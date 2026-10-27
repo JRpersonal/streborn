@@ -103,6 +103,7 @@ test.describe('UI 2.0 setup wizard', () => {
     // Nothing chosen yet: Next says why it waits.
     await expect(foot(page, 'next')).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('#w2NextHint')).toHaveText(W('find.chooseHint'));
+    await expect(foot(page, 'next')).toHaveAttribute('aria-describedby', 'w2NextHint');
     // aria-disabled keeps it in the tab order with its reason; a press does nothing.
     await foot(page, 'next').click({ force: true });
     await expect(title(page)).toHaveText(W('title.find'));
@@ -383,6 +384,199 @@ test.describe('UI 2.0 setup wizard', () => {
       await expect(title(page)).toHaveText(W('title.install', { name }));
       await stepState(page, 'check', 'skipped');
       await expect(page.locator('#w2PanelInstall #setupStickDetails')).toHaveAttribute('open', '');
+    });
+  });
+
+  test.describe('the check in the wizard: 10.x, the guide\'s own Update now', () => {
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: {
+          GetBoxFirmware: { sequence: [{ value: { ...SETUP_CHECK.guide, model: KITCHEN.model } }, { value: SETUP_CHECK.current }] },
+          GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: KITCHEN.model, current: '10.0.11' } },
+          FlashBoseFirmware: { never: true },
+        },
+      },
+    });
+
+    test('14. an update started from the guide holds Back, the stick and leaving, like the step\'s own', async ({ app, mock }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await openWizard(page);
+      await chooseKitchen(page);
+      await foot(page, 'next').click();
+      const check = page.locator('#w2CheckBody .u-check');
+      await expect(check).toHaveAttribute('data-case', 'guide');
+      await expect(foot(page, 'back')).not.toHaveAttribute('aria-disabled', 'true');
+      await check.locator('.u-check-fw [data-fwflash]').click();
+      await page.locator('#warnConfirm').click();
+      await mock.expectCalled('FlashBoseFirmware', { pred: (c) => c.args[0] === KITCHEN.host, times: 1 });
+      await expect(check).toHaveAttribute('data-phase', 'updating');
+      await expect(foot(page, 'back')).toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'stick')).toHaveCount(0);
+      // Its progress lines count too.
+      await mock.emit('firmware:progress', { host: KITCHEN.host, phase: 'upload', pct: 40, done: 40, total: 100 });
+      await expect(check).toHaveAttribute('data-phase', 'updating');
+      // Leaving asks first.
+      const modal = page.locator('#warnModal');
+      await nav(page, 'box').click();
+      await expect(modal).toBeVisible();
+      await expect(modal.locator('#warnBody')).toContainText(W('leave.bodyCheck', { name }));
+      await modal.locator('#warnCancel').click();
+      await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
+      // The backend says done: the step reads the speaker back and passes.
+      await mock.emit('firmware:progress', { host: KITCHEN.host, phase: 'done', pct: -1, done: 0, total: 0 });
+      await expect(check.locator('.u-check-callout')).toContainText(en('ui2.setup.check.updateDone', { name, version: '27.0.6' }));
+      await stepState(page, 'check', 'done');
+      await expect(foot(page, 'back')).not.toHaveAttribute('aria-disabled', 'true');
+    });
+  });
+
+  test.describe('the check in the wizard: 15.x, an update across a reload', () => {
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: {
+          GetBoxFirmware: { sequence: [{ value: SETUP_CHECK.routeA }, { value: SETUP_CHECK.current }] },
+          GetFirmwareGuide: { value: SETUP_CHECK.guideOne },
+          FlashBoseFirmware: { never: true },
+        },
+      },
+    });
+
+    test('15. the layout switch asks first, and after a reload the same update is not offered again', async ({ app, mock }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await openWizard(page);
+      await chooseKitchen(page);
+      await foot(page, 'next').click();
+      const check = page.locator('#w2CheckBody .u-check');
+      await expect(check).toHaveAttribute('data-case', 'routeA');
+      await check.locator('[data-check="flash"]').click();
+      await page.locator('#warnConfirm').click();
+      await mock.expectCalled('FlashBoseFirmware', { times: 1 });
+      await expect(foot(page, 'back')).toHaveAttribute('aria-disabled', 'true');
+      // The screen reader hears the phase, not the whole block: the callout
+      // is no live region, one short line is.
+      await expect(check.locator('.u-check-callout')).not.toHaveAttribute('role', /.+/);
+      await expect(check.locator('.u-check-live[role="status"]')).toHaveText(en('fwGuide.autoStarting'));
+      // Aa menu > Layout: classic asks before the reload.
+      await page.locator('#a11yTrigger').click();
+      await page.locator('#a11yMenu button[data-ui2="0"]').click();
+      const modal = page.locator('#warnModal');
+      await expect(modal).toBeVisible();
+      await expect(modal.locator('#warnBody')).toContainText(W('leave.bodyCheck', { name }));
+      await modal.locator('#warnCancel').click();
+      await expect(page.locator('#ui2SetupWizard')).toBeVisible();
+      await expect(page.locator('html')).toHaveClass(/\bui2\b/);
+      // A reload anyway (the Go call goes on): the check holds the wizard.
+      await page.reload();
+      await expect(page.locator('#ui2Sidebar')).toBeVisible();
+      await openWizard(page);
+      await chooseKitchen(page);
+      await foot(page, 'next').click();
+      const again = page.locator('#w2CheckBody .u-check');
+      await expect(again).toHaveAttribute('data-case', 'routeA');
+      await expect(again).toHaveAttribute('data-phase', 'updating');
+      await expect(again.locator('[data-check="flash"]')).toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'back')).toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'stick')).toHaveCount(0);
+      // Its end arrives on the new page: read back, done.
+      await mock.emit('firmware:progress', { host: KITCHEN.host, phase: 'done', pct: -1, done: 0, total: 0 });
+      await expect(again.locator('.u-check-callout')).toContainText(en('ui2.setup.check.updateDone', { name, version: '27.0.6' }));
+      await stepState(page, 'check', 'done');
+      expect(await mock.count('FlashBoseFirmware')).toBe(0);
+    });
+  });
+
+  test.describe('the check in the wizard: a slow read', () => {
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: {
+          GetBoxFirmware: { sequence: [{ value: SETUP_CHECK.routeA, delayMs: 2000 }, { value: SETUP_CHECK.current }] },
+          GetFirmwareGuide: { value: SETUP_CHECK.guideOne },
+          FlashBoseFirmware: { value: { before: '15.0.4', after: '27.0.6', via: 'page' }, delayMs: 1500 },
+        },
+      },
+    });
+
+    test('16. a footer button keeps the keyboard when the footer changes, and a locked one says why', async ({ app }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await openWizard(page);
+      await chooseKitchen(page);
+      await expect(foot(page, 'next')).not.toHaveAttribute('aria-describedby', /.+/);
+      await foot(page, 'next').click();
+      const check = page.locator('#w2CheckBody .u-check');
+      await expect(check).toHaveAttribute('data-case', 'loading');
+      await expect(page.locator('#w2InstallHint')).toHaveText(W('check.lockedCheck', { name }));
+      await foot(page, 'stick').focus();
+      // The read ends, the hint changes and the footer is drawn anew.
+      await expect(check).toHaveAttribute('data-case', 'routeA');
+      await expect(page.locator('#w2InstallHint')).toHaveText(W('check.lockedUpdate', { name }));
+      await expect(foot(page, 'stick')).toBeFocused();
+      await expect(foot(page, 'install')).toHaveAttribute('aria-describedby', 'w2InstallHint');
+      // Waiting on the locked Install: it unlocks under the keyboard.
+      await foot(page, 'install').focus();
+      await check.locator('[data-check="flash"]').click();
+      await page.locator('#warnConfirm').click();
+      await foot(page, 'back').focus();
+      await expect(foot(page, 'back')).toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'back')).toBeFocused();
+      await stepState(page, 'check', 'done');
+      await expect(foot(page, 'back')).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(foot(page, 'back')).toBeFocused();
+      await expect(foot(page, 'install')).not.toHaveAttribute('aria-describedby', /.+/);
+    });
+  });
+
+  test.describe('Confirm without an answer', () => {
+    test.use({
+      fakeClock: true,
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'kitchen'],
+        installFlow: true,
+        bindings: { InstallSTROnBox: { value: { step: 'guard', code: 'update-finishing', ok: false, message: 'update finishing', log: '', firmware: '27.0.6', model: 'SoundTouch 10', moduleType: '', variant: '' } } },
+      },
+    });
+
+    test('17. stops asking while the user is elsewhere, and after the window offers a way out', async ({ app, mock }) => {
+      const { page } = app;
+      const name = KITCHEN.friendlyName;
+      await toInstall(page);
+      await page.locator('#setupHeroInstall').click();
+      await page.getByRole('button', { name: W('install.waitConfirmLabel', { name }) }).click();
+      await expect(title(page)).toHaveText(W('title.confirm', { name }));
+      await expect(page.locator('#w2ConfirmLive[role="status"]')).toHaveText(W('confirm.waitingHead', { name }));
+      await expect(page.locator('#w2ConfirmBody [aria-busy]')).toHaveCount(0);
+      await expect.poll(() => mock.count('BoxAgentVersion', onHost(KITCHEN.host))).toBeGreaterThanOrEqual(1);
+      // Elsewhere: no more asking.
+      await nav(page, 'box').click();
+      await expect(page.locator('#ui2MainInner > #view-box')).toBeVisible();
+      await page.clock.runFor(4_000);
+      const asked = await mock.count('BoxAgentVersion', onHost(KITCHEN.host));
+      for (let i = 0; i < 4; i++) await page.clock.runFor(4_000);
+      expect(await mock.count('BoxAgentVersion', onHost(KITCHEN.host))).toBe(asked);
+      // Back on Add speaker: it asks again.
+      await nav(page, 'speakers').click();
+      await sub(page, 'add').click();
+      await expect(title(page)).toHaveText(W('title.confirm', { name }));
+      await expect.poll(() => mock.count('BoxAgentVersion', onHost(KITCHEN.host))).toBeGreaterThan(asked);
+      // The window runs out: failed, with the way back to the install and out.
+      for (let i = 0; i < 12; i++) await page.clock.runFor(30_000);
+      await expect(page.locator('#w2ConfirmBody [role="alert"]')).toContainText(W('confirm.failedHead', { name }));
+      await stepState(page, 'confirm', 'failed');
+      await expect(page.getByRole('button', { name: W('confirm.recheckLabel', { name }) })).toBeVisible();
+      await expect(page.getByRole('button', { name: W('confirm.another') })).toBeVisible();
+      await page.getByRole('button', { name: W('confirm.backInstallLabel', { name }) }).click();
+      await expect(title(page)).toHaveText(W('title.install', { name }));
+      await stepState(page, 'confirm', 'waiting');
+      await expect(page.locator('#w2PanelInstall #setupStickDetails')).toHaveAttribute('open', '');
+      await expect(page.locator('#w2PanelInstall #setupPrimaryAction .setup-hero')).toHaveAttribute('data-host', KITCHEN.host);
     });
   });
 
