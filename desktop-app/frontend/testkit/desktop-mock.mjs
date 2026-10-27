@@ -259,7 +259,7 @@ export function installDesktopMock({ scenario, demo }) {
       if (!b || b.offline) return { reachable: false, latest: '27.0.6' };
       return {
         reachable: true, model: b.model || '', firmware: '27.0.6.46330.5043500', short: '27.0.6',
-        moduleType: 'scm', variant: '', latest: '27.0.6', outdated: false, deviceId: 'device-id-here',
+        moduleType: '', variant: '', latest: '27.0.6', outdated: false, deviceId: 'device-id-here',
       };
     },
     CheckStereoBeforeInstall: () => ({ known: false, paired: false, status: '', partnerIP: '', partnerOnline: false, partnerHasSTR: false }),
