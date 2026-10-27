@@ -173,7 +173,7 @@ describe('Speakers > Groups wiring', () => {
   it('arranges the classic view after every paint and forks none of it', () => {
     expect(src).toContain('setMultiroomRenderHooks({ before: beforePaint, after: afterPaint })');
     expect(view).toContain('if (renderHooks && renderHooks.after) renderHooks.after(root, hookCtx);');
-    expect(view).toMatch(/const hookCtx = renderHooks && renderHooks\.before \? renderHooks\.before\(root\) : null;\n {2}root\.innerHTML = /);
+    expect(view).toMatch(/const hookCtx = renderHooks && renderHooks\.before \? renderHooks\.before\(root\) : null;\r?\n {2}root\.innerHTML = /);
     // Nothing here sends a group or pair request: every action is the classic
     // control's own click, replayed after the confirmation.
     expect(src).not.toMatch(/from '\.\.\/\.\.\/api\.js'/);
