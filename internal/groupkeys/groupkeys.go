@@ -221,6 +221,12 @@ type Store struct {
 	inFlight map[string]bool
 	lastAt   map[string]time.Time
 	lastWarn map[string]time.Time
+	// formedBy remembers, per key, the template the key's last successful
+	// press formed (cleared by a dissolve). It is what lets a press dissolve a
+	// group that formed without a member that was offline at the time; see
+	// templatePartlyLive. Memory only: after an agent restart the first press
+	// on such a group forms again, the next one dissolves.
+	formedBy map[string]string
 
 	lastAction Action
 	lastError  Action
@@ -237,6 +243,7 @@ func Load(path string, logger *slog.Logger) (*Store, error) {
 		inFlight: map[string]bool{},
 		lastAt:   map[string]time.Time{},
 		lastWarn: map[string]time.Time{},
+		formedBy: map[string]string{},
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -422,7 +429,7 @@ func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Te
 	if err != nil {
 		return OutcomeFailed, fmt.Errorf("read the main speaker's group: %w", err)
 	}
-	if templateLive(tpl, live) {
+	if templateLive(tpl, live) || (s.formedLast(key, tpl.Name) && templatePartlyLive(tpl, live)) {
 		if err := client.Dissolve(ctx, tpl.Master); err != nil {
 			return OutcomeFailed, fmt.Errorf("dissolve: %w", err)
 		}
@@ -505,6 +512,14 @@ func (s *Store) otherBoundTemplates(key string, tpl Template) []Template {
 	return out
 }
 
+// formedLast reports whether the last successful press of key formed the
+// template called name.
+func (s *Store) formedLast(key, name string) bool {
+	s.togMu.Lock()
+	defer s.togMu.Unlock()
+	return s.formedBy[key] != "" && strings.EqualFold(s.formedBy[key], name)
+}
+
 // finish records the outcome and writes the one log line per press.
 func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	a := Action{At: time.Now(), Key: key, Template: name, Outcome: outcome}
@@ -513,6 +528,14 @@ func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	}
 	s.togMu.Lock()
 	s.lastAction = a
+	if err == nil {
+		switch outcome {
+		case OutcomeFormed, OutcomeDeferred, OutcomeSwitched:
+			s.formedBy[key] = name
+		case OutcomeDissolved:
+			delete(s.formedBy, key)
+		}
+	}
 	if err != nil {
 		s.lastError = a
 	}
@@ -554,13 +577,25 @@ func leads(tpl Template, live LiveZone) bool {
 // address, because a two-chip chassis is enrolled under its firmware id while
 // discovery announced its other MAC.
 func templateLive(tpl Template, live LiveZone) bool {
-	if !leads(tpl, live) {
-		return false
-	}
-	for _, want := range tpl.Members {
+	return leads(tpl, live) && containsAll(live.Members, tpl.Members)
+}
+
+// templatePartlyLive reports whether the live zone is what is left of the
+// template's group with some members missing: the template's main speaker
+// leads it, it has at least one follower, and every follower it has is a
+// template member. On its own that cannot tell "a member was offline when the
+// key formed the group" from "the user grouped two of the speakers by hand",
+// so act only counts it as live when this key formed this template last.
+func templatePartlyLive(tpl Template, live LiveZone) bool {
+	return leads(tpl, live) && len(live.Members) > 0 && containsAll(tpl.Members, live.Members)
+}
+
+// containsAll reports whether every speaker of want is in have.
+func containsAll(have, want []Member) bool {
+	for _, w := range want {
 		found := false
-		for _, have := range live.Members {
-			if sameSpeaker(want, have) {
+		for _, h := range have {
+			if sameSpeaker(w, h) {
 				found = true
 				break
 			}

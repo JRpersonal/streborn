@@ -262,6 +262,58 @@ func TestToggleIncompleteGroupForms(t *testing.T) {
 	}
 }
 
+// A template with a speaker that was offline when the key formed it: the form
+// succeeds with the rest, and the next press must dissolve that group instead
+// of forming it again for as long as the speaker stays away (2026-10-27, an
+// "all speakers" group with one switched off).
+func TestToggleDissolvesAGroupFormedWithoutAnOfflineMember(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: false}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("first press: outcome %s", got)
+	}
+	// The form wired only the member that answered.
+	f.mu.Lock()
+	f.zones["AAAA"] = LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB", IP: "192.0.2.11"}}}
+	f.mu.Unlock()
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeDissolved {
+		t.Fatalf("second press: outcome %s, want the partial group dissolved", got)
+	}
+	// After the dissolve the memory is gone: a hand-made partial group is
+	// completed again, as before.
+	f.mu.Lock()
+	f.zones["AAAA"] = LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB", IP: "192.0.2.11"}}}
+	f.mu.Unlock()
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("third press: outcome %s, want a form", got)
+	}
+}
+
+// templatePartlyLive pinned on its own: a follower outside the template, or no
+// follower at all, is not what is left of the template's group.
+func TestTemplatePartlyLive(t *testing.T) {
+	tpl := evening()
+	if !templatePartlyLive(tpl, LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "CCCC"}}}) {
+		t.Fatal("a subset of the template must match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "AAAA"}) {
+		t.Fatal("a zone without followers must not match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB"}, {DeviceID: "EEEE"}}}) {
+		t.Fatal("a follower outside the template must not match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "ZZZZ", Members: []Member{{DeviceID: "BBBB"}}}) {
+		t.Fatal("a zone led by another speaker must not match")
+	}
+}
+
 // TestToggleSwitchesFromOtherTemplate: the other key's template is live on a
 // different main speaker -> dissolve it there, then form this one.
 func TestToggleSwitchesFromOtherTemplate(t *testing.T) {
