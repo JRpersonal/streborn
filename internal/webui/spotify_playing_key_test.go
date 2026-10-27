@@ -106,7 +106,7 @@ func TestPhoneRemoteFollowsTheSpotifyKeyRules(t *testing.T) {
 	for _, want := range []string{
 		"r.headers.get('X-STR-Playing-Key')",
 		"markPlaying(nowLoc, queue, spKey);",
-		"(spKey >= 1 && spKey <= 6 ? spKey : 0)",
+		"(spKey >= 1 && spKey <= 12 ? spKey : 0)",
 		"var ctxUri = spotifySaveContextURI(src, loc, (info && info.context) || '');",
 		"function spotifyURIFromContainer(loc)",
 		"if (src === 'SPOTIFY' || boxURI) return boxURI;",
