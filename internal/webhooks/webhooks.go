@@ -72,10 +72,42 @@ func (a Action) Configured() bool {
 	case "udp":
 		return a.Host != "" && a.Port > 0
 	case "wol":
-		return a.MAC != ""
+		// A MAC that cannot be parsed never fires, so it does not count as
+		// configured: it lit the key on the remote map and made the group-key
+		// section warn about a webhook that could not do anything (2026-10-27).
+		return ValidWOLMAC(a.MAC)
 	default: // "" / "http"
 		return a.URL != ""
 	}
+}
+
+// ValidWOLMAC reports whether mac is a 6-byte hardware address the magic
+// packet can carry, in any separator form net.ParseMAC accepts.
+func ValidWOLMAC(mac string) bool {
+	hw, err := net.ParseMAC(strings.TrimSpace(mac))
+	return err == nil && len(hw) == 6
+}
+
+// Validate refuses an ENABLED Wake-on-LAN action whose address cannot be
+// parsed, so the mistake shows when saving instead of as a silent failure on
+// every key press. A disabled one passes: switching a broken entry off must
+// always be possible.
+func (c Config) Validate() error {
+	check := func(name string, a Action) error {
+		if a.Enabled && a.Type == "wol" && strings.TrimSpace(a.MAC) != "" && !ValidWOLMAC(a.MAC) {
+			return fmt.Errorf("%s: %q is not a valid Wake-on-LAN address (six pairs like AA:BB:CC:DD:EE:FF)", name, a.MAC)
+		}
+		return nil
+	}
+	if err := check("thumbs keys", c.Thumb); err != nil {
+		return err
+	}
+	for id, t := range c.Buttons {
+		if err := check(id, t.Action); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Webhook interaction modes for the per-remote-key buttons.
@@ -193,6 +225,9 @@ func (s *Store) Get() Config {
 
 // Set replaces the config and persists it atomically.
 func (s *Store) Set(c Config) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.cfg = c
 	s.mu.Unlock()

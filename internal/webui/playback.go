@@ -75,6 +75,10 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSONRequest(w, r, 1<<16, &c) {
 			return
 		}
+		if err := c.Validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		if err := s.webhooks.Set(c); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
