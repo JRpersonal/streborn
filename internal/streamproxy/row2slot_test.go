@@ -48,7 +48,9 @@ func TestProxyServesTheSecondRow(t *testing.T) {
 	proxy := httptest.NewServer(mux)
 	defer proxy.Close()
 
-	before := time.Now()
+	// One millisecond back: on Windows two time.Now() calls can return the same
+	// instant, and SlotPulledSince wants a fetch strictly after it.
+	before := time.Now().Add(-time.Millisecond)
 	resp, err := http.Get(proxy.URL + "/stream/12")
 	if err != nil {
 		t.Fatalf("GET /stream/12: %v", err)
