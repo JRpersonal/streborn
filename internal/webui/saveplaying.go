@@ -293,8 +293,8 @@ func (s *Server) handleSavePlaying(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<12, &req) {
 		return
 	}
-	if req.Slot < 1 || req.Slot > 6 {
-		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+	if !presets.ValidSlot(req.Slot) {
+		http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 		return
 	}
 	saved, err := s.SavePlaying(r, req.Slot)

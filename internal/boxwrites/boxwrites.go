@@ -100,6 +100,18 @@ func SlotWrittenWithin(slot int, d time.Duration) bool {
 	return ok && time.Since(t) < d
 }
 
+// SlotNotedWithin reports whether NoteSlot(kind, slot) was called in the last
+// d. The double-press detector asks it whether a preset selection the speaker
+// just announced is the echo of STR's own command ("presetkey": a key STR
+// pressed over the CLI; "select" with slot 0: an item STR handed to /select)
+// rather than a person at the keys (#1110).
+func SlotNotedWithin(kind string, slot int, d time.Duration) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	t, ok := slotAt[slotKey{kind, slot}]
+	return ok && time.Since(t) < d
+}
+
 // SnapshotReset returns the writes since the last call and starts a fresh
 // window. Empty map = a write-free window (the healthy overnight state).
 func SnapshotReset() map[string]int {

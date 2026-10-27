@@ -11,6 +11,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // Native preset probe: a development harness for finding the exact TAP CLI
@@ -63,8 +64,9 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "presets store or box host not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if in.Slot < 1 || in.Slot > 6 {
-		in.Slot = 6
+	// The probe writes the speaker's own key, so only 1..6 (never row 2).
+	if !presets.IsBoxSlot(in.Slot) {
+		in.Slot = presets.BoxSlots
 	}
 	var name, stream string
 	for _, p := range s.presets.All() {

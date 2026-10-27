@@ -311,6 +311,21 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res.body())
 }
 
+// PlaySlotForKey recalls slot exactly the way the app's POST /api/play/<slot>
+// does, for a hardware key that asks for a preset the speaker itself does not
+// hold: the second row (slots 7..12, #1110), reached by pressing a key twice.
+// It returns the preset's name on success, or the refusal as an error.
+func (s *Server) PlaySlotForKey(ctx context.Context, slot int) (string, error) {
+	res, ref := s.playSlot(ctx, slot)
+	if ref != nil {
+		if ref.Code != "" {
+			return "", fmt.Errorf("recall refused (%d %s): %s", ref.Status, ref.Code, ref.Error)
+		}
+		return "", fmt.Errorf("recall refused (%d): %s", ref.Status, ref.Error)
+	}
+	return res.Name, nil
+}
+
 // recallUnavailable is the pair of 503s a recall answers before it looks at
 // the slot: no renderer, no preset store. Called with boxCmdMu held.
 func (s *Server) recallUnavailable() *playRefusal {

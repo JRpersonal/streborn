@@ -85,13 +85,13 @@ func TestSlotFetchStampsOnlyValidSlots(t *testing.T) {
 		t.Fatal("the global wedge stamp must still record the box contact")
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/stream/9", nil)
+	req = httptest.NewRequest(http.MethodGet, "/stream/13", nil)
 	rw = httptest.NewRecorder()
 	s.handle(rw, req)
 	if rw.Code != http.StatusBadRequest {
 		t.Fatalf("invalid slot must 400, got %d", rw.Code)
 	}
-	if !s.LastFetchForSlot(9).IsZero() || !s.LastFetchForSlot(0).IsZero() {
+	if !s.LastFetchForSlot(13).IsZero() || !s.LastFetchForSlot(0).IsZero() {
 		t.Fatal("out-of-range slots must never stamp")
 	}
 
