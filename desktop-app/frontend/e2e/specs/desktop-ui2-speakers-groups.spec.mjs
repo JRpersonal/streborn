@@ -398,7 +398,8 @@ test.describe('classic layout, phase 3 network', () => {
     await expect(page.locator('#view-multiroom .ui2-grp, #ui2GrpConfirm')).toHaveCount(0);
     await expect(page.locator('#view-multiroom > .zone-intro')).toBeVisible();
     await expect(page.locator('#zoneCreate')).toHaveText('Create group');
-    await expect(page.locator('#stereoCreate')).toHaveText('Create stereo pair');
+    // The pair picker opens on the live pair, so its button changes that pair.
+    await expect(page.locator('#stereoCreate')).toHaveText('Change stereo pair');
     await expect(page.locator('#view-multiroom .zone-card[role="button"]').first()).toBeVisible();
     await page.locator('#view-multiroom .box-group-x[data-dissolve-kind="pair"]').click();
     await mock.expectCalled('DissolveStereoPair');
