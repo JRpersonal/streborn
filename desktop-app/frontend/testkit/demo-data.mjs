@@ -276,6 +276,22 @@ export const PHONE = {
     { slot: 5, name: 'Radio Paradise', type: 'radio', stream_url: 'http://example.com/rp', art: art('rp') },
     { slot: 6, name: 'FIP', type: 'radio', stream_url: 'http://example.com/fip', art: art('fip') },
   ],
+  // The second row of keys (#1110): slot 6+n is key n pressed twice. Served
+  // only when the handler is told so (row2: true); by default row 2 is empty.
+  PRESETS_ROW2: [
+    { slot: 7, name: 'KEXP', type: 'radio', stream_url: 'http://example.com/kexp', art: art('kexp') },
+    { slot: 8, name: 'Classic FM', type: 'radio', stream_url: 'http://example.com/classic', art: art('classic') },
+    { slot: 9, name: 'Jazz Lounge', type: 'radio', stream_url: 'http://example.com/jazzlounge', art: art('jazz') },
+    { slot: 11, name: 'NPR Music', type: 'radio', stream_url: 'http://example.com/nprmusic', art: art('npr') },
+  ],
+  // A now-playing answer for any station; STATUS_PLAYING below is the same
+  // shape for Best Of Rock.FM.
+  statusXML: (name, loc) =>
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<nowPlaying deviceID="A1B2C3D4E5F6" source="LOCAL_INTERNET_RADIO">' +
+    '<ContentItem source="LOCAL_INTERNET_RADIO" location="' + loc + '" isPresetable="true">' +
+    '<itemName>' + name + '</itemName></ContentItem>' +
+    '<playStatus>PLAY_STATE</playStatus></nowPlaying>',
   STATUS_PLAYING:
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<nowPlaying deviceID="A1B2C3D4E5F6" source="LOCAL_INTERNET_RADIO">' +
@@ -289,7 +305,10 @@ export const PHONE = {
     network: { interfaces: [{ type: 'WIFI', state: 'NETWORK_WIFI_CONNECTED', ssid: 'HomeWiFi', ipAddress: '192.0.2.50', signal: 'GOOD' }] },
     sources: [{ source: 'AUX', status: 'READY' }, { source: 'BLUETOOTH', status: 'READY' }],
   },
-  VERSION: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok' },
+  // presetRows "2": the agent knows the second row of keys (#1110). The
+  // handler serves VERSION_ONE_ROW instead when told presetRows: false.
+  VERSION: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok', presetRows: '2' },
+  VERSION_ONE_ROW: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok' },
   // Days are 0 = Sunday .. 6 = Saturday (internal/alarm).
   ALARMS: {
     zone: 'Europe/Berlin',
