@@ -45,7 +45,7 @@ func (e *transferEngine) handler(w http.ResponseWriter, r *http.Request) {
 		e.track, e.paused = "New", true
 		// A real load takes seconds; without a gap the commit can share the
 		// play request's clock tick on Windows and never count as after it.
-		time.Sleep(20 * time.Millisecond)
+		waitForClockTick()
 		e.m.noteLibrespotLine(`level=info msg="loaded track \"New\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
 		if e.plays == 1 || e.lostAgain {
 			e.lost = true
