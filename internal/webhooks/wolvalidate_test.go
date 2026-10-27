@@ -1,6 +1,7 @@
 package webhooks
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -46,5 +47,28 @@ func TestWOLWithAnInvalidMAC(t *testing.T) {
 	good := Action{Enabled: true, Type: "wol", MAC: "AA:BB:CC:DD:EE:FF"}
 	if err := s.Set(Config{Thumb: good}); err != nil || !good.Configured() {
 		t.Fatalf("a valid WOL action was refused: %v", err)
+	}
+}
+
+// A broken entry stored before validation existed must not block saving the
+// other entries: the app saves the whole config at once.
+func TestAnUnchangedBrokenEntryDoesNotBlockOtherSaves(t *testing.T) {
+	bad := Action{Enabled: true, Type: "wol", MAC: "AA:BB:CC:DD:EEFF"}
+	s, err := Load(filepath.Join(t.TempDir(), "webhooks.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.cfg = Config{Thumb: bad}
+	s.mu.Unlock()
+	next := Config{Thumb: bad, Buttons: map[string]Trigger{"thumbsUp": {Action: Action{Enabled: true, URL: "http://192.0.2.9/x"}}}}
+	if err := s.Set(next); err != nil {
+		t.Fatalf("saving another entry was refused over the unchanged broken one: %v", err)
+	}
+	edited := next
+	edited.Thumb.MAC = "AA:BB:CC:DD:EE"
+	var inv *InvalidError
+	if err := s.Set(edited); !errors.As(err, &inv) || inv.Entry != "thumb" {
+		t.Fatalf("an edited broken entry must be refused with its entry named, got %v", err)
 	}
 }
