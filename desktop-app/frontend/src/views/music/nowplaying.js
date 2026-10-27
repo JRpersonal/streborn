@@ -4,7 +4,7 @@
 import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, Stop, TrackPosition } from '../../api.js';
 import { balanceSourceBox, inStereoPair, stereoPairsOf } from '../../groups.js';
 import { t } from '../../i18n/index.js';
-import { ROW_SIZE, keyLabel } from '../../presetrows.js';
+import { nowKeyTag } from '../../presetrows.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
@@ -278,12 +278,11 @@ export function renderNowPlayingBar() {
   // by colour alone (accessibility): play arrow normally, pause bars when
   // paused, a stop square when stopped (#1526).
   const stateGlyph = nowStateGlyph(ps, srcU);
-  // A key of the second row (#1110) says which one it is: "Key 1 · 2×" is not
-  // a key anybody can see on the speaker, so the line names it. Row-1 keys
-  // keep the line as it always was.
-  const keyTag = state.activePresetSlot > ROW_SIZE
-    ? ` <small class="now-key">${escapeHtml(keyLabel(state.activePresetSlot, t))}</small>`
-    : '';
+  // The key that is playing, named the way the grid names it ("Key 2",
+  // "Key 1 · 2×", #1110). Only an STR key: activePresetSlot is set for a key
+  // of the store, never for a station started from a list or the box's own.
+  const keyText = nowKeyTag(state.activePresetSlot, t);
+  const keyTag = keyText ? ` <small class="now-key">${escapeHtml(keyText)}</small>` : '';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"

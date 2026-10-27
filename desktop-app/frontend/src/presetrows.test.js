@@ -14,6 +14,7 @@ import {
   keyLabel,
   keyNum,
   markRow2Seen,
+  nowKeyTag,
   presetsWithin,
   row2Seen,
   rowCount,
@@ -69,6 +70,14 @@ describe('labels', () => {
     expect(keyNum(3, t)).toBe(3);
     expect(keyNum(8, t)).toBe('2 · 2×');
     expect(t('preset.savedToKey', { n: keyNum(8, t), name: 'WDR 5' })).toBe('Saved to key 2 · 2×: WDR 5');
+  });
+
+  it('names the playing key on the now-playing line, either row, only for an STR key', () => {
+    expect(nowKeyTag(2, t)).toBe('Key 2');
+    expect(nowKeyTag(7, t)).toBe('Key 1 · 2×');
+    expect(nowKeyTag(null, t)).toBe('');
+    expect(nowKeyTag(13, t)).toBe('');
+    expect(nowKeyTag(2, translator('de'))).toBe('Taste 2');
   });
 
   it('reads "Taste 1 · 2×" in German', () => {

@@ -76,6 +76,7 @@ test.describe('a speaker with the second row of keys', () => {
     // Back on Once, the Twice tab carries the playing marker, in words too.
     await onceTab(page).click();
     await expect(page.locator('#presets .preset.playing')).toHaveCount(0);
+    await expect(page.locator('#statusMain .now-key')).toHaveText(en('preset.row2.key', { n: 1 }));
     await expect(twiceTab(page).locator('.prt-playing')).toBeVisible();
     await expect(twiceTab(page)).toHaveAccessibleName(new RegExp(en('preset.row2.tabPlayingName')));
   });
@@ -118,6 +119,27 @@ test.describe('a speaker with the second row of keys', () => {
     expect(STATIONS.map((s) => s.name)).toContain(call.args[3]);
   });
 
+});
+
+test.describe('the now-playing line on a row-1 key', () => {
+  test('names the key the way the grid does', async ({ app }) => {
+    const { page } = app;
+    // The demo speaker plays key 2 (Best Of Rock.FM).
+    await expect(page.locator('#presets .preset.playing')).toContainText(PRESETS[1].name);
+    await expect(page.locator('#statusMain .now-key')).toHaveText(en('preset.key', { n: 2 }));
+  });
+});
+
+test.describe('the now-playing line on a station that is no key', () => {
+  test('names no key', async ({ app }) => {
+    const { page } = app;
+    await page.locator('#topBtn').click();
+    const row = page.locator('#searchResults .result-row').filter({ hasText: 'Jazz24' }).first();
+    await row.locator('.play-now').click();
+    await expect(page.locator('#statusMain')).toContainText('Jazz24');
+    await expect(page.locator('#presets .preset.playing')).toHaveCount(0);
+    await expect(page.locator('#statusMain .now-key')).toHaveCount(0);
+  });
 });
 
 test.describe('copying to a speaker with the second row', () => {

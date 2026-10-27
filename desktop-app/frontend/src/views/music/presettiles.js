@@ -408,11 +408,11 @@ export function renderPresets() {
     };
   });
   renderPresetRowChrome(rows, shownRow, playingRows);
-  // The now-playing line names a lit row-2 key; repaint it when that changes,
+  // The now-playing line names the lit key; repaint it when that changes,
   // since the bar is drawn before the keys on a status tick.
-  const row2Lit = state.activePresetSlot > ROW_SIZE ? state.activePresetSlot : null;
-  if (row2Lit !== lastRow2Lit) {
-    lastRow2Lit = row2Lit;
+  const lit = state.activePresetSlot;
+  if (lit !== lastLitKey) {
+    lastLitKey = lit;
     renderNowPlayingBar();
   }
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
@@ -420,8 +420,8 @@ export function renderPresets() {
   // rebuilt grid needs no measuring frame.
 }
 
-// lastRow2Lit is the row-2 key the now-playing line was last told about.
-let lastRow2Lit = null;
+// lastLitKey is the key the now-playing line was last told about.
+let lastLitKey = null;
 
 // keyNumHTML is the number line of a tile. A row-2 key wears the "2×" badge in
 // front of its number ("2× Key 1"); assistive technology reads the full label

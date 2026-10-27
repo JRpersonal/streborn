@@ -65,6 +65,14 @@ export function keyLabel(slot, t) {
   return t('preset.row2.key', { n: n - ROW_SIZE });
 }
 
+// nowKeyTag is the key the now-playing line names: "Key 2" or "Key 1 · 2×"
+// for a lit STR key, '' when no key of the store plays.
+export function nowKeyTag(activeSlot, t) {
+  const n = Number(activeSlot);
+  if (!Number.isInteger(n) || n < 1 || n > 2 * ROW_SIZE) return '';
+  return keyLabel(n, t);
+}
+
 // rowCount is how many keys of a row hold something.
 export function rowCount(presets, row) {
   const slots = new Set(rowSlots(row));
