@@ -32,6 +32,7 @@
 export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
+  'CopyPresetsAcrossBoxes', 'DeletePreset',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
@@ -105,8 +106,18 @@ export function installDesktopMock({ scenario, demo }) {
   const appInfo = Object.assign({}, demo.appInfo, sc.appInfo || {});
   const boxes = sc.boxes || [];
   const boxByHost = (h) => boxes.find((b) => b.host === h) || (sc.current && sc.current.host === h ? sc.current : null);
+  // A speaker whose agent keeps the second row of keys (presetRows "2",
+  // #1110) starts with the demo's row-2 keys too; scenario.presets replaces
+  // the starting store of a speaker whole.
+  const rowsOf = (h) => {
+    const b = boxByHost(h);
+    return b && b.presetRows === '2' ? 2 : 1;
+  };
   const presetsFor = (h) => {
-    if (!state.presets[h]) state.presets[h] = clone(demo.presets);
+    if (!state.presets[h]) {
+      const own = sc.presets && sc.presets[h];
+      state.presets[h] = own ? clone(own) : clone(rowsOf(h) === 2 ? [...demo.presets, ...(demo.presetsRow2 || [])] : demo.presets);
+    }
     return state.presets[h];
   };
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -168,7 +179,9 @@ export function installDesktopMock({ scenario, demo }) {
     BoxSettings: ([h]) => settingsFor(h),
     BoxAgentVersion: ([h]) => {
       const b = boxByHost(h);
-      return { version: (b && b.version) || appInfo.version, build: (b && b.build) || appInfo.build };
+      const v = { version: (b && b.version) || appInfo.version, build: (b && b.build) || appInfo.build };
+      if (b && b.presetRows) v.presetRows = b.presetRows;
+      return v;
     },
     PhoneQR: () => demo.phoneQR,
     GetPresets: ([h]) => clone(presetsFor(h)),
@@ -176,6 +189,20 @@ export function installDesktopMock({ scenario, demo }) {
     SetPreset: ([h, , slot, name, url, art, bitrate, homepage, codec]) => {
       putPreset(h, slot, { name, stream_url: url, type: 'radio', art, bitrate, homepage, codec });
       return undefined;
+    },
+    DeletePreset: ([h, , slot]) => {
+      const list = presetsFor(h);
+      const i = list.findIndex((x) => x.slot === slot);
+      if (i >= 0) list.splice(i, 1);
+      return undefined;
+    },
+    // Copies what the agent's bulk PUT would: every named source key the
+    // target keeps (row 2 only where the target reports presetRows "2").
+    CopyPresetsAcrossBoxes: ([src, , dst]) => {
+      const max = rowsOf(dst) * 6;
+      const set = presetsFor(src).filter((p) => p.slot >= 1 && p.slot <= max && p.name);
+      for (const p of set) putPreset(dst, p.slot, clone(p));
+      return set.length;
     },
     MovePreset: ([h, , from, to]) => {
       const list = presetsFor(h);

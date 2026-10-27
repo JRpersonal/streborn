@@ -30,6 +30,9 @@ export const BOX = {
   serialNumber: '',
   kind: 'STR',
   portVerified: true,
+  // Its agent keeps the second row of six keys, pressed twice (#1110); the
+  // other roster speakers run an agent without it.
+  presetRows: '2',
 };
 
 export const PRESETS = [
@@ -39,6 +42,13 @@ export const PRESETS = [
   { slot: 4, name: 'Jazz24', stream_url: 'http://demobox.local:8888/stream/4', type: 'radio', art: cover('J', '#7b2cbf'), bitrate: 320 },
   { slot: 5, name: 'Radio Paradise', stream_url: 'http://demobox.local:8888/stream/5', type: 'radio', art: cover('P', '#e07a00'), bitrate: 320 },
   { slot: 6, name: 'FIP', stream_url: 'http://demobox.local:8888/stream/6', type: 'radio', art: cover('F', '#d62246'), bitrate: 192 },
+];
+
+// The second row of keys (#1110) on a speaker whose agent keeps it: key 1 and
+// key 3 pressed twice. Slot 6+n is key n pressed twice.
+export const PRESETS_ROW2 = [
+  { slot: 7, name: 'Radio Swiss Jazz', stream_url: 'http://demobox.local:8888/stream/7', type: 'radio', art: cover('S', '#0b6e4f'), bitrate: 128 },
+  { slot: 9, name: 'KEXP', stream_url: 'http://demobox.local:8888/stream/9', type: 'radio', art: cover('K', '#3d348b'), bitrate: 128 },
 ];
 
 export const SETTINGS = {
@@ -338,7 +348,7 @@ export const PHONE = {
 
 // ---- the bundle the in-page desktop mock receives --------------------------
 export const DEMO = {
-  box: BOX, stockBox: STOCK_BOX, roster: ROSTER, recent: RECENT, presets: PRESETS, settings: SETTINGS,
+  box: BOX, stockBox: STOCK_BOX, roster: ROSTER, recent: RECENT, presets: PRESETS, presetsRow2: PRESETS_ROW2, settings: SETTINGS,
   statusPlaying: STATUS_PLAYING, statusIdle: STATUS_IDLE, statusTemplate: STATUS_TEMPLATE, defaultArt: cover('R', '#1b2636'),
   drives: DRIVES, wifi: WIFI, appInfo: APPINFO, stations: STATIONS, languages: LANGUAGES,
   mediaServers: MEDIA_SERVERS, libraryPage: LIBRARY_PAGE, phoneQR: PHONE_QR,
