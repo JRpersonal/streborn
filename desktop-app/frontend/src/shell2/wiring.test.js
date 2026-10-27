@@ -136,7 +136,7 @@ describe('UI 2.0 sidebar speaker list', () => {
       expect(markup, id).not.toContain(id);
     }
     const spk = markup.indexOf('id="ui2Speakers"');
-    const nav = markup.indexOf('<nav ');
+    const nav = markup.indexOf('<nav class="ui2-side-nav"');
     expect(spk).toBeGreaterThan(0);
     expect(nav).toBeGreaterThan(spk);
     for (const id of ['ui2LevelsPop', 'ui2GroupVolSlot', 'ui2Version', 'ui2SpkLists']) expect(markup, id).toContain(`id="${id}"`);

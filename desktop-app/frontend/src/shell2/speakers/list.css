@@ -1,0 +1,24 @@
+/* UI 2.0 preview: Speakers > list (#1287, list.js). Skeleton styles; the
+   list part replaces them. Under html.ui2 #view-speakers only. */
+
+html.ui2 #view-speakers {
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-speakers .spl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-speakers .spl-open {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+}
+html.ui2 #view-speakers .spl-name { font-weight: 600; overflow-wrap: anywhere; }
+html.ui2 #view-speakers .spl-meta { color: var(--u-muted); font-size: 13px; }
+html.ui2 #view-speakers .spl-empty { color: var(--u-muted); }

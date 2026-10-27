@@ -77,6 +77,12 @@ releases later.
   say "Offline"; Bose originals say "Ready for STR" and open the setup. This
   replaces the room switcher and the separate output popover of the first
   draft.
+- **A speaker's settings live on its page, Speakers > one speaker** (the
+  open question "where do speaker settings live" from the concept). The page
+  always shows the speaker you control: opening a speaker from the Speakers
+  list makes it the controlled one, and choosing another row in the sidebar
+  while the page is open moves the page with it. The sidebar row itself stays
+  one click (choose) plus `+` / `−`; it gets no second settings button.
 - **Volume in the player.** While a group plays, the group volume takes the
   place of the speaker volume, and Levels opens the per-speaker sliders.
   Levels only sets levels; choosing speakers stays in the sidebar.

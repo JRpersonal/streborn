@@ -1,0 +1,47 @@
+/* UI 2.0 preview: Speakers > one speaker (#1287, speaker.js): the speaker's
+   head, the five tabs and their panels. Under html.ui2 #ui2SpkPage only. */
+
+html.ui2 #ui2SpkPage { margin-top: 16px; }
+html.ui2 #ui2SpkPage[hidden] { display: none; }
+html.ui2 #ui2SpkPage .sps-name {
+  margin: 0;
+  color: var(--u-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2SpkPage .sps-meta,
+html.ui2 #ui2SpkPage .sps-none {
+  margin: 4px 0 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+/* The tabs: the selected one is underlined in the accent, bold and
+   aria-selected, so its state never rests on colour alone. They wrap rather
+   than scroll at a larger text size. */
+html.ui2 #ui2SpkPage .sps-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--u-border);
+}
+html.ui2 #ui2SpkPage .sps-tabs[hidden],
+html.ui2 #ui2SpkPage [hidden] { display: none; }
+html.ui2 #ui2SpkPage .sps-tab {
+  min-height: var(--u-target);
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  cursor: pointer;
+}
+html.ui2 #ui2SpkPage .sps-tab[aria-selected="true"] {
+  border-bottom-color: var(--u-accent);
+  font-weight: 700;
+}
+html.ui2 #ui2SpkPage .sps-panel { padding-top: 16px; }

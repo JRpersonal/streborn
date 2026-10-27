@@ -1,0 +1,6 @@
+/* UI 2.0 preview: Speakers > Groups (#1287, groups.js): the classic
+   Multi-room view shown inside the Speakers area. Skeleton: the classic view
+   keeps its own look until the groups part restyles it here, under
+   html.ui2 #view-multiroom[data-ui2-route="groups"] only. */
+
+html.ui2 #view-multiroom[data-ui2-route="groups"] { font-family: var(--u-font); }

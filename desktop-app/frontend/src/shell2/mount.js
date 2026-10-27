@@ -28,6 +28,7 @@ import { shellMarkup } from './markup.js';
 import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
+import { initSpeakersArea, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -234,6 +235,8 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  // The Speakers area (phase 3): its row of places and its routes.
+  initSpeakersArea(frame, deps);
 }
 
 // wireSpeakerList handles the sidebar list, delegated, so a repaint never
@@ -346,11 +349,13 @@ function watchAppUpdateBanner(banner, versionSlot, bannersSlot) {
 }
 
 // syncShellNav marks the open view in the sidebar and starts it at the top,
-// the way a fresh tab did when the whole window scrolled.
+// the way a fresh tab did when the whole window scrolled. An area entry
+// (Speakers) is marked on every view it stands for (data-views), and the
+// area's own head follows the view too.
 export function syncShellNav(view) {
   if (!state.ui2Shell) return;
   document.querySelectorAll('#ui2Sidebar .ui2-nav-item[data-view]').forEach((btn) => {
-    const on = btn.dataset.view === view;
+    const on = btn.dataset.view === view || (btn.dataset.views || '').split(' ').includes(view);
     btn.classList.toggle('is-active', on);
     if (on) btn.setAttribute('aria-current', 'page');
     else btn.removeAttribute('aria-current');
@@ -361,6 +366,7 @@ export function syncShellNav(view) {
     main.dataset.view = view || '';
     main.scrollTop = 0;
   }
+  syncSpeakersArea(view);
 }
 
 // syncShellPlayer shows the player only with a speaker to control. Without
@@ -448,6 +454,9 @@ export function renderShellSpeakers(force) {
   if (!state.ui2Shell) return;
   speakersSettled = true;
   paintSpeakers(!!force);
+  // The Speakers area reads the same state: its list and the open speaker's
+  // head follow every change the sidebar does.
+  refreshSpeakersArea();
 }
 
 function paintSpeakers(force) {
