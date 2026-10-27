@@ -507,6 +507,15 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 #alarmDays { grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
 #alarmDays .btn { min-width:0; min-height:44px; padding:4px 2px; font-size:13px; overflow-wrap:anywhere; }
 @container (max-width:303px) { #alarmDays { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+/* Save, Cancel and (for a saved alarm) Delete: one row of equal buttons, for
+   the same reason the days stacked. Where three no longer fit their words,
+   Save and Cancel share a row and Delete takes the next one. */
+#alarmBtns { grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:8px; }
+#alarmBtns .btn { min-width:0; min-height:44px; padding:8px 4px; overflow-wrap:anywhere; text-align:center; }
+@container (max-width:279px) {
+  #alarmBtns { grid-auto-flow:row; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #alarmBtns > :nth-child(3) { grid-column:1 / -1; }
+}
 #sleepGroupWrap { display:flex; align-items:center; gap:8px; margin-top:10px; min-height:44px; }
 #sleepGroupWrap[hidden] { display:none; }
 </style>
@@ -4760,7 +4769,7 @@ function alarmEditorHtml(a) {
     '<label class="msg" style="margin-top:10px;display:block">' + escapeHtml(T.alarmSnooze) +
       ' <select id="alarmSnooze">' + snoozes + '</select></label>' +
     '<div class="msg">' + escapeHtml(T.alarmSnoozeHint) + '</div>' +
-    '<div class="row" style="margin-top:10px;gap:8px">' +
+    '<div class="row" style="margin-top:10px" id="alarmBtns">' +
       '<button class="btn" type="button" id="btnAlarmSave" style="flex:1">' + escapeHtml(T.alarmSave) + '</button>' +
       '<button class="btn" type="button" id="btnAlarmCancel" style="flex:1">' + escapeHtml(T.alarmCancel) + '</button>' +
       (alarmDraftIdx >= 0 ? '<button class="btn" type="button" id="btnAlarmDel" style="flex:1">' + escapeHtml(T.alarmDelete) + '</button>' : '') +
