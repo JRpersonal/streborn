@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} pendientes",
   "ui2.speakers.list.waitingLabel": "Actualizar todos los altavoces, {{count}} pendientes",
   "ui2.speakers.list.updateRunning": "Hay una actualización en curso.",
-  "ui2.speakers.list.addText": "Un altavoz nuevo o uno que aún tiene firmware de Bose"
+  "ui2.speakers.list.addText": "Un altavoz nuevo o uno que aún tiene firmware de Bose",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Sonando ahora: {{what}}",
+  "ui2.speakers.speaker.netMore": "Detalles de la red",
+  "ui2.speakers.speaker.hwKeysHeading": "Botones del altavoz"
 }

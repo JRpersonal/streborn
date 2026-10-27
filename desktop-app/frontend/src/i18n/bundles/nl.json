@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} wachtend",
   "ui2.speakers.list.waitingLabel": "Elke speaker bijwerken, {{count}} wachtend",
   "ui2.speakers.list.updateRunning": "Er loopt een update.",
-  "ui2.speakers.list.addText": "Een nieuwe speaker of een met Bose-firmware"
+  "ui2.speakers.list.addText": "Een nieuwe speaker of een met Bose-firmware",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Speelt nu: {{what}}",
+  "ui2.speakers.speaker.netMore": "Netwerkdetails",
+  "ui2.speakers.speaker.hwKeysHeading": "Toetsen op de speaker"
 }

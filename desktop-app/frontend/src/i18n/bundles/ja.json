@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} 台待機中",
   "ui2.speakers.list.waitingLabel": "すべてのスピーカーをアップデート、{{count}} 台待機中",
   "ui2.speakers.list.updateRunning": "アップデート実行中です。",
-  "ui2.speakers.list.addText": "新しいスピーカー、または Bose ファームウェアのままのスピーカー"
+  "ui2.speakers.list.addText": "新しいスピーカー、または Bose ファームウェアのままのスピーカー",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}：{{action}}",
+  "ui2.speakers.speaker.nowPlaying": "再生中：{{what}}",
+  "ui2.speakers.speaker.netMore": "ネットワークの詳細",
+  "ui2.speakers.speaker.hwKeysHeading": "スピーカーのボタン"
 }

@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "Laukia: {{count}}",
   "ui2.speakers.list.waitingLabel": "Atnaujinti visus garsiakalbius, laukia: {{count}}",
   "ui2.speakers.list.updateRunning": "Vyksta atnaujinimas.",
-  "ui2.speakers.list.addText": "Naujas garsiakalbis arba toks, kuriame dar Bose programinė įranga"
+  "ui2.speakers.list.addText": "Naujas garsiakalbis arba toks, kuriame dar Bose programinė įranga",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Dabar groja: {{what}}",
+  "ui2.speakers.speaker.netMore": "Tinklo informacija",
+  "ui2.speakers.speaker.hwKeysHeading": "Garsiakalbio mygtukai"
 }

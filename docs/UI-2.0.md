@@ -83,6 +83,15 @@ releases later.
   list makes it the controlled one, and choosing another row in the sidebar
   while the page is open moves the page with it. The sidebar row itself stays
   one click (choose) plus `+` / `−`; it gets no second settings button.
+  Its five tabs hold every section of today's Speaker settings: Overview
+  (STR and Bose firmware, update, network summary, phone remote, name,
+  language, sources), Sound (volume, balance, bass, levels, display and
+  playback, announcements), Network (Wi-Fi, region, music libraries,
+  Pandora and iHeartRadio), Keys and alarms (button repair, remote key map
+  and key actions, copy keys, keys from an address, voice control) and
+  Maintenance (identify, logs, support, restart, reset, remove STR, backup,
+  SSH, other tools' changes). The checklist is `SPEAKER_SECTIONS` in
+  `shell2/speakers/speaker.js`; every confirmation there names the speaker.
 - **Volume in the player.** While a group plays, the group volume takes the
   place of the speaker volume, and Levels opens the per-speaker sliders.
   Levels only sets levels; choosing speakers stays in the sidebar.

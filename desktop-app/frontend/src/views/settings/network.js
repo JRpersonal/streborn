@@ -3,7 +3,7 @@
 // the radio search region.
 
 import { state, saveSearchCountry } from '../../state.js';
-import { $, escapeHtml, escapeAttr, confirmWarn, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { COUNTRIES, optFlag } from '../../localization.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../../wlanforget.js';
@@ -14,7 +14,7 @@ import {
   CurrentWiFi,
   boxFetch,
 } from '../../api.js';
-import { deps, withButtonPending, revealInSettings } from './shared.js';
+import { deps, withButtonPending, revealInSettings, confirmFor } from './shared.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
 // switch UI can skip the System-keychain admin prompt on macOS (#88) without
@@ -63,7 +63,7 @@ export function renderNetworkSections(ctx) {
   return {
     group: 'network',
     html: `
-    <div class="settings-section">
+    <div data-ui2-sec="wifi" class="settings-section">
       <h3>${escapeHtml(t(netHeadingKey))}</h3>
       ${netRows}
       <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
@@ -96,7 +96,7 @@ export function renderNetworkSections(ctx) {
       </div>
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="region" class="settings-section">
       <h3>${escapeHtml(t('settingsView.regionHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.regionCurrent'))}</span><span class="kv-val" id="currentAppRegion">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
@@ -274,7 +274,7 @@ function wireWlanSwitch(box, currentSsid) {
     // public hotspots included (field case 2026-10-14).
     const forgetOthers = !$('boxWlanForgetOthers') || $('boxWlanForgetOthers').checked;
     if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
-    const ok = await confirmWarn(
+    const ok = await confirmFor(box, 
       t('settingsView.wlanSwitchConfirmTitle'),
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
     );
@@ -296,7 +296,7 @@ function wireWlanSwitch(box, currentSsid) {
         if (r.status === 422) { try { refuse = JSON.parse(body); } catch {} }
         if (refuse && refuse.code === 'ssid-not-visible') {
           const visible = (Array.isArray(refuse.visible) ? refuse.visible : []).filter(Boolean);
-          const goAnyway = await confirmWarn(
+          const goAnyway = await confirmFor(box, 
             t('settingsView.wlanNotVisibleTitle'),
             t('settingsView.wlanNotVisibleBody', {
               ssid: escapeHtml(ssid),
@@ -377,7 +377,7 @@ function wireWlanStored(box) {
   btn.onclick = () => withButtonPending(btn, async () => {
     if (!view || !view.canForget) return;
     const speaker = box.friendlyName || box.name || box.host;
-    const ok = await confirmWarn(
+    const ok = await confirmFor(box, 
       t('settingsView.wlanForgetConfirmTitle'),
       t('settingsView.wlanForgetConfirmBody', {
         speaker: '<b>' + escapeHtml(speaker) + '</b>',

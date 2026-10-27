@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} بالانتظار",
   "ui2.speakers.list.waitingLabel": "تحديث كل السماعات، {{count}} بالانتظار",
   "ui2.speakers.list.updateRunning": "يجري تحديث الآن.",
-  "ui2.speakers.list.addText": "سماعة جديدة أو سماعة لا تزال على برنامج Bose الثابت"
+  "ui2.speakers.list.addText": "سماعة جديدة أو سماعة لا تزال على برنامج Bose الثابت",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "قيد التشغيل الآن: {{what}}",
+  "ui2.speakers.speaker.netMore": "تفاصيل الشبكة",
+  "ui2.speakers.speaker.hwKeysHeading": "أزرار السمّاعة"
 }

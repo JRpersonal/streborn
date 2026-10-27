@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "Очікують: {{count}}",
   "ui2.speakers.list.waitingLabel": "Оновити кожну колонку, очікують: {{count}}",
   "ui2.speakers.list.updateRunning": "Триває оновлення.",
-  "ui2.speakers.list.addText": "Нова колонка або та, що ще на прошивці Bose"
+  "ui2.speakers.list.addText": "Нова колонка або та, що ще на прошивці Bose",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Зараз грає: {{what}}",
+  "ui2.speakers.speaker.netMore": "Подробиці мережі",
+  "ui2.speakers.speaker.hwKeysHeading": "Кнопки на колонці"
 }

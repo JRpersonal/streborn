@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "Gaida: {{count}}",
   "ui2.speakers.list.waitingLabel": "Atjaunināt katru skaļruni, gaida: {{count}}",
   "ui2.speakers.list.updateRunning": "Notiek atjaunināšana.",
-  "ui2.speakers.list.addText": "Jauns skaļrunis vai tāds, kurā vēl ir Bose programmaparatūra"
+  "ui2.speakers.list.addText": "Jauns skaļrunis vai tāds, kurā vēl ir Bose programmaparatūra",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Pašlaik skan: {{what}}",
+  "ui2.speakers.speaker.netMore": "Tīkla informācija",
+  "ui2.speakers.speaker.hwKeysHeading": "Skaļruņa pogas"
 }

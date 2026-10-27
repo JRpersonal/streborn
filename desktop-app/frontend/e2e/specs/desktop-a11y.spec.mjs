@@ -1,7 +1,8 @@
 // Accessibility scans of the desktop app against baselines/a11y-desktop.json.
 //
 // Matrix: theme (dark, light, contrast) x layout (classic, UI 2.0 preview) x
-// view (box, library, settings with every group opened, setup). The UI 2.0
+// view (box, library, settings with every group opened (UI 2.0: every tab of
+// the speaker page shown), setup). The UI 2.0
 // box view also scans its two player popovers, More and Levels (Levels only
 // exists while the controlled speaker plays in a group, so that scan runs on
 // a grouped scenario). Scan keys: `${theme}|${ui2 ? 'ui2' : 'old'}|${view}`.
@@ -40,7 +41,7 @@ const GROUPED = {
 const LOADED = {
   box: '#view-box:not(.hidden) #presets .preset-body',
   library: '#view-library:not(.hidden) .library-row-folder',
-  settings: '#view-settings:not(.hidden) .settings-group',
+  settings: '#view-settings:not(.hidden) .settings-section',
   setup: '#view-setup:not(.hidden) .setup-target-card',
 };
 
@@ -57,7 +58,14 @@ async function openView(page, ui2, view) {
     await page.clock.runFor(2_000);
   }
   await expect(page.locator(LOADED[view]).first()).toBeVisible();
-  if (view === 'settings') {
+  if (view === 'settings' && ui2) {
+    // The preview shows one tab of the speaker page at a time
+    // (shell2/speakers/speaker.js); the scan covers all five, as the classic
+    // scan covers every group.
+    await page.addStyleTag({ content: 'html.ui2 #ui2SpkPanels .sps-sec { display: flex !important; }' });
+    await expect(page.locator('#ui2SpkPanels .sps-sec:visible')).toHaveCount(5);
+    await page.clock.runFor(1_000);
+  } else if (view === 'settings') {
     const groups = page.locator('#view-settings .settings-group');
     await page.evaluate(() => {
       document.querySelectorAll('#view-settings .settings-group').forEach((d) => { d.open = true; });

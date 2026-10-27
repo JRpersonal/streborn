@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} warten",
   "ui2.speakers.list.waitingLabel": "Jeden Lautsprecher aktualisieren, {{count}} warten",
   "ui2.speakers.list.updateRunning": "Ein Update läuft.",
-  "ui2.speakers.list.addText": "Ein neuer Lautsprecher oder einer mit Bose-Firmware"
+  "ui2.speakers.list.addText": "Ein neuer Lautsprecher oder einer mit Bose-Firmware",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Läuft gerade: {{what}}",
+  "ui2.speakers.speaker.netMore": "Netzwerkdetails",
+  "ui2.speakers.speaker.hwKeysHeading": "Tasten am Lautsprecher"
 }

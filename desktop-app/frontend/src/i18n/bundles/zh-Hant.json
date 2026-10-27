@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} 台等待中",
   "ui2.speakers.list.waitingLabel": "更新每台喇叭，{{count}} 台等待中",
   "ui2.speakers.list.updateRunning": "正在進行更新。",
-  "ui2.speakers.list.addText": "新的喇叭，或仍使用 Bose 韌體的喇叭"
+  "ui2.speakers.list.addText": "新的喇叭，或仍使用 Bose 韌體的喇叭",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}：{{action}}",
+  "ui2.speakers.speaker.nowPlaying": "正在播放：{{what}}",
+  "ui2.speakers.speaker.netMore": "網路詳細資料",
+  "ui2.speakers.speaker.hwKeysHeading": "喇叭上的按鍵"
 }

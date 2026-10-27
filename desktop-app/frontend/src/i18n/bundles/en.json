@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} waiting",
   "ui2.speakers.list.waitingLabel": "Update every speaker, {{count}} waiting",
   "ui2.speakers.list.updateRunning": "An update is running.",
-  "ui2.speakers.list.addText": "A new speaker or one still on Bose firmware"
+  "ui2.speakers.list.addText": "A new speaker or one still on Bose firmware",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Now playing: {{what}}",
+  "ui2.speakers.speaker.netMore": "Network details",
+  "ui2.speakers.speaker.hwKeysHeading": "Buttons on the speaker"
 }

@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} en attente",
   "ui2.speakers.list.waitingLabel": "Mettre à jour toutes les enceintes, {{count}} en attente",
   "ui2.speakers.list.updateRunning": "Une mise à jour est en cours.",
-  "ui2.speakers.list.addText": "Une nouvelle enceinte ou une encore sous firmware Bose"
+  "ui2.speakers.list.addText": "Une nouvelle enceinte ou une encore sous firmware Bose",
+  "ui2.speakers.speaker.confirmTitle": "{{name}} : {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "En cours de lecture : {{what}}",
+  "ui2.speakers.speaker.netMore": "Détails du réseau",
+  "ui2.speakers.speaker.hwKeysHeading": "Touches de l'enceinte"
 }

@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "{{count}} bekliyor",
   "ui2.speakers.list.waitingLabel": "Her hoparlörü güncelle, {{count}} bekliyor",
   "ui2.speakers.list.updateRunning": "Bir güncelleme sürüyor.",
-  "ui2.speakers.list.addText": "Yeni bir hoparlör veya hâlâ Bose yazılımında olan biri"
+  "ui2.speakers.list.addText": "Yeni bir hoparlör veya hâlâ Bose yazılımında olan biri",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Şu an çalıyor: {{what}}",
+  "ui2.speakers.speaker.netMore": "Ağ ayrıntıları",
+  "ui2.speakers.speaker.hwKeysHeading": "Hoparlördeki tuşlar"
 }

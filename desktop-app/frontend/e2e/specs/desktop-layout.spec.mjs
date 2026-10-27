@@ -55,7 +55,7 @@ const SCENARIOS = {
 
 const LOADED = {
   box: '#view-box:not(.hidden) #presets .preset-body',
-  settings: '#view-settings:not(.hidden) .settings-group',
+  settings: '#view-settings:not(.hidden) .settings-section',
 };
 
 async function prepare(page) {

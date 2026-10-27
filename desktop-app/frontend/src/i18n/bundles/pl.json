@@ -2140,5 +2140,9 @@
   "ui2.speakers.list.waiting": "Oczekujące: {{count}}",
   "ui2.speakers.list.waitingLabel": "Aktualizuj każdy głośnik, oczekujące: {{count}}",
   "ui2.speakers.list.updateRunning": "Trwa aktualizacja.",
-  "ui2.speakers.list.addText": "Nowy głośnik lub taki z firmware Bose"
+  "ui2.speakers.list.addText": "Nowy głośnik lub taki z firmware Bose",
+  "ui2.speakers.speaker.confirmTitle": "{{name}}: {{action}}",
+  "ui2.speakers.speaker.nowPlaying": "Teraz gra: {{what}}",
+  "ui2.speakers.speaker.netMore": "Szczegóły sieci",
+  "ui2.speakers.speaker.hwKeysHeading": "Przyciski na głośniku"
 }
