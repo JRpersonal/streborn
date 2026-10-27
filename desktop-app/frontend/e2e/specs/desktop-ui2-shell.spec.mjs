@@ -252,9 +252,8 @@ test.describe('UI 2.0 shell', () => {
         await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
         await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);
         await expect(nav(page, 'speakers')).toHaveAttribute('aria-current', 'page');
-        // The clock lives in a folded "Display & playback" group.
-        const group = page.locator('#settingsBody details.settings-group').filter({ has: page.locator('#boxClockOn') });
-        if (!(await group.evaluate((d) => d.open))) await group.locator('summary').click();
+        // The clock lives on the speaker page's Sound tab.
+        await page.locator('#ui2SpkTab-sound').click();
         const on = page.locator('#boxClockOn');
         await expect(on).toBeVisible();
         await mock.resetCalls();

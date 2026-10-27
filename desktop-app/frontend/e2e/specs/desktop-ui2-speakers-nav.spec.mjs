@@ -106,7 +106,8 @@ test.describe('UI 2.0 Speakers area', () => {
     await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
     for (const name of TABS.slice(1)) await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'false');
     await expect(page.getByRole('tabpanel', { name: 'Overview' })).toBeVisible();
-    await expect(page.locator('#ui2SpkPage [role="tabpanel"]:visible')).toHaveCount(1);
+    // The panels sit in the view they belong to, #view-settings (speaker.js).
+    await expect(page.locator('#ui2SpkPanels [role="tabpanel"]:visible')).toHaveCount(1);
     // Lock-step with the classic Settings view and the sidebar.
     await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
     await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);

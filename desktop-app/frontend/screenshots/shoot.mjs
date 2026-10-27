@@ -41,13 +41,16 @@ const UI2_VIEWS = ['app-ui2-dark', 'app-ui2-light', 'app-ui2-contrast', 'app-ui2
 // The phase 2 views of the preview (#1286), each in the dark and the light
 // theme: SHOOT_VIEWS=ui2p2 shoots all ten.
 const UI2P2_VIEWS = ['radio', 'radiorows', 'library', 'recent', 'spotify'].flatMap((v) => [`app-ui2p2-${v}-dark`, `app-ui2p2-${v}-light`]);
+// The phase 3 page of one speaker (#1287), each of its five tabs in the dark
+// and the light theme: SHOOT_VIEWS=ui2p3 shoots all ten.
+const UI2P3_VIEWS = ['overview', 'sound', 'network', 'keys', 'maintenance'].flatMap((v) => [`app-ui2p3-${v}-dark`, `app-ui2p3-${v}-light`]);
 // The same four views in the classic layout (preview off), on the same
 // simulated network and window, to compare a phase 2 view with what it
 // replaces: SHOOT_VIEWS=classicp2.
 const CLASSICP2_VIEWS = ['radio', 'library', 'recent', 'spotify'].map((v) => `app-classic-${v}`);
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
-    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : v === 'classicp2' ? CLASSICP2_VIEWS : [v]))
+    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : v === 'ui2p3' ? UI2P3_VIEWS : v === 'classicp2' ? CLASSICP2_VIEWS : [v]))
   : ALL_VIEWS;
 
 // ---- per-view driving ------------------------------------------------------
@@ -70,6 +73,8 @@ async function drive(page, view) {
     await page.waitForSelector('#ui2SpkLists .ui2-spk-act[data-act="add"]', { timeout: 20000 });
     if (view.startsWith('app-ui2p2-')) {
       await driveUi2Phase2(page, view.split('-')[2]);
+    } else if (view.startsWith('app-ui2p3-')) {
+      await driveUi2Speaker(page, view.split('-')[2]);
     } else if (view === 'app-ui2-dark') {
       // Scrolled to the offline speaker, so the shot shows it greyed with
       // "Offline" and the Bose original's "Ready for STR" below it.
@@ -223,6 +228,17 @@ async function driveUi2Phase2(page, which) {
     await open('spotify');
     await page.waitForSelector('#sp2Keys .sp2-key', { timeout: 20000 });
   }
+  await page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
+}
+
+// driveUi2Speaker opens the page of the speaker you control (Speakers, its
+// row) on one of its five tabs.
+async function driveUi2Speaker(page, tab) {
+  await page.click('#ui2Sidebar .ui2-nav-item[data-view="speakers"]');
+  await page.click('#view-speakers .spl-open[aria-current="true"]');
+  await page.waitForSelector('#ui2SpkPanels .sps-sec .settings-section', { timeout: 9000 });
+  await page.click(`#ui2SpkTab-${tab}`);
+  await page.waitForTimeout(600);
   await page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
 }
 
