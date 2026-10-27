@@ -1,6 +1,270 @@
 /* UI 2.0 preview: Speakers > Groups (#1287, groups.js): the classic
-   Multi-room view shown inside the Speakers area. Skeleton: the classic view
-   keeps its own look until the groups part restyles it here, under
-   html.ui2 #view-multiroom[data-ui2-route="groups"] only. */
+   Multi-room view arranged into sections and cards inside the Speakers area.
+   Every rule sits under html.ui2 #view-multiroom[data-ui2-route="groups"]
+   (or html.ui2 for the confirmation dialog, which lives outside the view),
+   so the classic layout is untouched. Status is said in words (the pills,
+   the status lines); colour only repeats it. */
 
-html.ui2 #view-multiroom[data-ui2-route="groups"] { font-family: var(--u-font); }
+html.ui2 #view-multiroom[data-ui2-route="groups"] {
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 920px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-top .setup-warn { margin: 0; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .stale-stereo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--u-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-lead,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-empty,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-note {
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneCurrent { margin-top: 0 !important; color: var(--u-text); font-size: 14px; }
+
+/* The status line of a sent action: waiting, done, or not confirmed. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  border-inline-start-width: 4px;
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-size: 14px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status[hidden] { display: none; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status.is-ok { border-inline-start-color: var(--u-ok); }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status.is-warn { border-inline-start-color: var(--u-warn); }
+
+/* Cards: one per pair or group, and the two editors. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards:empty { display: none; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards > .ui2-grp-empty { grid-column: 1 / -1; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-title {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members:empty { display: none; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members .zone-frame-chip {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--u-text);
+  font-size: 14px;
+  opacity: 1;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members .box-group-master {
+  margin-inline-end: 8px;
+  color: var(--u-text);
+  font-weight: 700;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-actions,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-actions:empty,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-actions:empty { display: none; }
+
+/* The classic x buttons, as buttons with their words. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-x {
+  position: static;
+  height: auto;
+  min-height: var(--u-target);
+  padding: 4px 12px;
+  border: 1px solid var(--u-border);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-size: 14px;
+  line-height: 1.2;
+  opacity: 1;
+  text-align: start;
+  white-space: normal;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-x:hover { background: var(--u-bg); }
+
+/* Results of an action, in the card or editor it belongs to. While the page
+   still waits for the speakers, the classic early "done" stays quiet. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-result:empty { display: none; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-quiet-ok .setup-ok { display: none; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneResult:empty,
+html.ui2 #view-multiroom[data-ui2-route="groups"] #stereoResult:empty { display: none; }
+
+/* The editors: the classic controls in the shell's sizes. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-editor .zone-controls {
+  max-width: none;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] [data-slot="editor-keys"] .zone-controls {
+  max-width: none;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-actions { flex-wrap: wrap; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] select,
+html.ui2 #view-multiroom[data-ui2-route="groups"] input[type="text"] {
+  min-height: var(--u-target);
+  padding: 0 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .u-btn { white-space: normal; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards > .muted { grid-column: 1 / -1; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card {
+  min-width: 0;
+  max-width: none;
+  border-color: var(--u-border);
+  background: var(--u-bg);
+  color: var(--u-text);
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card.master,
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card.selected {
+  border-color: var(--u-accent);
+  background: var(--u-selected);
+  box-shadow: inset 0 0 0 1px var(--u-accent);
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card-host { color: var(--u-muted); }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-badge { align-self: center; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-toggle[aria-pressed="true"] {
+  border-color: var(--u-accent);
+  background: var(--u-selected);
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-toggle[aria-pressed="true"]::before { content: '\2713'; }
+
+html.ui2 #view-multiroom[data-ui2-route="groups"] :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h:focus-visible { outline-offset: 4px; }
+
+/* The confirmation: a modal dialog that names the pair or group. */
+html.ui2 .ui2-grp-dialog {
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 .ui2-grp-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+html.ui2 .ui2-grp-dialog-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+html.ui2 .ui2-grp-dialog-body {
+  margin: 0 0 16px;
+  color: var(--u-text);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+html.ui2 .ui2-grp-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+html.ui2 .ui2-grp-dialog :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--u-surface), 0 0 0 4px var(--u-focus);
+}
