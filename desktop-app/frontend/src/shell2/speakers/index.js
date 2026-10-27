@@ -43,7 +43,7 @@
 
 import { state } from '../../state.js';
 import { stereoPairsOf } from '../../groups.js';
-import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab } from './routes.js';
+import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab, subnavCurrent } from './routes.js';
 import { renderSpeakerList } from './list.js';
 import { currentSpeakerTab, renderSpeakerPage } from './speaker.js';
 import { mountGroups } from './groups.js';
@@ -129,9 +129,11 @@ export function syncSpeakersArea(view) {
   area.hidden = !route;
   area.dataset.route = route;
   area.querySelectorAll('.spa-sub[data-route]').forEach((b) => {
-    const on = b.dataset.route === route;
-    b.classList.toggle('is-active', on);
-    if (on) b.setAttribute('aria-current', 'page');
+    // One speaker's page marks "All speakers" (aria-current="true"): the page
+    // is part of the list, and the place leads back to it.
+    const current = subnavCurrent(b.dataset.route, route);
+    b.classList.toggle('is-active', current !== '');
+    if (current) b.setAttribute('aria-current', current);
     else b.removeAttribute('aria-current');
   });
   const page = byId('ui2SpkPage');

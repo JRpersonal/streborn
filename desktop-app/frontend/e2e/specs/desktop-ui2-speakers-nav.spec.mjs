@@ -101,7 +101,11 @@ test.describe('UI 2.0 Speakers area', () => {
     expect(await shownViews(page)).toEqual(['view-settings']);
     await expect(page.locator('#ui2SpkPage')).toBeVisible();
     await expect(page.locator('#ui2SpkPageMeta')).toHaveText(`${BR.model} · ${BR.host}`);
-    await expect(page.locator('#ui2SpkSubnav [aria-current]')).toHaveCount(0);
+    // The page is part of the list: All speakers stays marked and leads back.
+    await expect(sub(page, 'list')).toHaveAttribute('aria-current', 'true');
+    await expect(sub(page, 'list')).toHaveClass(/is-active/);
+    await expect(page.locator('#ui2SpkSubnav [aria-current]')).toHaveCount(1);
+    await expect(page.locator('#ui2SpkSubnav .is-active')).toHaveCount(1);
     await expect(nav(page, 'speakers')).toHaveAttribute('aria-current', 'page');
     const tablist = page.getByRole('tablist', { name: `Settings for ${BR.friendlyName}` });
     await expect(tablist).toBeVisible();
@@ -115,6 +119,11 @@ test.describe('UI 2.0 Speakers area', () => {
     await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
     await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);
     await expect(pick(page, BR.host)).toHaveAttribute('aria-current', 'true');
+    // One click on the marked place leads back to the list.
+    await sub(page, 'list').click();
+    expect(await shownViews(page)).toEqual(['view-speakers']);
+    await expect(page.locator('#ui2SpkPage')).toBeHidden();
+    await expect(sub(page, 'list')).toHaveAttribute('aria-current', 'page');
   });
 
   test('4. the tabs work with the keyboard: arrows wrap, Home and End, one tab stop', async ({ app }) => {

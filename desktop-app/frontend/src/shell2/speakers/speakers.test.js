@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   ROUTE_VIEW, SPEAKER_ROUTES, SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, SPEAKERS_AREA_VIEWS, SUBNAV,
-  inSpeakersArea, normalizeTab, routeOfView, tabIndexFor,
+  inSpeakersArea, subnavCurrent, normalizeTab, routeOfView, tabIndexFor,
 } from './routes.js';
 import { speakerFrameHTML, speakerHead, tabsLabel } from './speaker.js';
 import { mountGroups } from './groups.js';
@@ -61,6 +61,17 @@ describe('routes', () => {
     expect(SUBNAV.map((s) => s.route)).toEqual(['list', 'groups', 'add']);
     expect(SUBNAV.find((s) => s.route === 'groups').badgeId).toBe('ui2GroupsBadge');
     for (const s of SUBNAV) expect(en[s.labelKey], s.labelKey).toBeTruthy();
+  });
+
+  it('marks the place of the route, and All speakers on one speaker page', () => {
+    const marks = (route) => SUBNAV.map((s) => subnavCurrent(s.route, route));
+    expect(marks('list')).toEqual(['page', '', '']);
+    expect(marks('groups')).toEqual(['', 'page', '']);
+    expect(marks('add')).toEqual(['', '', 'page']);
+    // The page is part of the list: its place is current, not the page itself.
+    expect(marks('speaker')).toEqual(['true', '', '']);
+    expect(marks('')).toEqual(['', '', '']);
+    expect(subnavCurrent('', '')).toBe('');
   });
 });
 

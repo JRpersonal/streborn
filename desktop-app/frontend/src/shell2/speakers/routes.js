@@ -49,6 +49,21 @@ export const SUBNAV = Object.freeze([
   Object.freeze({ route: 'add', labelKey: 'ui2.speakers.add' }),
 ]);
 
+// SUBNAV_PARENT is the place of the row a route without an entry of its own
+// belongs to: one speaker's page is part of the list, so "All speakers" stays
+// marked there and one click leads back.
+export const SUBNAV_PARENT = Object.freeze({ speaker: 'list' });
+
+// subnavCurrent is the aria-current a place of the row carries on a route:
+// 'page' on its own route, 'true' on a child route (the place is current, the
+// page is not that place itself), '' otherwise.
+export function subnavCurrent(place, route) {
+  if (!place || !route) return '';
+  if (place === route) return 'page';
+  if (SUBNAV_PARENT[route] === place) return 'true';
+  return '';
+}
+
 // routeOfView is the Speakers route a view belongs to, or '' outside the area.
 export function routeOfView(view) {
   for (const r of SPEAKER_ROUTES) if (ROUTE_VIEW[r] === view) return r;
