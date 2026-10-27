@@ -20,7 +20,10 @@ type screenLog struct {
 
 func (s *screenLog) add(e string) { s.mu.Lock(); s.events = append(s.events, e); s.mu.Unlock() }
 
-func (s *screenLog) Start(slot int, _ time.Time)    { s.add(fmt.Sprintf("start %d", slot)) }
+func (s *screenLog) Start(slot int, _ time.Time) { s.add(fmt.Sprintf("start %d", slot)) }
+func (s *screenLog) StartRowTwo(slot int, _ time.Time) {
+	s.add(fmt.Sprintf("start 2x %d", slot))
+}
 func (s *screenLog) Released(slot int, _ time.Time) { s.add(fmt.Sprintf("release %d", slot)) }
 func (s *screenLog) Cancel(slot int, reason string) {
 	s.add(fmt.Sprintf("cancel %d: %s", slot, reason))
