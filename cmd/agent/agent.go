@@ -2142,6 +2142,9 @@ func (a *agent) startDeferred() error {
 	// the marge endpoint actually accepts closes the window; on healthy boxes the
 	// redirect just lands a few seconds later, which is harmless.
 	if hostsMgr != nil {
+		if err := hostsMgr.Apply(hosts.IoTEntries()); err != nil {
+			logger.Warn("hosts file could not be modified", "err", err)
+		}
 		waitAddr := a.flags.margeAddr
 		if a.flags.tlsEnabled {
 			waitAddr = a.flags.margeTLSAddr
