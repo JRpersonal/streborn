@@ -31,7 +31,7 @@ All request and response bodies are JSON.
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
-| `POST` | `/api/play` | `{"url":"https://...","title":"...","mime":"audio/mpeg"}` | Play any stream URL. `title`, `icon`, `mime` are optional. |
+| `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. For a radio station send `codec` as radio-browser reports it (`MP3`, `AAC`, `AAC+`, ...): it picks the MIME the speaker decodes with, and an HE-AAC station labelled as MP3 plays silence. **`mime` is not a codec hint**: it marks a local music-library file that the speaker fetches directly, without the stream proxy and the native radio path. Never set it for radio. |
 | `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
