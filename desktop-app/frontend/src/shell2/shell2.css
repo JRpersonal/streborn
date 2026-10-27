@@ -206,6 +206,7 @@ html.ui2 .u-badge {
   font-size: 12px;
   font-weight: 700;
 }
+html.ui2 .u-badge[hidden] { display: none; }
 html.ui2 .u-badge--muted { background: transparent; color: var(--u-muted); border: 1px solid var(--u-border); }
 
 /* List rows: 48px, and a selected row says so three ways (background, the
