@@ -83,10 +83,6 @@
     "select-name": {
       "count": 4,
       "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
     }
   },
   "contrast|ui2|setup": {
@@ -179,10 +175,6 @@
     "select-name": {
       "count": 4,
       "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
     }
   },
   "dark|ui2|setup": {
@@ -295,10 +287,6 @@
     "select-name": {
       "count": 4,
       "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
     }
   },
   "light|ui2|setup": {
