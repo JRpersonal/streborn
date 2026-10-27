@@ -145,3 +145,16 @@ html.ui2 #ui2SpkPanels .settings-section summary:focus-visible {
 }
 /* The Network summary's way to the Network tab. */
 html.ui2 #ui2SpkPanels .sps-to-tab { margin-top: 8px; align-self: flex-start; }
+/* The classic .muted carries a 10px padding: it indents every note against
+   the card's heading and fields, and pushes a muted value (the device id)
+   below its label. In a card the text lines up instead. */
+html.ui2 #ui2SpkPanels .settings-section .muted { padding: 0; }
+/* A note that sits loose in a card (an inline <small>) reads as a paragraph:
+   its own line height, not the card's taller one. */
+html.ui2 #ui2SpkPanels .settings-section > small.muted {
+  display: block;
+  margin-top: 8px;
+  line-height: 1.45;
+}
+/* A closed card is only its summary: no gap under it. */
+html.ui2 #ui2SpkPanels details.settings-section:not([open]) > summary { margin-bottom: 0; }

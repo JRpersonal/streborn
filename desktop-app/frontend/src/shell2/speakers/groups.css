@@ -201,6 +201,17 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards {
   margin-bottom: 8px;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards > .muted { grid-column: 1 / -1; }
+/* The classic .muted carries a 10px padding that indents every note against
+   the headings and fields around it. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .muted { padding: 0; }
+/* The L / R letter of a chosen half: the classic colours put dark blue on
+   blue in the light theme. */
+html.ui2 #view-multiroom[data-ui2-route="groups"] .stereo-card.on .stereo-card-ch {
+  background: var(--u-action);
+  color: var(--u-on-action);
+}
+/* Ungroup only shows while a group plays (groups.js). */
+html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneUngroup.ui2-grp-off { display: none; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card {
   min-width: 0;
   max-width: none;
