@@ -8,8 +8,26 @@ import {
   relaxedHintVisible,
   stationBitrateCell,
   searchModePressed,
+  listButtonCloses,
   stationCheckDot,
 } from './searchflow.js';
+
+describe('listButtonCloses (#1521)', () => {
+  it('closes when the button of the open list is clicked again', () => {
+    expect(listButtonCloses('topBtn', 'top', true)).toBe(true);
+    expect(listButtonCloses('favModeBtn', 'favorites', true)).toBe(true);
+    expect(listButtonCloses('pandoraModeBtn', 'pandora', true)).toBe(true);
+  });
+  it('opens when another list or a search result is on screen', () => {
+    expect(listButtonCloses('topBtn', 'favorites', true)).toBe(false);
+    expect(listButtonCloses('favModeBtn', 'top', true)).toBe(false);
+    expect(listButtonCloses('topBtn', 'search', true)).toBe(false);
+  });
+  it('opens when nothing is on screen', () => {
+    expect(listButtonCloses('topBtn', 'top', false)).toBe(false);
+    expect(listButtonCloses('pandoraModeBtn', 'pandora', false)).toBe(false);
+  });
+});
 
 describe('isStreamURL', () => {
   it('accepts absolute http and https URLs, any case, with padding', () => {
