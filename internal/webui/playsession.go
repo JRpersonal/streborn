@@ -173,6 +173,25 @@ func (p *playSession) userPlayedSince(t time.Time) bool {
 	return p.last != nil && !p.last.fromBox && p.last.ts.After(t)
 }
 
+// noteRepushed marks the record as a play STR itself just pushed again: fresh
+// timestamp, no longer the firmware's own doing. The power-on endpoint
+// re-pushes the record it holds, which may be the firmware's own power-on
+// resume (NoteNativeLastPlay, fromBox). Left as it was, the late group-wake
+// guard took STR's own push for that self-resume and stopped it, so a group
+// key pressed on a sleeping speaker played its station for four seconds and
+// went silent (2026-10-27). Only the record that was pushed is touched: a
+// newer play in between is left alone. The generation and the auto-resume
+// counters stay as they are, it is the same stream.
+func (p *playSession) noteRepushed(boxURL string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.last == nil || p.last.boxURL != boxURL {
+		return
+	}
+	p.last.ts = time.Now()
+	p.last.fromBox = false
+}
+
 // rearmForResume clears the given-up flag and the re-push count of the record
 // so a resume can push it again, and hands back a copy. With maxAge > 0 a
 // record older than that is left untouched and reported as tooOld; ok is

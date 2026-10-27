@@ -440,6 +440,13 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 	if boxURL != "" {
 		if err := s.renderer.PlayURLMime(r.Context(), boxURL, title, art, mime); err != nil {
 			s.logger.Warn("power on: resume of last station failed", "err", err)
+		} else {
+			// This push is an explicit "play it again", so it counts as STR's
+			// play from now on. Without it a group key on a sleeping speaker
+			// (form, then this call) had its music stopped four seconds later
+			// by the group-wake guard, which took the push for the firmware's
+			// own power-on resume.
+			s.play.noteRepushed(boxURL)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"on": true})
