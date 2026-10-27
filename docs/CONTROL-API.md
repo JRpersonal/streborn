@@ -89,6 +89,21 @@ plays the way `/api/play/<slot>` plays any slot (`/stream/7`-`/stream/12`,
 reports `"presetRows":"2"` in `/api/agent/version`; an older one has no such
 key and answers `400` for slot 7 and up.
 
+On the speaker itself, tapping key `n` and then holding it down (press it a
+second time within a moment and keep it down until the display says
+`SAVED 2X n`) stores what played just before the tap on slot `6+n` and plays
+it. The tap still starts key `n`'s own station for a moment; that cannot be
+prevented. Key `n` (row 1) is never changed by this gesture, neither by STR
+nor by the speaker's own hold-to-store. Radio, Spotify, a library song or
+folder and the speaker's own services are kept the way a plain hold keeps
+them. If nothing that can be kept played (standby, AUX, Bluetooth), nothing
+is stored and the display says `NOT SAVED`. If the item already sits on
+another slot it is not stored a second time: the display says where it sits
+(`ON KEY m` or `ON 2X m`) and that slot plays. A key combination (for example
+1 and volume down) is never this gesture. In a zone or stereo pair the gesture
+needs the speaker's key trace, as the double press does. There is no endpoint
+for the gesture; its result is an ordinary preset on slot `6+n`.
+
 ## Pandora stations
 
 Only on a speaker where Pandora is enabled (a US speaker, or the opt-in) and

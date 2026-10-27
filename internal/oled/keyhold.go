@@ -67,6 +67,12 @@ func KeyHeld(key int) Notice {
 	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+strconv.Itoa(key), "SAVING...", heldOutcomeWait, 2)
 }
 
+// KeyHeldRowTwo is the screen while key is held after a tap, saving onto the
+// key's second row: the key with a busy badge, KEY 2X N, SAVING...
+func KeyHeldRowTwo(key int) Notice {
+	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+RowTwoLabel(key), "SAVING...", heldOutcomeWait, 2)
+}
+
 // heldSession is one held-key panel session. All fields are guarded by the
 // queue's mu.
 type heldSession struct {
@@ -121,6 +127,14 @@ func (s *heldSession) endAt() time.Time {
 // way, and so does an older held-key session.
 func KeyHoldStart(key int, pressAt time.Time) { notices.holdStart(key, pressAt) }
 
+// KeyHoldStartRowTwo is KeyHoldStart for a tap followed by a hold of key,
+// which saves onto the key's second row (cmd/agent tapholdsave.go): the same
+// session, the screen names "2X N". Outcomes for key reach it as for a plain
+// held key.
+func KeyHoldStartRowTwo(key int, pressAt time.Time) {
+	notices.holdStartScreen(key, pressAt, KeyHeldRowTwo(key))
+}
+
 // KeyHoldReleased tells the held-key session of key that the key went up.
 func KeyHoldReleased(key int, at time.Time) { notices.holdReleased(key, at) }
 
@@ -129,8 +143,12 @@ func KeyHoldReleased(key int, at time.Time) { notices.holdReleased(key, at) }
 func KeyHoldCancel(key int, reason string) { notices.holdCancel(key, reason) }
 
 func (q *noticeQueue) holdStart(key int, pressAt time.Time) {
+	q.holdStartScreen(key, pressAt, KeyHeld(key))
+}
+
+func (q *noticeQueue) holdStartScreen(key int, pressAt time.Time, screen Notice) {
 	q.startOnce.Do(func() { go q.loop() })
-	s := &heldSession{key: key, pressAt: pressAt, screen: KeyHeld(key)}
+	s := &heldSession{key: key, pressAt: pressAt, screen: screen}
 	q.mu.Lock()
 	if old := q.held; old != nil && !old.over {
 		old.ended = "replaced by a newer held key"

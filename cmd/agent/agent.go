@@ -1529,6 +1529,19 @@ func (a *agent) buildBoxLink() error {
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}
+	// A tap followed by a hold of the same key saves what played before the
+	// tap onto the key's second row and plays it (tapholdsave.go). The
+	// snapshot reads memory only; the save and the play go through the app's
+	// paths.
+	wsHandler.snapshotFn = webuiSrv.SnapshotPlaying
+	holdSave.tapHold = tapHoldWiring{
+		save:    webuiSrv.SaveSnapshot,
+		play:    wsHandler.playTapHoldSlot,
+		grouped: wsHandler.group.grouped,
+		tracePresses: func(key int, since time.Time) int {
+			return keyTrace.PhysicalPressesSince(fmt.Sprintf("PRESET_%d", key), since)
+		},
+	}
 	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	// A combination also tells the leave-setup watcher that the setup which

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -25,6 +26,10 @@ import (
 // has no preset form for (a UPnP push, a Deezer playlist, an unreadable
 // station descriptor).
 var errNotKeepable = errors.New("not a station STR can keep")
+
+// errTapHoldRowTwo refuses the firmware's own store of a key whose hold
+// follows a tap of it: that gesture saves onto the second row (tapholdsave.go).
+var errTapHoldRowTwo = errors.New("the hold follows a tap: it saves onto the key's second row")
 
 // heldLive is what the keeper reads from the running agent beyond the preset
 // store. Any func may be nil (tests, or a hold that lands before the web
@@ -133,6 +138,16 @@ func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logge
 	}
 	// The display tells the user how the hold went (displaynotices.go).
 	return func(item marge.HeldItem) error {
+		// A hold that follows a tap of the same key saves onto the key's
+		// second row (tapholdsave.go). The firmware's own store would put
+		// the key's own station (the tap started it) back on the key: it is
+		// refused, which leaves the firmware's key as it was, and the
+		// display shows the row-2 outcome instead.
+		if hs := heldGestureSaver.Load(); hs != nil && hs.tapHoldClaims(item.Slot) {
+			logger.Info("tap+hold on key "+strconv.Itoa(item.Slot)+": the speaker's own store on the key is refused, row 1 stays as it is",
+				"slot", item.Slot, "source", item.Source, "name", item.ItemName)
+			return errTapHoldRowTwo
+		}
 		name, err := keep(item)
 		noticeHeldStore(item, name, err)
 		return err

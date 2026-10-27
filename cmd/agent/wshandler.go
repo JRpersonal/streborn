@@ -309,6 +309,12 @@ type presetWsHandler struct {
 	ownSelectionFn func(key int) bool
 	tracePressesFn func(key int, since time.Time) int
 	zoneProbe      func(ctx context.Context) (bool, error)
+
+	// nowPlaying keeps the bus's last now-playing documents, and snapshotFn
+	// turns one into what a save of it would store (webui SnapshotPlaying):
+	// what played before a tap, for the tap+hold save (tapholdsave.go).
+	nowPlaying nowPlayingHistory
+	snapshotFn func(doc []byte) webui.PlayingSnapshot
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's
@@ -563,6 +569,9 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
 	pressAt := time.Now()
+	// The frame may be the tap of a tap+hold: note it with what played before
+	// it, before this press's recall changes anything (tapholdsave.go).
+	h.noteTap(slot, pressAt)
 	// A second press of the same key moments after the first plays the key's
 	// second-row preset (#1110, doublepress.go). The first press has already
 	// started row 1 by now; it is never held back waiting for a second one.
@@ -1307,10 +1316,14 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 	}
 	// Let the reconnect and the box's own (failing) self-activation settle.
 	time.Sleep(4 * time.Second)
+	readAt := time.Now()
 	np, ok := fetchNowPlaying(h.boxHost)
 	if !ok {
 		return
 	}
+	// The same read tells a tap soon after the reconnect what played, until
+	// the bus carries its own now-playing frame (tapholdsave.go).
+	h.nowPlaying.seed(np.Raw, readAt)
 	source, location, playing := np.Source, np.Location(), np.IsPlaying()
 	if isSTRStreamURL(location) && !playing {
 		h.logger.Warn("standby-race probe: box parked on an STR preset stream but NOT playing after a gabbo reconnect; candidate missed first-press (#435)",
