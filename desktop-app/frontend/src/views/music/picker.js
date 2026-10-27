@@ -19,15 +19,14 @@ import { preferMp3SiblingForBox } from './search.js';
 // different box) has to pass it, so a move offered after a refusal happens on
 // the speaker the station is actually on.
 //
-// In the UI 2.0 preview the picker is a real dialog for the keyboard: named by
-// its title, focus moves to the first key, Tab stays inside, Escape closes it,
-// and closing puts focus back on the control that opened it (or, when a repaint
-// replaced that control, on the same control of the same row or card). A key
+// The picker is a real dialog for the keyboard: named by its title, focus moves
+// to the first key, Tab stays inside, Escape closes it, and closing puts focus
+// back on the control that opened it (in the UI 2.0 preview, when a repaint
+// replaced that control, on the same control of the same row or card). There a key
 // that is pressed while another is saving does nothing (ui2radio.js lockPicker
 // marks the keys aria-disabled, which keeps the focus on the pressed one).
 export function showSlotPicker({ title, subtitle, onPick, box }) {
-  const ui2 = !!state.ui2Shell;
-  if (ui2) opener = openerMark(document.activeElement);
+  opener = openerMark(document.activeElement);
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
@@ -61,14 +60,12 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
   }
   const modal = $('pickModal');
   modal.classList.remove('hidden');
-  if (ui2) {
-    dialogSemantics(modal);
-    const first = grid.querySelector('.pick-slot');
-    if (first) first.focus();
-  }
+  dialogSemantics(modal);
+  const first = grid.querySelector('.pick-slot');
+  if (first) first.focus();
 }
 
-// opener is the control the open picker returns focus to (preview only).
+// opener is the control the open picker returns focus to.
 let opener = null;
 
 // openerMark remembers the control that opened the picker, and how to find it
@@ -99,9 +96,8 @@ export function openerTarget(mark, doc = typeof document !== 'undefined' ? docum
   return null;
 }
 
-// dialogSemantics makes #pickModal a named modal dialog for the preview and
-// keeps the keyboard inside it. Set on the first open; the current layout
-// never gets here.
+// dialogSemantics makes #pickModal a named modal dialog and keeps the keyboard
+// inside it. Set on the first open.
 function dialogSemantics(modal) {
   const content = modal.querySelector('.modal-content');
   if (content && !content.hasAttribute('role')) {
@@ -110,10 +106,10 @@ function dialogSemantics(modal) {
     content.setAttribute('aria-labelledby', 'pickTitle');
     content.setAttribute('aria-describedby', 'pickSub');
   }
-  if (modal.dataset.ui2Keys) return;
-  modal.dataset.ui2Keys = '1';
+  if (modal.dataset.pickKeys) return;
+  modal.dataset.pickKeys = '1';
   modal.addEventListener('keydown', (e) => {
-    if (!state.ui2Shell || modal.classList.contains('hidden')) return;
+    if (modal.classList.contains('hidden')) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePick(); return; }
     if (e.key !== 'Tab') return;
     const focusables = [...modal.querySelectorAll('button')].filter((el) => !el.disabled && el.offsetParent !== null);
@@ -121,7 +117,7 @@ function dialogSemantics(modal) {
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
     const at = focusables.indexOf(document.activeElement);
-    if (e.shiftKey && (at <= 0)) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (at < 0 || at === focusables.length - 1)) { e.preventDefault(); first.focus(); }
+    if (e.shiftKey && at <= 0) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (at < 0 || at === focusables.length - 1)) { e.preventDefault(); first.focus(); }
   });
 }
 
@@ -154,7 +150,12 @@ function closePick() {
   modal.classList.add('hidden');
   const back = opener;
   opener = null;
-  if (!wasOpen || !back || !state.ui2Shell) return;
+  if (!wasOpen || !back) return;
+  if (!state.ui2Shell) {
+    // The current layout keeps its plain return: the opener itself, if still there.
+    if (back.el && back.el.isConnected && typeof back.el.focus === 'function') back.el.focus();
+    return;
+  }
   const el = openerTarget(back);
   if (el && typeof el.focus === 'function') {
     try { el.focus({ preventScroll: true }); } catch { el.focus(); }

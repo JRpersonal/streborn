@@ -2804,7 +2804,12 @@ func (s *Server) reconcileZoneOnce(playKick bool) {
 		// of the LIVE group (an update reboot, a Wi-Fi hiccup) come back while
 		// the master plays, with the same member classification as the play
 		// kick and without waking anyone who was switched off on purpose.
-		s.rejoinMissingMembers(ctx, z)
+		// When the zone is gone altogether (a lone follower rebooted, and the
+		// master's firmware ended the zone with it), it is formed once more
+		// while that member is fresh (#1339).
+		if !s.rejoinMissingMembers(ctx, z) {
+			s.reformAfterMemberReboot(ctx, z)
+		}
 		return
 	}
 	if !s.zoneReconcileEnabled() {

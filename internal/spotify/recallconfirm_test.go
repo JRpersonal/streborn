@@ -227,6 +227,16 @@ func TestRecallResumeRetriesAreBounded(t *testing.T) {
 	}
 }
 
+// waitForClockTick returns once time.Now() has moved past the moment it was
+// called, so whatever a fake engine stamps next is strictly later than
+// anything stamped before the call.
+func waitForClockTick() {
+	t0 := time.Now()
+	for !time.Now().After(t0) {
+		time.Sleep(time.Millisecond)
+	}
+}
+
 type stuckEngine struct {
 	mu      sync.Mutex
 	m       *Manager
@@ -244,6 +254,13 @@ func (s *stuckEngine) handler(w http.ResponseWriter, r *http.Request) {
 		s.resumes++
 	}
 	if r.URL.Path == "/player/play" && s.m != nil {
+		// A real engine logs the load well after the request that asked for
+		// it, and the recall only counts a load stamped AFTER its play
+		// request. Answered inside the request, the stamp can land on the
+		// same clock tick as the request (Windows reads the monotonic clock
+		// at 0.5 to 15.6 ms granularity), the load then never counts, and the
+		// recall waits out both load waits (13 s) and never retries.
+		waitForClockTick()
 		s.m.noteLibrespotLine(`level=info msg="loaded track \"X\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
 	}
 	w.WriteHeader(http.StatusOK)

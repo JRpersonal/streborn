@@ -66,10 +66,37 @@ func DefaultEntries() []Entry {
 	// no Wi-Fi profile, so that re-association drops the speaker offline
 	// ("Wi-Fi Not Provided", #302/#303). Left at real DNS these dead hosts just
 	// NXDOMAIN/time out, the benign way the stock post-cloud box already tolerates.
-	return []Entry{
+	//
+	// The firmware's Alexa client (/opt/Bose/IoT) is the exception that is kept
+	// on the box: it registers the speaker at voice.api.bose.io, which Bose's
+	// gateway still answers (404), and a speaker that holds a certificate from
+	// before the shutdown reconnects to Bose's AWS IoT broker about once a
+	// minute. Alexa on SoundTouch is gone, so none of it serves the speaker,
+	// but it carries the device's identity out of the house. Pointed at
+	// loopback the registration fails locally (marge's certificate does not
+	// name the host) and the broker port (8883) is refused, and the client
+	// backs off on its own. NetManager's connectivity probe does not use these
+	// hosts, so the #302 re-association does not apply. The broker name is
+	// compiled into IoT (amqmidtcohfms, same on ST10, ST30 and Portable on
+	// 27.0.6); the second one was reported from a speaker that registered
+	// before the shutdown.
+	return append([]Entry{
 		{IP: "127.0.0.1", Host: "streaming.bose.com"},
 		{IP: "127.0.0.1", Host: "content.api.bose.io"},
 		{IP: "127.0.0.1", Host: "7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com"},
+	}, IoTEntries()...)
+}
+
+// IoTEntries are the Alexa client's hosts on their own. No STR listener has to
+// be up for them, so the agent applies them the moment it starts: IoT sends its
+// first registration about a minute after boot, a few seconds after the agent
+// starts and before marge is ready for the full block (seen on an ST10: agent
+// start +7 s, full block +7.6 s, registration +7 s).
+func IoTEntries() []Entry {
+	return []Entry{
+		{IP: "127.0.0.1", Host: "voice.api.bose.io"},
+		{IP: "127.0.0.1", Host: "amqmidtcohfms.iot.us-east-1.amazonaws.com"},
+		{IP: "127.0.0.1", Host: "a2bhvr9c4wn4ya.iot.us-east-1.amazonaws.com"},
 	}
 }
 

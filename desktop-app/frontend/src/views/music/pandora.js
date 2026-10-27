@@ -6,7 +6,7 @@ import { state } from '../../state.js';
 import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
 import { $, escapeAttr, escapeHtml, showError, showToast, sleep } from '../../utils.js';
 import { showSlotPicker } from './picker.js';
-import { syncSearchModeButtons } from './search.js';
+import { listButtonClick, syncSearchModeButtons } from './search.js';
 import { refreshStatus } from './status.js';
 
 // ---------- Pandora stations ----------
@@ -74,7 +74,7 @@ async function loadPandora() {
   try {
     pandoraRows = pandoraStationRows(await PandoraStations(box.host, box.port));
   } catch (err) {
-    if (state.searchLastMode !== 'pandora') return;
+    if (state.searchLastMode !== 'pandora' || !state.searchListOpen) return;
     const code = agentErrorCode(err);
     const msg = code === 'not-linked' || code === 'service-off'
       ? t('pandora.notLinked')
@@ -83,7 +83,7 @@ async function loadPandora() {
     if (code === 'not-linked' || code === 'service-off') updatePandoraModeBtn(true);
     return;
   }
-  if (state.searchLastMode !== 'pandora' || !state.currentBox || state.currentBox.host !== box.host) return;
+  if (state.searchLastMode !== 'pandora' || !state.searchListOpen || !state.currentBox || state.currentBox.host !== box.host) return;
   renderPandoraStations();
 }
 
@@ -170,7 +170,7 @@ export function openPandoraPick(s) {
 // mountPandora attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountPandora() {
-  $('pandoraModeBtn').onclick = () => loadPandora();
+  $('pandoraModeBtn').onclick = listButtonClick('pandoraModeBtn', () => loadPandora());
   // The settings card links or unlinks an account (or flips the opt-in): ask the
   // speaker again instead of waiting for the cache to run out.
   document.addEventListener('str:usservices-changed', () => { updatePandoraModeBtn(true); });

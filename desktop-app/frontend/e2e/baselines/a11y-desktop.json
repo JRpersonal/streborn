@@ -25,8 +25,8 @@
   },
   "contrast|old|settings": {
     "color-contrast": {
-      "count": 3,
-      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
     },
     "label": {
       "count": 2,
@@ -117,8 +117,8 @@
   },
   "dark|old|settings": {
     "color-contrast": {
-      "count": 4,
-      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer."
     },
     "label": {
       "count": 2,
@@ -209,8 +209,8 @@
   },
   "light|old|settings": {
     "color-contrast": {
-      "count": 3,
-      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the orange reboot button #boxRebootBtn (white on #d97a1d, 3.11:1), in the contrast theme too."
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
     },
     "label": {
       "count": 2,

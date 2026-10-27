@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func (e *transferEngine) handler(w http.ResponseWriter, r *http.Request) {
 		e.track, e.paused = "New", true
 		// A real load takes seconds; without a gap the commit can share the
 		// play request's clock tick on Windows and never count as after it.
-		time.Sleep(20 * time.Millisecond)
+		waitForClockTick()
 		e.m.noteLibrespotLine(`level=info msg="loaded track \"New\" (paused: true, position: 0ms, duration: 200000ms, prefetched: false)"`)
 		if e.plays == 1 || e.lostAgain {
 			e.lost = true
@@ -99,6 +100,14 @@ func TestRecallTakesBackATransferredSession(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if plays, paused := e.snapshot(); plays == 2 && !paused {
+			// The repeat is a Play running on the resume check's goroutine, and
+			// it is still on its last steps when the engine starts playing:
+			// returning now let it read the confirm timing while this test's
+			// cleanup put the production values back (-race). Its closing log
+			// line comes after the last of those reads.
+			for time.Now().Before(deadline) && strings.Count(logBuf.String(), "spotify: recall play") < 2 {
+				time.Sleep(10 * time.Millisecond)
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

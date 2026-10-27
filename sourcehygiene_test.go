@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -128,4 +129,52 @@ func itoa(n int) string {
 func hex4(r rune) string {
 	const d = "0123456789ABCDEF"
 	return string([]byte{d[(r>>12)&0xF], d[(r>>8)&0xF], d[(r>>4)&0xF], d[r&0xF]})
+}
+
+// No Go file may wrap a standard file descriptor in an *os.File.
+//
+// os.NewFile(0, os.DevNull) reads like "a writer to /dev/null" and is nothing
+// of the kind: it wraps whatever fd 0 is, and the *os.File it returns closes
+// that descriptor from a finalizer when the GC collects it. One spotify test
+// helper did this for a throwaway logger. The first collection closed stdin;
+// every later one closed whatever had been handed fd 0 since, a test server's
+// socket or a temp dir mid-removal, so a test further down the package failed
+// at random with an empty answer or "unlinkat: bad file descriptor" (CI,
+// 2026-10-26 and 2026-10-27). io.Discard is the writer that was meant.
+func TestNoGoFileWrapsAStandardDescriptor(t *testing.T) {
+	needle := regexp.MustCompile(`os\.NewFile\(\s*(0|1|2|uintptr\(\s*[012]\s*\))\s*,`)
+	var bad []string
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			// Comments may name the mistake; only code may not make it.
+			if code, _, _ := strings.Cut(line, "//"); needle.MatchString(code) {
+				bad = append(bad, filepath.ToSlash(path)+":"+itoa(i+1))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the tree: %v", err)
+	}
+	if len(bad) > 0 {
+		t.Errorf("os.NewFile on a standard descriptor (its finalizer closes the fd; use io.Discard or os.Stdout):\n  %s",
+			strings.Join(bad, "\n  "))
+	}
 }

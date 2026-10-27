@@ -2475,6 +2475,34 @@ function verifyInstalledState(box, onState) {
   }
   clearInterval(timerHandle);
   if (offProgress) offProgress();
+  // The install guard (install_guard.go) stopped the install before it touched
+  // the speaker: an update from this app is still finishing on it, or STR is
+  // already running there. Neither is a failure, so neither gets the failure
+  // screen. That screen offers the SSH repair, the power-cycle block, the
+  // failure report and, for some codes, the USB stick section, and every one of
+  // those is the wrong next step for a speaker whose update simply needs a few
+  // more minutes (field case 2026-10-21: a slow but successful update, then a
+  // stick install on top of it, then a dark speaker).
+  if (result && !result.ok && (result.code === 'update-finishing' || result.code === 'str-running')) {
+    try { SetOTARunning(false); } catch {}
+    baseHtml = '';
+    if (result.code === 'str-running') {
+      state.currentBox = foundBox;
+      render(`<div class="setup-ok">${escapeHtml(t('setup.alreadyInstalled', { ip: foundBox.host }))}</div>`
+        + `<div class="muted small">${escapeHtml(t('setup.installRefusedRemoveStick'))}</div>`
+        + `<div class="setup-ok-actions">`
+        + `<button id="setupUpdateAgentBtn" class="btn">${escapeHtml(t('setup.alreadyInstalledUpdateBtn'))}</button>`
+        + `<div class="muted small">${escapeHtml(t('setup.alreadyInstalledUpdateHint'))}</div>`
+        + `</div>`);
+      const upd = $('setupUpdateAgentBtn');
+      if (upd) upd.onclick = () => { deps.doBoxUpdate(); };
+    } else {
+      render(`<div class="setup-warn">${escapeHtml(t('setup.installUpdateFinishing'))}</div>`
+        + `<div class="muted small">${escapeHtml(t('setup.installRefusedRemoveStick'))}</div>`);
+    }
+    deps.discoverBoxes();
+    return;
+  }
   if (!result || !result.ok) {
     const msg = (result && result.message) || 'unknown';
     const help = installHelpHtml(result && result.code, !!knownBox, foundBox);

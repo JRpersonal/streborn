@@ -17,10 +17,14 @@ package bosefw
 // user's cache folder. The final step always comes from Bose's own host.
 //
 // LiveVerified is flipped only after a field report with a diagnostic bundle:
-// so far one SoundTouch 20 Series I went 5.x -> 06.02.01 -> 07.00.37 by USB
-// stick. (A Portable went 27.0.3 -> 27.0.6 over the network, which says
-// nothing about the hop from 15.00.20.) Every other step is unverified on real
-// hardware.
+// so far one SoundTouch 20 Series I went 5.x -> 06.02.01 -> 07.00.37 ->
+// 14.00.33 -> 16.00.09 by USB stick. 15.00.20 stalled on that speaker twice
+// (2026-10-27): by stick and on the speaker's own update page, both with an
+// empty bar. 16.00.09 then went in by stick from 14.00.33, so the ladder takes
+// 16.00.09 in place of 15.00.20; it carries the same new installer generation
+// (the format change at 15) and is the smallest file of that line. (A Portable
+// went 27.0.3 -> 27.0.6 over the network, which says nothing about the hop from
+// 16.00.09.) Every other step is unverified on real hardware.
 
 // ArchiveItemBase is the only Internet Archive address a ladder file is
 // fetched from.
@@ -59,9 +63,11 @@ var stScmLadder = []Step{
 	stScmArchive("07.00.37", "Airplay-1_ST20-30-Portable_07.00.37.zip", 65800764, "e2b2e7e0e23c7820e42f08e214c56a61c7ea20b4",
 		93032539, 0xa46e94d0, "0586eddfe502d324ac2836998b2271b89eb927fd", "high", true, false),
 	stScmArchive("14.00.33", "Airplay-1_ST20-30-Portable_14.00.33.zip", 67614484, "2d9898399328fab3bb79612a20bfdd42cac6dd60",
-		93114711, 0xd4dc260b, "b3b563a4de548632a066f768edf92a1b35bd2095", "medium", false, false),
-	stScmArchive("15.00.20", "Airplay-1_ST20-30-Portable_Update_ti_15.00.20.37272.2363762.scm.stu.zip", 75030888, "da0adbc64ef2b3362d9f49e778c52a68c75a3d5b",
-		101642152, 0xf8648557, "7a03fa3b37210b96b2bb852ee5ca710143767839", "medium-high", false, false),
+		93114711, 0xd4dc260b, "b3b563a4de548632a066f768edf92a1b35bd2095", "medium", true, false),
+	// The inner sha1 is not known: the zip was not downloaded in full. The size
+	// and CRC-32 come from its central directory, read on 2026-10-27.
+	stScmArchive("16.00.09", "Airplay-1_ST20-30-Portable_Update_ti_16.00.09.37890.2412967.scm.stu.zip", 70289971, "e1366ffab91c785804bfc58e8318058be91c3e30",
+		95712356, 0x62d60317, "", "medium-high", true, false),
 	{
 		ID:         FamilySTScm + "-27.0.6",
 		Version:    "27.0.6",
@@ -73,7 +79,7 @@ var stScmLadder = []Step{
 		InnerCRC32: 0x2d5a971e,
 		Confidence: "high",
 		// Bose's own file, flashed over the network on a real speaker, but
-		// only from 27.0.3. The hop from 15.00.20 is not tried yet, so the
+		// only from 27.0.3. The hop from 16.00.09 is not tried yet, so the
 		// ladder does not call it tested.
 		LiveVerified: false,
 		NetworkOK:    true,
@@ -92,6 +98,11 @@ var stScmFallback = []Step{
 		92333191, 0xc4fd3a70, "", "low", false, true),
 	stScmArchive("12.00.09", "Airplay-1_ST20-30-Portable_12.00.09.zip", 67590860, "c6e659517509c306a00d9774497d2b5d21742a7a",
 		93083567, 0xc4d62d01, "", "low", false, true),
+	// Between 16.x and 27.0.6 if that jump also stalls. On the one speaker
+	// tried, every file above 100 MB stalled by stick and on the update page;
+	// this is the largest one below it. Central directory read 2026-10-27.
+	stScmArchive("20.00.06", "Airplay-1_ST20-30-Portable_Update_ti_20.00.06.44144.3075410.scm.stu.zip", 72549266, "80a4c22cb800eb5c2056457337de3b99b5960f46",
+		98225732, 0x2f95d0db, "", "low", false, true),
 }
 
 // foreignCRCs are inner Update.stu CRC-32s of images that belong to OTHER

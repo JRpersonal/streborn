@@ -8,6 +8,7 @@ import { $, escapeHtml, escapeAttr, showError, showToast, compareVerBuild } from
 import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
 import { deps, confirmFor } from './shared.js';
+import { inLiveGroup } from '../../groups.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
 export function renderStatusSection() {
@@ -317,10 +318,14 @@ export function wireStatusSections(ctx) {
     const bannerMsg = softwareBtn
       ? `<b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: box.friendlyName || box.name || box.host }))}</b>`
       : `<b>${escapeHtml(t('updateAll.title'))}</b>`;
+    // A speaker in a live group leaves it while it restarts: said before the
+    // tap, on the single-speaker update only (#1339).
+    const groupNote = (softwareBtn && inLiveGroup(box, state.zoneLive))
+      ? `<br><small class="muted" id="updateGroupNote">${escapeHtml(t('update.groupNote'))}</small>` : '';
     const updateBanner = (softwareBtn || updateAllBtn) ? `
       <div class="update-banner" style="margin-bottom:14px">
         <div class="update-msg">${bannerMsg}<br>
-          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small></div>
+          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>${groupNote}</div>
         ${softwareBtn}${updateAllBtn}
       </div>` : '';
     body.innerHTML = updateBanner + `

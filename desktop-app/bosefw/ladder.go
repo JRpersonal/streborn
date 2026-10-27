@@ -10,6 +10,8 @@ package bosefw
 // times before 15.00.20 (new IPC at 12 and at 14.00.33, new bootloader and
 // kernel at 15.00.20). So the ladder lands each new installer generation on a
 // system from the generation before it, the hops Bose itself once shipped.
+// That generation is reached with 16.00.09: 15.00.20 itself stalled on the
+// one speaker that tried it, by stick and on its update page.
 //
 // Phase 1 knows one family only (FamilySTScm). Every other model gets
 // StatusUnsupported here and keeps the single-step guide.
@@ -180,6 +182,9 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		if stScmModels[strings.ToLower(p.Model)] && p.ModuleType != "sm2" {
 			p.Family = FamilySTScm
 			p.Steps = []Step{stScmLadder[len(stScmLadder)-1]}
+			if fb := FallbackFor(p.Steps[0].ID, p.Current); fb != nil {
+				p.Fallbacks[p.Steps[0].ID] = fb
+			}
 		}
 		return p
 	}
@@ -283,6 +288,10 @@ func FallbackFor(stepID, current string) []Step {
 	case FamilySTScm + "-14.00.33":
 		if cur[0] >= 7 && cur[0] < 12 {
 			return pick("09.00.41", "12.00.09", "14.00.33")
+		}
+	case FamilySTScm + "-27.0.6":
+		if cur[0] >= 16 && cur[0] < 20 {
+			return pick("20.00.06", "27.0.6")
 		}
 	}
 	return nil

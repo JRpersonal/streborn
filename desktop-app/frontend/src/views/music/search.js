@@ -28,6 +28,7 @@ import { playFailedForNoInternet } from '../../nointernet.js';
 import {
   addStationGuideFold,
   isStreamURL,
+  listButtonCloses,
   normalizeDetailedSearch,
   relaxedHintVisible,
   searchModePressed,
@@ -80,6 +81,35 @@ export function syncSearchModeButtons() {
     b.classList.toggle('mode-pressed', on);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
+}
+
+// closeSearchList empties the result panel and releases every list button: the
+// second click on the pressed Top / Favorites / Pandora button (#1521). The
+// mode is kept so a filter change still refills the last list; a fetch still on
+// its way is dropped by the searchListOpen checks after its await.
+export function closeSearchList() {
+  state.searchListOpen = false;
+  state.searchResults = [];
+  const res = $('searchResults');
+  if (res) res.innerHTML = '';
+  const lm = $('loadMoreRow');
+  if (lm) lm.classList.add('hidden');
+  const cnt = $('searchCount');
+  if (cnt) cnt.classList.add('hidden');
+  syncSearchModeButtons();
+}
+
+// listButtonClick makes a list button a toggle: a click on the pressed button
+// closes its list, any other click opens it. Native <button>s, so Enter and
+// Space take the same path.
+export function listButtonClick(btnId, open) {
+  return () => {
+    if (listButtonCloses(btnId, state.searchLastMode, state.searchListOpen)) {
+      closeSearchList();
+      return undefined;
+    }
+    return open();
+  };
 }
 
 // doRefilter re-runs the last action (Top or Search) with the new
@@ -137,7 +167,7 @@ async function searchByStreamURL(url) {
     // odd server never stops a URL that actually works.
     let kind = null;
     try { kind = await ClassifyStreamURL(url); } catch { kind = null; }
-    if (kind && kind.kind === 'website') {
+    if (kind && kind.kind === 'website' && state.searchListOpen) {
       $('searchResults').innerHTML =
         `<div class="muted">${escapeHtml(t('search.urlIsWebsite'))}</div>`
         + `<div class="muted" style="margin-top:.5rem">${escapeHtml(t('search.urlIsWebsiteHint'))}</div>`;
@@ -222,6 +252,8 @@ async function fetchSearchPage(append) {
       if (!isMissingBinding(err)) throw err;
       page = await RadioSearch(buildSearchOpts()) || [];
     }
+    // The list was closed by a second click while this page was on its way.
+    if (!state.searchListOpen) return;
     // Relaxed is per result set: a fresh search resets it (and the dismiss),
     // a "load more" keeps the hint once any page needed relaxing.
     state.searchRelaxed = append ? (state.searchRelaxed || relaxed) : relaxed;
@@ -263,6 +295,7 @@ async function fetchSearchPage(append) {
     renderSearchResults();
     $('loadMoreRow').classList.toggle('hidden', page.length < PAGE_SIZE);
   } catch (e) {
+    if (!state.searchListOpen) return;
     $('searchResults').innerHTML = `<div class="muted">${escapeHtml(searchErrorText(e))}</div>`;
     $('loadMoreRow').classList.add('hidden');
   }
@@ -577,8 +610,16 @@ export function renderSearchResults() {
   // The Pandora list lives in the same panel but is not a directory result:
   // a filter change while it shows must not repaint radio stations over it.
   syncSearchModeButtons();
-  if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
   const res = $('searchResults');
+  // A closed panel stays empty: a filter toggle or a star removed elsewhere
+  // must not paint a list back that the user just closed (#1521).
+  if (!state.searchListOpen) {
+    if (res) res.innerHTML = '';
+    const c = $('searchCount');
+    if (c) c.classList.add('hidden');
+    return;
+  }
+  if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
   // Optional client-side Bose compatibility filter: drop HTTPS
   // streams and exotic codecs so the user does not hit 502 errors
   // on play.
@@ -770,7 +811,7 @@ export function mountSearch() {
   $('searchOnlyBose').checked = state.searchOnlyBose;
 
   $('searchBtn').onclick = () => doSearch();
-  $('topBtn').onclick = () => doTop();
+  $('topBtn').onclick = listButtonClick('topBtn', () => doTop());
   syncSearchModeButtons();
 
   // Pointer for the users who want a station that radio-browser.info does not

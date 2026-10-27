@@ -63,8 +63,18 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 		// The number and name stay visible beside the image.
 		".preset.has-art {",
 		".preset .art {",
-		// A cover filled in after the save repaints the grid.
-		"(p.art || '')",
+		// A cover filled in after the save repaints the grid, and so does a
+		// folder key whose track covers moved (#1366): the signature holds
+		// the art the tile draws and the first track, like the app's.
+		"presetOwnArt(p), first].join(",
+		// The desktop app's order (#1467): the first stored image the app can
+		// draw, the DuckDuckGo icon of each public station host derived from
+		// homepage and stream, the homepage's favicon, then the rest.
+		"if (direct && (direct.u.protocol === 'https:' || lanArtHost(direct.u.hostname))) push(direct.src);",
+		"var hosts = presetLogoHosts(p);",
+		"[p.homepage, p.stream_url].forEach(",
+		"push('https://' + brand + '/favicon.ico');",
+		"if (!p || p.type === 'spotify') return stored.map(",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("phone remote cover art: index.html lacks %q", want)

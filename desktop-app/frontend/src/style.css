@@ -69,6 +69,12 @@
   --c-tile-err-b: #3a2a2a;
   /* Amber text (the lost-key hint and the loss banner title). */
   --c-amber-text: #e8c878;
+  /* Caution buttons (.btn-warning: Restart speaker, Copy presets, the conflict
+     clean-up). White on the orange measured 3.11:1, so the label is dark here:
+     #1a1a1a on #d97a1d is 5.60:1, 6.67:1 on the hover orange. */
+  --c-warn-bg: #d97a1d;
+  --c-warn-bg-hover: #e68a30;
+  --c-warn-on: #1a1a1a;
 }
 
 /* Light theme. Greyscale tokens flip to a light palette and the brand/
@@ -121,6 +127,10 @@ html.a11y-light {
   --c-tile-err-a: #f8e6e6;
   --c-tile-err-b: #f0d8d8;
   --c-amber-text: #7a5200;
+  /* A deeper orange keeps the white label: 5.02:1, 6.41:1 on hover. */
+  --c-warn-bg: #b45309;
+  --c-warn-bg-hover: #9a4700;
+  --c-warn-on: #ffffff;
 }
 
 /* High-contrast theme. Black base, pure-white text and borders, brighter
@@ -156,6 +166,10 @@ html.a11y-contrast {
   --signal-yellow: #ffe066;
   --signal-red: #ff8a8a;
   --c-amber-text: #ffe066;
+  /* Bright orange with a black label: 11.79:1, 13.00:1 on hover. */
+  --c-warn-bg: #ffb347;
+  --c-warn-bg-hover: #ffc069;
+  --c-warn-on: #000000;
 }
 
 /* Fallback to color-scheme:dark above: force high-contrast colors on every
@@ -1573,8 +1587,13 @@ html.a11y-contrast .btn:hover { background: #333333; }
    there is 2.9:1), white on the dark light-theme red, black in high contrast. */
 .btn-danger { background: var(--signal-red); color: var(--c-bg); border-color: var(--signal-red); }
 .btn-danger:hover { filter: brightness(1.08); }
-.btn-warning { background: #d97a1d; color: white; border-color: #d97a1d; }
-.btn-warning:hover { background: #e68a30; }
+/* Theme tokens, not literals: white on #d97a1d was 3.11:1 in every theme. */
+.btn-warning { background: var(--c-warn-bg); color: var(--c-warn-on); border-color: var(--c-warn-bg); }
+.btn-warning:hover { background: var(--c-warn-bg-hover); border-color: var(--c-warn-bg-hover); }
+/* The high-contrast hover above paints every .btn #333, which would put the
+   black caution and danger labels on near black. Keep their own fills. */
+html.a11y-contrast .btn-warning:hover { background: var(--c-warn-bg-hover); }
+html.a11y-contrast .btn-danger:hover { background: var(--signal-red); }
 .btn-warning:disabled { background: #6a4a30; color: #aa8; border-color: #6a4a30; cursor: not-allowed; }
 
 /* High contrast: a disabled button must stay READABLE, because during a speaker
@@ -2662,6 +2681,11 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-live.in { color: var(--signal-green); }
 .zone-update-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #5a3a1a; color: #f8c66c; }
 .zone-card.outdated { border-style: dashed; }
+/* An offline speaker cannot join a group: shown, but not selectable. The name
+   and the reason keep full text colours (no opacity), so they stay readable. */
+.zone-card.offline { cursor: not-allowed; border-style: dashed; background: var(--c-surface); }
+.zone-card.offline:hover { background: var(--c-surface); }
+.zone-offline-note { font-size: 11px; color: var(--c-muted); }
 /* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the
    <option> popup do not inherit the app's dark theme on Linux/WebKitGTK, so
    they render white text on a white background. Force readable colors on every

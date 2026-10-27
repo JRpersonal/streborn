@@ -237,6 +237,7 @@ type Server struct {
 	rejoinLiveZoneFn        func(ctx context.Context, host string) (boxapi.Zone, error)
 	rejoinReadAgentUptimeFn func(ctx context.Context, ip string) int
 	rejoinSetZoneFn         func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error
+	rejoinSelfDeviceIDFn    func(ctx context.Context) string
 	// networkChangedFn is the post-switch state refresh, fired after a
 	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
 	networkChangedFn func(reason string)
@@ -470,6 +471,17 @@ type Server struct {
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
 	wakeForPlayReadRetry  time.Duration
+	// New-play wake seams (newplaywake.go): the standby wake, the level read,
+	// the level write and the stream proxy gate. nil = production
+	// (boxcli.WakeAndWait, boxapi, s.streamProxy). ownLevelSetFn is also what
+	// setVolumeOnFirstLife writes through.
+	newPlayWakeFn   func(ctx context.Context) error
+	ownVolumeFn     func(ctx context.Context) (boxapi.Volume, error)
+	ownLevelSetFn   func(ctx context.Context, vol int) error
+	newPlayGateFn   newPlayGater
+	newPlayRestoreT *newPlayRestoreTiming
+	// newPlayLevel follows the level around a muted wake for a new play.
+	newPlayLevel newPlayLevelState
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time
@@ -560,6 +572,13 @@ type Server struct {
 	// does not drive the firmware with back-to-back setZone rounds.
 	defaultFormMu     sync.Mutex
 	lastDefaultFormAt time.Time
+	// zoneLossMu guards the firmware-dissolve bookkeeping the tick reads to
+	// take a just-rebooted member back into a permanent group whose zone died
+	// with it (reformAfterMemberReboot): when the speaker last reported its
+	// zone gone, and when that path last drove a setZone.
+	zoneLossMu            sync.Mutex
+	zoneDissolvedAt       time.Time
+	zoneLossRejoinTriedAt time.Time
 
 	// wedge tracks the "box accepts transport pushes but never plays" state
 	// that only a power-cycle clears; streamActivityFn (the stream proxy's
@@ -1311,10 +1330,9 @@ func (s *Server) setVolumeOnFirstLife(ctx context.Context, vol int) <-chan struc
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		c := boxapi.New(s.boxHost)
 		for ctx.Err() == nil {
 			if np := s.quietWakeNowPlaying(ctx, s.boxHost); np.Source != "" && np.Source != "STANDBY" {
-				_ = c.SetVolume(ctx, vol)
+				_ = s.setOwnLevel(ctx, vol)
 				return
 			}
 			select {
@@ -1440,6 +1458,12 @@ func (s *Server) ensureBoxReadyErr(ctx context.Context) error {
 		}
 		cancel()
 	}
+	s.refreshPairingInBackground()
+	return wakeErr
+}
+
+// refreshPairingInBackground is the marge-account half of ensureBoxReady.
+func (s *Server) refreshPairingInBackground() {
 	if s.autoPair != nil {
 		// Fire-and-forget. The marge-account refresh is NOT needed for the
 		// UPnP playback that follows, yet the box's :8090 setMargeAccount POST
@@ -1452,7 +1476,6 @@ func (s *Server) ensureBoxReadyErr(ctx context.Context) error {
 			s.autoPair.TriggerNow(pairCtx)
 		}()
 	}
-	return wakeErr
 }
 
 // New creates a new webui server.

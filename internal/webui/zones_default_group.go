@@ -145,6 +145,18 @@ func (s *Server) rejoinSetZone(ctx context.Context, host string, master boxapi.Z
 	return boxapi.New(host).SetZone(ctx, master, slaves)
 }
 
+// rejoinSelfDeviceID is this speaker's own deviceID as its firmware reports
+// it, or "" when /info does not answer.
+func (s *Server) rejoinSelfDeviceID(ctx context.Context) string {
+	if s.rejoinSelfDeviceIDFn != nil {
+		return s.rejoinSelfDeviceIDFn(ctx)
+	}
+	if s.boxHost == "" {
+		return ""
+	}
+	return s.localDeviceID(ctx, boxapi.New(s.boxHost), "")
+}
+
 // wakeMemberAgent wakes one stored member through its own agent
 // (POST /api/box/wake, the same TAP wake the desktop app uses when enrolling a
 // switched-off member, #70). The chassis decides the agent port, so both are
@@ -443,7 +455,8 @@ const rejoinFreshBootWindow = 10 * time.Minute
 // What it deliberately does NOT do: wake a member that somebody switched off
 // (standby with a long agent uptime), pull in a member playing its own source
 // or grouped elsewhere (classifyMemberForRejoin), or touch anything while the
-// master is silent. Returns true when a setZone was driven.
+// master is silent. A zone that is gone altogether (a lone follower rebooted)
+// is reformAfterMemberReboot's case. Returns true when a setZone was driven.
 func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 	if !z.Permanent || z.Stereo || len(z.Slaves) == 0 || s.boxHost == "" {
 		return false
@@ -503,5 +516,111 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 		return false
 	}
 	s.logger.Info("default group: missing members taken back into the live group", "added", added, "members", len(joiners))
+	return true
+}
+
+// zoneLossRejoinWindow is how long after the firmware reported the zone gone
+// the tick still treats that as "a member just rebooted" and re-forms the
+// stored permanent group once. Matches rejoinFreshBootWindow: past it, the
+// member that dropped out is no longer fresh either.
+const zoneLossRejoinWindow = rejoinFreshBootWindow
+
+// noteZoneDissolved stamps a firmware-reported zone dissolve (NoteBoxZoneState)
+// for reformAfterMemberReboot.
+func (s *Server) noteZoneDissolved() {
+	s.zoneLossMu.Lock()
+	s.zoneDissolvedAt = time.Now()
+	s.zoneLossMu.Unlock()
+}
+
+// reformAfterMemberReboot covers what rejoinMissingMembers cannot: the zone is
+// GONE. The master's firmware drops a follower that stops answering, and with
+// a single follower that ends the whole zone, so a two-speaker permanent group
+// whose follower restarted for an update stayed apart until the next play
+// (field bundle, #1339). On the tick, with the master awake, a dissolve the
+// firmware reported within zoneLossRejoinWindow, and a stored member whose
+// agent is freshly started, the stored group is formed ONCE more with a single
+// /setZone.
+//
+// Same rules as rejoinMissingMembers: members are classified the same way, a
+// standby member is only woken when its agent was just started (never one
+// somebody switched off), a stereo pair is never touched (it lives in marge),
+// nothing here starts audio, and only a permanent group qualifies. At most one
+// attempt per dissolve: the setZone's own teardown frame stamps a new dissolve,
+// so the attempt also blocks the path for the rest of the window. Returns true
+// when a setZone was driven.
+func (s *Server) reformAfterMemberReboot(ctx context.Context, z zones.Zone) bool {
+	if !z.Permanent || z.Stereo || z.Mirror() || len(z.Slaves) == 0 || s.boxHost == "" {
+		return false
+	}
+	if s.groupFormHushed() {
+		return false
+	}
+	s.zoneLossMu.Lock()
+	dissolvedAt, triedAt := s.zoneDissolvedAt, s.zoneLossRejoinTriedAt
+	s.zoneLossMu.Unlock()
+	if dissolvedAt.IsZero() || time.Since(dissolvedAt) > zoneLossRejoinWindow {
+		return false // no recent firmware dissolve: nothing fell apart under us
+	}
+	if !triedAt.IsZero() && (!dissolvedAt.After(triedAt) || time.Since(triedAt) < zoneLossRejoinWindow) {
+		return false // this dissolve (or the one our own setZone caused) had its attempt
+	}
+	live, err := s.rejoinLiveZone(ctx, s.boxHost)
+	if err != nil || strings.TrimSpace(live.Master) != "" {
+		return false // unreadable, or a zone exists: rejoinMissingMembers owns that
+	}
+	if self := s.rejoinSelfDeviceID(ctx); self == "" || !strings.EqualFold(self, z.Master) {
+		return false // only the master re-forms; a member's copy of the document stays put
+	}
+	if np := s.rejoinReadNowPlaying(ctx, s.boxHost); np.Source == "" || np.Source == "STANDBY" {
+		return false // the master is off or not answering: the next play re-forms it
+	}
+
+	joiners := make([]boxapi.ZoneMember, 0, len(z.Slaves))
+	fresh := 0
+	for _, m := range z.Slaves {
+		if m.IP == "" {
+			continue
+		}
+		mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
+		np := s.rejoinReadNowPlaying(mctx, m.IP)
+		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
+		isFresh := false
+		if act == rejoinWake || act == rejoinJoin {
+			up := s.rejoinReadAgentUptime(mctx, m.IP)
+			isFresh = up >= 0 && time.Duration(up)*time.Second <= rejoinFreshBootWindow
+			if act == rejoinWake {
+				if !isFresh {
+					s.logger.Info("default group: member is in standby and was not just rebooted, leaving it off", "ip", m.IP, "agentUptimeSec", up)
+					mcancel()
+					continue
+				}
+				s.rejoinWakeMember(mctx, m.IP, s.logger)
+				act = rejoinJoin
+			}
+		}
+		mcancel()
+		s.logger.Info("default group: member of the dissolved group classified", "ip", m.IP, "action", act.String(), "fresh", isFresh)
+		if act == rejoinJoin {
+			joiners = append(joiners, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			if isFresh {
+				fresh++
+			}
+		}
+	}
+	if fresh == 0 {
+		// No member just restarted: the zone ended for another reason, and the
+		// next play re-forms it as before.
+		return false
+	}
+	s.zoneLossMu.Lock()
+	s.zoneLossRejoinTriedAt = time.Now()
+	s.zoneLossMu.Unlock()
+	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
+		s.logger.Warn("default group: re-forming the group after a member restarted failed", "err", err, "members", len(joiners))
+		return false
+	}
+	s.logger.Info("default group: re-formed after a member restarted and the zone ended", "members", len(joiners), "restarted", fresh)
 	return true
 }
