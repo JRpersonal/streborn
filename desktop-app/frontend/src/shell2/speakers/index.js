@@ -42,6 +42,7 @@
 // and nothing touches the DOM at import.
 
 import { state } from '../../state.js';
+import { stereoPairsOf } from '../../groups.js';
 import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab } from './routes.js';
 import { renderSpeakerList } from './list.js';
 import { currentSpeakerTab, renderSpeakerPage } from './speaker.js';
@@ -146,6 +147,17 @@ function paintRoute(route) {
       boxPlaying: state.boxPlaying || {},
       offlineTitle: deps.offlineTitle,
       pairName: deps.pairName,
+      // What the list's cards read beyond the sidebar rows (list.js).
+      nowPlayState: state.nowPlayState,
+      nowSource: state.nowSource,
+      nowName: state.nowName,
+      stereoPairs: stereoPairsOf(state.zoneLive || {}),
+      appVersion: (state.appInfo && state.appInfo.version) || '',
+      otaHost: (state.otaInProgress && state.otaTargetHost) || '',
+      otaRunning: !!state.otaInProgress,
+      doBoxUpdate: deps.doBoxUpdate,
+      updateAll: deps.updateAllBoxes,
+      discoverBoxes: deps.discoverBoxes,
     });
   } else if (route === 'speaker') {
     const tab = wantTab;

@@ -18,6 +18,9 @@ const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
 const KITCHEN = ROSTER.kitchen;
 const HOSTS = SPEAKERS3.boxes.map((k) => ROSTER[k].host);
+// The list draws a stereo pair as one card, led by its master (the left half
+// here), as the sidebar does: one row fewer than speakers.
+const ROW_HOSTS = HOSTS.filter((h) => h !== ROSTER.terraceRight.host);
 const TABS = ['Overview', 'Sound', 'Network', 'Keys and alarms', 'Maintenance'];
 
 const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
@@ -33,7 +36,7 @@ const shownViews = (page) => page.locator('#ui2MainInner > [id^="view-"]').evalu
 async function openList(page) {
   await nav(page, 'speakers').click();
   await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
-  await expect(page.locator('#view-speakers .spl-open')).toHaveCount(HOSTS.length);
+  await expect(page.locator('#view-speakers .spl-open')).toHaveCount(ROW_HOSTS.length);
 }
 
 async function openSpeaker(page, host, name) {
@@ -61,7 +64,7 @@ test.describe('UI 2.0 Speakers area', () => {
     expect(await shownViews(page)).toEqual(['view-speakers']);
     // Every speaker of the fixture (in the app's own order), the current one marked.
     expect((await page.locator('#view-speakers .spl-open').evaluateAll((els) => els.map((e) => e.dataset.host))).sort())
-      .toEqual([...HOSTS].sort());
+      .toEqual([...ROW_HOSTS].sort());
     await expect(listRow(page, LR.host)).toHaveAttribute('aria-current', 'true');
     await expect(page.locator('#view-speakers .spl-open[aria-current]')).toHaveCount(1);
     // The sidebar speaker list is phase 1's, unchanged: still there, still
