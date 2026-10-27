@@ -71,3 +71,21 @@ for (const [w, scale, lang, rows] of [[390, 1, 'en', 1], [390, 1, 'de', 1], [320
     });
   });
 }
+
+// The badge on the alarm and sleep-timer cards names a feature the Bose app
+// never had. It came in English and German only, so a Lithuanian page (and
+// ten others) read "NEW WITH STR" in English.
+test.describe('STR badge in Lithuanian', () => {
+  test.use({ phoneLang: 'lt' });
+  test('is Lithuanian, and every language has its own', async ({ phone }) => {
+    const { page } = phone;
+    await expect(page.locator('#lblAlarmBadge')).toHaveText('Nauja su STR');
+    await expect(page.locator('#lblSleepBadge')).toHaveText('Nauja su STR');
+    const d = await page.evaluate(() => window.I18N2);
+    expect(Object.keys(d).length).toBe(12);
+    for (const lang of Object.keys(d)) {
+      expect(d[lang].strOnly, lang).toBeTruthy();
+      if (lang !== 'en') expect(d[lang].strOnly, lang).not.toBe(d.en.strOnly);
+    }
+  });
+});
