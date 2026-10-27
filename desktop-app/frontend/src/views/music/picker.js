@@ -18,7 +18,12 @@ import { preferMp3SiblingForBox } from './search.js';
 // caller that can assign onto ANOTHER speaker (a Recently-played card from a
 // different box) has to pass it, so a move offered after a refusal happens on
 // the speaker the station is actually on.
+//
+// The picker is a real dialog for the keyboard: named by its title, focus moves
+// to the first key, Tab stays inside, Escape closes it, and closing puts focus
+// back on the control that opened it.
 export function showSlotPicker({ title, subtitle, onPick, box }) {
+  opener = document.activeElement;
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
@@ -49,7 +54,39 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
     };
     grid.appendChild(b);
   }
-  $('pickModal').classList.remove('hidden');
+  const modal = $('pickModal');
+  modal.classList.remove('hidden');
+  dialogSemantics(modal);
+  const first = grid.querySelector('.pick-slot');
+  if (first) first.focus();
+}
+
+// opener is the control the open picker returns focus to.
+let opener = null;
+
+// dialogSemantics makes #pickModal a named modal dialog and keeps the keyboard
+// inside it. Set on the first open.
+function dialogSemantics(modal) {
+  const content = modal.querySelector('.modal-content');
+  if (content && !content.hasAttribute('role')) {
+    content.setAttribute('role', 'dialog');
+    content.setAttribute('aria-modal', 'true');
+    content.setAttribute('aria-labelledby', 'pickTitle');
+    content.setAttribute('aria-describedby', 'pickSub');
+  }
+  if (modal.dataset.pickKeys) return;
+  modal.dataset.pickKeys = '1';
+  modal.addEventListener('keydown', (e) => {
+    if (modal.classList.contains('hidden')) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePick(); return; }
+    if (e.key !== 'Tab') return;
+    const focusables = [...modal.querySelectorAll('button')].filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const at = focusables.indexOf(document.activeElement);
+    if (e.shiftKey && at <= 0) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (at < 0 || at === focusables.length - 1)) { e.preventDefault(); first.focus(); }
+  });
 }
 
 export function openPick(station) {
@@ -69,7 +106,14 @@ export function openPick(station) {
     },
   });
 }
-function closePick() { $('pickModal').classList.add('hidden'); }
+function closePick() {
+  const modal = $('pickModal');
+  const wasOpen = !modal.classList.contains('hidden');
+  modal.classList.add('hidden');
+  const back = opener;
+  opener = null;
+  if (wasOpen && back && back.isConnected && typeof back.focus === 'function') back.focus();
+}
 
 // mountPicker attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
