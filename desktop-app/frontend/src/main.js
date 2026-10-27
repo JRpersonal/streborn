@@ -13,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { groupKeyErrorBannerKey } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
@@ -2475,9 +2476,13 @@ function checkBoxIssueBanner() {
   }
   if (keyErr.length) {
     const names = keyErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
-      name: names, reason: keyErr[0].groupKeyError,
-    })));
+    // A refusal the user can act on reads as a sentence in their language;
+    // the agent's raw reason (English, technical) stays reachable on hover.
+    const reason = keyErr[0].groupKeyError;
+    const bannerKey = groupKeyErrorBannerKey(keyErr[0].groupKeyErrorKind);
+    const text = escapeHtml(t(bannerKey, { name: names, reason }));
+    msgs.push(bannerKey === 'speaker.groupKeyErrorBanner'
+      ? text : `<span title="${escapeAttr(reason)}">${text}</span>`);
   }
   if (holdErr.length) {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');

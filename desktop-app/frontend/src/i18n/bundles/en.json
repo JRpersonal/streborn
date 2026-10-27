@@ -1849,7 +1849,7 @@
   "multiroom.pairNotGroupable": "A stereo pair cannot be part of a group right now; the speaker firmware never starts the audio distribution then. Dissolve the pair, group the speakers individually, and re-create the pair afterwards.",
   "multiroom.groupNotPairable": "Speakers that are in a group, including a saved group, cannot be made into a stereo pair right now: the pair takes the place of the group, and any members left in it start refusing stations. Dissolve the group, create the pair, and group the speakers again afterwards.",
   "multiroom.groupKeysHeading": "Group keys",
-  "multiroom.groupKeysIntro": "Save a group as a template and put it on a thumbs key of one speaker's remote. A press on that key forms the group, a second press dissolves it.",
+  "multiroom.groupKeysIntro": "Save a group as a template and put it on a thumbs key of one speaker's remote. A press on that key forms the group, a second press on the same key dissolves it.",
   "multiroom.groupKeysRemoteOf": "Remote of",
   "multiroom.groupKeysRemoteHelp": "The speaker your remote points at. The keys are stored on that speaker, so they keep working without the app.",
   "multiroom.groupKeysNone": "No group templates on this speaker yet.",
@@ -1867,7 +1867,7 @@
   "multiroom.groupKeysSaved": "Group keys saved on {{name}}.",
   "multiroom.groupKeysLoadFailed": "Could not read the group keys from {{name}}: {{err}}",
   "multiroom.groupKeysSaveFailed": "Could not save the group keys: {{err}}",
-  "multiroom.groupKeysHint": "A press on that key forms the group, a second press dissolves it. If the main speaker is idle, it plays its last station. No text on the display yet: the members joining or going quiet is the confirmation.",
+  "multiroom.groupKeysHint": "A press on that key forms the group, a second press on the same key dissolves it. If the main speaker is idle, it plays its last station. No text on the display yet: the members joining or going quiet is the confirmation.",
   "multiroom.groupKeysWebhookWarn": "This key also carries a webhook on {{name}}. The group wins; the webhook does not fire for it.",
   "multiroom.groupKeysOpenKeyMap": "Show on the remote key map",
   "multiroom.groupKeysNeedsUpdate": "{{name}} runs an older STR version without group keys. Update it first.",
@@ -1948,5 +1948,11 @@
   "settingsView.webhookRemoteLegendBass": "bass",
   "multiroom.groupKeysKeyBass": "(bass)",
   "multiroom.groupKeysBassHint": "A thumbs key that changes the bass cannot form a group as well. Change it on the remote key map in Settings.",
-  "settingsView.bassKeyNeedsUpdate": "Update this speaker to put a bass step on a key."
+  "settingsView.bassKeyNeedsUpdate": "Update this speaker to put a bass step on a key.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: a group key press on the remote did nothing, because the speaker that leads the group answered too slowly. Please press the key again.",
+  "speaker.groupKeyErrorMoved": "{{name}}: a group key press on the remote did nothing, because a speaker of the group is no longer at its saved address. Please save the group again in the Multi-room tab.",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}} also carries the shared thumbs webhook (\"{{entry}}\"). On this key the group wins, but on the other thumbs key the webhook still fires. Not needed? Switch it off on the remote key map in Settings.",
+  "multiroom.groupKeysDisplayNote": "Dissolve the group with the same key that formed it. The speaker's display may show \"Action not available\" on a thumbs press, because the firmware treats the key as a rating. That message does not mean the group key failed.",
+  "settingsView.webhookThumbSharedNote": "This shared entry fires on both thumbs keys. On a key that carries a group, the group wins. To remove it, switch it off and save.",
+  "settingsView.webhookMacInvalid": "That MAC address is not valid. Use six pairs, for example AA:BB:CC:DD:EE:FF."
 }

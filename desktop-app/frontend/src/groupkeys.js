@@ -159,13 +159,65 @@ export function describeTemplate(tpl, boxes, label) {
   return nameOf(tpl.master) + (members.length ? ' + ' + members.join(', ') : '');
 }
 
+// validWolMac reports whether mac is a 6-byte hardware address in a form the
+// agent's parser accepts (AA:BB:CC:DD:EE:FF, AA-BB-..., or AABB.CCDD.EEFF).
+// A shorter one never fires, so it must not pass as configured.
+export function validWolMac(mac) {
+  const s = String(mac || '').trim();
+  return /^[0-9a-f]{2}([:-])[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i.test(s)
+    || /^[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}$/i.test(s);
+}
+
+// webhookConfigured reports whether a webhook action is enabled and has what
+// its transport needs to fire, the same test the agent applies.
+export function webhookConfigured(a) {
+  return !!a && a.enabled === true && (
+    a.type === 'wol' ? validWolMac(a.mac) : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
+}
+
+// webhookSourceOnKey says where the webhook on key comes from: 'key' for the
+// key's own trigger, 'thumb' for the legacy shared thumbs action (it fires for
+// either thumbs key), '' for none.
+export function webhookSourceOnKey(cfg, key) {
+  if (!cfg) return '';
+  if (webhookConfigured(cfg.buttons && cfg.buttons[key])) return 'key';
+  return GROUP_KEY_IDS.includes(key) && webhookConfigured(cfg.thumb) ? 'thumb' : '';
+}
+
 // webhookOnKey reports whether the speaker's webhook config carries an
 // enabled, configured trigger for key (the legacy shared thumbs action counts
 // for both thumbs keys). A bound group wins over it, so the view warns.
 export function webhookOnKey(cfg, key) {
-  const configured = (a) => !!a && a.enabled === true && (
-    a.type === 'wol' ? !!a.mac : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
-  if (!cfg) return false;
-  if (configured(cfg.buttons && cfg.buttons[key])) return true;
-  return GROUP_KEY_IDS.includes(key) && configured(cfg.thumb);
+  return webhookSourceOnKey(cfg, key) !== '';
+}
+
+// keyMapTarget is the webhook entry a click on key in the remote key map
+// opens. A thumbs key lit only by the shared thumbs action opens that shared
+// entry: opening the key's own (empty) form left a lit key with nothing on it
+// to change or remove (2026-10-27).
+export function keyMapTarget(cfg, key) {
+  return webhookSourceOnKey(cfg, key) === 'thumb' ? 'thumb' : key;
+}
+
+// groupKeyWebhookWarnKey picks the Multi-room warning for a webhook on a
+// group-bound key: the shared thumbs action needs its own sentence, because it
+// keeps firing on the other thumbs key and lives under its own entry.
+export function groupKeyWebhookWarnKey(cfg, key) {
+  switch (webhookSourceOnKey(cfg, key)) {
+    case 'key': return 'multiroom.groupKeysWebhookWarn';
+    case 'thumb': return 'multiroom.groupKeysWebhookWarnShared';
+    default: return '';
+  }
+}
+
+// groupKeyErrorBannerKey picks the banner sentence for a refused group-key
+// press by the agent's stable kind. The kinds the user can act on get their
+// own sentence; any other (or none, from an older agent) keeps the generic
+// one with the speaker's reason in it.
+export function groupKeyErrorBannerKey(kind) {
+  switch (kind) {
+    case 'master-unresponsive': return 'speaker.groupKeyErrorUnresponsive';
+    case 'member-unresolved': return 'speaker.groupKeyErrorMoved';
+    default: return 'speaker.groupKeyErrorBanner';
+  }
 }

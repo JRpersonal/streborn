@@ -1948,5 +1948,11 @@
   "settingsView.webhookRemoteLegendBass": "bas",
   "multiroom.groupKeysKeyBass": "(bas)",
   "multiroom.groupKeysBassHint": "Przycisk kciuka, który zmienia bas, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
-  "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku."
+  "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: naciśnięcie przycisku grupy na pilocie nic nie dało, bo głośnik prowadzący grupę odpowiedział zbyt wolno. Naciśnij przycisk jeszcze raz.",
+  "speaker.groupKeyErrorMoved": "{{name}}: naciśnięcie przycisku grupy na pilocie nic nie dało, bo jeden z głośników grupy nie jest już pod zapisanym adresem. Zapisz grupę ponownie na karcie Multiroom.",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}} ma też wspólny webhook przycisków kciuka („{{entry}}”). Na tym przycisku wygrywa grupa, ale na drugim przycisku kciuka webhook nadal się uruchamia. Niepotrzebny? Wyłącz go na mapie klawiszy pilota w Ustawieniach.",
+  "multiroom.groupKeysDisplayNote": "Rozwiąż grupę tym samym przyciskiem, który ją utworzył. Wyświetlacz głośnika może po naciśnięciu przycisku kciuka pokazać „Akcja niedostępna”, bo firmware traktuje ten przycisk jako ocenę. Ten komunikat nie oznacza, że przycisk grupy zawiódł.",
+  "settingsView.webhookThumbSharedNote": "Ten wspólny wpis uruchamia się na obu przyciskach kciuka. Na przycisku z grupą wygrywa grupa. Aby go usunąć, wyłącz go i zapisz.",
+  "settingsView.webhookMacInvalid": "Ten adres MAC jest nieprawidłowy. Podaj sześć par, na przykład AA:BB:CC:DD:EE:FF."
 }

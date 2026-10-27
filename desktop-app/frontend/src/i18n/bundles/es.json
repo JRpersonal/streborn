@@ -1948,5 +1948,11 @@
   "settingsView.webhookRemoteLegendBass": "graves",
   "multiroom.groupKeysKeyBass": "(graves)",
   "multiroom.groupKeysBassHint": "Una tecla de pulgar que cambia los graves no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes.",
-  "settingsView.bassKeyNeedsUpdate": "Actualiza este altavoz para asignar un paso de graves a una tecla."
+  "settingsView.bassKeyNeedsUpdate": "Actualiza este altavoz para asignar un paso de graves a una tecla.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: una pulsación de una tecla de grupo del mando no tuvo efecto, porque el altavoz que dirige el grupo respondió demasiado despacio. Pulsa la tecla de nuevo.",
+  "speaker.groupKeyErrorMoved": "{{name}}: una pulsación de una tecla de grupo del mando no tuvo efecto, porque un altavoz del grupo ya no está en su dirección guardada. Guarda el grupo de nuevo en la pestaña Multisala.",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}} también tiene el webhook compartido de las teclas de pulgar («{{entry}}»). En esta tecla gana el grupo, pero en la otra tecla de pulgar el webhook sigue disparándose. ¿No lo necesitas? Desactívalo en el mapa de teclas del mando, en Ajustes.",
+  "multiroom.groupKeysDisplayNote": "Disuelve el grupo con la misma tecla que lo formó. La pantalla del altavoz puede mostrar «Acción no disponible» al pulsar una tecla de pulgar, porque el firmware la trata como una valoración. Ese mensaje no significa que la tecla de grupo haya fallado.",
+  "settingsView.webhookThumbSharedNote": "Esta entrada compartida se dispara en ambas teclas de pulgar. En una tecla con un grupo, gana el grupo. Para quitarla, desactívala y guarda.",
+  "settingsView.webhookMacInvalid": "Esa dirección MAC no es válida. Usa seis pares, por ejemplo AA:BB:CC:DD:EE:FF."
 }

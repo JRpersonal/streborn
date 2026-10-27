@@ -1948,5 +1948,11 @@
   "settingsView.webhookRemoteLegendBass": "bas",
   "multiroom.groupKeysKeyBass": "(bas)",
   "multiroom.groupKeysBassHint": "Een duimtoets die de bas regelt, kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen.",
-  "settingsView.bassKeyNeedsUpdate": "Werk deze speaker bij om een basstap op een toets te zetten."
+  "settingsView.bassKeyNeedsUpdate": "Werk deze speaker bij om een basstap op een toets te zetten.",
+  "speaker.groupKeyErrorUnresponsive": "{{name}}: een druk op een groepstoets van de afstandsbediening deed niets, omdat de speaker die de groep leidt te traag antwoordde. Druk nog een keer op de toets.",
+  "speaker.groupKeyErrorMoved": "{{name}}: een druk op een groepstoets van de afstandsbediening deed niets, omdat een speaker van de groep niet meer op zijn opgeslagen adres staat. Sla de groep opnieuw op in het tabblad Multiroom.",
+  "multiroom.groupKeysWebhookWarnShared": "{{name}} heeft ook de gedeelde duimtoets-webhook (\"{{entry}}\"). Op deze toets wint de groep, maar op de andere duimtoets gaat de webhook nog steeds af. Niet nodig? Schakel hem uit op de toetsenkaart van de afstandsbediening in Instellingen.",
+  "multiroom.groupKeysDisplayNote": "Hef de groep op met dezelfde toets die hem vormde. Het display van de speaker kan bij een druk op een duimtoets \"Actie niet beschikbaar\" tonen, omdat de firmware de toets als beoordeling behandelt. Die melding betekent niet dat de groepstoets mislukt is.",
+  "settingsView.webhookThumbSharedNote": "Deze gedeelde vermelding gaat af op beide duimtoetsen. Op een toets met een groep wint de groep. Schakel hem uit en sla op om hem te verwijderen.",
+  "settingsView.webhookMacInvalid": "Dat MAC-adres is ongeldig. Gebruik zes paren, bijvoorbeeld AA:BB:CC:DD:EE:FF."
 }

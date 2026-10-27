@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate,
   withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey,
+  validWolMac, webhookSourceOnKey, keyMapTarget, groupKeyWebhookWarnKey, groupKeyErrorBannerKey,
 } from './groupkeys.js';
 
 const living = { deviceID: 'AAAA', host: '192.0.2.10', friendlyName: 'Living room' };
@@ -93,6 +94,53 @@ describe('webhookOnKey', () => {
     expect(webhookOnKey({ thumb: { enabled: true, url: 'http://x' } }, 'prev')).toBe(false);
     expect(webhookOnKey({ buttons: { thumbsDown: { enabled: true, type: 'wol', mac: 'AA:BB:CC:DD:EE:FF' } } }, 'thumbsDown')).toBe(true);
   });
+
+  it('does not count a Wake-on-LAN entry whose address can never fire', () => {
+    // Five octets: the agent cannot send a magic packet to it (2026-10-27).
+    const broken = { thumb: { enabled: true, type: 'wol', mac: 'AA:BB:CC:DD:EE' } };
+    expect(webhookOnKey(broken, 'thumbsUp')).toBe(false);
+    expect(groupKeyWebhookWarnKey(broken, 'thumbsUp')).toBe('');
+  });
+});
+
+describe('validWolMac', () => {
+  it('takes the forms the agent parses and nothing shorter or longer', () => {
+    for (const ok of ['AA:BB:CC:DD:EE:FF', 'aa-bb-cc-dd-ee-ff', ' AA:BB:CC:DD:EE:FF ', 'aabb.ccdd.eeff']) {
+      expect(validWolMac(ok), ok).toBe(true);
+    }
+    for (const bad of ['', 'AA:BB:CC:DD:EE', 'AA:BB:CC:DD:EE:FF:00:11', 'AA:BB-CC:DD:EE:FF', 'not a mac']) {
+      expect(validWolMac(bad), bad).toBe(false);
+    }
+  });
+});
+
+describe('the shared thumbs entry', () => {
+  const shared = { thumb: { enabled: true, url: 'http://x' }, buttons: {} };
+  it('tells a per-key trigger from the shared one', () => {
+    expect(webhookSourceOnKey(shared, 'thumbsUp')).toBe('thumb');
+    expect(webhookSourceOnKey({ buttons: { thumbsUp: { enabled: true, url: 'http://y' } } }, 'thumbsUp')).toBe('key');
+    expect(webhookSourceOnKey({}, 'thumbsUp')).toBe('');
+  });
+  it('opens the shared entry from a thumbs key it alone lights', () => {
+    expect(keyMapTarget(shared, 'thumbsUp')).toBe('thumb');
+    expect(keyMapTarget(shared, 'thumbsDown')).toBe('thumb');
+    expect(keyMapTarget(shared, 'prev')).toBe('prev');
+    const both = { ...shared, buttons: { thumbsUp: { enabled: true, url: 'http://y' } } };
+    expect(keyMapTarget(both, 'thumbsUp')).toBe('thumbsUp');
+  });
+  it('warns with the sentence that names the shared entry', () => {
+    expect(groupKeyWebhookWarnKey(shared, 'thumbsUp')).toBe('multiroom.groupKeysWebhookWarnShared');
+    expect(groupKeyWebhookWarnKey({ buttons: { thumbsUp: { enabled: true, url: 'http://y' } } }, 'thumbsUp')).toBe('multiroom.groupKeysWebhookWarn');
+  });
+});
+
+describe('groupKeyErrorBannerKey', () => {
+  it('turns the kinds the user can act on into their own sentence', () => {
+    expect(groupKeyErrorBannerKey('master-unresponsive')).toBe('speaker.groupKeyErrorUnresponsive');
+    expect(groupKeyErrorBannerKey('member-unresolved')).toBe('speaker.groupKeyErrorMoved');
+    expect(groupKeyErrorBannerKey('form-refused')).toBe('speaker.groupKeyErrorBanner');
+    expect(groupKeyErrorBannerKey(undefined)).toBe('speaker.groupKeyErrorBanner');
+  });
 });
 
 // Every string the group keys section and the key map marker can show must
@@ -102,7 +150,9 @@ describe('group keys i18n', () => {
   const read = (loc) => JSON.parse(
     readFileSync(new URL(`./i18n/bundles/${loc}.json`, import.meta.url), 'utf8'));
   const en = read('en');
-  const keys = Object.keys(en).filter((k) => k.startsWith('multiroom.groupKeys') || k.startsWith('settingsView.webhookGroupKey') || k === 'settingsView.webhookRemoteLegendGroup');
+  const keys = Object.keys(en).filter((k) => k.startsWith('multiroom.groupKeys') || k.startsWith('settingsView.webhookGroupKey')
+    || k.startsWith('speaker.groupKeyError') || k === 'settingsView.webhookRemoteLegendGroup'
+    || k === 'settingsView.webhookThumbSharedNote' || k === 'settingsView.webhookMacInvalid');
   it('has the section strings in English at all', () => {
     expect(keys.length).toBeGreaterThanOrEqual(20);
   });
