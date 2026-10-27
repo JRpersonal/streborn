@@ -442,10 +442,15 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		}
 		// The status read above takes a round trip; a recall abandoned or
 		// stopped meanwhile paused the engine on purpose (AbandonRecall).
+		// The look and the resume hold recallCmdMu together: checked alone,
+		// an abandon landing between the look and the POST had its pause
+		// overtaken by this resume, and the engine played to nobody.
+		m.recallCmdMu.Lock()
 		m.mu.Lock()
 		superseded = m.recallSeq != seq || m.userStopAt.After(since)
 		m.mu.Unlock()
 		if superseded {
+			m.recallCmdMu.Unlock()
 			return
 		}
 		retries++
@@ -454,9 +459,13 @@ func (m *Manager) confirmRecallPlaying(uri string, opts PlayOptions, seq uint64,
 		if stagingGen != 0 {
 			m.markRecallStagingResumed(stagingGen)
 		}
+		if m.beforeExtraResume != nil {
+			m.beforeExtraResume()
+		}
 		if err := m.apiPost(ctx, "/player/resume", ""); err != nil {
 			m.logger.Debug("spotify: extra resume failed", "err", err)
 		}
+		m.recallCmdMu.Unlock()
 		lastResume = time.Now()
 	}
 	if !confirmed {
@@ -717,6 +726,10 @@ func (m *Manager) AbandonRecall(ctx context.Context) error {
 	if m == nil {
 		return nil
 	}
+	// Waits for an extra resume already on its way, so this pause is the
+	// engine's last word (recallCmdMu).
+	m.recallCmdMu.Lock()
+	defer m.recallCmdMu.Unlock()
 	m.mu.Lock()
 	m.recallSeq++
 	m.recallUntil = time.Time{}
