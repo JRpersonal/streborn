@@ -421,6 +421,18 @@ export function stereoPairKey(pair) {
   return ids.length >= 2 ? ids.join('+') : '';
 }
 
+// dropOfflineMembers removes every speaker the list marks offline from the
+// group editor's member ticks (a { deviceID: true } map, edited in place). An
+// offline speaker cannot join a group, so a tick made while it still answered
+// must not be sent or named. Returns the map for convenience.
+export function dropOfflineMembers(slaves, boxes) {
+  if (!slaves) return slaves;
+  for (const b of boxes || []) {
+    if (b && b.offline && b.deviceID && slaves[b.deviceID]) delete slaves[b.deviceID];
+  }
+  return slaves;
+}
+
 // pairMemberBoxes maps a live pair onto discovered boxes, in LEFT/RIGHT order
 // (unknown roles keep their reported order). Matches by deviceID first and by
 // IP second: on two-chip chassis the firmware's deviceID differs from the

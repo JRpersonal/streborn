@@ -2681,6 +2681,11 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-live.in { color: var(--signal-green); }
 .zone-update-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #5a3a1a; color: #f8c66c; }
 .zone-card.outdated { border-style: dashed; }
+/* An offline speaker cannot join a group: shown, but not selectable. The name
+   and the reason keep full text colours (no opacity), so they stay readable. */
+.zone-card.offline { cursor: not-allowed; border-style: dashed; background: var(--c-surface); }
+.zone-card.offline:hover { background: var(--c-surface); }
+.zone-offline-note { font-size: 11px; color: var(--c-muted); }
 /* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the
    <option> popup do not inherit the app's dark theme on Linux/WebKitGTK, so
    they render white text on a white background. Force readable colors on every

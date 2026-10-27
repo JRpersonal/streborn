@@ -166,6 +166,7 @@
   "multiroom.stereoDissolveBtn": "Stereo çifti çöz",
   "multiroom.stereoSamePicked": "Sol ve sağ için iki farklı hoparlör seçin.",
   "multiroom.stereoFormed": "Stereo çift oluşturuldu. Birkaç saniye verin. Bir hoparlör sessiz kalırsa ya da ikisi de aynı kanalı çalarsa, günlükleri gönderin.",
+  "multiroom.offlineNotSelectable": "Çevrimdışı: eklemek için hoparlörü açın",
   "multiroom.pickHint": "Ana hoparlörü seçin (yıldız), sonra gruba eklemek için diğerlerine dokunun.",
   "multiroom.pickAtLeastOne": "Gruba eklemek için en az bir hoparlöre daha dokunun.",
   "multiroom.mainBadge": "Ana",

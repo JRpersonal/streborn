@@ -166,6 +166,7 @@
   "multiroom.stereoDissolveBtn": "Atsaist stēreo pāri",
   "multiroom.stereoSamePicked": "Kreisajam un labajam izvēlieties divus dažādus skaļruņus.",
   "multiroom.stereoFormed": "Stereo pāris izveidots. Dodiet tam dažas sekundes. Ja kāds skaļrunis paliek kluss vai abi atskaņo to pašu kanālu, atsūtiet žurnālus.",
+  "multiroom.offlineNotSelectable": "Bezsaistē: ieslēdziet to, lai pievienotu",
   "multiroom.pickHint": "Izvēlieties galveno skaļruni (zvaigznīte), pēc tam pieskarieties pārējiem, lai pievienotu tos grupai.",
   "multiroom.pickAtLeastOne": "Pieskarieties vismaz vienam citam skaļrunim, lai pievienotu to grupai.",
   "multiroom.mainBadge": "Galvenais",

@@ -170,6 +170,7 @@
   "multiroom.stereoDissolveBtn": "Undo stereo pair",
   "multiroom.stereoSamePicked": "Pick two different speakers for left and right.",
   "multiroom.stereoFormed": "Stereo pair created. Give it a few seconds. If a speaker stays silent or both play the same channel, send logs.",
+  "multiroom.offlineNotSelectable": "Offline: switch it on to add it",
   "multiroom.pickHint": "Pick the main speaker (the star), then tap the others to add them to the group.",
   "multiroom.pickAtLeastOne": "Tap at least one other speaker to add it to the group.",
   "multiroom.mainBadge": "Main",

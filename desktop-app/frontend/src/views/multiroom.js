@@ -16,7 +16,7 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, dropOfflineMembers } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 // A speaker stuck as half of an old stereo pair (see stalestereo.js).
@@ -236,6 +236,10 @@ export function renderMultiroom(fetchLive) {
   for (const id of Object.keys(state.zoneSlaves)) {
     if (strBoxes.some(b => b.deviceID === id && inPair(b))) delete state.zoneSlaves[id];
   }
+  // An offline speaker cannot join a group: a tick made while it was still
+  // answering is dropped the moment the list marks it offline, so it is
+  // neither sent nor named in the "keep permanently" help.
+  dropOfflineMembers(state.zoneSlaves, strBoxes);
   // Without a live group, a star the user did not hand-pick is a default and
   // is re-derived on every repaint, so it settles on the stored permanent
   // group's main speaker once the zone answers arrive instead of keeping the
@@ -401,19 +405,28 @@ export function renderMultiroom(fetchLive) {
   const cards = zoneBoxes.length
     ? zoneBoxes.map(b => {
         const isMaster = b.deviceID === state.zoneMaster;
-        const selected = !isMaster && !!state.zoneSlaves[b.deviceID];
+        // An offline speaker (the list's own offline mark) is shown so the
+        // grid matches the speaker list, but it is not a member or main
+        // candidate: it is marked disabled with the reason in place of the
+        // "make main" control, and a click on it does nothing.
+        const offline = !isMaster && !!b.offline;
+        const selected = !isMaster && !offline && !!state.zoneSlaves[b.deviceID];
         const outdated = deps.boxNeedsUpdate(b);
         const model = (b.model && b.model !== 'SoundTouch')
           ? `<span class="box-model">${escapeHtml(b.model)}</span>` : '';
+        const offlineWhy = offline ? t('multiroom.offlineNotSelectable') : '';
         const foot = isMaster
           ? `<span class="zone-badge">${escapeHtml(t('multiroom.mainBadge'))}</span>`
-          : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
+          : offline
+            ? `<span class="zone-offline-note">${escapeHtml(offlineWhy)}</span>`
+            : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
         // A BUTTON, not a span. It looked exactly like the button beside it and
         // did nothing, and the click fell through to the card, which selected
         // the outdated speaker for the group anyway: the control did the
         // opposite of what it said.
-        const upd = outdated ? `<button class="zone-update-badge" data-update-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.updateFirst'))}</button>` : '';
-        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0">
+        const upd = outdated && !offline ? `<button class="zone-update-badge" data-update-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.updateFirst'))}</button>` : '';
+        const offAttrs = offline ? ` aria-disabled="true" title="${escapeAttr(offlineWhy)}"` : '';
+        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}${offline ? ' offline' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0"${offAttrs}>
             <span class="zone-card-tick">${selected ? '&#10003;' : (isMaster ? '&#9733;' : '')}</span>
             <div class="zone-card-name">${escapeHtml(zoneLabel(b))} ${model}</div>
             <small class="zone-card-host">${escapeHtml(b.host)}</small>
@@ -763,7 +776,7 @@ export function renderMultiroom(fetchLive) {
         return;
       }
       const id = card.dataset.id;
-      if (!enough || id === state.zoneMaster) return;
+      if (!enough || id === state.zoneMaster || card.getAttribute('aria-disabled') === 'true') return;
       state.zoneSlaves[id] = !state.zoneSlaves[id];
       renderMultiroom();
     };
@@ -1200,7 +1213,8 @@ async function doFormZone(strBoxes) {
   const groupable = strBoxes.filter(b => !pairs.has(String(b.deviceID || '').toUpperCase()));
   const master = groupable.find(b => b.deviceID === state.zoneMaster);
   const sel = state.zoneSlaves || {};
-  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
+  // Never an offline member, even from a tick that predates the offline mark.
+  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID] && !b.offline);
   if (!master || (!slaveBoxes.length && groupable.length < 2)) {
     setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`, { transient: true });
     renderMultiroom(false);
