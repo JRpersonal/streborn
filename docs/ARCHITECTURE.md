@@ -900,6 +900,14 @@ Wi-Fi (fatal on the ethernet-only path, which persists no Wi-Fi profile).
 Left at real DNS they simply fail the benign way the post-cloud box already
 tolerates.
 
+The firmware's Alexa client (`/opt/Bose/IoT`) is redirected to loopback:
+`voice.api.bose.io` (Bose's gateway still answers its registration with a
+404) and the AWS IoT broker it connects to about once a minute when it holds
+a certificate from before the shutdown. Alexa on SoundTouch is gone, so this
+only stops the speaker's identity from leaving the house; the client fails
+locally and backs off. NetManager's connectivity probe does not use these
+hosts.
+
 ## Storage layout on the speaker
 
 Four areas, and the difference between them matters: **rootfs is UBIFS
