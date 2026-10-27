@@ -22,6 +22,8 @@ const BR = ROSTER.bedroom;
 const OLD = ROSTER.oldAgent;
 const OFFICE = ROSTER.office;
 const NURSERY = ROSTER.nursery;
+const TL = ROSTER.terraceLeft;
+const TR = ROSTER.terraceRight;
 
 const TAB_NAME = { overview: 'Overview', sound: 'Sound', network: 'Network', keys: 'Keys and alarms', maintenance: 'Maintenance' };
 
@@ -196,6 +198,27 @@ test.describe('UI 2.0 one speaker page', () => {
     await openSpeaker(page, NURSERY.host, NURSERY.friendlyName);
     await expect(page.locator('#ui2SpkPageState .u-pill')).toHaveText('Starting up');
   });
+
+  test('9. both halves of a stereo pair have their page; the restart names the half', async ({ app, mock }) => {
+    const { page } = app;
+    // The pair's card opens its main speaker, which leads to the other half.
+    await openSpeaker(page, TL.host, TL.friendlyName);
+    const other = page.getByRole('button', { name: `Open the other half: ${TR.friendlyName}` });
+    await other.click();
+    await expect(page.locator('#ui2SpkPageName')).toHaveText(TR.friendlyName);
+    await expect(page.locator('#boxNameInput')).toHaveValue(TR.friendlyName);
+    await expect(page.getByRole('button', { name: `Open the other half: ${TL.friendlyName}` })).toBeVisible();
+    await tab(page, 'maintenance').click();
+    await mock.resetCalls();
+    await page.locator('#boxRebootBtn').click();
+    await expect(page.locator('#warnModal .warn-title')).toContainText(`${TR.friendlyName}: `);
+    await page.locator('#warnConfirm').click();
+    await mock.expectCalled('RebootBox', { pred: onHost(TR.host) });
+    expect(await mock.count('RebootBox', (c) => c.args[0] !== TR.host)).toBe(0);
+    // A speaker outside a pair has no such way.
+    await openSpeaker(page, LR.host, LR.friendlyName);
+    await expect(page.locator('#ui2SpkPageHalf')).toBeHidden();
+  });
 });
 
 test.describe('classic Speaker settings with the phase 3 network', () => {
@@ -219,5 +242,25 @@ test.describe('classic Speaker settings with the phase 3 network', () => {
     await expect(page.locator('#warnModal .warn-title')).not.toContainText(`${LR.friendlyName}:`);
     await page.locator('#warnCancel').click();
     expect(await mock.count('RebootBox')).toBe(0);
+  });
+
+  test('10. the preview switched on late sorts the open settings into the tabs', async ({ app }) => {
+    const { page } = app;
+    await page.locator('.tab-btn[data-view="settings"]').click();
+    await expect(page.locator('#view-settings > #settingsBody > details.settings-group').first()).toBeVisible();
+    // The storage that holds the preview switch answers only now (a late
+    // WebView restore): the next list refresh mounts the shell around the
+    // settings that are already on screen.
+    await page.evaluate(() => localStorage.setItem('str.ui2Preview', '1'));
+    // The Music view's refresh (out of sight here) runs that list refresh.
+    await page.locator('#refreshBtn').evaluate((b) => b.click());
+    await expect(page.locator('#ui2SpkTabs')).toBeVisible();
+    await expect(page.locator('#settingsBody details.settings-group')).toHaveCount(0);
+    await expect(page.locator('#ui2SpkPanels .sps-sec')).toHaveCount(5);
+    await expect(page.getByRole('tabpanel', { name: 'Overview' }).locator('#boxNameInput')).toBeVisible();
+    await expect(page.locator('#boxRebootBtn')).toBeHidden();
+    await page.locator('#ui2SpkTab-maintenance').click();
+    await expect(page.getByRole('tabpanel', { name: 'Maintenance' }).locator('#boxRebootBtn')).toBeVisible();
+    await expect(page.locator('#boxNameInput')).toBeHidden();
   });
 });

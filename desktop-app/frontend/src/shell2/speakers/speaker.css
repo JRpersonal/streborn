@@ -26,6 +26,9 @@ html.ui2 #ui2SpkPage .sps-none {
   color: var(--u-muted);
   font-size: 14px;
 }
+/* Half of a stereo pair: the way to the other half's own page. */
+html.ui2 #ui2SpkPage .sps-half { margin: 8px 0 0; }
+html.ui2 #ui2SpkPage .sps-half[hidden] { display: none; }
 /* The state line: the pill in words, the chips, what the speaker plays. */
 html.ui2 #ui2SpkPage .sps-state {
   display: flex;

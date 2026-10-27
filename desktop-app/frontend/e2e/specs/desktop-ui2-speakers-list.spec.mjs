@@ -12,7 +12,7 @@
 
 import { test, expect } from '../fixtures.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
-import { speakersScenario } from '../../testkit/scenario.mjs';
+import { mergeScenario, speakersScenario } from '../../testkit/scenario.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { KILL_ANIM } from '../helpers/a11y.mjs';
 import { minSize, noHorizontalOverflow } from '../helpers/layout.mjs';
@@ -115,9 +115,39 @@ test.describe('UI 2.0 Speakers list', () => {
     // The mock never brings it back: the card says so, in its own place.
     await expect(off.locator('.spl-note-result')).toHaveText('Office is still not reachable. Unplug it for ten seconds, wait two minutes, then search again.');
     await expect(act(page, 'search', R.office.host)).toBeFocused();
+    // Said aloud from a status region that outlives the repaint.
+    await expect(page.locator('#ui2SplLive[role="status"]')).toHaveText('Office is still not reachable. Unplug it for ten seconds, wait two minutes, then search again.');
+    await expect(off.locator('[role="status"]')).toHaveCount(0);
     // An offline speaker still opens its page.
     await off.locator('.spl-open').click();
     await expect(page.locator('#ui2SpkPageName')).toHaveText(R.office.friendlyName);
+  });
+
+  test.describe('a Bose original that is not reachable', () => {
+    test.use({ scenario: mergeScenario(speakersScenario(), { boxPatches: { kitchen: { offline: true } } }) });
+
+    test('5b. offers no setup; its card searches again instead of opening the setup', async ({ app, mock }) => {
+      const { page } = app;
+      await openList(page);
+      const kit = card(page, R.kitchen.host);
+      await expect(kit.locator('.u-pill').first()).toHaveText('Offline');
+      await expect(act(page, 'setup', R.kitchen.host)).toHaveCount(0);
+      const before = await mock.count('DiscoverBoxes');
+      await kit.locator('.spl-open').click();
+      await expect.poll(() => mock.count('DiscoverBoxes')).toBeGreaterThan(before);
+      await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
+      await expect(page.locator('#ui2MainInner > #view-setup')).toBeHidden();
+    });
+  });
+
+  test('5c. each half of a stereo pair keeps its own way to its settings', async ({ app }) => {
+    const { page } = app;
+    await openList(page);
+    const right = act(page, 'half', R.terraceRight.host);
+    await expect(right).toHaveAccessibleName(`Settings of ${R.terraceRight.friendlyName}`);
+    await expect(act(page, 'half', R.terraceLeft.host)).toBeVisible();
+    await right.click();
+    await expect(page.locator('#ui2SpkPageName')).toHaveText(R.terraceRight.friendlyName);
   });
 
   test('6. the footer leads to Groups, every update and Add speaker', async ({ app }) => {

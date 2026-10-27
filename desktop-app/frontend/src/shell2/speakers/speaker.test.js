@@ -5,7 +5,7 @@
 // desktop-ui2-speakers-page.spec.mjs.
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  PAGE_SECTIONS, SPEAKER_SECTIONS, networkSummaryHTML, networkSummaryRows, sectionTab,
+  PAGE_SECTIONS, SPEAKER_SECTIONS, bodyUnsorted, networkSummaryHTML, otherPairHalf, networkSummaryRows, sectionTab,
   speakerConfirmTitle, speakerStateHTML, speakerStateKind,
 } from './speaker.js';
 import { SPEAKER_TABS } from './routes.js';
@@ -109,6 +109,25 @@ describe('the head', () => {
   });
 });
 
+describe('otherPairHalf', () => {
+  const L = { host: '192.0.2.71', deviceID: 'F01', kind: 'str' };
+  const R = { host: '192.0.2.72', deviceID: 'F02', kind: 'str' };
+  const X = { host: '192.0.2.50', deviceID: 'AAA', kind: 'str' };
+  const zl = { F01: { stereo: { masterDeviceID: 'F01', members: [{ deviceID: 'F01', ip: L.host, role: 'LEFT' }, { deviceID: 'F02', ip: R.host, role: 'RIGHT' }] } } };
+
+  it('leads from either half of a live pair to the other', () => {
+    expect(otherPairHalf(L, zl, [L, R, X])).toBe(R);
+    expect(otherPairHalf(R, zl, [L, R, X])).toBe(L);
+  });
+
+  it('is null off a pair, without a known partner, or without a speaker', () => {
+    expect(otherPairHalf(X, zl, [L, R, X])).toBe(null);
+    expect(otherPairHalf(L, zl, [L, X])).toBe(null);
+    expect(otherPairHalf(L, {}, [L, R])).toBe(null);
+    expect(otherPairHalf(null, zl, [L, R])).toBe(null);
+  });
+});
+
 describe('confirmations name the speaker', () => {
   it('in the preview only; the classic layout keeps its titles', () => {
     expect(speakerConfirmTitle('Restart speaker', 'Kitchen')).toBe('Restart speaker');
@@ -136,6 +155,24 @@ describe('the hooks in the classic view', () => {
     const render = srcOf('renderBoxSettings');
     expect(render.indexOf('arrangeSpeakerSections(ctx)')).toBeGreaterThan(render.indexOf('wireAdvancedSections(ctx)'));
     expect(srcOf('revealInSettings')).toContain('revealSpeakerTabOf(el)');
+  });
+
+  it('sort a body rendered before the shell mounted, once it lands in a tab', () => {
+    const body = (groups, sections) => ({
+      querySelector: (sel) => (sel === 'details.settings-group' && groups ? {} : null),
+      querySelectorAll: () => sections.map((inTab) => ({ closest: () => (inTab ? {} : null) })),
+    });
+    expect(bodyUnsorted(body(true, []))).toBe(true);
+    expect(bodyUnsorted(body(false, [true, false]))).toBe(true);
+    expect(bodyUnsorted(body(false, [true, true]))).toBe(false);
+    // The "speaker unreachable" or loading panels hold no section at all.
+    expect(bodyUnsorted(body(false, []))).toBe(false);
+    expect(bodyUnsorted(null)).toBe(false);
+    const place = srcOf('placeSettingsBody');
+    expect(place).toMatch(/bodyUnsorted\(body\)\)\s*\{\s*arrangeSpeakerSections\(lastArrangeCtx\)/);
+    // The ctx is kept before the shell check, so a late mount has it.
+    const arrange = srcOf('arrangeSpeakerSections');
+    expect(arrange.indexOf('lastArrangeCtx = ctx')).toBeLessThan(arrange.indexOf('state.ui2Shell'));
   });
 
   it('do nothing without the shell', async () => {

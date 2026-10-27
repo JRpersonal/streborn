@@ -1,7 +1,7 @@
 // The UI 2.0 Speakers area skeleton (#1287, phase 3): the routes, the list's
 // rows, one speaker's frame with its five tabs, and the rules every part
 // keeps (import without a DOM, CSS only under html.ui2, only known tokens).
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   ROUTE_VIEW, SPEAKER_ROUTES, SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, SPEAKERS_AREA_VIEWS, SUBNAV,
@@ -11,6 +11,7 @@ import { speakerFrameHTML, speakerHead, tabsLabel } from './speaker.js';
 import { mountGroups } from './groups.js';
 import * as router from './index.js';
 import { setLocale } from '../../i18n/index.js';
+import { state } from '../../state.js';
 import { shellMarkup } from '../markup.js';
 import en from '../../i18n/bundles/en.json';
 
@@ -106,6 +107,44 @@ describe('one speaker skeleton', () => {
     }
     expect((html.match(/role="tabpanel"[^>]*hidden/g) || []).length).toBe(4);
     for (const w of ['Overview', 'Sound', 'Network', 'Keys and alarms', 'Maintenance']) expect(html).toContain(`>${w}</button>`);
+  });
+});
+
+describe('the speaker page reconnect loop', () => {
+  const A = { host: '192.0.2.61', deviceID: 'A1', kind: 'str' };
+  const B = { host: '192.0.2.62', deviceID: 'B1', kind: 'str' };
+  const loop = () => ({ attempts: 8, max: 10, timer: setTimeout(() => {}, 60000) });
+  const views = [];
+  const reset = () => {
+    Object.assign(state, { ui2Shell: true, boxes: [A, B], settingsBox: A, view: 'speakers', settingsReconnect: loop() });
+    views.length = 0;
+  };
+  router.initSpeakersArea(null, {
+    switchView: (v) => { views.push(v); state.view = v; },
+    speakerPicked: (b) => { state.settingsBox = b; },
+  });
+  afterEach(() => {
+    if (state.settingsReconnect && state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+    Object.assign(state, { ui2Shell: false, settingsReconnect: null, view: '' });
+  });
+
+  it('starts from zero for the next speaker, whichever view opened it', () => {
+    reset();
+    expect(router.openSpeakers('speaker', { host: B.host })).toBe(true);
+    expect(views).toEqual(['settings']);
+    expect(state.settingsBox).toBe(B);
+    expect(state.settingsReconnect).toBe(null);
+  });
+
+  it('keeps running for the same speaker, and stops once the page is left', () => {
+    reset();
+    state.view = 'settings';
+    router.openSpeakers('speaker', { host: A.host });
+    expect(state.settingsReconnect).not.toBe(null);
+    router.syncSpeakersArea('settings');
+    expect(state.settingsReconnect).not.toBe(null);
+    router.syncSpeakersArea('speakers');
+    expect(state.settingsReconnect).toBe(null);
   });
 });
 

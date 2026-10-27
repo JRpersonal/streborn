@@ -54,7 +54,8 @@ let frameRoot = null;
 // A tab asked for by openSpeakers, applied on the next paint of the page.
 let wantTab = '';
 
-const byId = (id) => (frameRoot && frameRoot.querySelector(`#${id}`)) || document.getElementById(id);
+const byId = (id) => (frameRoot && frameRoot.querySelector(`#${id}`))
+  || (typeof document !== 'undefined' ? document.getElementById(id) : null);
 const label = (b) => (typeof deps.getBoxLabel === 'function' ? deps.getBoxLabel(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
 const findBox = (host) => (state.boxes || []).find((b) => b && b.host === host) || null;
 
@@ -90,12 +91,10 @@ export function openSpeakers(route = 'list', opts = {}) {
       // one you control (speakerPickedInTab).
       if (typeof deps.speakerPicked === 'function') deps.speakerPicked(box);
       else state.settingsBox = box;
-      if (state.view === 'settings' && state.settingsBox !== prev && state.settingsReconnect) {
-        // The same reset the Settings picker's own change does: the previous
-        // speaker's reconnect loop must not run on against the new one.
-        if (state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
-        state.settingsReconnect = null;
-      }
+      // The same reset the Settings picker's own change does: the previous
+      // speaker's reconnect loop must not run on against the new one, from
+      // whichever view the page is opened (the list, Groups, the page itself).
+      if (state.settingsBox !== prev) stopSettingsReconnect();
     }
   } else if (r === 'add' && box) {
     // The setup opens on this speaker (a stock one: the network install).
@@ -108,10 +107,22 @@ export function openSpeakers(route = 'list', opts = {}) {
   return true;
 }
 
+// stopSettingsReconnect ends the settings view's reconnect loop (its count and
+// its pending retry). The next load of the page starts it from zero.
+function stopSettingsReconnect() {
+  if (!state.settingsReconnect) return;
+  if (state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+  state.settingsReconnect = null;
+}
+
 // syncSpeakersArea shows the area head on the four routes and paints the
 // route's part. Called from syncShellNav on every view switch.
 export function syncSpeakersArea(view) {
   if (!state.ui2Shell) return;
+  // Off the speaker page, its reconnect loop has nobody to show its banner
+  // to: stop it rather than keep polling an unreachable speaker from behind
+  // another view. Coming back loads the page again (switchView).
+  if (view !== 'settings') stopSettingsReconnect();
   const area = byId('ui2SpkArea');
   if (!area) return;
   const route = routeOfView(view);
@@ -166,6 +177,8 @@ function paintRoute(route) {
       box: state.settingsBox || null,
       tab: tab || undefined,
       label,
+      // The way to the other half of a stereo pair.
+      open: openSpeakers,
       // The head's state pill reads the sidebar's own checks.
       needsUpdate: deps.boxNeedsUpdate,
       cannotReachInternet: deps.boxCannotReachInternet,

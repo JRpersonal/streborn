@@ -65,6 +65,10 @@
 //                a conflicting tool or cloud address, factory reset, remove
 //                STR), backup, ssh, foreign (other tools' changes), restore.
 //
+// The classic Settings dropdown listed both halves of a stereo pair; the
+// sidebar and the list show a pair as one row that opens its main speaker, so
+// the head of a half's page leads to the other half (otherPairHalf).
+//
 // Classic Speaker settings has no alarm settings; the tab's name follows the
 // mockup and carries the sleep and snooze key actions.
 //
@@ -75,9 +79,9 @@
 // render and hook functions, never at import.
 
 import { t } from '../../i18n/index.js';
-import { escapeHtml } from '../../utils.js';
+import { escapeAttr, escapeHtml } from '../../utils.js';
 import { state } from '../../state.js';
-import { stereoPairsOf } from '../../groups.js';
+import { inStereoPair, pairMemberBoxes, stereoPairsOf } from '../../groups.js';
 import { speakerTileState } from '../../speakertile.js';
 import { chipHTML, speakerChipKinds, speakerPillKind, statusPillHTML } from '../pill.js';
 import { SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, normalizeTab, tabIndexFor } from './routes.js';
@@ -230,12 +234,26 @@ export function speakerFrameHTML(tab = SPEAKER_TABS[0]) {
     + '<h3 class="sps-name" id="ui2SpkPageName"></h3>'
     + '<p class="sps-meta" id="ui2SpkPageMeta"></p>'
     + '<p class="sps-state" id="ui2SpkPageState" hidden></p>'
+    + '<p class="sps-half" id="ui2SpkPageHalf" hidden></p>'
     + `<p class="sps-none" id="ui2SpkPageNone" hidden>${escapeHtml(t('ui2.speakers.none'))}</p>`
     + '</div>'
     + '<div class="sps-head-actions" id="ui2SpkPageActions"></div>'
     + '</div>'
     + `<div class="sps-tabs" role="tablist" id="ui2SpkTabs">${tabs}</div>`
     + `<div class="sps-panels" id="ui2SpkPanels">${panels}</div>`;
+}
+
+// otherPairHalf is the other half of the live stereo pair box belongs to, or
+// null. The sidebar and the Speakers list show a pair as one row that opens
+// its main speaker, so the page itself leads to the other half: the classic
+// Settings dropdown listed both, and each half has its own settings.
+export function otherPairHalf(box, zoneLive, boxes) {
+  if (!box) return null;
+  const pair = stereoPairsOf(zoneLive || {}).find((p) => inStereoPair(box, p));
+  if (!pair) return null;
+  const other = pairMemberBoxes(pair, boxes).map((x) => x.box)
+    .find((b) => b && b.host && b.host !== box.host);
+  return other || null;
 }
 
 // tabsLabel is the tab row's accessible name: it names the speaker.
@@ -252,8 +270,12 @@ let frameRoot = null;
 let panelsEl = null;
 let activeTab = SPEAKER_TABS[0];
 let onTab = null;
+let openFn = null;
 let hasHead = false;
 let lastState = '';
+let lastHalf = '';
+// The ctx of the last settings render (arrangeSpeakerSections).
+let lastArrangeCtx = null;
 
 export function currentSpeakerTab() {
   return activeTab;
@@ -294,6 +316,14 @@ export function placeSettingsBody() {
   const body = document.getElementById('settingsBody');
   const view = document.getElementById('view-settings');
   if (!body || !view) return;
+  // A body rendered before the shell mounted (the preview's storage came
+  // late, classic Speaker settings were open) is still the classic accordion:
+  // sort it now, with the ctx of the render that built it, or every tab
+  // would show all of it until the next load.
+  if (hasHead && lastArrangeCtx && bodyUnsorted(body)) {
+    arrangeSpeakerSections(lastArrangeCtx);
+    return;
+  }
   if (panelsEl && panelsEl.parentNode !== view) view.appendChild(panelsEl);
   const panel = hasHead ? speakerPanel(activeTab) : null;
   const home = panel || view;
@@ -309,10 +339,20 @@ export function placeSettingsBody() {
   }
 }
 
+// bodyUnsorted: the settings body still holds classic markup the tabs have
+// not taken in (an accordion group, or a section outside every tab wrapper).
+export function bodyUnsorted(body) {
+  if (!body || typeof body.querySelector !== 'function') return false;
+  if (body.querySelector('details.settings-group')) return true;
+  return [...body.querySelectorAll('.settings-section')].some((el) => !el.closest('.sps-sec'));
+}
+
 // arrangeSpeakerSections sorts a freshly rendered settings body into the five
 // tabs. Called by renderBoxSettings after its handlers are on; a no-op without
-// the shell. ctx is the render's ctx ({ box, nv, ... }).
+// the shell. ctx is the render's ctx ({ box, nv, ... }), kept also without the
+// shell so a late mount can sort the body it finds (placeSettingsBody).
 export function arrangeSpeakerSections(ctx = {}) {
+  lastArrangeCtx = ctx;
   if (!state.ui2Shell || typeof document === 'undefined') return;
   const body = document.getElementById('settingsBody');
   if (!body) return;
@@ -378,6 +418,13 @@ export function revealSpeakerTabOf(el) {
 }
 
 function wireFrame(root) {
+  const half = root.querySelector('#ui2SpkPageHalf');
+  if (half) {
+    half.addEventListener('click', (e) => {
+      const b = e.target.closest('.sps-half-btn');
+      if (b && typeof openFn === 'function') openFn('speaker', { host: b.dataset.host });
+    });
+  }
   const tabs = root.querySelector('#ui2SpkTabs');
   if (!tabs) return;
   tabs.addEventListener('click', (e) => {
@@ -419,6 +466,7 @@ function tileOf(box, ctx) {
 export function renderSpeakerPage(root, ctx = {}) {
   if (!root) return;
   onTab = ctx.onTab || null;
+  openFn = ctx.open || null;
   if (frameRoot !== root || !root.querySelector('#ui2SpkTabs')) {
     if (panelsEl) {
       // Never take the settings body down with the old frame.
@@ -431,6 +479,7 @@ export function renderSpeakerPage(root, ctx = {}) {
     frameRoot = root;
     panelsEl = root.querySelector('#ui2SpkPanels');
     lastState = '';
+    lastHalf = '';
     wireFrame(root);
   }
   const head = speakerHead(ctx.box, ctx.label);
@@ -449,6 +498,20 @@ export function renderSpeakerPage(root, ctx = {}) {
     const html = head ? speakerStateHTML(box, tile, playing) : '';
     if (html !== lastState) { stateLine.innerHTML = html; lastState = html; }
     stateLine.hidden = !html;
+  }
+  const half = root.querySelector('#ui2SpkPageHalf');
+  if (half) {
+    const other = head ? otherPairHalf(ctx.box, state.zoneLive, state.boxes) : null;
+    const otherName = other ? ((typeof ctx.label === 'function' && ctx.label(other)) || other.friendlyName || other.name || other.host) : '';
+    const sig = other ? `${other.host}|${otherName}` : '';
+    if (sig !== lastHalf) {
+      lastHalf = sig;
+      half.innerHTML = other
+        ? `<button type="button" class="u-btn u-btn--secondary sps-half-btn" data-host="${escapeAttr(other.host)}">`
+          + `${escapeHtml(t('ui2.speakers.speaker.otherHalf', { name: otherName }))}</button>`
+        : '';
+    }
+    half.hidden = !other;
   }
   if (none) none.hidden = !!head;
   if (tabs) {

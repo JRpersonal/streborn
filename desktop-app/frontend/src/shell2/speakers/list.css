@@ -69,6 +69,12 @@ html.ui2 #view-speakers .spl-actions {
   align-items: center;
   padding: 8px 16px;
 }
+html.ui2 #view-speakers .spl-halves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
 html.ui2 #view-speakers .spl-busy {
   color: var(--u-muted);
   font-size: 13px;

@@ -11,7 +11,9 @@
 //   - "Update" on a speaker with an update ready: the classic single-speaker
 //     path (doBoxUpdate), after opening that speaker's page, where the update
 //     paints its progress (the same order as the speaker-update card);
-//   - "Set up STR" on a Bose original;
+//   - "Set up STR" on a Bose original that is reachable;
+//   - on a stereo pair, "Settings of <half>" for each half (the card itself
+//     opens the pair's main speaker);
 //   - "Search again" on an offline speaker, in its own card, which also says
 //     what happened and what to do (errors where they happen).
 //
@@ -197,7 +199,9 @@ export function speakerListModel(boxes, ctx = {}) {
     const controls = !!cur && r.hosts.includes(cur.host);
     const now = r.playing && controls && ctx.nowName ? String(ctx.nowName) : '';
     let action = '';
-    if (stock) action = 'setup';
+    // An offline Bose original cannot be set up until it is found again: its
+    // card offers the search (noteHTML), as the sidebar does for that row.
+    if (stock && !offline) action = 'setup';
     else if (r.kind === 'str' && updateReady && !offline && !startingUp) {
       action = ctx.otaHost && r.hosts.includes(ctx.otaHost) ? 'updating' : 'update';
     }
@@ -222,6 +226,9 @@ export function speakerListModel(boxes, ctx = {}) {
       group,
       now,
       action,
+      // A pair's card opens its main speaker; each half keeps a way to its
+      // own settings (the classic Settings dropdown listed both).
+      halves: pair ? own.map((b) => ({ host: b.host, name: label(b) || b.host })) : [],
       updateLine,
       offlineSince: offline && since.length ? Math.min(...since) : 0,
       search: offline ? (search.get(r.host) || '') : '',
@@ -275,7 +282,7 @@ function noteHTML(row) {
       + ` aria-label="${escapeAttr(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.searchLabel', { name: row.name }))}">`
       + `${escapeHtml(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.search', { name: row.name }))}</button>`
       + (row.search === 'still'
-        ? `<p class="spl-note-result" role="status">${escapeHtml(t('ui2.speakers.list.stillOffline', { name: row.name }))}</p>`
+        ? `<p class="spl-note-result">${escapeHtml(t('ui2.speakers.list.stillOffline', { name: row.name }))}</p>`
         : '')
       + '</div>';
   }
@@ -288,6 +295,15 @@ function noteHTML(row) {
   return '';
 }
 
+// halvesHTML: on a stereo pair's card, one button per half to its own page.
+function halvesHTML(row) {
+  if (!row.halves || !row.halves.length) return '';
+  return '<div class="spl-halves">'
+    + row.halves.map((h) => `<button type="button" class="u-btn u-btn--secondary spl-act" data-act="half" data-host="${escapeAttr(h.host)}">`
+      + `${escapeHtml(t('ui2.speakers.list.halfSettings', { name: h.name }))}</button>`).join('')
+    + '</div>';
+}
+
 function cardHTML(row) {
   const stock = row.kind === 'stock';
   const cls = ['spl-item',
@@ -297,13 +313,17 @@ function cardHTML(row) {
     row.kind === 'pair' ? 'is-pair' : ''].filter(Boolean).join(' ');
   const state = cardState(row);
   // A Bose original opens the setup, and its name says so (the sidebar's
-  // own wording for the same row). Every other card is read from its words.
-  const aria = stock ? ` aria-label="${escapeAttr(t('ui2.side.rowLabelSetUp', { name: row.name, state }))}"` : '';
+  // own wording for the same row). An offline one cannot be set up: its card
+  // searches again instead, the way the sidebar answers a pick of it. Every
+  // other card is read from its words.
+  const setUp = stock && !row.offline;
+  const route = stock ? (row.offline ? 'search' : 'add') : 'speaker';
+  const aria = setUp ? ` aria-label="${escapeAttr(t('ui2.side.rowLabelSetUp', { name: row.name, state }))}"` : '';
   const badges = listPillHTML(row.pill) + row.chips.map(chipHTML).join('');
   return `<li class="${cls}" data-host="${escapeAttr(row.host)}">`
     + '<div class="spl-card">'
     + `<button type="button" class="spl-open u-row${row.current ? ' is-selected' : ''}"`
-    + ` data-host="${escapeAttr(row.host)}" data-route="${stock ? 'add' : 'speaker'}"${row.current ? ' aria-current="true"' : ''}${aria}>`
+    + ` data-host="${escapeAttr(row.host)}" data-route="${route}"${row.current ? ' aria-current="true"' : ''}${aria}>`
     + '<span class="spl-text">'
     + `<span class="spl-name">${escapeHtml(row.name)}</span>`
     + (row.meta ? `<span class="spl-meta">${escapeHtml(row.meta)}</span>` : '')
@@ -315,6 +335,7 @@ function cardHTML(row) {
     + '</button>'
     + (row.action ? `<div class="spl-actions">${actionHTML(row)}</div>` : '')
     + '</div>'
+    + halvesHTML(row)
     + noteHTML(row)
     + '</li>';
 }
@@ -375,6 +396,29 @@ async function searchAgain(root, host) {
   if (box && box.offline) search.set(host, 'still');
   else search.delete(host);
   repaint(root);
+  if (box && box.offline) announce(t('ui2.speakers.list.stillOffline', { name: (lastCtx.label && lastCtx.label(box)) || box.friendlyName || box.name || host }));
+}
+
+// The list's live region: one node outside the repainted markup, created
+// empty when the list first paints, so a screen reader has registered it
+// before the first result is written into it.
+let liveRegion = null;
+function ensureLiveRegion() {
+  if (liveRegion && document.body.contains(liveRegion)) return liveRegion;
+  liveRegion = document.createElement('div');
+  liveRegion.id = 'ui2SplLive';
+  liveRegion.className = 'u-sr-only';
+  liveRegion.setAttribute('role', 'status');
+  liveRegion.setAttribute('aria-live', 'polite');
+  document.body.appendChild(liveRegion);
+  return liveRegion;
+}
+
+function announce(text) {
+  const region = ensureLiveRegion();
+  // The same words twice in a row are a change too: clear first.
+  region.textContent = '';
+  setTimeout(() => { region.textContent = text; }, 50);
 }
 
 function onClick(root, e) {
@@ -388,6 +432,7 @@ function onClick(root, e) {
       case 'groups': open('groups'); break;
       case 'add': open('add'); break;
       case 'setup': open('add', { host }); break;
+      case 'half': open('speaker', { host }); break;
       case 'updateAll':
         if (typeof ctx.updateAll === 'function') ctx.updateAll();
         break;
@@ -406,6 +451,7 @@ function onClick(root, e) {
     return;
   }
   const btn = e.target.closest('.spl-open');
+  if (btn && btn.dataset.route === 'search') { searchAgain(root, btn.dataset.host); return; }
   if (btn && typeof ctx.open === 'function') ctx.open(btn.dataset.route, { host: btn.dataset.host });
 }
 
@@ -416,6 +462,7 @@ function onClick(root, e) {
 export function renderSpeakerList(root, ctx = {}) {
   if (!root) return;
   lastCtx = ctx;
+  ensureLiveRegion();
   if (!wired.has(root)) {
     wired.add(root);
     root.addEventListener('click', (e) => onClick(root, e));

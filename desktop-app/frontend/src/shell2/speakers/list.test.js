@@ -198,6 +198,17 @@ describe('speakerListModel', () => {
   it('marks the speaker you control', () => {
     expect(model.rows.filter((r) => r.current).map((r) => r.host)).toEqual([LR.host]);
   });
+
+  it('keeps a way to each half of a stereo pair', () => {
+    expect(row(TL.host).halves).toEqual([{ host: TL.host, name: 'Terrace left' }, { host: TR.host, name: 'Terrace right' }]);
+    expect(row(LR.host).halves).toEqual([]);
+  });
+
+  it('offers no setup on a Bose original that is not reachable', () => {
+    const gone = speakerListModel([{ ...KIT, offline: true }], ctx());
+    expect(gone.rows[0].pill).toBe('notReachable');
+    expect(gone.rows[0].action).toBe('');
+  });
 });
 
 describe('speakerListHTML', () => {
@@ -208,6 +219,14 @@ describe('speakerListHTML', () => {
     expect(html).toContain(`data-host="${KIT.host}" data-route="add" aria-label="Kitchen, Ready for STR. Opens the setup"`);
     expect((html.match(/aria-current="true"/g) || []).length).toBe(1);
     expect((html.match(/class="spl-open /g) || []).length).toBe(9);
+  });
+
+  it('names each half of a pair on its button, and searches for an offline Bose original', () => {
+    expect(html).toContain(`data-act="half" data-host="${TR.host}">Settings of Terrace right</button>`);
+    const gone = speakerListHTML(speakerListModel([{ ...KIT, offline: true }], ctx()));
+    expect(gone).toContain(`data-host="${KIT.host}" data-route="search"`);
+    expect(gone).not.toContain('Opens the setup');
+    expect(gone).not.toContain('data-act="setup"');
   });
 
   it('names the speaker in every action', () => {
@@ -222,7 +241,7 @@ describe('speakerListHTML', () => {
     const busy = speakerListHTML(speakerListModel(BOXES, ctx({ search: new Map([[OFF.host, 'busy']]) })));
     expect(busy).toContain('aria-disabled="true" aria-busy="true"');
     const still = speakerListHTML(speakerListModel(BOXES, ctx({ search: new Map([[OFF.host, 'still']]) })));
-    expect(still).toContain('role="status">Office is still not reachable.');
+    expect(still).toContain('class="spl-note-result">Office is still not reachable.');
   });
 
   it('explains a speaker starting up', () => {
