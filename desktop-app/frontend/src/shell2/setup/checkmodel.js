@@ -184,10 +184,12 @@ export function rowsHtml(rows) {
 // failed, ok.
 export function stepPhase(view) {
   const v = view || {};
+  // A running update comes first: while it runs the speaker restarts and
+  // may not answer a read, and the wizard must stay held all along.
+  if (!v.confirmed && v.flash && v.flash.phase && v.flash.phase !== 'done' && v.flash.phase !== 'error') return 'updating';
   if (v.loading) return 'checking';
   if (v.kase === 'unreachable') return 'unreachable';
   if (v.confirmed || v.kase === 'current') return 'ok';
   if (v.flash && v.flash.phase === 'error') return 'failed';
-  if (v.flash && v.flash.phase && v.flash.phase !== 'done') return 'updating';
   return 'needs-update';
 }

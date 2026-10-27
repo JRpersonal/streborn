@@ -344,6 +344,7 @@ import {
   initSetupView,
   installRunActive,
 } from './views/setup.js';
+import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
 import { onSpeakerPurge } from './speakerPurge.js';
 // The Music view ("Listen": now playing, presets, volume, sources, search,
 // favourites, Pandora, the group panel and the status poll), extracted from
@@ -714,6 +715,14 @@ watchTabs(document.querySelector('.tabs'));
   menu.querySelectorAll('.locale-dd-item').forEach(item => {
     item.onclick = () => {
       const code = item.dataset.locale;
+      // The UI 2.0 setup wizard with an install or a firmware update running
+      // asks first: the reload would stop it being followed on screen. With
+      // nothing running (and always in the classic layout) nothing changes.
+      if (code && code !== getLocale() && wizardBusy()) {
+        close();
+        confirmLeaveWizard().then((ok) => { if (ok && setLocale(code)) location.reload(); });
+        return;
+      }
       if (code && code !== getLocale() && setLocale(code)) {
         location.reload();
       } else {
@@ -756,16 +765,25 @@ watchTabs(document.querySelector('.tabs'));
     b.onclick = () => {
       const on = b.dataset.ui2 === '1';
       if (on === getUi2Preview()) { syncPressed('data-ui2', b.dataset.ui2); return; }
-      if (!setUi2Preview(on)) {
-        setUi2Preview(!on);
-        layoutWriteFailed = true;
-        syncLayoutAvailable();
+      // Same question as the language switch while the wizard works.
+      if (wizardBusy()) {
+        close();
+        confirmLeaveWizard().then((ok) => { if (ok) switchLayout(b, on); });
         return;
       }
-      syncPressed('data-ui2', b.dataset.ui2);
-      location.reload();
+      switchLayout(b, on);
     };
   });
+  function switchLayout(b, on) {
+    if (!setUi2Preview(on)) {
+      setUi2Preview(!on);
+      layoutWriteFailed = true;
+      syncLayoutAvailable();
+      return;
+    }
+    syncPressed('data-ui2', b.dataset.ui2);
+    location.reload();
+  }
   document.addEventListener('click', (e) => { if (!e.target.closest('.a11y-dd')) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 })();

@@ -203,7 +203,7 @@ test.describe('UI 2.0 setup check: firmware', () => {
     test('7. the stick ladder sits in the step, with no way past it', async ({ app, mock }) => {
       const step = await mount(app.page);
       await expect(step).toHaveAttribute('data-case', 'ladder');
-      await expect(step.locator('.u-check-callout')).toContainText(en('ui2.setup.check.ladderIntro', { name: NAME, version: '7.0.37' }));
+      await expect(step.locator('.u-check-callout')).toContainText(en('ui2.setup.check.guideIntro', { name: NAME, version: '7.0.37', required: '27.0.6' }));
       await expect(step.locator('.u-check-callout')).toContainText(en('ui2.setup.check.noSkip', { name: NAME }));
       const lad = step.locator('.u-check-guide .fw-ladder');
       await expect(lad).toContainText(en('fwLadder.title', { n: 2 }));

@@ -46,7 +46,7 @@ import { BoxAgentVersion } from '../../api.js';
 import { renderSetupTargetPicker, installRunActive } from '../../views/setup.js';
 import { FACTORY, findModel, paintFind, selectedCandidate } from './find.js';
 import { installBusy, installIntroHTML, installNoteHTML, installOutcome, outcomeStepState } from './install.js';
-import { confirmHTML, confirmLoop, newStrHost } from './confirm.js';
+import { confirmHTML, confirmLiveText, confirmLoop, newStrHost, strSnapshot } from './confirm.js';
 import './setup.css';
 
 export const WIZARD_STEPS = Object.freeze(['find', 'check', 'install', 'confirm']);
@@ -210,8 +210,11 @@ const W = {
   // phase: the check's last state (check.js onState); ready: its answer once
   // the install may go ahead, until the user presses Install.
   check: { gen: 0, abort: null, busy: false, phase: '', ready: null },
-  confirm: { gen: 0, status: '', version: null },
-  strAtStart: new Set(),
+  // running: the confirm loop is asking right now (it stops while the user
+  // is elsewhere and starts again when the add route opens).
+  confirm: { gen: 0, status: '', version: null, running: false },
+  // The STR speakers known when the install started (confirm.js strSnapshot).
+  strAtStart: { hosts: new Set(), ids: new Set() },
   sig: {},
   bypass: false,
 };
@@ -219,7 +222,7 @@ const W = {
 const byId = (id) => (W.root && W.root.querySelector(`#${id}`)) || document.getElementById(id);
 const boxFor = (host) => (state.boxes || []).find((b) => b && b.host === host) || null;
 const label = (b) => (typeof W.ctx.label === 'function' ? W.ctx.label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
-const strHosts = () => new Set((state.boxes || []).filter((b) => b && b.host && b.kind !== 'stock').map((b) => b.host));
+const strHosts = () => strSnapshot(state.boxes);
 
 function targetName() {
   const tg = W.target;
@@ -282,7 +285,10 @@ function mount(view) {
     + '<div id="w2InstallIntro"></div><div id="w2InstallBody" class="w2-classic"><div id="w2InstallNote"></div></div>'
     + '</div>'
     + '<div class="w2-panel" id="w2PanelConfirm" data-step="confirm" hidden>'
-    + '<div id="w2ConfirmBody"></div><div id="w2ConfirmDetails" class="w2-classic"></div>'
+    + '<div id="w2ConfirmBody"></div>'
+    // Built once and only its text changes, so the result is read out.
+    + '<p id="w2ConfirmLive" class="u-sr-only" role="status" aria-live="polite"></p>'
+    + '<div id="w2ConfirmDetails" class="w2-classic"></div>'
     + '</div>'
     + '<div class="w2-foot" id="w2Foot"></div>';
   view.insertBefore(root, view.firstChild);
@@ -303,6 +309,11 @@ function mount(view) {
 }
 
 function wire(root) {
+  // The stick's Prepare (the classic #setupGo) starts a stick install: the
+  // speaker it brings in is one that is not on STR at this moment.
+  root.addEventListener('click', (e) => {
+    if (e.target && e.target.closest && e.target.closest('#setupGo')) W.strAtStart = strHosts();
+  }, true);
   root.addEventListener('change', (e) => {
     const r = e.target.closest('.w2-radio');
     if (r && r.checked) choose(r.value);
@@ -342,6 +353,7 @@ function act(a) {
       break;
     case 'confirm': goConfirm(); break;
     case 'recheck': startConfirm(); paint(); break;
+    case 'backInstall': backToInstall(); break;
     case 'retryCheck': goCheck(); break;
     case 'another': reset(); paint(); focusTitle(); break;
     case 'openPage': openPage(); break;
@@ -379,7 +391,13 @@ function clickCard(kind, host) {
 }
 
 function onEntry(host) {
-  if (W.step === 'confirm' && W.confirm.status === 'done') reset();
+  if (W.step === 'confirm') {
+    // A finished or failed Confirm, or another Bose original asked for (the
+    // sidebar), starts over; a Confirm still waiting asks again.
+    const other = !!host && !!W.target && host !== W.target.host;
+    if (W.confirm.status === 'done' || W.confirm.status === 'failed' || other) reset();
+    else if (W.confirm.status === 'waiting' && !W.confirm.running) startConfirm();
+  }
   if (W.step !== 'find') return;
   if (host) {
     const box = boxFor(host);
@@ -419,6 +437,7 @@ function reset() {
   W.installKind = '';
   W.confirm.status = '';
   W.confirm.version = null;
+  W.confirm.running = false;
   W.strAtStart = strHosts();
   if (!installRunActive()) {
     const r = document.getElementById('setupResult');
@@ -541,6 +560,7 @@ function goInstall(route, skipped) {
   if (!installRunActive()) {
     const r = document.getElementById('setupResult');
     if (r) r.innerHTML = '';
+    W.strAtStart = strHosts();
   }
   putResultIn('w2InstallBody');
   applyTarget();
@@ -623,13 +643,38 @@ function goConfirm() {
   focusTitle();
 }
 
+// backToInstall leaves a Confirm that got no answer for the Install step,
+// where the network install and the USB stick section are again in reach.
+function backToInstall() {
+  if (W.step !== 'confirm' || installRunActive()) return;
+  W.confirm.gen++;
+  W.confirm.status = '';
+  W.confirm.version = null;
+  W.confirm.running = false;
+  W.outcome.confirm = '';
+  // A speaker that was only guessed from discovery (a stick install) is
+  // guessed anew after the next install.
+  if (W.target && W.target.kind === 'factory') W.target = { ...W.target, host: '', name: '', model: '' };
+  goInstall(W.route, W.outcome.check === 'skipped');
+  // The stick is the way past an install that got no answer.
+  const details = document.getElementById('setupStickDetails');
+  if (details) details.open = true;
+}
+
+// confirmWatched: the Confirm step is on screen. The loop asks the speaker
+// only then; it is spare hardware, often in the middle of an agent update.
+function confirmWatched() {
+  return W.step === 'confirm' && state.view === 'setup' && !!W.root && W.root.isConnected !== false;
+}
+
 function startConfirm() {
   W.confirm.gen++;
   const gen = W.confirm.gen;
   W.confirm.status = 'waiting';
   W.confirm.version = null;
+  W.confirm.running = true;
   W.outcome.confirm = '';
-  const alive = () => gen === W.confirm.gen && W.step === 'confirm';
+  const alive = () => gen === W.confirm.gen && confirmWatched();
   let asked = 0;
   const probe = async () => {
     let host = W.target && W.target.host;
@@ -649,6 +694,9 @@ function startConfirm() {
     return BoxAgentVersion(host, 0);
   };
   confirmLoop({ probe, alive }).then((r) => {
+    if (gen === W.confirm.gen) W.confirm.running = false;
+    // Stopped because the user left: status stays 'waiting', and opening
+    // Add speaker again asks anew (onEntry).
     if (!alive()) return;
     if (r.ok) {
       W.confirm.status = 'done';
@@ -734,7 +782,11 @@ function paint() {
   // A refusal that is not a failure (setup.css tones the classic red down).
   W.root.classList.toggle('is-calm', W.step === 'install' && ['update-finishing', 'str-running'].includes(W.installKind));
   if (W.step === 'confirm') {
-    setHTML('w2ConfirmBody', confirmHTML({ status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '' }));
+    const cm = { status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '' };
+    setHTML('w2ConfirmBody', confirmHTML(cm));
+    const live = byId('w2ConfirmLive');
+    const say = confirmLiveText(cm);
+    if (live && live.textContent !== say) live.textContent = say;
   }
   paintFoot(name);
 }
@@ -746,9 +798,12 @@ function paintFindStep() {
   paintFind(byId('w2FindList'), model);
 }
 
-function footBtn(act, text, { primary = false, disabled = false, aria = '' } = {}) {
+// footBtn: a footer button. A locked one keeps its focus (aria-disabled) and,
+// with describedBy, carries the hint that says why it is locked.
+function footBtn(act, text, { primary = false, disabled = false, aria = '', describedBy = '' } = {}) {
   return `<button type="button" class="u-btn ${primary ? 'u-btn--primary' : 'u-btn--secondary'} w2-act" data-act="${act}"`
     + (disabled ? ' aria-disabled="true"' : '')
+    + (disabled && describedBy ? ` aria-describedby="${describedBy}"` : '')
     + (aria ? ` aria-label="${escapeAttr(aria)}"` : '')
     + `>${escapeHtml(text)}</button>`;
 }
@@ -766,7 +821,7 @@ function paintFoot(name) {
       const model = findModel(state.boxes || [], { label, selected: tg ? tg.host : '' });
       const c = selectedCandidate(model);
       right = (c ? '' : `<span class="w2-hint" id="w2NextHint">${escapeHtml(t('ui2.setup.wizard.find.chooseHint'))}</span>`)
-        + footBtn('next', c ? t('ui2.setup.wizard.next', { name: c.name }) : t('ui2.setup.wizard.nextPlain'), { primary: true, disabled: !c });
+        + footBtn('next', c ? t('ui2.setup.wizard.next', { name: c.name }) : t('ui2.setup.wizard.nextPlain'), { primary: true, disabled: !c, describedBy: 'w2NextHint' });
     }
   } else if (W.step === 'check' || W.step === 'install') {
     const to = backTarget({ step: W.step, checkBusy: W.check.busy, installKind: W.installKind, checkSkipped: W.outcome.check === 'skipped' });
@@ -777,11 +832,23 @@ function paintFoot(name) {
     if (W.step === 'check' && to) {
       const ready = !!W.check.ready;
       right = (ready ? '' : `<span class="w2-hint" id="w2InstallHint">${escapeHtml(t(lockHintKey(W.check.phase), { name }))}</span>`)
-        + footBtn('install', t('ui2.setup.wizard.check.toInstall', { name }), { primary: true, disabled: !ready });
+        + footBtn('install', t('ui2.setup.wizard.check.toInstall', { name }), { primary: true, disabled: !ready, describedBy: 'w2InstallHint' });
     }
     if (!to) right = `<span class="w2-hint">${escapeHtml(t(W.installKind === 'done' ? 'ui2.setup.wizard.backDone' : 'ui2.setup.wizard.backBusy', { name }))}</span>`;
   }
+  // The footer is drawn anew when it changes; the keyboard stays on the
+  // button it was on (a hint that changed, Install unlocking under it).
+  const foot = byId('w2Foot');
+  const ae = typeof document !== 'undefined' ? document.activeElement : null;
+  const had = foot && ae && foot.contains(ae) && ae.dataset ? ae.dataset.act : '';
   setHTML('w2Foot', (left || right) ? `<div class="w2-foot-left">${left}</div><div class="w2-foot-right">${right}</div>` : '');
+  if (had && foot && !foot.contains(document.activeElement)) {
+    const b = foot.querySelector(`.w2-act[data-act="${had}"]`);
+    if (b) b.focus();
+    // Its button is gone (the stick while an update runs): the title keeps
+    // the keyboard inside the wizard instead of the page.
+    else focusTitle();
+  }
 }
 
 // ---- leaving mid-install ---------------------------------------------------
@@ -797,15 +864,29 @@ function leaveGuard(e) {
   if (!busyNow()) return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  const name = targetName() || t('ui2.setup.wizard.newSpeaker');
-  const key = W.step === 'check' ? 'ui2.setup.wizard.leave.bodyCheck' : 'ui2.setup.wizard.leave.body';
-  confirmWarn(
-    t('ui2.setup.wizard.leave.title'),
-    `<p>${escapeHtml(t(key, { name }))}</p>`,
-    { confirmLabel: t('ui2.setup.wizard.leave.confirm'), confirmClass: 'btn btn-secondary' },
-  ).then((ok) => {
+  askLeave().then((ok) => {
     if (!ok) return;
     W.bypass = true;
     try { el.click(); } finally { W.bypass = false; }
   });
+}
+
+function askLeave() {
+  const name = targetName() || t('ui2.setup.wizard.newSpeaker');
+  const key = W.step === 'check' ? 'ui2.setup.wizard.leave.bodyCheck' : 'ui2.setup.wizard.leave.body';
+  return confirmWarn(
+    t('ui2.setup.wizard.leave.title'),
+    `<p>${escapeHtml(t(key, { name }))}</p>`,
+    { confirmLabel: t('ui2.setup.wizard.leave.confirm'), confirmClass: 'btn btn-secondary' },
+  ).then((ok) => !!ok, () => false);
+}
+
+// confirmLeaveWizard is for a change that reloads the window (the language
+// and layout switches in main.js): while an install or a firmware update
+// runs in the wizard it asks first, the same question as leaving it.
+// Resolves true to go ahead. Outside the preview, or with nothing running,
+// it is true at once and asks nothing.
+export function confirmLeaveWizard() {
+  if (!wizardBusy()) return Promise.resolve(true);
+  return askLeave();
 }

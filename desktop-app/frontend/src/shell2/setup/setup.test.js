@@ -7,7 +7,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { setLocale } from '../../i18n/index.js';
 import { FACTORY, findHTML, findModel, selectedCandidate } from './find.js';
 import { installBusy, installIntroHTML, installNoteHTML, installOutcome, outcomeStepState } from './install.js';
-import { confirmHTML, confirmLoop, newStrHost } from './confirm.js';
+import { confirmHTML, confirmLiveText, confirmLoop, newStrHost, strSnapshot } from './confirm.js';
+import { EXTERNAL_FLASH_QUIET_MS, clearFlashMark, flashMark, markFlash } from './check.js';
 import {
   SETUP_PLACES, STATE_LABEL_KEYS, STEP_LABEL_KEYS, WIZARD_STEPS,
   adaptCheckStep, backTarget, checkAborted, checkRoute, checkRunner, checkSkipped,
@@ -190,6 +191,29 @@ describe('Confirm', () => {
     expect(newStrHost([STR(51, 'Kitchen', { offline: true })], before)).toBe('');
   });
 
+  it('does not take a known STR speaker under a new address for the new one', () => {
+    const snap = strSnapshot([STR(10, 'Living room', { deviceID: 'aabbccddeeff' }), STOCK(51, 'Kitchen', { deviceID: '112233445566' })]);
+    expect([...snap.hosts]).toEqual(['192.0.2.10']);
+    // DHCP gave Living room a new address: its device ID still says it is known.
+    expect(newStrHost([STR(12, 'Living room', { deviceID: 'AABBCCDDEEFF' })], snap)).toBe('');
+    // Kitchen, a Bose original in the snapshot, now runs STR: that is the one.
+    expect(newStrHost([STR(12, 'Living room', { deviceID: 'AABBCCDDEEFF' }), STR(51, 'Kitchen', { deviceID: '112233445566' })], snap)).toBe('192.0.2.51');
+  });
+
+  it('says the result through a live text, and offers a way out when no answer came', () => {
+    expect(confirmLiveText({ status: 'waiting', name: 'Kitchen', host: '192.0.2.51' })).toBe('Waiting for Kitchen to answer with STR');
+    expect(confirmLiveText({ status: 'done', name: 'Kitchen', version: { version: 'v1.0.19' } })).toContain('Kitchen answered with STR v1.0.19.');
+    expect(confirmLiveText({ status: 'failed', name: 'Kitchen' })).toBe('');
+    // The visual blocks no longer carry their own status role (or aria-busy):
+    // the persistent live region in the wizard speaks for them.
+    expect(confirmHTML({ status: 'waiting', name: 'Kitchen', host: '192.0.2.51' })).not.toMatch(/role=|aria-busy/);
+    expect(confirmHTML({ status: 'done', name: 'Kitchen', version: { version: 'v1' } })).not.toContain('role=');
+    const failed = confirmHTML({ status: 'failed', name: 'Kitchen' });
+    expect(failed).toContain('data-act="backInstall"');
+    expect(failed).toContain('aria-label="Go back to installing STR on Kitchen"');
+    expect(failed).toContain('data-act="another"');
+  });
+
   it('names the speaker in every state', () => {
     expect(confirmHTML({ status: 'waiting', name: 'Kitchen', host: '192.0.2.51' })).toContain('Waiting for Kitchen to answer with STR');
     expect(confirmHTML({ status: 'waiting', name: '', host: '' })).toContain('Looking for your new speaker on the network');
@@ -339,5 +363,43 @@ describe('Wizard strings and styles', () => {
   it('reads only tokens the shell defines', () => {
     const defined = new Set([...shellCss.matchAll(/(--u-[\w-]+)\s*:/g)].map((m) => m[1]));
     for (const m of css.matchAll(/var\((--[\w-]+)/g)) expect(defined.has(m[1]), m[1]).toBe(true);
+  });
+});
+
+describe('A firmware update outlives a reload', () => {
+  it('keeps the running update per speaker in sessionStorage until it ends or goes quiet', () => {
+    const store = new Map();
+    const prev = globalThis.sessionStorage;
+    globalThis.sessionStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    };
+    try {
+      expect(flashMark('192.0.2.51')).toBeNull();
+      markFlash('192.0.2.51', 'upload', 1000);
+      expect(flashMark('192.0.2.51', 2000)).toEqual({ phase: 'upload' });
+      expect(flashMark('192.0.2.52', 2000)).toBeNull();
+      // Quiet for longer than an install and restart take: forgotten.
+      expect(flashMark('192.0.2.51', 1000 + EXTERNAL_FLASH_QUIET_MS + 1)).toBeNull();
+      expect(store.size).toBe(0);
+      markFlash('192.0.2.51', 'install', 1000);
+      clearFlashMark('192.0.2.51');
+      expect(flashMark('192.0.2.51', 1001)).toBeNull();
+    } finally {
+      globalThis.sessionStorage = prev;
+    }
+  });
+
+  it('works without storage', () => {
+    const prev = globalThis.sessionStorage;
+    const deny = () => { throw new Error('denied'); };
+    globalThis.sessionStorage = { getItem: deny, setItem: deny, removeItem: deny };
+    try {
+      expect(() => markFlash('192.0.2.51', 'upload')).not.toThrow();
+      expect(flashMark('192.0.2.51')).toBeNull();
+    } finally {
+      globalThis.sessionStorage = prev;
+    }
   });
 });

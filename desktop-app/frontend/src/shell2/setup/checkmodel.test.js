@@ -169,6 +169,14 @@ describe('stepPhase', () => {
     expect(stepPhase({ kase: 'routeA', flash: { phase: 'error' } })).toBe('failed');
     expect(stepPhase({ kase: 'ladder' })).toBe('needs-update');
   });
+
+  it('holds the wizard for a running update even while the speaker does not answer', () => {
+    // After a reload mid-update the first read may find the speaker restarting.
+    expect(stepPhase({ loading: true, flash: { phase: 'install' } })).toBe('updating');
+    expect(stepPhase({ kase: 'unreachable', flash: { phase: 'upload' } })).toBe('updating');
+    expect(stepPhase({ kase: 'unreachable', flash: { phase: 'done' } })).toBe('unreachable');
+    expect(stepPhase({ kase: 'routeA', confirmed: true, flash: { phase: 'install' } })).toBe('ok');
+  });
 });
 
 describe('check.js', () => {
