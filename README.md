@@ -223,7 +223,7 @@ Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Sec
 
 ## Privacy
 
-STR has no accounts, no ads, and no third-party trackers in the app. The speaker never contacts the Bose cloud: STR answers it locally; with Spotify Connect enabled it talks to Spotify's servers. The desktop app talks to st-reborn.de (optional version check, disablable with `STR_NO_UPDATE_CHECK=1`; sends only the app version, build, OS, architecture, and language), to st-reborn.de again for the list in the Wishes tab (a plain download, translations included, nothing is sent), to radio-browser.info for the station search, and to public favicon endpoints for station logos. The website uses cookieless GoatCounter analytics. Full breakdown: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
+STR has no accounts, no ads, and no third-party trackers in the app. The speaker never contacts the Bose cloud: STR answers it locally; it fetches station logos for its display and the phone remote through its own `/art` proxy (the station's logo host and `icons.duckduckgo.com`, sending only the station's public domain, never a LAN host), and with Spotify Connect enabled it talks to Spotify's servers. The desktop app talks to st-reborn.de (optional version check, disablable with `STR_NO_UPDATE_CHECK=1`; sends only the app version, build, OS, architecture, and language), to st-reborn.de again for the list in the Wishes tab (a plain download, translations included, nothing is sent), to radio-browser.info for the station search, and to public favicon endpoints for station logos. The website uses cookieless GoatCounter analytics. Full breakdown: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
 
 ## Contributing
 

@@ -264,6 +264,14 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 			})
 		}
 	}
+	// A radio station gets the desktop app's whole logo chain, whichever
+	// client saved it: the phone page sends the one radio-browser favicon it
+	// has, often http or empty, and its keys came out without the logo the
+	// app's save of the same station shows (#1467). A media-server file
+	// (Source set) keeps the cover it came with.
+	if p.Type == "radio" && p.Source == "" && p.StreamURL != "" {
+		p.Art = completeStationArt(p.Art, p.Homepage, p.StreamURL)
+	}
 	// Stamp the account a Spotify preset belongs to (go-librespot's current
 	// login) so a later recall can switch back to it on a multi-account box
 	// (#27). Two cases: (a) no account yet, fill it from the current login;

@@ -70,8 +70,10 @@ func TestPresetSaveHealsBoxLoopbackArt(t *testing.T) {
 	if !ok {
 		t.Fatal("preset was not stored")
 	}
-	if p.Art != "https://cdn-profiles.tunein.com/s74982/images/logod.png" {
-		t.Errorf("stored art = %q, want the unwrapped origin URL", p.Art)
+	// The unwrapped origin leads; the station's host icons follow it
+	// (stationart.go, #1467).
+	if first, _, _ := strings.Cut(p.Art, "|"); first != "https://cdn-profiles.tunein.com/s74982/images/logod.png" {
+		t.Errorf("stored art = %q, want the unwrapped origin URL first", p.Art)
 	}
 	if strings.Contains(p.Art, "/art?u=") || strings.Contains(p.Art, "127.0.0.1") {
 		t.Errorf("stored art still points at the agent: %q", p.Art)

@@ -6,7 +6,7 @@ import { applyFavRemovals, parseFavRemovals } from '../../favremovals.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
-import { renderSearchResults, syncSearchModeButtons } from './search.js';
+import { listButtonClick, renderSearchResults, syncSearchModeButtons } from './search.js';
 
 // Radio favorites: a per-machine list of starred stations kept in
 // localStorage (no agent change, no preset-schema change). It stores only
@@ -199,6 +199,6 @@ function loadFavorites() {
 // mountFavorites attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountFavorites() {
-  $('favModeBtn').onclick = () => loadFavorites();
+  $('favModeBtn').onclick = listButtonClick('favModeBtn', () => loadFavorites());
   updateFavModeBtn();
 }
