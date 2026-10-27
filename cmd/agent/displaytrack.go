@@ -65,6 +65,9 @@ func (h *presetWsHandler) OnVolumeLevel(_ context.Context, level int) {
 	if h.spotify != nil {
 		h.spotify.NoteBoxVolume(level)
 	}
+	if h.onBoxVolume != nil {
+		h.onBoxVolume(level)
+	}
 }
 
 // OnPlayingChanged is the boxws hook for the speaker's play status: the

@@ -13,6 +13,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
@@ -526,7 +527,6 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	if len(items) == 0 {
 		return errors.New("empty queue")
 	}
-	s.ensureBoxReady(ctx)
 	s.queue.load(items, start, shuffle, rep)
 	s.queueMu.Lock()
 	s.queueFolder = card
@@ -536,6 +536,16 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	it, ok := s.queue.current()
 	if !ok {
 		return errors.New("empty queue")
+	}
+	// A sleeping speaker is kept silent through its own resume until the
+	// first track has taken over (#1557, newplaywake.go). A preset recall that
+	// woke the speaker and continues into this folder has its gate still
+	// closed; the first track is what it waits for now.
+	delivered := false
+	playSent := s.ensureBoxReadyForNewPlayRead(ctx, streamproxy.NewPlayTarget{URLs: []string{it.URL}})
+	defer func() { playSent(delivered) }()
+	if g := s.newPlayGate(); g != nil {
+		g.AddNewPlayTarget(it.URL)
 	}
 	// A queue start is an explicit user play: clear the stop latches and anchor
 	// the standby-flip discriminator (#419).
@@ -565,6 +575,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
 	}
+	delivered = true
 	s.setQueueTiming(it.Duration)
 	s.ensureWatcher()
 	s.prearmNextLength()
