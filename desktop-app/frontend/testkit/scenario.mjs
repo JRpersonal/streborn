@@ -14,7 +14,7 @@
 //                    a host not listed falls through to the model).
 // Route override (scenario.routes['/api/path']): { status, body } | { abort: true }.
 
-import { ROSTER } from './demo-data.mjs';
+import { ROSTER, SPEAKERS3 } from './demo-data.mjs';
 
 export function defaultScenario() {
   return {
@@ -38,6 +38,19 @@ export function defaultScenario() {
     // Strict: every binding call with neither an override nor a model is
     // recorded in __strMock.unmocked (the drift guard reads it).
     strict: false,
+  };
+}
+
+// speakersScenario is the UI 2.0 phase 3 network (demo-data.mjs SPEAKERS3):
+// ten speakers, one in every state the Speakers area shows. A patch like any
+// other: test.use({ ui2: true, scenario: speakersScenario() }), or merge more
+// on top with mergeScenario(speakersScenario(), { ... }).
+export function speakersScenario() {
+  return {
+    boxes: [...SPEAKERS3.boxes],
+    current: 'livingRoom',
+    playing: { ...SPEAKERS3.playing },
+    zones: clone(SPEAKERS3.zones),
   };
 }
 

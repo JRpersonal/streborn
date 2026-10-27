@@ -224,6 +224,63 @@ export const ROSTER = {
   kitchen: STOCK_BOX,
   // An old agent: boxNeedsUpdate (main.js) is true for it.
   oldAgent: strBox(54, 'D7E8F9A0B1C2', 'Hallway', 'SoundTouch 20', { version: 'v1.0.10', build: '2026-09-30' }),
+  // UI 2.0 phase 3 (the Speakers area, SPEAKERS3 below): two halves of a
+  // stereo pair, the main speaker and the member of a fixed group, and a
+  // speaker starting up (its Bose side answers, the agent not yet: the
+  // transient strSilent marker of discovery, boxstate.js answersWithoutSTR).
+  terraceLeft: strBox(71, 'E1F2A3B4C5D6', 'Terrace left', 'SoundTouch 10'),
+  terraceRight: strBox(72, 'E2F3A4B5C6D7', 'Terrace right', 'SoundTouch 10'),
+  dining: strBox(73, 'E3F4A5B6C7D8', 'Dining room', 'SoundTouch 20'),
+  hall: strBox(74, 'E4F5A6B7C8D9', 'Hall', 'SoundTouch 10'),
+  nursery: strBox(75, 'E5F6A7B8C9DA', 'Nursery', 'SoundTouch Portable', { strSilent: true }),
+};
+
+// ---- UI 2.0 phase 3: the Speakers area (#1287) ------------------------------
+// Ten speakers, one for every state the Speakers list and one speaker's page
+// have to show (scenario.mjs speakersScenario() turns this into a scenario):
+//
+//   state          roster key                 why
+//   playing        livingRoom                 PLAY_STATE, the speaker you control
+//   standby        bedroom                    STANDBY, volume 18
+//   update ready   oldAgent (Hallway)         agent v1.0.10, the app ships v1.0.19
+//   starting up    nursery                    strSilent: Bose answers, agent not yet
+//   not reachable  office                     offline for ten minutes
+//   stereo pair    terraceLeft + terraceRight one pair, "Terrace"
+//   fixed group    dining (main) + hall       a permanent group, stored, not live
+//   Bose original  kitchen                    kind stock, on :8090
+const SPK3_PAIR = {
+  stereo: {
+    id: 'pair-terrace',
+    masterDeviceID: ROSTER.terraceLeft.deviceID,
+    name: 'Terrace',
+    members: [
+      { deviceID: ROSTER.terraceLeft.deviceID, ip: ROSTER.terraceLeft.host, role: 'LEFT' },
+      { deviceID: ROSTER.terraceRight.deviceID, ip: ROSTER.terraceRight.host, role: 'RIGHT' },
+    ],
+  },
+};
+// A fixed group as the main speaker reports it while it is not playing: no
+// live members, its followers remembered (groups.js storedPermanentGroupsOf).
+const SPK3_FIXED_GROUP = {
+  members: [],
+  permanent: true,
+  remembered: [{ deviceID: ROSTER.hall.deviceID, ip: ROSTER.hall.host, name: ROSTER.hall.friendlyName }],
+};
+export const SPEAKERS3 = {
+  boxes: ['livingRoom', 'bedroom', 'oldAgent', 'nursery', 'office', 'terraceLeft', 'terraceRight', 'dining', 'hall', 'kitchen'],
+  playing: { livingRoom: 'PLAY_STATE', bedroom: 'STANDBY' },
+  zones: { terraceLeft: SPK3_PAIR, terraceRight: SPK3_PAIR, dining: SPK3_FIXED_GROUP },
+  // Which roster key stands for which state, for specs that look one up.
+  states: {
+    playing: 'livingRoom',
+    standby: 'bedroom',
+    updateReady: 'oldAgent',
+    startingUp: 'nursery',
+    offline: 'office',
+    stereoPair: ['terraceLeft', 'terraceRight'],
+    fixedGroup: ['dining', 'hall'],
+    boseOriginal: 'kitchen',
+  },
 };
 
 // ---- the UI 2.0 network (screenshots and ui2-check) ------------------------

@@ -108,6 +108,15 @@ The roster: `livingRoom` (current, playing, `demobox.local:8888`), `bedroom`
 (192.0.2.51:8090, Bose original) and `oldAgent` (Hallway, 192.0.2.54, agent
 v1.0.10, so it needs an update). Default boxes: the first four.
 
+The UI 2.0 Speakers area (phase 3) has a network of its own:
+`scenario: speakersScenario()` (`testkit/scenario.mjs`) gives ten speakers,
+one in every state the area shows: playing (`livingRoom`), standby
+(`bedroom`), update ready (`oldAgent`), starting up (`nursery`, `strSilent`),
+not reachable (`office`), a stereo pair (`terraceLeft` + `terraceRight`), a
+stored fixed group (`dining` leads, `hall` follows) and a Bose original
+(`kitchen`). `SPEAKERS3.states` in `testkit/demo-data.mjs` names the roster
+key of each state.
+
 A binding the model does not answer is overridden in the spec:
 `scenario: { bindings: { Name: spec } }`, where spec is `{ value }`,
 `{ error }`, `{ never: true }` or `{ sequence: [spec, ...] }`, optionally with
