@@ -126,6 +126,12 @@ type BoxInfo struct {
 	// apart from a push that landed and did not boot; either one alone gets one
 	// of those two cases wrong.
 	AgentRunningSha256 string `json:"agentRunningSha256,omitempty"`
+	// PresetRows is "2" when the speaker's agent keeps a second row of six
+	// keys, played by pressing a hardware key twice quickly (#1110); empty for
+	// an agent that predates it. The app shows the Once | Twice switch only
+	// where this says so. It belongs to the agent build, so it travels with
+	// Version through both merges.
+	PresetRows string `json:"presetRows,omitempty"`
 	// Offline marks a speaker that was seen earlier but has missed every probe
 	// for longer than its reboot grace window (e.g. it is rebooting for a long
 	// time, powered off, or off the LAN). The tile stays listed greyed out

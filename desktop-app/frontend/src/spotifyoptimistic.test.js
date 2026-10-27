@@ -13,7 +13,8 @@ describe('optimisticSpotifyLocation', () => {
   });
 
   it('is exactly what the speaker reports, so the optimistic window releases early', () => {
-    for (let n = 1; n <= 6; n++) {
+    // 7 to 12 are the keys pressed twice on a speaker with the second row (#1110).
+    for (let n = 1; n <= 12; n++) {
       expect(optimisticSpotifyLocation(LOOP, n)).toBe(`${LOOP}/spotify/stream-${n}.ogg`);
     }
   });
@@ -21,6 +22,6 @@ describe('optimisticSpotifyLocation', () => {
   it('falls back to the generic stream for a slot that is not a key', () => {
     expect(optimisticSpotifyLocation(LOOP, 0)).toBe(`${LOOP}/spotify/stream.ogg`);
     expect(optimisticSpotifyLocation(LOOP, undefined)).toBe(`${LOOP}/spotify/stream.ogg`);
-    expect(optimisticSpotifyLocation(LOOP, 7)).toBe(`${LOOP}/spotify/stream.ogg`);
+    expect(optimisticSpotifyLocation(LOOP, 13)).toBe(`${LOOP}/spotify/stream.ogg`);
   });
 });

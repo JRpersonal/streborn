@@ -9,6 +9,8 @@
 // the user pressed. A move is an explicit act, which is why it is allowed where
 // the silent delete is not.
 
+import { keyNum } from './presetrows.js';
+
 // parsePresetConflict pulls the other key and the name of what sits on it out
 // of the agent's 409, as it reaches the frontend: a rejected binding whose
 // message carries the JSON body. Returns null for every other failure, so
@@ -31,8 +33,8 @@ export function parsePresetConflict(err) {
 // so the plain refusal is unchanged.
 export function presetConflictNote(conflict, t) {
   return conflict.name
-    ? t('preset.alreadyOnKeyNamed', { name: conflict.name, n: conflict.slot })
-    : t('preset.alreadyOnKey', { n: conflict.slot });
+    ? t('preset.alreadyOnKeyNamed', { name: conflict.name, n: keyNum(conflict.slot, t) })
+    : t('preset.alreadyOnKey', { n: keyNum(conflict.slot, t) });
 }
 
 // offerPresetMove shows the refusal WITH the way out and performs the move when
@@ -64,7 +66,7 @@ export async function offerPresetMove({ conflict, toSlot, t, confirm, move, toas
     // which of two legitimate things the user meant.
     icon: null,
     calm: true,
-    confirmLabel: t('preset.moveButton', { n: toSlot }),
+    confirmLabel: t('preset.moveButton', { n: keyNum(toSlot, t) }),
     confirmClass: 'btn btn-primary',
   });
   if (!ok) {
@@ -79,7 +81,7 @@ export async function offerPresetMove({ conflict, toSlot, t, confirm, move, toas
     fail(t('preset.moveFailed', { err: String((e && e.message) || e || '') }));
     return false;
   }
-  toast(t('preset.movedToKey', { from: conflict.slot, n: toSlot }));
+  toast(t('preset.movedToKey', { from: keyNum(conflict.slot, t), n: keyNum(toSlot, t) }));
   if (done) await done();
   return true;
 }
