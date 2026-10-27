@@ -498,6 +498,15 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
    outranks the browser's own rule for the hidden attribute, and this row is
    hidden by exactly that attribute whenever the speaker is playing alone; the
    [hidden] line keeps that working now that a display is declared. */
+/* The alarm's seven weekdays side by side. A .row is a grid with no columns
+   of its own, so they used to stack one per line, seven buttons tall, since
+   the alarm clock arrived. Seven equal columns of at least 40px; where the
+   editor is narrower than that (a 320px phone, extra-large text, which zooms
+   the page) they wrap to two rows of four and three. */
+#alarmList { container-type:inline-size; }
+#alarmDays { grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+#alarmDays .btn { min-width:0; min-height:44px; padding:4px 2px; font-size:13px; overflow-wrap:anywhere; }
+@container (max-width:303px) { #alarmDays { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 #sleepGroupWrap { display:flex; align-items:center; gap:8px; margin-top:10px; min-height:44px; }
 #sleepGroupWrap[hidden] { display:none; }
 </style>
@@ -4733,7 +4742,7 @@ function alarmEditorHtml(a) {
   }).join('');
   return '<div style="margin-top:8px">' +
     '<input type="time" id="alarmTime" value="' + escapeHtml(alarmHHMM(a)) + '" style="width:100%;font-size:1.4em;padding:8px">' +
-    '<div class="row" style="margin-top:10px;gap:4px" id="alarmDays">' + days + '</div>' +
+    '<div class="row" style="margin-top:10px" id="alarmDays">' + days + '</div>' +
     (presetRowsOK
       ? '<div class="pickhead" style="margin-top:6px"><div class="msg">' + escapeHtml(T.alarmPreset) + ': ' +
           escapeHtml(alarmPresetName(a.slot)) + '</div><div class="rowsw" id="alarmRowSw"></div></div>'
