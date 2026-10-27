@@ -1,6 +1,7 @@
 // The classic Multi-room view (#1554, open decision 5): the fixed-group editor
-// never offers an offline speaker as a member, and the group's lead speaker is
-// called the main speaker everywhere.
+// never offers an offline speaker as a member, the stereo editor says it
+// changes a pair that already exists instead of creating one, and the group's
+// lead speaker is called the main speaker everywhere.
 //
 //   E2E_PORT=4182 npx playwright test specs/desktop-multiroom.spec.mjs
 
@@ -11,6 +12,24 @@ import { ROSTER } from '../../testkit/demo-data.mjs';
 const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
 const OFFICE = ROSTER.office;
+
+// Two more SoundTouch 10s that are a live stereo pair (the shape of
+// demo-data.mjs UI2_PAIR). Bedroom is a SoundTouch 10 too, so it is the
+// third pair candidate.
+const ST10 = (n, id, name) => ({ ...BR, name, friendlyName: name, host: `192.0.2.${n}`, deviceID: id, volume: undefined });
+const PAIR_L = ST10(61, 'C3D4E5F6A1B2', 'Terrace left');
+const PAIR_R = ST10(62, 'D4E5F6A1B2C3', 'Terrace right');
+const PAIR = {
+  stereo: {
+    id: 'pair-demo',
+    masterDeviceID: PAIR_L.deviceID,
+    name: 'Terrace',
+    members: [
+      { deviceID: PAIR_L.deviceID, ip: PAIR_L.host, role: 'LEFT' },
+      { deviceID: PAIR_R.deviceID, ip: PAIR_R.host, role: 'RIGHT' },
+    ],
+  },
+};
 
 test.use({ ui2: false });
 
@@ -65,5 +84,34 @@ test.describe('fixed-group editor', () => {
     await expect(view.locator('.zone-name-note')).toHaveText(en('multiroom.groupNameNote'));
     await expect(view.locator('.zone-name-note')).toContainText('main speaker');
     await expect(view).not.toContainText(/master/i);
+  });
+});
+
+test.describe('stereo editor', () => {
+  test.use({
+    scenario: {
+      boxes: ['livingRoom', 'bedroom', 'office', 'kitchen', PAIR_L, PAIR_R],
+      zones: { [PAIR_L.host]: PAIR, [PAIR_R.host]: PAIR },
+    },
+  });
+
+  test('an existing pair is changed, not created, and a new pick is created', async ({ app, mock }) => {
+    const { page } = app;
+    await openMultiroom(page);
+    const btn = page.locator('#stereoCreate');
+    // The live pair fills the dropdowns once the zone answers are in.
+    await expect(page.locator('#stereoLeft')).toHaveValue(PAIR_L.deviceID);
+    await expect(page.locator('#stereoRight')).toHaveValue(PAIR_R.deviceID);
+    await expect(btn).toHaveText(en('multiroom.stereoUpdateBtn'));
+
+    await mock.resetCalls();
+    await btn.click();
+    await mock.expectCalled('FormZone', { times: 1 });
+    await expect(page.locator('#stereoResult')).toContainText(en('multiroom.stereoUpdated'));
+    await expect(page.locator('#stereoResult')).not.toContainText(en('multiroom.stereoFormed'));
+
+    // Bedroom on the right is not a pair yet: back to "create".
+    await page.locator('#stereoRight').selectOption(BR.deviceID);
+    await expect(page.locator('#stereoCreate')).toHaveText(en('multiroom.stereoCreateBtn'));
   });
 });

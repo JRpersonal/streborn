@@ -421,6 +421,16 @@ export function stereoPairKey(pair) {
   return ids.length >= 2 ? ids.join('+') : '';
 }
 
+// livePairFor returns the live pair made of exactly these two speakers (either
+// order), or null when the two are not paired right now. The Multi-room stereo
+// editor uses it to tell "change this existing pair" from "create a new one",
+// both for the button and for the message after it.
+export function livePairFor(livePairs, leftId, rightId) {
+  const want = stereoPairKey({ members: [{ deviceID: leftId }, { deviceID: rightId }] });
+  if (!want) return null;
+  return (livePairs || []).find((p) => stereoPairKey(p) === want) || null;
+}
+
 // dropOfflineMembers removes every speaker the list marks offline from the
 // group editor's member ticks (a { deviceID: true } map, edited in place). An
 // offline speaker cannot join a group, so a tick made while it still answered

@@ -170,6 +170,8 @@
   "multiroom.stereoDissolveBtn": "Stereopaar auflösen",
   "multiroom.stereoSamePicked": "Wähle zwei verschiedene Lautsprecher für links und rechts.",
   "multiroom.stereoFormed": "Stereo-Paar erstellt. Gib ihm ein paar Sekunden. Falls ein Lautsprecher stumm bleibt oder beide denselben Kanal spielen, bitte Logs senden.",
+  "multiroom.stereoUpdateBtn": "Stereo-Paar ändern",
+  "multiroom.stereoUpdated": "Stereo-Paar geändert. Gib ihm ein paar Sekunden. Falls ein Lautsprecher stumm bleibt oder beide denselben Kanal spielen, bitte Logs senden.",
   "multiroom.offlineNotSelectable": "Offline: schalte ihn ein, um ihn hinzuzufügen",
   "multiroom.pickHint": "Wähle den Hauptlautsprecher (der Stern), dann tippe die anderen an, um sie zur Gruppe hinzuzufügen.",
   "multiroom.pickAtLeastOne": "Tippe mindestens einen weiteren Lautsprecher an, um ihn zur Gruppe hinzuzufügen.",

@@ -16,7 +16,7 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, dropOfflineMembers } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 // A speaker stuck as half of an old stereo pair (see stalestereo.js).
@@ -523,8 +523,7 @@ export function renderMultiroom(fetchLive) {
   // The pair the dropdowns describe: the live pair whose members match the L/R
   // selection (stereoPairKey normalizes case+order). null while forming a NEW
   // pair, so the rename/dissolve controls never act on the wrong existing pair.
-  const formingPair = livePairs.find(p =>
-    stereoPairKey(p) === stereoPairKey({ members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] })) || null;
+  const formingPair = livePairFor(livePairs, pairPick[0], pairPick[1]);
   const pairOpts = (sel) => pairCands
     .map(b => `<option value="${escapeAttr(b.deviceID)}"${b.deviceID === pairPick[sel] ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
     .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
@@ -652,7 +651,7 @@ export function renderMultiroom(fetchLive) {
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoName'))}</span>
          <input id="stereoName" type="text" maxlength="40" placeholder="${escapeAttr(t('multiroom.stereoNamePlaceholder'))}" value="${escapeAttr(state.stereoName != null ? state.stereoName : pairName)}"${pairDis}></label>
        <div class="zone-actions">
-         <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
+         <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t(formingPair ? 'multiroom.stereoUpdateBtn' : 'multiroom.stereoCreateBtn'))}</button>
          ${formingPair ? `<button id="stereoNameSave" class="btn btn-mini">${escapeHtml(t('multiroom.stereoNameSaveBtn'))}</button>` : ''}
          <button id="stereoDissolve" class="btn btn-mini"${pairDis}>${escapeHtml(t('multiroom.stereoDissolveBtn'))}</button>
        </div>
@@ -1128,6 +1127,9 @@ async function doFormStereo(pairCands, allBoxes) {
   const left = pairCands.find(b => b.deviceID === leftId);
   const right = pairCands.find(b => b.deviceID === rightId);
   if (!left || !right) return;
+  // These two may already be a live pair: then the press changes that pair
+  // (sides, name) rather than creating one, and the message says so.
+  const editing = !!livePairFor(stereoPairsOf(state.zoneLive), leftId, rightId);
   // The mirror image of pairNotGroupable, and it was guarded in one direction
   // only: forming a GROUP out of a pair half was refused, forming a PAIR out of
   // two speakers that are already in a group was checked nowhere. The firmware
@@ -1184,7 +1186,7 @@ async function doFormStereo(pairCands, allBoxes) {
       const params = fail.key === 'multiroom.formFailed' ? { err: fail.params.err || t('multiroom.formedNone') } : fail.params;
       state.stereoMsg = `<div class="${fail.cls}">${escapeHtml(t(fail.key, params))}</div>`;
     } else {
-      flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`);
+      flashStereoMsg(`<div class="setup-ok">${escapeHtml(t(editing ? 'multiroom.stereoUpdated' : 'multiroom.stereoFormed'))}</div>`);
       // Persist the user-given name app-side, keyed on the two members. The
       // desktop normalizes these deviceIDs to the firmware /info id, so the key
       // matches the one the live pair reports at display time.

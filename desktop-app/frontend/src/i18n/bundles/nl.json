@@ -166,6 +166,8 @@
   "multiroom.stereoDissolveBtn": "Stereopaar opheffen",
   "multiroom.stereoSamePicked": "Kies twee verschillende speakers voor links en rechts.",
   "multiroom.stereoFormed": "Stereopaar gemaakt. Geef het een paar seconden. Als een speaker stil blijft of beide hetzelfde kanaal afspelen, stuur dan de logs.",
+  "multiroom.stereoUpdateBtn": "Stereopaar wijzigen",
+  "multiroom.stereoUpdated": "Stereopaar gewijzigd. Geef het een paar seconden. Als een speaker stil blijft of beide hetzelfde kanaal afspelen, stuur dan de logs.",
   "multiroom.offlineNotSelectable": "Offline: zet hem aan om hem toe te voegen",
   "multiroom.pickHint": "Kies de hoofdspeaker (de ster) en tik daarna de andere aan om ze aan de groep toe te voegen.",
   "multiroom.pickAtLeastOne": "Tik minstens één andere speaker aan om die aan de groep toe te voegen.",
