@@ -120,7 +120,7 @@
   "multiroom.needTwo": "Necesitas al menos dos altavoces con ST Reborn para crear un grupo.",
   "multiroom.masterLabel": "Altavoz principal (reproduce la fuente)",
   "multiroom.slavesLabel": "Agrupar con",
-  "multiroom.groupNameNote": "El grupo aparece en Spotify y en el altavoz con el nombre del altavoz maestro.",
+  "multiroom.groupNameNote": "El grupo aparece en Spotify y en el altavoz con el nombre del altavoz principal.",
   "multiroom.createBtn": "Crear grupo",
   "multiroom.createPermanentBtn": "Crear grupo permanente",
   "multiroom.ungroupBtn": "Deshacer grupo",
