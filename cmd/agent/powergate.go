@@ -228,6 +228,10 @@ func (h *presetWsHandler) admitPower(sig powerSignal, origin powerOrigin) bool {
 func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 	switch ev.Kind {
 	case boxlog.PowerWake:
+		// The track screen hears of every wake the speaker logs: when the
+		// speaker's own word took it down, the bus may not report the wake
+		// as a source change (displaytrack.go).
+		trackOnBoxWake(h.newBoxWakeCheck)
 		// A standby still waiting for the bus is stale now: the box is on
 		// again, and delivering it late would latch a stop against a box the
 		// user just switched on.
@@ -241,6 +245,10 @@ func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 			"source", "syslog", "via", string(ev.Source), "class", string(ev.Class))
 		h.standbyExit()
 	case boxlog.PowerStandby:
+		// A speaker in standby shows no track, whichever source it left and
+		// whatever the bus last said: this also takes down a screen a
+		// phantom wake frame put up (phantomwake.go).
+		trackOnBoxStandby()
 		if h.strSourceRecently != nil && !h.strSourceRecently() {
 			// The bus would not have reported this one as STR's playback
 			// being powered off, so it does not act on it either; the gate

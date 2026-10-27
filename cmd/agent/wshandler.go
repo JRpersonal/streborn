@@ -140,6 +140,10 @@ type presetWsHandler struct {
 	// it is acted on (powergate.go). Wired to boxws.Client.Connected. nil
 	// means "assume down": the ring delivers at once.
 	busLive func() bool
+	// wakeChecks carries the check of a switch out of standby from the
+	// source hook to the standby-exit hook of the same frame (phantomwake.go).
+	// Zero value ready.
+	wakeChecks wakeChecks
 	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
 	// when the BOX itself reports its pair torn down, which is how a teardown
 	// done in the Bose app (or one that reached only the other member) reaches
@@ -1212,6 +1216,27 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // that silently de-registered the key layer during standby (#487, where dead
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
+	// A switch onto STR's source can be the speaker answering STR's own
+	// transport commands without ever leaving standby (phantomwake.go). Such
+	// a frame is checked against the speaker's own word first: acting on it
+	// would cancel a held standby, record a wake that never happened and ask
+	// for a key re-sync of a sleeping speaker. A real wake answers the first
+	// read, so it acts after one now_playing read; a speaker that does not
+	// answer at all is taken at the frame's word, as before.
+	if w := h.wakeChecks.take(); w != nil {
+		go func() {
+			if w.settled() == wakeStandby {
+				return // settleWakeCheck logs it
+			}
+			h.actOnStandbyExit()
+		}()
+		return
+	}
+	h.actOnStandbyExit()
+}
+
+// actOnStandbyExit is OnStandbyExit for a frame that is a wake.
+func (h *presetWsHandler) actOnStandbyExit() {
 	// A ring standby still waiting for the bus is stale now: the box is on
 	// again (powergate.go).
 	if h.powerGate.cancelHeldStandby(false) {
