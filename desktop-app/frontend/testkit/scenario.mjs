@@ -38,6 +38,10 @@ export function defaultScenario() {
     // Strict: every binding call with neither an override nor a model is
     // recorded in __strMock.unmocked (the drift guard reads it).
     strict: false,
+    // UI 2.0 setup wizard (phase 4): a Bose original has no agent until
+    // InstallSTROnBox succeeded on it, then discovery lists it as STR
+    // (desktop-mock.mjs, "a Bose original that becomes STR").
+    installFlow: false,
   };
 }
 
@@ -161,5 +165,6 @@ export function resolveScenario(sc, roster = ROSTER) {
     routes: s.routes,
     banners: s.banners,
     strict: !!s.strict,
+    installFlow: !!s.installFlow,
   };
 }

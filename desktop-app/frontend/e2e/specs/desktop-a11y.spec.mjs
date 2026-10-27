@@ -42,7 +42,9 @@ const LOADED = {
   box: '#view-box:not(.hidden) #presets .preset-body',
   library: '#view-library:not(.hidden) .library-row-folder',
   settings: '#view-settings:not(.hidden) .settings-section',
-  setup: '#view-setup:not(.hidden) .setup-target-card',
+  // The classic picker's cards, or in the preview the setup wizard's Find list
+  // (phase 4), which comes first in the view.
+  setup: '#view-setup:not(.hidden) .setup-target-card, #view-setup:not(.hidden) #w2FindList .w2-radio',
 };
 
 async function prepare(page) {

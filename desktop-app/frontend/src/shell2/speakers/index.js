@@ -6,7 +6,7 @@
 //   list     every speaker with its state             view 'speakers' (list.js)
 //   speaker  one speaker, five tabs                   view 'settings' (speaker.js)
 //   groups   stereo pairs and fixed groups            view 'multiroom' (groups.js)
-//   add      the existing setup (wizard: phase 4)     view 'setup'
+//   add      the setup wizard (phase 4, #1288)        view 'setup' (../setup/wizard.js)
 //
 // A route is a view: opening one calls the app's own switchView, so the
 // classic lifecycle of each view (the settings load and reconnect loop, the
@@ -47,12 +47,16 @@ import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab, subnavCurrent } 
 import { renderSpeakerList } from './list.js';
 import { currentSpeakerTab, renderSpeakerPage } from './speaker.js';
 import { mountGroups } from './groups.js';
+import { paintSetupWizard } from '../setup/wizard.js';
 import './speakers.css';
 
 let deps = {};
 let frameRoot = null;
 // A tab asked for by openSpeakers, applied on the next paint of the page.
 let wantTab = '';
+// The speaker Add speaker was opened on (a Bose original's "Set up STR"),
+// handed to the wizard's Find step on the next paint.
+let wantAddHost = '';
 
 const byId = (id) => (frameRoot && frameRoot.querySelector(`#${id}`))
   || (typeof document !== 'undefined' ? document.getElementById(id) : null);
@@ -99,6 +103,7 @@ export function openSpeakers(route = 'list', opts = {}) {
   } else if (r === 'add' && box) {
     // The setup opens on this speaker (a stock one: the network install).
     if (typeof deps.speakerPicked === 'function') deps.speakerPicked(box);
+    wantAddHost = box.host;
   }
   // Always through switchView, also for the view already open: the same as
   // clicking the open tab in the classic layout (it loads the settings again,
@@ -138,7 +143,7 @@ export function syncSpeakersArea(view) {
   });
   const page = byId('ui2SpkPage');
   if (page) page.hidden = route !== 'speaker';
-  paintRoute(route);
+  paintRoute(route, true);
 }
 
 export function refreshSpeakersArea() {
@@ -147,7 +152,9 @@ export function refreshSpeakersArea() {
   if (route) paintRoute(route);
 }
 
-function paintRoute(route) {
+// entry is true when the route was just opened (syncSpeakersArea), false on a
+// repaint from the shared state.
+function paintRoute(route, entry = false) {
   if (route === 'list') {
     renderSpeakerList(byId('view-speakers'), {
       boxes: state.boxes || [],
@@ -187,5 +194,15 @@ function paintRoute(route) {
     });
   } else if (route === 'groups') {
     mountGroups({ root: byId('view-multiroom'), open: openSpeakers, label });
+  } else if (route === 'add') {
+    const host = entry ? wantAddHost : '';
+    if (entry) wantAddHost = '';
+    paintSetupWizard(byId('view-setup'), {
+      entry,
+      host,
+      label,
+      open: openSpeakers,
+      discoverBoxes: deps.discoverBoxes,
+    });
   }
 }
