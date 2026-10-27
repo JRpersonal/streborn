@@ -41,9 +41,16 @@ const UI2_VIEWS = ['app-ui2-dark', 'app-ui2-light', 'app-ui2-contrast', 'app-ui2
 // The phase 2 views of the preview (#1286), each in the dark and the light
 // theme: SHOOT_VIEWS=ui2p2 shoots all ten.
 const UI2P2_VIEWS = ['radio', 'radiorows', 'library', 'recent', 'spotify'].flatMap((v) => [`app-ui2p2-${v}-dark`, `app-ui2p2-${v}-light`]);
-// The phase 3 page of one speaker (#1287), each of its five tabs in the dark
-// and the light theme: SHOOT_VIEWS=ui2p3 shoots all ten.
-const UI2P3_VIEWS = ['overview', 'sound', 'network', 'keys', 'maintenance'].flatMap((v) => [`app-ui2p3-${v}-dark`, `app-ui2p3-${v}-light`]);
+// Phase 3, the Speakers area (#1287): the list, the page of one speaker on
+// each of its five tabs, Groups with the stereo pair and the fixed group, and
+// a confirmation before something is taken apart (restart on the speaker
+// page, undoing the pair on Groups). Each in the dark and the light theme, at
+// the smallest window (min, 1000 x 700) and a wide one (wide, 1600 x 1000):
+// SHOOT_VIEWS=ui2p3 shoots all forty. A name without the width
+// (app-ui2p3-sound-dark) shoots the app's default window, 1240 x 740.
+const UI2P3_SCREENS = ['list', 'overview', 'sound', 'network', 'keys', 'maintenance', 'groups', 'confirm', 'confirmpair'];
+const UI2P3_VIEWS = UI2P3_SCREENS.flatMap((v) => ['min', 'wide'].flatMap((w) => [`app-ui2p3-${v}-${w}-dark`, `app-ui2p3-${v}-${w}-light`]));
+const UI2P3_SIZES = { min: { width: 1000, height: 700 }, wide: { width: 1600, height: 1000 } };
 // The same four views in the classic layout (preview off), on the same
 // simulated network and window, to compare a phase 2 view with what it
 // replaces: SHOOT_VIEWS=classicp2.
@@ -74,7 +81,7 @@ async function drive(page, view) {
     if (view.startsWith('app-ui2p2-')) {
       await driveUi2Phase2(page, view.split('-')[2]);
     } else if (view.startsWith('app-ui2p3-')) {
-      await driveUi2Speaker(page, view.split('-')[2]);
+      await driveUi2Phase3(page, view.split('-')[2]);
     } else if (view === 'app-ui2-dark') {
       // Scrolled to the offline speaker, so the shot shows it greyed with
       // "Offline" and the Bose original's "Ready for STR" below it.
@@ -231,15 +238,41 @@ async function driveUi2Phase2(page, which) {
   await page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
 }
 
-// driveUi2Speaker opens the page of the speaker you control (Speakers, its
-// row) on one of its five tabs.
-async function driveUi2Speaker(page, tab) {
+// driveUi2Phase3 opens one screen of the Speakers area: the list, the page
+// of the speaker you control (its row in the list) on one of its five tabs,
+// Groups, or a confirmation (restart on Maintenance, undoing the stereo pair
+// on Groups), left open for the shot.
+async function driveUi2Phase3(page, which) {
   await page.click('#ui2Sidebar .ui2-nav-item[data-view="speakers"]');
+  await page.waitForSelector('#view-speakers .spl-open', { timeout: 9000 });
+  const top = () => page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
+  if (which === 'list') {
+    await page.waitForTimeout(600);
+    return top();
+  }
+  if (which === 'groups' || which === 'confirmpair') {
+    await page.click('#ui2SpkSubnav .spa-sub[data-route="groups"]');
+    await page.waitForSelector('#view-multiroom > .ui2-grp .ui2-grp-card[data-kind="pair"]', { timeout: 15000 });
+    await page.waitForTimeout(600);
+    await top();
+    if (which === 'confirmpair') {
+      await page.locator('#view-multiroom .ui2-grp-card[data-kind="pair"]').getByRole('button', { name: /./ }).last().click();
+      await page.waitForSelector('#ui2GrpConfirm', { state: 'visible', timeout: 9000 });
+      await page.waitForTimeout(300);
+    }
+    return;
+  }
   await page.click('#view-speakers .spl-open[aria-current="true"]');
   await page.waitForSelector('#ui2SpkPanels .sps-sec .settings-section', { timeout: 9000 });
+  const tab = which === 'confirm' ? 'maintenance' : which;
   await page.click(`#ui2SpkTab-${tab}`);
   await page.waitForTimeout(600);
-  await page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
+  await top();
+  if (which === 'confirm') {
+    await page.click('#boxRebootBtn');
+    await page.waitForSelector('#warnModal', { state: 'visible', timeout: 9000 });
+    await page.waitForTimeout(300);
+  }
 }
 
 // ---- main ------------------------------------------------------------------
@@ -283,7 +316,9 @@ try {
       if (process.env.SHOOT_DEBUG) page.on('console', (m) => console.log(`  [${lang}/${view}] console.${m.type()}:`, m.text()));
       // The UI 2.0 shots use the app's own default window (main.go, 1240 x 740),
       // the size the sidebar has to fit.
-      if (view.startsWith('app-ui2') || view.startsWith('app-classic-')) await page.setViewportSize({ width: 1240, height: 740 });
+      const p3size = view.startsWith('app-ui2p3-') ? UI2P3_SIZES[view.split('-')[3]] : null;
+      if (p3size) await page.setViewportSize(p3size);
+      else if (view.startsWith('app-ui2') || view.startsWith('app-classic-')) await page.setViewportSize({ width: 1240, height: 740 });
       const scenario = shotScenario(view, lang);
       await page.addInitScript(installDesktopMock, { scenario, demo: shotDemo(view) });
       await page.route('**/api/**', agentRoutes(scenario));
@@ -294,6 +329,16 @@ try {
         // app-logs keeps only the lower part of the window: the footer is
         // what matters, and a full-height shot would dwarf it.
         const clip = view === 'app-logs' ? { x: 0, y: 780 - 300, width: 1100, height: 300 } : undefined;
+        // SHOOT_TALL=1 (review shots) grows the window until the main pane
+        // no longer scrolls, so one picture shows a whole long page.
+        if (process.env.SHOOT_TALL && view.startsWith('app-ui2') && !/-confirm/.test(view)) {
+          const extra = await page.evaluate(() => { const m = document.getElementById('ui2Main'); return m ? m.scrollHeight - m.clientHeight : 0; });
+          if (extra > 0) {
+            const vp = page.viewportSize();
+            await page.setViewportSize({ width: vp.width, height: Math.min(vp.height + extra, 6000) });
+            await page.waitForTimeout(400);
+          }
+        }
         await page.screenshot({ path: out, clip });
         console.log(`ok  ${lang}/${view}`);
         ok++;
