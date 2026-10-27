@@ -97,11 +97,60 @@ export const SETUP_PLACES = Object.freeze([
 const CHECK_MODULES = import.meta.glob('./check.js', { eager: true });
 
 // checkRunner is the check's entry point, or null without check.js.
+// check.js names it renderCheckStep and reports its state through onState;
+// adaptCheckStep turns that into the runCheck shape described above.
 export function checkRunner(mods = CHECK_MODULES) {
   const m = Object.values(mods || {})[0];
   if (!m) return null;
+  if (typeof m.renderCheckStep === 'function') return adaptCheckStep(m.renderCheckStep);
   const fn = ['runCheck', 'renderCheck', 'mountCheck', 'default'].map((k) => m[k]).find((f) => typeof f === 'function');
   return fn || null;
+}
+
+// adaptCheckStep wraps check.js's renderCheckStep: a running firmware update
+// (phase 'updating') holds Back and makes leaving warn, every other phase
+// releases it.
+export function adaptCheckStep(render) {
+  return (container, ctx = {}) => {
+    let busy = false;
+    const onState = (s) => {
+      if (typeof ctx.onPhase === 'function') ctx.onPhase((s && s.phase) || '');
+      const b = !!s && s.phase === 'updating';
+      if (b === busy) return;
+      busy = b;
+      if (typeof ctx.setBusy === 'function') ctx.setBusy(b);
+    };
+    // The step names the speaker exactly as the wizard does (rule 1).
+    const box = { ...(ctx.box || {}) };
+    if (ctx.label) box.name = ctx.label;
+    return render(container, { box, signal: ctx.signal, onState });
+  };
+}
+
+// checkAborted is true for an answer that only says the check was left.
+export function checkAborted(result) {
+  return !!result && typeof result === 'object' && result.ok === false && result.route === 'aborted';
+}
+
+// checkSkipped is true when the user went on without the firmware update
+// (or without a readable version): the stepper says "skipped", not "done".
+export function checkSkipped(result) {
+  return !!result && typeof result === 'object' && (result.route === 'skip' || result.route === 'unknown');
+}
+
+// checkHolds is true when the check passed without a click of the user's
+// (the firmware is confirmed): the wizard stays on Check and unlocks Install.
+export function checkHolds(result) {
+  return !!result && typeof result === 'object' && result.ok === true
+    && !checkSkipped(result) && checkRoute(result) === 'network';
+}
+
+// lockHintKey says why Install is still locked during the check, from the
+// check's phase (check.js onState).
+export function lockHintKey(phase) {
+  return ['needs-update', 'updating', 'failed'].includes(phase)
+    ? 'ui2.setup.wizard.check.lockedUpdate'
+    : 'ui2.setup.wizard.check.lockedCheck';
 }
 
 // checkRoute reads the check's answer: the stick, or the network install.
@@ -158,7 +207,9 @@ const W = {
   target: null, // { kind: 'stock' | 'factory', host, name, model }
   route: 'network',
   installKind: '',
-  check: { gen: 0, abort: null, busy: false },
+  // phase: the check's last state (check.js onState); ready: its answer once
+  // the install may go ahead, until the user presses Install.
+  check: { gen: 0, abort: null, busy: false, phase: '', ready: null },
   confirm: { gen: 0, status: '', version: null },
   strAtStart: new Set(),
   sig: {},
@@ -279,7 +330,16 @@ function act(a) {
       break;
     }
     case 'search': if (typeof W.ctx.discoverBoxes === 'function') W.ctx.discoverBoxes(); break;
-    case 'stick': goInstall('stick', true); break;
+    case 'stick':
+      if (W.step === 'check') {
+        if (W.check.busy) break;
+        abortCheck();
+      }
+      goInstall('stick', true);
+      break;
+    case 'install':
+      if (W.step === 'check' && W.check.ready) goInstall(checkRoute(W.check.ready), false);
+      break;
     case 'confirm': goConfirm(); break;
     case 'recheck': startConfirm(); paint(); break;
     case 'retryCheck': goCheck(); break;
@@ -386,6 +446,7 @@ function goCheck() {
   W.step = 'check';
   W.outcome = { find: 'done' };
   W.installKind = '';
+  abortCheck();
   paint();
   focusTitle();
   runCheckStep(box);
@@ -394,6 +455,8 @@ function goCheck() {
 function abortCheck() {
   W.check.gen++;
   W.check.busy = false;
+  W.check.phase = '';
+  W.check.ready = null;
   if (W.check.abort) { try { W.check.abort.abort(); } catch (_) { /* already */ } }
   W.check.abort = null;
 }
@@ -416,13 +479,29 @@ function runCheckStep(box) {
       W.check.busy = !!b;
       paint();
     },
+    onPhase: (ph) => {
+      if (gen !== W.check.gen || W.check.phase === ph) return;
+      W.check.phase = ph;
+      paint();
+    },
   };
   const run = checkRunner();
   const p = run ? Promise.resolve().then(() => run(body, ctx)) : placeholderCheck(body, name);
   p.then((res) => {
     if (gen !== W.check.gen || W.step !== 'check') return;
+    if (checkAborted(res)) return;
     W.check.busy = false;
-    goInstall(checkRoute(res), false);
+    if (checkHolds(res)) {
+      // The speaker passed on its own (27.0.6 read back): the rows stay in
+      // view and Install unlocks in the footer, as in the design.
+      W.check.ready = res;
+      W.outcome = { ...W.outcome, check: 'done' };
+      paint();
+      return;
+    }
+    // A click inside the check settled it (continue without updating, the
+    // placeholder): that click already was the way on.
+    goInstall(checkRoute(res), checkSkipped(res));
   }, (err) => {
     if (gen !== W.check.gen || W.step !== 'check') return;
     W.check.busy = false;
@@ -690,6 +769,14 @@ function paintFoot(name) {
   } else if (W.step === 'check' || W.step === 'install') {
     const to = backTarget({ step: W.step, checkBusy: W.check.busy, installKind: W.installKind, checkSkipped: W.outcome.check === 'skipped' });
     left = footBtn('back', t('ui2.setup.wizard.back'), { disabled: !to });
+    // The USB stick stays the fallback during the check: it is the way past
+    // a firmware the network install refuses.
+    if (W.step === 'check' && !W.check.busy) left += footBtn('stick', t('ui2.setup.wizard.find.useStick'));
+    if (W.step === 'check' && to) {
+      const ready = !!W.check.ready;
+      right = (ready ? '' : `<span class="w2-hint" id="w2InstallHint">${escapeHtml(t(lockHintKey(W.check.phase), { name }))}</span>`)
+        + footBtn('install', t('ui2.setup.wizard.check.toInstall', { name }), { primary: true, disabled: !ready });
+    }
     if (!to) right = `<span class="w2-hint">${escapeHtml(t(W.installKind === 'done' ? 'ui2.setup.wizard.backDone' : 'ui2.setup.wizard.backBusy', { name }))}</span>`;
   }
   setHTML('w2Foot', (left || right) ? `<div class="w2-foot-left">${left}</div><div class="w2-foot-right">${right}</div>` : '');

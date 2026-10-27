@@ -10,7 +10,8 @@ import { installBusy, installIntroHTML, installNoteHTML, installOutcome, outcome
 import { confirmHTML, confirmLoop, newStrHost } from './confirm.js';
 import {
   SETUP_PLACES, STATE_LABEL_KEYS, STEP_LABEL_KEYS, WIZARD_STEPS,
-  backTarget, checkRoute, checkRunner, stepperHTML, stepperModel, wizardBusy,
+  adaptCheckStep, backTarget, checkAborted, checkRoute, checkRunner, checkSkipped,
+  stepperHTML, stepperModel, wizardBusy,
 } from './wizard.js';
 
 setLocale('en');
@@ -251,6 +252,29 @@ describe('Wizard', () => {
     expect(checkRoute({ stick: true })).toBe('stick');
     expect(checkRoute({ route: 'network' })).toBe('network');
     expect(checkRoute(undefined)).toBe('network');
+  });
+
+  it('wires check.js renderCheckStep in: the label, busy only while updating, the answers', async () => {
+    const seen = [];
+    let ctxSeen = null;
+    const render = async (el, ctx) => {
+      ctxSeen = ctx;
+      for (const phase of ['checking', 'needs-update', 'updating', 'updating', 'ok']) ctx.onState({ phase });
+      return { ok: true, firmware: '27.0.6', route: 'route-a' };
+    };
+    const run = checkRunner({ './check.js': { renderCheckStep: render } });
+    expect(typeof run).toBe('function');
+    const res = await run({}, { box: STOCK(51, 'kitchen-raw'), label: 'Kitchen', setBusy: (b) => seen.push(b) });
+    expect(ctxSeen.box.name).toBe('Kitchen');
+    expect(ctxSeen.box.host).toBe('192.0.2.51');
+    expect(seen).toEqual([true, false]);
+    expect(checkRoute(res)).toBe('network');
+    expect(checkSkipped(res)).toBe(false);
+    expect(checkSkipped({ ok: true, route: 'skip' })).toBe(true);
+    expect(checkSkipped({ ok: true, route: 'unknown' })).toBe(true);
+    expect(checkAborted({ ok: false, route: 'aborted' })).toBe(true);
+    expect(checkAborted({ ok: true, route: 'current' })).toBe(false);
+    expect(typeof adaptCheckStep(render)).toBe('function');
   });
 
   it('is not busy without the shell', () => {
