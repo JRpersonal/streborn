@@ -11,7 +11,7 @@
 //   list      speakers            every speaker with its state (list.js)
 //   speaker   settings            one speaker, five tabs (speaker.js)
 //   groups    multiroom           stereo pairs and fixed groups (groups.js)
-//   add       setup               the existing setup view (the wizard is phase 4)
+//   add       setup               the setup wizard (../setup/wizard.js, phase 4)
 //
 // Who plays along right now is NOT a route: that stays in the sidebar speaker
 // list ("+" and "-", phase 1). There is no output popover and no room switcher.

@@ -1,0 +1,241 @@
+/* UI 2.0 preview: the setup wizard, Speakers > Add speaker (#1288,
+   docs/UI-2.0.md phase 4; wizard.js builds it, docs/design/ui-2.0/setup.png
+   is the mockup).
+
+   Everything sits under html.ui2 and reads only the --u-* tokens, so the
+   classic layout is untouched. The classic setup nodes the wizard moves into
+   its steps keep their own styles; only their place changes, and the parts
+   the wizard shows in its own words are hidden here. */
+
+html.ui2 .w2 {
+  max-width: 960px;
+  padding: 24px;
+  border: 1px solid var(--u-border);
+  border-radius: 12px;
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-setup.w2-on > h2 { display: none; }
+
+html.ui2 .w2-crumb {
+  margin: 0 0 4px;
+  color: var(--u-muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+/* #view-setup h2 (style.css) colours the classic heading; the wizard's
+   title is text, so the id beats it. */
+html.ui2 #ui2SetupWizard .w2-title {
+  margin: 0 0 16px;
+  color: var(--u-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* The stepper: four boxes, each says its number, its name and its state in
+   words; the mark only repeats the words, and the current step also carries
+   aria-current="step" and a heavier edge. */
+html.ui2 .w2-steps {
+  display: grid;
+  /* Four in a row; with larger text they wrap two by two, never mid-word. */
+  grid-template-columns: repeat(auto-fit, minmax(10em, 1fr));
+  gap: 8px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 .w2-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+}
+html.ui2 .w2-step.is-current { border-width: 2px; background: var(--u-selected); }
+html.ui2 .w2-step.is-failed { border-width: 2px; border-color: var(--u-danger); }
+html.ui2 .w2-step.is-waiting,
+html.ui2 .w2-step.is-skipped { border-style: dashed; }
+html.ui2 .w2-step-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+html.ui2 .w2-step.is-done .w2-step-mark { color: var(--u-ok); }
+html.ui2 .w2-step.is-current .w2-step-mark { color: var(--u-accent); }
+html.ui2 .w2-step.is-failed .w2-step-mark { color: var(--u-danger); }
+html.ui2 .w2-step.is-waiting .w2-step-mark,
+html.ui2 .w2-step.is-skipped .w2-step-mark { color: var(--u-muted); }
+html.ui2 .w2-step-text { display: flex; flex-direction: column; min-width: 0; }
+html.ui2 .w2-step-n { color: var(--u-muted); font-size: 12px; }
+html.ui2 .w2-step-name { color: var(--u-text); font-size: 15px; font-weight: 700; overflow-wrap: break-word; }
+html.ui2 .w2-step-state { color: var(--u-muted); font-size: 12px; }
+html.ui2 .w2-step.is-failed .w2-step-state { color: var(--u-danger); font-weight: 600; }
+html.ui2 .w2-step.is-done .w2-step-state { color: var(--u-ok); }
+
+html.ui2 .w2-panel[hidden] { display: none; }
+html.ui2 .w2-lead { margin: 0 0 16px; color: var(--u-text); font-size: 15px; line-height: 1.45; }
+html.ui2 .w2-muted { color: var(--u-muted); font-size: 14px; line-height: 1.45; }
+
+/* Find: one radio per speaker, the whole row is the target. */
+html.ui2 .w2-group { margin: 0; padding: 0; border: 0; min-width: 0; }
+html.ui2 .w2-legend { margin: 0 0 8px; padding: 0; color: var(--u-text); font-size: 15px; font-weight: 700; }
+html.ui2 .w2-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+html.ui2 .w2-row {
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+}
+html.ui2 .w2-row.is-selected { border-width: 2px; background: var(--u-selected); }
+html.ui2 .w2-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+html.ui2 .w2-row.is-offline .w2-choice { cursor: not-allowed; }
+html.ui2 .w2-radio {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--u-action);
+}
+html.ui2 .w2-choice-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+html.ui2 .w2-name { color: var(--u-text); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+html.ui2 .w2-row.is-offline .w2-name { color: var(--u-muted); }
+html.ui2 .w2-meta { color: var(--u-muted); font-size: 13px; overflow-wrap: anywhere; }
+html.ui2 .w2-row-note { margin: 0; padding: 0 12px 10px 44px; color: var(--u-muted); font-size: 13px; line-height: 1.4; }
+html.ui2 .w2-row--str {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+}
+html.ui2 .w2-empty { margin: 0 0 16px; }
+html.ui2 .w2-empty p { margin: 0 0 8px; }
+html.ui2 .w2-onstr { margin-top: 16px; }
+html.ui2 .w2-onstr-sum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--u-target);
+  color: var(--u-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* A flex summary loses its marker: draw it, closed and open. */
+html.ui2 .w2-onstr-sum::before { content: 'B8'; }
+html.ui2 .w2-onstr[open] > .w2-onstr-sum::before { content: 'BE'; }
+html.ui2 .w2-onstr > .w2-muted { margin: 0 0 8px; }
+
+/* The classic picker moves into Find for its onboarding part only: the cards
+   and its own empty hints are the list above, in the wizard's words. */
+html.ui2 .w2 #setupTargetSection > h3,
+html.ui2 .w2 .setup-target-card,
+html.ui2 .w2 .setup-done-group,
+html.ui2 .w2 .setup-target-limited-note,
+html.ui2 .w2 .setup-target-empty,
+html.ui2 .w2 .setup-target-empty-hint,
+html.ui2 .w2 .setup-target-empty-reset { display: none; }
+html.ui2 .w2 .w2-onboard { display: none; margin-top: 16px; }
+html.ui2 .w2.is-onboarding .w2-onboard { display: block; }
+html.ui2 .w2.is-missing #setupPrimaryAction { display: none; }
+
+/* Notes inside a step: what happened and what comes next. Calm notes are not
+   failures; a failure says so in its words and its mark. */
+html.ui2 .w2-note,
+html.ui2 .w2-done {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+}
+html.ui2 .w2-note--calm { border-color: var(--u-accent); }
+html.ui2 .w2-note--failed { border-width: 2px; border-color: var(--u-danger); }
+html.ui2 .w2-done { border-width: 2px; border-color: var(--u-ok); }
+html.ui2 .w2-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  color: var(--u-text);
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+html.ui2 .w2-note-text { margin: 0 0 4px; color: var(--u-text); font-size: 14px; line-height: 1.45; }
+html.ui2 .w2-note-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+html.ui2 .w2-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  color: var(--u-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+html.ui2 .w2-note--failed .w2-ico { color: var(--u-danger); }
+html.ui2 .w2-ico--ok { color: var(--u-ok); }
+html.ui2 .w2-spin {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--u-border);
+  border-top-color: var(--u-accent);
+  border-radius: 50%;
+  animation: w2spin 1s linear infinite;
+}
+@keyframes w2spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  html.ui2 .w2-spin { animation: none; }
+}
+
+html.ui2 .w2-classic { margin-top: 8px; }
+html.ui2 .w2-details:empty { display: none; }
+
+/* The foot: Back on the left, the way on on the right. */
+html.ui2 .w2-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 24px;
+}
+html.ui2 .w2-foot:empty { display: none; }
+html.ui2 .w2-foot-left,
+html.ui2 .w2-foot-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+html.ui2 .w2-foot-right { margin-inline-start: auto; justify-content: flex-end; }
+html.ui2 .w2-hint { color: var(--u-muted); font-size: 14px; }
+
+html.ui2 .w2 :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+html.ui2 .w2-title:focus { outline: none; }
+html.ui2 .w2-title:focus-visible { outline: 2px solid var(--u-focus); }
+
