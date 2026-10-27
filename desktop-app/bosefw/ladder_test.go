@@ -22,25 +22,25 @@ func TestPlanByStartingVersion(t *testing.T) {
 		bt                       *bool
 		status, steps            string
 	}{
-		{"5.x ST20, the field case", "SoundTouch 20", "", "5.2.0.11111.222", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 15.00.20 27.0.6"},
-		{"exactly 06.02.01 does not get it again", "SoundTouch 20", "scm", "6.2.1", nil, StatusLadder, "07.00.37 14.00.33 15.00.20 27.0.6"},
-		{"6.x older than 06.02.01 skips it", "SoundTouch 30", "scm", "6.0.39", nil, StatusLadder, "07.00.37 14.00.33 15.00.20 27.0.6"},
-		{"7.0.37", "SoundTouch 20", "", "7.0.37", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
-		{"14.0.15 goes via 14.00.33, never straight to 27 (#854)", "SoundTouch 20", "scm", "14.0.15", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
-		{"14.0.33", "SoundTouch Portable", "", "14.0.33", nil, StatusLadder, "15.00.20 27.0.6"},
+		{"5.x ST20, the field case", "SoundTouch 20", "", "5.2.0.11111.222", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 16.00.09 27.0.6"},
+		{"exactly 06.02.01 does not get it again", "SoundTouch 20", "scm", "6.2.1", nil, StatusLadder, "07.00.37 14.00.33 16.00.09 27.0.6"},
+		{"6.x older than 06.02.01 skips it", "SoundTouch 30", "scm", "6.0.39", nil, StatusLadder, "07.00.37 14.00.33 16.00.09 27.0.6"},
+		{"7.0.37", "SoundTouch 20", "", "7.0.37", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
+		{"14.0.15 goes via 14.00.33, never straight to 27 (#854)", "SoundTouch 20", "scm", "14.0.15", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
+		{"14.0.33", "SoundTouch Portable", "", "14.0.33", nil, StatusLadder, "16.00.09 27.0.6"},
 		{"15.0.20 gets the final step only", "SoundTouch 20", "scm", "15.0.20", nil, StatusFinal, "27.0.6"},
 		{"27.0.3 gets the final step only", "SoundTouch Portable", "scm", "27.0.3", nil, StatusFinal, "27.0.6"},
 		{"27.0.6 is done", "SoundTouch 20", "scm", "27.0.6.46330.5043500", nil, StatusUpToDate, ""},
 		{"Wave 2.1.51 without moduleType is not in phase 1", "Wave SoundTouch", "", "2.1.51", nil, StatusUnsupported, ""},
 		{"ST20 10.x without moduleType asks about Bluetooth", "SoundTouch 20", "", "10.0.11", nil, StatusNeedsBluetooth, ""},
-		{"... no Bluetooth button means scm", "SoundTouch 20", "", "10.0.11", boolp(false), StatusLadder, "14.00.33 15.00.20 27.0.6"},
+		{"... no Bluetooth button means scm", "SoundTouch 20", "", "10.0.11", boolp(false), StatusLadder, "14.00.33 16.00.09 27.0.6"},
 		{"... a Bluetooth button means sm2, not in phase 1", "SoundTouch 30", "", "10.0.11", boolp(true), StatusUnsupported, ""},
-		{"a Portable never asks: it is scm only", "SoundTouch Portable", "", "10.0.11", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
-		{"sm2 below 9 cannot exist, so no moduleType at 7 is scm", "SoundTouch 30", "", "7.2.21", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
+		{"a Portable never asks: it is scm only", "SoundTouch Portable", "", "10.0.11", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
+		{"sm2 below 9 cannot exist, so no moduleType at 7 is scm", "SoundTouch 30", "", "7.2.21", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
 		{"sm2 reported is not in phase 1", "SoundTouch 20", "sm2", "14.0.15", nil, StatusUnsupported, ""},
 		{"SoundTouch 10 is not in phase 1", "SoundTouch 10", "sm2", "14.0.15", nil, StatusUnsupported, ""},
 		{"no version asks for it", "SoundTouch 20", "", "", nil, StatusNeedsVersion, ""},
-		{"a 2.x ST20 gets the full ladder", "SoundTouch 20", "", "2.1.51", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 15.00.20 27.0.6"},
+		{"a 2.x ST20 gets the full ladder", "SoundTouch 20", "", "2.1.51", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 16.00.09 27.0.6"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -90,8 +90,8 @@ func TestNextAndReached(t *testing.T) {
 		"5.2.0":   "06.02.01",
 		"6.2.1":   "07.00.37",
 		"7.0.37":  "14.00.33",
-		"14.0.33": "15.00.20",
-		"15.0.20": "27.0.6",
+		"14.0.33": "16.00.09",
+		"16.0.9":  "27.0.6",
 		"":        "06.02.01", // unknown: stay on the first step
 	}
 	for rep, want := range cases {
@@ -122,8 +122,14 @@ func TestFallbackFor(t *testing.T) {
 	if FallbackFor(FamilySTScm+"-06.02.01", "5.2.0") != nil {
 		t.Error("5.x has no smaller step before 06.02.01")
 	}
-	if FallbackFor(FamilySTScm+"-15.00.20", "14.0.33") != nil {
-		t.Error("15.00.20 has no fallback")
+	if got := versions(FallbackFor(FamilySTScm+"-27.0.6", "16.0.9")); got != "20.00.06 27.0.6" {
+		t.Errorf("16.x fallback before 27.0.6 %q", got)
+	}
+	if FallbackFor(FamilySTScm+"-27.0.6", "20.0.6") != nil {
+		t.Error("20.0.6 has no smaller step before 27.0.6")
+	}
+	if fb := Plan("SoundTouch 20", "scm", "", "16.0.9", nil).Fallbacks; versions(fb[FamilySTScm+"-27.0.6"]) != "20.00.06 27.0.6" {
+		t.Error("a 16.x speaker is offered 20.00.06 when 27.0.6 stalls")
 	}
 	for _, s := range FallbackFor(FamilySTScm+"-14.00.33", "7.0.37") {
 		if s.Version != "14.00.33" && !s.Fallback {
@@ -229,7 +235,7 @@ func TestLadderDataInvariants(t *testing.T) {
 	// 27.0.6 was seen from 27.0.3 only, not from 15.00.20, so the ladder's last
 	// step is not "tested" yet.
 	for _, s := range AllSteps() {
-		want := s.Version == "06.02.01" || s.Version == "07.00.37" || s.Version == "14.00.33"
+		want := s.Version == "06.02.01" || s.Version == "07.00.37" || s.Version == "14.00.33" || s.Version == "16.00.09"
 		if s.LiveVerified != want {
 			t.Errorf("%s: LiveVerified %v without a field report", s.ID, s.LiveVerified)
 		}
