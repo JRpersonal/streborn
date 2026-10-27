@@ -11,6 +11,12 @@
 // Output: docs/screenshots/phone/<lang>/<view>.png
 //
 // Run: npm run shoot-phone   (SHOOT_LANGS=en,de and SHOOT_VIEWS=phone-play to narrow)
+//
+// SHOOT_OUT=<dir> writes somewhere else (a review set that must not land in
+// the repo), SHOOT_THEMES=dark,light adds a <theme> folder level and sets the
+// page's theme, SHOOT_WIDTH=320 shoots a narrower phone. The phone-keys-*,
+// phone-save-row2 and phone-alarm-row2 views show the second row of keys
+// (#1110); they are not in the default set.
 
 import { chromium } from 'playwright';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -22,7 +28,12 @@ import { phoneHandler } from '../testkit/phone-mock.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '../../..');
 const ASSETS = path.join(REPO, 'internal/webui/assets');
-const OUT = path.join(REPO, 'docs/screenshots/phone');
+const OUT = process.env.SHOOT_OUT ? path.resolve(process.env.SHOOT_OUT) : path.join(REPO, 'docs/screenshots/phone');
+const THEMES = (process.env.SHOOT_THEMES && process.env.SHOOT_THEMES.trim())
+  ? process.env.SHOOT_THEMES.split(',').map((s) => s.trim()).filter(Boolean)
+  : [''];
+const WIDTH = Number(process.env.SHOOT_WIDTH) || 390;
+const ROW2_FILLED = ['phone-keys-row1', 'phone-keys-row2-playing', 'phone-save-row2', 'phone-alarm-row2'];
 const ORIGIN = PHONE.ORIGIN; // a placeholder origin, never resolved
 
 const ALL_LANGS = ['en', 'de'];
@@ -40,6 +51,7 @@ const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
 let phone = null;
 
 // ---- per-view driving ------------------------------------------------------
+let shotPath = ''; // where the current view's shot goes
 async function drive(page, view) {
   const tab = async (name) => {
     await page.click('#tab' + name);
@@ -62,6 +74,37 @@ async function drive(page, view) {
     await page.click('#btnSearch');
     await page.waitForSelector('#results .station, #results button', { timeout: 9000 });
     await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-keys-row1') {
+    await page.waitForSelector('#presetRowSw button', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-keys-row2-empty') {
+    await page.click('#presetRowSw button[data-row="2"]');
+    await page.waitForSelector('#row2Hint:not([hidden])', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-keys-row2-playing') {
+    // Row 1 with the playing dot on 2x first, as a twin shot.
+    await page.waitForSelector('#presetRowSw button[data-row="2"] .rdot', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: shotPath.replace(/\.png$/, '-row1-dot.png') });
+    await page.click('#presetRowSw button[data-row="2"]');
+    await page.waitForSelector('#presets .preset.active[data-slot="9"]', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-save-row2') {
+    await tab('Browse');
+    await page.fill('#q', 'rock');
+    await page.click('#btnSearch');
+    await page.waitForSelector('#results .station', { timeout: 9000 });
+    await page.click('#results .station button:nth-of-type(2)');
+    await page.waitForSelector('#pickRowSw', { timeout: 9000 });
+    await page.click('#pickRowSw button[data-row="2"]');
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-alarm-row2') {
+    await page.waitForSelector('#alarmList [data-alarm-edit="0"]', { timeout: 9000 });
+    await page.click('#alarmList [data-alarm-edit="0"]');
+    await page.click('#alarmRowSw button[data-row="2"]');
+    await page.click('#alarmSlots [data-alarm-slot="9"]');
+    await scrollTo('#alarmTime', 120);
   } else if (view === 'phone-speakers') {
     await tab('Speakers');
     await page.waitForSelector('#peers .peer', { timeout: 9000 });
@@ -80,30 +123,38 @@ phone = phoneHandler({ indexHTML: await readFile(path.join(ASSETS, 'index.html')
 const browser = await chromium.launch({ headless: true });
 let ok = 0, fail = 0;
 try {
-  for (const lang of LANGS) {
-    await mkdir(path.join(OUT, lang), { recursive: true });
+  for (const theme of THEMES) for (const lang of LANGS) {
+    const dir = theme ? path.join(OUT, theme, lang) : path.join(OUT, lang);
+    await mkdir(dir, { recursive: true });
     const ctx = await browser.newContext({
-      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+      viewport: { width: WIDTH, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       locale: lang, timezoneId: 'Europe/Berlin',
       userAgent: PHONE.USER_AGENT,
     });
-    await ctx.addInitScript((l) => {
+    await ctx.addInitScript(([l, th]) => {
       try {
         localStorage.setItem('str.remote.lang', l);
         localStorage.setItem('coachSeen', '1'); // the first-visit hint bubble
+        if (th) localStorage.setItem('a11yTheme', th);
       } catch (e) {}
-    }, lang);
+    }, [lang, theme]);
     await ctx.route('**/*', phone.handle);
     for (const view of VIEWS) {
       phone.options.view = view;
       phone.options.grouped = view === 'phone-speakers';
+      // The second row of keys: filled for these shots, empty for the rest
+      // (the explainer); the playing shot plays key 3 pressed twice.
+      phone.options.row2 = ROW2_FILLED.includes(view);
+      phone.options.playing = view === 'phone-keys-row2-playing'
+        ? { name: 'Jazz Lounge', loc: 'http://192.0.2.50:8888/stream/9', key: '' } : null;
+      shotPath = path.join(dir, view + '.png');
       const page = await ctx.newPage();
       page.on('pageerror', (e) => console.warn(`  [${lang}/${view}] pageerror:`, e.message));
       try {
         await page.goto(ORIGIN + '/', { waitUntil: 'domcontentloaded' });
         await drive(page, view);
-        await page.screenshot({ path: path.join(OUT, lang, view + '.png') });
-        console.log(`ok  ${lang}/${view}`);
+        await page.screenshot({ path: shotPath });
+        console.log(`ok  ${theme ? theme + '/' : ''}${lang}/${view}`);
         ok++;
       } catch (e) {
         console.error(`FAIL ${lang}/${view}: ${e.message}`);
