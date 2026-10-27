@@ -344,3 +344,127 @@ func TestRejoinMissingMembersTakesRebootedMembersBackOnly(t *testing.T) {
 		t.Error("a non-permanent group must not rejoin on the tick")
 	}
 }
+
+// zoneLossFixture is a two-speaker permanent group whose lone follower just
+// restarted for an update: the master's firmware ended the zone with it, the
+// master is awake and idle, and the follower sits in standby with a freshly
+// started agent (#1339).
+type zoneLossFixture struct {
+	mu           sync.Mutex
+	setCalls     int
+	setSlaves    []boxapi.ZoneMember
+	woken        map[string]bool
+	masterSource string
+	memberUptime int
+	liveMaster   string
+}
+
+func newZoneLossFixture(t *testing.T) (*Server, *zoneLossFixture, zones.Zone) {
+	t.Helper()
+	f := &zoneLossFixture{woken: map[string]bool{}, masterSource: "INVALID_SOURCE", memberUptime: 90}
+	s := newRejoinServer()
+	s.rejoinSelfDeviceIDFn = func(context.Context) string { return "MASTER01" }
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch ip {
+		case "10.0.0.1":
+			return nowPlayingSnapshot{Source: f.masterSource, PlayStatus: "STOP_STATE"}
+		case "10.0.0.2":
+			return nowPlayingSnapshot{Source: "STANDBY"}
+		default:
+			return nowPlayingSnapshot{}
+		}
+	}
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.memberUptime
+	}
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(_ context.Context, ip string, _ *slog.Logger) {
+		f.mu.Lock()
+		f.woken[ip] = true
+		f.mu.Unlock()
+	}
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return boxapi.Zone{Master: f.liveMaster}, nil
+	}
+	s.rejoinSetZoneFn = func(_ context.Context, _ string, _ boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+		f.mu.Lock()
+		f.setCalls++
+		f.setSlaves = slaves
+		f.mu.Unlock()
+		return nil
+	}
+	s.noteZoneDissolved()
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
+		{DeviceID: "FOLLOWER", IP: "10.0.0.2"},
+	}}
+	return s, f, z
+}
+
+// A two-speaker permanent group whose follower restarted for an update, master
+// awake, zone gone: exactly one setZone, and a second tick adds none.
+func TestReformAfterMemberRebootTakesRestartedFollowerBackOnce(t *testing.T) {
+	t.Parallel()
+	s, f, z := newZoneLossFixture(t)
+	if !s.reformAfterMemberReboot(context.Background(), z) {
+		t.Fatal("the restarted follower was not taken back")
+	}
+	if f.setCalls != 1 || len(f.setSlaves) != 1 || f.setSlaves[0].DeviceID != "FOLLOWER" {
+		t.Fatalf("setCalls=%d slaves=%v, want exactly one setZone with FOLLOWER", f.setCalls, f.setSlaves)
+	}
+	if !f.woken["10.0.0.2"] {
+		t.Error("the freshly restarted follower in standby was not woken for the join")
+	}
+	// The setZone's own teardown frame stamps a new dissolve; the next tick
+	// must still leave it at that one attempt.
+	s.noteZoneDissolved()
+	if s.reformAfterMemberReboot(context.Background(), z) || f.setCalls != 1 {
+		t.Errorf("second tick drove another setZone: setCalls=%d", f.setCalls)
+	}
+}
+
+func TestReformAfterMemberRebootLeavesItAlone(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(s *Server, f *zoneLossFixture, z *zones.Zone)
+	}{
+		{"master in standby", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.masterSource = "STANDBY" }},
+		{"not permanent", func(_ *Server, _ *zoneLossFixture, z *zones.Zone) { z.Permanent = false }},
+		{"stereo pair", func(_ *Server, _ *zoneLossFixture, z *zones.Zone) { z.Stereo = true }},
+		{"member switched off long ago", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.memberUptime = 5000 }},
+		{"member agent not answering", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.memberUptime = -1 }},
+		{"zone still live", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.liveMaster = "MASTER01" }},
+		{"this speaker is a member", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.rejoinSelfDeviceIDFn = func(context.Context) string { return "FOLLOWER" }
+		}},
+		{"no dissolve observed", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.zoneLossMu.Lock()
+			s.zoneDissolvedAt = time.Time{}
+			s.zoneLossMu.Unlock()
+		}},
+		{"dissolve too long ago", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.zoneLossMu.Lock()
+			s.zoneDissolvedAt = time.Now().Add(-zoneLossRejoinWindow - time.Minute)
+			s.zoneLossMu.Unlock()
+		}},
+		{"group re-form hushed", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) { s.hushGroupForm(time.Minute) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, f, z := newZoneLossFixture(t)
+			tc.setup(s, f, &z)
+			if s.reformAfterMemberReboot(context.Background(), z) || f.setCalls != 0 {
+				t.Errorf("setZone driven: setCalls=%d", f.setCalls)
+			}
+			if f.woken["10.0.0.2"] {
+				t.Error("a member was woken")
+			}
+		})
+	}
+}

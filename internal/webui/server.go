@@ -237,6 +237,7 @@ type Server struct {
 	rejoinLiveZoneFn        func(ctx context.Context, host string) (boxapi.Zone, error)
 	rejoinReadAgentUptimeFn func(ctx context.Context, ip string) int
 	rejoinSetZoneFn         func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error
+	rejoinSelfDeviceIDFn    func(ctx context.Context) string
 	// networkChangedFn is the post-switch state refresh, fired after a
 	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
 	networkChangedFn func(reason string)
@@ -560,6 +561,13 @@ type Server struct {
 	// does not drive the firmware with back-to-back setZone rounds.
 	defaultFormMu     sync.Mutex
 	lastDefaultFormAt time.Time
+	// zoneLossMu guards the firmware-dissolve bookkeeping the tick reads to
+	// take a just-rebooted member back into a permanent group whose zone died
+	// with it (reformAfterMemberReboot): when the speaker last reported its
+	// zone gone, and when that path last drove a setZone.
+	zoneLossMu            sync.Mutex
+	zoneDissolvedAt       time.Time
+	zoneLossRejoinTriedAt time.Time
 
 	// wedge tracks the "box accepts transport pushes but never plays" state
 	// that only a power-cycle clears; streamActivityFn (the stream proxy's
