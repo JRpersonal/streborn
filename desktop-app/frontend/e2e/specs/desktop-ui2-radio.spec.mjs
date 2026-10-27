@@ -127,7 +127,13 @@ test.describe('UI 2.0 Radio', () => {
       await mock.set('RadioSearchDetailed', { value: { relaxed: false, stations: [
         { name: 'Dead Air FM', url: 'http://example.com/dead', url_resolved: 'http://example.com/dead', stationuuid: 'dead', codec: 'MP3', bitrate: 128, lastcheckok: 0 },
       ] } });
-      await page.locator('#topBtn').click();
+      // The Top list is already open, and a click on its pressed button
+      // closes it (#1521): close it, then open it again on the new answer.
+      const top = page.locator('#topBtn');
+      await expect(top).toHaveAttribute('aria-pressed', 'true');
+      await top.click();
+      await expect(top).toHaveAttribute('aria-pressed', 'false');
+      await top.click();
       const r = row(page, 'Dead Air FM');
       await expect(r).toHaveClass(/is-broken/);
       await expect(r.locator('.ui2-st-broken')).toHaveText('Not reachable at the last directory check');
