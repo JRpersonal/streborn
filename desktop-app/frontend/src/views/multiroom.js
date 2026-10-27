@@ -988,7 +988,11 @@ function renderGroupKeysSection(strBoxes) {
       const key = keyOf(doc, tp.name);
       const perm = tp.permanent
         ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>` : '';
-      const warnKey = key ? groupKeyWebhookWarnKey(gk.webhooks, key) : '';
+      // The other thumbs key's group or key action decides whether the shared
+      // thumbs webhook still fires there, so the warning gets both.
+      const warnKey = key ? groupKeyWebhookWarnKey(gk.webhooks, key, {
+        bindings: doc.bindings, keyActionOn: (k) => sleepKey(k) || snoozeKey(k) || bassKey(k),
+      }) : '';
       const warn = warnKey
         ? `<small class="gk-warn setup-warn small">${escapeHtml(t(warnKey, { name: remoteName, entry: t('settingsView.webhookKeyThumb') }))}</small>` : '';
       return `<div class="gk-row">` +

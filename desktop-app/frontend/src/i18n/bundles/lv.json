@@ -1952,6 +1952,7 @@
   "speaker.groupKeyErrorUnresponsive": "{{name}}: grupas pogas nospiešana pultī neko nepaveica, jo skaļrunis, kas vada grupu, atbildēja pārāk lēni. Lūdzu, nospiediet pogu vēlreiz.",
   "speaker.groupKeyErrorMoved": "{{name}}: grupas pogas nospiešana pultī neko nepaveica, jo kāds grupas skaļrunis vairs nav saglabātajā adresē. Lūdzu, saglabājiet grupu vēlreiz cilnē Multiroom.",
   "multiroom.groupKeysWebhookWarnShared": "{{name}} ir arī kopīgais īkšķa pogu webhook („{{entry}}”). Šajā pogā uzvar grupa, bet otrā īkšķa pogā webhook joprojām nostrādā. Nav vajadzīgs? Izslēdziet to pults taustiņu kartē iestatījumos.",
+  "multiroom.groupKeysWebhookWarnSharedUnused": "{{name}} ir arī kopīgais īkšķa pogu webhook („{{entry}}”). Tas nenostrādā nevienā no īkšķa pogām: šajā uzvar grupa, bet otrai pogai ir sava grupa, darbība vai webhook (vai ieraksts ir nepilnīgs). Nav vajadzīgs? Izslēdziet to pults pogu kartē Iestatījumos.",
   "multiroom.groupKeysDisplayNote": "Izjauciet grupu ar to pašu pogu, ar kuru to izveidojāt. Skaļruņa displejs pēc īkšķa pogas nospiešanas var rādīt „Darbība nav pieejama”, jo programmaparatūra pogu uztver kā vērtējumu. Šis ziņojums nenozīmē, ka grupas poga nav nostrādājusi.",
   "settingsView.webhookThumbSharedNote": "Šis kopīgais ieraksts nostrādā abās īkšķa pogās. Pogā ar grupu uzvar grupa. Lai to noņemtu, izslēdziet un saglabājiet.",
   "settingsView.webhookMacInvalid": "Šī MAC adrese nav derīga. Norādiet sešus pārus, piemēram, AA:BB:CC:DD:EE:FF."

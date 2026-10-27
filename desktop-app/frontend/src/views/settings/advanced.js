@@ -12,7 +12,7 @@ import { t } from '../../i18n/index.js';
 import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from '../../copyreport.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
-import { normalizeDoc, webhookConfigured, keyMapTarget, validWolMac } from '../../groupkeys.js';
+import { normalizeDoc, webhookPresent, keyMapTarget, validWolMac } from '../../groupkeys.js';
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../../keyactions.js';
 import {
   SetPreset,
@@ -624,10 +624,12 @@ export function wireAdvancedSections(ctx) {
       // repaint from what the speaker holds now (a refusal leaves it as it was)
       loadInto(tg);
     };
-    // paintRemote marks every key that carries an enabled, configured trigger
-    // and the key currently being edited. The legacy shared thumbs action
-    // lights both thumbs keys, since it fires for either.
-    const configured = webhookConfigured;
+    // paintRemote marks every key that carries an enabled trigger and the key
+    // currently being edited. The legacy shared thumbs action lights both
+    // thumbs keys, since it fires for either. A broken entry (an address that
+    // does not parse) lights too: it is on the key, and the user has to be
+    // able to find it, open it and switch it off.
+    const configured = webhookPresent;
     const paintRemote = (selected) => {
       const thumbShared = configured(cfg.thumb);
       document.querySelectorAll('.rc-key[data-key]').forEach((el) => {

@@ -1952,6 +1952,7 @@
   "speaker.groupKeyErrorUnresponsive": "{{name}}: a group key press on the remote did nothing, because the speaker that leads the group answered too slowly. Please press the key again.",
   "speaker.groupKeyErrorMoved": "{{name}}: a group key press on the remote did nothing, because a speaker of the group is no longer at its saved address. Please save the group again in the Multi-room tab.",
   "multiroom.groupKeysWebhookWarnShared": "{{name}} also carries the shared thumbs webhook (\"{{entry}}\"). On this key the group wins, but on the other thumbs key the webhook still fires. Not needed? Switch it off on the remote key map in Settings.",
+  "multiroom.groupKeysWebhookWarnSharedUnused": "{{name}} also carries the shared thumbs webhook (\"{{entry}}\"). It does not fire on either thumbs key: the group wins on this one, and the other key carries its own group, key action or webhook (or the entry is incomplete). Not needed? Switch it off on the remote key map in Settings.",
   "multiroom.groupKeysDisplayNote": "Dissolve the group with the same key that formed it. The speaker's display may show \"Action not available\" on a thumbs press, because the firmware treats the key as a rating. That message does not mean the group key failed.",
   "settingsView.webhookThumbSharedNote": "This shared entry fires on both thumbs keys. On a key that carries a group, the group wins. To remove it, switch it off and save.",
   "settingsView.webhookMacInvalid": "That MAC address is not valid. Use six pairs, for example AA:BB:CC:DD:EE:FF."
