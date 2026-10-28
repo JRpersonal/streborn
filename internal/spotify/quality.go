@@ -294,7 +294,22 @@ func (m *Manager) SetBitrate(kbps int) (applied bool, err error) {
 		}
 	}
 	if sameEff {
-		return !pending, nil
+		if !pending || streaming {
+			return !pending, nil
+		}
+		// config.yml already carries this bitrate from a plan-driven change
+		// that is still waiting for a detach. The speaker is idle and the user
+		// just asked for it, so pay that restart now instead of waiting for a
+		// whole play-then-stop cycle.
+		m.mu.Lock()
+		m.bitrPending = false
+		m.mu.Unlock()
+		m.invalidateHeaderCache()
+		m.logger.Info("spotify: applying the waiting bitrate change on request, restarting go-librespot", "kbps", eff, "reason", reason)
+		if restart != nil {
+			restart()
+		}
+		return true, nil
 	}
 	if werr := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
 		[]byte(m.configYAML(name, vol)), 0o644); werr != nil {

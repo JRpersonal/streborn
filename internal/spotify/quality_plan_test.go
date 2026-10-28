@@ -353,3 +353,23 @@ func TestServeQualityReportsChoiceAndReason(t *testing.T) {
 		t.Errorf("POST 0 = %d %s", w.Code, w.Body.String())
 	}
 }
+
+// A plan-driven change already written to config.yml waits for a detach. When
+// the user then picks that same quality while nothing plays, the restart is
+// paid at once instead of after a whole play-then-stop cycle.
+func TestSetBitrateIdlePaysAWaitingPlanChange(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "cfg")
+	m, logs := newPlanManager(t, cfg)
+	restarted := 0
+	m.mu.Lock()
+	m.bitr, m.bitrReason, m.bitrPending = 320, bitrateReasonPremium, true
+	m.runCancel = func() { restarted++ }
+	m.mu.Unlock()
+	applied, err := m.SetBitrate(320)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, pending := bitrState(m); !applied || pending || restarted != 1 {
+		t.Fatalf("applied=%v pending=%v restarts=%d, want true false 1\n%s", applied, pending, restarted, logs.String())
+	}
+}
