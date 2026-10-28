@@ -383,6 +383,9 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// on (#1035), "" when it is not. It keeps the hold line to one per source
 	// and lets the release say what was protected.
 	userHeldSrc := ""
+	// setupHeldSrc is the setup source the forced pass was held on, "" when
+	// it was not. One hold line per stretch in setup, and the release names it.
+	setupHeldSrc := ""
 	// groupWakeHeld keeps the group-wake hold line to one per episode, the
 	// same way retryHoldLogged does for the playback hold.
 	groupWakeHeld := false
@@ -600,15 +603,27 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			}
 			startHoldLogged = false
 			userSrc := userChosenSource(src)
-			if userSrc {
+			setupSrc := isSetupSource(src)
+			if userSrc || setupSrc {
 				// The ceiling bounds a wait on STR's own playback only. Time
-				// spent on the listener's AirPlay or Bluetooth must not count
-				// towards it, or the moment they switch to an STR station the
-				// pass would write straight into it.
+				// spent on the listener's AirPlay or Bluetooth, or in the
+				// speaker's setup, must not count towards it, or the moment
+				// the speaker moves on to an STR station the pass would write
+				// straight into it.
 				forceHeldSince = time.Time{}
 			}
 			hold, ceilingHit := forcedWriteHold(src, playing, playKnown, everFullDone, forceHeldSince, time.Now())
 			switch {
+			case hold && setupSrc:
+				// One line per stretch in setup, not per retry.
+				if setupHeldSrc == "" {
+					logger.Info("preset reconcile: forced pass held, the speaker is in setup; it runs once the speaker leaves setup",
+						"source", src, "firstPass", !everFullDone)
+				}
+				setupHeldSrc = src
+				forceHeld = true
+				time.Sleep(forcedPlayHoldRetry)
+				continue
 			case hold && userSrc:
 				// One line per source, not per retry: a held pass re-reads the
 				// box every 30 s for as long as the session lasts.
@@ -686,6 +701,11 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			}
 			ceilingListedLogged = false
 			forceKeysDead = false
+			if setupHeldSrc != "" {
+				logger.Info("preset reconcile: the speaker left setup, running the held pass",
+					"heldOn", setupHeldSrc, "source", src)
+				setupHeldSrc = ""
+			}
 			if userHeldSrc != "" {
 				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
 					"heldOn", userHeldSrc, "source", src)
@@ -858,6 +878,10 @@ const userPlayStartHoldRetry = 5 * time.Second
 // while his PC was searching for it. So the source NAME decides too, exactly as
 // it has for the insurance pass since 2026-08-02.
 func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
+	if isSetupSource(src) {
+		// No ceiling and no first-pass exception: see isSetupSource.
+		return true, false
+	}
 	if !forcedWriteBusy(src, playing, playKnown) {
 		return false, false
 	}
@@ -875,6 +899,20 @@ func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSinc
 		return false, true
 	}
 	return true, false
+}
+
+// isSetupSource reports whether the speaker is in its setup: the SETUP source
+// or any of the SETUP_* family. A forced pass is never written into it, however
+// long it has been held. A preset write makes the firmware touch its source,
+// and a speaker in setup is either being provisioned by the person at it
+// (Bose's setup page) or raising its own setup access point because it has no
+// network; the write helps neither and can end the setup. Field case,
+// Series-I ST20 2026-10-28: "forced pass ran anyway, the hold ceiling passed
+// ... source=SETUP heldFor=5m1s". The pass runs once the source leaves setup;
+// the leave-setup watcher clears a merely stuck SETUP source within seconds,
+// so a networked speaker is not held for long.
+func isSetupSource(src string) bool {
+	return strings.HasPrefix(src, "SETUP")
 }
 
 // userChosenSource reports whether src is a source the listener picked outside

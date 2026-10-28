@@ -146,6 +146,42 @@ func TestSTRsOwnPlaybackKeepsTheCeiling(t *testing.T) {
 	}
 }
 
+// Series-I ST20, 2026-10-28: "forced pass ran anyway, the hold ceiling passed
+// ... source=SETUP heldFor=5m1s". A speaker in setup is being provisioned or is
+// raising its own access point for lack of a network; the pass waits for it to
+// leave setup however long that takes, and runs once it has.
+func TestForcedWriteHoldNeverWritesIntoSetup(t *testing.T) {
+	now := time.Now()
+	for _, src := range []string{"SETUP", "SETUP_AP_OOB", "SETUP_INACTIVE"} {
+		for _, c := range []struct {
+			name         string
+			playing      bool
+			everFullDone bool
+			heldSince    time.Time
+		}{
+			{"first registration", false, false, time.Time{}},
+			{"hold just began", false, true, time.Time{}},
+			{"at the ceiling", false, true, now.Add(-forcedPlayHoldCeiling)},
+			{"long past the ceiling", true, true, now.Add(-time.Hour)},
+		} {
+			hold, ceiling := forcedWriteHold(src, c.playing, true, c.everFullDone, c.heldSince, now)
+			if !hold || ceiling {
+				t.Errorf("src=%q %s: a speaker in setup must stay held with no ceiling: hold=%v ceiling=%v",
+					src, c.name, hold, ceiling)
+			}
+		}
+	}
+	// Once the source has left setup the pass is free to run.
+	if hold, ceiling := forcedWriteHold("STANDBY", false, true, true, time.Time{}, now); hold || ceiling {
+		t.Fatalf("after setup the held pass must run: hold=%v ceiling=%v", hold, ceiling)
+	}
+	for _, src := range []string{"", "STANDBY", "UPNP", "LOCAL_INTERNET_RADIO", "BLUETOOTH"} {
+		if isSetupSource(src) {
+			t.Errorf("%q is not setup", src)
+		}
+	}
+}
+
 func TestUserChosenSource(t *testing.T) {
 	for _, src := range []string{"AIRPLAY", "BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "STORED_MUSIC", "SOMETHING_NEW"} {
 		if !userChosenSource(src) {
