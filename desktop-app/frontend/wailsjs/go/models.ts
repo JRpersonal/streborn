@@ -175,6 +175,7 @@ export namespace main {
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
 	    staleFolderKeySlot?: string;
+	    speakerNameUnsafe?: boolean;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -217,6 +218,7 @@ export namespace main {
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
 	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
+	        this.speakerNameUnsafe = source["speakerNameUnsafe"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
