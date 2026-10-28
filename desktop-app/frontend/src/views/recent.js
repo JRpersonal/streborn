@@ -18,7 +18,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
-import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
+import { logoImgTag, spotifyCoverImgTag } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
@@ -170,13 +170,19 @@ export function groupRecentCards(entries) {
     }
     const seen = new Set();
     if (e.track) seen.add(e.track);
+    // A spotify: card is a Spotify card whatever the row says. An older agent
+    // filed a Spotify URI pushed through the play-a-URL path as "radio" and
+    // kept that label for the key recalls of the same playlist (#1077); as a
+    // radio card it read "Radio" and its Play sent the URI to the speaker as
+    // a stream, which the speaker refused.
+    const source = /^spotify:/.test(e.cardKey) ? 'spotify' : e.source;
     // Spotify playable when its playlist URI matches a preset slot on its box.
-    const playSlot = e.source === 'spotify' && e._spotifySlots
+    const playSlot = source === 'spotify' && e._spotifySlots
       ? e._spotifySlots[e.cardKey]
       : undefined;
     const c = {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
-      source: e.source, cardKey: e.cardKey, name: e.cardName,
+      source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
       itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
@@ -253,11 +259,15 @@ function formatTrack(raw) {
 
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade
 // the preset/search tiles use (a global error-listener walks the chain). Spotify
-// shows its glyph; radio/NAS derive favicons from the URL, ending on a monogram
-// so a logo-less station still gets a clean letter tile instead of a blank box.
-function logoImg(c) {
+// shows the playlist or album cover the agent stored on the card, with its glyph
+// as the immediate image and the fallback, exactly like a Spotify preset key; it
+// used to show the bare glyph always, so the only Spotify entry that ever had a
+// cover was one mislabelled as radio (#1077). Radio/NAS derive favicons from the
+// URL, ending on a monogram so a logo-less station still gets a clean letter
+// tile instead of a blank box.
+export function logoImg(c) {
   if (c.source === 'spotify') {
-    return `<img class="rc-logo" src="${escapeAttr(SPOTIFY_LOGO)}" alt="">`;
+    return spotifyCoverImgTag(c.art, 'rc-logo');
   }
   // Radio/NAS reuse the exact search/preset tile path (logoImgTag), so they go
   // through the SAME global, async, non-blocking Go-resolved hydration that

@@ -3998,7 +3998,12 @@ async function loadFavorites(quiet) {
   if (!box) return;
   var list = await api('/api/favorites');
   if (quiet && !Array.isArray(list)) return;
-  var next = Array.isArray(list) ? list : [];
+  // A favourite whose address is no http(s) stream (a Spotify playlist starred
+  // from a card mislabelled as radio, #1077) cannot play as a station: the
+  // speaker answered it with a bad-URL error. It is left out here.
+  var next = (Array.isArray(list) ? list : []).filter(function (st) {
+    return st && isStreamURL(st.url_resolved || st.url);
+  });
   var sig = JSON.stringify(next);
   if (quiet && (sig === favSig || box.querySelector('.fav-confirm'))) return;
   favSig = sig;
@@ -4013,6 +4018,12 @@ async function loadFavorites(quiet) {
     box.appendChild(row);
     renderFavRow(row, st, i, false, '');
   });
+}
+
+// isStreamURL reports whether u is an http(s) address, the only kind
+// /api/play accepts.
+function isStreamURL(u) {
+  return /^https?:\/\//i.test(String(u || ''));
 }
 
 // favKey names a favourite the way the desktop app and the agent do (favId in
@@ -5685,6 +5696,9 @@ async function loadRecent() {
   list.forEach(function(e){
     if (!e || !e.cardKey || seenKeys[e.cardKey]) return;
     seenKeys[e.cardKey] = true;
+    // A spotify: card is a Spotify card whatever an older agent filed it
+    // under (#1077): labelled "radio" it got no key Play.
+    if (e.source !== 'spotify' && /^spotify:/.test(e.cardKey)) e = Object.assign({}, e, { source: 'spotify' });
     cards.push(e);
   });
   cards = cards.slice(0, 6);

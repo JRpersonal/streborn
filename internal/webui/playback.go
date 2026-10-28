@@ -147,6 +147,17 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url required", http.StatusBadRequest)
 		return
 	}
+	// Only an http(s) stream can be played here; the stream proxy refuses
+	// anything else anyway. A spotify: URI that reached this path (a stray
+	// favourite or a mislabelled Recently-played card) used to wake the box,
+	// end in AUDIO_ERROR_BAD_URL and still be filed as a "radio" card, which
+	// then relabelled the real Spotify card of the same URI (#1077). Refused
+	// before the speaker is touched and before anything is recorded.
+	if !isHTTPURL(req.URL) {
+		s.logger.Warn("play request refused: not a stream URL", "url", req.URL)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
+		return
+	}
 	if s.refuseIfIncompletePair(w) {
 		return
 	}
