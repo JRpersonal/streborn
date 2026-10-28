@@ -516,12 +516,24 @@ var friendlyNameLogRegex = regexp.MustCompile(`(?im)(\b(?:friendlyName|pair)[:=]
 // The value shapes allow the JSON-escaped quote (\") as well as the plain one,
 // and the replacement keeps whatever delimiters were there and adds no quote or
 // backslash, so a log line embedded in a JSON string stays valid JSON.
-var friendlyNameChangeLineRegex = regexp.MustCompile(`(?i)(friendly ?name (?:updated|change)\\?"?)((?:[ \t]+[A-Za-z_][A-Za-z0-9_.]*=(?:\\?"[^"\\\n]*\\?"|[^\s"\\]+))+)`)
+//
+// The same holds for the other agent lines that log the name under name=,
+// old= or new= (#1582 found the Spotify ones in a bundle):
+//
+//	msg="spotify: refreshed config from box" name=Kitchen vol=30 restart=true
+//	msg="spotify: device name changed, restarting go-librespot" name=Kitchen
+//	msg="setup wizard box name applied" name=Kitchen
+//	msg="speaker name contains a character ..." name="Test&B" suggested="Test+B"
+//	msg="speaker name repaired on the user's request, ..." old="Test&B" new="Test+B"
+//
+// Those phrases can sit anywhere in the message, so the anchor may be followed
+// by the rest of it before the closing quote.
+var friendlyNameChangeLineRegex = regexp.MustCompile(`(?i)((?:friendly ?name (?:updated|change)|refreshed config from box|device name changed|box name applied|speaker name)[^"\\\n]*\\?"?)((?:[ \t]+[A-Za-z_][A-Za-z0-9_.]*=(?:\\?"[^"\\\n]*\\?"|[^\s"\\]+))+)`)
 
 // friendlyNameAttrRegex is one name-bearing attribute inside the tail that
 // friendlyNameChangeLineRegex isolated.
 // Quoted (plain or JSON-escaped) or bare value.
-var friendlyNameAttrRegex = regexp.MustCompile(`(?i)(\b(?:name|old|new)=)(?:(\\?")([^"\\\n]*)(\\?")|([^\s"\\]+))`)
+var friendlyNameAttrRegex = regexp.MustCompile(`(?i)(\b(?:name|old|new|suggested)=)(?:(\\?")([^"\\\n]*)(\\?")|([^\s"\\]+))`)
 
 // scrubFriendlyNameChanges hashes the speaker names in the agent's
 // network-name log lines (see friendlyNameChangeLineRegex).
