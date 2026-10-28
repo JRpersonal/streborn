@@ -283,6 +283,7 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	s.NoteBoxName(name, false)
 	// On /name POST Bose also resets the margeURL back to default —
 	// trigger AutoPair so the pair state is immediately re-established.
 	if s.autoPair != nil {

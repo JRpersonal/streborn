@@ -135,6 +135,17 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	} else {
 		out["boxHealth"] = "ok"
 	}
+	// A speaker name the firmware's UPnP renderer cannot survive (#1582,
+	// speakername.go): Spotify and the music library cannot play until it is
+	// renamed and restarted. The app and the phone page say exactly that and
+	// offer the repair. Emitted only when there is something to report.
+	unsafeName, rendererMissing := s.SpeakerNameIssue()
+	if unsafeName {
+		out["speakerNameUnsafe"] = "true"
+	}
+	if rendererMissing {
+		out["upnpRendererMissing"] = "true"
+	}
 	// Whether the speaker reaches the internet (internal/internet): a passive
 	// verdict fed by the clock sync and the stream proxy, no probe of its own.
 	// "unreachable" only on positive evidence. The desktop app turns it into

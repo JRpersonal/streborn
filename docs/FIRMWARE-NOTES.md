@@ -234,6 +234,28 @@ has an SSH fallback for the binary upload. The official Web API doc
 documents no request size limit anywhere; the measured cap is field
 knowledge and stands.
 
+## A speaker name with `&` takes the UPnP renderer down
+
+The UPnP renderer on `:8091` pastes the speaker's name into its device
+description (`/XD/BO5EBO5E-F00D-F00D-FEED-<deviceID>.xml`) without XML
+escaping it. Measured on a Portable, FW 27.0.6, 2026-10-28 (#1582): after a
+rename to `Test&B` (posted correctly escaped to `:8090/name`) the description
+served `<friendlyName>Test&B</friendlyName>`, and after the next boot the
+renderer did not come up at all. The description and every SOAP call answered
+404, and the syslog said `gupnp_root_device_get_ssdp_resource_group: assertion
+'GUPNP_IS_ROOT_DEVICE (root_device)' failed`. A name stored as invalid UTF-8
+(a lone Latin-1 byte) did the same. Renaming back and rebooting cured it.
+
+Spotify and the music library both play through that renderer, so neither
+works while native radio does. `:8090` itself escapes the name correctly, so
+nothing else looks wrong. STR writes names only through
+`speakername.Sanitise` (`&` becomes `+`, `<` and `>` are dropped, invalid
+UTF-8 is read as Latin-1), and the agent recognises a bad name the Bose app
+or the stock web UI set (`internal/webui/speakername.go`): it reports
+`speakerNameUnsafe` on `/api/agent/version`, probes the description once
+after a renderer 404, and offers a rename-and-restart on
+`POST /api/box/name/repair`.
+
 ## The `:8090` HTTP API vs the official doc
 
 ### The error envelope and the code table

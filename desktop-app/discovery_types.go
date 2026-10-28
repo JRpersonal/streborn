@@ -209,6 +209,11 @@ type BoxInfo struct {
 	// typically after a USB stick swap on a router's media server), empty
 	// when none. Only saving the folder on the key again cures it.
 	StaleFolderKeySlot string `json:"staleFolderKeySlot,omitempty"`
+	// SpeakerNameUnsafe is true while the speaker's stored name carries a
+	// character its firmware's UPnP renderer cannot survive ("&", "<", ">" or
+	// invalid UTF-8): Spotify and the music library cannot play on it until it
+	// is renamed and restarted (#1582).
+	SpeakerNameUnsafe bool `json:"speakerNameUnsafe,omitempty"`
 	// Storm1036 is true while the box rejects essentially every preset recall
 	// (Bose error 1036, "not logged in"). Nothing the user presses will play
 	// until the state clears, and the remedy people reach for on their own,

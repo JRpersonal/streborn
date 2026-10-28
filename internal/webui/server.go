@@ -419,6 +419,10 @@ type Server struct {
 	// nil until wired by cmd/agent.
 	boxNameFn func() (name, model string)
 
+	// speakerName tracks whether the speaker's stored name breaks the
+	// firmware's UPnP renderer (speakername.go, #1582). Zero value is ready.
+	speakerName speakerNameHealth
+
 	// nativePresetLocator decides whether a preset can be stored as a native
 	// LOCAL_INTERNET_RADIO station (returning its orion location) instead of a
 	// UPnP stream that the box refuses to activate on its own. nil until wired
@@ -1584,6 +1588,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
+	mux.HandleFunc("/api/box/name/repair", s.handleBoxNameRepair)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/mute", s.handleBoxMute)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)
