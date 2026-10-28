@@ -302,6 +302,7 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 func (m *Manager) CredentialSnapshot() map[string]any {
 	m.mu.Lock()
 	s := m.credReject
+	sr := m.stateRepair
 	m.mu.Unlock()
 	present := stateHasCredential(filepath.Join(m.configDir, "state.json"))
 	_, backupErr := os.Stat(filepath.Join(m.configDir, rejectedCredentialFile))
@@ -315,6 +316,9 @@ func (m *Manager) CredentialSnapshot() map[string]any {
 		"rejectedBackupKept":   backupErr == nil,
 		"nextStartAt":          fmtTime(s.retryAt),
 		"waitingForSpotifyTap": !present && !s.quarantinedAt.IsZero(),
+		"stateRepairedAt":      fmtTime(sr.at),
+		"stateLoginRestored":   sr.restored,
+		"stateRepairError":     sr.err,
 	}
 	return out
 }

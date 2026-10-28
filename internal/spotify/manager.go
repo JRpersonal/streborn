@@ -121,6 +121,9 @@ type Manager struct {
 	// credReject tracks Spotify refusing the saved login (BadCredentials) and
 	// what the supervisor did about it; see credreject.go. Guarded by mu.
 	credReject credRejectState
+	// stateRepair is the last time a damaged state.json was set aside before an
+	// engine start; see staterepair.go. Guarded by mu.
+	stateRepair stateRepair
 	// MemAvailKB reads the box's MemAvailable in KB, negative when unknown.
 	// Wired by the agent from /proc/meminfo before Run; nil in tests. The
 	// chain cutter (oggchain.go) reads it a couple of times a minute while a
