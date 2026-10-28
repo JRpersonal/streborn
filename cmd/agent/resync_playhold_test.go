@@ -182,6 +182,46 @@ func TestForcedWriteHoldNeverWritesIntoSetup(t *testing.T) {
 	}
 }
 
+// The setup hold has no ceiling while the speaker has no network (it is being
+// provisioned or raising its own access point), and a ten-minute one once it
+// has a default gateway: a Portable that finished Bose's setup page, and #873
+// speakers, can keep reporting SETUP for good.
+func TestSetupWriteHoldCeilingOnlyOnceOnTheNetwork(t *testing.T) {
+	now := time.Now()
+
+	// No gateway: held however long, and the clock never starts.
+	for _, gw := range []string{"", "0.0.0.0"} {
+		hold, since := setupWriteHold(gw, now.Add(-time.Hour), now)
+		if !hold || !since.IsZero() {
+			t.Errorf("gw=%q: must hold with the clock reset: hold=%v since=%v", gw, hold, since)
+		}
+	}
+
+	// Gateway first seen now: the clock starts and the pass waits.
+	hold, since := setupWriteHold("192.0.2.1", time.Time{}, now)
+	if !hold || !since.Equal(now) {
+		t.Fatalf("first sight of a gateway must start the clock and hold: hold=%v since=%v", hold, since)
+	}
+	// Just below the ceiling: still held, clock kept.
+	if hold, s := setupWriteHold("192.0.2.1", since, now.Add(forcedSetupHoldCeiling-time.Second)); !hold || !s.Equal(since) {
+		t.Errorf("below the ceiling: hold=%v since=%v", hold, s)
+	}
+	// At the ceiling: the pass runs.
+	if hold, _ := setupWriteHold("192.0.2.1", since, now.Add(forcedSetupHoldCeiling)); hold {
+		t.Error("at the ceiling on a network the pass must run")
+	}
+	// The gateway drops away near the ceiling: held again and the clock
+	// restarts from zero when it comes back.
+	hold, s := setupWriteHold("", since, now.Add(forcedSetupHoldCeiling-time.Second))
+	if !hold || !s.IsZero() {
+		t.Fatalf("losing the gateway must hold and reset: hold=%v since=%v", hold, s)
+	}
+	later := now.Add(forcedSetupHoldCeiling + time.Minute)
+	if hold, s := setupWriteHold("192.0.2.1", s, later); !hold || !s.Equal(later) {
+		t.Errorf("a gateway back after a gap restarts the clock: hold=%v since=%v", hold, s)
+	}
+}
+
 func TestUserChosenSource(t *testing.T) {
 	for _, src := range []string{"AIRPLAY", "BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "STORED_MUSIC", "SOMETHING_NEW"} {
 		if !userChosenSource(src) {
