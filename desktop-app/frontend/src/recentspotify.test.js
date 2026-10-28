@@ -44,4 +44,23 @@ describe('a star on a Spotify playlist is dropped', () => {
     ]));
     expect(loadFavStore().map((s) => s.name)).toEqual(['SWR3']);
   });
+  it('drops it from storage once', () => {
+    localStorage.setItem('str.favStations', JSON.stringify([
+      { stationuuid: KEY, name: 'Gypsy Soul', url: KEY, url_resolved: KEY },
+      { stationuuid: 'u1', name: 'SWR3', url: 'https://stream.example/swr3' },
+    ]));
+    loadFavStore();
+    const stored = JSON.parse(localStorage.getItem('str.favStations'));
+    expect(stored.map((s) => s.name)).toEqual(['SWR3']);
+    const spy = vi.spyOn(localStorage, 'setItem');
+    loadFavStore();
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it('survives a storage that throws on write', () => {
+    localStorage.setItem('str.favStations', JSON.stringify([
+      { stationuuid: KEY, name: 'Gypsy Soul', url: KEY, url_resolved: KEY },
+    ]));
+    localStorage.setItem = () => { throw new Error('quota'); };
+    expect(loadFavStore()).toEqual([]);
+  });
 });

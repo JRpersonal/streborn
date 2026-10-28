@@ -18,7 +18,15 @@ const FAV_KEY = 'str.favStations';
 export function loadFavStore() {
   let arr;
   try { arr = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
-  return Array.isArray(arr) ? arr.filter((s) => !isSpotifyFav(s)) : [];
+  if (!Array.isArray(arr)) return [];
+  const kept = arr.filter((s) => !isSpotifyFav(s));
+  // Drop such stars from the store itself, so this happens once and not on
+  // every read. Only the local copy: the speakers get the cleaned list with
+  // the next save, as every list change does.
+  if (kept.length !== arr.length) {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(kept)); } catch {}
+  }
+  return kept;
 }
 // isSpotifyFav spots a star set on a Spotify playlist that Recently played
 // showed as a radio card (#1077). It is no station: played as one, the speaker
