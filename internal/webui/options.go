@@ -127,6 +127,9 @@ func WithBoxHost(host string) Option {
 	return func(s *Server) {
 		s.boxHost = host
 		s.renderer = upnp.NewBoseRenderer(host)
+		// A 404 from this speaker's renderer may be a name it cannot survive
+		// (#1582, speakername.go); one rate-limited probe tells.
+		s.renderer.OnNotFound = s.NoteRendererNotFound
 	}
 }
 

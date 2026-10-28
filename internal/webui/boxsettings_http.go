@@ -19,6 +19,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/wlanlive"
+	"github.com/JRpersonal/streborn/speakername"
 )
 
 // guessErrorReason converts the technical UPnP / network error into a
@@ -266,19 +267,29 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name empty", http.StatusBadRequest)
 		return
 	}
+	// The name the speaker will actually store: "&", "<", ">" and invalid
+	// UTF-8 take its UPnP renderer down on the next boot (#1582), so they are
+	// replaced here (boxapi.SetName applies the same rule) and the reply
+	// carries the stored form for the app to show.
+	name := speakername.Sanitise(req.Name)
+	if name == "" {
+		http.Error(w, "name empty", http.StatusBadRequest)
+		return
+	}
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
-	if err := c.SetName(ctx, req.Name); err != nil {
+	if err := c.SetName(ctx, name); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	s.NoteBoxName(name, false)
 	// On /name POST Bose also resets the margeURL back to default —
 	// trigger AutoPair so the pair state is immediately re-established.
 	if s.autoPair != nil {
 		go s.autoPair.TriggerNow(context.Background())
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "name": req.Name})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "name": name})
 }
 
 // handleBoxVolume PUT sets the volume. Body {"value":N}.

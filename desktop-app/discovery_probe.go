@@ -170,6 +170,7 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		HoldRefusedSource:  jsonStringField(s, "holdRefusedSource"),
 		HoldRefusedSlot:    jsonStringField(s, "holdRefusedSlot"),
 		StaleFolderKeySlot: jsonStringField(s, "staleFolderKeySlot"),
+		SpeakerNameUnsafe:  jsonStringField(s, "speakerNameUnsafe") == "true",
 		Storm1036:          jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))

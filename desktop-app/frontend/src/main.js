@@ -13,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
 import { wantsFastPoll } from './trackprogress.js';
@@ -21,6 +22,7 @@ import {
   RefreshKnownBoxes,
   AddBoxByIP,
   RebootBox,
+  RepairSpeakerName,
   RemoveConflictingMod,
   RestoreSTRCloud,
   UpdateFailureReport,
@@ -2503,7 +2505,19 @@ function checkBoxIssueBanner() {
       name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
+  // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
+  // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
+  // music library cannot play while radio still does, and nothing else on
+  // screen says why. Not dismissible; the fix is one tap.
+  const badName = unsafeNameBoxes(boxes);
+  if (badName.length) {
+    const names = badName.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
+  }
   if (!msgs.length) { el.classList.add('hidden'); return; }
+  const badNameBtn = badName.length
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueBadNameBtn">${escapeHtml(t('speaker.badNameFixBtn'))}</button>`
+    : '';
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
   // instead of just telling them to "set it up in the settings": the button
   // jumps straight to that speaker's settings, where the Wi-Fi section is.
@@ -2535,6 +2549,7 @@ function checkBoxIssueBanner() {
     : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${badNameBtn}
     ${cloudBtn}
     ${stormBtn}
     ${conflictBtn}
@@ -2551,6 +2566,26 @@ function checkBoxIssueBanner() {
       showError(String(e));
     } finally {
       sb.disabled = false;
+    }
+  };
+  const bnb = $('boxIssueBadNameBtn');
+  if (bnb) bnb.onclick = async () => {
+    bnb.disabled = true;
+    try {
+      for (const box of badName) {
+        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
+        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
+        box.friendlyName = name || box.friendlyName;
+        box.speakerNameUnsafe = false;
+        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
+        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: box.friendlyName, speakerNameUnsafe: false };
+      }
+      checkBoxIssueBanner();
+      renderBoxSelect();
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      bnb.disabled = false;
     }
   };
   const cloudB = $('boxIssueCloudBtn');

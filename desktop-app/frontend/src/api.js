@@ -24,6 +24,7 @@ export {
   PhoneQR,
   PhoneAddressFor,
   RebootBox,
+  RepairSpeakerName,
   RecordUpdateIntent,
   ClearUpdateIntent,
   PendingUpdateIntent,

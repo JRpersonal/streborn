@@ -1181,6 +1181,11 @@ func (a *agent) buildBoxLink() error {
 	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
 	// button. We hook the event and trigger our UPnP player.
 	renderer := upnp.NewBoseRenderer(a.flags.boxHost)
+	// A renderer that answers 404 to everything did not come up at boot; a
+	// speaker name with "&" or invalid UTF-8 does that (#1582). The hook probes
+	// once (rate-limited) and names the cause in the log and to the apps.
+	renderer.OnNotFound = webuiSrv.NoteRendererNotFound
+	webui.RegisterDebugSection("speaker_name", webuiSrv.SpeakerNameForensics)
 	// The speaker's own playback clock, for the Spotify buffer-lag measurement
 	// (internal/spotify/boxlag.go): the app shows the position go-librespot has
 	// delivered, the room hears what the box has rendered, and this is the only
@@ -2019,7 +2024,7 @@ func (a *agent) startDeferred() error {
 		// Background poll: refresh name AND model in mDNS TXT as
 		// soon as /info on :8090 responds, then continue watching
 		// for renames the user might do via the BoseApp HTTP API.
-		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, logger)
+		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, a.webuiSrv.NoteBoxName, logger)
 
 		// Register again whenever the LAN address moves, the first lease after
 		// a boot above all: the agent is often up before it, and until then

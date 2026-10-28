@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JRpersonal/streborn/speakername"
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
@@ -503,7 +504,13 @@ type NameConfig struct {
 }
 
 // WriteNameConfig writes a name.conf JSON file to the stick.
+//
+// The name is passed through speakername.Sanitise: "&", "<", ">" and invalid
+// UTF-8 take the speaker's UPnP renderer down on the next boot, and Spotify
+// and the music library with it (#1582). The agent applies the same rule when
+// it sets the name, so this only keeps the stick's copy honest.
 func WriteNameConfig(targetPath string, cfg NameConfig) error {
+	cfg.Name = speakername.Sanitise(cfg.Name)
 	if cfg.Name == "" {
 		return fmt.Errorf("name must not be empty")
 	}
