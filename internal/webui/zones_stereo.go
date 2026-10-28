@@ -118,6 +118,9 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	if s.zones != nil {
 		if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
 			out.Permanent = true
+			if len(z.Members) > 0 && strings.EqualFold(z.Master, sz.Master) {
+				out.NotJoined = notJoinedMembers(z.Members, s.rememberedZoneMembers())
+			}
 		}
 	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
@@ -168,6 +171,12 @@ type zoneAnswer struct {
 	// frame when it is not live, so the user can see it exists and remove it;
 	// without the flag the group was invisible between plays (2026-09-06).
 	Permanent bool `json:"permanent,omitempty"`
+	// NotJoined lists the stored members of a live permanent group that are
+	// not in it right now (asleep and not woken, unreachable, or grouped under
+	// another speaker). Without it the app drew only the live zone, and a
+	// member that stayed out read as removed from the group, then came back
+	// once the group ended (#1576).
+	NotJoined []rememberedMember `json:"notJoined,omitempty"`
 	// PairPartnerGone names the other half of a stereo pair that did not answer.
 	// While a pair is incomplete the firmware refuses every source activation, so
 	// the speaker wakes and is back in standby five seconds later and nothing it
@@ -184,6 +193,25 @@ type rememberedMember struct {
 	IP       string `json:"ip"`
 	DeviceID string `json:"deviceID,omitempty"`
 	Name     string `json:"name,omitempty"`
+}
+
+// notJoinedMembers returns the stored members missing from the live member
+// list, matched by deviceID and, for a member stored without one, by address.
+func notJoinedMembers(live []boxapi.ZoneMember, stored []rememberedMember) []rememberedMember {
+	var out []rememberedMember
+	for _, m := range stored {
+		in := false
+		for _, l := range live {
+			if (m.DeviceID != "" && strings.EqualFold(m.DeviceID, l.DeviceID)) || (m.IP != "" && m.IP == l.IP) {
+				in = true
+				break
+			}
+		}
+		if !in {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // rememberedZoneMembers reads the persisted zone from the store and returns
