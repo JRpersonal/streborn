@@ -61,7 +61,25 @@ type Manager struct {
 	fallback  string // device name used until the box's friendly name is known
 	apiAddr   string // host:port of go-librespot's HTTP API
 	logger    *slog.Logger
-	bitr      int // 96/160/320 (persisted preference, see quality.go)
+	// bitr is the bitrate config.yml carries (96/160/320): the explicit choice
+	// when there is one, otherwise the plan-dependent default; see quality.go.
+	bitr int
+	// bitrChoice is the explicit per-speaker choice, bitrateAuto (0) while the
+	// default applies. Persisted in sp-bitrate.txt + sp-bitrate.choice.
+	bitrChoice int
+	// bitrReason says which rule produced bitr (bitrateReason* constants).
+	bitrReason string
+	// bitrStarted is the bitrate of the engine process last started (before
+	// the first start: the one the warm header cache was loaded for), so a
+	// start at a different bitrate drops the late-joiner header set.
+	bitrStarted int
+	// bitrLastUser is the account the engine was last seen logged in as. Unlike
+	// productUser it survives an engine start, so the next start can still
+	// look up that account's remembered plan when state.json names nobody.
+	bitrLastUser string
+	// bitrPlanTried is the account|kbps of the last plan-driven bitrate change
+	// owed to a restart, so one is never owed twice per agent process.
+	bitrPlanTried string
 	// bitrPending: a bitrate change arrived while the box was streaming; the
 	// config is written, only the engine restart is owed. The box's next
 	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
@@ -535,7 +553,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		credStore:  filepath.Join(filepath.Dir(configDir), "sp-accounts"),
 		apiAddr:    "127.0.0.1:3678",
 		logger:     logger,
-		bitr:       loadBitrate(bitratePath(configDir)),
+		bitrChoice: loadBitrateChoice(configDir),
 		client:     &http.Client{Timeout: 5 * time.Second},
 		playClient: &http.Client{Timeout: 25 * time.Second},
 		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),
@@ -544,6 +562,11 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 	// on NAND (a sibling of configDir), so it survives reboots and OTA agent
 	// swaps (which replace only the binary).
 	m.resume = newResumeStore(filepath.Join(filepath.Dir(configDir), "sp-resume.json"), logger)
+	// The bitrate the first config.yml carries: the choice, or the default for
+	// the plan remembered for the account the engine will log in as. Every
+	// engine start re-settles it (prepareBitrateForStart).
+	m.bitr, m.bitrReason = effectiveBitrate(m.bitrChoice, m.startPlan())
+	m.bitrStarted = m.bitr
 	// Warm the Ogg header cache from the last session so the very first box
 	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
 	// (the "service unavailable" flash). Best-effort; absent on a fresh install.

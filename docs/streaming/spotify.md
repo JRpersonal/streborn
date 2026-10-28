@@ -453,6 +453,62 @@ engine process for the name alone (honouring the 429 quiet window). The
 `product` in that answer is ignored: the engine's report gates. Once the
 name is known, the engine path makes no Web API call at all.
 
+### Streaming quality: Premium defaults to 320 kbps (`quality.go`)
+
+The engine's Vorbis bitrate (`bitrate:` in `config.yml`) is decided per
+speaker, in this order:
+
+1. **An explicit choice** made for the speaker in the desktop app (Spotify
+   tab, "Streaming quality": 160 or 320 kbps; 96 via the API) always wins.
+2. **Otherwise the default follows the account plan:** 320 kbps for a
+   Premium account, 160 kbps for any other plan, and 160 kbps while the
+   plan is unknown. Spotify serves the 320 files only to Premium, so a Free
+   account gets 160 anyway. "Automatic" in the selector (POST
+   `/spotify/quality` with `{"bitrate":0}`) goes back to this default.
+
+**When it is applied.** At every engine start `prepareBitrateForStart`
+computes the bitrate from the plan remembered in `plans.json` for the
+account whose credential `state.json` names (falling back to the account
+the engine was last seen logged in as), rewrites `config.yml` only if the
+value changed, drops the late-joiner header cache only if the new process
+runs at a different bitrate than the last one, and logs one line:
+`spotify: engine streaming quality kbps=320 reason=premium-default
+plan=premium`. Reasons are `chosen`, `premium-default`, `free-default` and
+`plan-unknown`.
+
+A plan answer that arrives later (a fresh install, the very first check)
+and moves the default never restarts the engine on the spot, not even when
+idle, because a plan read lands right after a login, when somebody is
+about to listen. `reconcilePlanBitrate` rewrites `config.yml` and marks the
+restart as owed; the box's next detach from the stream (after the usual
+10 s grace) or the next engine start pays it. The owed restart is armed at
+most once per account and target bitrate per agent process
+(`bitrPlanTried`), so a start that cannot see the plan and the plan read
+that follows it can never take turns restarting the engine. An explicit
+choice is never touched by a plan answer. Choosing a bitrate that already
+runs (320 on a Premium speaker on the default) only records the choice and
+does not restart.
+
+**Storage and migration.** `sp-bitrate.txt` (beside `sp-accounts/`) still
+holds the chosen number, so a downgraded agent reads it as before. A new
+sibling `sp-bitrate.choice` marks it as an explicit choice. Automatic
+removes both. A `sp-bitrate.txt` without the marker was written by an
+older agent: its selector only offered 160 (the default) and 320, stored
+nothing while the default ran, and selecting 160 on a speaker already at
+160 was a no-op. Such a file says 160 only after somebody tried 320 and
+went back, which was the only way back to the default that UI had, so a
+legacy 160 is read as **the default** (a Premium speaker moves to 320 at
+its next engine start). A legacy 96 or 320 can only have been chosen and
+stays an explicit choice. Whoever wants 160 on Premium picks it once more
+and it sticks, now with the marker.
+
+**Where it shows.** `GET /spotify/quality` answers `bitrate` (what
+`config.yml` carries), `pending` (a restart is owed), `choice` (0 =
+automatic) and `reason`; an older agent omits `choice`, which is how the
+desktop app knows whether to offer "Automatic". Each speaker row in the
+desktop app's Spotify tab reads e.g. "Streaming quality: 320 kbps (Premium
+default)". The phone page has no quality setting.
+
 ## Goal
 
 A SoundTouch speaker running STR should be linkable to one or more
