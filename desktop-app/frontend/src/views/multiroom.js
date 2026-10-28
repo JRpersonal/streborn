@@ -1424,6 +1424,10 @@ async function doDissolveStereo(pairCands) {
     }
   }
   if (dissolved) {
+    // The pair is gone, so its name goes too: a pair formed again from the same
+    // two speakers starts without the old one (#1579).
+    const undone = pair || { members: [{ deviceID: state.stereoLeft }, { deviceID: state.stereoRight }] };
+    try { await setPairName(undone, ''); } catch {}
     const okHtml = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
     if (offline.length) {
       // The skipped offline half keeps its side of the pair until it is back;
@@ -1575,6 +1579,8 @@ async function doDissolveStereoPair(pair, boxes) {
     }
   }
   if (dissolved) {
+    // Same as doDissolveStereo: the undone pair's name is forgotten (#1579).
+    try { await setPairName(pair, ''); } catch {}
     flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`);
   } else if (unconfirmed) {
     // Not an error and not a success. The agent sent the teardown and the
