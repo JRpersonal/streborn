@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Bu hoparlör gruptan çıkarılamadı: {{err}}",
   "multiroom.permanentForgotten": "Kalıcı grup silindi. Kendiliğinden bir daha kurulmayacak.",
   "multiroom.storedPermanentNote": "Kalıcı grup. Yalnızca çalma {{master}} üzerinde başlatıldığında oluşur.",
+  "multiroom.notJoined": "katılmadı",
+  "multiroom.notJoinedTip": "{{name}} bu kalıcı gruba ait, ancak şu anda birlikte çalmıyor.",
   "multiroom.undoPairTip": "Bu stereo çiftini geri al",
   "multiroom.formed": "Grup oluşturuldu. Ana hoparlör diğerlerine akış gönderir. Sessiz kalırlarsa, ana hoparlörün gerçekten çaldığından emin olun, sonra günlükleri gönderin.",
   "multiroom.formFailed": "Grup değiştirilemedi: {{err}}",

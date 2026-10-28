@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Šo skaļruni neizdevās izņemt no grupas: {{err}}",
   "multiroom.permanentForgotten": "Pastāvīgā grupa dzēsta. Tā vairs neizveidosies pati.",
   "multiroom.storedPermanentNote": "Pastāvīga grupa. Tā izveidojas tikai tad, kad atskaņošana tiek sākta uz {{master}}.",
+  "multiroom.notJoined": "nav pievienojies",
+  "multiroom.notJoinedTip": "{{name}} pieder šai pastāvīgajai grupai, bet pašlaik kopā nespēlē.",
   "multiroom.undoPairTip": "Atsaukt šo stereo pāri",
   "multiroom.formed": "Grupa izveidota. Galvenais skaļrunis straumē uz pārējiem. Ja tie paliek klusi, pārliecinieties, ka galvenais skaļrunis tiešām atskaņo, un atsūtiet žurnālus.",
   "multiroom.formFailed": "Neizdevās mainīt grupu: {{err}}",

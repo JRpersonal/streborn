@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Nie udało się usunąć tego głośnika z grupy: {{err}}",
   "multiroom.permanentForgotten": "Grupa stała usunięta. Nie utworzy się już sama.",
   "multiroom.storedPermanentNote": "Grupa stała. Tworzy się tylko wtedy, gdy odtwarzanie zostanie uruchomione na {{master}}.",
+  "multiroom.notJoined": "nie dołączył",
+  "multiroom.notJoinedTip": "{{name}} należy do tej stałej grupy, ale teraz z nią nie gra.",
   "multiroom.undoPairTip": "Cofnij tę parę stereo",
   "multiroom.formed": "Grupa utworzona. Główny głośnik strumieniuje do pozostałych. Jeśli milczą, upewnij się, że główny głośnik faktycznie odtwarza, a następnie prześlij logi.",
   "multiroom.formFailed": "Nie udało się zmienić grupy: {{err}}",

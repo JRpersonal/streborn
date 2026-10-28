@@ -148,6 +148,8 @@
   "multiroom.memberRemoveFailed": "That speaker could not be taken out of the group: {{err}}",
   "multiroom.permanentForgotten": "Permanent group deleted. It will not form itself again.",
   "multiroom.storedPermanentNote": "Permanent group. It only forms when playback is started on {{master}}.",
+  "multiroom.notJoined": "not joined",
+  "multiroom.notJoinedTip": "{{name}} belongs to this permanent group but is not playing along right now.",
   "multiroom.undoPairTip": "Undo this stereo pair",
   "multiroom.formed": "Group created. The main speaker streams to the others. If they stay silent, make sure the main speaker is actually playing, then send logs.",
   "multiroom.formFailed": "Could not change the group: {{err}}",

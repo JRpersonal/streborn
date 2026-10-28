@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "No se pudo sacar ese altavoz del grupo: {{err}}",
   "multiroom.permanentForgotten": "Grupo permanente eliminado. Ya no volverá a formarse solo.",
   "multiroom.storedPermanentNote": "Grupo permanente. Solo se forma cuando la reproducción se inicia en {{master}}.",
+  "multiroom.notJoined": "no se ha unido",
+  "multiroom.notJoinedTip": "{{name}} pertenece a este grupo permanente, pero ahora no suena con él.",
   "multiroom.undoPairTip": "Deshacer esta pareja estéreo",
   "multiroom.formed": "Grupo creado. El altavoz principal transmite a los demás. Si se quedan en silencio, comprueba que el altavoz principal esté reproduciendo de verdad y envíame los registros.",
   "multiroom.formFailed": "No se pudo cambiar el grupo: {{err}}",
