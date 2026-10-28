@@ -493,6 +493,7 @@
   "update.refreshBtn": "Atnaujinti",
   "update.rebootNote": "Atnaujinimo metu garsiakalbis paleidžiamas iš naujo, priklausomai nuo atnaujinimo vieną ar du kartus, ir prisijungia pats. Tai ne atstatymas: išsaugoti nustatymai ir stotys lieka. Jei po kelių minučių jis negrįžta arba garsiakalbio lemputės mirksi geltonai, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",
   "update.groupNote": "Šis garsiakalbis atnaujinimui bus paleistas iš naujo ir trumpam paliks savo grupę. Nuolatinė grupė jį vėl priims pati, o įprastą grupę po to reikės sudaryti iš naujo.",
+  "updateAll.groupNote": "Grupėje esantys garsiakalbiai, paleidžiami iš naujo atnaujinimui, trumpam paliks savo grupę. Nuolatinė grupė juos vėl priims pati, o įprastą grupę po to reikės sudaryti iš naujo.",
   "update.uploading": "Įkeliama (apie 1 min.)...",
   "update.runningBtn": "Atnaujinama…",
   "update.uploadedToast": "Atnaujinimas įkeltas. Garsiakalbis paleidžiamas iš naujo ir gali užtrukti iki kelių minučių, kol vėl atsakys.",

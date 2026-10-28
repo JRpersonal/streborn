@@ -535,6 +535,7 @@
   "update.refreshBtn": "Install update",
   "update.rebootNote": "The speaker restarts during the update, once or twice depending on the update, and reconnects by itself.",
   "update.groupNote": "This speaker restarts for the update and leaves its group for the moment. A permanent group takes it back by itself, an ordinary group you form again afterwards.",
+  "updateAll.groupNote": "Grouped speakers leave their group for the moment while they restart for the update. A permanent group takes them back by itself, an ordinary group you form again afterwards.",
   "update.speakerUpdateAvailFor": "Update available for '{{name}}'",
   "update.versionLine": "installed: {{installed}} → new: {{next}}",
   "update.appBehindShort": "Speaker newer than the app, please update the app (app: {{appVersion}})",

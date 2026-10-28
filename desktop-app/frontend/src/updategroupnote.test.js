@@ -6,12 +6,13 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { inLiveGroup } from './groups.js';
+import { inLiveGroup, anyInLiveGroup } from './groups.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bundleDir = join(here, 'i18n', 'bundles');
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const KEY = 'update.groupNote';
+const ALL_KEY = 'updateAll.groupNote';
 
 const master = { deviceID: 'AAAA', host: '192.0.2.1', kind: 'str' };
 const follower = { deviceID: 'BBBB', host: '192.0.2.2', kind: 'str' };
@@ -48,6 +49,65 @@ describe('inLiveGroup', () => {
     };
     expect(inLiveGroup(master, pairLive)).toBe(false);
     expect(inLiveGroup(follower, pairLive)).toBe(false);
+  });
+});
+
+describe('anyInLiveGroup', () => {
+  const zoneLive = {
+    AAAA: { master: 'AAAA', members: [{ deviceID: 'BBBB', ip: '192.0.2.2' }] },
+    BBBB: { master: 'AAAA' },
+  };
+
+  it('is true when any speaker of the run is grouped, master or follower', () => {
+    expect(anyInLiveGroup([solo, follower], zoneLive)).toBe(true);
+    expect(anyInLiveGroup([master, solo], zoneLive)).toBe(true);
+  });
+
+  it('is false for standalone speakers, an empty run and no run', () => {
+    expect(anyInLiveGroup([solo, twoChip], zoneLive)).toBe(false);
+    expect(anyInLiveGroup([], zoneLive)).toBe(false);
+    expect(anyInLiveGroup(null, zoneLive)).toBe(false);
+  });
+
+  it('is false when the only grouping is a stereo pair', () => {
+    const pairLive = {
+      AAAA: { master: 'AAAA', members: [{ deviceID: 'BBBB', ip: '192.0.2.2' }],
+        stereo: { id: 'p1', masterDeviceID: 'AAAA', members: [{ deviceID: 'AAAA', ip: '192.0.2.1' }, { deviceID: 'BBBB', ip: '192.0.2.2' }] } },
+      BBBB: { master: 'AAAA' },
+    };
+    expect(anyInLiveGroup([master, follower, solo], pairLive)).toBe(false);
+  });
+});
+
+describe('the update-all paths', () => {
+  const status = readFileSync(join(here, 'views', 'settings', 'status.js'), 'utf8');
+  const main = readFileSync(join(here, 'main.js'), 'utf8');
+
+  it('say beforehand that grouped speakers leave their group', () => {
+    // The Settings banner, when "Update all" is on offer.
+    expect(status).toContain('updateAllBtn && anyInLiveGroup(updateAllTargets, state.zoneLive)');
+    expect(status).toContain(`t('${ALL_KEY}')`);
+    // The confirmation before the run starts.
+    expect(main).toContain(`if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('${ALL_KEY}'));`);
+    // The speaker update card in the music view, for more than one speaker.
+    expect(main).toContain('outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)');
+  });
+
+  it('carries a real translation in every bundle', () => {
+    const en = JSON.parse(readFileSync(join(bundleDir, 'en.json'), 'utf8'))[ALL_KEY];
+    expect(en).toBeTruthy();
+    for (const l of langs) {
+      const b = JSON.parse(readFileSync(join(bundleDir, l + '.json'), 'utf8'));
+      const v = b[ALL_KEY];
+      expect(v, l).toBeTruthy();
+      expect(v, l).not.toEqual(b[KEY]);
+      if (l !== 'en') expect(v, l).not.toEqual(en);
+      expect(v, l).not.toMatch(/ [-–—] /);
+    }
+    const de = JSON.parse(readFileSync(join(bundleDir, 'de.json'), 'utf8'))[ALL_KEY];
+    expect(de).toMatch(/\bdu\b/);
+    expect(de).toMatch(/[äöüß]/);
+    expect(de).not.toMatch(/\bSie\b/);
   });
 });
 

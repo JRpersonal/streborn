@@ -913,8 +913,28 @@ function pickDict(){
   // that is missing one new string shows English for that string only.
   var base2 = I18N2.en, sel2 = I18N2[code] || base2;
   for (var k2 in base2) out[k2] = (sel2[k2] != null ? sel2[k2] : base2[k2]);
+  var base3 = I18N3.en, sel3 = I18N3[code] || base3;
+  for (var k3 in base3) out[k3] = (sel3[k3] != null ? sel3[k3] : base3[k3]);
   return out;
 }
+// A third dictionary with short lines: one locale per line and only a few
+// keys each, so a new string touches its own lines and not the enormous
+// ones above. pickDict merges it with the same per-key English fall-through
+// as I18N2; it only has to be filled before the call below.
+var I18N3 = {
+  en:{suGrpAllNote:"Grouped speakers leave their group for the moment while they restart for the update. A permanent group takes them back by itself, an ordinary group you form again afterwards."},
+  de:{suGrpAllNote:"Gruppierte Lautsprecher verlassen ihre Gruppe kurz, während sie für das Update neu starten. Eine dauerhafte Gruppe nimmt sie von selbst wieder auf, eine normale Gruppe bildest du danach neu."},
+  nl:{suGrpAllNote:"Gegroepeerde speakers verlaten even hun groep terwijl ze voor de update opnieuw opstarten. Een vaste groep neemt ze vanzelf weer op, een gewone groep maak je daarna opnieuw."},
+  fr:{suGrpAllNote:"Les enceintes groupées quittent leur groupe pour un moment pendant qu'elles redémarrent pour la mise à jour. Un groupe permanent les reprend tout seul, un groupe ordinaire est à refaire ensuite."},
+  es:{suGrpAllNote:"Los altavoces agrupados salen de su grupo por un momento mientras se reinician para la actualización. Un grupo permanente los vuelve a incluir solo, un grupo normal hay que formarlo de nuevo después."},
+  pl:{suGrpAllNote:"Zgrupowane głośniki na chwilę opuszczą swoją grupę, gdy uruchomią się ponownie na czas aktualizacji. Grupa stała przyjmie je z powrotem sama, zwykłą grupę trzeba potem utworzyć ponownie."},
+  tr:{suGrpAllNote:"Gruptaki hoparlörler güncelleme için yeniden başlarken bir süreliğine gruplarından ayrılır. Kalıcı bir grup onları kendiliğinden geri alır, normal bir grup sonrasında yeniden kurulmalıdır."},
+  ar:{suGrpAllNote:"السمّاعات الموجودة في مجموعة تغادرها مؤقتًا أثناء إعادة تشغيلها من أجل التحديث. المجموعة الدائمة تستعيدها تلقائيًا، أما المجموعة العادية فيجب تكوينها من جديد بعد ذلك."},
+  ja:{suGrpAllNote:"グループ内のスピーカーは、更新のために再起動する間グループから外れます。常設グループには自動で戻ります。通常のグループは後でもう一度作り直してください。"},
+  lt:{suGrpAllNote:"Grupėje esantys garsiakalbiai, paleidžiami iš naujo atnaujinimui, trumpam paliks savo grupę. Nuolatinė grupė juos vėl priims pati, o įprastą grupę po to reikės sudaryti iš naujo."},
+  lv:{suGrpAllNote:"Grupā esošie skaļruņi, restartējoties atjauninājumam, uz brīdi pametīs savu grupu. Pastāvīga grupa tos pieņems atpakaļ pati, bet parastu grupu pēc tam būs jāizveido no jauna."},
+  uk:{suGrpAllNote:"Динаміки в групі ненадовго вийдуть зі своєї групи, поки перезапускаються для оновлення. Постійна група прийме їх назад сама, а звичайну групу потім доведеться створити знову."},
+};
 var T = pickDict();
 // fmt fills {n}/{name} placeholders. Values are inserted as TEXT by every
 // caller, never as markup.
@@ -5100,14 +5120,25 @@ async function saveDisplay(kind, enabled) {
     else if (planning || probing) show(T.sfLoading);
     else if (onlyThis && fleet() && st.available) show(T.sfOneNote + (suGroupNoteDue() ? ' ' + T.suGrpNote : ''));
     else if (upd && !fleet() && suGroupNoteDue()) show(T.suGrpNote);
+    else if (!onlyThis && planFresh && fleet() && st.fleet.mode === 'plan' && suGroupNoteDue(planRows())) show(T.suGrpAllNote);
     else show('');
     renderFleet();
   }
   /* A speaker in a live group leaves it while it restarts for the update:
      the firmware drops a member that stops answering, and with one follower
-     the whole zone ends. Said before the tap, for the single-speaker update
-     only (#1339). A stereo pair is not a group here and survives a restart. */
-  function suGroupNoteDue() { return !!(typeof zone === 'object' && zone && zone.grouped && !zone.stereo); }
+     the whole zone ends. Said before the tap (#1339). A stereo pair is not a
+     group here and survives a restart.
+     Without rows: this speaker's own update. With rows (the fleet plan): due
+     when the run will restart this speaker or any member of its group. The
+     phone knows only the group of the speaker serving this page; a group of
+     other speakers alone is not visible here. */
+  function suGroupNoteDue(rows) {
+    if (!(typeof zone === 'object' && zone && zone.grouped && !zone.stereo)) return false;
+    if (!rows) return true;
+    var ips = {};
+    (zone.members || []).forEach(function(m){ if (m && m.ip) ips[m.ip] = true; });
+    return rows.some(function(sp){ return sp.state === 'waiting' && (sp.self || (sp.ip && ips[sp.ip])); });
+  }
   window.suRender = render;
   /* For the status poll: an update is in flight, this phone's run, one the
      serving speaker drives, or a single-speaker update the card is still
