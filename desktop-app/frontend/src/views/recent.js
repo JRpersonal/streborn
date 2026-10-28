@@ -18,7 +18,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
-import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
+import { logoImgTag, spotifyCoverImgTag } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
@@ -259,11 +259,15 @@ function formatTrack(raw) {
 
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade
 // the preset/search tiles use (a global error-listener walks the chain). Spotify
-// shows its glyph; radio/NAS derive favicons from the URL, ending on a monogram
-// so a logo-less station still gets a clean letter tile instead of a blank box.
-function logoImg(c) {
+// shows the playlist or album cover the agent stored on the card, with its glyph
+// as the immediate image and the fallback, exactly like a Spotify preset key; it
+// used to show the bare glyph always, so the only Spotify entry that ever had a
+// cover was one mislabelled as radio (#1077). Radio/NAS derive favicons from the
+// URL, ending on a monogram so a logo-less station still gets a clean letter
+// tile instead of a blank box.
+export function logoImg(c) {
   if (c.source === 'spotify') {
-    return `<img class="rc-logo" src="${escapeAttr(SPOTIFY_LOGO)}" alt="">`;
+    return spotifyCoverImgTag(c.art, 'rc-logo');
   }
   // Radio/NAS reuse the exact search/preset tile path (logoImgTag), so they go
   // through the SAME global, async, non-blocking Go-resolved hydration that
