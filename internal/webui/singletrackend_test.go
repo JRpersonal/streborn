@@ -188,11 +188,34 @@ func TestRepeatOneAlsoCoversABoxThatStoppedByItself(t *testing.T) {
 	}
 }
 
-func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
+// A user with the toggle on "all" started one track and it stopped at its end
+// with the repeat button lit (mail, 2026-10-28). A lone track is a list of one,
+// so "all" plays it again too.
+func TestRepeatAllAlsoPlaysALoneTrackAgain(t *testing.T) {
 	t.Parallel()
 	np := &fakeNowPlaying{}
 	s, rec := singleTrackServer(t, np)
 	withPlayMode(t, s, "shuffle=0 repeat=all\n")
+	gen := s.setLastPlay("http://192.0.2.9/all-for-love.mp3", "All for love", "", "audio/mpeg")
+
+	np.set("PLAY_STATE", 2*qsec, 5*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: "http://192.0.2.9/all-for-love.mp3", title: "All for love", mime: "audio/mpeg", dur: 5 * qsec}, gen)
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 5*qsec, 5*qsec)
+
+	waitForTrackEnd(t, "the track to be played again", func() bool {
+		return rec.countOf("SetAVTransportURI") >= 1 && s.RecallGeneration() != gen
+	})
+	if rec.has("Stop") {
+		t.Fatalf("repeat all stopped the box instead of playing the track again: %v", rec.list())
+	}
+}
+
+func TestRepeatOffStopsALoneTrackAtItsEnd(t *testing.T) {
+	t.Parallel()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	withPlayMode(t, s, "shuffle=0 repeat=off\n")
 	gen := s.setLastPlay("http://192.0.2.9/28082.flac", "Photographs And Memories", "", "audio/x-flac")
 
 	np.set("PLAY_STATE", 2*qsec, 5*qsec)
@@ -202,7 +225,7 @@ func TestRepeatAllLeavesALoneTrackAlone(t *testing.T) {
 
 	waitForTrackEnd(t, "the box to be stopped", func() bool { return rec.has("Stop") })
 	if rec.countOf("SetAVTransportURI") != 0 {
-		t.Fatal("repeat all looped a single click; it is the folder mode and must not")
+		t.Fatal("repeat off played the track again")
 	}
 }
 
