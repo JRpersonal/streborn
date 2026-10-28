@@ -345,16 +345,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if err := json.Unmarshal(ev.Data, &md); err != nil {
 				continue
 			}
-			m.mu.Lock()
-			m.curName = md.Name
-			m.curArtist = strings.Join(md.ArtistNames, ", ")
-			m.curCover = md.AlbumCoverURL
-			if md.URI != "" {
-				m.curTrackURI = md.URI
-			}
-			m.noteRecallTrackLocked(md.URI, md.Name, true)
-			m.mu.Unlock()
-			m.notifyTrack()
+			m.applyTrackMetadata(md.URI, md.Name, md.ArtistNames, md.AlbumCoverURL)
 			// metadata arrives for the track that is actually playing, so it
 			// is the second place a held re-point becomes due. Whichever of
 			// the two events lands first wins; the other finds nothing left.
