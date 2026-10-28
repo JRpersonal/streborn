@@ -3356,7 +3356,6 @@ async function loadVersion() {
   btn.addEventListener('click', function() {
     if (!btn.classList.contains('haspeers')) return;
     showTab('Speakers');
-    dismissCoach();
     // The switch list is the first card, but the tab may have been left
     // scrolled; bring it into view and flash it so the tap visibly lands on it.
     var card = document.getElementById('peersCard');
@@ -3436,7 +3435,7 @@ function showTab(name) {
 (function wireTabs(){
   TAB_IDS.forEach(function(t){
     var b = document.getElementById('tab' + t);
-    if (b) b.addEventListener('click', function(){ showTab(t); dismissCoach(); });
+    if (b) b.addEventListener('click', function(){ showTab(t); });
   });
 })();
 

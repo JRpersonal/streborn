@@ -111,7 +111,6 @@ export const test = base.extend({
     await page.addInitScript((lang) => {
       try {
         localStorage.setItem('str.remote.lang', lang);
-        localStorage.setItem('coachSeen', '1'); // the first-visit hint bubble
       } catch (e) {}
     }, phoneLang);
     // Owns every request: it serves the placeholder origin and aborts the rest.
