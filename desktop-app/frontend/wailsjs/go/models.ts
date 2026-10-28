@@ -1195,6 +1195,9 @@ export namespace main {
 	    bitrate: number;
 	    pending: boolean;
 	    applied: boolean;
+	    autoSupported: boolean;
+	    choice: number;
+	    reason: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyQualityState(source);
@@ -1206,6 +1209,9 @@ export namespace main {
 	        this.bitrate = source["bitrate"];
 	        this.pending = source["pending"];
 	        this.applied = source["applied"];
+	        this.autoSupported = source["autoSupported"];
+	        this.choice = source["choice"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class SpotifySyncTarget {

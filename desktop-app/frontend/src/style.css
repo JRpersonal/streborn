@@ -1333,6 +1333,14 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   flex-wrap: wrap;
 }
 .quality-row > span:first-child { min-width: 160px; }
+/* The active bitrate and why, on its own line under the selector, so every
+   row reads the same whatever the length of the translation. */
+.quality-row > .quality-active {
+  flex: 1 0 100%;
+  padding-left: 170px;
+  margin-top: -4px;
+  box-sizing: border-box;
+}
 
 /* ---------- Library view ---------- */
 .library-header h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }

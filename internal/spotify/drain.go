@@ -261,7 +261,10 @@ func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 		if persist {
 			m.hdrPersisted = true
 		}
-		hdrKbps := m.bitr
+		// The bitrate the RUNNING engine streams at, not bitr: while a
+		// change is pending, config.yml already says the new value but these
+		// headers still belong to the old one.
+		hdrKbps := m.bitrStarted
 		m.mu.Unlock()
 		d.capturing = false
 		if persist {

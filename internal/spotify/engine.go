@@ -399,6 +399,9 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.resetProductStateLocked()
 	m.mu.Unlock()
 	m.resetCredRejectRun()
+	// Settle the streaming quality for this process (explicit choice, else the
+	// plan remembered for the account it will log in as) and log it.
+	m.prepareBitrateForStart()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	// Point the engine's Spotify Connect advert at a name this speaker actually
