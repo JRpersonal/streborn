@@ -934,6 +934,9 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts Pla
 	// guesswork (every Spotify-recall investigation hit this blind spot).
 	m.logger.Info("spotify: recall start", "uri", uri, "wantAccount", account,
 		"sessionUser", cur, "loggedIn", m.LoggedIn())
+	m.mu.Lock()
+	m.recallTrackArmed = true
+	m.mu.Unlock()
 	if account != "" {
 		if _, err := m.switchAccountFrom(ctx, cur, account); err != nil {
 			m.logger.Warn("spotify: account switch failed, playing with current account", "account", anonymise.MaskAccount(account), "err", err)

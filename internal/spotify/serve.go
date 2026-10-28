@@ -215,6 +215,28 @@ func (m *Manager) notifyTrack() {
 	cb(tc)
 }
 
+// applyTrackMetadata takes the engine's metadata event for the track that is
+// now playing: the display fields, the recall bookkeeping, and the Recently
+// played notification. The first event after a recall lifts the name dedup
+// once (recallTrackArmed), so the recall's card gets its first song even when
+// that song has the name of the last one recorded.
+func (m *Manager) applyTrackMetadata(uri, name string, artists []string, cover string) {
+	m.mu.Lock()
+	m.curName = name
+	m.curArtist = strings.Join(artists, ", ")
+	m.curCover = cover
+	if uri != "" {
+		m.curTrackURI = uri
+	}
+	m.noteRecallTrackLocked(uri, name, true)
+	if m.recallTrackArmed && name != "" {
+		m.recallTrackArmed = false
+		m.lastNotifiedTrack = ""
+	}
+	m.mu.Unlock()
+	m.notifyTrack()
+}
+
 // ServeInfo answers GET /spotify/info with the live state the UI needs: whether
 // Spotify is available, the measured bitrate, and the advertised device name.
 func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {

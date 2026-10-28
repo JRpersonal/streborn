@@ -183,6 +183,14 @@ type Manager struct {
 	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
 	onTrack           func(TrackChange)
 	lastNotifiedTrack string
+	// recallTrackArmed lifts that dedup once, for the first metadata event after
+	// a recall: a recall opens a new Recently played card, and a song with the
+	// same name as the last one recorded (the same album recalled twice) was
+	// otherwise never filed under it, leaving a card with no song and no time
+	// (#1592). Only the engine's metadata event consumes it, never a /status
+	// poll, so the previous track still cached in curName cannot be filed under
+	// the new card.
+	recallTrackArmed bool
 	// onSinkDetach fires when the box lets go of a Spotify stream it had been
 	// playing for a while, so the watchdog that already recovers a dropped
 	// internet-radio stream can recover this one too. nil until wired; the
