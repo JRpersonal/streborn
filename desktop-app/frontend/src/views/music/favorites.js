@@ -16,7 +16,17 @@ import { listButtonClick, renderSearchResults, syncSearchModeButtons } from './s
 const FAV_KEY = 'str.favStations';
 
 export function loadFavStore() {
-  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  return Array.isArray(arr) ? arr.filter((s) => !isSpotifyFav(s)) : [];
+}
+// isSpotifyFav spots a star set on a Spotify playlist that Recently played
+// showed as a radio card (#1077). It is no station: played as one, the speaker
+// refused the spotify: URI as a bad stream URL, and pushed to the speakers it
+// kept the phone page's favourite replaying that error. Such a star is dropped;
+// the playlist plays from its preset key.
+export function isSpotifyFav(s) {
+  return !!s && /^spotify:/i.test(String(s.url_resolved || s.url || ''));
 }
 function saveFavStore(arr) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}

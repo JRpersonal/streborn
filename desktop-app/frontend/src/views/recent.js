@@ -170,13 +170,19 @@ export function groupRecentCards(entries) {
     }
     const seen = new Set();
     if (e.track) seen.add(e.track);
+    // A spotify: card is a Spotify card whatever the row says. An older agent
+    // filed a Spotify URI pushed through the play-a-URL path as "radio" and
+    // kept that label for the key recalls of the same playlist (#1077); as a
+    // radio card it read "Radio" and its Play sent the URI to the speaker as
+    // a stream, which the speaker refused.
+    const source = /^spotify:/.test(e.cardKey) ? 'spotify' : e.source;
     // Spotify playable when its playlist URI matches a preset slot on its box.
-    const playSlot = e.source === 'spotify' && e._spotifySlots
+    const playSlot = source === 'spotify' && e._spotifySlots
       ? e._spotifySlots[e.cardKey]
       : undefined;
     const c = {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
-      source: e.source, cardKey: e.cardKey, name: e.cardName,
+      source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
       itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
