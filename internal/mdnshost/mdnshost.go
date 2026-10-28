@@ -109,6 +109,10 @@ type Responder struct {
 	ownQueries    int64 // questions about our name
 	answersSent   int64
 	announcements int64
+	// packetsSeen counts every datagram read, replies included. Against
+	// seenQueries it shows how much of the traffic was other hosts answering
+	// each other, which is what a flooding device on the network looks like.
+	packetsSeen int64
 }
 
 // Start brings the responder up. It returns an error rather than a disabled
@@ -218,6 +222,18 @@ func (r *Responder) serve() {
 			}
 			continue
 		}
+		r.mu.Lock()
+		r.packetsSeen++
+		r.mu.Unlock()
+		// Most of the multicast traffic is replies between other hosts, and a
+		// single misbehaving device can push hundreds per second (#841: a
+		// smart speaker asking for the router's name 45 times a second, with
+		// the router and three repeaters answering each one). The header
+		// alone says whether a packet is a question worth decoding, so the
+		// rest is dropped without a full unpack on a CPU this small.
+		if !worthDecoding(buf[:n]) {
+			continue
+		}
 		var msg dns.Msg
 		if err := msg.Unpack(buf[:n]); err != nil {
 			continue
@@ -230,6 +246,19 @@ func (r *Responder) serve() {
 		r.mu.Unlock()
 		r.handle(&msg, src)
 	}
+}
+
+// worthDecoding reports whether a datagram is a query that carries at least
+// one question, read straight from the 12 byte DNS header: the QR bit is the
+// top bit of byte 2 and the question count sits in bytes 4 and 5.
+func worthDecoding(b []byte) bool {
+	if len(b) < 12 {
+		return false
+	}
+	if b[2]&0x80 != 0 {
+		return false
+	}
+	return b[4] != 0 || b[5] != 0
 }
 
 // handle answers only what this responder owns. Every other question on the
@@ -349,6 +378,8 @@ func (r *Responder) Stats() map[string]any {
 		"queriesForUs":     r.ownQueries,
 		"answersSent":      r.answersSent,
 		"announcementsOut": r.announcements,
+		"packetsSeen":      r.packetsSeen,
+		"udp":              udpCounters(),
 	}
 }
 
