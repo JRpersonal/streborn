@@ -23,6 +23,6 @@ describe('Spotify card cover', () => {
   it('the Spotify branch does not go back to the bare glyph', () => {
     const src = readFileSync(new URL('./views/recent.js', import.meta.url), 'utf8');
     expect(src).toContain("return spotifyCoverImgTag(c.art, 'rc-logo');");
-    expect(src).not.toContain('src="${escapeAttr(SPOTIFY_LOGO)}"');
+    expect(src).not.toContain('src="$' + '{escapeAttr(SPOTIFY_LOGO)}"');
   });
 });
