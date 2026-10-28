@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/JRpersonal/streborn/speakername"
 )
 
 // BoxSettings fetches name/volume/bass/network/sources of the box via the stick.
@@ -28,9 +30,12 @@ func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	return out, nil
 }
 
-// SetBoxName changes the display name of the Bose box.
+// SetBoxName changes the display name of the Bose box. The name is sanitised
+// here as well as in the agent (speakername): an agent older than #1582 would
+// otherwise store an "&" that takes the speaker's UPnP renderer down on the
+// next boot, and Spotify and the music library with it.
 func (a *App) SetBoxName(host string, port int, name string) error {
-	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": name})
+	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": speakername.Sanitise(name)})
 }
 
 // SetBoxVolume sets the volume (0-100).

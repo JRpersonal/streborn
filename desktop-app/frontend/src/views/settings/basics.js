@@ -30,6 +30,7 @@ import {
   writeBoxBalance,
 } from '../../api.js';
 import { deps, withButtonPending, wireCombobox, formatRel } from './shared.js';
+import { sanitizeSpeakerName } from '../../speakername.js';
 
 // uidSuffixFor returns the last 4 characters of the device ID as a
 // suffix used to disambiguate friendly names (for example "FFD8").
@@ -210,12 +211,18 @@ export function wireBasicsSections(ctx) {
   // Wire handlers. All operations explicitly target settingsBox
   // (not currentBox).
   $('boxNameSave').onclick = () => withButtonPending($('boxNameSave'), async () => {
-    const desired = $('boxNameInput').value.trim();
+    const typed = $('boxNameInput').value.trim();
+    // The characters the speaker's firmware cannot survive (#1582) are
+    // replaced before saving, the same way the agent stores them, so the field
+    // shows the name the speaker really got.
+    const desired = sanitizeSpeakerName(typed);
     if (!desired) return;
     const finalName = ensureWithUID(desired, box);
     try {
       await SetBoxName(box.host, box.port, finalName);
-      showToast(t('settingsView.speakerNameSavedToast', { name: finalName }));
+      showToast(desired !== typed
+        ? t('settingsView.speakerNameAdjustedToast', { name: finalName })
+        : t('settingsView.speakerNameSavedToast', { name: finalName }));
       $('boxNameInput').value = finalName;
       // Update locally: both the selected speaker and the matching
       // entry in the global speakers list so every dropdown is
