@@ -966,6 +966,9 @@ body {
    tell whether it existed and had no x to remove it (Jens 2026-09-06). */
 .box-group-stored { border-style: dashed; --bg-color: var(--c-muted); }
 .box-group-stored .zone-frame-chip { opacity: 0.8; }
+/* A stored member of a live permanent group that is not playing along (#1576). */
+.zone-chip-out { opacity: 0.6; border-style: dashed; }
+.zone-chip-out-note { font-size: 0.85em; font-style: italic; }
 .zone-frame-note { flex-basis: 100%; font-size: 11px; color: var(--c-muted); margin: 0 2px; }
 /* Small speaker icon on a tile whose speaker is currently playing. */
 /* Green, matching the "playing" status bar (--signal-green), so the icon means

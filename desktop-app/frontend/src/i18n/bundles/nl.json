@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Die speaker kon niet uit de groep worden gehaald: {{err}}",
   "multiroom.permanentForgotten": "Permanente groep verwijderd. Hij vormt zichzelf niet meer.",
   "multiroom.storedPermanentNote": "Vaste groep. Hij vormt zich alleen als het afspelen op {{master}} wordt gestart.",
+  "multiroom.notJoined": "speelt niet mee",
+  "multiroom.notJoinedTip": "{{name}} hoort bij deze vaste groep, maar speelt nu niet mee.",
   "multiroom.undoPairTip": "Dit stereopaar opheffen",
   "multiroom.formed": "Groep gemaakt. De hoofdspeaker streamt naar de andere. Als ze stil blijven, controleer dan of de hoofdspeaker echt afspeelt en stuur de logs.",
   "multiroom.formFailed": "Kon de groep niet wijzigen: {{err}}",

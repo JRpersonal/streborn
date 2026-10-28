@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Cette enceinte n'a pas pu être retirée du groupe : {{err}}",
   "multiroom.permanentForgotten": "Groupe permanent supprimé. Il ne se reformera plus tout seul.",
   "multiroom.storedPermanentNote": "Groupe permanent. Il ne se forme que si la lecture est lancée sur {{master}}.",
+  "multiroom.notJoined": "pas connectée",
+  "multiroom.notJoinedTip": "{{name}} fait partie de ce groupe permanent mais ne joue pas en ce moment.",
   "multiroom.undoPairTip": "Défaire cette paire stéréo",
   "multiroom.formed": "Groupe créé. L'enceinte principale diffuse vers les autres. Si elles restent muettes, vérifie que l'enceinte principale joue bien, puis envoie-moi les journaux.",
   "multiroom.formFailed": "Impossible de modifier le groupe : {{err}}",

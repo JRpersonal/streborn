@@ -340,7 +340,7 @@ export function renderMultiroom(fetchLive) {
           const isMaster = !pair && !!masterBox && b.host === masterBox.host;
           const mark = isMaster ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>` : '';
           return `<span class="zone-frame-chip">${mark}${escapeHtml(zoneLabel(b))}</span>`;
-        }).join('');
+        }).join('') + (permanent ? notJoinedChips(((state.zoneLive || {})[masterBox.deviceID] || {}).notJoined, strBoxes) : '');
         // A dismiss control per frame: the honest place to take THIS group apart,
         // where the user is looking at it, instead of the one shared Ungroup
         // button that could only reach whichever group liveZoneMaster happened to
@@ -1346,6 +1346,24 @@ async function doFormZone(strBoxes) {
 // So neither half can be assumed to be the one holding it. Asking both is
 // harmless (a speaker not in a pair answers "nothing to undo" and is left
 // alone) and it is the only way a one-sided leftover can be cleared at all.
+// notJoinedChips draws the stored members of a live permanent group that are
+// not in it right now, dimmed and labelled. Without them the frame showed only
+// the live zone, so a member that stayed out read as removed from the group
+// and then came back once the group ended (#1576). The agent reports them as
+// `notJoined` on the main speaker's zone answer.
+function notJoinedChips(list, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  return (list || []).map((m) => {
+    const box = (boxes || []).find((x) => x && x.deviceID && m.deviceID && up(x.deviceID) === up(m.deviceID))
+      || (boxes || []).find((x) => x && x.host && m.ip && x.host === m.ip) || null;
+    const name = box ? zoneLabel(box) : (m.name || m.ip || '');
+    if (!name) return '';
+    const tip = t('multiroom.notJoinedTip', { name });
+    return `<span class="zone-frame-chip zone-chip-out" title="${escapeAttr(tip)}">${escapeHtml(name)}` +
+      ` <span class="zone-chip-out-note">${escapeHtml(t('multiroom.notJoined'))}</span></span>`;
+  }).join('');
+}
+
 async function doDissolveStereo(pairCands) {
   // Undo the pair the user has SELECTED in the dropdowns, not just the first
   // live one, so a household with two pairs dissolves the right one.

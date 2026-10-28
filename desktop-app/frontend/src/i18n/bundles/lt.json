@@ -144,6 +144,8 @@
   "multiroom.memberRemoveFailed": "Šios kolonėlės pašalinti iš grupės nepavyko: {{err}}",
   "multiroom.permanentForgotten": "Nuolatinė grupė ištrinta. Ji daugiau pati nesusikurs.",
   "multiroom.storedPermanentNote": "Nuolatinė grupė. Ji susidaro tik tada, kai grojimas paleidžiamas per {{master}}.",
+  "multiroom.notJoined": "neprisijungė",
+  "multiroom.notJoinedTip": "{{name}} priklauso šiai nuolatinei grupei, bet dabar kartu negroja.",
   "multiroom.undoPairTip": "Panaikinti šią stereoporą",
   "multiroom.formed": "Grupė sukurta. Pagrindinis garsiakalbis transliuoja į kitus. Jei jie tyli, įsitikinkite, kad pagrindinis garsiakalbis tikrai groja, ir atsiųskite žurnalus.",
   "multiroom.formFailed": "Nepavyko pakeisti grupės: {{err}}",
