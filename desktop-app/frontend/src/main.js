@@ -227,6 +227,7 @@ import {
   groupCountSplit,
   onZoneLive,
   notifyZoneLive,
+  anyInLiveGroup,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
 import { findStalePairs, confirmStalePairs, staleFindingFor } from './stalestereo.js';
@@ -2108,6 +2109,11 @@ function maybeShowSpeakerUpdateCard() {
       `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
       `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
       `<ul class="suc-list">${list}</ul>` +
+      // Several speakers at once restart one after the other; any of them in
+      // a live group leaves it (#1339). One speaker goes through doBoxUpdate,
+      // whose own banner says it for that speaker.
+      (outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)
+        ? `<div class="suc-text" id="sucGroupNote">${escapeHtml(t('updateAll.groupNote'))}</div>` : '') +
       `<div class="suc-actions">` +
         `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
         `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
@@ -3343,6 +3349,16 @@ onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxe
 // the speaker's own settings), read both halves straight away rather than at
 // the next status poll, so the slider reads the pair before it is touched.
 onZoneLive(syncVolumeScopeOnZoneLive);
+// The speaker update card usually paints before the first zone round lands.
+// Redraw it once its group note would change, and only then: a redraw resets
+// its button, which may be mid-click (#1339).
+onZoneLive(() => {
+  const el = $('speakerUpdateCard');
+  if (!el || el.classList.contains('hidden')) return;
+  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  const want = outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive);
+  if (want !== !!$('sucGroupNote')) maybeShowSpeakerUpdateCard();
+});
 
 // A speaker stuck as half of a stereo pair that no longer exists (see
 // stalestereo.js). Recomputed after every zone round from data the poll already
@@ -4163,6 +4179,9 @@ async function runUpdateAllBoxes(onStart) {
       }
     } catch { /* headroom unknown (older agent): never block a batch */ }
   }
+  // A grouped speaker leaves its group while it restarts, in a run just as in
+  // a single update (#1339): said once, before the run starts.
+  if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('updateAll.groupNote'));
   hideToast();
   // The prompt used to be one plain string with "\n" separators pushed through
   // innerHTML, where HTML collapses newlines: four speakers plus two notes

@@ -493,6 +493,7 @@
   "update.refreshBtn": "Bijwerken",
   "update.rebootNote": "De speaker herstart tijdens de update, afhankelijk van de update één of twee keer, en verbindt vanzelf opnieuw. Dit is geen reset: presets en instellingen blijven behouden. Komt hij na een paar minuten niet terug of knipperen de lampjes op de speaker oranje, koppel hem dan even los van de stroom en sluit hem weer aan.",
   "update.groupNote": "Deze speaker start voor de update opnieuw op en verlaat even zijn groep. Een vaste groep neemt hem vanzelf weer op, een gewone groep maak je daarna opnieuw.",
+  "updateAll.groupNote": "Gegroepeerde speakers verlaten even hun groep terwijl ze voor de update opnieuw opstarten. Een vaste groep neemt ze vanzelf weer op, een gewone groep maak je daarna opnieuw.",
   "update.uploading": "Uploaden (ca. 1 min)...",
   "update.runningBtn": "Bijwerken…",
   "update.uploadedToast": "Update geüpload. De speaker herstart en heeft tot enkele minuten nodig om weer te antwoorden.",
