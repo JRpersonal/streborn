@@ -31,7 +31,7 @@ All request and response bodies are JSON.
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
-| `POST` | `/api/play` | `{"url":"https://...","title":"...","mime":"audio/mpeg"}` | Play any stream URL. `title`, `icon`, `mime` are optional. |
+| `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. `codec` is the station codec (`MP3`, `AAC`, `AAC+`); an HE-AAC stream without it can play silence. Do not send `mime` for a stream: it marks a music-library file and hands the URL straight to the speaker. |
 | `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`6`. |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
