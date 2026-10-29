@@ -117,7 +117,9 @@ type agent struct {
 	region         string
 	streamProxySrv *streamproxy.Server
 	spotifyMgr     *spotify.Manager
-	mdnsHostResp   *mdnshost.Responder
+	// mdnsHost is the name responder; nil until it runs, which on a wired
+	// speaker can be after boot (startMDNSHost). Read it at use time.
+	mdnsHost atomic.Pointer[mdnshost.Responder]
 
 	// buildWebui
 	webuiSrv *webui.Server
@@ -844,49 +846,9 @@ func (a *agent) buildMedia() error {
 		return spotifyMgr.VolumeSnapshot()
 	})
 
-	// Answer for this speaker's own mDNS name BEFORE the engine is told to
-	// advertise it. The order is the safety property, not a detail: the engine
-	// names the box's Linux hostname today, which is the Bose chassis codename,
-	// and nothing on the network answers a query for it. Pointing the engine at
-	// a new name that is equally unanswered would be a step backwards, because
-	// the codename at least still sits in some routers' caches. So the name is
-	// only handed over once it means something, and a responder that cannot
-	// start leaves everything exactly as it is today.
-	// Captured for the post-switch network refresh (#697): after a live Wi-Fi
-	// move the responder must be repointed at the new address, or it keeps
-	// answering the box's own name with the boot address, cache-flush bit set.
-	var mdnsHostResp *mdnshost.Responder
-	if label := mdnshost.LabelFor(deviceID); label != "" {
-		if ip := routableIPv4(); ip != nil {
-			if resp, err := mdnshost.Start(ctx, logger.With("comp", "mdnshost"), label, ip); err != nil {
-				logger.Warn("mdns host: not answering for this speaker's own name, leaving the engine on the chassis name",
-					"err", err, "label", label)
-			} else {
-				spotifyMgr.SetZeroconfHost(resp.Label())
-				// The agent's own service gets the same treatment. Its entry
-				// names the chassis codename today just like the Spotify one
-				// did, so three SoundTouch 10s announce themselves under one
-				// name. It is less visible than the Spotify fault only because
-				// the desktop app takes the address out of the service answer
-				// instead of looking the name up.
-				mdnsHostLabel = resp.Label()
-				// Tell the HTTP surface too: the desktop app reads this back to put a
-				// name on the phone-remote QR code instead of an address.
-				webui.SetMDNSHostName(resp.Name())
-				mdnsHostResp = resp
-				// Put the counters in the diagnostic bundle. The open question
-				// they answer: a SoundTouch 30 here is missing from four
-				// browses in a row while its engine runs and is logged in. If
-				// queriesSeen climbs on that box, the questions arrive and the
-				// answers are getting lost; if it stays at zero, the box is
-				// never being asked. Those are different faults.
-				webui.RegisterDebugSection("mdns_host", func() any { return resp.Stats() })
-				// Closed in wait(), once the listeners are down.
-			}
-		} else {
-			logger.Warn("mdns host: no routable address yet, leaving the engine on the chassis name", "label", label)
-		}
-	}
+	// Answer for this speaker's own mDNS name before the engine advertises it;
+	// see startMDNSHost for why the order matters.
+	a.startMDNSHost(ctx, logger, deviceID, spotifyMgr)
 	// Mirror a Spotify Connect volume change onto the whole multiroom group:
 	// go-librespot runs only on the master, so feed it the current followers'
 	// IPs. LIVE-verified on every use: zones.json deliberately outlives the
@@ -970,7 +932,6 @@ func (a *agent) buildMedia() error {
 	a.region = region
 	a.streamProxySrv = streamProxySrv
 	a.spotifyMgr = spotifyMgr
-	a.mdnsHostResp = mdnsHostResp
 	return nil
 }
 
@@ -1866,7 +1827,7 @@ func (a *agent) startBackground() error {
 func (a *agent) wireLate() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
-	webuiSrv, mdnsHostResp := a.webuiSrv, a.mdnsHostResp
+	webuiSrv := a.webuiSrv
 
 	// === Deferred heavy init (background) ===
 	// Everything below this point runs while the agent's listeners
@@ -1919,15 +1880,16 @@ func (a *agent) wireLate() error {
 	webuiSrv.SetNetworkChangedFn(func(reason string) {
 		refreshAfterNetworkChange(reason, netRefreshDeps{
 			setMDNSHostAddr: func(ip net.IP) {
-				if mdnsHostResp != nil {
-					mdnsHostResp.SetAddress(ip)
+				if r := a.mdnsHost.Load(); r != nil {
+					r.SetAddress(ip)
 				}
 			},
 			currentMDNSAddr: func() net.IP {
-				if mdnsHostResp == nil {
+				r := a.mdnsHost.Load()
+				if r == nil {
 					return nil
 				}
-				return mdnsHostResp.Addr()
+				return r.Addr()
 			},
 			reannounce: func(r string) error {
 				a.mdnsMu.Lock()
@@ -1979,7 +1941,7 @@ func (a *agent) startDeferred() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
 	region, regionRes, margeSrv := a.region, a.regionRes, a.margeSrv
-	mdnsHostResp, hostsMgr := a.mdnsHostResp, a.hostsMgr
+	hostsMgr := a.hostsMgr
 
 	// mDNS announce: detect model from box /info, then announce. The
 	// model lookup is a 5 s blocking call against the Bose firmware
@@ -2030,8 +1992,10 @@ func (a *agent) startDeferred() error {
 		// a boot above all: the agent is often up before it, and until then
 		// there is nothing to announce on. Repoint the name responder with it.
 		go ann.WatchAddresses(ctx, 15*time.Second, func([]string) {
-			if ip := routableIPv4(); ip != nil && mdnsHostResp != nil {
-				mdnsHostResp.SetAddress(ip)
+			if r := a.mdnsHost.Load(); r != nil {
+				if ip := routableIPv4(); ip != nil {
+					r.SetAddress(ip)
+				}
 			}
 		})
 	}()
@@ -2197,7 +2161,7 @@ func (a *agent) startDeferred() error {
 func (a *agent) wait() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx := a.logger, a.ctx
-	recentStore, hostsMgr, mdnsHostResp := a.recentStore, a.hostsMgr, a.mdnsHostResp
+	recentStore, hostsMgr := a.recentStore, a.hostsMgr
 
 	var firstErr error
 	select {
@@ -2233,8 +2197,8 @@ func (a *agent) wait() error {
 		}
 	}
 
-	if mdnsHostResp != nil {
-		_ = mdnsHostResp.Close()
+	if r := a.mdnsHost.Load(); r != nil {
+		_ = r.Close()
 	}
 
 	logger.Info("streborn exited")

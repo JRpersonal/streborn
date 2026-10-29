@@ -293,7 +293,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// name on the phone-remote QR code rather than an address that changes with
 	// the next DHCP lease. Absent while no responder is running, which is the
 	// only honest answer.
-	if n := mdnsHostName; n != "" {
+	if n := currentMDNSHostName(); n != "" {
 		out["mdnsName"] = n
 	}
 	// Which speaker this is, so the app can tell it from another one that got

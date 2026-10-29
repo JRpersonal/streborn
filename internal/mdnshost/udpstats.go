@@ -6,13 +6,17 @@ import (
 	"strings"
 )
 
-// udpCounters reads the kernel's UDP totals and the drops on every socket bound
+// UDPCounters reads the kernel's UDP totals and the drops on every socket bound
 // to the mDNS port, for the diagnostic bundle. A report on #841 traced a frozen
 // standby clock and stalling radio to a device on the network flooding mDNS,
 // and the evidence that proved it (datagrams per second, drops per socket) had
 // to be collected by hand over SSH. With these in the bundle the same case
 // shows up in the first file. nil off Linux or when /proc is unreadable.
-func udpCounters() map[string]any {
+//
+// It is its own bundle section rather than part of Stats: the counters do not
+// need the responder, and a wired speaker whose responder could not start at
+// boot had none of them (#841, 2026-10-29).
+func UDPCounters() map[string]any {
 	out := map[string]any{}
 	if b, err := os.ReadFile("/proc/net/snmp"); err == nil {
 		for k, v := range parseSNMPUdp(string(b)) {
