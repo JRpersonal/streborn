@@ -72,6 +72,28 @@ repo. CI overwrites them with the real binaries during release.
 On a developer machine `agentbin.Available()` returns `false`, and
 the desktop app falls back to a configured external path.
 
+## Architecture
+
+If you want to understand how the agent, the desktop app, and the speaker's stock firmware fit together (components, ports, data flows for discovery, playback, marge emulation, install, OTA), read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). It is short, has diagrams, and is the right starting point for contributors.
+
+## Repository layout
+
+| Path | Description |
+|------|-------------|
+| `cmd/` | Stick agent entry point, plus `winformat`, `relnotes`, `mdns-probe` helpers |
+| `internal/` | Agent-only packages: marge cloud stub, BMX, UPnP, WebSocket hook, preset store, stream proxy, Spotify manager, zones, webhooks |
+| `discovery/` | mDNS discovery (top level so the desktop app can import it) |
+| `dlna/` | DLNA MediaServer client for the Library tab (top level) |
+| `radiobrowser/` | radio-browser.info client for the app-side radio search (top level) |
+| `sticksetup/` / `wifiprofiles/` | Embedded stick provisioning + saved-Wi-Fi reader (top level) |
+| `usb-stick/` | Bootstrap and runtime scripts on the speaker |
+| `setup/` | Legacy PowerShell wizard (superseded by the in-app stick setup) |
+| `desktop-app/` | Cross-platform Wails app (own Go module) |
+| `.github/` | CI and release workflows |
+| `docs/` | Public documentation (architecture, threat model, models, roadmap) |
+
+For a release-like local build of the desktop app with the embedded helpers and the version stamp, use `make wails-build` (raw `wails build` leaves the embeds empty).
+
 ## Code style and conventions
 
 - **Language.** All code, comments, identifiers, commit messages,

@@ -4,22 +4,9 @@
 
 <p align="center">
   <a href="https://github.com/JRpersonal/streborn/actions/workflows/build.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/build.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
-  <a href="https://github.com/JRpersonal/streborn/actions/workflows/release.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/release.yml/badge.svg" alt="Release"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/JRpersonal/streborn"><img src="https://api.securityscorecards.dev/projects/github.com/JRpersonal/streborn/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://www.bestpractices.dev/projects/15200"><img src="https://www.bestpractices.dev/projects/15200/badge" alt="OpenSSF Best Practices"></a>
-  <a href="https://pkg.go.dev/github.com/JRpersonal/streborn"><img src="https://pkg.go.dev/badge/github.com/JRpersonal/streborn.svg" alt="Go Reference"></a>
   <a href="https://github.com/JRpersonal/streborn/releases/latest"><img src="https://img.shields.io/github/v/release/JRpersonal/streborn" alt="Latest release"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/JRpersonal/streborn"><img src="https://api.securityscorecards.dev/projects/github.com/JRpersonal/streborn/badge" alt="OpenSSF Scorecard"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/JRpersonal/streborn?cacheSeconds=3600" alt="License"></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/JRpersonal/streborn/releases"><img src="https://img.shields.io/github/downloads/JRpersonal/streborn/total" alt="Downloads"></a>
-  <a href="#downloads-and-end-user-documentation"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D4" alt="Windows | macOS | Linux"></a>
-  <a href="#supported-models"><img src="https://img.shields.io/badge/speakers-ST10%20%7C%20ST20%20%7C%20ST30%20%7C%20Portable-555" alt="SoundTouch 10 | 20 | 30 | Portable"></a>
-  <a href="#verifying-release-artifacts"><img src="https://img.shields.io/badge/code%20signed-Certum%20%2B%20Apple%20notarized-2ea44f" alt="Code signed: Certum and Apple notarized"></a>
-  <a href="#verifying-release-artifacts"><img src="https://img.shields.io/badge/provenance-Sigstore-6f42c1?logo=sigstore" alt="Provenance: Sigstore"></a>
-  <a href="./go.mod"><img src="https://img.shields.io/github/go-mod/go-version/JRpersonal/streborn" alt="Go version"></a>
   <a href="https://st-reborn.de"><img src="https://img.shields.io/badge/website-st--reborn.de-blue" alt="Website st-reborn.de"></a>
 </p>
 
@@ -27,207 +14,49 @@
   <img src="docs/screenshots/en/app-listen.png" alt="ST Reborn desktop app" width="820">
 </p>
 
-Bose announced the end of the SoundTouch cloud for February 2026 and switched the servers off for good on 6 May 2026. STR keeps the speakers usable: a small Go agent is installed onto the speaker itself, stands in for the discontinued cloud locally, and brings back internet radio, Spotify, your own media library, multiroom, and the hardware preset buttons. **The install runs over your home network from the desktop app**, so no USB stick and no second device are needed. The agent persists on the speaker and starts with it on every boot.
+Bose switched the SoundTouch cloud off for good on 6 May 2026. STR keeps the speakers usable: a small agent is installed onto the speaker itself, stands in for the cloud locally, and brings back internet radio, Spotify, your own music library, multiroom, and the preset buttons. **The install runs over your home network from the desktop app**, no USB stick needed, and the agent starts with the speaker on every boot.
 
-## How it works in one paragraph
+## What you get
 
-The desktop app finds the speaker on the network, reaches it on its setup port and copies the agent into the speaker's persistent storage. From then on it starts automatically every time the speaker powers on. A USB stick is still supported as a fallback and recovery path, but it is no longer the normal way to install. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Playback then happens over UPnP AVTransport on the speaker, which is supported natively, whether the source is an internet radio station, a Spotify playlist, or a track from a media server on your own network. The hardware preset buttons are wired through the speaker's local WebSocket, so a button press recalls the saved source; the same bus lets a remote key fire a webhook to control your smart home. Several speakers can be grouped into a multiroom zone or a stereo pair.
+- Internet radio from tens of thousands of stations, searchable, no account.
+- The six preset keys on the speaker and the remote work again.
+- Spotify Connect, including Spotify playlists on the preset keys.
+- Your own music from a media server at home (FRITZ!Box, Synology, Plex and others).
+- Multiroom groups and stereo pairs.
+- A phone remote in the browser of every phone, no app store and no account.
+- Alarm clock, sleep timer, backup and restore, and a full "Uninstall STR".
 
-## Screenshots
+The complete list, what is in the works, and more screenshots: [`docs/FEATURES.md`](./docs/FEATURES.md).
 
-The desktop app: browse and assign presets, search internet radio, control Spotify, browse your local media library, manage speaker settings, and install STR onto a speaker over the network.
+## Supported speakers
 
-| | | |
-|:--:|:--:|:--:|
-| [![Presets and playback](docs/screenshots/en/app-listen.png)](docs/screenshots/en/app-listen.png) | [![Internet radio search](docs/screenshots/en/app-search.png)](docs/screenshots/en/app-search.png) | [![Recently played](docs/screenshots/en/app-recent.png)](docs/screenshots/en/app-recent.png) |
-| Presets and playback | Internet radio search | Recently played |
-| [![DLNA library](docs/screenshots/en/app-library.png)](docs/screenshots/en/app-library.png) | [![Speaker settings](docs/screenshots/en/app-settings1.png)](docs/screenshots/en/app-settings1.png) | [![Install over the network](docs/screenshots/en/app-install.png)](docs/screenshots/en/app-install.png) |
-| DLNA music library | Speaker settings and phone QR code | Install STR over the network |
+SoundTouch 10, 20, 30 and Portable, the SoundTouch 300 and 520, the Wave SoundTouch III and IV, the SA-4 and SA-5 amplifiers, CineMate 520, 220, 130 and 120, Lifestyle 535, 600 and 650, and the Wireless Link Adapter. Details per model in [`docs/MODELS.md`](./docs/MODELS.md). If yours is not listed, I would like to hear from you.
 
-### Phone remote
+## Install
 
-Every speaker running STR serves its own remote in the phone browser: scan the QR code in the speaker settings and add the page to the home screen. No app store, no account.
+Download the app for Windows, macOS or Linux from **[st-reborn.de](https://st-reborn.de)**, open it on a computer in the same Wi-Fi as your speaker, and follow the setup. On macOS `brew install --cask jrpersonal/tap/st-reborn` works too; more in [`packaging/README.md`](./packaging/README.md).
 
-<p align="center">
-  <a href="docs/screenshots/phone/en/phone-play.png"><img src="docs/screenshots/phone/en/phone-play.png" alt="Phone remote: now playing, volume and presets" width="200"></a>
-  <a href="docs/screenshots/phone/en/phone-browse.png"><img src="docs/screenshots/phone/en/phone-browse.png" alt="Phone remote: station search and favourites" width="200"></a>
-  <a href="docs/screenshots/phone/en/phone-speakers.png"><img src="docs/screenshots/phone/en/phone-speakers.png" alt="Phone remote: switch speakers and group them" width="200"></a>
-  <a href="docs/screenshots/phone/en/phone-alarm.png"><img src="docs/screenshots/phone/en/phone-alarm.png" alt="Phone remote: sleep timer and alarm clock" width="200"></a>
-</p>
+Speaker firmware too old? [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md) shows how to bring it to Bose's last version.
 
-The interface is available in thirteen languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic, Traditional Chinese). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed; `npm run shoot-phone` does the same for the phone remote.
+## Community apps
 
-## Status (October 2026)
+Independent community projects that build on STR:
 
-STR is at 1.0: every criterion I set myself for it is met (see [1.0](#10) below). This section is the honest snapshot. No marketing.
+- STR Remote (iPhone, free, by Wagges): https://apps.apple.com/app/id6811924121, independent community project.
 
-### What works
+## Help and community
 
-- Discovery of speakers running STR over mDNS, list view in the desktop app. Speakers without STR show up too, marked "ready for STR", and can be installed in-app.
-- Playback control: play / pause / stop / volume / bass / source switch (AUX, Bluetooth, Standby) via the speaker's existing UPnP AVTransport endpoint on port 8091. I never route audio through the dead Bose cloud.
-- Phone remote: every speaker serves its own remote in the browser. Scan the QR code in the desktop app's speaker settings, add the page to your phone's home screen, and control that speaker, group it, and browse stations and your library from Android or iPhone, with no app store and no account.
-- Radio search via radio-browser.info, queried directly by the desktop app (no API key); only the final stream URL goes to the speaker. HLS-only stations (BBC and co.) are converted on the fly by the agent's stream proxy. On a blocked or dead stream the app automatically tries another listing of the same station.
-- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo), and they survive a cold boot, a standby cycle and a Wi-Fi outage. Internet radio presets are registered with the speaker's own radio source, so the speaker starts them itself. Keys can be renamed, a station already on another key can be moved to the key you pressed, and existing non-STR presets (e.g. Deezer) are left untouched. Presets copy from one speaker to the others in one step, and holding a key on the speaker saves whatever STR is playing, Spotify and the music library included.
-- Radio sources of the speaker itself: TuneIn stations play through the speaker's own TuneIn source, and on US speakers Pandora and iHeartRadio stations can be stored on the preset keys.
-- Favourites beyond the six keys: starred stations are stored on the speaker, so the phone remote shows the same list as the desktop app.
-- Alarm clock: wake up to one of your six presets at a set time and volume, per weekday.
-- Volume details: a fixed start volume per speaker (off by default), mute, left/right balance for a stereo pair, and separate centre and surround levels on a soundbar.
-- Spotify Connect: a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud. Streaming quality is set per speaker (160 or 320 kbps), and one click copies a Spotify login to every speaker so saved Spotify presets play on all of them.
-- Local media library: browse media servers on your home network over DLNA / UPnP AV (SSDP discovery, ContentDirectory browse), including FRITZ!Box, Synology, Plex and miniDLNA, and save any track as a preset. Lossless files (FLAC) play directly; the agent's stream proxy feeds the box.
-- Multiroom zones and stereo pairs: group several speakers to play in sync, or pair two as a left/right stereo pair under a name of your own. A group can be made permanent: it persists on the speaker, reforms automatically after a reboot, standby cycle, or Wi-Fi outage, and takes members back that dropped out. A saved group can sit on a thumbs key of the remote, one press forms it and the next dissolves it.
-- Smart-home triggers (webhooks): turn a remote-control key (Back, Forward, Thumbs up and down, Play/Pause each on its own), the power button, or an AUX change into a user-configured HTTP call, UDP packet, or Wake-on-LAN magic packet, so a press can drive Home Assistant, ioBroker, Node-RED, wake a PC, or anything reachable on the network.
-- OTA agent updates from the desktop app, with an SSH fallback and a pre-reboot stick refresh so the update cannot be reverted by the boot sync. Build stamp comparison catches version drift.
-- WLAN reconfigure from the desktop app. I rewrite `/etc/wpa_supplicant.conf` in full because appending breaks Wi-Fi.
-- Setup wizard for the install, including preset region, friendly name, box language, and Wi-Fi credentials. The network install is the normal path; the USB stick route (with a bundled FAT32 formatting helper) remains available as a fallback.
-- Backup and restore: save your favourites and every speaker's preset keys to one file, and restore them, for example before you rebuild.
-- Sleep timer: switch a speaker, or a whole group, off by itself after a set time, from the phone remote.
-- Home Assistant and other automation: STR keeps the speaker's local control API (`:8090`) and UPnP media renderer (`:8091`) alive, so a hub you run at home can control the speakers, send audio or TTS to them, and, via Alexa or Google, do voice control. STR adds its own local REST API on top. No cloud skill of my own. See [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md).
-- Help when a speaker's firmware is too old: a step-by-step guide with Bose's own download link, and a one-click update to Bose's last firmware. Very old speakers that need several updates in a row are covered in [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md). If the Windows firewall blocks STR, the app says so and can allow it with one click.
-- Speakers with a display show a short message when a key cannot play, and an STR logo animation after an install or update.
-- Wishes tab: every open feature wish with its votes, in the app's language and searchable, with links to vote and to suggest a new one.
-- Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
-- And one thing that was never in the manual: a game hidden on the display of the SoundTouch 20, 30 and Portable. How to start it is a riddle in the [Arcade](https://github.com/JRpersonal/streborn/discussions/1173), and that is also where the highscores go.
-- And yes, it runs DOOM. That one lives in its own repo, [streborn-doom](https://github.com/JRpersonal/streborn-doom), and STR never installs it.
+- Questions and ideas: [GitHub Discussions](https://github.com/JRpersonal/streborn/discussions). Vote on what comes next in the [Ideas](https://github.com/JRpersonal/streborn/discussions/categories/ideas) category.
+- Bug reports: [Issues](https://github.com/JRpersonal/streborn/issues), with a diagnostic log from the app ("Save diagnostic log" at the very bottom).
+- Security reports: [SECURITY.md](./SECURITY.md).
 
-### In the works, and what comes next
+## Further reading
 
-- **Podcasts**: search a show, play episodes, and put the newest episode of a show on a preset key ([#1167](https://github.com/JRpersonal/streborn/discussions/1167)).
-- **An app for the phone remote** on Android ([#1123](https://github.com/JRpersonal/streborn/discussions/1123)), and updating speakers from the phone without a PC ([#1091](https://github.com/JRpersonal/streborn/discussions/1091)).
-- **More streaming sources**: SoundCloud ([#1122](https://github.com/JRpersonal/streborn/discussions/1122)) is at the feasibility stage. Deezer ([#1239](https://github.com/JRpersonal/streborn/discussions/1239)), Tidal, YouTube Music and SiriusXM have no open playback API, so each would need a separately maintained bridge like the one STR uses for Spotify. Existing Deezer presets on a speaker survive an install untouched.
-- **You decide the order.** Every open idea has its own discussion in the [Ideas category](https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop), and the app's Wishes tab lists them too. Upvote what you want; the curated overview stays in #390.
-
-### Supported models
-
-| Model                       | Status                   |
-| --------------------------- | ------------------------ |
-| SoundTouch 10               | ✅ Verified on hardware  |
-| SoundTouch 20               | ✅ Works (contributor-confirmed) |
-| SoundTouch 30               | ✅ Works (confirmed on hardware) |
-| SoundTouch Portable         | ✅ Verified on hardware  |
-| Wave SoundTouch series III and IV | ✅ Works (network install) |
-| SoundTouch 300              | ✅ Works (network install) |
-| Bose SA-4 amplifier         | ✅ Works (network install) |
-| Bose SA-5 amplifier         | ✅ Works (network install) |
-| CineMate 520, 220, 130 and 120 | ✅ Works (network install) |
-| SoundTouch 520              | ✅ Works (network install) |
-| Lifestyle 535, 600 and 650  | ✅ Works (network install) |
-| SoundTouch Wireless Link Adapter | ✅ Works (network install) |
-
-Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/MODELS.md). The SoundTouch 300 and 520, the SA-4 and SA-5 amplifiers, the Wave systems, the CineMate and Lifestyle systems and the Wireless Link Adapter never read a USB stick at boot, so the network install is what made these models possible in the first place. If you own a model that is not listed here, I would like to hear from you so we can work out how close it is.
-
-### What I do for security
-
-- DNS pinning for the Bose hostnames (`streaming.bose.com`, `bmx-cloud.*`, TuneIn partner subdomain) to `127.0.0.1` via an `/etc/hosts` bind-mount. The speaker no longer makes outbound queries for these names. This closes the residual domain-squat risk if Bose lets the DNS lapse and someone re-registers it.
-- Per-box local TLS CA, generated on first boot, stored in `/mnt/nv/streborn/ca/`, installed in the speaker's own trust store. Only valid for the loopback-redirected hostnames; the CA private key never leaves the speaker's NAND. The stand-in listeners themselves are LAN-reachable like the rest of the agent surface.
-
-### What I do not do for security yet
-
-- No client authentication on the agent's web UI (`:8888`). Any device on the LAN that can reach the speaker can edit presets and trigger playback.
-- No encryption between the desktop app and the agent. Both sit on the LAN, the LAN is the trust boundary.
-- No verification of the stock speaker firmware integrity.
-- No sandboxing of the desktop application.
-
-### What is inherited from stock Bose firmware (and I do not change)
-
-- HTTP control on `:8090` and UPnP on `:8091` accept any LAN client without authentication. Standard SoundTouch behaviour, not added by me.
-- The speakers ship with `root` having no password set, and SSH (port 22) is enabled by Bose's own init script when a `remote_services` file is present on a mounted USB stick. **STR does not hold that port open.** On a normal, stickless boot the speaker ends up with SSH closed; STR only force-starts `sshd` when you deliberately ask for it, with the SSH switch in the speaker's settings in the desktop app (it places the marker file `/mnt/nv/streborn/enable-ssh` on the speaker). That keeps the repair channel available when an install or update leaves the agent down, without leaving a passwordless root shell on your LAN the rest of the time. While a setup stick is inserted, Bose's own gate opens SSH, which is why the app reminds you to pull the stick after setup. The same switch turns it off again.
-
-### Factory reset
-
-A Bose factory reset clears only what Bose itself knows about: the Bose preset database, account, friendly name, Wi-Fi. It does not touch `/mnt/nv/streborn/`, which is where my agent binary, CA, preset store, region, name, and the `run-override.sh` hook live. After a factory reset, STR is still installed and boots automatically.
-
-Implication: a speaker being passed on or sold needs a separate "Uninstall STR" step. That ships in the desktop app: Speaker Settings offers **Remove STR** (removes `/mnt/nv/streborn/` and the boot override, returns the speaker to stock Bose firmware) and a separate **True Factory Reset**. See [`docs/ROADMAP.md`](./docs/ROADMAP.md), "Factory reset wizard", for the remaining level (reset STR data only).
-
-### 1.0
-
-The bar I set myself for 1.0 was deliberately low and measurable. All five are met:
-
-1. **Two models verified end to end.** The SoundTouch 10 and the Portable are verified on hardware; the ST20, ST30, ST300, Wave, SA-4, SA-5, the CineMate and Lifestyle systems and the Wireless Link Adapter run it in the field (see [`docs/MODELS.md`](./docs/MODELS.md)).
-2. **Hardware presets survive a cold boot, a standby cycle and a Wi-Fi outage** without a manual reset. The agent re-registers the keys whenever the speaker reports an empty list, and tests pin the empty-list, standby-exit and reconnect paths (`internal/boxws`).
-3. **An honest first install.** Both desktop builds are signed (Windows by Certum, macOS notarized by Apple), so there is no SmartScreen or Gatekeeper workaround to explain. The website names the one prompt that does appear (the Windows firewall asking for home-network access), and its Verify section links the SHA256 sums and the Sigstore attestation.
-4. **Threat model published**, including what a Bose factory reset does and does not remove ([`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md)).
-5. **Legal pages complete.** Imprint and privacy policy, in German and English, without placeholder text.
-
-Additional models, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Code signing ships on both desktop platforms already: Windows binaries are Authenticode-signed with a Certum open-source certificate, and the macOS app and disk image are Developer ID signed and notarized by Apple.
-
-## Quick start for developers
-
-```bash
-git clone https://github.com/JRpersonal/streborn.git
-cd streborn
-
-# Build the stick agent for the speaker hardware (ARMv7l)
-make build-arm
-
-# Build the desktop app with embedded helpers and version stamp
-# (requires Wails v2 CLI; raw `wails build` leaves the embeds empty)
-make wails-build
-```
-
-Requirements: Go 1.25 or newer, Node 20 or newer, Wails CLI v2 for the desktop app. Note: on Windows/macOS hosts the agent itself only cross-compiles (`make build-arm`); plain `go build ./...` fails on its Linux-only syscalls.
-
-The website ([st-reborn.de](https://st-reborn.de)) is built from a separate, private repository. A release here triggers a build there via `repository_dispatch`.
-
-## Architecture
-
-If you want to understand how the agent, the desktop app, and the speaker's stock firmware fit together (components, ports, data flows for discovery, playback, marge emulation, install, OTA), read [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). It is short, has diagrams, and is the right starting point for contributors.
-
-## Repository layout
-
-| Path | Description |
-|------|-------------|
-| `cmd/` | Stick agent entry point, plus `winformat`, `relnotes`, `mdns-probe` helpers |
-| `internal/` | Agent-only packages: marge cloud stub, BMX, UPnP, WebSocket hook, preset store, stream proxy, Spotify manager, zones, webhooks |
-| `discovery/` | mDNS discovery (top level so the desktop app can import it) |
-| `dlna/` | DLNA MediaServer client for the Library tab (top level) |
-| `radiobrowser/` | radio-browser.info client for the app-side radio search (top level) |
-| `sticksetup/` / `wifiprofiles/` | Embedded stick provisioning + saved-Wi-Fi reader (top level) |
-| `usb-stick/` | Bootstrap and runtime scripts on the speaker |
-| `setup/` | Legacy PowerShell wizard (superseded by the in-app stick setup) |
-| `desktop-app/` | Cross-platform Wails app (own Go module) |
-| `.github/` | CI and release workflows |
-| `docs/` | Public documentation (architecture, threat model, models, roadmap) |
-
-## Downloads and end user documentation
-
-See [st-reborn.de](https://st-reborn.de).
-
-Install with a package manager: on macOS `brew install --cask jrpersonal/tap/st-reborn` works today. On Windows, `winget install JRpersonal.STReborn` works once the first submission to winget is accepted; it is waiting for a moderator. Details in [`packaging/README.md`](./packaging/README.md).
-
-## Verifying release artifacts
-
-Every release on GitHub Releases is built by the official workflow and ships with build provenance attestations via Sigstore. You can verify any binary with:
-
-```bash
-gh attestation verify STR-Windows.exe --owner JRpersonal
-```
-
-The desktop downloads have stable names without a version (`STR-Windows.exe`, `STR-macOS.dmg`, `STR-Linux-x64.tar.gz`; releases up to v1.0.1 carried the version in the name). The version is shown in the app and, on Windows, under Properties > Details. Each release also carries its Sigstore bundle as a file, `STR-<version>.sigstore.json`, for offline checks with `gh attestation verify STR-Windows.exe --bundle STR-<version>.sigstore.json --owner JRpersonal`.
-
-Windows builds are additionally Authenticode-signed with a Certum open-source code-signing certificate; check the signature in the file's Properties > Digital Signatures tab or with `signtool verify /pa`.
-
-For the threat model and the vulnerability reporting process see [SECURITY.md](./SECURITY.md) and [docs/THREAT-MODEL.md](./docs/THREAT-MODEL.md).
-
-## How this repo stays clean
-
-Every change is checked automatically and the results are public, so you do not have to take my word for any of it. The badges at the top of this page are live: green means the latest run passed, click one to open the run.
-
-- **CI** runs `golangci-lint`, `govulncheck` (Go vulnerability scan), and the test suite on every push and pull request.
-- **CodeQL** runs static security analysis on every push and weekly.
-- **OpenSSF Scorecard** audits the supply-chain posture (branch protection, pinned dependencies, signed releases, token hygiene) weekly and publishes the score.
-- **Dependabot** keeps Go, npm, and GitHub Actions dependencies patched; all third-party actions are pinned to a commit SHA.
-- **Secret Scanning with Push Protection** blocks commits that contain a leaked credential.
-- **Releases** are built only by the release workflow, from the main branch, with SHA256 sums and Sigstore build-provenance attestations (above). All shipped binaries, including the small speaker shim, are compiled from source by the workflow, and every release carries the Sigstore bundle and the SLSA provenance as files (`STR-<version>.sigstore.json`, `STR-<version>.intoto.jsonl`). One prebuilt binary is still in the repository: `usb-stick/str-shim.so`, which only local developer builds use. Release builds replace it with the workflow-built, attested copy (since v1.0.1), and removing it from the repository is planned.
-
-Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Security tab](https://github.com/JRpersonal/streborn/security). The full policy is in [SECURITY.md](./SECURITY.md), and hard-won notes about the stock firmware STR runs on top of are in [docs/FIRMWARE-NOTES.md](./docs/FIRMWARE-NOTES.md). How to bring a speaker to Bose's last firmware, including very old ones, is in [docs/FIRMWARE-UPDATE.md](./docs/FIRMWARE-UPDATE.md).
-
-## Privacy
-
-STR has no accounts, no ads, and no third-party trackers in the app. The speaker never contacts the Bose cloud: STR answers it locally; it fetches station logos for its display and the phone remote through its own `/art` proxy (the station's logo host and `icons.duckduckgo.com`, sending only the station's public domain, never a LAN host), and with Spotify Connect enabled it talks to Spotify's servers. The desktop app talks to st-reborn.de (optional version check, disablable with `STR_NO_UPDATE_CHECK=1`; sends only the app version, build, OS, architecture, and language), to st-reborn.de again for the list in the Wishes tab (a plain download, translations included, nothing is sent), to radio-browser.info for the station search, and to public favicon endpoints for station logos. The website uses cookieless GoatCounter analytics. Full breakdown: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
-
-## Contributing
-
-Issues and pull requests welcome. By submitting a contribution you agree to license it under the Apache License 2.0. Significant changes please open an issue first to discuss the approach.
+- **Security, privacy and verifying a download:** [`docs/SECURITY-OVERVIEW.md`](./docs/SECURITY-OVERVIEW.md), threat model in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md).
+- **Home Assistant and automation:** [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md), [`docs/CONTROL-API.md`](./docs/CONTROL-API.md), [`docs/AUTOMATION.md`](./docs/AUTOMATION.md).
+- **Developers:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (build, repository layout) and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+- **What 1.0 means and what comes after:** [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+- **Credits:** [`docs/ACKNOWLEDGEMENTS.md`](./docs/ACKNOWLEDGEMENTS.md) and [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
 
 ## Support the project
 
@@ -245,24 +74,6 @@ STR exists solely to restore functionality of these speakers after the official 
 
 The software is provided AS IS, without warranty. Use at your own risk. The full disclaimer is in [DISCLAIMER.md](./DISCLAIMER.md).
 
-## Acknowledgements and third-party software
-
-STR stands on other people's open source. Thank you.
-
-- **[go-librespot](https://github.com/devgianlu/go-librespot)** by devgianlu, **GPL-3.0** , the Spotify Connect client that powers STR's Spotify support. It ships as a **separate binary** that STR runs as a child process and talks to over a local API/pipe; it is not linked into STR, so STR's own Apache-2.0 code and the GPL-3.0 binary are merely aggregated, each under its own license. STR builds it from a small fork, [JRpersonal/go-librespot](https://github.com/JRpersonal/go-librespot) (also GPL-3.0), that adds a raw-Ogg passthrough mode; that change is offered back upstream ([devgianlu/go-librespot#316](https://github.com/devgianlu/go-librespot/pull/316)). The full source of the bundled build is public there.
-- **[radio-browser.info](https://www.radio-browser.info/)** , the community-run radio station directory STR searches, with no key and no account.
-- **[Octicons](https://github.com/primer/octicons)** by GitHub (MIT) , a couple of UI icons.
-- **[Bose-SoundTouch](https://github.com/gesellix/Bose-SoundTouch)** by gesellix , the independent cloud emulation whose documented account and BMX service schema STR's native source registration is built on: the numeric `sourceproviderid` catalogue, the `<devices>` block the firmware requires before it accepts an account at all, and the finding that device-local slots such as `UPNP` and `STORED_MUSIC_MEDIA_RENDERER` must never be served to a speaker as account sources. Sponsor: [github.com/sponsors/gesellix](https://github.com/sponsors/gesellix).
-- **[bosesoundtouchapi](https://github.com/thlucas1/bosesoundtouchapi)** by thlucas1 , the most complete public reference for the speaker's own REST API on port 8090.
-- **[SixBack](https://github.com/tostmann/SixBack)** by Dirk Tostmann , an independent post-shutdown revival project; its documented source-registration behaviour helped separate "source not registered" from "source has no account behind it".
-- **[soundcork](https://github.com/deborahgu/soundcork)** , the proxied API specification for the Bose cloud calls, assembled from real speaker traffic.
-- **[libsoundtouch](https://github.com/CharlesBlonde/libsoundtouch)** by CharlesBlonde , early documentation of the speaker protocol and the WebSocket event bus.
-- **[BoseSoundtouch](https://github.com/TimoGo/BoseSoundtouch)** by TimoGo , documented the TAP CLI sequence for Wi-Fi provisioning, including the `network` prefix the Bose service manual leaves out.
-- **[Soundtouch-without-the-app](https://github.com/bosefirmware/Soundtouch-without-the-app)** and the wider **[bosefirmware](https://github.com/bosefirmware)** archive , cloud-free operation of the speakers, and the firmware images that made it possible to tell the chassis generations apart.
-- The wider community that documented the SoundTouch TAP CLI and firmware behaviour after the cloud shutdown, whose findings STR builds on.
-
-Bundled components keep their own licenses; STR's own code is Apache-2.0. The full list of what is distributed is in [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
-
 ## License
 
 STR is licensed under the [Apache License 2.0](./LICENSE). Releases up to and including v1.0.12 were published under the MIT License, which still applies to them.
@@ -271,4 +82,4 @@ You may use, change and redistribute STR, also commercially. A work based on STR
 
 **The names "STR", "ST Reborn" and "SoundTouch Reborn" are not part of the license.** A fork or derived work must use a name of its own, so users can tell it apart from this project.
 
-See [DISCLAIMER.md](./DISCLAIMER.md) for the trademark and interoperability notice. The bundled go-librespot binary is GPL-3.0; see the Acknowledgements above.
+See [DISCLAIMER.md](./DISCLAIMER.md) for the trademark and interoperability notice. The bundled go-librespot binary is GPL-3.0; see [`docs/ACKNOWLEDGEMENTS.md`](./docs/ACKNOWLEDGEMENTS.md).
