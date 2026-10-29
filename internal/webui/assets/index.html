@@ -2950,6 +2950,20 @@ function queueSlot(q, list) {
   return 0;
 }
 
+// nativeSlot names the Pandora or iHeartRadio key the speaker is playing: such
+// a key has no stream URL, only the station's location, which is what the
+// speaker reports as playing. Without it the key lost its light once the tap
+// grace ran out, and a key saved by a hold never lit (#1599, #1600). Same rule
+// as the desktop app's nativeServiceActive.
+function nativeSlot(loc, list) {
+  if (!loc) return 0;
+  for (var i = 0; i < (list || []).length; i++) {
+    var p = list[i];
+    if (p && p.type === 'native' && p.native && p.native.location && p.native.location === loc) return p.slot;
+  }
+  return 0;
+}
+
 // markPlaying moves the highlight to the key the speaker is on. queue is the
 // agent's running play queue (or null), for a key holding a folder. spKey is
 // the Spotify key the agent found playing (X-STR-Playing-Key on /api/status):
@@ -2961,7 +2975,8 @@ function queueSlot(q, list) {
 function markPlaying(loc, queue, spKey) {
   var grid = document.getElementById('presets');
   if (!grid) return;
-  var n = playingSlot(loc, lastPresetList) || (spKey >= 1 && spKey <= 6 ? spKey : 0) || queueSlot(queue, lastPresetList);
+  var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
+    (spKey >= 1 && spKey <= 6 ? spKey : 0) || queueSlot(queue, lastPresetList);
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
