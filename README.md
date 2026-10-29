@@ -42,7 +42,8 @@ Speaker firmware too old? [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md)
 
 Independent community projects that build on STR:
 
-- STR Remote (iPhone, free, by Wagges): https://apps.apple.com/app/id6811924121, independent community project.
+- [STR Remote](https://apps.apple.com/app/id6811924121) for iPhone, free, by Wagges ([discussion #1233](https://github.com/JRpersonal/streborn/discussions/1233)).
+- [SoundFork](https://github.com/twitnic/SoundFork) for Android 14 and newer, by twitnic, early version without a download yet ([discussion #456](https://github.com/JRpersonal/streborn/discussions/456)).
 
 ## Help and community
 
