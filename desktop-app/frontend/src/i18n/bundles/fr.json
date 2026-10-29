@@ -1003,7 +1003,6 @@
   "pandora.empty": "Pas encore de stations. Crée des stations dans l'app Pandora, elles apparaîtront ici.",
   "pandora.starting": "Lancement de {{name}}",
   "pandora.playFailed": "L'enceinte n'a pas lancé la station : {{err}}",
-  "pandora.savePlayingFirst": "Lancement de {{name}} d'abord : la touche est enregistrée à partir de ce que joue l'enceinte.",
   "settingsView.regionHeading": "Région",
   "settingsView.regionCurrent": "Actuelle",
   "settingsView.regionHelp": "Utilisé comme pays par défaut pour la recherche radio et le filtre de langue. Prend effet immédiatement et est enregistré dans l'enceinte elle-même.",

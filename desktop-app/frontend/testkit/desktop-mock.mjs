@@ -39,7 +39,7 @@ export const MODELLED_BINDINGS = [
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
-  'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SaveQueuePreset', 'SaveSpotifyPreset',
+  'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset',
   'SetAppFlag', 'SetAppLocale', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
   'SpotifyNowPlaying', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
@@ -194,6 +194,11 @@ export function installDesktopMock({ scenario, demo }) {
     SaveNativePreset: ([h, , slot, name]) => {
       const it = state.item[h] || {};
       putPreset(h, slot, { name: name || it.name || '', stream_url: '', type: 'native', art: it.art });
+      return undefined;
+    },
+    // A station from the Pandora list: the item comes with the call.
+    SavePandoraStationPreset: ([h, , slot, name, , , art]) => {
+      putPreset(h, slot, { name, stream_url: '', type: 'native', art });
       return undefined;
     },
     SaveSpotifyPreset: ([h, , slot, name, uri, account]) => {

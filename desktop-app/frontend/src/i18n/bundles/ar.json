@@ -1003,7 +1003,6 @@
   "pandora.empty": "لا توجد محطات بعد. أنشئ محطات في تطبيق Pandora وستظهر هنا.",
   "pandora.starting": "جارٍ تشغيل {{name}}",
   "pandora.playFailed": "لم تبدأ السمّاعة تشغيل المحطة: {{err}}",
-  "pandora.savePlayingFirst": "يتم تشغيل {{name}} أولًا: يُحفظ الزر مما تشغّله السمّاعة.",
   "settingsView.regionHeading": "المنطقة",
   "settingsView.regionCurrent": "الحالية",
   "settingsView.regionHelp": "تُستخدم كدولة افتراضية للبحث عن الراديو ومرشّح اللغة. تسري فورًا وتُحفظ في السمّاعة نفسها.",

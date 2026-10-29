@@ -1003,7 +1003,6 @@
   "pandora.empty": "Nog geen zenders. Maak zenders aan in de Pandora-app, dan verschijnen ze hier.",
   "pandora.starting": "{{name}} wordt gestart",
   "pandora.playFailed": "De speaker heeft de zender niet gestart: {{err}}",
-  "pandora.savePlayingFirst": "Eerst wordt {{name}} gestart: de toets wordt opgeslagen uit wat de speaker speelt.",
   "settingsView.regionHeading": "Regio",
   "settingsView.regionCurrent": "Huidig",
   "settingsView.regionHelp": "Wordt gebruikt als standaardland voor het radiozoeken en het taalfilter. Werkt meteen en wordt in de speaker zelf opgeslagen.",

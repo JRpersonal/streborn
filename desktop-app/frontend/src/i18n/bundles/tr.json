@@ -1003,7 +1003,6 @@
   "pandora.empty": "Henüz istasyon yok. Pandora uygulamasında istasyon oluştur, burada görünürler.",
   "pandora.starting": "{{name}} başlatılıyor",
   "pandora.playFailed": "Hoparlör istasyonu başlatmadı: {{err}}",
-  "pandora.savePlayingFirst": "Önce {{name}} başlatılıyor: tuş, hoparlörün çaldığından kaydedilir.",
   "settingsView.regionHeading": "Bölge",
   "settingsView.regionCurrent": "Mevcut",
   "settingsView.regionHelp": "Radyo araması ve dil filtresi için varsayılan ülke olarak kullanılır. Hemen etkili olur ve hoparlörün kendisinde saklanır.",

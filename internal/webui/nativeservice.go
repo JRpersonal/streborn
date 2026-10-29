@@ -165,6 +165,11 @@ func (s *Server) saveNativePreset(ctx context.Context, req presetSaveRequest, in
 	var item presets.NativeItem
 	if in.Native != nil && in.Native.Location != "" {
 		item = *in.Native
+		// A station from the app's Pandora list arrives without the account
+		// (#1595): store the one the speaker holds, as a now-playing save would.
+		if item.SourceAccount == "" {
+			item = s.withSpeakerAccount(ctx, item)
+		}
 	} else {
 		got, ok, err := s.nowPlayingNativeItem(ctx)
 		if err != nil {

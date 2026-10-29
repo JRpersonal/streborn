@@ -1003,7 +1003,6 @@
   "pandora.empty": "Stočių dar nėra. Sukurkite stotis Pandora programėlėje ir jos atsiras čia.",
   "pandora.starting": "Paleidžiama {{name}}",
   "pandora.playFailed": "Garsiakalbis nepaleido stoties: {{err}}",
-  "pandora.savePlayingFirst": "Pirmiausia paleidžiama {{name}}: mygtukas išsaugomas iš to, ką groja garsiakalbis.",
   "settingsView.regionHeading": "Regionas",
   "settingsView.regionCurrent": "Dabartinis",
   "settingsView.regionHelp": "Naudojama kaip numatytoji šalis radijo paieškai ir kalbos filtrui. Veikia iškart ir išsaugoma pačiame garsiakalbyje.",

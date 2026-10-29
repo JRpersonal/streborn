@@ -315,6 +315,12 @@ export function SaveNativePreset(host, port, slot, name) {
   return callOptionalBinding('SaveNativePreset', [host, port, slot, name]);
 }
 
+// SavePandoraStationPreset stores a Pandora station from the station list on a
+// key without starting it (#1595). Optional binding, per the note above.
+export function SavePandoraStationPreset(host, port, slot, name, location, type, art) {
+  return callOptionalBinding('SavePandoraStationPreset', [host, port, slot, name, location, type, art]);
+}
+
 // Pandora and iHeartRadio, the services the speaker plays by itself
 // (usservices.js). Optional bindings, per the note above: all brand new.
 // service is 'pandora' or 'iheart'. The password goes to the speaker and is
