@@ -308,6 +308,8 @@ export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 
 export function SaveNativePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
 
+export function SavePandoraStationPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
+
 export function SavePlayingPreset(arg1:string,arg2:number,arg3:number):Promise<main.SavedPlaying>;
 
 export function SaveQueuePreset(arg1:string,arg2:number,arg3:number):Promise<string>;

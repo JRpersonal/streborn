@@ -606,6 +606,10 @@ export function SaveNativePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveNativePreset'](arg1, arg2, arg3, arg4);
 }
 
+export function SavePandoraStationPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SavePandoraStationPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
 export function SavePlayingPreset(arg1, arg2, arg3) {
   return window['go']['main']['App']['SavePlayingPreset'](arg1, arg2, arg3);
 }

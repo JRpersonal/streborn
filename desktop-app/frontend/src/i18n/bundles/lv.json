@@ -1003,7 +1003,6 @@
   "pandora.empty": "Vēl nav staciju. Izveido stacijas Pandora lietotnē, un tās parādīsies šeit.",
   "pandora.starting": "Palaiž {{name}}",
   "pandora.playFailed": "Skaļrunis nepalaida staciju: {{err}}",
-  "pandora.savePlayingFirst": "Vispirms palaiž {{name}}: taustiņā saglabā to, ko atskaņo skaļrunis.",
   "settingsView.regionHeading": "Reģions",
   "settingsView.regionCurrent": "Pašreizējais",
   "settingsView.regionHelp": "Tiek izmantota kā noklusējuma valsts radio meklēšanai un valodas filtram. Stājas spēkā uzreiz un tiek saglabāta pašā skaļrunī.",

@@ -1112,7 +1112,6 @@
   "pandora.empty": "Noch keine Sender. Leg Sender in der Pandora-App an, dann erscheinen sie hier.",
   "pandora.starting": "{{name}} wird gestartet",
   "pandora.playFailed": "Der Lautsprecher hat den Sender nicht gestartet: {{err}}",
-  "pandora.savePlayingFirst": "{{name}} wird zuerst gestartet: Die Taste wird aus dem gespeichert, was der Lautsprecher spielt.",
   "settingsView.regionHeading": "Region",
   "settingsView.regionCurrent": "Aktuell",
   "settingsView.regionHelp": "Wird als Standardland für die Radio-Suche und den Sprachfilter benutzt. Die Änderung greift sofort und wird im Lautsprecher selbst gespeichert.",

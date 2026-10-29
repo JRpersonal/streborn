@@ -318,6 +318,35 @@ func (a *App) SaveNativePreset(host string, port int, slot int, name string) err
 	return err
 }
 
+// SavePandoraStationPreset stores a Pandora station from the speaker's station
+// list on a key without starting it (#1595). The app sends the item the list
+// carried; the speaker agent fills in the account the speaker holds, the same
+// item a box-to-box copy hands over.
+func (a *App) SavePandoraStationPreset(host string, port int, slot int, name, location, typ, art string) error {
+	if strings.TrimSpace(location) == "" {
+		return fmt.Errorf("no station selected")
+	}
+	if strings.TrimSpace(typ) == "" {
+		typ = "stationurl"
+	}
+	item, err := json.Marshal(map[string]string{
+		"source": "PANDORA", "location": location, "itemType": typ, "itemName": name, "containerArt": art,
+	})
+	if err != nil {
+		return err
+	}
+	err = a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+		Preset{Slot: slot, Name: name, Type: "native", Native: item})
+	if a.logger != nil {
+		if err != nil {
+			a.logger.Info("pandora station preset save: refused", "host", host, "slot", slot, "name", name, "location", location, "err", err)
+		} else {
+			a.logger.Info("pandora station preset save: stored", "host", host, "slot", slot, "name", name, "location", location)
+		}
+	}
+	return err
+}
+
 // LogSpotifySaveGate records what the app knew about this speaker's Spotify state
 // when it decided whether to warn after a save. The three fields are "yes", "no"
 // or "unknown", because "the speaker could not be asked" must stay separate from

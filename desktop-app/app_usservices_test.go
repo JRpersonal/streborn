@@ -109,3 +109,34 @@ func TestUSServicesBindings(t *testing.T) {
 		t.Fatal("empty location accepted")
 	}
 }
+
+// The Pandora list's "+" hands the station item to the agent instead of
+// starting the station first (#1595).
+func TestSavePandoraStationPresetSendsTheItem(t *testing.T) {
+	var got Preset
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.Method + " " + r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	a := newTestApp()
+	if err := a.SavePandoraStationPreset("127.0.0.1", listenPort(t, srv), 3, "Jazz Radio", "111", "", "http://img.example.com/1.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if path != "PUT /api/presets/3" || got.Type != "native" || got.Name != "Jazz Radio" {
+		t.Fatalf("request = %s %+v", path, got)
+	}
+	var item map[string]string
+	if err := json.Unmarshal(got.Native, &item); err != nil {
+		t.Fatal(err)
+	}
+	if item["source"] != "PANDORA" || item["location"] != "111" || item["itemType"] != "stationurl" || item["containerArt"] != "http://img.example.com/1.jpg" {
+		t.Fatalf("native item = %v", item)
+	}
+	if err := a.SavePandoraStationPreset("127.0.0.1", listenPort(t, srv), 3, "x", " ", "", ""); err == nil {
+		t.Fatal("a save without a location went through")
+	}
+}

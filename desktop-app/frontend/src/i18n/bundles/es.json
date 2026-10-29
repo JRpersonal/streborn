@@ -1003,7 +1003,6 @@
   "pandora.empty": "Aún no hay emisoras. Crea emisoras en la app de Pandora y aparecerán aquí.",
   "pandora.starting": "Iniciando {{name}}",
   "pandora.playFailed": "El altavoz no inició la emisora: {{err}}",
-  "pandora.savePlayingFirst": "Primero se inicia {{name}}: la tecla se guarda a partir de lo que suena en el altavoz.",
   "settingsView.regionHeading": "Región",
   "settingsView.regionCurrent": "Actual",
   "settingsView.regionHelp": "Se usa como país predeterminado para la búsqueda de radio y el filtro de idioma. Surte efecto de inmediato y se guarda en el propio altavoz.",

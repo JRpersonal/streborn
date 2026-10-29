@@ -1112,7 +1112,6 @@
   "pandora.empty": "還沒有電台。在 Pandora App 建立電台後，就會顯示在這裡。",
   "pandora.starting": "正在啟動 {{name}}",
   "pandora.playFailed": "喇叭沒有啟動這個電台：{{err}}",
-  "pandora.savePlayingFirst": "先啟動 {{name}}：按鍵會儲存喇叭正在播放的內容。",
   "settingsView.regionHeading": "地區",
   "settingsView.regionCurrent": "目前",
   "settingsView.regionHelp": "當作電台搜尋和語言篩選的預設國家。變更會立刻生效，並存在喇叭本身。",

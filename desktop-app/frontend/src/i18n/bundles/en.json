@@ -1112,7 +1112,6 @@
   "pandora.empty": "No stations yet. Create stations in the Pandora app, they show up here.",
   "pandora.starting": "Starting {{name}}",
   "pandora.playFailed": "The speaker did not start the station: {{err}}",
-  "pandora.savePlayingFirst": "Starting {{name}} first: the key is saved from what the speaker plays.",
   "settingsView.regionHeading": "Region",
   "settingsView.regionCurrent": "Current",
   "settingsView.regionHelp": "Used as the default country for the radio search and language filter. Takes effect immediately and is stored on the speaker itself.",

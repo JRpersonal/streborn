@@ -1003,7 +1003,6 @@
   "pandora.empty": "Brak stacji. Utwórz stacje w aplikacji Pandora, a pojawią się tutaj.",
   "pandora.starting": "Uruchamianie {{name}}",
   "pandora.playFailed": "Głośnik nie uruchomił stacji: {{err}}",
-  "pandora.savePlayingFirst": "Najpierw uruchamiam {{name}}: przycisk zapisuje to, co gra głośnik.",
   "settingsView.regionHeading": "Region",
   "settingsView.regionCurrent": "Bieżący",
   "settingsView.regionHelp": "Używany jako domyślny kraj w wyszukiwaniu radia i filtrze języka. Działa natychmiast i jest zapisywany w samym głośniku.",

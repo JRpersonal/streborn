@@ -1003,7 +1003,6 @@
   "pandora.empty": "ステーションはまだありません。Pandora アプリでステーションを作成すると、ここに表示されます。",
   "pandora.starting": "{{name}} を開始中",
   "pandora.playFailed": "スピーカーがステーションを開始しませんでした: {{err}}",
-  "pandora.savePlayingFirst": "まず {{name}} を再生します。キーにはスピーカーが再生中の内容が保存されます。",
   "settingsView.regionHeading": "地域",
   "settingsView.regionCurrent": "現在",
   "settingsView.regionHelp": "ラジオ検索と言語フィルターの既定の国として使用されます。すぐに反映され、スピーカー本体に保存されます。",
