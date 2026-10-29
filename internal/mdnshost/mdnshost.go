@@ -379,7 +379,6 @@ func (r *Responder) Stats() map[string]any {
 		"answersSent":      r.answersSent,
 		"announcementsOut": r.announcements,
 		"packetsSeen":      r.packetsSeen,
-		"udp":              udpCounters(),
 	}
 }
 

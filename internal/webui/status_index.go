@@ -144,7 +144,21 @@ var mdnsHostName string
 // derive the name itself (mdnshost is under internal/, and it is a separate
 // module), and a second copy of that derivation is exactly the drift this
 // codebase has paid for elsewhere. So the speaker says it.
-func SetMDNSHostName(n string) { mdnsHostName = n }
+func SetMDNSHostName(n string) {
+	mdnsHostNameMu.Lock()
+	mdnsHostName = n
+	mdnsHostNameMu.Unlock()
+}
+
+// mdnsHostNameMu guards mdnsHostName: a wired speaker sets it once its first
+// lease arrives, after the HTTP surface is already serving.
+var mdnsHostNameMu sync.Mutex
+
+func currentMDNSHostName() string {
+	mdnsHostNameMu.Lock()
+	defer mdnsHostNameMu.Unlock()
+	return mdnsHostName
+}
 
 // agentIdentityFn reports the ids this speaker answers under: the deviceID its
 // own announcement carries, and the firmware's SoundTouch id once the box has
