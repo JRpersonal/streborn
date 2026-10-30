@@ -638,6 +638,21 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				if self || ip == "" {
 					continue
 				}
+				// A speaker on the cable and on Wi-Fi announces both addresses
+				// (#165). Taking the first one every time could pick the other
+				// address than the one the roster already holds (the app seeds
+				// the cable one), and adopt a second entry for the same speaker.
+				// Keep the known address while the record still carries it.
+				if len(inst.IPv4) > 1 {
+					peersMu.Lock()
+					for _, a := range inst.IPv4 {
+						if _, known := peersByIP[a]; known && !mine[a] {
+							ip = a
+							break
+						}
+					}
+					peersMu.Unlock()
+				}
 				name := inst.FriendlyName
 				if name == "" {
 					name = inst.Name
@@ -699,25 +714,36 @@ func cachedPeerLinks() []webui.PeerLink {
 	// the new one is already live, so the phone page listed the same speaker
 	// twice, once of them nameless (#494). Keep only the freshest entry per
 	// name, and prefer a reachable one over a dimmed one.
+	//
+	// The same holds per device id (#165): a speaker on the cable AND on Wi-Fi
+	// sits here under both addresses (mDNS reports one, the app's seed the
+	// other), and the two can carry different names while one is still a
+	// "str-<ip>" placeholder. Either id the speaker answers under ties them.
 	bestByName := map[string]string{} // display name -> ip of the entry to keep
+	bestByID := map[string]string{}   // lower-cased device id -> ip of the entry to keep
+	// peerBeats: reachable beats dimmed, then the fresher sighting; the address
+	// breaks a full tie so the pick does not depend on map order.
+	peerBeats := func(ip string, e *peerEntry, curIP string) bool {
+		prev := peersByIP[curIP]
+		if e.reachable != prev.reachable {
+			return e.reachable
+		}
+		if !e.lastSeen.Equal(prev.lastSeen) {
+			return e.lastSeen.After(prev.lastSeen)
+		}
+		return ip < curIP
+	}
 	for ip, e := range peersByIP {
 		if e.name == "" || now.Sub(e.lastSeen) > peerTTL {
 			continue
 		}
-		cur, ok := bestByName[e.name]
-		if !ok {
+		if cur, ok := bestByName[e.name]; !ok || peerBeats(ip, e, cur) {
 			bestByName[e.name] = ip
-			continue
 		}
-		prev := peersByIP[cur]
-		if e.reachable != prev.reachable {
-			if e.reachable {
-				bestByName[e.name] = ip
+		for _, id := range peerEntryIDs(e) {
+			if cur, ok := bestByID[id]; !ok || peerBeats(ip, e, cur) {
+				bestByID[id] = ip
 			}
-			continue
-		}
-		if e.lastSeen.After(prev.lastSeen) {
-			bestByName[e.name] = ip
 		}
 	}
 	out := make([]webui.PeerLink, 0, len(peersByIP))
@@ -757,6 +783,16 @@ func cachedPeerLinks() []webui.PeerLink {
 		if keep, ok := bestByName[e.name]; ok && keep != ip {
 			continue // an entry for the same speaker at a fresher address wins
 		}
+		lost := false
+		for _, id := range peerEntryIDs(e) {
+			if keep, ok := bestByID[id]; ok && keep != ip {
+				lost = true
+				break
+			}
+		}
+		if lost {
+			continue // the same device answers at a better address
+		}
 		port := e.port
 		if port == 0 {
 			port = 8888 // never reached yet: best-effort URL so the entry still resolves once it comes up
@@ -780,6 +816,18 @@ func cachedPeerLinks() []webui.PeerLink {
 		}
 		return out[i].URL < out[j].URL
 	})
+	return out
+}
+
+// peerEntryIDs returns every device id a roster entry is known by, lower-cased,
+// for the per-device collapse in cachedPeerLinks.
+func peerEntryIDs(e *peerEntry) []string {
+	var out []string
+	for _, id := range []string{e.deviceID, e.boxDeviceID} {
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+			out = append(out, id)
+		}
+	}
 	return out
 }
 

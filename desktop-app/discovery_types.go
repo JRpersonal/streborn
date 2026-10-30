@@ -238,6 +238,14 @@ type BoxInfo struct {
 	// the user on the next cold boot. The UI warns the user to run STR's own
 	// Wi-Fi setup (#270).
 	WLANCredsMissing bool `json:"wlanCredsMissing,omitempty"`
+	// LANAddrs and WiredAddrs are the agent's own report of every address the
+	// speaker answers on and the subset on the network cable, comma-joined
+	// (#165). Only a speaker with more than one address sends them. The
+	// same-device collapse uses them to keep the cable address over the Wi-Fi
+	// one, and the known-box refresh to fall back to another address when the
+	// one the tile holds stops answering.
+	LANAddrs   string `json:"lanAddrs,omitempty"`
+	WiredAddrs string `json:"wiredAddrs,omitempty"`
 	// SerialNumber is the human-readable Bose PackagedProduct serial
 	// (the sticker on the bottom of the speaker, e.g.
 	// "000000P00000000AA"). Pulled from /info on 8090; empty if the

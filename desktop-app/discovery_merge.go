@@ -279,6 +279,12 @@ var boxFieldPolicy = []fieldPolicy{
 	{"RecallRefusal", keepBase, verifiedReading},
 	{"RecallRefusalSinceSec", keepBase, follows("RecallRefusal")},
 	{"WLANCredsMissing", keepBase, verifiedReading},
+	// The speaker's own address report (#165) travels like the version: only a
+	// live probe carries it, and a thin cycle keeps the last known one, which
+	// is exactly what the fallback to another address needs while the tile's
+	// address is silent.
+	{"LANAddrs", preferNonEmpty, preferVerified},
+	{"WiredAddrs", preferNonEmpty, preferVerified},
 	{"SerialNumber", preferNonEmpty, preferNonEmpty},
 	{"Kind", stickySTR, keepBase},
 }

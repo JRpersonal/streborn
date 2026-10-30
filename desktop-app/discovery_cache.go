@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -457,27 +458,24 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 // flicker back on a later cycle. Records without a DeviceID are left untouched:
 // stock Bose mDNS sometimes omits the MAC, and collapsing those would merge
 // distinct speakers (the reason the upsert is IP-keyed in the first place).
+//
+// The same collapse covers a speaker on the cable AND on Wi-Fi (#165): it
+// answers on two live addresses at once, and both carry the same deviceID. The
+// agent's own address report (BoxInfo.LANAddrs) links the two as well, which
+// matters where one sighting carries the firmware id and the other the agent's
+// radio MAC. pickLiveBoxKey then keeps the cable address while it answers.
 func (a *App) dedupeByDeviceID(seen map[string]BoxInfo) {
-	byDevice := map[string][]string{}
-	for key, b := range seen {
-		if b.DeviceID == "" {
-			continue
-		}
-		byDevice[b.DeviceID] = append(byDevice[b.DeviceID], key)
-	}
 	var dropped []string
-	for dev, keys := range byDevice {
-		if len(keys) < 2 {
-			continue
-		}
+	for _, keys := range sameSpeakerGroups(seen) {
 		winner := pickLiveBoxKey(seen, keys)
 		for _, key := range keys {
 			if key == winner {
 				continue
 			}
 			if a.logger != nil {
-				a.logger.Info("discovery: collapsed duplicate box at a stale IP (same deviceID as the reachable one)",
-					"deviceID", dev, "staleHost", key, "liveHost", winner)
+				a.logger.Info("discovery: collapsed duplicate box (same speaker at another address)",
+					"deviceID", seen[key].DeviceID, "droppedHost", key, "keptHost", winner,
+					"keptWired", hostIsWired(seen, keys, winner))
 			}
 			delete(seen, key)
 			dropped = append(dropped, key)
@@ -493,12 +491,117 @@ func (a *App) dedupeByDeviceID(seen map[string]BoxInfo) {
 	a.discMu.Unlock()
 }
 
+// sameSpeakerGroups returns the host keys of seen that belong to one physical
+// speaker, one slice per speaker with at least two keys, each sorted. Two keys
+// are the same speaker when they share a non-empty DeviceID, or when one
+// record's own address report (LANAddrs, from the agent) names the other's
+// host. Records with neither stay alone: stock mDNS sometimes omits the MAC,
+// and grouping on anything weaker would merge distinct speakers.
+func sameSpeakerGroups(seen map[string]BoxInfo) [][]string {
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parent := make(map[string]string, len(keys))
+	var find func(string) string
+	find = func(k string) string {
+		if parent[k] == k {
+			return k
+		}
+		r := find(parent[k])
+		parent[k] = r
+		return r
+	}
+	union := func(x, y string) {
+		rx, ry := find(x), find(y)
+		if rx != ry {
+			parent[ry] = rx
+		}
+	}
+	byDevice := map[string]string{}
+	byHost := map[string]string{}
+	for _, k := range keys {
+		parent[k] = k
+		if h := seen[k].Host; h != "" {
+			byHost[h] = k
+		}
+		byHost[k] = k
+	}
+	for _, k := range keys {
+		b := seen[k]
+		if b.DeviceID != "" {
+			if first, ok := byDevice[b.DeviceID]; ok {
+				union(first, k)
+			} else {
+				byDevice[b.DeviceID] = k
+			}
+		}
+		for _, addr := range splitAddrList(b.LANAddrs) {
+			if other, ok := byHost[addr]; ok && other != k {
+				union(k, other)
+			}
+		}
+	}
+	groups := map[string][]string{}
+	for _, k := range keys {
+		r := find(k)
+		groups[r] = append(groups[r], k)
+	}
+	var out [][]string
+	for _, g := range groups {
+		if len(g) > 1 {
+			out = append(out, g)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
+	return out
+}
+
+// splitAddrList parses the agent's comma-joined address list.
+func splitAddrList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// hostIsWired reports whether any record of the group says that key's host is
+// on the speaker's network cable. Any record, because the agent sends the same
+// report on every address it answers on, and the record at the cable address
+// may be the thinner one this cycle.
+func hostIsWired(seen map[string]BoxInfo, group []string, key string) bool {
+	host := seen[key].Host
+	if host == "" {
+		host = key
+	}
+	for _, k := range group {
+		for _, w := range splitAddrList(seen[k].WiredAddrs) {
+			if w == host {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// boxKeyReachableFn is the reachability probe pickLiveBoxKey uses; a variable
+// so the tests can decide which address answers.
+var boxKeyReachableFn = boxKeyReachable
+
 // pickLiveBoxKey chooses which of several host keys for one physical box to keep.
-// A currently-reachable IP wins outright; an STR record breaks ties over a stock
-// one, and the host string is the final deterministic tiebreaker (seen is a map,
-// so keys arrive in random order). If none is reachable — every IP mid-reboot, or
-// a transient probe miss — it still returns the best-scored key so the box never
-// drops off the list entirely (fallback-first).
+// A currently-reachable IP wins outright; among reachable ones the speaker's
+// cable address beats its Wi-Fi address (#165: steadier, and the one a
+// speaker with both is meant to be used on); an STR record breaks ties over a
+// stock one, and the host string is the final deterministic tiebreaker (seen is
+// a map, so keys arrive in random order). Reachability outranks the cable, so a
+// cable address that stopped answering hands over to the Wi-Fi one. If none is
+// reachable — every IP mid-reboot, or a transient probe miss — it still returns
+// the best-scored key so the box never drops off the list entirely
+// (fallback-first).
 func pickLiveBoxKey(seen map[string]BoxInfo, keys []string) string {
 	sorted := append([]string(nil), keys...)
 	sort.Strings(sorted)
@@ -507,7 +610,10 @@ func pickLiveBoxKey(seen map[string]BoxInfo, keys []string) string {
 	for _, key := range sorted {
 		b := seen[key]
 		score := 0
-		if boxKeyReachable(b) {
+		if boxKeyReachableFn(b) {
+			score += 4
+		}
+		if hostIsWired(seen, sorted, key) {
 			score += 2
 		}
 		if b.Kind == "str" {
@@ -683,6 +789,40 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 				probed, probeOK = probe(ctx, kb.Host)
 			} else {
 				probed, probeOK = probeSTRPreferring(ctx, kb.Host, knownAgentPort(kb))
+			}
+			// The address the tile holds is silent, but the speaker said it
+			// also answers elsewhere (cable and Wi-Fi at once, #165): try those
+			// before calling it unreachable. The merge below then moves the
+			// tile to the address that answered and evicts the silent one, and
+			// the next full discovery moves it back to the cable once that
+			// answers again.
+			if !probeOK && kb.Kind == "str" {
+				for _, alt := range splitAddrList(kb.LANAddrs) {
+					if alt == kb.Host || ctx.Err() != nil {
+						continue
+					}
+					var altBox BoxInfo
+					var altOK bool
+					if probe != nil {
+						altBox, altOK = probe(ctx, alt)
+					} else {
+						altBox, altOK = probeSTRPreferring(ctx, alt, knownAgentPort(kb))
+					}
+					if altOK {
+						if a.logger != nil {
+							a.logger.Info("refresh: speaker silent at its address, answered at its other one",
+								"silentHost", kb.Host, "answeredHost", alt, "deviceID", kb.DeviceID)
+						}
+						probed, probeOK = altBox, true
+						// Keep the identity the tile had, so the merge can tie
+						// the new address to it even when the probe came back
+						// thin (no :8090 /info answer yet).
+						if probed.DeviceID == "" {
+							probed.DeviceID = kb.DeviceID
+						}
+						break
+					}
+				}
 			}
 			bosePortOpen := false
 			if !probeOK {
