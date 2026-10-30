@@ -258,11 +258,15 @@ button.btn:active { background:var(--press); }
    slot 6+n. One compact "1x | 2x" switch picks which six the grid shows; the
    grid itself stays 2x3. The switch shares the heading line, so the keys keep
    the place #1371 gave them above the fold. Each segment is a 44x40 target;
-   only the 26px pill inside is drawn, and the line's negative margins hand the
-   undrawn part back: the keys start exactly where they did under the label. */
-.phead.two, .pickhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.phead.two { margin:-9px 12px -2px; }
-.phead.two #lblPresets { margin:0 !important; min-width:0; }
+   only the 26px pill inside is drawn. The label keeps its own block layout and
+   margins, and the switch is laid over the label's line, so it adds no height:
+   the keys start exactly where they did under the label alone, whatever line
+   height the platform's font gives the label (fixed negative margins matched
+   Windows' Segoe UI and were 3px off with Linux fonts). */
+.phead.two { position:relative; }
+.phead.two #lblPresets { padding-right:120px; }
+.phead.two .rowsw { position:absolute; right:12px; top:50%; transform:translateY(-50%); }
+.pickhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .pickhead { flex-wrap:wrap; margin-bottom:4px; }
 .pickhead > :first-child { flex:1 1 auto; min-width:0; margin:0; }
 .rowsw { display:inline-flex; flex:none; margin-left:auto; }
