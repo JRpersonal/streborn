@@ -167,6 +167,9 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 
 	title := tr.title
 	start := time.Now()
+	// firstStart stays at the first push: a start retry resets start, but a
+	// refusal is judged over the whole attempt (singletrackrefusal.go).
+	firstStart := start
 	var (
 		lastPos   time.Duration
 		lastPosAt time.Time
@@ -243,6 +246,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
 			s.demoteCustomFile(tr.boxURL, "the speaker dropped the source", time.Since(start))
+			s.noteSingleTrackRefused(title, firstStart)
 			return false, gen
 		}
 		// PLAY_STATE only counts when the speaker reports OUR file. A speaker
@@ -346,6 +350,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 					}
 				}
 				s.logger.Info("single track: it never started, dropping the end watch", "title", title)
+				s.noteSingleTrackRefused(title, firstStart)
 				return false, gen
 			}
 			continue

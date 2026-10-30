@@ -602,6 +602,13 @@ type Server struct {
 	// LastActivity) tells it apart from a failing station. See wedge.go.
 	wedge            wedgeState
 	streamActivityFn func() (lastFetch, lastFailure time.Time)
+	// boxPlayFailureFn reports whether the firmware logged a playback failure
+	// of its own (BAD_URL, no first frame, no decoded data, ...) within the
+	// last d, and whether its log is being read at all. A library track the
+	// speaker dropped WITHOUT such a line was never tried: that is the
+	// speaker refusing STR's push, not a file it cannot decode (#1634). nil
+	// when the agent has no log reader. See singletrackrefusal.go.
+	boxPlayFailureFn func(d time.Duration) (failed, logLive bool)
 
 	// lastStationResolve is when the box last resolved a native station
 	// through the LIR/orion descriptor endpoints (unix nanos, 0 = never). The

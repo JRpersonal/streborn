@@ -35,6 +35,7 @@ import {
 } from '../api.js';
 import { orderLongFolder } from '../trackorder.js';
 import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
+import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -440,7 +441,9 @@ async function libraryBrowseCurrent() {
       const page = await BrowseLibrary(libState.currentUDN, top.id, start, LIB_PAGE);
       if (token !== libState.browseToken) return; // navigated away mid-fetch: drop it
       acc.containers = acc.containers.concat(page.containers || []);
-      acc.items = acc.items.concat(page.items || []);
+      // A Mac's "._" companion files are no audio (libraryplayfail.js). Paging
+      // below still counts what the server returned, so offsets stay right.
+      acc.items = acc.items.concat(withoutMacMetadata(page.items));
       acc.totalMatches = page.totalMatches || acc.totalMatches;
       acc.returned = acc.containers.length + acc.items.length;
       const got = (page.containers || []).length + (page.items || []).length;
@@ -639,6 +642,13 @@ async function verifyLibraryPlayback(item, target) {
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     if (ps === 'PLAY_STATE') return; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
+  }
+  // A speaker refusing everything STR pushes never tried the file, so neither
+  // the format nor the server is the answer: the restart banner's text is
+  // (#1634, libraryplayfail.js).
+  if (speakerRefusingPushes(state.boxes, box)) {
+    showToast(t('speaker.stormBanner', { name: getBoxLabel(box) }), 9000);
+    return;
   }
   const probe = await probeDelivery(item.streamURL);
   // Only a probe that actually answered may change the wording. "Not known" is

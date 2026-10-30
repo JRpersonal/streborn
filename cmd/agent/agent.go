@@ -1537,6 +1537,12 @@ func (a *agent) buildBoxLink() error {
 		return fetched
 	}
 	keyTrace.SetPlayFailureHandler(wsHandler.OnPlayFailure)
+	// A library track the speaker dropped without a playback failure of its
+	// own was never tried: the speaker refused the push (#1634).
+	webuiSrv.SetBoxPlayFailureFn(func(d time.Duration) (bool, bool) {
+		_, failed := keyTrace.LastPlaybackFailure(d)
+		return failed, keyTrace.Healthy()
+	})
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it
 	// arrives with the key stamp the standby classifier reads); the ring's
