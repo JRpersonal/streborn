@@ -159,6 +159,7 @@ export namespace main {
 	    build: string;
 	    agentBinarySha256?: string;
 	    agentRunningSha256?: string;
+	    presetRows?: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
 	    strNotRunning?: boolean;
@@ -202,6 +203,7 @@ export namespace main {
 	        this.build = source["build"];
 	        this.agentBinarySha256 = source["agentBinarySha256"];
 	        this.agentRunningSha256 = source["agentRunningSha256"];
+	        this.presetRows = source["presetRows"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.strNotRunning = source["strNotRunning"];
