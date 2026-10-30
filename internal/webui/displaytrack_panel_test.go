@@ -626,3 +626,34 @@ func TestPanelInputsWithoutPanel(t *testing.T) {
 		t.Fatalf("panel touched without a panel: %+v %v", shown, cleared)
 	}
 }
+
+// A speaker without a display (an ST10) is not offered the setting while it
+// is off; one switched on there stays offered so it can be switched off.
+func TestDisplayTrackNotOfferedWithoutADisplay(t *testing.T) {
+	s, _, _ := newTrackServer(t, false)
+	s.displayMsg.hasDisplayFn = func() (bool, bool) { return false, true }
+	get := func() map[string]any {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/box/display-track", nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		s.handleDisplayTrack(rr, req)
+		var got map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := get(); got["supported"] != true {
+		t.Fatalf("switched on without a display: %v, want it still offered", got)
+	}
+	if err := writeFlagFile(s.displayTrackPath, "0"); err != nil {
+		t.Fatal(err)
+	}
+	if got := get(); got["supported"] != false {
+		t.Fatalf("off without a display: %v, want not offered", got)
+	}
+	s.displayMsg.hasDisplayFn = func() (bool, bool) { return true, true }
+	if got := get(); got["supported"] != true {
+		t.Fatalf("off with a display: %v, want offered", got)
+	}
+}
