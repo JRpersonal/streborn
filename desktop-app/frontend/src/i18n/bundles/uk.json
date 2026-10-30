@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Підключено. Готово до відтворення.",
   "usServices.stateLinked": "Підключено як {{account}}. Динамік ще налаштовує це, може тривати хвилину.",
   "usServices.stateLinkedNoName": "Підключено. Динамік ще налаштовує це, може тривати хвилину.",
+  "usServices.stateStale": "На цій колонці є старіший обліковий запис {{service}} ({{account}}), але вхід у нього не виконано. Увійдіть знову, щоб користуватися {{service}} тут.",
+  "usServices.stateStaleNoName": "На цій колонці є старіший обліковий запис {{service}}, але вхід у нього не виконано. Увійдіть знову, щоб користуватися {{service}} тут.",
   "usServices.stateUnlinked": "Не підключено",
   "usServices.stateOff": "Не увімкнено на цьому динаміку",
   "usServices.emailPlaceholder": "Ел. пошта",

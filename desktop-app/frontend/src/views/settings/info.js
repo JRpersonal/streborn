@@ -18,7 +18,7 @@ import { firmwareGuideMount, wireFirmwareGuides } from '../../fwguide.js';
 import { firmwareLadderDeps } from '../../fwladderdeps.js';
 import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
-  usServiceCanDisconnect, agentErrorText, usDisconnectError, usConnectError,
+  usServiceCanDisconnect, usServiceNeedsLogin, agentErrorText, usDisconnectError, usConnectError,
 } from '../../usservices.js';
 import { wireToggleSection } from '../../togglesection.js';
 import {
@@ -367,17 +367,21 @@ async function fillUSServices(box) {
   if (enabled) {
     US_SERVICES.forEach(svc => {
       const st = usServiceState(status, svc.type);
-      const line = t(usServiceStatusKey(st), { account: st.account });
+      const line = t(usServiceStatusKey(st), { account: st.account, service: svc.label });
       const badge = svc.experimental ? ` <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span>` : '';
-      const action = usServiceCanDisconnect(st)
-        ? `<button class="btn btn-mini" data-usdisconnect="${escapeAttr(svc.key)}">${escapeHtml(t('usServices.disconnect'))}</button>`
-        : `<div class="wlan-row">
+      const login = usServiceNeedsLogin(st)
+        ? `<div class="wlan-row">
             <input type="email" autocomplete="off" id="usUser-${escapeAttr(svc.key)}" placeholder="${escapeAttr(t('usServices.emailPlaceholder'))}" />
           </div>
           <div class="wlan-row">
             <input type="password" autocomplete="off" id="usPass-${escapeAttr(svc.key)}" placeholder="${escapeAttr(t('usServices.passwordPlaceholder'))}" />
             <button class="btn btn-mini btn-primary" data-usconnect="${escapeAttr(svc.key)}">${escapeHtml(t('usServices.connect'))}</button>
-          </div>`;
+          </div>`
+        : '';
+      const disconnect = usServiceCanDisconnect(st)
+        ? `<button class="btn btn-mini" data-usdisconnect="${escapeAttr(svc.key)}">${escapeHtml(t('usServices.disconnect'))}</button>`
+        : '';
+      const action = login + disconnect;
       parts.push(`<div class="setting-row" style="display:block;margin-top:8px">
         <div><b>${escapeHtml(svc.label)}</b>${badge}</div>
         <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(line)}</small>

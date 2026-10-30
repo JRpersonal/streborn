@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "متصل. جاهز للتشغيل.",
   "usServices.stateLinked": "متصل باسم {{account}}. ما زالت السمّاعة تُعدّه، قد يستغرق ذلك دقيقة.",
   "usServices.stateLinkedNoName": "متصل. ما زالت السمّاعة تُعدّه، قد يستغرق ذلك دقيقة.",
+  "usServices.stateStale": "يوجد على هذه السمّاعة حساب {{service}} قديم ({{account}})، لكنه غير مسجَّل الدخول. سجّل الدخول من جديد لاستخدام {{service}} هنا.",
+  "usServices.stateStaleNoName": "يوجد على هذه السمّاعة حساب {{service}} قديم، لكنه غير مسجَّل الدخول. سجّل الدخول من جديد لاستخدام {{service}} هنا.",
   "usServices.stateUnlinked": "غير متصل",
   "usServices.stateOff": "غير مفعّل على هذه السمّاعة",
   "usServices.emailPlaceholder": "البريد الإلكتروني",

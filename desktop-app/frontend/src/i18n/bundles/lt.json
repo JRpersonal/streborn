@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Prisijungta. Paruošta groti.",
   "usServices.stateLinked": "Prisijungta kaip {{account}}. Garsiakalbis dar nustato, tai gali užtrukti minutę.",
   "usServices.stateLinkedNoName": "Prisijungta. Garsiakalbis dar nustato, tai gali užtrukti minutę.",
+  "usServices.stateStale": "Šiame garsiakalbyje yra senesnė {{service}} paskyra ({{account}}), bet ji neprisijungusi. Prisijunkite iš naujo, kad galėtumėte naudoti {{service}} čia.",
+  "usServices.stateStaleNoName": "Šiame garsiakalbyje yra senesnė {{service}} paskyra, bet ji neprisijungusi. Prisijunkite iš naujo, kad galėtumėte naudoti {{service}} čia.",
   "usServices.stateUnlinked": "Neprijungta",
   "usServices.stateOff": "Šiame garsiakalbyje neįjungta",
   "usServices.emailPlaceholder": "El. paštas",

@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Bağlı. Çalmaya hazır.",
   "usServices.stateLinked": "{{account}} olarak bağlı. Hoparlör hâlâ ayarlıyor, bu bir dakika sürebilir.",
   "usServices.stateLinkedNoName": "Bağlı. Hoparlör hâlâ ayarlıyor, bu bir dakika sürebilir.",
+  "usServices.stateStale": "Bu hoparlörde daha eski bir {{service}} hesabı ({{account}}) var, ancak oturumu açık değil. {{service}} hizmetini burada kullanmak için yeniden oturum aç.",
+  "usServices.stateStaleNoName": "Bu hoparlörde daha eski bir {{service}} hesabı var, ancak oturumu açık değil. {{service}} hizmetini burada kullanmak için yeniden oturum aç.",
   "usServices.stateUnlinked": "Bağlı değil",
   "usServices.stateOff": "Bu hoparlörde etkin değil",
   "usServices.emailPlaceholder": "E-posta",

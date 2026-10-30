@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "接続済み。再生できます。",
   "usServices.stateLinked": "{{account}} として接続済み。スピーカーが設定中です。1 分ほどかかることがあります。",
   "usServices.stateLinkedNoName": "接続済み。スピーカーが設定中です。1 分ほどかかることがあります。",
+  "usServices.stateStale": "このスピーカーには以前の{{service}}アカウント（{{account}}）が残っていますが、ログインしていません。ここで{{service}}を使うには、もう一度ログインしてください。",
+  "usServices.stateStaleNoName": "このスピーカーには以前の{{service}}アカウントが残っていますが、ログインしていません。ここで{{service}}を使うには、もう一度ログインしてください。",
   "usServices.stateUnlinked": "未接続",
   "usServices.stateOff": "このスピーカーでは有効になっていません",
   "usServices.emailPlaceholder": "メールアドレス",

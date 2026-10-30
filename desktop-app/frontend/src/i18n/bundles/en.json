@@ -1116,6 +1116,8 @@
   "usServices.stateReadyNoName": "Connected. Ready to play.",
   "usServices.stateLinked": "Connected as {{account}}. The speaker is still setting it up, this can take a minute.",
   "usServices.stateLinkedNoName": "Connected. The speaker is still setting it up, this can take a minute.",
+  "usServices.stateStale": "An older {{service}} account ({{account}}) is on this speaker, but it is not signed in. Sign in again to use {{service}} here.",
+  "usServices.stateStaleNoName": "An older {{service}} account is on this speaker, but it is not signed in. Sign in again to use {{service}} here.",
   "usServices.stateUnlinked": "Not connected",
   "usServices.stateOff": "Not enabled on this speaker",
   "usServices.emailPlaceholder": "E-mail",

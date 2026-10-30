@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Połączono. Gotowe do odtwarzania.",
   "usServices.stateLinked": "Połączono jako {{account}}. Głośnik jeszcze to konfiguruje, może to potrwać minutę.",
   "usServices.stateLinkedNoName": "Połączono. Głośnik jeszcze to konfiguruje, może to potrwać minutę.",
+  "usServices.stateStale": "Na tym głośniku jest starsze konto {{service}} ({{account}}), ale nie jest zalogowane. Zaloguj się ponownie, aby korzystać tu z {{service}}.",
+  "usServices.stateStaleNoName": "Na tym głośniku jest starsze konto {{service}}, ale nie jest zalogowane. Zaloguj się ponownie, aby korzystać tu z {{service}}.",
   "usServices.stateUnlinked": "Nie połączono",
   "usServices.stateOff": "Nie włączono na tym głośniku",
   "usServices.emailPlaceholder": "E-mail",
