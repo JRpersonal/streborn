@@ -538,8 +538,12 @@ func rewriteURLAddr(raw, oldHost, oldPort, newHost, newPort string) (string, boo
 // The covers are checked even when the tracks did not move: a key an older
 // agent healed has its tracks on the live address and its covers on the dead
 // one (#1366), and the press is the moment that key is in hand.
+//
+// After the address, the files themselves: a server that renumbered its file
+// URLs (#919) has the key's folder read again (libraryreresolve.go).
 func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *presets.Preset) {
 	s.healQueuePreset(ctx, slot, p, nil)
+	s.reresolveQueuePreset(ctx, slot, p)
 }
 
 // healQueuePreset is healQueuePresetIfMoved with the store guard of the

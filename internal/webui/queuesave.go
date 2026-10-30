@@ -112,6 +112,8 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	p, ok := queuePresetFromLive(slot, items, shuffle, folder)
 	if ok {
 		p.Folder = s.queueFolderRef(folder.key)
+		// Each track's object id where this agent listed it (#919).
+		s.fillLibraryRefs(&p)
 	}
 	return p, ok
 }

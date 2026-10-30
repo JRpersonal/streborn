@@ -947,6 +947,7 @@ export namespace main {
 	    repeat?: boolean;
 	    native?: number[];
 	    folder?: number[];
+	    track?: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -971,6 +972,7 @@ export namespace main {
 	        this.repeat = source["repeat"];
 	        this.native = source["native"];
 	        this.folder = source["folder"];
+	        this.track = source["track"];
 	    }
 	}
 	export class RadioSearchOpts {

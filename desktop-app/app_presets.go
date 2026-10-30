@@ -50,6 +50,9 @@ type Preset struct {
 	// presets.FolderRef). Raw JSON for the reason Items is: a box-to-box copy
 	// carries it verbatim.
 	Folder json.RawMessage `json:"folder,omitempty"`
+	// Track is a single library track's media server and object id (agent
+	// presets.TrackRef, #919). Raw JSON for the reason Items is.
+	Track json.RawMessage `json:"track,omitempty"`
 }
 
 // presetAPIPath is the agent's preset REST route; the slot is appended for

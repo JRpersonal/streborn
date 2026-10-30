@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -118,6 +119,15 @@ type Server struct {
 	// TCP probe and the real media-server resolve.
 	queueHostAnswers func(ctx context.Context, rawURL string) bool
 	queueHealResolve func(ctx context.Context, serverID string) (location string, ok bool)
+	// libraryURLServes and libraryServerResolve are the network steps of the
+	// library key re-resolve (libraryreresolve.go, #919), swapped out in
+	// tests. nil = the real ranged GET and the real media-server resolve.
+	libraryURLServes     func(ctx context.Context, rawURL string) bool
+	libraryServerResolve func(ctx context.Context, udn string) (dlna.Server, bool)
+	// libRefs remembers which media-server object each track URL this agent
+	// listed belongs to, so a key saved from the phone's library carries the
+	// object id too (libraryreresolve.go). The zero value is ready to use.
+	libRefs libraryRefCache
 	// mediaLoc remembers, per media server UDN, the device-description URL the
 	// last successful discovery resolved. A phone library search whose single
 	// M-SEARCH round goes unanswered then re-probes that address directly

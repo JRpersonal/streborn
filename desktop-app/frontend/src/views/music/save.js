@@ -5,7 +5,6 @@ import {
   LogSpotifySaveGate,
   MovePreset,
   RadioVote,
-  SaveLibraryPreset,
   SaveNativePreset,
   SavePlayingPreset,
   SaveQueuePreset,
@@ -14,6 +13,7 @@ import {
   SpotifyNowPlaying,
 } from '../../api.js';
 import { t } from '../../i18n/index.js';
+import { saveLibraryTrackPreset } from '../../librarytrackref.js';
 import { nativeServiceLabel, nativeServiceSaveable } from '../../nativeservice.js';
 import { ROW_SIZE, keyNum } from '../../presetrows.js';
 import { offerPresetMove, parsePresetConflict, presetConflictNote } from '../../presetmove.js';
@@ -320,10 +320,11 @@ export async function saveCurrentToSlot(slot) {
     const lib = state.lastLibraryPlay;
     const lname = lib.name || state.nowName || '(track)';
     try {
-      await SaveLibraryPreset(
-        state.currentBox.host, state.currentBox.port,
-        slot, lname, lib.url, lib.art || '', 0, lib.source || '', lib.durationSec || 0
-      );
+      // With the track's object on its server when the play knew it (#919).
+      await saveLibraryTrackPreset(state.currentBox.host, state.currentBox.port, slot, {
+        name: lname, url: lib.url, art: lib.art || '', source: lib.source || '',
+        durationSec: lib.durationSec || 0, ref: lib.ref || null,
+      });
       showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: lname }));
       await loadPresets();
     } catch (err) {

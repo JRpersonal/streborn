@@ -159,8 +159,13 @@ func (s *Server) healLibraryKeyHost(ctx context.Context, p *presets.Preset) (cha
 // changed. Written only when something changed: this runs on a key press and
 // the speaker's flash is not free. A key that is not a library track is left
 // exactly as it is, radio stations included.
+//
+// After the address, the file itself: a server that renumbered its file URLs
+// (#919) is asked for the track's current one when the key knows the track's
+// object id (libraryreresolve.go).
 func (s *Server) healLibraryKeyIfMoved(ctx context.Context, slot int, p *presets.Preset) {
 	s.healLibraryKey(ctx, slot, p, nil)
+	s.reresolveLibraryKey(ctx, slot, p)
 }
 
 // healLibraryKey is healLibraryKeyIfMoved with the background sweep's store
