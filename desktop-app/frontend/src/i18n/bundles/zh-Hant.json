@@ -202,7 +202,7 @@
   "spotify.bullet2": "可以和現有的 STR 電台功能並存。",
   "spotify.bullet3": "等穩定之後，STR 應用程式裡會有重新配對的說明。",
   "spotify.feedbackPrompt": "實驗性功能。如果 Spotify 在你的喇叭上已經能用或是失敗了，請到 issue 分享細節。",
-  "spotify.issueLink": "開啟 issue #78",
+  "spotify.issueLink": "在 GitHub 回報問題",
   "spotify.versionNote": "需要喇叭上的 STR 是最新版本。",
   "spotify.updateLink": "開啟喇叭設定進行更新",
   "spotify.presetsTitle": "把播放清單或專輯存到預設鍵",

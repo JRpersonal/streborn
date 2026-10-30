@@ -189,7 +189,7 @@
   "spotify.bullet2": "Mevcut STR radyo işlevleriyle birlikte çalışır.",
   "spotify.bullet3": "Bu kararlı hale geldiğinde STR uygulamasında yeniden bağlama talimatları.",
   "spotify.feedbackPrompt": "Deneysel. Spotify hoparlörünüzde zaten çalışıyor ya da çalışmıyorsa, ayrıntıları sorunda paylaşın.",
-  "spotify.issueLink": "Sorun #78'i aç",
+  "spotify.issueLink": "GitHub'da sorun bildir",
   "spotify.versionNote": "Hoparlörde en yeni STR sürümünü gerektirir.",
   "spotify.updateLink": "Güncellemek için hoparlör ayarlarını aç",
   "spotify.presetsTitle": "Bir çalma listesini veya albümü ön ayar düğmesine kaydedin",

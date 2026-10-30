@@ -189,7 +189,7 @@
   "spotify.bullet2": "Fonctionne en parallèle des fonctions radio existantes de STR.",
   "spotify.bullet3": "Instructions de réassociation dans l'application STR une fois stable.",
   "spotify.feedbackPrompt": "Expérimental. Si Spotify fonctionne déjà ou échoue sur votre enceinte, partagez les détails sur le ticket.",
-  "spotify.issueLink": "Ouvrir le ticket #78",
+  "spotify.issueLink": "Signaler un problème sur GitHub",
   "spotify.versionNote": "Nécessite la dernière version de STR sur l'enceinte.",
   "spotify.updateLink": "Ouvrir les réglages de l'enceinte pour mettre à jour",
   "spotify.presetsTitle": "Enregistrer une playlist ou un album sur une touche de préréglage",

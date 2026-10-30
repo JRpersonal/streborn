@@ -202,7 +202,7 @@
   "spotify.bullet2": "Works alongside the existing STR radio features.",
   "spotify.bullet3": "Re-pairing instructions in the STR app once stable.",
   "spotify.feedbackPrompt": "Experimental. If Spotify already works or fails on your speaker, please share details on the issue.",
-  "spotify.issueLink": "Open issue #78",
+  "spotify.issueLink": "Report a problem on GitHub",
   "spotify.versionNote": "Requires the latest STR version on the speaker.",
   "spotify.updateLink": "Open speaker settings to update",
   "spotify.presetsTitle": "Save a playlist or album to a preset button",

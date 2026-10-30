@@ -189,7 +189,7 @@
   "spotify.bullet2": "既存のSTRラジオ機能と併用できます。",
   "spotify.bullet3": "安定後にSTRアプリで再ペアリングの手順を案内します。",
   "spotify.feedbackPrompt": "実験的機能です。Spotifyがすでに動作する、または失敗する場合は、チケットで詳細を共有してください。",
-  "spotify.issueLink": "チケット #78 を開く",
+  "spotify.issueLink": "GitHub で問題を報告",
   "spotify.versionNote": "スピーカーに最新のSTRバージョンが必要です。",
   "spotify.updateLink": "スピーカー設定を開いて更新",
   "spotify.presetsTitle": "プレイリストやアルバムをプリセットボタンに保存",
