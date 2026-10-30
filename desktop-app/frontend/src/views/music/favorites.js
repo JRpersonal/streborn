@@ -6,7 +6,7 @@ import { applyFavRemovals, parseFavRemovals } from '../../favremovals.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
-import { renderSearchResults, syncSearchModeButtons } from './search.js';
+import { listButtonClick, renderSearchResults, syncSearchModeButtons } from './search.js';
 
 // Radio favorites: a per-machine list of starred stations kept in
 // localStorage (no agent change, no preset-schema change). It stores only
@@ -16,7 +16,25 @@ import { renderSearchResults, syncSearchModeButtons } from './search.js';
 const FAV_KEY = 'str.favStations';
 
 export function loadFavStore() {
-  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  const kept = arr.filter((s) => !isSpotifyFav(s));
+  // Drop such stars from the store itself, so this happens once and not on
+  // every read. Only the local copy: the speakers get the cleaned list with
+  // the next save, as every list change does.
+  if (kept.length !== arr.length) {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(kept)); } catch {}
+  }
+  return kept;
+}
+// isSpotifyFav spots a star set on a Spotify playlist that Recently played
+// showed as a radio card (#1077). It is no station: played as one, the speaker
+// refused the spotify: URI as a bad stream URL, and pushed to the speakers it
+// kept the phone page's favourite replaying that error. Such a star is dropped;
+// the playlist plays from its preset key.
+export function isSpotifyFav(s) {
+  return !!s && /^spotify:/i.test(String(s.url_resolved || s.url || ''));
 }
 function saveFavStore(arr) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}
@@ -199,6 +217,6 @@ function loadFavorites() {
 // mountFavorites attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountFavorites() {
-  $('favModeBtn').onclick = () => loadFavorites();
+  $('favModeBtn').onclick = listButtonClick('favModeBtn', () => loadFavorites());
   updateFavModeBtn();
 }

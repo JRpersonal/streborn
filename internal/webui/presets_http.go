@@ -443,8 +443,11 @@ func playableSpotifyURI(uri string) bool {
 }
 
 // isHTTPURL reports whether s is a real http(s) URL the stream proxy can fetch.
+// The scheme is matched case-insensitively (RFC 3986), like isPlainHTTPURL, so
+// a station saved as "HTTP://..." is not refused as a non-stream URL.
 func isHTTPURL(s string) bool {
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+	l := strings.ToLower(s)
+	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")
 }
 
 // isPlainHTTPURL reports whether s is a plaintext http:// URL (not https). A LAN

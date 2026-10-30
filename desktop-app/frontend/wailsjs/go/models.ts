@@ -171,9 +171,11 @@ export namespace main {
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
 	    groupKeyError?: string;
+	    groupKeyErrorKind?: string;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
 	    staleFolderKeySlot?: string;
+	    speakerNameUnsafe?: boolean;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
@@ -212,9 +214,11 @@ export namespace main {
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];
+	        this.groupKeyErrorKind = source["groupKeyErrorKind"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
 	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
+	        this.speakerNameUnsafe = source["speakerNameUnsafe"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
@@ -1193,6 +1197,9 @@ export namespace main {
 	    bitrate: number;
 	    pending: boolean;
 	    applied: boolean;
+	    autoSupported: boolean;
+	    choice: number;
+	    reason: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyQualityState(source);
@@ -1204,6 +1211,9 @@ export namespace main {
 	        this.bitrate = source["bitrate"];
 	        this.pending = source["pending"];
 	        this.applied = source["applied"];
+	        this.autoSupported = source["autoSupported"];
+	        this.choice = source["choice"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class SpotifySyncTarget {

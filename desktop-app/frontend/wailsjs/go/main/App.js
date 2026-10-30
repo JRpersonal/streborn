@@ -526,6 +526,10 @@ export function RepairInstallViaSSH(arg1, arg2) {
   return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
 }
 
+export function RepairSpeakerName(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RepairSpeakerName'](arg1, arg2, arg3);
+}
+
 export function ReplayFolderCard(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['ReplayFolderCard'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -600,6 +604,10 @@ export function SaveLibraryPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8
 
 export function SaveNativePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveNativePreset'](arg1, arg2, arg3, arg4);
+}
+
+export function SavePandoraStationPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SavePandoraStationPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function SavePlayingPreset(arg1, arg2, arg3) {

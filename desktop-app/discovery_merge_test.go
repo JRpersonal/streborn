@@ -97,7 +97,7 @@ func TestMergeWithSelfIsIdentity(t *testing.T) {
 		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2", PresetRows: "2",
 		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
-		GroupKeyError: "g", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
+		GroupKeyError: "g", GroupKeyErrorKind: "other", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
 		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, SerialNumber: "sn", Kind: "str", PortVerified: true}
 	if got := mergeBoxInfo(full, full); !reflect.DeepEqual(got, full) {
 		t.Errorf("mergeBoxInfo(x, x) != x:\n got %+v\nwant %+v", got, full)

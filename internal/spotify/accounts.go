@@ -551,7 +551,7 @@ func (m *Manager) writeActiveCredential(cred storedCredential) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, out, 0o600)
+	return writeFileAtomic(path, out, 0o600)
 }
 
 // captureCredential snapshots go-librespot's current persisted credential into
@@ -575,7 +575,9 @@ func (m *Manager) captureCredential(user string) error {
 	if err := os.MkdirAll(m.credStore, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(m.credStore, sanitizeUser(user)+".json"), blob, 0o600)
+	// Atomic: this copy is what a damaged state.json is restored from
+	// (staterepair.go), so it must not be the file a power cut truncates.
+	return writeFileAtomic(filepath.Join(m.credStore, sanitizeUser(user)+".json"), blob, 0o600)
 }
 
 // captureLoop watches the active account and snapshots its credential whenever a

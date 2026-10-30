@@ -41,7 +41,7 @@ const singleTrackMaxWatch = 3 * time.Hour
 
 // singleTrack is what the end watch needs to know about the file it watches:
 // enough to recognise its end, and enough to play it once more when the
-// speaker's sticky repeat mode says "repeat one".
+// speaker's sticky repeat mode is "one" or "all".
 type singleTrack struct {
 	boxURL string // the URL the box was handed (direct: the media server's own)
 	title  string
@@ -52,7 +52,7 @@ type singleTrack struct {
 }
 
 // armSingleTrackEnd watches one directly played file and stops the box when it
-// reaches its end, or plays it again when repeat-one is on. gen is the recall
+// reaches its end, or plays it again when repeat is on. gen is the recall
 // generation of this play: any newer play supersedes this watch immediately.
 func (s *Server) armSingleTrackEnd(tr singleTrack, gen uint64) {
 	if s.renderer == nil {
@@ -72,14 +72,16 @@ func (s *Server) armSingleTrackEnd(tr singleTrack, gen uint64) {
 // SoundTouch light went amber and silence (her workaround was the Bose app's
 // own repeat). The watch now asks the sticky mode at each natural end.
 //
-// Only "one" repeats a lone track. "all" is the folder mode, and letting it loop
-// a single click forever would surprise everybody who set it for their folders.
-func (s *Server) singleTrackRepeatOne() bool {
+// Both "one" and "all" repeat a lone track. "all" used to be left to folders,
+// so a single track stopped at its end with the repeat button lit, and a user
+// with the toggle on "all" read that as repeat not working (mail, Portable and
+// ST30, 2026-10-28). A lone track is a list of one, and "all" wraps a list.
+func (s *Server) singleTrackRepeats() bool {
 	_, rep, ok := s.loadPlayMode()
-	return ok && rep == repeatOne
+	return ok && rep != repeatOff
 }
 
-// replaySingleTrack plays the same file again for repeat-one. It re-checks,
+// replaySingleTrack plays the same file again when repeat is on. It re-checks,
 // under boxCmdMu, that nothing newer took the box while the end was being
 // detected, the same way the queue's advance does. It returns the generation
 // of the new play, which the watch continues under.
@@ -91,11 +93,11 @@ func (s *Server) replaySingleTrack(tr singleTrack, gen uint64) (uint64, bool) {
 	}
 	s.ClearUserStop()
 	if err := s.renderer.PlayURLTrack(s.queueCtx(), tr.boxURL, tr.title, tr.art, tr.mime, tr.meta); err != nil {
-		s.logger.Warn("single track: repeat one could not start the track again", "title", tr.title, "err", err)
+		s.logger.Warn("single track: repeat could not start the track again", "title", tr.title, "err", err)
 		return 0, false
 	}
 	newGen := s.setLastPlay(tr.boxURL, tr.title, tr.art, tr.mime)
-	s.logger.Info("single track: repeat one, playing it again", "title", tr.title)
+	s.logger.Info("single track: repeat is on, playing it again", "title", tr.title)
 	return newGen, true
 }
 
@@ -140,7 +142,7 @@ func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 			return
 		}
 		gen = cur
-		if !s.singleTrackRepeatOne() {
+		if !s.singleTrackRepeats() {
 			return
 		}
 		next, ok := s.replaySingleTrack(tr, gen)
@@ -153,7 +155,7 @@ func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
 }
 
 // watchOneSingleTrackPlay watches one play of the file to its end. It returns
-// true when the track ended naturally and repeat-one may play it again, false
+// true when the track ended naturally and repeat may play it again, false
 // when the watch ended for any other reason or the box was stopped for good,
 // plus the generation the play ended under (a start retry makes a new one).
 func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint64) {
@@ -240,6 +242,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// track's nominal length would just be silence with a ticking
 			// progress bar. There is no next track here, so end the watch.
 			s.logger.Info("single track: the speaker dropped the track without playing it, ending the watch")
+			s.demoteCustomFile(tr.boxURL, "the speaker dropped the source", time.Since(start))
 			return false, gen
 		}
 		// PLAY_STATE only counts when the speaker reports OUR file. A speaker
@@ -319,12 +322,17 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 				continue // has not started yet
 			}
 			// The box stopped by itself at the end, so there is nothing to
-			// stop. With repeat-one the caller plays it again. Otherwise mark it
+			// stop. With repeat on the caller plays it again. Otherwise mark it
 			// as an end, so the auto re-push does not treat the silence as a
 			// dropped stream and start the track over.
 			s.logger.Info("single track: the box reported the track stopped", "title", title,
 				"posSec", int(lastPos.Seconds()), "trackSec", int(end.Seconds()))
-			if s.singleTrackRepeatOne() {
+			if end > 0 && lastPos < end-qt.endEpsilon {
+				// Stopped by itself long before the end: the speaker did not
+				// take the file directly.
+				s.demoteCustomFile(tr.boxURL, "the speaker stopped long before the end", time.Since(start))
+			}
+			if s.singleTrackRepeats() {
 				return true, gen
 			}
 			s.NoteUserStop()
@@ -402,13 +410,13 @@ func sameQuery(a, b url.Values) bool {
 }
 
 // finishSingleTrack handles a natural end the watch detected itself. With
-// repeat-one the box is NOT stopped first: the replay hands it the same file
+// repeat on the box is NOT stopped first: the replay hands it the same file
 // right away, and a Stop in between would only add a gap and a STOP_STATE flash
 // on every display. Without it, the box is stopped as before. It returns true
 // when the caller should play the track again.
 func (s *Server) finishSingleTrack(title, why string, pos, end time.Duration) bool {
-	if s.singleTrackRepeatOne() {
-		s.logger.Info("single track ended, repeat one is on", "title", title, "why", why,
+	if s.singleTrackRepeats() {
+		s.logger.Info("single track ended, repeat is on", "title", title, "why", why,
 			"posSec", int(pos.Seconds()), "trackSec", int(end.Seconds()))
 		return true
 	}

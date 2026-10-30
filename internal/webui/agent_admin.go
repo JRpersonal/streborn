@@ -140,6 +140,17 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	} else {
 		out["boxHealth"] = "ok"
 	}
+	// A speaker name the firmware's UPnP renderer cannot survive (#1582,
+	// speakername.go): Spotify and the music library cannot play until it is
+	// renamed and restarted. The app and the phone page say exactly that and
+	// offer the repair. Emitted only when there is something to report.
+	unsafeName, rendererMissing := s.SpeakerNameIssue()
+	if unsafeName {
+		out["speakerNameUnsafe"] = "true"
+	}
+	if rendererMissing {
+		out["upnpRendererMissing"] = "true"
+	}
 	// Whether the speaker reaches the internet (internal/internet): a passive
 	// verdict fed by the clock sync and the stream proxy, no probe of its own.
 	// "unreachable" only on positive evidence. The desktop app turns it into
@@ -208,6 +219,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.groupKeys != nil {
 		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
 			out["groupKeyError"] = a.Error
+			// A stable code beside the raw text: the app explains the refusal
+			// in the user's language and keeps the text for the details.
+			if a.Kind != "" {
+				out["groupKeyErrorKind"] = a.Kind
+			}
 			out["groupKeyErrorKey"] = a.Key
 			out["groupKeyErrorAgeSec"] = strconv.FormatInt(int64(time.Since(a.At).Seconds()), 10)
 			if a.Template != "" {
@@ -282,7 +298,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// name on the phone-remote QR code rather than an address that changes with
 	// the next DHCP lease. Absent while no responder is running, which is the
 	// only honest answer.
-	if n := mdnsHostName; n != "" {
+	if n := currentMDNSHostName(); n != "" {
 		out["mdnsName"] = n
 	}
 	// Which speaker this is, so the app can tell it from another one that got

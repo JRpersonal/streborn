@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/JRpersonal/streborn/speakername"
 )
 
 // Client wraps http.Client + box host.
@@ -91,6 +93,12 @@ type Info struct {
 	MargeURL    string `json:"margeURL,omitempty"`
 	IP          string `json:"ipAddress"`
 	CountryCode string `json:"countryCode"`
+	// NameNotUTF8 is set when /info was not valid UTF-8 and had to be read as
+	// Latin-1 (see ensureUTF8). The name is the only free text in /info, so
+	// the firmware then stores the speaker's name as invalid UTF-8, which
+	// breaks its UPnP renderer just like an "&" does (#1582). Name carries the
+	// Latin-1 reading, which is what a rename should write back.
+	NameNotUTF8 bool `json:"nameNotUTF8,omitempty"`
 }
 
 // SetupStatus is the response from /setup. State is e.g. "SETUP_AP_OOB"
@@ -277,10 +285,12 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 			IP   string `xml:"ipAddress"`
 		} `xml:"networkInfo"`
 	}
-	if err := c.getXML(ctx, "/info", &raw); err != nil {
+	widened, err := c.getXMLReport(ctx, "/info", &raw)
+	if err != nil {
 		return Info{}, err
 	}
 	info := Info{
+		NameNotUTF8:      widened,
 		DeviceID:         strings.TrimSpace(raw.DeviceID),
 		Name:             strings.TrimSpace(raw.Name),
 		Type:             strings.TrimSpace(raw.Type),
@@ -612,8 +622,14 @@ func (c *Client) RemoveZoneSlave(ctx context.Context, master ZoneMember, slaves 
 // SetName changes the display name of the box. Caution: Bose also resets
 // the margeURL in the box state to the default update server in the
 // process. Our autoPair re-attaches it on the next tick.
+//
+// The name goes through speakername.Sanitise first: the firmware's UPnP
+// renderer pastes it unescaped into its device description, and a name with
+// "&", "<", ">" or invalid UTF-8 takes the renderer down on the next boot, and
+// Spotify and the music library with it (#1582). A caller that echoes the
+// stored name back sanitises it the same way.
 func (c *Client) SetName(ctx context.Context, name string) error {
-	body := fmt.Sprintf(`<name>%s</name>`, xmlEscape(name))
+	body := fmt.Sprintf(`<name>%s</name>`, xmlEscape(speakername.Sanitise(name)))
 	return c.postXML(ctx, "/name", body)
 }
 
@@ -962,32 +978,40 @@ func (c *Client) SiteSurvey(ctx context.Context) ([]string, error) {
 }
 
 func (c *Client) getXML(ctx context.Context, path string, dst any) error {
+	_, err := c.getXMLReport(ctx, path, dst)
+	return err
+}
+
+// getXMLReport is getXML that also says whether the body was not valid UTF-8
+// and had to be widened from Latin-1 by ensureUTF8.
+func (c *Client) getXMLReport(ctx context.Context, path string, dst any) (widened bool, err error) {
 	ctx, cancel := callCtx(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("box %s: %d", path, resp.StatusCode)
+		return false, fmt.Errorf("box %s: %d", path, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
-		return err
+		return false, err
 	}
 	// An empty (or whitespace-only) 200 body means "no state" on several
 	// firmware reads: a standalone box returns an empty body from /getGroup
 	// (live verified on taigan, NOT `<group/>`). xml.Unmarshal would fail that
 	// with io.EOF, so leave dst zero-valued and report success instead.
 	if len(bytes.TrimSpace(body)) == 0 {
-		return nil
+		return false, nil
 	}
-	return xml.Unmarshal(ensureUTF8(body), dst)
+	widened = !utf8.Valid(body)
+	return widened, xml.Unmarshal(ensureUTF8(body), dst)
 }
 
 // ensureUTF8 returns b unchanged when it is already valid UTF-8, otherwise it

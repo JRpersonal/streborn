@@ -39,15 +39,18 @@ const BOSE = {
 };
 const S0602 = step('06.02.01', true);
 const S0700 = step('07.00.37', true);
-const S1400 = step('14.00.33', false);
-const S1500 = step('15.00.20', false);
+const S1400 = step('14.00.33', true);
+// 16.00.09 replaced 15.00.20 (bosefw/ladder_data.go): its archive file is
+// named after the inner Update.stu, not the bare version.
+const S1600_ZIP = 'Airplay-1_ST20-30-Portable_Update_ti_16.00.09.37890.2412967.scm.stu.zip';
+const S1600 = step('16.00.09', true, { url: `${ARCHIVE}${S1600_ZIP}`, fileName: S1600_ZIP, innerSize: 95_712_356 });
 const plan = (current, steps, fallbacks = {}) => ({
   status: 'ladder', family: 'st-scm', model: 'SoundTouch 20', moduleType: 'scm', current, deviceId: 'device-id-here',
   versionFrom: 'lan', steps, oldStart: false, fallbacks,
 });
-const PLAN_5X = plan('5.2.0', [S0602, S0700, S1400, S1500, BOSE]);
-const PLAN_6X = plan('6.2.1', [S0700, S1400, S1500, BOSE]);
-const PLAN_7X = plan('7.0.37', [S1400, S1500, BOSE], {
+const PLAN_5X = plan('5.2.0', [S0602, S0700, S1400, S1600, BOSE]);
+const PLAN_6X = plan('6.2.1', [S0700, S1400, S1600, BOSE]);
+const PLAN_7X = plan('7.0.37', [S1400, S1600, BOSE], {
   'st-scm-14.00.33': [step('09.00.41', false, { fallback: true }), step('12.00.09', false, { fallback: true }), S1400],
 });
 const STICK_OK = { ok: true, path: 'E:\\', filesystem: 'FAT32', totalBytes: 31043616768, isFat32: true, bigEnough: true, writable: true, reason: '', freeBytes: 30500000000, clusterBytes: 16384, tooLarge: false, clusterTooBig: false };
@@ -190,7 +193,7 @@ test.describe('a stall on a plan built from a picked version', () => {
     ui2: false,
     scenario: scenario({
       RecheckFirmware: { value: { found: true, version: '12.0.9', via: 'lan', model: 'SoundTouch 20', moduleType: '', deviceId: 'device-id-here' } },
-      GetFirmwareLadderManual: { value: plan('12.0.9', [S1400, S1500, BOSE]) },
+      GetFirmwareLadderManual: { value: plan('12.0.9', [S1400, S1600, BOSE]) },
     }, { ...PLAN_7X, versionFrom: 'manual' }),
   });
 

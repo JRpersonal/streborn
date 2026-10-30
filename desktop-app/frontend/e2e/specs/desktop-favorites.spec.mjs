@@ -3,7 +3,7 @@
 // played shows neither a "- kbit/s" placeholder nor a red "not reachable" dot,
 // a radio-browser station keeps its real check dot (red included) and its
 // bitrate when one is known, and the Top list / Favorites buttons show which
-// list is open.
+// list is open; a second click on the pressed button closes that list again.
 //
 //   E2E_PORT=4190 npx playwright test specs/desktop-favorites.spec.mjs
 
@@ -65,4 +65,59 @@ test('the Favorites and Top list buttons show which list is open', async ({ app 
   await expect(top).toHaveAttribute('aria-pressed', 'false');
   await expect(fav).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#searchBtn')).not.toHaveAttribute('aria-pressed', /.*/);
+});
+
+test('a second click on the pressed list button closes its list (#1521)', async ({ app }) => {
+  const { page } = app;
+  const fav = page.locator('#favModeBtn');
+  const top = page.locator('#topBtn');
+  const rows = page.locator('#searchResults .result-row');
+
+  // Open Favorites, close it with a second click.
+  await fav.click();
+  await expect(rows).toHaveCount(FAVORITES.length);
+  await expect(fav).toHaveAttribute('aria-pressed', 'true');
+  await fav.click();
+  await expect(fav).toHaveAttribute('aria-pressed', 'false');
+  await expect(fav).not.toHaveClass(/\bmode-pressed\b/);
+  await expect(page.locator('#searchResults')).toBeEmpty();
+  await expect(page.locator('#searchCount')).toBeHidden();
+
+  // The Top list toggles the same way.
+  await top.click();
+  await expect(top).toHaveAttribute('aria-pressed', 'true');
+  await expect(rows.first()).toBeVisible();
+  await top.click();
+  await expect(top).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#searchResults')).toBeEmpty();
+  await expect(page.locator('#loadMoreRow')).toBeHidden();
+
+  // With one list open, another list's button switches to that list.
+  await top.click();
+  await expect(top).toHaveAttribute('aria-pressed', 'true');
+  await expect(rows.first()).toBeVisible();
+  await fav.click();
+  await expect(fav).toHaveAttribute('aria-pressed', 'true');
+  await expect(top).toHaveAttribute('aria-pressed', 'false');
+  await expect(rows).toHaveCount(FAVORITES.length);
+
+  // Keyboard: Enter on the focused pressed button closes it, Space reopens it.
+  await fav.focus();
+  await page.keyboard.press('Enter');
+  await expect(fav).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#searchResults')).toBeEmpty();
+  await page.keyboard.press('Space');
+  await expect(fav).toHaveAttribute('aria-pressed', 'true');
+  await expect(rows).toHaveCount(FAVORITES.length);
+
+  // A closed list stays closed when a filter only re-renders the panel.
+  await fav.click();
+  await expect(page.locator('#searchResults')).toBeEmpty();
+  await page.locator('#searchOnlyBose').click();
+  await expect(page.locator('#searchResults')).toBeEmpty();
+
+  // A name search after a closed list still shows its results.
+  await page.locator('#searchQ').fill('rock');
+  await page.locator('#searchBtn').click();
+  await expect(rows.first()).toBeVisible();
 });

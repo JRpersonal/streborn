@@ -162,9 +162,11 @@ func TestHandlePresetSlotPutWire(t *testing.T) {
 			http.StatusOK,
 			`{"slot":3,"name":"Pandora","stream_url":"","type":"native","source":"Pandora","native":{"source":"PANDORA","location":"x"}}` + "\n"},
 		{"radio stored", 2, relax, newSaveGateServer,
-			http.StatusOK, `{"slot":2,"name":"Absolut Relax","stream_url":"http://stream.example/relax","type":"radio","codec":"AAC+"}` + "\n"},
+			// A station saved without art gets the desktop app's icon chain
+			// for its host (stationart.go, #1467).
+			http.StatusOK, `{"slot":2,"name":"Absolut Relax","stream_url":"http://stream.example/relax","type":"radio","art":"https://icons.duckduckgo.com/ip3/stream.example.ico","codec":"AAC+"}` + "\n"},
 		{"same key re-saved", 1, relax, withRelaxOn1,
-			http.StatusOK, `{"slot":1,"name":"Absolut Relax","stream_url":"http://stream.example/relax","type":"radio","codec":"AAC+"}` + "\n"},
+			http.StatusOK, `{"slot":1,"name":"Absolut Relax","stream_url":"http://stream.example/relax","type":"radio","art":"https://icons.duckduckgo.com/ip3/stream.example.ico","codec":"AAC+"}` + "\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

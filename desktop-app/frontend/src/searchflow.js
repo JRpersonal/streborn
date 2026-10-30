@@ -129,3 +129,12 @@ export function searchModePressed(mode, listOpen) {
   const on = (m) => !!listOpen && mode === m;
   return { topBtn: on('top'), favModeBtn: on('favorites'), pandoraModeBtn: on('pandora') };
 }
+
+// listButtonCloses says whether a click on the Top / Favorites / Pandora button
+// closes its list instead of opening it: the button is pressed, so its list is
+// the one on screen, and a second click releases it and empties the panel
+// (#1521: a pressed button did nothing, so there was no way back to the view
+// without a list open).
+export function listButtonCloses(btnId, mode, listOpen) {
+  return !!searchModePressed(mode, listOpen)[btnId];
+}

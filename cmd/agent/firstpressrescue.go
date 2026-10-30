@@ -262,11 +262,16 @@ func (h *presetWsHandler) OnPlayFailure(ev boxlog.PlayFailure) {
 // OnSourceChanged is the boxws hook for every source transition. It runs on
 // the gabbo read loop, so the press happens in its own goroutine.
 func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
-	// leaving STR's sources takes the track off the panel (displaytrack.go)
-	trackOnSourceChanged(from, to)
+	// leaving STR's sources takes the track off the panel (displaytrack.go);
+	// coming back out of standby is checked with the speaker first
+	// (phantomwake.go)
+	trackOnSourceChanged(from, to, h.beginWakeCheck(from, to))
 	// the alarm clock: STANDBY ends a ringing alarm, AUX may snooze it
 	if h.onAlarmSource != nil {
 		h.onAlarmSource(from, to)
+	}
+	if h.onBoxSource != nil {
+		h.onBoxSource(from, to)
 	}
 	var seen time.Time
 	if h.stationActivity != nil {

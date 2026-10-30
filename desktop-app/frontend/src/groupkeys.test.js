@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import {
   normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate,
   withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey,
+  validWolMac, webhookSourceOnKey, keyMapTarget, groupKeyWebhookWarnKey, groupKeyErrorBannerKey,
+  webhookConfigured, sharedThumbFiresOn, groupKeyErrorBanners,
 } from './groupkeys.js';
 
 const living = { deviceID: 'AAAA', host: '192.0.2.10', friendlyName: 'Living room' };
@@ -93,6 +95,69 @@ describe('webhookOnKey', () => {
     expect(webhookOnKey({ thumb: { enabled: true, url: 'http://x' } }, 'prev')).toBe(false);
     expect(webhookOnKey({ buttons: { thumbsDown: { enabled: true, type: 'wol', mac: 'AA:BB:CC:DD:EE:FF' } } }, 'thumbsDown')).toBe(true);
   });
+
+  it('still shows a Wake-on-LAN entry whose address can never fire', () => {
+    // Five octets: the agent cannot send a magic packet to it, but it sits on
+    // the key and must stay visible and reachable to be switched off
+    // (2026-10-27). The warning says it never fires.
+    const broken = { thumb: { enabled: true, type: 'wol', mac: 'AA:BB:CC:DD:EE' } };
+    expect(webhookConfigured(broken.thumb)).toBe(false);
+    expect(webhookOnKey(broken, 'thumbsUp')).toBe(true);
+    expect(keyMapTarget(broken, 'thumbsUp')).toBe('thumb');
+    expect(groupKeyWebhookWarnKey(broken, 'thumbsUp')).toBe('multiroom.groupKeysWebhookWarnSharedUnused');
+  });
+});
+
+describe('validWolMac', () => {
+  it('takes the forms the agent parses and nothing shorter or longer', () => {
+    for (const ok of ['AA:BB:CC:DD:EE:FF', 'aa-bb-cc-dd-ee-ff', ' AA:BB:CC:DD:EE:FF ', 'aabb.ccdd.eeff']) {
+      expect(validWolMac(ok), ok).toBe(true);
+    }
+    for (const bad of ['', 'AA:BB:CC:DD:EE', 'AA:BB:CC:DD:EE:FF:00:11', 'AA:BB-CC:DD:EE:FF', 'not a mac']) {
+      expect(validWolMac(bad), bad).toBe(false);
+    }
+  });
+});
+
+describe('the shared thumbs entry', () => {
+  const shared = { thumb: { enabled: true, url: 'http://x' }, buttons: {} };
+  it('tells a per-key trigger from the shared one', () => {
+    expect(webhookSourceOnKey(shared, 'thumbsUp')).toBe('thumb');
+    expect(webhookSourceOnKey({ buttons: { thumbsUp: { enabled: true, url: 'http://y' } } }, 'thumbsUp')).toBe('key');
+    expect(webhookSourceOnKey({}, 'thumbsUp')).toBe('');
+  });
+  it('opens the shared entry from a thumbs key it alone lights', () => {
+    expect(keyMapTarget(shared, 'thumbsUp')).toBe('thumb');
+    expect(keyMapTarget(shared, 'thumbsDown')).toBe('thumb');
+    expect(keyMapTarget(shared, 'prev')).toBe('prev');
+    const both = { ...shared, buttons: { thumbsUp: { enabled: true, url: 'http://y' } } };
+    expect(keyMapTarget(both, 'thumbsUp')).toBe('thumbsUp');
+  });
+  it('warns with the sentence that names the shared entry', () => {
+    expect(groupKeyWebhookWarnKey(shared, 'thumbsUp')).toBe('multiroom.groupKeysWebhookWarnShared');
+    expect(groupKeyWebhookWarnKey({ buttons: { thumbsUp: { enabled: true, url: 'http://y' } } }, 'thumbsUp')).toBe('multiroom.groupKeysWebhookWarn');
+  });
+  it('only says the shared entry fires on the other key when it really does', () => {
+    expect(sharedThumbFiresOn(shared, 'thumbsDown', {})).toBe(true);
+    // The other key carries a group, a key action, or its own webhook: the
+    // agent never falls back to the shared entry there.
+    const bindings = { thumbsUp: 'All', thumbsDown: 'Bath' };
+    expect(groupKeyWebhookWarnKey(shared, 'thumbsUp', { bindings })).toBe('multiroom.groupKeysWebhookWarnSharedUnused');
+    expect(groupKeyWebhookWarnKey(shared, 'thumbsUp', { bindings: { thumbsUp: 'All' }, keyActionOn: (k) => k === 'thumbsDown' }))
+      .toBe('multiroom.groupKeysWebhookWarnSharedUnused');
+    const own = { ...shared, buttons: { thumbsDown: { enabled: true, url: 'http://z' } } };
+    expect(groupKeyWebhookWarnKey(own, 'thumbsUp', { bindings: { thumbsUp: 'All' } })).toBe('multiroom.groupKeysWebhookWarnSharedUnused');
+    expect(groupKeyWebhookWarnKey(shared, 'thumbsUp', { bindings: { thumbsUp: 'All' } })).toBe('multiroom.groupKeysWebhookWarnShared');
+  });
+});
+
+describe('groupKeyErrorBannerKey', () => {
+  it('turns the kinds the user can act on into their own sentence', () => {
+    expect(groupKeyErrorBannerKey('master-unresponsive')).toBe('speaker.groupKeyErrorUnresponsive');
+    expect(groupKeyErrorBannerKey('member-unresolved')).toBe('speaker.groupKeyErrorMoved');
+    expect(groupKeyErrorBannerKey('form-refused')).toBe('speaker.groupKeyErrorBanner');
+    expect(groupKeyErrorBannerKey(undefined)).toBe('speaker.groupKeyErrorBanner');
+  });
 });
 
 // Every string the group keys section and the key map marker can show must
@@ -102,7 +167,9 @@ describe('group keys i18n', () => {
   const read = (loc) => JSON.parse(
     readFileSync(new URL(`./i18n/bundles/${loc}.json`, import.meta.url), 'utf8'));
   const en = read('en');
-  const keys = Object.keys(en).filter((k) => k.startsWith('multiroom.groupKeys') || k.startsWith('settingsView.webhookGroupKey') || k === 'settingsView.webhookRemoteLegendGroup');
+  const keys = Object.keys(en).filter((k) => k.startsWith('multiroom.groupKeys') || k.startsWith('settingsView.webhookGroupKey')
+    || k.startsWith('speaker.groupKeyError') || k === 'settingsView.webhookRemoteLegendGroup'
+    || k === 'settingsView.webhookThumbSharedNote' || k === 'settingsView.webhookMacInvalid');
   it('has the section strings in English at all', () => {
     expect(keys.length).toBeGreaterThanOrEqual(20);
   });
@@ -116,5 +183,26 @@ describe('group keys i18n', () => {
         expect(ph(b[k]), `${loc}.json ${k} placeholders`).toBe(ph(en[k]));
       }
     }
+  });
+});
+
+describe('groupKeyErrorBanners', () => {
+  const label = (b) => b.name;
+  it('gives each kind its own sentence and keeps every reason', () => {
+    const out = groupKeyErrorBanners([
+      { name: 'A', groupKeyError: 'resolve: moved', groupKeyErrorKind: 'member-unresolved' },
+      { name: 'B', groupKeyError: 'form: setZone: boom', groupKeyErrorKind: 'form-refused' },
+      { name: 'C', groupKeyError: 'resolve: gone', groupKeyErrorKind: 'member-unresolved' },
+    ], label);
+    expect(out).toEqual([
+      { key: 'speaker.groupKeyErrorMoved', names: 'A, C', reason: 'resolve: moved', reasons: ['resolve: moved', 'resolve: gone'] },
+      { key: 'speaker.groupKeyErrorBanner', names: 'B', reason: 'form: setZone: boom', reasons: ['form: setZone: boom'] },
+    ]);
+  });
+  it('gives each generic refusal its own line, since the reason is in the sentence', () => {
+    const out = groupKeyErrorBanners([
+      { name: 'A', groupKeyError: 'x' }, { name: 'B', groupKeyError: 'y' },
+    ], label);
+    expect(out.map(o => o.names)).toEqual(['A', 'B']);
   });
 });

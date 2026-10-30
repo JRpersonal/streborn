@@ -192,6 +192,10 @@ type Server struct {
 	held    *heldConn
 	heldFor time.Duration
 
+	// newPlay silences the station a woken speaker resumes by itself while
+	// STR starts something new on it (newplaygate.go).
+	newPlay newPlayGate
+
 	// radio stream health: cross-reconnect counters behind the
 	// radio_stream_health debug section and one consolidated WARN per upstream
 	// disconnect. The per-handler reconnect attempt counter resets on every
@@ -409,6 +413,10 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid url scheme", http.StatusBadRequest)
 		return
 	}
+	if hold, released := s.newPlayGateHolds(0, url); hold {
+		s.serveGatedSilence(r.Context(), w, released, 0, url)
+		return
+	}
 	if isDASHURL(url) {
 		s.logger.Warn("stream proxy: DASH not supported yet, refusing instead of reconnect-looping", "url", url)
 		s.recordFailure(url, fmt.Errorf("dash not supported"))
@@ -581,6 +589,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	p, ok := s.store.Get(slot)
 	streamURL := p.StreamURL
+	if hold, released := s.newPlayGateHolds(slot, streamURL); hold {
+		s.serveGatedSilence(r.Context(), w, released, slot, streamURL)
+		return
+	}
 	if ok && streamURL == "" && p.Type == "queue" {
 		// A queue preset carries no single StreamURL: its tracks live in the play
 		// queue the webui owns, and its box-native /stream/<slot> station must

@@ -18,6 +18,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/tlsgen"
+	"github.com/JRpersonal/streborn/speakername"
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
@@ -196,6 +197,11 @@ func bytesEqual(a, b []byte) bool {
 // update (#133, #292). Duplicate-name disambiguation is the caller's concern (the
 // user simply gives two speakers two different names); STR does not second-guess
 // a name the user picked. On success the file is deleted.
+//
+// The one exception is the characters the firmware cannot survive: "&", "<",
+// ">" and invalid UTF-8 take its UPnP renderer down on the next boot, and with
+// it Spotify and the music library (#1582). speakername.Sanitise replaces
+// those, and only those.
 func applyPendingBoxName(ctx context.Context, boxHost, path string, logger *slog.Logger) {
 	if boxHost == "" || path == "" {
 		return
@@ -205,12 +211,11 @@ func applyPendingBoxName(ctx context.Context, boxHost, path string, logger *slog
 		// no file, nothing to apply
 		return
 	}
-	raw := strings.TrimSpace(string(b))
-	if raw == "" {
+	wanted := speakername.Sanitise(string(b))
+	if wanted == "" {
 		_ = os.Remove(path)
 		return
 	}
-	wanted := raw
 	// The box must be reachable. Wait until the BoseApp web server is up.
 	time.Sleep(10 * time.Second)
 	c := boxapi.New(boxHost)

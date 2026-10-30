@@ -121,7 +121,7 @@ The attestation proves:
 
 STR has no user accounts, no advertising, and no third-party trackers in the app.
 
-- **The speaker never contacts the Bose cloud.** STR redirects the Bose cloud hostnames to localhost and answers them itself. The speaker reaches your LAN, the radio station's own stream, and, only if you enable Spotify Connect, Spotify's servers (the bundled go-librespot client). Station search moved to the desktop app; the speaker no longer contacts radio-browser.info.
+- **The speaker never contacts the Bose cloud.** STR redirects the Bose cloud hostnames to localhost and answers them itself. The speaker reaches your LAN, the radio station's own stream, station logos through its `/art` proxy (for its display and the phone remote's keys: the station's own logo host and `icons.duckduckgo.com`, sending only the station's public domain, never a LAN host), and, only if you enable Spotify Connect, Spotify's servers (the bundled go-librespot client). Station search moved to the desktop app; the speaker no longer contacts radio-browser.info.
 - **The desktop app talks to:** `st-reborn.de` (optional version check at startup, sending only the app version, build, OS, CPU architecture, and UI language; disable with `STR_NO_UPDATE_CHECK=1`), radio-browser.info (station search), and public favicon endpoints (station logos). No account, no device identifier, no personal data.
 - **The website** uses GoatCounter, a privacy-friendly analytics tool: no cookies, no cross-site tracking, the visitor IP is not stored.
 

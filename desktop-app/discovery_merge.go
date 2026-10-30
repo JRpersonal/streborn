@@ -269,9 +269,11 @@ var boxFieldPolicy = []fieldPolicy{
 	{"ConflictingMod", keepBase, verifiedReading},
 	{"ForeignCloudURL", keepBase, verifiedReading},
 	{"GroupKeyError", keepBase, verifiedReading},
+	{"GroupKeyErrorKind", keepBase, follows("GroupKeyError")},
 	{"HoldRefusedSource", keepBase, verifiedReading},
 	{"HoldRefusedSlot", keepBase, follows("HoldRefusedSource")},
 	{"StaleFolderKeySlot", keepBase, verifiedReading},
+	{"SpeakerNameUnsafe", keepBase, verifiedReading},
 	{"Storm1036", keepBase, verifiedReading},
 	{"Storm1036SinceSec", keepBase, follows("Storm1036")},
 	{"RecallRefusal", keepBase, verifiedReading},
@@ -365,6 +367,7 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.Internet = ""
 	b.InternetReason = ""
 	b.WLANCredsMissing = false
+	b.SpeakerNameUnsafe = false
 	b.Storm1036 = false
 	b.Storm1036SinceSec = 0
 	b.RecallRefusal = false

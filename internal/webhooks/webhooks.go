@@ -72,10 +72,68 @@ func (a Action) Configured() bool {
 	case "udp":
 		return a.Host != "" && a.Port > 0
 	case "wol":
-		return a.MAC != ""
+		// A MAC that cannot be parsed never fires, so it does not count as
+		// configured: it lit the key on the remote map and made the group-key
+		// section warn about a webhook that could not do anything (2026-10-27).
+		return ValidWOLMAC(a.MAC)
 	default: // "" / "http"
 		return a.URL != ""
 	}
+}
+
+// ValidWOLMAC reports whether mac is a 6-byte hardware address the magic
+// packet can carry, in any separator form net.ParseMAC accepts.
+func ValidWOLMAC(mac string) bool {
+	hw, err := net.ParseMAC(strings.TrimSpace(mac))
+	return err == nil && len(hw) == 6
+}
+
+// InvalidError is a config Validate refused; the HTTP handler answers it 400.
+type InvalidError struct {
+	// Entry is the refused entry: "thumb" for the shared thumbs action, else
+	// the per-key trigger id.
+	Entry string
+	MAC   string
+}
+
+func (e *InvalidError) Error() string {
+	name := e.Entry
+	if name == "thumb" {
+		name = "thumbs keys"
+	}
+	return fmt.Sprintf("%s: %q is not a valid Wake-on-LAN address (six pairs like AA:BB:CC:DD:EE:FF)", name, e.MAC)
+}
+
+// Validate refuses an ENABLED Wake-on-LAN action whose address cannot be
+// parsed, so the mistake shows when saving instead of as a silent failure on
+// every key press. A disabled one passes: switching a broken entry off must
+// always be possible.
+func (c Config) Validate() error { return c.ValidateChanges(Config{}) }
+
+// ValidateChanges is Validate for the entries that differ from prev only. The
+// app saves the whole config at once, so a broken entry stored before
+// validation existed would otherwise block saving every other key until the
+// user found and fixed it (2026-10-27).
+func (c Config) ValidateChanges(prev Config) error {
+	same := func(a, b Action) bool { return a.Enabled == b.Enabled && a.Type == b.Type && a.MAC == b.MAC }
+	check := func(name string, a, old Action) error {
+		if same(a, old) {
+			return nil
+		}
+		if a.Enabled && a.Type == "wol" && strings.TrimSpace(a.MAC) != "" && !ValidWOLMAC(a.MAC) {
+			return &InvalidError{Entry: name, MAC: a.MAC}
+		}
+		return nil
+	}
+	if err := check("thumb", c.Thumb, prev.Thumb); err != nil {
+		return err
+	}
+	for id, t := range c.Buttons {
+		if err := check(id, t.Action, prev.Buttons[id].Action); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Webhook interaction modes for the per-remote-key buttons.
@@ -192,8 +250,14 @@ func (s *Store) Get() Config {
 }
 
 // Set replaces the config and persists it atomically.
+// Only entries that changed are validated (see ValidateChanges); a refusal is
+// an *InvalidError.
 func (s *Store) Set(c Config) error {
 	s.mu.Lock()
+	if err := c.ValidateChanges(s.cfg); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	s.cfg = c
 	s.mu.Unlock()
 	return s.save(c)

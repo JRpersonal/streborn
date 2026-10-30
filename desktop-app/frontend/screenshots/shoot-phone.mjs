@@ -134,7 +134,6 @@ try {
     await ctx.addInitScript(([l, th]) => {
       try {
         localStorage.setItem('str.remote.lang', l);
-        localStorage.setItem('coachSeen', '1'); // the first-visit hint bubble
         if (th) localStorage.setItem('a11yTheme', th);
       } catch (e) {}
     }, [lang, theme]);

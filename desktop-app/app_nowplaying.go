@@ -227,11 +227,41 @@ func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
 // SpotifyQualityState is the engine's streaming-quality preference as the UI
 // needs it: the configured bitrate, and whether a change is still waiting for
 // an engine restart (a change never interrupts running playback, #728).
+//
+// AutoSupported is true when the speaker's agent knows the plan-dependent
+// default (320 kbps on Premium, 160 otherwise). Then Choice is the explicit
+// per-speaker choice (0 while the default applies) and Reason says why Bitrate
+// is what it is: "chosen", "premium-default", "free-default" or
+// "plan-unknown". An older agent leaves all three empty.
 type SpotifyQualityState struct {
-	OK      bool `json:"ok"`
-	Bitrate int  `json:"bitrate"`
-	Pending bool `json:"pending"`
-	Applied bool `json:"applied"`
+	OK            bool   `json:"ok"`
+	Bitrate       int    `json:"bitrate"`
+	Pending       bool   `json:"pending"`
+	Applied       bool   `json:"applied"`
+	AutoSupported bool   `json:"autoSupported"`
+	Choice        int    `json:"choice"`
+	Reason        string `json:"reason"`
+}
+
+// spotifyQualityAnswer is what the agent's /spotify/quality sends back, for
+// GET and POST alike. Choice is a pointer so a missing field (older agent)
+// is distinguishable from 0 (automatic).
+type spotifyQualityAnswer struct {
+	OK      bool   `json:"ok"`
+	Bitrate int    `json:"bitrate"`
+	Pending bool   `json:"pending"`
+	Applied bool   `json:"applied"`
+	Choice  *int   `json:"choice"`
+	Reason  string `json:"reason"`
+}
+
+func (q spotifyQualityAnswer) state() SpotifyQualityState {
+	st := SpotifyQualityState{Bitrate: q.Bitrate, Pending: q.Pending, Applied: q.Applied, Reason: q.Reason}
+	if q.Choice != nil {
+		st.AutoSupported = true
+		st.Choice = *q.Choice
+	}
+	return st
 }
 
 // SpotifyQuality reads the speaker's configured Spotify streaming bitrate
@@ -246,19 +276,19 @@ func (a *App) SpotifyQuality(host string, port int) SpotifyQualityState {
 	if resp.StatusCode != http.StatusOK {
 		return SpotifyQualityState{}
 	}
-	var out struct {
-		Bitrate int  `json:"bitrate"`
-		Pending bool `json:"pending"`
-	}
+	var out spotifyQualityAnswer
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return SpotifyQualityState{}
 	}
-	return SpotifyQualityState{OK: true, Bitrate: out.Bitrate, Pending: out.Pending}
+	st := out.state()
+	st.OK = true
+	return st
 }
 
 // SetSpotifyQuality sets the speaker's Spotify streaming bitrate
-// (POST /spotify/quality). Applied=false means the speaker stored the choice
-// and applies it once playback stops.
+// (POST /spotify/quality). kbps 0 returns to the plan-dependent default (only
+// on an agent with AutoSupported). Applied=false means the speaker stored the
+// choice and applies it once playback stops.
 func (a *App) SetSpotifyQuality(host string, port int, kbps int) SpotifyQualityState {
 	body := fmt.Sprintf(`{"bitrate":%d}`, kbps)
 	resp, err := a.boxDo(host, port, http.MethodPost, "/spotify/quality", "application/json", body)
@@ -269,13 +299,13 @@ func (a *App) SetSpotifyQuality(host string, port int, kbps int) SpotifyQualityS
 	if resp.StatusCode != http.StatusOK {
 		return SpotifyQualityState{}
 	}
-	var out struct {
-		OK      bool `json:"ok"`
-		Bitrate int  `json:"bitrate"`
-		Applied bool `json:"applied"`
-	}
+	var out spotifyQualityAnswer
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return SpotifyQualityState{}
 	}
-	return SpotifyQualityState{OK: out.OK, Bitrate: out.Bitrate, Pending: !out.Applied, Applied: out.Applied}
+	st := out.state()
+	st.OK = out.OK
+	// An older agent sends no "pending" on POST; applied is the source of truth.
+	st.Pending = !out.Applied
+	return st
 }

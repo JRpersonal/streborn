@@ -115,3 +115,38 @@ test.describe('stereo editor', () => {
     await expect(page.locator('#stereoCreate')).toHaveText(en('multiroom.stereoCreateBtn'));
   });
 });
+
+// #1576: a live permanent group draws the stored members that are not playing
+// along, labelled, instead of leaving them out as if they had been removed.
+test.describe('live permanent group with a member that stayed out', () => {
+  const HALL = { ...BR, name: 'Hall', friendlyName: 'Hall', host: '192.0.2.63', deviceID: 'E5F6A1B2C3D4', volume: undefined };
+  const live = {
+    master: LR.deviceID,
+    senderIP: LR.host,
+    permanent: true,
+    members: [{ deviceID: LR.deviceID, ip: LR.host }, { deviceID: BR.deviceID, ip: BR.host }],
+  };
+  test.use({
+    scenario: {
+      boxes: ['livingRoom', 'bedroom', 'office', 'kitchen', HALL],
+      zones: {
+        [LR.host]: { ...live, notJoined: [{ deviceID: HALL.deviceID, ip: HALL.host, name: 'Hall' }] },
+        [BR.host]: live,
+      },
+    },
+  });
+
+  test('the member that is not in the live group is shown as not joined', async ({ app }) => {
+    const { page } = app;
+    await openMultiroom(page);
+    const frame = page.locator('#view-multiroom .zone-frames .box-group').first();
+    await expect(frame).toContainText('Living Room');
+    await expect(frame).toContainText('Bedroom');
+    const out = frame.locator('.zone-chip-out');
+    await expect(out).toHaveCount(1);
+    await expect(out).toContainText('Hall');
+    await expect(out).toContainText(en('multiroom.notJoined'));
+    await expect(out).toHaveAttribute('title', en('multiroom.notJoinedTip', { name: 'Hall' }));
+    if (process.env.SHOOT_DIR) await frame.screenshot({ path: `${process.env.SHOOT_DIR}/permanent-group-not-joined.png` });
+  });
+});

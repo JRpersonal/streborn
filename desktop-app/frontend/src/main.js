@@ -13,6 +13,8 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { unsafeNameBoxes } from './speakername.js';
+import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
@@ -20,6 +22,7 @@ import {
   RefreshKnownBoxes,
   AddBoxByIP,
   RebootBox,
+  RepairSpeakerName,
   RemoveConflictingMod,
   RestoreSTRCloud,
   UpdateFailureReport,
@@ -226,6 +229,7 @@ import {
   groupCountSplit,
   onZoneLive,
   notifyZoneLive,
+  anyInLiveGroup,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
 import { findStalePairs, confirmStalePairs, staleFindingFor } from './stalestereo.js';
@@ -2108,6 +2112,11 @@ function maybeShowSpeakerUpdateCard() {
       `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
       `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
       `<ul class="suc-list">${list}</ul>` +
+      // Several speakers at once restart one after the other; any of them in
+      // a live group leaves it (#1339). One speaker goes through doBoxUpdate,
+      // whose own banner says it for that speaker.
+      (outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)
+        ? `<div class="suc-text" id="sucGroupNote">${escapeHtml(t('updateAll.groupNote'))}</div>` : '') +
       `<div class="suc-actions">` +
         `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
         `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
@@ -2475,10 +2484,15 @@ function checkBoxIssueBanner() {
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
   }
   if (keyErr.length) {
-    const names = keyErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
-      name: names, reason: keyErr[0].groupKeyError,
-    })));
+    // A refusal the user can act on reads as a sentence in their language,
+    // one per kind; the agent's raw reason (English, technical) is the line
+    // under it, visible and selectable for a support mail, not hover-only.
+    for (const line of groupKeyErrorBanners(keyErr, getBoxLabel)) {
+      const text = escapeHtml(t(line.key, { name: line.names, reason: line.reason }));
+      msgs.push(line.key === 'speaker.groupKeyErrorBanner'
+        ? text
+        : `${text}<br><small class="muted">${escapeHtml(line.reasons.join(' | '))}</small>`);
+    }
   }
   if (holdErr.length) {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');
@@ -2492,7 +2506,19 @@ function checkBoxIssueBanner() {
       name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
+  // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
+  // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
+  // music library cannot play while radio still does, and nothing else on
+  // screen says why. Not dismissible; the fix is one tap.
+  const badName = unsafeNameBoxes(boxes);
+  if (badName.length) {
+    const names = badName.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
+  }
   if (!msgs.length) { el.classList.add('hidden'); return; }
+  const badNameBtn = badName.length
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueBadNameBtn">${escapeHtml(t('speaker.badNameFixBtn'))}</button>`
+    : '';
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
   // instead of just telling them to "set it up in the settings": the button
   // jumps straight to that speaker's settings, where the Wi-Fi section is.
@@ -2524,6 +2550,7 @@ function checkBoxIssueBanner() {
     : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${badNameBtn}
     ${cloudBtn}
     ${stormBtn}
     ${conflictBtn}
@@ -2540,6 +2567,26 @@ function checkBoxIssueBanner() {
       showError(String(e));
     } finally {
       sb.disabled = false;
+    }
+  };
+  const bnb = $('boxIssueBadNameBtn');
+  if (bnb) bnb.onclick = async () => {
+    bnb.disabled = true;
+    try {
+      for (const box of badName) {
+        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
+        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
+        box.friendlyName = name || box.friendlyName;
+        box.speakerNameUnsafe = false;
+        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
+        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: box.friendlyName, speakerNameUnsafe: false };
+      }
+      checkBoxIssueBanner();
+      renderBoxSelect();
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      bnb.disabled = false;
     }
   };
   const cloudB = $('boxIssueCloudBtn');
@@ -3338,6 +3385,16 @@ onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxe
 // the speaker's own settings), read both halves straight away rather than at
 // the next status poll, so the slider reads the pair before it is touched.
 onZoneLive(syncVolumeScopeOnZoneLive);
+// The speaker update card usually paints before the first zone round lands.
+// Redraw it once its group note would change, and only then: a redraw resets
+// its button, which may be mid-click (#1339).
+onZoneLive(() => {
+  const el = $('speakerUpdateCard');
+  if (!el || el.classList.contains('hidden')) return;
+  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  const want = outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive);
+  if (want !== !!$('sucGroupNote')) maybeShowSpeakerUpdateCard();
+});
 
 // A speaker stuck as half of a stereo pair that no longer exists (see
 // stalestereo.js). Recomputed after every zone round from data the poll already
@@ -4158,6 +4215,9 @@ async function runUpdateAllBoxes(onStart) {
       }
     } catch { /* headroom unknown (older agent): never block a batch */ }
   }
+  // A grouped speaker leaves its group while it restarts, in a run just as in
+  // a single update (#1339): said once, before the run starts.
+  if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('updateAll.groupNote'));
   hideToast();
   // The prompt used to be one plain string with "\n" separators pushed through
   // innerHTML, where HTML collapses newlines: four speakers plus two notes

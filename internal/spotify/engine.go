@@ -385,6 +385,9 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	if !m.diskSpaceOK() {
 		return errLowDisk
 	}
+	// A state.json cut off mid-write makes the engine exit on every start; set
+	// it aside and put the saved login back before launching (staterepair.go).
+	m.repairCorruptState()
 	// go-librespot uses pflag: the long flag needs two dashes (-config_dir
 	// is misparsed as a shorthand cluster). HOME is forced into the
 	// writable config dir because the box rootfs is read-only and
@@ -399,6 +402,9 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.resetProductStateLocked()
 	m.mu.Unlock()
 	m.resetCredRejectRun()
+	// Settle the streaming quality for this process (explicit choice, else the
+	// plan remembered for the account it will log in as) and log it.
+	m.prepareBitrateForStart()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	// Point the engine's Spotify Connect advert at a name this speaker actually

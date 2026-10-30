@@ -31,7 +31,7 @@ All request and response bodies are JSON.
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
-| `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. For a radio station send `codec` as radio-browser reports it (`MP3`, `AAC`, `AAC+`, ...): it picks the MIME the speaker decodes with, and an HE-AAC station labelled as MP3 plays silence. **`mime` is not a codec hint**: it marks a local music-library file that the speaker fetches directly, without the stream proxy and the native radio path. Never set it for radio. |
+| `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. `codec` is the station codec (`MP3`, `AAC`, `AAC+`); an HE-AAC stream without it can play silence. Do not send `mime` for a stream: it marks a music-library file and hands the URL straight to the speaker. |
 | `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
@@ -186,7 +186,25 @@ alone.
 | `POST`   | `/api/box/zone/volume` | `{"value":N}` or `{"ip":"...","value":N}` | Every member, or one of them. |
 
 The form body is
-`{"master":{"deviceID","ip"},"slaves":[{"deviceID","ip"}],"mode","permanent","defineOnly","stereo"}`.
+`{"master":{"deviceID","ip"},"slaves":[{"deviceID","ip"}],"mode","permanent","defineOnly","stereo","name"}`.
+
+### Stereo pair names
+
+The speakers hold a stereo pair's name, in the same pair record the Bose app
+reads and edits. Every client sees the same name that way, so set it there:
+
+- `name` in the form body (with `"stereo":true`) names a new pair. Left out or
+  blank, the pair is called `Stereo pair`.
+- `POST /api/box/zone/stereo-name` with `{"name":"..."}` renames a live pair.
+  Send it to BOTH members; each one holds its own copy of the record.
+- `GET /api/box/zone` reports the name as `stereo.name`, and
+  `GET /api/box/zone/volume` as `stereoName`.
+- `DELETE /api/box/zone?stereo=1` undoes the pair, and the name goes with it.
+  A pair formed again from the same two speakers starts as `Stereo pair`.
+
+The desktop app shows the speakers' name. It only falls back to a name of its
+own when the speakers carry the default, and it never writes that name back over
+`Stereo pair` (#1579).
 
 Two fields decide more than they look like they do.
 

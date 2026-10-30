@@ -31,29 +31,34 @@ func TestClassifyMemberForRejoin(t *testing.T) {
 	const master = "MASTER01"
 	for _, tc := range []struct {
 		name, src, status, zoneMaster string
+		playKick                      bool
 		want                          rejoinAction
 	}{
-		{"unreachable", "", "", "", rejoinSkipUnreachable},
-		{"standby wakes", "STANDBY", "", "", rejoinWake},
-		{"idle joins", "INVALID_SOURCE", "", "", rejoinJoin},
-		{"stopped source joins", "LOCAL_INTERNET_RADIO", "STOP_STATE", "", rejoinJoin},
-		{"paused source joins", "UPNP", "PAUSE_STATE", "", rejoinJoin},
-		{"solo player stays out", "SPOTIFY", "PLAY_STATE", "", rejoinSkipSolo},
-		{"buffering solo stays out", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", rejoinSkipSolo},
-		{"already ours rejoins even while playing", "UPNP", "PLAY_STATE", master, rejoinJoin},
-		{"other group stays out", "UPNP", "PLAY_STATE", "OTHER99", rejoinSkipOtherZone},
-		{"other group even idle stays out", "INVALID_SOURCE", "", "OTHER99", rejoinSkipOtherZone},
+		{"unreachable", "", "", "", false, rejoinSkipUnreachable},
+		{"standby wakes", "STANDBY", "", "", false, rejoinWake},
+		{"idle joins", "INVALID_SOURCE", "", "", false, rejoinJoin},
+		{"stopped source joins", "LOCAL_INTERNET_RADIO", "STOP_STATE", "", false, rejoinJoin},
+		{"paused source joins", "UPNP", "PAUSE_STATE", "", false, rejoinJoin},
+		{"solo player stays out", "SPOTIFY", "PLAY_STATE", "", false, rejoinSkipSolo},
+		{"buffering solo stays out", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", false, rejoinSkipSolo},
+		{"already ours rejoins even while playing", "UPNP", "PLAY_STATE", master, false, rejoinJoin},
+		{"other group stays out", "UPNP", "PLAY_STATE", "OTHER99", false, rejoinSkipOtherZone},
+		{"other group even idle stays out", "INVALID_SOURCE", "", "OTHER99", false, rejoinSkipOtherZone},
+		{"solo player joins on the master's play kick", "SPOTIFY", "PLAY_STATE", "", true, rejoinJoin},
+		{"buffering solo joins on the play kick", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", true, rejoinJoin},
+		{"other group stays out on the play kick", "UPNP", "PLAY_STATE", "OTHER99", true, rejoinSkipOtherZone},
+		{"standby still wakes on the play kick", "STANDBY", "", "", true, rejoinWake},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyMemberForRejoin(tc.src, tc.status, tc.zoneMaster, master); got != tc.want {
-				t.Errorf("classify(%q,%q,%q) = %v, want %v", tc.src, tc.status, tc.zoneMaster, got, tc.want)
+			if got := classifyMemberForRejoin(tc.src, tc.status, tc.zoneMaster, master, tc.playKick); got != tc.want {
+				t.Errorf("classify(%q,%q,%q,%v) = %v, want %v", tc.src, tc.status, tc.zoneMaster, tc.playKick, got, tc.want)
 			}
 		})
 	}
 }
 
-// The play-triggered re-form must wake the standby member, keep the solo
-// player out, and assert the zone with exactly the qualifying members. All
+// The play-triggered re-form must wake the standby member, take the solo
+// player along (#1576), and assert the zone with exactly the qualifying members. All
 // firmware/member traffic goes through the seams.
 func TestFormDefaultGroupOnPlay(t *testing.T) {
 	t.Parallel()
@@ -136,8 +141,10 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 	for _, m := range setSlaves {
 		ids[m.DeviceID] = true
 	}
-	if !ids["SLEEPY"] || !ids["IDLE"] || ids["SOLO"] {
-		t.Errorf("joined = %v, want SLEEPY+IDLE without SOLO", ids)
+	// #1576: the master was started on purpose, so the member playing on its
+	// own comes along too.
+	if !ids["SLEEPY"] || !ids["IDLE"] || !ids["SOLO"] {
+		t.Errorf("joined = %v, want SLEEPY+IDLE+SOLO", ids)
 	}
 
 	// Cooldown: a second kick right after must not drive the firmware again.
@@ -342,5 +349,148 @@ func TestRejoinMissingMembersTakesRebootedMembersBackOnly(t *testing.T) {
 	z.Permanent = false
 	if s.rejoinMissingMembers(context.Background(), z) {
 		t.Error("a non-permanent group must not rejoin on the tick")
+	}
+}
+
+// zoneLossFixture is a two-speaker permanent group whose lone follower just
+// restarted for an update: the master's firmware ended the zone with it, the
+// master is awake and idle, and the follower sits in standby with a freshly
+// started agent (#1339).
+type zoneLossFixture struct {
+	mu           sync.Mutex
+	setCalls     int
+	setSlaves    []boxapi.ZoneMember
+	woken        map[string]bool
+	masterSource string
+	memberUptime int
+	liveMaster   string
+}
+
+func newZoneLossFixture(t *testing.T) (*Server, *zoneLossFixture, zones.Zone) {
+	t.Helper()
+	f := &zoneLossFixture{woken: map[string]bool{}, masterSource: "INVALID_SOURCE", memberUptime: 90}
+	s := newRejoinServer()
+	s.rejoinSelfDeviceIDFn = func(context.Context) string { return "MASTER01" }
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		switch ip {
+		case "10.0.0.1":
+			return nowPlayingSnapshot{Source: f.masterSource, PlayStatus: "STOP_STATE"}
+		case "10.0.0.2":
+			return nowPlayingSnapshot{Source: "STANDBY"}
+		default:
+			return nowPlayingSnapshot{}
+		}
+	}
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.memberUptime
+	}
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(_ context.Context, ip string, _ *slog.Logger) {
+		f.mu.Lock()
+		f.woken[ip] = true
+		f.mu.Unlock()
+	}
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return boxapi.Zone{Master: f.liveMaster}, nil
+	}
+	s.rejoinSetZoneFn = func(_ context.Context, _ string, _ boxapi.ZoneMember, slaves []boxapi.ZoneMember) error {
+		f.mu.Lock()
+		f.setCalls++
+		f.setSlaves = slaves
+		f.mu.Unlock()
+		return nil
+	}
+	s.noteZoneDissolved()
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
+		{DeviceID: "FOLLOWER", IP: "10.0.0.2"},
+	}}
+	return s, f, z
+}
+
+// A two-speaker permanent group whose follower restarted for an update, master
+// awake, zone gone: exactly one setZone, and a second tick adds none.
+func TestReformAfterMemberRebootTakesRestartedFollowerBackOnce(t *testing.T) {
+	t.Parallel()
+	s, f, z := newZoneLossFixture(t)
+	if !s.reformAfterMemberReboot(context.Background(), z) {
+		t.Fatal("the restarted follower was not taken back")
+	}
+	if f.setCalls != 1 || len(f.setSlaves) != 1 || f.setSlaves[0].DeviceID != "FOLLOWER" {
+		t.Fatalf("setCalls=%d slaves=%v, want exactly one setZone with FOLLOWER", f.setCalls, f.setSlaves)
+	}
+	if !f.woken["10.0.0.2"] {
+		t.Error("the freshly restarted follower in standby was not woken for the join")
+	}
+	// The setZone's own teardown frame stamps a new dissolve; the next tick
+	// must still leave it at that one attempt.
+	s.noteZoneDissolved()
+	if s.reformAfterMemberReboot(context.Background(), z) || f.setCalls != 1 {
+		t.Errorf("second tick drove another setZone: setCalls=%d", f.setCalls)
+	}
+}
+
+func TestReformAfterMemberRebootLeavesItAlone(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(s *Server, f *zoneLossFixture, z *zones.Zone)
+	}{
+		{"master in standby", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.masterSource = "STANDBY" }},
+		{"not permanent", func(_ *Server, _ *zoneLossFixture, z *zones.Zone) { z.Permanent = false }},
+		{"stereo pair", func(_ *Server, _ *zoneLossFixture, z *zones.Zone) { z.Stereo = true }},
+		{"member switched off long ago", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.memberUptime = 5000 }},
+		{"member agent not answering", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.memberUptime = -1 }},
+		{"zone still live", func(_ *Server, f *zoneLossFixture, _ *zones.Zone) { f.liveMaster = "MASTER01" }},
+		{"this speaker is a member", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.rejoinSelfDeviceIDFn = func(context.Context) string { return "FOLLOWER" }
+		}},
+		{"no dissolve observed", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.zoneLossMu.Lock()
+			s.zoneDissolvedAt = time.Time{}
+			s.zoneLossMu.Unlock()
+		}},
+		{"dissolve too long ago", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) {
+			s.zoneLossMu.Lock()
+			s.zoneDissolvedAt = time.Now().Add(-zoneLossRejoinWindow - time.Minute)
+			s.zoneLossMu.Unlock()
+		}},
+		{"group re-form hushed", func(s *Server, _ *zoneLossFixture, _ *zones.Zone) { s.hushGroupForm(time.Minute) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, f, z := newZoneLossFixture(t)
+			tc.setup(s, f, &z)
+			if s.reformAfterMemberReboot(context.Background(), z) || f.setCalls != 0 {
+				t.Errorf("setZone driven: setCalls=%d", f.setCalls)
+			}
+			if f.woken["10.0.0.2"] {
+				t.Error("a member was woken")
+			}
+		})
+	}
+}
+
+// #1576: a stored member that is not in the live group is reported, matched by
+// deviceID first and by address for a member stored without one.
+func TestNotJoinedMembers(t *testing.T) {
+	t.Parallel()
+	live := []boxapi.ZoneMember{{DeviceID: "MASTER01", IP: "10.0.0.1"}, {DeviceID: "sleepy", IP: "10.0.0.2"}}
+	stored := []rememberedMember{
+		{DeviceID: "SLEEPY", IP: "10.0.0.9"},
+		{DeviceID: "SOLO", IP: "10.0.0.3", Name: "Kitchen"},
+		{IP: "10.0.0.1"},
+	}
+	got := notJoinedMembers(live, stored)
+	if len(got) != 1 || got[0].DeviceID != "SOLO" || got[0].Name != "Kitchen" {
+		t.Fatalf("notJoined = %+v, want only SOLO", got)
+	}
+	if notJoinedMembers(live, nil) != nil {
+		t.Error("no stored members must report none")
 	}
 }
