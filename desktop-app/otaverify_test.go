@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -19,22 +20,26 @@ import (
 // the client gives up. droppingPort is a listener that accepts and never
 // answers, which is what a DROP looks like once the SYN is through (the real
 // one never even connects; either way the client sees a timeout).
-func droppingPort(t *testing.T) (port int, hits *int) {
+func droppingPort(t *testing.T) (port int, hits *atomic.Int32) {
 	t.Helper()
-	n := 0
+	// Atomic: the handler runs on the server goroutine, and a dropped
+	// request is counted there while the client has already timed out.
+	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n++
+		n.Add(1)
 		<-r.Context().Done()
 	}))
 	t.Cleanup(srv.Close)
 	return listenPort(t, srv), &n
 }
 
-func agentPort(t *testing.T, build string) (port int, hits *int) {
+func agentPort(t *testing.T, build string) (port int, hits *atomic.Int32) {
 	t.Helper()
-	n := 0
+	// Atomic: the handler runs on the server goroutine, and a dropped
+	// request is counted there while the client has already timed out.
+	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n++
+		n.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"version":"v0.9.75","build":"`+build+`"}`)
 	}))
@@ -103,8 +108,8 @@ func TestBoxDoErrorLeadsWithThePortThatMatters(t *testing.T) {
 	if strings.Count(first, "/api/agent/version") != 1 {
 		t.Errorf("the other port's full error was pasted in as well:\n%s", msg)
 	}
-	if *dropHits != 1 {
-		t.Errorf("dropping port was tried %d times, want 1", *dropHits)
+	if dropHits.Load() != 1 {
+		t.Errorf("dropping port was tried %d times, want 1", dropHits.Load())
 	}
 	if !isTransportNotReady(err) {
 		t.Error("the combined error lost its transport-failure nature (callers classify on it)")
@@ -131,11 +136,11 @@ func TestPostOTAVerifyAsksTheUpdatePortFirst(t *testing.T) {
 	if ver["build"] != "b1" {
 		t.Errorf("build = %q, want b1", ver["build"])
 	}
-	if *dropHits != 0 {
-		t.Errorf("the dropped port was tried %d times before the update port", *dropHits)
+	if dropHits.Load() != 0 {
+		t.Errorf("the dropped port was tried %d times before the update port", dropHits.Load())
 	}
-	if *agentHits != 1 {
-		t.Errorf("agent asked %d times, want 1", *agentHits)
+	if agentHits.Load() != 1 {
+		t.Errorf("agent asked %d times, want 1", agentHits.Load())
 	}
 	if d := time.Since(start); d > 300*time.Millisecond {
 		t.Errorf("poll took %v: it waited on the dropped port first", d)
@@ -148,8 +153,8 @@ func TestPostOTAVerifyAsksTheUpdatePortFirst(t *testing.T) {
 	if _, err := b.BoxAgentVersion("127.0.0.1", drop); err != nil {
 		t.Fatalf("plain BoxAgentVersion: %v", err)
 	}
-	if *dropHits != 1 {
-		t.Errorf("control: dropped port hit %d times, want 1 (the plain path still goes record-port first)", *dropHits)
+	if dropHits.Load() != 1 {
+		t.Errorf("control: dropped port hit %d times, want 1 (the plain path still goes record-port first)", dropHits.Load())
 	}
 }
 
@@ -305,8 +310,8 @@ func TestRefusedPortFallsThroughToTheOtherPortInAnyLocale(t *testing.T) {
 		t.Fatalf("boxDo did not fall through to the answering port: %v", err)
 	}
 	resp.Body.Close()
-	if *agentHits != 1 {
-		t.Errorf("agent asked %d times, want 1", *agentHits)
+	if agentHits.Load() != 1 {
+		t.Errorf("agent asked %d times, want 1", agentHits.Load())
 	}
 	if p, ok := a.cachedPort("127.0.0.1"); !ok || p != agent {
 		t.Errorf("cached port = %d (present=%v), want %d", p, ok, agent)
