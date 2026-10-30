@@ -159,6 +159,42 @@ func (u *selfUpdater) progress(done, total int64) {
 	u.mu.Unlock()
 }
 
+// selfUpdateInstallStates are the states an install owns from the moment it
+// is accepted until it has ended. A check running beside it (the "plan"
+// action asks for the latest release too, and the install checks again when
+// its index is old) must leave them alone.
+var selfUpdateInstallStates = map[string]bool{"downloading": true, "installing": true, "rebooting": true, "engine": true}
+
+// beginCheck shows "checking" unless an install holds the state. It reports
+// whether the check owns the state and may settle it when it ends. #1339: a
+// check inside an install set "idle" for a moment, a phone polling right then
+// read the install as over, stopped asking and kept "Downloading, 9%" while
+// the speaker finished the update on its own.
+func (u *selfUpdater) beginCheck() bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if selfUpdateInstallStates[u.state] {
+		return false
+	}
+	u.state, u.phase, u.done, u.total, u.err = "checking", "", 0, 0, ""
+	return true
+}
+
+// endCheck settles a check that owns the state: idle, or failed with err. An
+// install that took the state over meanwhile keeps it.
+func (u *selfUpdater) endCheck(err error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.state != "checking" {
+		return
+	}
+	if err != nil {
+		u.state, u.err = "failed", err.Error()
+		return
+	}
+	u.state, u.phase, u.done, u.total, u.err = "idle", "", 0, 0, ""
+}
+
 // claim marks the updater busy; false when another check or install runs.
 func (u *selfUpdater) claim() bool {
 	u.mu.Lock()
@@ -389,7 +425,7 @@ func selfUpdateSourceNow() (base string, keys []string) {
 
 // selfUpdateCheck fetches and verifies the latest release index.
 func (s *Server) selfUpdateCheck(ctx context.Context) (updatesig.Index, error) {
-	s.selfUpd.set("checking", "")
+	own := s.selfUpd.beginCheck()
 	base, keys := selfUpdateSourceNow()
 	ix, err := s.fetchSignedIndex(ctx, base, base+"latest/download/", keys)
 	// A network that is only just back (DNS answers late after a router
@@ -402,13 +438,17 @@ func (s *Server) selfUpdateCheck(ctx context.Context) (updatesig.Index, error) {
 		ix, err = s.fetchSignedIndex(ctx, base, base+"latest/download/", keys)
 	}
 	if err != nil {
-		s.selfUpd.fail(fmt.Errorf("could not check for updates: %w", err))
+		if own {
+			s.selfUpd.endCheck(fmt.Errorf("could not check for updates: %w", err))
+		}
 		return updatesig.Index{}, err
 	}
 	s.selfUpd.mu.Lock()
 	s.selfUpd.index, s.selfUpd.base, s.selfUpd.checkedAt = &ix, base, time.Now()
 	s.selfUpd.mu.Unlock()
-	s.selfUpd.set("idle", "")
+	if own {
+		s.selfUpd.endCheck(nil)
+	}
 	s.logger.Info("self-update: checked", "running", agentVersion(), "latest", ix.Version,
 		"available", updatesig.VersionLess(agentVersion(), ix.Version))
 	return ix, nil
