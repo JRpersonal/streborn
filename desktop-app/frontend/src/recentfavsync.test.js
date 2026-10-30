@@ -67,16 +67,26 @@ describe('pollFavRemovalsOnCurrentBox (#1339)', () => {
     expect(api.PushFavorites).not.toHaveBeenCalled();
   });
 
-  it('stays quiet for a stock speaker, an empty list and a speaker that does not answer', async () => {
+  it('stays quiet for a stock speaker and a speaker that does not answer', async () => {
     state.currentBox = { ...BOX, kind: 'stock' };
     expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
     state.currentBox = BOX;
     api.FavoriteRemovals.mockRejectedValue(new Error('timeout'));
     expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
+  });
+
+  // #1621: the first star may come from a phone, so an empty list still asks.
+  it('adds a favourite starred on the phone, even to an empty list', async () => {
     localStorage.setItem('str.favStations', '[]');
-    api.FavoriteRemovals.mockClear();
-    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
-    expect(api.FavoriteRemovals).not.toHaveBeenCalled();
+    api.FavoriteRemovals.mockResolvedValue(JSON.stringify({
+      removed: [],
+      added: [{ id: 'u-9', at: 700, fav: { stationuuid: 'u-9', name: 'SWR3', url_resolved: 'http://example/swr3' } }],
+    }));
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(true);
+    expect(fav.isFav({ stationuuid: 'u-9' })).toBe(true);
+    // Pushed to every speaker: that push settles the note.
+    expect(api.PushFavorites).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(api.PushFavorites.mock.calls[0][2])[0]).toMatchObject({ stationuuid: 'u-9', starredAt: 700 });
   });
 });
 

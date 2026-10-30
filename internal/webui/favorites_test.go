@@ -15,11 +15,14 @@ import (
 func favServer(t *testing.T) *Server {
 	t.Helper()
 	old := favoritesPath
-	oldRemovals := favoriteRemovalsPath
+	oldRemovals, oldAdditions := favoriteRemovalsPath, favoriteAdditionsPath
 	dir := t.TempDir()
 	favoritesPath = filepath.Join(dir, "favorites.json")
 	favoriteRemovalsPath = filepath.Join(dir, "favorites-removed.json")
-	t.Cleanup(func() { favoritesPath, favoriteRemovalsPath = old, oldRemovals })
+	favoriteAdditionsPath = filepath.Join(dir, "favorites-added.json")
+	t.Cleanup(func() {
+		favoritesPath, favoriteRemovalsPath, favoriteAdditionsPath = old, oldRemovals, oldAdditions
+	})
 	return &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 

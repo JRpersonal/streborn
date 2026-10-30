@@ -16,8 +16,10 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -263,8 +265,12 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 // handleFavorites serves and stores the starred stations.
 //
 //	GET            -> [] (never null: the phone page renders a list, not a maybe)
-//	GET ?removed=1 -> {"removed":[{id,at}]}, for the desktop app to catch up
+//	GET ?removed=1 -> {"removed":[{id,at}],"added":[{id,at,fav}]}, for the
+//	               desktop app to catch up
 //	PUT [ ... ]    replaces the list, from the desktop app
+//	POST { ... }   stars one favourite, from the phone page or a remote app
+//	               (#1621), and hands it on to the other STR speakers unless
+//	               local=1
 //	DELETE ?id=KEY removes one favourite, from the phone page (#1389), and
 //	               hands the removal on to the other STR speakers unless local=1
 //
@@ -278,7 +284,7 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if r.URL.Query().Get("removed") == "1" {
-			writeJSON(w, http.StatusOK, map[string]any{"removed": loadFavoriteRemovals()})
+			writeJSON(w, http.StatusOK, map[string]any{"removed": loadFavoriteRemovals(), "added": loadFavoriteAdditions()})
 			return
 		}
 		writeJSON(w, http.StatusOK, loadFavorites())
@@ -288,6 +294,12 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.deleteFavorite(w, r)
+	case http.MethodPost:
+		if !isLocalLAN(r.RemoteAddr) {
+			http.Error(w, "only allowed from LAN", http.StatusForbidden)
+			return
+		}
+		s.addFavorite(w, r)
 	case http.MethodPut:
 		if !isLocalLAN(r.RemoteAddr) {
 			http.Error(w, "only allowed from LAN", http.StatusForbidden)
@@ -308,6 +320,16 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		}
 		if held > 0 {
 			s.logger.Info("favorites: kept removed favourites out of a pushed list", "count", held)
+		}
+		adds := loadFavoriteAdditions()
+		kept, stillOpen, restored := applyFavoriteAdditions(kept, adds)
+		if len(stillOpen) != len(adds) {
+			if err := storeFavoriteAdditions(stillOpen); err != nil {
+				s.logger.Warn("favorites: could not update the addition notes", "err", err)
+			}
+		}
+		if restored > 0 {
+			s.logger.Info("favorites: kept favourites starred elsewhere in a pushed list", "count", restored)
 		}
 		clean := sanitiseFavorites(kept)
 		b, err := json.Marshal(clean)
@@ -369,6 +391,10 @@ func (s *Server) deleteFavorite(w http.ResponseWriter, r *http.Request) {
 		out = append(out, favoriteRemoval{ID: id, At: time.Now().UnixMilli()})
 		err = storeFavoriteRemovals(out)
 	}
+	if err == nil {
+		// Unstarred before the desktop app took it over: nothing to take over.
+		err = dropFavoriteAddition(id)
+	}
 	favoritesMu.Unlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -382,15 +408,15 @@ func (s *Server) deleteFavorite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "removed": removed})
 }
 
-// forwardFavoriteRemoval hands a phone removal on to every other STR speaker
-// the agent knows. Best effort: a speaker that is off misses it here and gets
-// the shorter list from the desktop app once that has read the note.
+// forwardFavoriteChange hands a phone removal or addition on to every other
+// STR speaker the agent knows. Best effort: a speaker that is off misses it
+// here and gets the list from the desktop app once that has read the note.
 //
 // Each peer is first recognised by its agent's JSON version answer, the way
 // the phone-driven update finds them, so a Bose service sharing a port with
-// the agent is never sent the DELETE. local=1 stops the peer from handing it
-// on again.
-func (s *Server) forwardFavoriteRemoval(ctx context.Context, id string) {
+// the agent is never sent the change. local=1 in path stops the peer from
+// handing it on again.
+func (s *Server) forwardFavoriteChange(ctx context.Context, what, method, path string, body []byte) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
@@ -406,9 +432,9 @@ func (s *Server) forwardFavoriteRemoval(ctx context.Context, id string) {
 				if _, err := fleetGetJSON(ctx, base+"/api/agent/version", 4*time.Second, &v); err != nil || v.Version == "" {
 					continue
 				}
-				code, err := fleetDelete(ctx, base+"/api/favorites?local=1&id="+url.QueryEscape(id), 5*time.Second)
+				code, err := fleetSend(ctx, method, base+path, body, 5*time.Second)
 				if err != nil || code != http.StatusOK {
-					s.logger.Info("favorites: a speaker did not take the removal", "peer", p.Name, "code", code, "err", err)
+					s.logger.Info("favorites: a speaker did not take the "+what, "peer", p.Name, "code", code, "err", err)
 				}
 				return
 			}
@@ -417,13 +443,26 @@ func (s *Server) forwardFavoriteRemoval(ctx context.Context, id string) {
 	wg.Wait()
 }
 
-// fleetDelete sends a DELETE to a peer and reports the status code.
-func fleetDelete(ctx context.Context, u string, timeout time.Duration) (int, error) {
+// forwardFavoriteRemoval hands a phone removal on to the other speakers.
+func (s *Server) forwardFavoriteRemoval(ctx context.Context, id string) {
+	s.forwardFavoriteChange(ctx, "removal", http.MethodDelete, "/api/favorites?local=1&id="+url.QueryEscape(id), nil)
+}
+
+// fleetSend sends a request with an optional JSON body to a peer and reports
+// the status code.
+func fleetSend(ctx context.Context, method, u string, body []byte, timeout time.Duration) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, rd)
 	if err != nil {
 		return 0, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := fleetClient(timeout).Do(req)
 	if err != nil {
