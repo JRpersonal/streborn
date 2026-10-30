@@ -5335,7 +5335,22 @@ async function saveDisplay(kind, enabled) {
     } finally { clearTimeout(t); }
   }
   async function peerStatus(base) { var r = await peerCall(base, 'GET', null, 6000); return (r.ok && r.data && r.data.state) ? r.data : null; }
-  async function ownStatus() { var r = await api(SU); if (r && typeof r === 'object') { st = r; lostSince = 0; return r; } heardNothing(); return null; }
+  async function ownStatus() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; return r; } heardNothing(); return null; }
+  /* The card's own status read, with a time limit. A read that never
+     settles (the speaker restarted under it, or the phone was put away
+     with it in flight) held the poll forever: the card kept its last
+     answer, "Downloading, 9%", while the speaker had long finished the
+     update (#1339). Now it counts as "no answer" and the next read asks
+     again. */
+  async function suGet() {
+    var ctl = new AbortController(), t = setTimeout(function(){ ctl.abort(); }, 10000);
+    try {
+      var r = await fetch(SU, { cache: 'no-store', signal: ctl.signal });
+      return r.ok ? await r.json() : null;
+    } catch (e) {
+      return null;
+    } finally { clearTimeout(t); }
+  }
   /* lostSince: when this speaker last stopped answering, 0 while it answers.
      Every read of its status keeps it, so the card never paints an old
      answer as news (#1339: "Downloading, 22%" came back ten minutes into a
@@ -5484,6 +5499,12 @@ async function saveDisplay(kind, enabled) {
          only when the speaker said so or the download was through. */
       var restarting = st.state === 'rebooting' || (st.total > 0 && st.done >= st.total);
       if (restarting) show(T.suReboot, false, true);
+      /* The speaker's last word was that its internet is gone, and then it
+         went quiet: the router is off. That stays the line for the whole
+         outage, with what to do if the speaker gives up meanwhile; the card
+         no longer flips to "not answering" and to the red "not reachable"
+         when its own asking pauses (#1339). */
+      else if (st.phase === 'network') show(runActive() ? T.sfNetWait : T.sfNetWaitOne, false, true);
       else if (polling || fleetPolling) show(T.sfNoAnswer, false, true);
       else show(T.offline, true);
     }
@@ -5539,7 +5560,7 @@ async function saveDisplay(kind, enabled) {
   function suBusyState() { return !!(st && ['downloading','installing','rebooting','engine','checking'].indexOf(st.state) >= 0); }
   function suResume() { if (!polling && lostSince && suBusyState()) poll(); }
   window.suResume = suResume;
-  async function load() { var r = await api(SU); if (r && typeof r === 'object') { st = r; lostSince = 0; } else heardNothing(); return r; }
+  async function load() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; } else heardNothing(); return r; }
   /* Asks each peer of the plan directly what it runs: the port the serving
      speaker knows first, then the other agent port. */
   async function probePeer(ip, port) {
@@ -5571,6 +5592,11 @@ async function saveDisplay(kind, enabled) {
     planning = false; planFresh = true;
     if (r && typeof r === 'object') { st = r; lostSince = 0; }
     render();
+    /* The list came back while this speaker is in the middle of an update
+       nobody here is following: follow it, or its last percentage stays on
+       the card for good (#1339: "Downloading, 9%" after the speaker was
+       long on the new version). */
+    if (suBusyState() && !polling && !fleetPolling && !fleetRunning() && !runActive()) poll();
     await probePeers();
     replanIfUnreachable();
   }
