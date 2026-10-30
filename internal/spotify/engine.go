@@ -637,7 +637,13 @@ func (m *Manager) noteLibrespotLine(line string) {
 	// track can be unavailable in a region. A run of them is the account being
 	// refused wholesale, and that is what a listener experiences as a playlist
 	// racing past in silence.
-	if strings.Contains(lc, "audio key") && (strings.Contains(lc, "refused") || strings.Contains(lc, "failed retrieving")) {
+	//
+	// A newer engine stops after three refusals in a row and says so once
+	// (keydenied.go), so its run never reaches keyRefusalRunTrips: that line is
+	// the trip there. It is not a per-track refusal and is not counted.
+	if isEngineKeyDeniedLine(lc) {
+		m.noteEngineKeyDenied(line)
+	} else if strings.Contains(lc, "audio key") && (strings.Contains(lc, "refused") || strings.Contains(lc, "failed retrieving")) {
 		m.mu.Lock()
 		if time.Since(m.lastKeyRefusalAt) > keyRefusalRunGap {
 			m.keyRefusalRun = 0
@@ -645,6 +651,9 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.keyRefusalRun++
 		m.lastKeyRefusalAt = time.Now()
 		run := m.keyRefusalRun
+		// An engine that stops by itself has already done what the pause below
+		// does; asking again is harmless but pointless.
+		engineStops := m.engineStopsOnKeyDenial
 		m.mu.Unlock()
 		if run == keyRefusalRunTrips {
 			m.logger.Warn("spotify: Spotify is refusing the audio key for track after track, so nothing plays through this engine; the speaker's own Spotify entry is unaffected",
@@ -659,11 +668,16 @@ func (m *Manager) noteLibrespotLine(line string) {
 			//
 			// Quiet and best-effort: an engine that is already dead does not need
 			// to be told, and this must never become an error of its own.
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-				defer cancel()
-				_ = m.apiPostQuiet(ctx, "/player/pause", "")
-			}()
+			//
+			// Only for engines that skip on (the older builds still on speakers):
+			// a newer one has stopped itself after three refusals already.
+			if !engineStops {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+					defer cancel()
+					_ = m.apiPostQuiet(ctx, "/player/pause", "")
+				}()
+			}
 		}
 	}
 	// The engine gave up on a whole run. This is the moment the user is left
@@ -729,7 +743,15 @@ func (m *Manager) playDenialHint() string {
 	for attempt := 0; attempt < 2; attempt++ {
 		m.mu.Lock()
 		line, at := m.lastPlayFailLine, m.lastPlayFailAt
+		deniedAt := m.engineKeyDeniedAt
 		m.mu.Unlock()
+		// A newer engine refuses a play outright while it backs off after a
+		// run of refused keys (keydenied.go). Either its play-failure line
+		// names it, or its key_denied event arrived with the failure.
+		if (!at.IsZero() && time.Since(at) < 15*time.Second && isEngineKeyDeniedLine(line)) ||
+			(!deniedAt.IsZero() && time.Since(deniedAt) < 5*time.Second) {
+			return keyDeniedBackoffHint
+		}
 		if !at.IsZero() && time.Since(at) < 15*time.Second &&
 			(strings.Contains(line, "aes key") || strings.Contains(line, "audio key")) {
 			// A key request that failed because the connection to Spotify was

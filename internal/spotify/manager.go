@@ -285,6 +285,13 @@ type Manager struct {
 	lastGroupedRefusalAt time.Time
 	keyRefusalRun        int
 	keyRefusalGaveUpAt   time.Time
+	// engineKeyDeniedAt / engineKeyDeniedMsg: the newer engine's own
+	// session-level refusal (playback_error kind key_denied), see keydenied.go.
+	// engineStopsOnKeyDenial latches once the engine has shown it stops by
+	// itself, which makes the agent's refusal-run pause redundant.
+	engineKeyDeniedAt      time.Time
+	engineKeyDeniedMsg     string
+	engineStopsOnKeyDenial bool
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on

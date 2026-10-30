@@ -194,6 +194,19 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// "paused: true" 3.7 s after the resume, and the shuffle toggle was
 	// superseded).
 	loaded, busy := m.waitContextLoaded(ctx, playAt, 5*time.Second)
+	// A newer engine accepts the play and then refuses to load the track while
+	// it backs off after a run of refused audio keys (keydenied.go). Nothing is
+	// coming, and replaying from the top or waiting longer only asks again:
+	// say why instead.
+	if !loaded && m.engineKeyDeniedSince(playAt) {
+		m.endRecallStaging(stagingGen)
+		m.clearSkipCut()
+		m.mu.Lock()
+		m.clearRecallDisplayLocked()
+		m.mu.Unlock()
+		m.logger.Warn("spotify: the engine refused the recall while it waits after a run of refused audio keys", "uri", uri)
+		return fmt.Errorf("spotify play refused: %s", keyDeniedBackoffHint)
+	}
 	if !loaded && busy && !m.seekFailedSince(playAt) {
 		m.logger.Info("spotify: the engine is still loading the recalled track, waiting for it", "uri", uri)
 		loaded, _ = m.waitContextLoaded(ctx, playAt, recallSlowLoadWait)
@@ -573,6 +586,11 @@ func (m *Manager) setRepeat(ctx context.Context, on bool) {
 func (m *Manager) waitContextLoaded(ctx context.Context, since time.Time, max time.Duration) (loaded, busy bool) {
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
+		// The engine refused this load outright (key-denial back-off,
+		// keydenied.go): nothing is coming.
+		if m.engineKeyDeniedSince(since) {
+			return false, false
+		}
 		if st, ok := m.readEngineStatus(ctx); ok {
 			m.mu.Lock()
 			committed := m.lastLoadCommitAt.After(since)
