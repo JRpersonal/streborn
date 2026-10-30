@@ -121,3 +121,35 @@ func TestLeaveSetupLeavesAnAskedSetupAlone(t *testing.T) {
 		}
 	}
 }
+
+// #1573: the firmware's own setup access point on a speaker with no network is
+// held for leaveSetupOOBHold and then cleared as before; everything the watcher
+// was written for (#367's stuck source, the 2026-07-09 out-of-box setup on a
+// speaker that has a network, a setup page that has done its job) is still
+// cleared at once.
+func TestLeaveSetupHoldsOOB(t *testing.T) {
+	now := time.Date(2026, 10, 28, 3, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name       string
+		setupState string
+		gateway    string
+		heldSince  time.Time
+		want       bool
+	}{
+		{"firmware-raised OOB, no route: hold begins", setupStateAPOOB, "", time.Time{}, true},
+		{"firmware-raised OOB, gateway 0.0.0.0: hold begins", setupStateAPOOB, "0.0.0.0", time.Time{}, true},
+		{"inside the hold", setupStateAPOOB, "", now.Add(-leaveSetupOOBHold + time.Minute), true},
+		// #157: a cold-boot association failure must not be stranded on its
+		// own access point; past the hold the rescue gets its turn.
+		{"hold elapsed", setupStateAPOOB, "", now.Add(-leaveSetupOOBHold), false},
+		{"network back during the hold", setupStateAPOOB, "192.0.2.1", now.Add(-time.Minute), false},
+		{"OOB on a speaker with a network (2026-07-09, finished setup page)", setupStateAPOOB, "192.0.2.1", time.Time{}, false},
+		{"#367 stuck source", "SETUP_INACTIVE", "", time.Time{}, false},
+		{"unreadable /setup", "unreadable", "", time.Time{}, false},
+	}
+	for _, c := range cases {
+		if got := leaveSetupHoldsOOB(c.setupState, c.gateway, c.heldSince, now); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
