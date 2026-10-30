@@ -203,6 +203,35 @@ else
     fail "there are now $PUSHES goform_wlan_push call sites; a new one may need the same guard"
 fi
 
+# ---- str_creds_current: the veto before every push (#1573) -------------------
+#
+# A setup through Bose's own page can keep the network name and change the
+# password. The old SSID-only compare let STR's stale password through goform
+# in exactly that case, so the helper compares both.
+
+eval "$(extract str_creds_current)"
+TMPD=$(mktemp -d 2>/dev/null || echo "/tmp/str_creds_test.$$")
+mkdir -p "$TMPD"
+CREDS="$TMPD/wlan-creds"
+printf 'SSID=Home Net\nPASS=old pass&1\n' > "$CREDS"
+str_creds_current "Home Net" "old pass&1" "$CREDS"; check "the stored set is current" 0 $?
+str_creds_current "Home Net" "new pass" "$CREDS"; check "same network, other password is not current" 1 $?
+str_creds_current "Other" "old pass&1" "$CREDS"; check "other network is not current" 1 $?
+str_creds_current "" "" "$CREDS"; check "an empty set is never current" 1 $?
+mv "$CREDS" "$CREDS.superseded"
+str_creds_current "Home Net" "old pass&1" "$CREDS"; check "retired credentials are not current" 1 $?
+rm -rf "$TMPD"
+
+for block in "hands-off: no lease after 90s" "BCO cold-boot re-association watchdog"; do
+    CODE=$(awk -v start="$block" 'index($0, start) { on = 1 } on { print } on && /^    fi$/ { exit }' "$RUNSH" | grep -v "^[[:space:]]*#")
+    V=$(printf '%s' "$CODE" | grep -n "str_creds_current" | tail -1 | cut -d: -f1)
+    P=$(printf '%s' "$CODE" | grep -n "goform_wlan_push" | head -1 | cut -d: -f1)
+    if [ -n "$V" ] && [ -n "$P" ] && [ "$V" -lt "$P" ]; then
+        ok
+    else
+        fail "'$block' does not re-check STR's stored credentials before it pushes (veto=$V push=$P)"
+    fi
+done
 
 if [ "$FAILED" -eq 0 ]; then
     echo "setup guard: $CASES checks, all passed"
