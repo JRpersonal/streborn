@@ -223,6 +223,8 @@
   "library.root": "الجذر",
   "library.emptyFolder": "هذا المجلد فارغ.",
   "library.play": "تشغيل",
+  "library.playFromHere": "من هنا",
+  "library.playFromHereHint": "تشغيل هذا المقطع وكل ما يليه في هذا المجلد",
   "library.saveAsPreset": "حفظ كإعداد مسبق",
   "library.searchPlaceholder": "ابحث في هذا المجلد...",
   "library.wholeSearchPlaceholder": "ابحث في مكتبتك الموسيقية كلها...",

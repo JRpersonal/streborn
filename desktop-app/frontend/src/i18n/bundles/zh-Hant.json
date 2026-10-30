@@ -236,6 +236,8 @@
   "library.root": "根目錄",
   "library.emptyFolder": "這個資料夾是空的。",
   "library.play": "播放",
+  "library.playFromHere": "從這裡開始",
+  "library.playFromHereHint": "播放這首曲目及此資料夾中之後的所有曲目",
   "library.saveAsPreset": "存成預設",
   "library.searchPlaceholder": "搜尋這個資料夾...",
   "library.wholeSearchPlaceholder": "搜尋整個音樂庫...",

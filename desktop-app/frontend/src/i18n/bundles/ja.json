@@ -223,6 +223,8 @@
   "library.root": "ルート",
   "library.emptyFolder": "このフォルダーは空です。",
   "library.play": "再生",
+  "library.playFromHere": "ここから",
+  "library.playFromHereHint": "この曲とフォルダー内の以降の曲をすべて再生",
   "library.saveAsPreset": "プリセットとして保存",
   "library.searchPlaceholder": "このフォルダー内を検索...",
   "library.wholeSearchPlaceholder": "ミュージックライブラリ全体を検索...",

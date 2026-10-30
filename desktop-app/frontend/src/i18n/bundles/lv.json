@@ -223,6 +223,8 @@
   "library.root": "Saknes mape",
   "library.emptyFolder": "Šī mape ir tukša.",
   "library.play": "Atskaņot",
+  "library.playFromHere": "No šejienes",
+  "library.playFromHereHint": "Atskaņot šo celiņu un visus nākamos šajā mapē",
   "library.saveAsPreset": "Saglabāt kā iestatījumu",
   "library.searchPlaceholder": "Meklēt šajā mapē...",
   "library.wholeSearchPlaceholder": "Meklēt visā mūzikas bibliotēkā...",
