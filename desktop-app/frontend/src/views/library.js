@@ -28,13 +28,13 @@ import {
   RemoveManualMediaServer,
   PlayURL,
   StartQueue,
-  SaveLibraryPreset,
   SaveFolderPreset,
   Status,
   EnableBoxMediaServer,
   boxFetch,
 } from '../api.js';
 import { orderLongFolder } from '../trackorder.js';
+import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -577,6 +577,9 @@ async function libraryPlay(item) {
       // line shows them; the speaker reports neither for a direct file (#1394).
       artist: item.artist || '',
       album: item.album || '',
+      // The track's object on its server, so a key saved from this play
+      // survives the server renumbering its file addresses (#919).
+      ref: libraryTrackRef(item, libraryItemUDN(item)),
       at: Date.now(),
     };
     // Put the track on the now-playing line now, as a station play does, and
@@ -769,6 +772,9 @@ function librarySaveFolderAsPreset() {
       artist: it.artist || '',
       // Shown with the artist next to the running song, as on this row (#1033).
       album: it.album || '',
+      // The track's object on the server, so the speaker can match it up again
+      // when the server renumbers its file addresses (#919).
+      ...(it.id ? { object_id: String(it.id) } : {}),
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));
@@ -834,6 +840,17 @@ function librarySourceName() {
   return (srv && (srv.friendlyName || srv.address)) || '';
 }
 
+// libraryItemUDN is the media server a track belongs to: the server a
+// whole-library search hit names, else the open one. '' when a search hit's
+// server is not in the list; the speaker then finds it by name.
+function libraryItemUDN(item) {
+  if (item && item.server) {
+    const srv = libState.servers.find(s => (s.friendlyName || s.address) === item.server);
+    return (srv && srv.udn) || '';
+  }
+  return libState.currentUDN || '';
+}
+
 function librarySaveAsPreset(item) {
   if (!state.currentBox) {
     showToast(t('library.toastNoBox') || t('common.pickBox'));
@@ -850,9 +867,12 @@ function librarySaveAsPreset(item) {
     title: t('library.assignTitle', { name: getBoxLabel(state.currentBox) }),
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
     onPick: async (i) => {
-      await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
-        item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source,
-        item.durationSec || 0);
+      await saveLibraryTrackPreset(state.currentBox.host, state.currentBox.port, i, {
+        name: item.title || '(track)', url: item.streamURL, art: item.albumArtURL || '',
+        source, durationSec: item.durationSec || 0,
+        // The track's object on its server (#919).
+        ref: libraryTrackRef(item, libraryItemUDN(item)),
+      });
       showToast(t('preset.savedToKey', { n: keyNum(i, t), name: item.title || '(track)' }));
     },
   });

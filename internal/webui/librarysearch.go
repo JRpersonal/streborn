@@ -151,6 +151,8 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = reg.Name
 		}
+		// A key saved from these hits carries each track's object id (#919).
+		s.noteLibraryItems(reg.ID, items)
 		for _, it := range items {
 			if it.StreamURL == "" {
 				continue

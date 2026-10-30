@@ -545,6 +545,8 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 	// keys there before anyone presses one (#1366). The desktop app calls this
 	// endpoint once per server it opened in its own Library for exactly this.
 	s.healQueuePresetsFromBrowse(ctx, srv, res)
+	// A key saved from this listing carries each track's object id (#919).
+	s.noteLibraryItems(udn, res.Items)
 	// An album the server lists alphabetically is shown, and played by "Play
 	// all", in track order (#1487); dlna.OrderBrowsePage has the rule.
 	res = dlna.OrderBrowsePage(ctx, srv, id, start, res)

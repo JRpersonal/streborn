@@ -120,6 +120,10 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 	// self-proxy stream heal below; the box side re-wraps at write time
 	// anyway, so the display loses nothing.
 	p.Art = healSelfArtProxy(p.Art)
+	// A library key saved from a listing this agent served (the phone page)
+	// gets the track's object id, so a server that renumbers its file URLs
+	// does not kill it (#919, libraryreresolve.go).
+	s.fillLibraryRefs(&p)
 	// A Pandora or iHeartRadio station (type native) is the speaker's own
 	// item and has no stream to gate; see nativeservice.go.
 	if p.Type == presets.TypeNative {
