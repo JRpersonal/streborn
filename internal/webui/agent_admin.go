@@ -1487,11 +1487,7 @@ func wlanCredsWarningWarranted() bool {
 	if hasSavedWLANCreds() || wlanCredsRetired() {
 		return false
 	}
-	mode, err := os.ReadFile(filepath.Join(strNANDDir, "wlan-mode"))
-	if err != nil {
-		return false
-	}
-	return wlanCredsWarningFor(strings.TrimSpace(string(mode)), firmwareWifiProfileSSID)
+	return wlanCredsWarningFor(readWlanMode(), firmwareWifiProfileSSID)
 }
 
 // wlanCredsWarningFor is the decision for a speaker without STR's own copy,

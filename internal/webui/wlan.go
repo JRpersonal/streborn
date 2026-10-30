@@ -482,9 +482,14 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 		}
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
 		// Same store, one last chance to record the new network before the
-		// reboot. Known to fail on taigan; logged either way and never
-		// allowed to hold up the reboot that actually applies the move.
-		s.commitFirmwareProfile(context.Background(), ssid, password)
+		// reboot, and never allowed to hold up the reboot that actually
+		// applies the move. Not on a Portable: see commitBeforeBCOReboot.
+		if commitBeforeBCOReboot(readWlanMode()) {
+			s.commitFirmwareProfile(context.Background(), ssid, password)
+		} else {
+			s.logger.Info("WLAN: Portable, the boot path writes the new network into the speaker's own store (AirplayConfiguration.xml); its network API never takes it here",
+				"wantTag", ssidTag(ssid))
+		}
 		// Weak intent: this chassis has no runtime channel at all, so the move
 		// is requested here and can only ever be checked against the firmware's
 		// STORED profile after the reboot, never against a real association.
@@ -494,6 +499,30 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 		touchWLANApplyMarker()
 		rebootBox()
 	}
+}
+
+// commitBeforeBCOReboot reports whether the BCO arm of a Wi-Fi change asks the
+// firmware's network API to store the new network before it reboots, by the
+// speaker's wlan-mode.
+//
+// Never on a Portable ("taigan-bco"). Its NetManager accepts the POST and
+// never processes it, so the call ran into its full 20 s budget on every
+// change, held the reboot up by that much and left a warning in the bundle
+// saying a cold boot might return to the old network (live on the test
+// Portable, 2026-10-30). Neither was true: run.sh's boot path writes the
+// profile into AirplayConfiguration.xml, which is where this chassis keeps
+// it, and run.sh itself skips the same dead call there. The scm bridge boxes
+// ("bco") keep the call, because their NetManager does record the profile
+// (2026-07-09, scm SoundTouch 30), it only never associates from it.
+func commitBeforeBCOReboot(mode string) bool { return mode != "taigan-bco" }
+
+// readWlanMode is run.sh's chassis verdict from NAND, "" when unreadable.
+func readWlanMode() string {
+	b, err := os.ReadFile(strNANDDir + "/wlan-mode")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // commitFirmwareProfile teaches the SPEAKER'S OWN network store the new Wi-Fi
