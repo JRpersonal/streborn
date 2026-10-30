@@ -27,3 +27,23 @@ func TestPhoneRemoteLightsTheNativeKey(t *testing.T) {
 		t.Error("markPlaying does not light a native key")
 	}
 }
+
+// A stopped speaker still reports the station's location. The desktop app keeps
+// that key dark (#1526); the phone page lit it from the location alone, so a
+// group wake that left the main speaker stopped on a station lit its key here
+// (#1629). The gate has to sit before the pending-press branch, so a key just
+// pressed still lights at once.
+func TestPhoneRemoteKeepsAStoppedSpeakersKeyDark(t *testing.T) {
+	mp := indexHTML[strings.Index(indexHTML, "function markPlaying("):]
+	mp = mp[:strings.Index(mp, "\n}\n")]
+	if !strings.HasPrefix(mp, "function markPlaying(loc, queue, spKey, state)") {
+		t.Fatal("markPlaying no longer takes the play state")
+	}
+	gate := strings.Index(mp, "if (state === 'STOP_STATE') n = 0;")
+	if gate < 0 {
+		t.Fatal("markPlaying lights a key on a stopped speaker")
+	}
+	if pend := strings.Index(mp, "if (pendingStart.slot)"); pend < 0 || pend < gate {
+		t.Error("the STOP_STATE gate must come before the pending-press branch")
+	}
+}

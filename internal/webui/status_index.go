@@ -212,7 +212,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		s.setPlayingKeyHeader(w, body)
 		w.WriteHeader(code)
-		_, _ = w.Write(s.withStationName(body))
+		_, _ = w.Write(s.statusForClients(body))
 		return
 	}
 	s.statusMu.Unlock()
@@ -230,7 +230,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		s.setPlayingKeyHeader(w, []byte(boxErr.Body))
 		w.WriteHeader(boxErr.Status)
-		_, _ = w.Write(s.withStationName([]byte(boxErr.Body)))
+		_, _ = w.Write(s.statusForClients([]byte(boxErr.Body)))
 		return
 	}
 	if err != nil {
@@ -262,7 +262,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 			s.setPlayingKeyHeader(w, body)
 			w.WriteHeader(code)
-			_, _ = w.Write(s.withStationName(body))
+			_, _ = w.Write(s.statusForClients(body))
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
@@ -272,7 +272,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	s.setPlayingKeyHeader(w, body)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(s.withStationName(body))
+	_, _ = w.Write(s.statusForClients(body))
+}
+
+// statusForClients is the now_playing body as /api/status serves it: the
+// speaker's own XML with the station name STR started (withStationName) and a
+// quiet wake's leftover pause reported as stopped (wokenStop, #1629).
+func (s *Server) statusForClients(body []byte) []byte {
+	return s.wokenStop.apply(s.withStationName(body))
 }
 
 // withStationName puts the station STR started back into a now_playing body

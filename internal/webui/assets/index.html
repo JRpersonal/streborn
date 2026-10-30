@@ -3207,12 +3207,18 @@ function nativeSlot(loc, list) {
 // did not, so a key saved from what plays stayed dark here (#1077 issues 19,
 // 20). The agent decides, so both apps follow one rule; an older agent sends
 // no header and the page behaves as before.
-function markPlaying(loc, queue, spKey) {
+//
+// state is the speaker's playStatus. A stopped speaker still reports the
+// station's location, but the key is not playing, so it stays dark: the same
+// rule as the desktop app's presetMayLight (#1526, #1629). A key just pressed
+// still lights at once through pendingStart below.
+function markPlaying(loc, queue, spKey, state) {
   var grid = document.getElementById('presets');
   if (!grid) return;
   // Keys 7..12 are the second row (#1110); an agent without it never names them.
   var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
     (spKey >= 1 && spKey <= 12 ? spKey : 0) || queueSlot(queue, lastPresetList);
+  if (state === 'STOP_STATE') n = 0;
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
@@ -3333,7 +3339,7 @@ async function refreshStatus() {
   // still holds the title of whatever radio stream it carried last (#274).
   const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
   // The same read lights the key a folder was started from (#1029).
-  markPlaying(nowLoc, queue, spKey);
+  markPlaying(nowLoc, queue, spKey, state);
   if (!song && playing && queue) song = queueSongMeta(queue);
   // And only while the location is a proxied radio stream: a single library
   // track is UPNP too, and the proxy still held the station's song for a few
