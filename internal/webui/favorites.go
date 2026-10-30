@@ -62,6 +62,16 @@ type Favorite struct {
 	// copy of the list that still carries it. Lists from before this field
 	// have none, which reads as "starred long ago".
 	StarredAt int64 `json:"starredAt,omitempty"`
+	// Source, Mime and DurationSec mark a music-library favourite (an album,
+	// a playlist or a track starred from Recently played, #1605). Source is
+	// "upnp" for those and empty for a radio station. Without them the list
+	// came back from the speaker as plain stations: played as radio, the
+	// item was filed under Radio with no cover, a folder played its first
+	// track only (#978) and a single file could loop (#817). For a folder
+	// the UUID holds the card's "queue:" key the speaker rebuilds it from.
+	Source      string `json:"source,omitempty"`
+	Mime        string `json:"mime,omitempty"`
+	DurationSec int    `json:"durationSec,omitempty"`
 }
 
 // key names a favourite the way the desktop app does (favId in main.js): the

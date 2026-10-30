@@ -73,6 +73,12 @@ function favMinimal(s) {
     // When it was starred (#1389). A removal on a phone page only takes a star
     // set BEFORE it, so starring a removed station again here sticks.
     starredAt: s.starredAt || 0,
+    // A music-library item starred from Recently played (#1605): the mark
+    // plus MIME and length, so Favourites plays it the library way. Undefined
+    // on a radio station, and dropped with it.
+    source: s.source === 'upnp' ? 'upnp' : undefined,
+    mime: s.mime || undefined,
+    durationSec: s.durationSec > 0 ? s.durationSec : undefined,
   };
 }
 
