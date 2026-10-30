@@ -125,3 +125,36 @@ func TestRenderSleepDisplayPNG(t *testing.T) {
 		writePNG(t, filepath.Join(dir, "sleep-"+name+"@3x.png"), r.full, 3)
 	}
 }
+
+// Renders the examples the desktop app shows next to the display settings:
+// each "Show" choice with and without the time, and the time alone. The
+// TrackText per choice is the one webui.panelText builds for it. Same switch:
+//
+//	STR_DISPLAY_PNG_DIR=$PWD/desktop-app/frontend/src/assets/images/display go test ./internal/oled -run SettingsPreviewPNG
+func TestRenderSettingsPreviewPNG(t *testing.T) {
+	dir := os.Getenv("STR_DISPLAY_PNG_DIR")
+	if dir == "" {
+		t.Skip("STR_DISPLAY_PNG_DIR not set")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 20, 15, 42, 0, 0, time.Local)
+	playing := trackAnim{playing: true, frame: 3}
+	modes := map[string]TrackText{
+		"both":   {Station: "WDR 2", Artist: "Herbert Grönemeyer", Title: "Männer"},
+		"artist": {Station: "WDR 2", Title: "Herbert Grönemeyer"},
+		"title":  {Station: "WDR 2", Title: "Männer"},
+	}
+	render := func(name string, tt TrackText) {
+		buf := make([]byte, FrameSize)
+		renderTrack(tt.sanitized(), at, playing, 0, 0, 0, buf)
+		writePNG(t, filepath.Join(dir, "preview-"+name+".png"), buf, 2)
+	}
+	for mode, tt := range modes {
+		render(mode, tt)
+		tt.Clock = true
+		render(mode+"-clock", tt)
+	}
+	render("clock", TrackText{Station: "WDR 2", Clock: true})
+}

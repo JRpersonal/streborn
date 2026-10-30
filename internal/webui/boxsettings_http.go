@@ -680,12 +680,15 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		active, why := s.displayTrackActiveNow(r.Context())
+		enabled := s.displayTrackEnabled()
 		writeJSON(w, http.StatusOK, map[string]any{
-			// false on a Wave: its segment display shows neither STR's panel
-			// nor a now-playing title, so the setting could only cost audio
-			// gaps there (#1305).
-			"supported": !s.segmentDisplayOnly(),
-			"enabled":   s.displayTrackEnabled(),
+			// false where there is no display to show a title on: a Wave,
+			// whose segment display shows neither STR's panel nor a title
+			// (#1305), and a speaker without any display, an ST10, where the
+			// setting could only cost audio gaps. One that was switched on
+			// there stays offered so it can be switched off again.
+			"supported": s.speakerHasDisplay() || (enabled && !s.segmentDisplayOnly()),
+			"enabled":   enabled,
 			"mode":      s.displayTrackMode(),
 			// activeNow says whether the setting can do anything on THIS speaker
 			// right now. A follower in a group refuses every display write, so

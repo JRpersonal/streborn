@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "Głośnik przed chwilą nie odpowiedział, więc to ustawienie jest nieznane (może się właśnie restartować). Otwórz ustawienia ponownie za minutę.",
   "settingsView.displayTrackModeArtist": "Wykonawca",
   "settingsView.displayTrackModeBoth": "Oba",
+  "settingsView.displayPreviewAlt": "Przykład wyświetlacza głośnika",
+  "settingsView.displayPreviewCaption": "Tak to wygląda na głośniku (przykład)",
   "settingsView.displayTrackModeLabel": "Pokaż:",
   "settingsView.displayTrackModeTitle": "Tytuł",
   "settingsView.displayTrackSavedToast": "Ustawienie wyświetlania zapisane.",

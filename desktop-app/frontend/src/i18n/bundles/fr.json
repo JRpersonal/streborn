@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "L'enceinte n'a pas répondu à l'instant, ce réglage est donc inconnu (elle redémarre peut-être). Rouvrez les réglages dans une minute.",
   "settingsView.displayTrackModeArtist": "Artiste",
   "settingsView.displayTrackModeBoth": "Les deux",
+  "settingsView.displayPreviewAlt": "Exemple de l'écran de l'enceinte",
+  "settingsView.displayPreviewCaption": "Voici ce qu'affiche l'enceinte (exemple)",
   "settingsView.displayTrackModeLabel": "Afficher :",
   "settingsView.displayTrackModeTitle": "Titre",
   "settingsView.displayTrackSavedToast": "Réglage d'affichage enregistré.",
