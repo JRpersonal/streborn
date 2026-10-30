@@ -153,12 +153,12 @@ low and measurable, not aspirational:
 5. **Legal pages complete.** Website imprint, privacy policy, and
    their German equivalents have no placeholder text.
 
-Additional models and Wails sandboxing are post-1.0. Code signing is
-done on both desktop platforms: Windows installers are Certum-signed
-since v0.9.20, the macOS app and DMG are Developer ID signed and
-Apple-notarized since v0.9.33. Forward-looking ideas beyond v1.0,
-currently an iOS PWA proposal and a factory-reset wizard for the
-desktop app, live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Code signing is done on both desktop platforms: Windows installers are
+Certum-signed since v0.9.20, the macOS app and DMG are Developer ID
+signed and Apple-notarized since v0.9.33, and the app updates itself in
+place on Windows, macOS and Linux. What comes next is the wish list:
+the Ideas discussions, ordered by votes, indexed in discussion #1591.
+[`docs/ROADMAP.md`](docs/ROADMAP.md) points there and keeps the 1.0 bar.
 
 ## Build version stamping
 

@@ -272,21 +272,13 @@ reinstall.
 
 ## Hardening roadmap
 
-The following items are planned before STR is recommended for users
-who cannot evaluate the speaker firmware caveats above on their own.
-Issues and PRs welcome.
-
-- Provision a fresh credential for any administrative interface the
-  stock firmware exposes, on the first boot of the agent, and store
-  the resulting state inside NAND so it survives reboots.
-- Where the firmware permits, disable administrative remote access
-  entirely once provisioning is complete.
-- Surface a clear status indicator in the desktop app for whether
-  the hardening step has run successfully on each discovered
-  speaker.
-- Publish a step-by-step user guide for putting the speaker on its
-  own VLAN, for users who prefer network-level isolation over
-  agent-managed hardening.
+SSH is closed in normal operation since v0.8.1: it follows the install
+stick, or the opt-in marker described above. What remains is tracked in
+discussion [#1589](https://github.com/JRpersonal/streborn/discussions/1589):
+protecting the agent's update, engine and SSH endpoints, while playback
+control stays open to every device on the LAN. A step-by-step guide for
+putting the speakers on their own VLAN, for users who prefer network-level
+isolation, is still to be written. Issues and PRs welcome.
 
 The corresponding code lives under `internal/autopair/`,
 `internal/tlsgen/`, `usb-stick/setup-tls.sh`, and
