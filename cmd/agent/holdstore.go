@@ -29,7 +29,9 @@ var errNotKeepable = errors.New("not a station STR can keep")
 
 // errTapHoldRowTwo refuses the firmware's own store of a key whose hold
 // follows a tap of it: that gesture saves onto the second row (tapholdsave.go).
-var errTapHoldRowTwo = errors.New("the hold follows a tap: it saves onto the key's second row")
+// It wraps marge.ErrHeldStoreHandled, so the refusal is not reported to the
+// app as a long press that could not be kept: the save went to row 2.
+var errTapHoldRowTwo = fmt.Errorf("the hold follows a tap: it saves onto the key's second row: %w", marge.ErrHeldStoreHandled)
 
 // heldLive is what the keeper reads from the running agent beyond the preset
 // store. Any func may be nil (tests, or a hold that lands before the web

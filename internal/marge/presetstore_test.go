@@ -3,6 +3,7 @@ package marge
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -377,5 +378,19 @@ func TestHeldRefusalOfOwnWriteEchoIsLoggedNotRecorded(t *testing.T) {
 	}
 	if out := logBuf.String(); !strings.Contains(out, "cannot map onto a preset") || !strings.Contains(out, "ownWriteEcho=true") {
 		t.Fatalf("refusal WARN missing or not marked as own-write echo:\n%s", out)
+	}
+}
+
+// A store the keeper declines because the gesture was saved elsewhere (a
+// tap+hold onto the key's second row) worked for the owner: no refusal may
+// be recorded, or the app says the save failed (2026-10-30).
+func TestHeldStoreHandledElsewhereIsNotARefusal(t *testing.T) {
+	noOwnWrites(t)
+	s := newKeeperServer(t, func(HeldItem) error {
+		return fmt.Errorf("tap+hold: %w", ErrHeldStoreHandled)
+	})
+	putHeld(t, s, 1)
+	if r, ok := s.LastHeldRefusal(); ok {
+		t.Fatalf("a store handled on row 2 was recorded as a refused long press: %+v", r)
 	}
 }
