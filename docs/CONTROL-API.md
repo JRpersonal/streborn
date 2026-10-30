@@ -127,15 +127,16 @@ takes the item from what the speaker plays.
 
 The starred stations the desktop app keeps and the phone remote shows. The
 desktop app owns the list: it pushes the whole list to every speaker whenever
-it changes, and it learns a removal made elsewhere only from the speaker's
-removal notes.
+it changes, and it learns a removal or addition made elsewhere only from the
+speaker's notes.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`    | `/api/favorites` | - | The list: `[{"stationuuid","name","url","url_resolved","codec","bitrate","favicon","country","homepage","source","mime","durationSec"}]`. A favourite's key is `stationuuid`, else `name\|url`. |
 | `DELETE` | `/api/favorites?id=<key>` | - | Remove one favourite. This is the call for a remote app. It writes a removal note, hands the removal on to every other STR speaker, and the desktop app takes the favourite off its own list within seconds. |
-| `GET`    | `/api/favorites?removed=1` | - | The removal notes: `{"removed":[{"id","at"}]}`. |
-| `PUT`    | `/api/favorites` | the whole list | The desktop app's sync. Do not use it to remove a favourite: a shorter list writes no removal note, so the desktop app puts the favourite back with its next push and the other speakers never hear of it. |
+| `POST`   | `/api/favorites` | one favourite: `{"stationuuid","name","url","url_resolved",...}` | Add one favourite. This is the call for a remote app. `name` and an http(s) `url` or `url_resolved` are required. It stores the favourite, writes an addition note, hands it on to every other STR speaker, and the desktop app stars it within seconds. Answers `{"ok":true,"added":<bool>,"id":"<key>"}`; `added` is false when the speaker already had it. |
+| `GET`    | `/api/favorites?removed=1` | - | The notes: `{"removed":[{"id","at"}],"added":[{"id","at","fav"}]}`. An addition note lasts until the desktop app has taken the favourite over. |
+| `PUT`    | `/api/favorites` | the whole list | The desktop app's sync. Do not use it to add or remove a favourite: a changed list writes no note, so the desktop app undoes it with its next push and the other speakers never hear of it. |
 
 ## Alarm clock
 

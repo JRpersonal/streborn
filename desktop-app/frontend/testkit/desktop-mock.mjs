@@ -33,7 +33,7 @@ export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CopyPresetsAcrossBoxes', 'DeletePreset',
-  'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FormZone',
+  'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
@@ -173,6 +173,9 @@ export function installDesktopMock({ scenario, demo }) {
     FormZone: () => ({ ok: true }),
     DissolveZone: () => ({ ok: true }),
     WakeBox: () => ({}),
+    // No favourite removed or starred on a phone (#1389, #1621): the app's
+    // own list stays as it is.
+    FavoriteRemovals: () => JSON.stringify({ removed: [], added: [] }),
     // Durable "already seen" flags: true keeps the one-time invites away.
     GetAppFlag: () => true,
     SetAppFlag: () => undefined,
