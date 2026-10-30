@@ -88,7 +88,12 @@ func (s *Server) handleBoxWLANScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPut) {
+	if !requireMethod(w, r, http.MethodPut, http.MethodDelete) {
+		return
+	}
+	// DELETE forgets the Wi-Fi altogether, cabled speakers only (wlanclear.go).
+	if r.Method == http.MethodDelete {
+		s.handleBoxWLANClear(w, r)
 		return
 	}
 	if !isLocalLAN(r.RemoteAddr) {
