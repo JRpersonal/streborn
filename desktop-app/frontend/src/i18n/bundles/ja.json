@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "スピーカーが今は応答しなかったため、この設定は不明です（再起動中の可能性があります）。1分後にもう一度設定を開いてください。",
   "settingsView.displayTrackModeArtist": "アーティスト",
   "settingsView.displayTrackModeBoth": "両方",
+  "settingsView.displayPreviewAlt": "スピーカー表示の例",
+  "settingsView.displayPreviewCaption": "スピーカーでの表示（例）",
   "settingsView.displayTrackModeLabel": "表示:",
   "settingsView.displayTrackModeTitle": "タイトル",
   "settingsView.displayTrackSavedToast": "表示設定を保存しました。",

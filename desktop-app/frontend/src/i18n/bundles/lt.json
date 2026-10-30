@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "Garsiakalbis ką tik neatsakė, todėl šis nustatymas nežinomas (galbūt jis paleidžiamas iš naujo). Atidarykite nustatymus dar kartą po minutės.",
   "settingsView.displayTrackModeArtist": "Atlikėjas",
   "settingsView.displayTrackModeBoth": "Abu",
+  "settingsView.displayPreviewAlt": "Garsiakalbio ekrano pavyzdys",
+  "settingsView.displayPreviewCaption": "Taip atrodo garsiakalbyje (pavyzdys)",
   "settingsView.displayTrackModeLabel": "Rodyti:",
   "settingsView.displayTrackModeTitle": "Pavadinimas",
   "settingsView.displayTrackSavedToast": "Rodymo nustatymas išsaugotas.",

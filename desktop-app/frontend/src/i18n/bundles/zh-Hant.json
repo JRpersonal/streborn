@@ -922,6 +922,8 @@
   "settingsView.displayTrackModeArtist": "演出者",
   "settingsView.displayTrackModeTitle": "曲名",
   "settingsView.displayTrackModeBoth": "兩者",
+  "settingsView.displayPreviewAlt": "喇叭顯示畫面範例",
+  "settingsView.displayPreviewCaption": "在喇叭上看起來是這樣（範例）",
   "settingsView.displayTrackSavedToast": "顯示設定已儲存。",
   "settingsView.displayMsgHeading": "在喇叭螢幕上顯示訊息",
   "settingsView.displayMsgHelp": "當按鍵無法播放時（Spotify 未設定、電台沒有回應、沒有網路），喇叭會在螢幕上顯示約 10 秒的簡短訊息。不會發出聲音，音量也不會改變。",

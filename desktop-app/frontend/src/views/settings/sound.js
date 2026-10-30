@@ -35,6 +35,24 @@ import {
   SetAirplayOpt,
 } from '../../api.js';
 import { deps, toggleDeps, withButtonPending } from './shared.js';
+import { displayPreviewName } from './displaypreview.js';
+import previewBoth from '../../assets/images/display/preview-both.png';
+import previewBothClock from '../../assets/images/display/preview-both-clock.png';
+import previewArtist from '../../assets/images/display/preview-artist.png';
+import previewArtistClock from '../../assets/images/display/preview-artist-clock.png';
+import previewTitle from '../../assets/images/display/preview-title.png';
+import previewTitleClock from '../../assets/images/display/preview-title-clock.png';
+import previewClock from '../../assets/images/display/preview-clock.png';
+
+// The example pictures next to the display settings, rendered by the panel's
+// own code (internal/oled TestRenderSettingsPreviewPNG), keyed by
+// displayPreviewName.
+const DISPLAY_PREVIEWS = {
+  both: previewBoth, 'both-clock': previewBothClock,
+  artist: previewArtist, 'artist-clock': previewArtistClock,
+  title: previewTitle, 'title-clock': previewTitleClock,
+  clock: previewClock,
+};
 
 export function renderSoundSections() {
   return {
@@ -82,6 +100,10 @@ export function renderSoundSections() {
         <button class="btn btn-mini toggle-btn" id="displayClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
+      <figure class="display-preview hidden" id="displayPreview">
+        <img id="displayPreviewImg" alt="${escapeAttr(t('settingsView.displayPreviewAlt'))}" width="192" height="150">
+        <figcaption class="muted small">${escapeHtml(t('settingsView.displayPreviewCaption'))}</figcaption>
+      </figure>
       <div class="format-warn" id="displayTrackWarn">
         <div class="warn-icon-inline">&#9888;</div>
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
@@ -307,13 +329,27 @@ export function wireSoundSections(ctx) {
   // Until the speaker says otherwise, assume the re-buffer path: the warning
   // stays and the confirm runs (the safe side for older agents).
   let dtOnPanel = false;
+  // The example picture follows the three choices as they are painted: track
+  // on/off, what to show, and the time. Only where STR draws the panel, since
+  // that is what the pictures show.
+  let dtEnabled = null;
+  let dcEnabled = null;
+  const dpFig = $('displayPreview');
+  const dpImg = $('displayPreviewImg');
+  const paintPreview = () => {
+    const name = dtOnPanel ? displayPreviewName(dtEnabled, dtMode, dcEnabled) : '';
+    if (dpFig) dpFig.classList.toggle('hidden', !name);
+    if (dpImg && name) dpImg.src = DISPLAY_PREVIEWS[name];
+  };
   const paintDtPath = () => {
     if (dtWarn) dtWarn.classList.toggle('hidden', dtOnPanel);
     if (dtHelp) dtHelp.classList.toggle('hidden', dtOnPanel);
     if (dtHelpPanel) dtHelpPanel.classList.toggle('hidden', !dtOnPanel);
+    paintPreview();
   };
   const paintDtMode = () => {
     for (const [m, b] of Object.entries(dtModeBtns)) { if (b) b.classList.toggle('active', m === dtMode); }
+    paintPreview();
   };
   // enabled is true, false, or null for "could not be read". A failed read used
   // to paint Off, so a speaker that was restarting showed the setting off while
@@ -332,6 +368,8 @@ export function wireSoundSections(ctx) {
       paintDtMode();
     },
     onPaint: (enabled) => {
+      dtEnabled = enabled;
+      paintPreview();
       if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
       if (dtUnknown) dtUnknown.classList.toggle('hidden', enabled !== null);
       if (enabled === true) paintDtMode();
@@ -378,6 +416,10 @@ export function wireSoundSections(ctx) {
       show: !!r && r.supported === true,
       enabled: r && typeof r.enabled === 'boolean' ? r.enabled : null,
     }),
+    onPaint: (enabled) => {
+      dcEnabled = enabled;
+      paintPreview();
+    },
     onLoaded: (st) => {
       const dcHelp = $('displayClockHelp');
       if (st.show && dcHelp) dcHelp.classList.remove('hidden');

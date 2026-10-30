@@ -3629,3 +3629,8 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .setup-done-group[open] > summary::before { transform: rotate(90deg); }
 .setup-done-group > summary:hover { border-color: var(--c-text-2); }
 .setup-done-group[open] > summary { margin-bottom: 6px; }
+
+/* Example of the speaker display next to its settings: the panel's own
+   pixels, kept sharp when scaled. */
+.display-preview { margin: 8px 0 10px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.display-preview img { width: 192px; height: 150px; image-rendering: pixelated; background: #000; border: 1px solid var(--border, #333); border-radius: 6px; }

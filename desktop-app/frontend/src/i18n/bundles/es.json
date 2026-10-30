@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "El altavoz no ha respondido ahora mismo, así que este ajuste es desconocido (puede que se esté reiniciando). Vuelve a abrir los ajustes dentro de un minuto.",
   "settingsView.displayTrackModeArtist": "Intérprete",
   "settingsView.displayTrackModeBoth": "Ambos",
+  "settingsView.displayPreviewAlt": "Ejemplo de la pantalla del altavoz",
+  "settingsView.displayPreviewCaption": "Así se ve en el altavoz (ejemplo)",
   "settingsView.displayTrackModeLabel": "Mostrar:",
   "settingsView.displayTrackModeTitle": "Título",
   "settingsView.displayTrackSavedToast": "Ajuste de pantalla guardado.",

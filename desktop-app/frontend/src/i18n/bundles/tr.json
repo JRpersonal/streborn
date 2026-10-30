@@ -1626,6 +1626,8 @@
   "settingsView.displayTrackUnknown": "Hoparlör az önce yanıt vermedi, bu yüzden bu ayar bilinmiyor (yeniden başlıyor olabilir). Ayarları bir dakika sonra tekrar açın.",
   "settingsView.displayTrackModeArtist": "Sanatçı",
   "settingsView.displayTrackModeBoth": "İkisi de",
+  "settingsView.displayPreviewAlt": "Hoparlör ekranı örneği",
+  "settingsView.displayPreviewCaption": "Hoparlörde böyle görünür (örnek)",
   "settingsView.displayTrackModeLabel": "Göster:",
   "settingsView.displayTrackModeTitle": "Başlık",
   "settingsView.displayTrackSavedToast": "Ekran ayarı kaydedildi.",

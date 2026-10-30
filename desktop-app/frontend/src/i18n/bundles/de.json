@@ -922,6 +922,8 @@
   "settingsView.displayTrackModeArtist": "Interpret",
   "settingsView.displayTrackModeTitle": "Titel",
   "settingsView.displayTrackModeBoth": "Beides",
+  "settingsView.displayPreviewAlt": "Beispiel der Lautsprecher-Anzeige",
+  "settingsView.displayPreviewCaption": "So sieht es auf dem Lautsprecher aus (Beispiel)",
   "settingsView.displayTrackSavedToast": "Anzeige-Einstellung gespeichert.",
   "settingsView.displayMsgHeading": "Hinweise auf dem Lautsprecher-Display",
   "settingsView.displayMsgHelp": "Wenn eine Taste nichts abspielen kann (Spotify nicht eingerichtet, Sender antwortet nicht, kein Internet), zeigt der Lautsprecher etwa 10 Sekunden lang einen kurzen Hinweis auf dem Display. Dabei läuft kein Ton und die Lautstärke bleibt, wie sie ist.",
