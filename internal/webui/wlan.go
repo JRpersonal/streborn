@@ -481,10 +481,18 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 			s.logger.Info("WLAN: forgetting the other networks is not supported on this chassis yet (BoseApp keeps its own list in AirplayConfiguration.xml)", "wantTag", ssidTag(ssid))
 		}
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
-		// Same store, one last chance to record the new network before the
-		// reboot. Known to fail on taigan; logged either way and never
-		// allowed to hold up the reboot that actually applies the move.
-		s.commitFirmwareProfile(context.Background(), ssid, password)
+		// No commitFirmwareProfile here. On a BCO chassis the firmware's
+		// network API never stores a network STR can rely on: the Portable's
+		// NetManager accepts the POST and never processes it, so every change
+		// waited out the full 20 s budget before this reboot and logged a
+		// warning that a cold boot might return to the old network (live on
+		// the test Portable, 2026-10-30), and no field bundle from any BCO
+		// speaker ever showed the call succeed. What applies and keeps the
+		// move is the boot path the marker below triggers: it writes
+		// AirplayConfiguration.xml and pushes the coprocessor through goform,
+		// and run.sh skips the same dead call on every BCO chassis.
+		s.logger.Info("WLAN: the boot path writes the new network into the speaker's own store (AirplayConfiguration.xml)",
+			"wantTag", ssidTag(ssid))
 		// Weak intent: this chassis has no runtime channel at all, so the move
 		// is requested here and can only ever be checked against the firmware's
 		// STORED profile after the reboot, never against a real association.
@@ -494,6 +502,21 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 		touchWLANApplyMarker()
 		rebootBox()
 	}
+}
+
+// isWifiProfileSetupRefusal reports whether an addWirelessProfile error is the
+// firmware's standing refusal, 500 with error 1035 WIFI_PROFILE_SETUP_FAILED.
+func isWifiProfileSetupRefusal(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "WIFI_PROFILE_SETUP_FAILED")
+}
+
+// readWlanMode is run.sh's chassis verdict from NAND, "" when unreadable.
+func readWlanMode() string {
+	b, err := os.ReadFile(strNANDDir + "/wlan-mode")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // commitFirmwareProfile teaches the SPEAKER'S OWN network store the new Wi-Fi
@@ -514,22 +537,33 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 // the old network stays a boot candidate and the boot guard (wlanguard.go) is
 // the second half of the fix.
 //
-// Best-effort by design and never fatal: the call is known to fail on some
-// chassis (taigan answers 500, see run.sh), and the live switch has already
+// Best-effort by design and never fatal, and the live switch has already
 // succeeded by the time we get here. Every outcome is logged with the box's
 // own before/after profile count, so the next diagnostic bundle settles this
 // in one look.
+//
+// In practice the firmware refuses it: every field bundle that carries this
+// call, 13 of them from ST10, ST20, ST30, ST300 and Lifestyle speakers
+// between August and October 2026, shows 500 with error 1035
+// WIFI_PROFILE_SETUP_FAILED, and none shows it succeed. That refusal is
+// logged as expected, not as a warning that the speaker may fall back: the
+// apply marker, the priority raise (#697) and the boot guard are what keep
+// the move. Any other failure stays a warning, it is something new.
 func (s *Server) commitFirmwareProfile(ctx context.Context, ssid, password string) {
 	if s.boxHost == "" {
 		return
 	}
 	before := wifiProfileCount(s.boxHost)
 	// The box's own budget for the operation is in the request body; this is
-	// ours, and it deliberately keeps the BCO path's reboot from being held up
-	// for longer than it already was.
+	// ours.
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if err := boxapi.New(s.boxHost).AddWirelessProfile(cctx, ssid, password); err != nil {
+		if isWifiProfileSetupRefusal(err) {
+			s.logger.Info("WLAN: the speaker's network API refused to store the new Wi-Fi (1035), as it does on every speaker seen so far; the boot path and the profile priority keep the move",
+				"wantTag", ssidTag(ssid), "profilesBefore", before)
+			return
+		}
 		// The error carries the box's own status and reply text, which is where
 		// the firmware puts its refusals.
 		s.logger.Warn("WLAN: could not teach the speaker's own network store the new Wi-Fi; a cold boot may return to the old network",
