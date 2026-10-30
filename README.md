@@ -57,7 +57,7 @@ Independent community projects that build on STR:
 - **Security, privacy and verifying a download:** [`docs/SECURITY-OVERVIEW.md`](./docs/SECURITY-OVERVIEW.md), threat model in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md).
 - **Home Assistant and automation:** [`docs/HOME-ASSISTANT.md`](./docs/HOME-ASSISTANT.md), [`docs/CONTROL-API.md`](./docs/CONTROL-API.md), [`docs/AUTOMATION.md`](./docs/AUTOMATION.md).
 - **Developers:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (build, repository layout) and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
-- **What 1.0 means and what comes after:** [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+- **What comes next:** the [Ideas](https://github.com/JRpersonal/streborn/discussions/categories/ideas) wish list, ordered by votes. What 1.0 meant: [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 - **Credits:** [`docs/ACKNOWLEDGEMENTS.md`](./docs/ACKNOWLEDGEMENTS.md) and [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
 
 ## Support the project
