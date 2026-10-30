@@ -182,6 +182,8 @@ export namespace main {
 	    recallRefusal?: boolean;
 	    recallRefusalSinceSec?: number;
 	    wlanCredsMissing?: boolean;
+	    lanAddrs?: string;
+	    wiredAddrs?: string;
 	    serialNumber: string;
 	    kind: string;
 	    portVerified: boolean;
@@ -226,6 +228,8 @@ export namespace main {
 	        this.recallRefusal = source["recallRefusal"];
 	        this.recallRefusalSinceSec = source["recallRefusalSinceSec"];
 	        this.wlanCredsMissing = source["wlanCredsMissing"];
+	        this.lanAddrs = source["lanAddrs"];
+	        this.wiredAddrs = source["wiredAddrs"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
 	        this.portVerified = source["portVerified"];

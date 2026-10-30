@@ -301,6 +301,17 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if n := currentMDNSHostName(); n != "" {
 		out["mdnsName"] = n
 	}
+	// A speaker on the cable AND on Wi-Fi answers on two addresses (#165). The
+	// app merges the two sightings by deviceID; these say which address is the
+	// cable (preferred) and which others to fall back to when it stops
+	// answering. Emitted only on a speaker with more than one address, so the
+	// common response stays small (wiredaddrs.go).
+	if all, wired := speakerLANAddrs(); strings.Contains(all, ",") {
+		out["lanAddrs"] = all
+		if wired != "" {
+			out["wiredAddrs"] = wired
+		}
+	}
 	// Which speaker this is, so the app can tell it from another one that got
 	// this address while both restarted (see SetAgentIdentityFn).
 	if agentIdentityFn != nil {

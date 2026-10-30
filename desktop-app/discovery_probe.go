@@ -182,6 +182,8 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 			return n
 		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
+		LANAddrs:         jsonStringField(s, "lanAddrs"),
+		WiredAddrs:       jsonStringField(s, "wiredAddrs"),
 		// The hash of the agent binary this speaker is actually running. It is
 		// the only answer about "is this box current" that no clock can spoil,
 		// and v0.9.88 needed it: the release stamped the app one minute later
