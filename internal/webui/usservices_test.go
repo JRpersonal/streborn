@@ -328,6 +328,36 @@ func TestUSServicesDebugSnapshotReadsBoxSources(t *testing.T) {
 	}
 }
 
+func TestNativeBoxSourcesPrefersReadyEntry(t *testing.T) {
+	t.Parallel()
+	s, _, box := nativeTestServer(true)
+	// Two stale Bose-era accounts listed before the working one (#1630).
+	box.sources = []boxapi.Source{
+		{Source: "PANDORA", Status: "UNAVAILABLE", SourceAccount: "old1", DisplayName: "old one"},
+		{Source: "PANDORA", Status: "UNAVAILABLE", SourceAccount: "old2", DisplayName: "old two"},
+		{Source: "PANDORA", Status: "READY", SourceAccount: "new", DisplayName: "current"},
+	}
+	got := s.nativeBoxSources(context.Background())
+	if got["PANDORA"]["status"] != "READY" || got["PANDORA"]["displayName"] != "current" || got["PANDORA"]["hasAccount"] != "true" {
+		t.Fatalf("PANDORA = %v, want the READY entry", got["PANDORA"])
+	}
+	// Without a READY one, the first listed entry is reported.
+	box.sources = box.sources[:2]
+	got = s.nativeBoxSources(context.Background())
+	if got["PANDORA"]["status"] != "UNAVAILABLE" || got["PANDORA"]["displayName"] != "old one" {
+		t.Fatalf("PANDORA = %v, want the first entry", got["PANDORA"])
+	}
+	// A READY entry without an account does not win over the first one.
+	box.sources = []boxapi.Source{
+		{Source: "PANDORA", Status: "UNAVAILABLE", SourceAccount: "old1", DisplayName: "old one"},
+		{Source: "PANDORA", Status: "READY", DisplayName: "no account"},
+	}
+	got = s.nativeBoxSources(context.Background())
+	if got["PANDORA"]["displayName"] != "old one" {
+		t.Fatalf("PANDORA = %v, want the first entry", got["PANDORA"])
+	}
+}
+
 func TestAgentVersionReportsRegion(t *testing.T) {
 	t.Parallel()
 	s := quietServer("127.0.0.1")

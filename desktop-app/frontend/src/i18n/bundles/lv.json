@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Savienots. Gatavs atskaņošanai.",
   "usServices.stateLinked": "Savienots kā {{account}}. Skaļrunis to vēl iestata, tas var aizņemt minūti.",
   "usServices.stateLinkedNoName": "Savienots. Skaļrunis to vēl iestata, tas var aizņemt minūti.",
+  "usServices.stateStale": "Šajā skaļrunī ir vecāks {{service}} konts ({{account}}), bet tas nav pierakstījies. Pieraksties vēlreiz, lai šeit izmantotu {{service}}.",
+  "usServices.stateStaleNoName": "Šajā skaļrunī ir vecāks {{service}} konts, bet tas nav pierakstījies. Pieraksties vēlreiz, lai šeit izmantotu {{service}}.",
   "usServices.stateUnlinked": "Nav savienots",
   "usServices.stateOff": "Šajā skaļrunī nav ieslēgts",
   "usServices.emailPlaceholder": "E-pasts",

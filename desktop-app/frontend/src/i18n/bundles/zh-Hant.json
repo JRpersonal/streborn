@@ -1116,6 +1116,8 @@
   "usServices.stateReadyNoName": "已連線。可以播放。",
   "usServices.stateLinked": "已以 {{account}} 連線。喇叭仍在設定中，可能需要一分鐘。",
   "usServices.stateLinkedNoName": "已連線。喇叭仍在設定中，可能需要一分鐘。",
+  "usServices.stateStale": "這台喇叭上還有一個舊的 {{service}} 帳號（{{account}}），但尚未登入。請重新登入，才能在這裡使用 {{service}}。",
+  "usServices.stateStaleNoName": "這台喇叭上還有一個舊的 {{service}} 帳號，但尚未登入。請重新登入，才能在這裡使用 {{service}}。",
   "usServices.stateUnlinked": "未連線",
   "usServices.stateOff": "這個喇叭未啟用",
   "usServices.emailPlaceholder": "電子郵件",

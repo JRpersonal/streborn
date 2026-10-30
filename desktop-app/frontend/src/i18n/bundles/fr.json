@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Connecté. Prêt à jouer.",
   "usServices.stateLinked": "Connecté en tant que {{account}}. L'enceinte termine la configuration, cela peut prendre une minute.",
   "usServices.stateLinkedNoName": "Connecté. L'enceinte termine la configuration, cela peut prendre une minute.",
+  "usServices.stateStale": "Un ancien compte {{service}} ({{account}}) est encore sur cette enceinte, mais il n'est pas connecté. Reconnecte-toi pour utiliser {{service}} ici.",
+  "usServices.stateStaleNoName": "Un ancien compte {{service}} est encore sur cette enceinte, mais il n'est pas connecté. Reconnecte-toi pour utiliser {{service}} ici.",
   "usServices.stateUnlinked": "Non connecté",
   "usServices.stateOff": "Non activé sur cette enceinte",
   "usServices.emailPlaceholder": "E-mail",

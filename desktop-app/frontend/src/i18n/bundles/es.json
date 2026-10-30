@@ -1005,6 +1005,8 @@
   "usServices.stateReadyNoName": "Conectado. Listo para reproducir.",
   "usServices.stateLinked": "Conectado como {{account}}. El altavoz aún lo está configurando, puede tardar un minuto.",
   "usServices.stateLinkedNoName": "Conectado. El altavoz aún lo está configurando, puede tardar un minuto.",
+  "usServices.stateStale": "En este altavoz hay una cuenta antigua de {{service}} ({{account}}), pero no tiene la sesión iniciada. Vuelve a iniciar sesión para usar {{service}} aquí.",
+  "usServices.stateStaleNoName": "En este altavoz hay una cuenta antigua de {{service}}, pero no tiene la sesión iniciada. Vuelve a iniciar sesión para usar {{service}} aquí.",
   "usServices.stateUnlinked": "No conectado",
   "usServices.stateOff": "No activado en este altavoz",
   "usServices.emailPlaceholder": "Correo electrónico",

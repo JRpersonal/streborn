@@ -1116,6 +1116,8 @@
   "usServices.stateReadyNoName": "Verbunden. Bereit zum Abspielen.",
   "usServices.stateLinked": "Verbunden als {{account}}. Der Lautsprecher richtet es noch ein, das kann eine Minute dauern.",
   "usServices.stateLinkedNoName": "Verbunden. Der Lautsprecher richtet es noch ein, das kann eine Minute dauern.",
+  "usServices.stateStale": "Auf diesem Lautsprecher ist noch ein älteres {{service}}-Konto ({{account}}), es ist aber nicht angemeldet. Melde dich erneut an, um {{service}} hier zu nutzen.",
+  "usServices.stateStaleNoName": "Auf diesem Lautsprecher ist noch ein älteres {{service}}-Konto, es ist aber nicht angemeldet. Melde dich erneut an, um {{service}} hier zu nutzen.",
   "usServices.stateUnlinked": "Nicht verbunden",
   "usServices.stateOff": "Auf diesem Lautsprecher nicht eingeschaltet",
   "usServices.emailPlaceholder": "E-Mail",
