@@ -123,6 +123,20 @@ the speaker and `{"code":"not-linked"}` when it lists no Pandora account, and
 with `PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`: the agent
 takes the item from what the speaker plays.
 
+## Favourites
+
+The starred stations the desktop app keeps and the phone remote shows. The
+desktop app owns the list: it pushes the whole list to every speaker whenever
+it changes, and it learns a removal made elsewhere only from the speaker's
+removal notes.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/favorites` | - | The list: `[{"stationuuid","name","url","url_resolved","codec","bitrate","favicon","country","homepage","source","mime","durationSec"}]`. A favourite's key is `stationuuid`, else `name\|url`. |
+| `DELETE` | `/api/favorites?id=<key>` | - | Remove one favourite. This is the call for a remote app. It writes a removal note, hands the removal on to every other STR speaker, and the desktop app takes the favourite off its own list within seconds. |
+| `GET`    | `/api/favorites?removed=1` | - | The removal notes: `{"removed":[{"id","at"}]}`. |
+| `PUT`    | `/api/favorites` | the whole list | The desktop app's sync. Do not use it to remove a favourite: a shorter list writes no removal note, so the desktop app puts the favourite back with its next push and the other speakers never hear of it. |
+
 ## Alarm clock
 
 | Method | Path | Body | Notes |
