@@ -289,6 +289,11 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			// to another device. Forward as deliberate intent (guarded against
 			// echoes of STR's own staged recalls inside).
 			m.handleEnginePlaybackEnd(ev.Type)
+		case "playback_error":
+			// Only the newer engine's session-level key refusal is acted on
+			// here (keydenied.go); every other kind is the engine's own
+			// business and shows up in its log as before.
+			m.handleEnginePlaybackError(ev.Data)
 		case "will_play":
 			// A track is about to play; if its context (playlist/album) differs
 			// from the last one, the app switched playlists. Re-point the box so

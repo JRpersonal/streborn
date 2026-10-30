@@ -45,6 +45,18 @@ support: a pre-2024 account plays on the same (STR) device while the new
 account does not. Upstream tracking: librespot-org/librespot#1649,
 devgianlu/go-librespot#279. First field case: #78 (2026-08-01).
 
+Engine builds from JRpersonal/go-librespot#9 on (#480) stop on the third
+refusal in a row instead of skipping through the playlist: one
+`playback_error` event (stage `session`, kind `key_denied`), the log line
+`stopping playback: spotify refused the audio key for several tracks in a
+row ...`, then new loads are refused with the same wording for a back-off
+(30 s doubling to 5 min, cleared when a track plays). The agent handles
+both generations (`internal/spotify/keydenied.go`): an older engine still
+trips the five-refusal run and gets paused by the agent; a newer one trips
+`AudioKeyRefused()` through its event or log line, gets no agent pause, and
+a recall during its back-off fails at once with an explaining message
+instead of waiting out the load timeouts.
+
 ## Decision update (2026-06-04): go-librespot is the open backend, not librespot-org
 
 The earlier spike picked librespot-org (MIT) as the sidecar. Building the

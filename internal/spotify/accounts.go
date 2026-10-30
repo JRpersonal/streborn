@@ -760,6 +760,11 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 func (m *Manager) AudioKeyRefused() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// A newer engine stops after three refusals and reports it itself
+	// (keydenied.go), so its run never gets as far as keyRefusalRunTrips.
+	if !m.engineKeyDeniedAt.IsZero() && time.Since(m.engineKeyDeniedAt) < keyDeniedShowFor {
+		return true
+	}
 	if m.keyRefusalRun < keyRefusalRunTrips {
 		return false
 	}
@@ -767,7 +772,7 @@ func (m *Manager) AudioKeyRefused() bool {
 	if !m.keyRefusalGaveUpAt.IsZero() && m.keyRefusalGaveUpAt.After(last) {
 		last = m.keyRefusalGaveUpAt
 	}
-	return time.Since(last) < 10*time.Minute
+	return time.Since(last) < keyDeniedShowFor
 }
 
 // spotifyWebGet makes ONE authenticated Spotify Web API call, using an access
