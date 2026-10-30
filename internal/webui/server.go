@@ -485,6 +485,9 @@ type Server struct {
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
 	wakeForPlayReadRetry  time.Duration
+	// wokenStop is set when a quiet wake left the speaker paused instead of
+	// stopped (a Pandora station, #1629); /api/status then reports it stopped.
+	wokenStop wokenStop
 	// New-play wake seams (newplaywake.go): the standby wake, the level read,
 	// the level write and the stream proxy gate. nil = production
 	// (boxcli.WakeAndWait, boxapi, s.streamProxy). ownLevelSetFn is also what
@@ -1291,7 +1294,18 @@ const (
 // speaker reports it stopped, and sends the STOP again when the speaker still
 // plays quietWakeRestopGap later (at most quietWakeMaxStops keys in all). Every
 // read and every key run on fresh deadlines.
+//
+// The state the watch ends on is logged, and a speaker it leaves paused rather
+// than stopped (a Pandora station has no stopped state) is reported stopped by
+// /api/status until it plays again (#1629, wokenstop.go).
 func (s *Server) stopQuietWakeResume() {
+	np, stops := s.watchQuietWakeResume()
+	s.noteQuietWakeEnd(np, stops)
+}
+
+// watchQuietWakeResume is the loop of stopQuietWakeResume. It returns the last
+// state it read and how many STOP keys it sent.
+func (s *Server) watchQuietWakeResume() (nowPlayingSnapshot, int) {
 	deadline := time.Now().Add(quietWakeResumeWatch)
 	stops := 0
 	var lastStop time.Time
@@ -1301,11 +1315,11 @@ func (s *Server) stopQuietWakeResume() {
 		cancel()
 		switch {
 		case np.Source == "" || np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
-			return
+			return np, stops
 		case np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE":
 			if stops >= quietWakeMaxStops {
 				s.logger.Warn("wake: the speaker kept playing what it resumed after the quiet wake", "stops", stops, "source", np.Source, "playStatus", np.PlayStatus)
-				return
+				return np, stops
 			}
 			if stops > 0 && time.Since(lastStop) < quietWakeRestopGap {
 				break // the last STOP is still taking effect
@@ -1315,7 +1329,7 @@ func (s *Server) stopQuietWakeResume() {
 			cancel()
 			if err != nil {
 				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err, "stops", stops)
-				return
+				return np, stops
 			}
 			stops++
 			lastStop = time.Now()
@@ -1326,10 +1340,10 @@ func (s *Server) stopQuietWakeResume() {
 			}
 		case stops > 0:
 			// A STOP went out and the speaker no longer plays: done.
-			return
+			return np, stops
 		}
 		if !time.Now().Before(deadline) {
-			return
+			return np, stops
 		}
 		time.Sleep(quietWakeResumePoll)
 	}
