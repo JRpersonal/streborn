@@ -1844,7 +1844,7 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		// /api/play/<slot>, which reloads the context and hands the box a clean
 		// track boundary. For a shuffle preset (slots 4/5) that lands a fresh track;
 		// a resume preset restarts its context.
-		if slot >= 1 && slot <= 6 {
+		if presets.ValidSlot(slot) {
 			s.recallSlotClean(context.Background(), slot)
 			s.logger.Info("spotify skip recovery: clean slot recall after a skip left the box not playing", "slot", slot)
 			return
@@ -1893,7 +1893,7 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 // playing.
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
 	slot := s.currentSpotifySlot()
-	if slot < 1 || slot > 6 {
+	if !presets.ValidSlot(slot) {
 		return s.transportSkip(ctx, forward)
 	}
 	// Hold the competing auto-repoint off for the whole handover: the box is
@@ -1977,7 +1977,7 @@ func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 	s.logger.Info("skip: box re-attached to the Spotify stream", "why", why, "slot", slot)
 }
 
-// currentSpotifySlot returns the preset slot (1-6) the box is currently playing a
+// currentSpotifySlot returns the preset slot (1-12) the box is currently playing a
 // Spotify preset from, or 0 if it is not on a numbered Spotify preset stream (the
 // slot-less /spotify/stream.ogg, i.e. app-driven playback, or a non-Spotify
 // source). Read from lastPlay, the URL STR last pointed the box at.

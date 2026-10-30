@@ -94,7 +94,7 @@ func TestBoxFieldPolicyCoversEveryField(t *testing.T) {
 // merging a record with itself is the identity for every rule.
 func TestMergeWithSelfIsIdentity(t *testing.T) {
 	full := BoxInfo{Name: "n", Host: "h", Port: 17008, DeviceID: "d", BoxDeviceID: "bd", FriendlyName: "Küche",
-		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2",
+		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2", PresetRows: "2",
 		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
 		GroupKeyError: "g", GroupKeyErrorKind: "other", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
@@ -146,6 +146,9 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"AgentBinarySha256", str(BoxInfo{AgentBinarySha256: "old"}), str(BoxInfo{}), "old", "an empty live hash is filled (older agent, or mDNS only)"},
 		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{AgentRunningSha256: "new"}), "new", "the live running hash wins"},
 		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{}), "old", "an empty live running hash is filled"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), str(BoxInfo{Version: "v1.0.20"}), "", "an older agent's one row is not papered over by a cached second row (#1110)"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), str(BoxInfo{}), "2", "a cycle without a version keeps the cached answer with the cached version"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.20"}), str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), "2", "an update to a supporting agent shows at once"},
 
 		{"Offline", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), false, "a cached offline marker never survives a sighting"},
 		{"OfflineSinceSec", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), 0, "nor does its age"},
@@ -245,6 +248,8 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"AgentRunningSha256", m(BoxInfo{}), v(BoxInfo{AgentRunningSha256: "new"}), "new", "the running hash is what the update badge keys on"},
 		{"AgentRunningSha256", v(BoxInfo{AgentRunningSha256: "new"}), m(BoxInfo{}), "new", "in either order"},
 		{"AgentRunningSha256", m(BoxInfo{}), m(BoxInfo{AgentRunningSha256: "x"}), "x", "no probe: whichever has one"},
+		{"PresetRows", m(BoxInfo{Version: "v1.0.21"}), v(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), "2", "the probe's answer travels with its version (#1110)"},
+		{"PresetRows", v(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), m(BoxInfo{Version: "v1.0.21"}), "2", "in either order"},
 
 		{"Offline", m(BoxInfo{Offline: true}), v(BoxInfo{}), true, "per-cycle annotation: the first"},
 		{"OfflineSinceSec", m(BoxInfo{OfflineSinceSec: 9}), v(BoxInfo{}), 9, "the first"},

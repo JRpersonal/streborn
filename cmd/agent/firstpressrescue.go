@@ -101,6 +101,9 @@ type nativeActivation struct {
 type firstPressRescue struct {
 	mu   sync.Mutex
 	last nativeActivation
+	// epoch moves on every cancel, so a rescue already waiting out its settle
+	// time can tell it no longer belongs to what the speaker should play.
+	epoch uint64
 	// radioFrom/radioFromAt are the last switch INTO the radio source, kept
 	// because that switch can arrive just before the activation it belongs to.
 	radioFrom   string
@@ -201,6 +204,24 @@ func (f *firstPressRescue) failedAfterRescue(t time.Time) (int, bool) {
 	return f.last.slot, true
 }
 
+// cancel forgets the last activation: a newer choice (a double press that
+// plays the key's second row, #1110) took over, and a rescue must not press
+// the key again and bring the first row back. A rescue already waiting sees
+// the epoch move and stands down.
+func (f *firstPressRescue) cancel() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = nativeActivation{}
+	f.epoch++
+}
+
+// currentEpoch returns the cancel count (see cancel).
+func (f *firstPressRescue) currentEpoch() uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.epoch
+}
+
 // claim decides whether a failure at t belongs to the last activation and
 // takes the single rescue that activation is allowed. It returns the slot to
 // press, or 0.
@@ -271,7 +292,12 @@ func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
 // input is the very thing the user pressed the key to leave, so it does not
 // count as the speaker having found its feet.
 func (h *presetWsHandler) rescueFirstPress(slot int, origin string) {
+	epoch := h.firstPress.currentEpoch()
 	time.Sleep(firstPressSettle)
+	if h.firstPress.currentEpoch() != epoch {
+		h.logger.Info("first press rescue: a newer choice took over (second preset row), standing down", "slot", slot)
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// If the speaker found its feet in the meantime, leave it alone. A retry

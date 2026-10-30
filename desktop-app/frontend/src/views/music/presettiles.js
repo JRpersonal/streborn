@@ -10,12 +10,26 @@ import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds } from 
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
 import {
+  ROW_SIZE,
+  boxPresetRows,
+  clampRow,
+  keyLabel,
+  keyNum,
+  markRow2Seen,
+  row2Seen,
+  rowCount,
+  showNewMarker,
+  slotKey,
+  slotRow,
+} from '../../presetrows.js';
+import {
   $,
   activeSlotFromLocation,
   appArtFromBoxArt,
   confirmWarn,
   escapeAttr,
   escapeHtml,
+  getBoxLabel,
   isKeyChrome,
   nativeSlotStale,
   orionStationPayload,
@@ -27,6 +41,7 @@ import {
   showToast,
 } from '../../utils.js';
 import { renderGroupControl } from './group.js';
+import { renderNowPlayingBar } from './nowplaying.js';
 import { play } from './play.js';
 import {
   boxSourceLabel,
@@ -45,6 +60,13 @@ import { saveCurrentToSlot } from './save.js';
 export function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
+  // The second row of six keys (#1110): only on a speaker whose agent keeps
+  // it. Everything else renders exactly the one row it always had.
+  const rows = boxPresetRows(state.currentBox, state.presets);
+  state.presetRow = clampRow(state.presetRow, rows);
+  const shownRow = state.presetRow;
+  // Which rows hold the key that is playing, for the tab's playing marker.
+  const playingRows = new Set();
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
   updatePresetTransferRow();
@@ -106,12 +128,15 @@ export function renderPresets() {
   }
   // The lit tile, for the stuck-buffering check in refreshStatus (#1077).
   state.activePresetSlot = null;
-  for (let i = 1; i <= 6; i++) {
+  // Every key of every row is checked for "playing" (the tab of the hidden row
+  // shows it), but only the shown row is drawn.
+  for (let i = 1; i <= rows * ROW_SIZE; i++) {
     const p = state.presets.find(x => x.slot === i);
     // A slot STR does not manage may still hold one of the box's own presets
     // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
-    // can recall it, instead of a misleading "empty" tile.
-    const bp = !p ? (state.boxPresets || []).find(x => x.slot === i) : null;
+    // can recall it, instead of a misleading "empty" tile. The firmware has
+    // six keys of its own, so a row-2 slot never holds one.
+    const bp = !p && i <= ROW_SIZE ? (state.boxPresets || []).find(x => x.slot === i) : null;
     // The queue match is checked outside the location gate below: right after
     // a click on a library album or folder key the optimistic location is
     // empty (the key stores no stream URL) and only the optimistic queue card
@@ -151,10 +176,16 @@ export function renderPresets() {
       playingUrl: playingURL,
     }));
     if (isActive && p && state.activePresetSlot === null) state.activePresetSlot = i;
+    const bpActive = !!bp && !!state.nowLocation && !!bp.location && state.nowLocation === bp.location;
+    if ((isActive && p) || (bpActive && !lostStrKey(bp))) playingRows.add(slotRow(i));
+    if (slotRow(i) !== shownRow) continue;
+    const label = keyLabel(i, t);
+    const numHTML = keyNumHTML(i);
     const hasErr = !!state.presetErrors[i];
     const div = document.createElement('div');
     div.className = 'preset' + (p || bp ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '') + (bp ? ' box-native' : '');
     div.dataset.slot = i;
+    if (slotRow(i) === 2) div.classList.add('row2');
     if (p) {
       const stateLabel = presetStateLabel(i, isActive, hasErr);
       const hint = state.nowLocation && !isActive
@@ -271,11 +302,11 @@ export function renderPresets() {
       // wide enough for the string", user report 2026-08-23). The running title
       // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}" aria-label="${escapeAttr(t('preset.renameTitle'))}" role="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg></span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
+        <div class="preset-head"><span class="num">${numHTML}</span><span class="preset-acts"><span class="ren" data-slot="${i}" title="${escapeAttr(t('preset.renameTitle'))}" aria-label="${escapeAttr(t('preset.renameTitle'))}" role="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg></span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
-            <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
+            <div class="name">${escapeHtml(p.name || label)}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
             ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
@@ -299,7 +330,7 @@ export function renderPresets() {
       const logo =
         `<img class="preset-logo" alt="" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span></div>
+        <div class="preset-head"><span class="num">${numHTML}</span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
@@ -313,13 +344,12 @@ export function renderPresets() {
     } else if (bp) {
       // The box's own preset (a source STR does not manage, e.g. Deezer). Tap to
       // recall it via the hardware key; the box plays it through its own account.
-      const bpActive = !!state.nowLocation && !!bp.location && state.nowLocation === bp.location;
       if (bpActive) div.classList.add('playing');
       const srcLabel = boxSourceLabel(bp.source);
       const logo =
         `<img class="preset-logo" alt="" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
       div.innerHTML = `
-        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span></div>
+        <div class="preset-head"><span class="num">${numHTML}</span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
@@ -334,7 +364,7 @@ export function renderPresets() {
         ? `<div class="preset-hint">${escapeHtml(t('preset.longPressHint'))}</div>`
         : `<div class="url">${escapeHtml(t('preset.searchHint'))}</div>`;
       div.innerHTML = `
-        <div class="num">${escapeHtml(t('preset.key', { n: i }))}</div>
+        <div class="num">${numHTML}</div>
         <div class="name">${escapeHtml(t('preset.empty'))}</div>
         ${hint}
         <div class="long-press-bar" id="lp-bar-${i}"></div>
@@ -368,7 +398,7 @@ export function renderPresets() {
       const senderName = p && p.name ? escapeHtml(p.name) : t('preset.placeholderSender');
       const ok = await confirmWarn(
         t('preset.confirmClearTitle'),
-        t('preset.confirmClearBody', { n: slot, name: senderName })
+        t('preset.confirmClearBody', { n: keyNum(slot, t), name: senderName })
       );
       if (!ok) return;
       try {
@@ -377,9 +407,137 @@ export function renderPresets() {
       } catch (err) { showError(err); }
     };
   });
+  renderPresetRowChrome(rows, shownRow, playingRows);
+  // The now-playing line names the lit key; repaint it when that changes,
+  // since the bar is drawn before the keys on a status tick.
+  const lit = state.activePresetSlot;
+  if (lit !== lastLitKey) {
+    lastLitKey = lit;
+    renderNowPlayingBar();
+  }
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
+}
+
+// lastLitKey is the key the now-playing line was last told about.
+let lastLitKey = null;
+
+// keyNumHTML is the number line of a tile. A row-2 key wears the "2×" badge in
+// front of its number ("2× Key 1"); assistive technology reads the full label
+// ("Key 1 · 2×") instead of the two visual pieces.
+function keyNumHTML(slot) {
+  if (slotRow(slot) !== 2) return escapeHtml(keyLabel(slot, t));
+  return `<span class="row2-badge" aria-hidden="true">${escapeHtml(t('preset.row2.badge'))}</span>`
+    + `<span class="row2-key" aria-hidden="true">${escapeHtml(t('preset.key', { n: slotKey(slot) }))}</span>`
+    + `<span class="visually-hidden">${escapeHtml(keyLabel(slot, t))}</span>`;
+}
+
+// renderPresetRowChrome draws the Once | Twice tabs above the grid and the
+// one-sentence explainer of an empty second row. On a speaker with one row
+// both stay hidden and the grid carries no tab semantics, so the classic
+// layout is exactly what it was.
+function renderPresetRowChrome(rows, shownRow, playingRows) {
+  const grid = $('presets');
+  const tabs = $('presetRowTabs');
+  const intro = $('presetRow2Intro');
+  if (!tabs || !grid) return;
+  if (rows < 2) {
+    tabs.classList.add('hidden');
+    tabs.innerHTML = '';
+    if (intro) { intro.classList.add('hidden'); intro.innerHTML = ''; }
+    grid.removeAttribute('role');
+    grid.removeAttribute('aria-labelledby');
+    return;
+  }
+  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const count2 = rowCount(state.presets, 2);
+  const isNew = showNewMarker(rows, count2, row2Seen());
+  const tab = (row) => {
+    const selected = row === shownRow;
+    const playing = playingRows.has(row) && !selected;
+    const count = row === 2 ? count2 : 0;
+    // The name comes from the content, so it always starts with what the tab
+    // shows ("Twice 2 New", WCAG 2.5.3) and goes on, for a screen reader, with
+    // the speaker, how many keys are in use and whether one of them plays.
+    const more = [t(row === 2 ? 'preset.row2.tabTwiceName' : 'preset.row2.tabOnceName', { speaker })];
+    if (count) more.push(t('preset.row2.tabCountName', { n: count }));
+    if (playing) more.push(t('preset.row2.tabPlayingName'));
+    const visible = t(row === 2 ? 'preset.row2.tabTwice' : 'preset.row2.tabOnce');
+    return `<button type="button" role="tab" class="preset-row-tab" id="presetRowTab${row}" data-row="${row}"`
+      + ` aria-selected="${selected ? 'true' : 'false'}" aria-controls="presets" tabindex="${selected ? '0' : '-1'}">`
+      + `<span class="prt-label">${escapeHtml(visible)}</span>`
+      + (count ? ` <span class="prt-count">${count}</span>` : '')
+      + (row === 2 && isNew ? ` <span class="prt-new">${escapeHtml(t('preset.row2.new'))}</span>` : '')
+      + (playing ? `<span class="prt-playing" aria-hidden="true" title="${escapeAttr(t('preset.row2.tabPlayingName'))}">&#9654;</span>` : '')
+      + `<span class="visually-hidden">, ${escapeHtml(more.join(', '))}</span>`
+      + '</button>';
+  };
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', t('preset.row2.tablistName', { speaker }));
+  tabs.innerHTML = tab(1) + tab(2);
+  tabs.classList.remove('hidden');
+  grid.setAttribute('role', 'tabpanel');
+  grid.setAttribute('aria-labelledby', 'presetRowTab' + shownRow);
+  wireRowTabs(tabs, (row) => selectPresetRow(row, true));
+  if (intro) {
+    const showIntro = shownRow === 2 && count2 === 0;
+    intro.classList.toggle('hidden', !showIntro);
+    intro.innerHTML = showIntro
+      ? `<p>${escapeHtml(t('preset.row2.introBody'))}</p>`
+        + `<button type="button" class="btn btn-mini" id="presetRow2SearchBtn">${escapeHtml(t('preset.row2.introSearch'))}</button>`
+      : '';
+    const go = $('presetRow2SearchBtn');
+    if (go) go.onclick = goToStationSearch;
+  }
+}
+
+// selectPresetRow switches the key grid to a row. focusTab keeps the keyboard
+// on the tab that was just chosen, since the redraw replaces the buttons.
+export function selectPresetRow(row, focusTab) {
+  const next = row === 2 ? 2 : 1;
+  if (next === 2) markRow2Seen();
+  if (state.presetRow === next && !focusTab) return;
+  state.presetRow = next;
+  renderPresets();
+  if (focusTab) {
+    const el = $('presetRowTab' + next);
+    if (el) el.focus();
+  }
+}
+
+// wireRowTabs is the WAI-ARIA tabs keyboard model shared by the key grid and
+// the "Put on key" window: arrows move between the two tabs and choose them
+// (in a right-to-left layout the arrows follow the reading direction), Home
+// and End jump to the first and last, a click chooses.
+export function wireRowTabs(list, onSelect) {
+  list.querySelectorAll('[role="tab"]').forEach((el) => {
+    el.onclick = () => onSelect(parseInt(el.dataset.row, 10));
+  });
+  list.onkeydown = (e) => {
+    const tabs = [...list.querySelectorAll('[role="tab"]')];
+    const at = tabs.indexOf(document.activeElement);
+    if (at < 0) return;
+    const rtl = getComputedStyle(list).direction === 'rtl';
+    let to = -1;
+    if (e.key === 'ArrowRight') to = rtl ? at - 1 : at + 1;
+    else if (e.key === 'ArrowLeft') to = rtl ? at + 1 : at - 1;
+    else if (e.key === 'Home') to = 0;
+    else if (e.key === 'End') to = tabs.length - 1;
+    else return;
+    e.preventDefault();
+    to = (to + tabs.length) % tabs.length;
+    onSelect(parseInt(tabs[to].dataset.row, 10));
+  };
+}
+
+// goToStationSearch is the explainer's way forward: the station search right
+// under the grid, with the cursor in it.
+function goToStationSearch() {
+  const q = $('searchQ');
+  if (!q) return;
+  q.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  q.focus();
 }
 
 // PRESET_NAME_MAX mirrors maxPresetNameRunes in the agent, so the field stops
@@ -399,7 +557,7 @@ async function renamePresetKey(slot) {
   const current = p.name || '';
   const answer = confirmWarn(
     t('preset.renameHeading'),
-    `<p>${escapeHtml(t('preset.renameBody', { n: slot }))}</p>`
+    `<p>${escapeHtml(t('preset.renameBody', { n: keyNum(slot, t) }))}</p>`
     + `<input id="presetRenameInput" class="rename-input" type="text" maxlength="${PRESET_NAME_MAX}" />`,
     {
       icon: null,
@@ -435,7 +593,7 @@ async function renamePresetKey(slot) {
     showError(err);
     return;
   }
-  showToast(t('preset.renamedKey', { n: slot, name }));
+  showToast(t('preset.renamedKey', { n: keyNum(slot, t), name }));
   loadPresets();
 }
 

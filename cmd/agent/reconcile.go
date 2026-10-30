@@ -42,6 +42,22 @@ const webhookPlaceholderName = "Webhook"
 // The fix is to keep something in the slot so the firmware treats the key as
 // assigned and reports the press; the replace-mode branch in OnPresetSelected
 // then withholds the playback, which is exactly what the mode promised.
+// boxRowPresets returns the presets that belong on the speaker's own keys:
+// row 1, slots 1..6. The second row (7..12, #1110) lives only in STR's store
+// and is reached by a double press, so every pass that maps the store onto
+// the speaker's preset list starts from this, never from store.All(): a
+// row-2 slot counted as "missing on the box" would be re-written (and
+// refused) on every pass, forever.
+func boxRowPresets(all []presets.Preset) []presets.Preset {
+	out := make([]presets.Preset, 0, len(all))
+	for _, p := range all {
+		if presets.IsBoxSlot(p.Slot) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
 	slots := wh.ReplacePresetSlots()
 	if len(slots) == 0 {
@@ -265,8 +281,8 @@ func initialSyncShouldStandDown() bool {
 
 func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
 	time.Sleep(30 * time.Second)
-	specs := make([]boxcli.PresetSpec, 0, 6)
-	for _, p := range store.All() {
+	specs := make([]boxcli.PresetSpec, 0, presets.BoxSlots)
+	for _, p := range boxRowPresets(store.All()) {
 		if p.IsNative() {
 			// A Pandora or iHeartRadio key is the speaker's own item; the
 			// reconcile writes it back if the speaker lost it (nativeslots.go).
@@ -1048,7 +1064,7 @@ func keysMissingOnBox(store *presets.Store, boxHost string, wh *webhooks.Store) 
 	if err != nil {
 		return nil, err
 	}
-	stick := store.All()
+	stick := boxRowPresets(store.All())
 	return slotsMissingOnBox(stick, webhookOnlySlots(wh, stick), entries), nil
 }
 
@@ -1071,7 +1087,7 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 		want[slot] = true
 	}
 	var missing []int
-	for slot := 1; slot <= 6; slot++ {
+	for slot := 1; slot <= presets.BoxSlots; slot++ {
 		if want[slot] && !listed[slot] {
 			missing = append(missing, slot)
 		}
@@ -1080,7 +1096,7 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 }
 
 func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
-	stick := store.All()
+	stick := boxRowPresets(store.All())
 	// Keys configured as "webhook only" need a placeholder even when the store
 	// is completely empty, which is the shape the second #536 reporter was in:
 	// no presets anywhere, six dead keys, and a webhook that could never fire.
@@ -1485,7 +1501,7 @@ func fetchBoxPresetsFull(boxHost string) ([]boxPresetEntry, error) {
 	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {
 		slot := 0
 		fmt.Sscanf(blk[1], "%d", &slot)
-		if slot < 1 || slot > 6 {
+		if !presets.IsBoxSlot(slot) {
 			continue
 		}
 		e := boxPresetEntry{Slot: slot}

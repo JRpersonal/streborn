@@ -1642,6 +1642,52 @@ html.a11y-contrast .btn-warning:disabled {
    own row. grid-auto-rows: 1fr makes every row match the tallest, so all
    buttons stay the same size. */
 #presets { grid-auto-rows: 1fr; }
+/* The second row of keys (#1110): Once | Twice above the grid and in the "Put
+   on key" window. A chosen tab is told apart by weight, a 3px underline and
+   aria-selected, never by its fill alone. Each tab is at least 40px high. */
+.preset-row-tabs, .pick-rows { display: flex; gap: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--c-border); }
+.preset-row-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; min-width: 96px; padding: 6px 14px;
+  background: transparent; color: var(--c-text-2);
+  border: 1px solid transparent; border-bottom: 3px solid transparent;
+  border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.preset-row-tab:hover { background: var(--c-surface-2); color: var(--c-text); }
+.preset-row-tab[aria-selected="true"] {
+  background: var(--brand-bg); color: var(--brand-text);
+  border-color: var(--c-border); border-bottom-color: var(--brand);
+  font-weight: 700;
+}
+.prt-count {
+  min-width: 20px; padding: 0 6px; border-radius: 10px; line-height: 18px;
+  font-size: 12px; font-weight: 700; text-align: center;
+  border: 1px solid var(--brand-border); color: var(--brand-text-mid);
+}
+.preset-row-tab[aria-selected="true"] .prt-count { color: var(--brand-text); }
+.prt-new {
+  padding: 0 6px; border-radius: 10px; line-height: 18px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  background: var(--brand); color: var(--c-bg);
+}
+.prt-playing { color: var(--signal-green); font-size: 11px; }
+.preset-row2-intro {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px;
+  margin-bottom: 8px; padding: 10px 12px;
+  background: var(--brand-bg); border: 1px solid var(--brand-border); border-radius: 6px;
+}
+.preset-row2-intro p { margin: 0; color: var(--brand-text); font-size: 14px; line-height: 1.4; flex: 1 1 260px; }
+.preset-row2-intro .btn { min-height: 40px; }
+.row2-badge {
+  display: inline-block; margin-inline-end: 5px; padding: 0 5px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; line-height: 16px;
+  background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border);
+}
+/* "Key 1" never breaks between word and number; at large text the badge may
+   sit on its own line above it instead. */
+.row2-key { white-space: nowrap; }
+.status-bar .now-key { color: var(--c-text-2); font-weight: 600; }
 .preset {
   background: var(--c-surface-2);
   border: 1px solid var(--c-border);

@@ -37,7 +37,13 @@ export function agentRoutes(scenario = {}, demo = DEMO) {
     if (url.includes('/api/radio/languages')) return json(demo.languages);
     if (url.includes('/api/radio/tags')) return json([]);
     if (url.includes('/api/region')) return json({ countryCode: 'US', country: 'United States' });
-    if (url.includes('/api/agent/version')) return json({ version: appInfo.version, build: appInfo.build });
+    if (url.includes('/api/agent/version')) {
+      // presetRows follows the speaker the request went to (#1110).
+      let host = '';
+      try { host = new URL(url).hostname; } catch { host = ''; }
+      const box = [...(scenario.boxes || []), scenario.current].find((b) => b && b.host === host);
+      return json({ version: appInfo.version, build: appInfo.build, ...(box && box.presetRows ? { presetRows: box.presetRows } : {}) });
+    }
     if (url.includes('/api/box/settings')) return json(demo.settings);
     if (url.includes('/api/stick/status')) return json({});
     if (url.includes('/api/debug/state')) return json({});

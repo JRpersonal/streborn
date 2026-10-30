@@ -6,6 +6,7 @@ package boxcli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -15,7 +16,22 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxwrites"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
+
+// ErrNotBoxSlot is returned by every command that writes, removes or presses a
+// speaker preset when the slot is not one of the firmware's six keys. STR's
+// second preset row (slots 7..12, #1110) lives only in the agent's own store;
+// the firmware's keys are 1..6, so a row-2 slot must never reach the box.
+var ErrNotBoxSlot = errors.New("not a speaker preset key (1..6)")
+
+// checkBoxSlot is the one guard every box preset write goes through.
+func checkBoxSlot(op string, slot int) error {
+	if !presets.IsBoxSlot(slot) {
+		return fmt.Errorf("%s slot %d: %w", op, slot, ErrNotBoxSlot)
+	}
+	return nil
+}
 
 // Send sends a single command to port 17000 and collects up to 200 ms
 // of output. The box typically answers immediately.
@@ -301,9 +317,15 @@ func readSource(ctx context.Context, c *http.Client, url string) (string, error)
 
 // PresetKey simulates a physical preset key press.
 //
-//	slot 1..6
+//	slot 1..6 (a row-2 slot is refused with ErrNotBoxSlot)
 //	mode "p" = press&release, "ph" = press&hold
 func PresetKey(ctx context.Context, host string, slot int, mode string) error {
+	if err := checkBoxSlot("PresetKey", slot); err != nil {
+		return err
+	}
+	// The speaker answers this with the same selection frame a person's press
+	// makes; the double-press detector must not count STR's own press.
+	boxwrites.NoteSlot("presetkey", slot)
 	if mode == "" {
 		mode = "p"
 	}
@@ -335,6 +357,9 @@ func tapLabel(name, fallback string) string {
 //
 //	ws AddPreset <SOURCE> <TYPE> <LOCATION> <LABEL> <SOURCEACCOUNT> <PRESETID>
 func AddPreset(ctx context.Context, host string, slot int, name, streamURL string) error {
+	if err := checkBoxSlot("AddPreset", slot); err != nil {
+		return err
+	}
 	// LABEL must be in quotes, otherwise the box splits it at the space.
 	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,
@@ -376,8 +401,11 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 	location = clean(location)
 	account = clean(account)
 	name = tapLabel(name, fmt.Sprintf("Preset %d", slot))
-	if source == "" || location == "" || slot < 1 || slot > 6 {
-		return fmt.Errorf("AddPresetRaw: source, location and slot 1..6 required")
+	if err := checkBoxSlot("AddPresetRaw", slot); err != nil {
+		return err
+	}
+	if source == "" || location == "" {
+		return fmt.Errorf("AddPresetRaw: source and location required")
 	}
 	if typ == "" {
 		typ = "audio"
@@ -404,8 +432,8 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 // The reply is checked, because the CLI answers a refused AddPreset with an
 // error line on a clean socket.
 func AddPresetContentItem(ctx context.Context, host string, slot int, source, typ, location, name, account string) error {
-	if slot < 1 || slot > 6 {
-		return fmt.Errorf("AddPresetContentItem: slot 1..6 required")
+	if err := checkBoxSlot("AddPresetContentItem", slot); err != nil {
+		return err
 	}
 	if source == "" || location == "" {
 		return fmt.Errorf("AddPresetContentItem: source and location required")
@@ -450,6 +478,9 @@ func tapToken(v string) bool {
 
 // RemovePreset deletes the box preset slot.
 func RemovePreset(ctx context.Context, host string, slot int) error {
+	if err := checkBoxSlot("RemovePreset", slot); err != nil {
+		return err
+	}
 	_, err := Send(ctx, host, fmt.Sprintf("ws RemovePreset %d", slot))
 	return err
 }
@@ -481,8 +512,11 @@ func SetDiagLogger(l *slog.Logger) { diagLogger = l }
 // account is deliberately EMPTY: that is what the firmware itself reports for
 // this source, and any other value puts it back in the refusing state.
 func AddPresetNative(ctx context.Context, host string, slot int, name, location string) error {
-	if location == "" || slot < 1 || slot > 6 {
-		return fmt.Errorf("AddPresetNative: location and slot 1..6 required")
+	if err := checkBoxSlot("AddPresetNative", slot); err != nil {
+		return err
+	}
+	if location == "" {
+		return fmt.Errorf("AddPresetNative: location required")
 	}
 	// The account argument is the literal "none", and that detail is the whole
 	// difference between a working migration and six dead hardware keys.
@@ -537,7 +571,7 @@ func firstLine(s string) string {
 
 // PresetSpec is a box preset specification for SyncAllPresets.
 type PresetSpec struct {
-	Slot      int    // 1..6
+	Slot      int    // 1..6; row-2 slots (7..12) are skipped, never sent
 	Name      string // displayed name (quoted if it contains a space)
 	StreamURL string // direct stream URL for UPnP
 	// NativeLocation, when set, stores the slot as a native
@@ -564,10 +598,10 @@ type PresetSpec struct {
 // variable so a test can drop it to zero.
 var WriteGap = 250 * time.Millisecond
 
-func SyncAllPresets(ctx context.Context, host string, presets []PresetSpec) map[int]error {
+func SyncAllPresets(ctx context.Context, host string, specs []PresetSpec) map[int]error {
 	errs := map[int]error{}
-	for i, p := range presets {
-		if p.StreamURL == "" || p.Slot < 1 || p.Slot > 6 {
+	for i, p := range specs {
+		if p.StreamURL == "" || !presets.IsBoxSlot(p.Slot) {
 			continue
 		}
 		if i > 0 && WriteGap > 0 {

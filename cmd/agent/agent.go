@@ -478,6 +478,12 @@ func (a *agent) buildMarge() error {
 			out := make([]marge.Preset, 0, len(all))
 			taken := make(map[int]bool, len(all))
 			for _, p := range all {
+				// The cloud view mirrors the speaker's own six keys. A
+				// row-2 preset (7..12, #1110) is STR's alone: served here,
+				// the firmware would take it for a key it does not have.
+				if !presets.IsBoxSlot(p.Slot) {
+					continue
+				}
 				taken[p.Slot] = true
 				if p.IsNative() {
 					// A Pandora or iHeartRadio station the speaker plays
@@ -1317,6 +1323,9 @@ func (a *agent) buildBoxLink() error {
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlot,
+		// A key pressed twice plays its second-row preset (slots 7..12, #1110)
+		// through the app's own recall path; the speaker never holds those.
+		playSlotFn: webuiSrv.PlaySlotForKey,
 	}
 	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
 	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this
@@ -1488,6 +1497,19 @@ func (a *agent) buildBoxLink() error {
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}
+	// A tap followed by a hold of the same key saves what played before the
+	// tap onto the key's second row and plays it (tapholdsave.go). The
+	// snapshot reads memory only; the save and the play go through the app's
+	// paths.
+	wsHandler.snapshotFn = webuiSrv.SnapshotPlaying
+	holdSave.tapHold = tapHoldWiring{
+		save:    webuiSrv.SaveSnapshot,
+		play:    wsHandler.playTapHoldSlot,
+		grouped: wsHandler.group.grouped,
+		tracePresses: func(key int, since time.Time) int {
+			return keyTrace.PhysicalPressesSince(fmt.Sprintf("PRESET_%d", key), since)
+		},
+	}
 	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	// A combination also tells the leave-setup watcher that the setup which

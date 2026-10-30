@@ -621,6 +621,7 @@ document.querySelector('#app').innerHTML = `
     <div class="modal-content">
       <h3 id="pickTitle">${escapeHtml(t('preset.assignTitle'))}</h3>
       <p class="modal-sub" id="pickSub"></p>
+      <div class="pick-rows hidden" id="pickRows"></div>
       <div class="pick-grid" id="pickGrid"></div>
       <button class="btn btn-secondary" id="pickCancel">${escapeHtml(t('common.cancel'))}</button>
     </div>

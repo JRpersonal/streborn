@@ -30,6 +30,9 @@ export const BOX = {
   serialNumber: '',
   kind: 'STR',
   portVerified: true,
+  // Its agent keeps the second row of six keys, pressed twice (#1110); the
+  // other roster speakers run an agent without it.
+  presetRows: '2',
 };
 
 export const PRESETS = [
@@ -39,6 +42,13 @@ export const PRESETS = [
   { slot: 4, name: 'Jazz24', stream_url: 'http://demobox.local:8888/stream/4', type: 'radio', art: cover('J', '#7b2cbf'), bitrate: 320 },
   { slot: 5, name: 'Radio Paradise', stream_url: 'http://demobox.local:8888/stream/5', type: 'radio', art: cover('P', '#e07a00'), bitrate: 320 },
   { slot: 6, name: 'FIP', stream_url: 'http://demobox.local:8888/stream/6', type: 'radio', art: cover('F', '#d62246'), bitrate: 192 },
+];
+
+// The second row of keys (#1110) on a speaker whose agent keeps it: key 1 and
+// key 3 pressed twice. Slot 6+n is key n pressed twice.
+export const PRESETS_ROW2 = [
+  { slot: 7, name: 'Radio Swiss Jazz', stream_url: 'http://demobox.local:8888/stream/7', type: 'radio', art: cover('S', '#0b6e4f'), bitrate: 128 },
+  { slot: 9, name: 'KEXP', stream_url: 'http://demobox.local:8888/stream/9', type: 'radio', art: cover('K', '#3d348b'), bitrate: 128 },
 ];
 
 export const SETTINGS = {
@@ -276,6 +286,22 @@ export const PHONE = {
     { slot: 5, name: 'Radio Paradise', type: 'radio', stream_url: 'http://example.com/rp', art: art('rp') },
     { slot: 6, name: 'FIP', type: 'radio', stream_url: 'http://example.com/fip', art: art('fip') },
   ],
+  // The second row of keys (#1110): slot 6+n is key n pressed twice. Served
+  // only when the handler is told so (row2: true); by default row 2 is empty.
+  PRESETS_ROW2: [
+    { slot: 7, name: 'KEXP', type: 'radio', stream_url: 'http://example.com/kexp', art: art('kexp') },
+    { slot: 8, name: 'Classic FM', type: 'radio', stream_url: 'http://example.com/classic', art: art('classic') },
+    { slot: 9, name: 'Jazz Lounge', type: 'radio', stream_url: 'http://example.com/jazzlounge', art: art('jazz') },
+    { slot: 11, name: 'NPR Music', type: 'radio', stream_url: 'http://example.com/nprmusic', art: art('npr') },
+  ],
+  // A now-playing answer for any station; STATUS_PLAYING below is the same
+  // shape for Best Of Rock.FM.
+  statusXML: (name, loc) =>
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<nowPlaying deviceID="A1B2C3D4E5F6" source="LOCAL_INTERNET_RADIO">' +
+    '<ContentItem source="LOCAL_INTERNET_RADIO" location="' + loc + '" isPresetable="true">' +
+    '<itemName>' + name + '</itemName></ContentItem>' +
+    '<playStatus>PLAY_STATE</playStatus></nowPlaying>',
   STATUS_PLAYING:
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<nowPlaying deviceID="A1B2C3D4E5F6" source="LOCAL_INTERNET_RADIO">' +
@@ -289,7 +315,10 @@ export const PHONE = {
     network: { interfaces: [{ type: 'WIFI', state: 'NETWORK_WIFI_CONNECTED', ssid: 'HomeWiFi', ipAddress: '192.0.2.50', signal: 'GOOD' }] },
     sources: [{ source: 'AUX', status: 'READY' }, { source: 'BLUETOOTH', status: 'READY' }],
   },
-  VERSION: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok' },
+  // presetRows "2": the agent knows the second row of keys (#1110). The
+  // handler serves VERSION_ONE_ROW instead when told presetRows: false.
+  VERSION: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok', presetRows: '2' },
+  VERSION_ONE_ROW: { version: 'v1.0.19', build: '2026-10-23', boxHealth: 'ok', internet: 'ok' },
   // Days are 0 = Sunday .. 6 = Saturday (internal/alarm).
   ALARMS: {
     zone: 'Europe/Berlin',
@@ -338,7 +367,7 @@ export const PHONE = {
 
 // ---- the bundle the in-page desktop mock receives --------------------------
 export const DEMO = {
-  box: BOX, stockBox: STOCK_BOX, roster: ROSTER, recent: RECENT, presets: PRESETS, settings: SETTINGS,
+  box: BOX, stockBox: STOCK_BOX, roster: ROSTER, recent: RECENT, presets: PRESETS, presetsRow2: PRESETS_ROW2, settings: SETTINGS,
   statusPlaying: STATUS_PLAYING, statusIdle: STATUS_IDLE, statusTemplate: STATUS_TEMPLATE, defaultArt: cover('R', '#1b2636'),
   drives: DRIVES, wifi: WIFI, appInfo: APPINFO, stations: STATIONS, languages: LANGUAGES,
   mediaServers: MEDIA_SERVERS, libraryPage: LIBRARY_PAGE, phoneQR: PHONE_QR,

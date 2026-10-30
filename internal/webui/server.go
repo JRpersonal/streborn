@@ -1542,7 +1542,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Deliberately OUTSIDE the "/api/presets/" prefix. An agent older than this
 	// endpoint registers only the prefix, so a move request sent there reaches
 	// the per-slot handler, which parses "move" as a slot number and answers
-	// 400 "invalid slot, must be 1-6". The new endpoint answers exactly that
+	// 400 "invalid slot, must be 1-6" (1-12 since #1110). The new endpoint answers exactly that
 	// sentence for a genuinely out-of-range slot, so the app could not tell an
 	// old agent from a real refusal, and guessing wrong runs a destructive
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
@@ -1691,7 +1691,9 @@ func (s *Server) Run(ctx context.Context) error {
 		// store a UNIQUE location per Spotify preset. Without this, two Spotify
 		// presets share the identical location and the box drops one of them
 		// (observed: slot 1 vanished when 1 and 6 both used /spotify/stream.ogg).
-		for slot := 1; slot <= 6; slot++ {
+		// Row-2 slots (7..12, #1110) never reach the box's list, but an app
+		// recall or a double press plays them through the same per-slot URL.
+		for slot := 1; slot <= presets.MaxSlot; slot++ {
 			mux.HandleFunc(fmt.Sprintf("/spotify/stream-%d.ogg", slot), s.spotifyStream)
 		}
 	}

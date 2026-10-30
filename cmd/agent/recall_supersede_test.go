@@ -90,6 +90,9 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 		"http://127.0.0.1:8888/stream/6",
 		"http://127.0.0.1:8888/spotify/stream-4.ogg",
 		"http://127.0.0.1:8888/spotify/stream.ogg",
+		// The second preset row (#1110) is STR's own shape too.
+		"http://127.0.0.1:8888/stream/12",
+		"http://127.0.0.1:8888/spotify/stream-9.ogg",
 		native3,
 		"/core02/svc-bmx-adapter-orion/prod/orion" + native3,
 	}
@@ -101,7 +104,8 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 	foreign := []string{
 		"http://icecast.example.com/stream/1",
 		"http://example.com/radio/stream/128.mp3",
-		"http://127.0.0.1:8888/stream/7",
+		"http://127.0.0.1:8888/stream/13",
+		"http://127.0.0.1:8888/spotify/stream-13.ogg",
 		"http://127.0.0.1:8888/stream/raw?u=abc",
 		"/v1/playback/station/s12345",
 		"123456789",
@@ -110,7 +114,7 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 		// old-cloud orion station, or a foreign adapter), a slot number STR
 		// never writes, the ad-hoc raw proxy of an app play, and garbage.
 		webui.OrionStationLocation("https://stream.example.com/live.mp3", "Foreign", ""),
-		webui.OrionStationLocation("http://127.0.0.1:8888/stream/7", "Seven", ""),
+		webui.OrionStationLocation("http://127.0.0.1:8888/stream/13", "Thirteen", ""),
 		webui.OrionStationLocation("http://127.0.0.1:8888/stream/raw?u=abc", "Ad hoc", ""),
 		"/station?data=!!!not-base64!!!",
 		"/station?data=",

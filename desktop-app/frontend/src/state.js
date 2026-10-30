@@ -21,6 +21,7 @@ export const state = {
   wlanStoreFor: null,  // host whose Settings should open on the Wi-Fi form ("Save Wi-Fi" banner)
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
+  presetRow: 1,        // the row of keys the grid shows: 1 = pressed once, 2 = pressed twice (#1110)
   boxSnapshot: null,   // agent's pre-takeover snapshot (warns about lost cloud sources like Deezer)
   searchResults: [],
   drives: [],

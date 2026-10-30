@@ -23,8 +23,12 @@ import (
 
 // writeStorePresetToBox puts a stored preset on the speaker's key in the form
 // its type needs: the speaker's own item for a native-service preset, the
-// stream (or native radio) form for everything else.
+// stream (or native radio) form for everything else. A row-2 slot (7..12) is a
+// no-op: the speaker's keys are 1..6.
 func (s *Server) writeStorePresetToBox(ctx context.Context, p presets.Preset) error {
+	if !presets.IsBoxSlot(p.Slot) {
+		return nil
+	}
 	if p.IsNative() {
 		item := s.withSpeakerAccount(ctx, *p.Native)
 		return boxcli.AddPresetContentItem(ctx, s.boxHost, p.Slot, item.Source, item.ItemType,

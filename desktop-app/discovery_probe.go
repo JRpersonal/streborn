@@ -188,6 +188,7 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		// than the agent it embeds, so every speaker looked permanently behind.
 		AgentBinarySha256:  jsonStringField(s, "agentBinarySha256"),
 		AgentRunningSha256: jsonStringField(s, "agentRunningSha256"),
+		PresetRows:         jsonStringField(s, "presetRows"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

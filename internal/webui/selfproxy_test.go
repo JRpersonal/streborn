@@ -19,7 +19,8 @@ func TestSelfProxySlot(t *testing.T) {
 		{"http://strm112.1.fm/x_mobile_mp3", 0, false},
 		{"https://example.com/stream/3", 0, false}, // path matches but neither port nor loopback
 		{"http://192.0.2.7:8888/stream/raw?u=abc", 0, false},
-		{"http://192.0.2.7:8888/stream/7", 0, false},
+		{"http://192.0.2.7:8888/stream/13", 0, false},
+		{"http://192.0.2.7:8888/stream/12", 12, true},
 		{"not a url at all://", 0, false},
 	}
 	for _, c := range cases {

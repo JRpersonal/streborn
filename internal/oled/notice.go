@@ -132,8 +132,22 @@ func SavedFromApp(key int) Notice {
 	return keyNotice(NoticeSavedFromApp, iconKeyCheck, key, "SAVED "+strconv.Itoa(key), "FROM STR APP", 2*time.Second, 2)
 }
 
+// SavedOnRowTwo: a tap followed by a hold of key stored name on the key's
+// second row ("2X N", key pressed twice).
+func SavedOnRowTwo(key int, name string) Notice {
+	return keyNotice(NoticeSavedByKey, iconKeyCheck, key, "SAVED "+RowTwoLabel(key), name, 2500*time.Millisecond, 2)
+}
+
+// RowTwoLabel names key n's second-row slot the way the display and the app
+// say it: "2X N", key n pressed twice.
+func RowTwoLabel(key int) string { return "2X " + strconv.Itoa(key) }
+
 // AlreadyOnKey: a save was refused because the item already sits on other.
+// A second-row slot (7..12) is named by its key pressed twice.
 func AlreadyOnKey(other int) Notice {
+	if other > 6 && other <= 12 {
+		return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other-6, "ON "+RowTwoLabel(other-6), "ALREADY SAVED", 3*time.Second, 2)
+	}
 	return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other, "ON KEY "+strconv.Itoa(other), "ALREADY SAVED", 3*time.Second, 2)
 }
 
