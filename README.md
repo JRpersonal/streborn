@@ -44,6 +44,7 @@ Independent community projects that build on STR:
 
 - [STR Remote](https://apps.apple.com/app/id6811924121) for iPhone, free, by Wagges ([discussion #1233](https://github.com/JRpersonal/streborn/discussions/1233)).
 - [SoundFork](https://github.com/twitnic/SoundFork) for Android 14 and newer, by twitnic, early version without a download yet ([discussion #456](https://github.com/JRpersonal/streborn/discussions/456)).
+- [SoundRebornRemote](https://github.com/ben240374/SoundRebornRemote) for Android 7 and newer, by ben240374, early version with an APK on GitHub.
 
 ## Help and community
 

@@ -49,6 +49,8 @@ import {
   showToast,
 } from '../../utils.js';
 import { deps } from './deps.js';
+import { isLibraryFav, libraryFavCard } from '../../libraryfav.js';
+import { replayLibraryCard } from '../recent.js';
 import { isFav, loadFavStore, toggleFav } from './favorites.js';
 import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
@@ -697,6 +699,10 @@ export function renderSearchResults() {
       // The synthetic play-this-URL card: no directory metadata exists, so
       // the meta line carries the localized card label instead.
       metaBits.push(escapeHtml(t('search.playUrlCard')));
+    } else if (isLibraryFav(s)) {
+      // A music-library favourite: no directory metadata either, so it says
+      // where it comes from, in the same words as its Recently-played card.
+      metaBits.push(escapeHtml(t('recent.srcLibrary')));
     } else {
       if (countryDe) metaBits.push(escapeHtml(countryDe));
       // No known bitrate, no cell: a "- kbit/s" placeholder on every such row
@@ -742,6 +748,14 @@ export function renderSearchResults() {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const s = list[parseInt(btn.dataset.i, 10)];
+      // A music-library favourite (an album, playlist or track starred from
+      // Recently played) replays the way its card does: a folder as the whole
+      // queue, a track with its MIME and length. As a station it was filed
+      // under Radio with no cover, and a folder played one song (#1605).
+      if (isLibraryFav(s)) {
+        try { await replayLibraryCard(libraryFavCard(s), effectivePlayTarget()); } catch (err) { showError(err); }
+        return;
+      }
       // playStation handles the upstream-failure case (403/503/dead URL): it
       // shows a clear reason and auto-retries another radio-browser entry of the
       // same station before giving up, so a single blocked mirror no longer

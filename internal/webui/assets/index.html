@@ -4459,10 +4459,56 @@ async function startPandora(st, btn) {
   }
 }
 
+// isLibraryFav reports whether a favourite is a music-library item starred
+// from Recently played (#1605): the desktop app marks it source "upnp", and a
+// folder starred before that mark existed still carries its folder key.
+function isLibraryFav(st) {
+  return !!st && (st.source === 'upnp' || isFolderFavKey(st.stationuuid));
+}
+function isFolderFavKey(key) {
+  return /^(queue:|folder:[^:\/]+\/)/.test(key || '');
+}
+
+// playLibraryFav plays a library favourite the way Recently played replays its
+// card (playRecent): a folder through the speaker's folder replay, a track with
+// its MIME and length. Sent as a station it was filed under Radio with no cover,
+// a folder played its first track only (#978) and a file could loop (#817).
+async function playLibraryFav(st) {
+  var key = st.stationuuid || '';
+  if (isFolderFavKey(key)) {
+    var r = await postPlay('/api/queue/replay-card', { key: key, name: st.name || '', art: st.favicon || '' });
+    if (r.handled) return r;
+    if (r.ok && r.data && (r.data.error || r.data.offline)) {
+      showPlayNotice((r.data.error && playRefusal(r.data)) || (T.offline || ''));
+      return { ok: false, handled: true };
+    }
+    // 404: the media server is no longer a registered music source. Play the
+    // one track the favourite holds, as Recently played does.
+    if (r.ok || r.status !== 404) return r;
+  }
+  return postPlay('/api/play', {
+    url: st.url_resolved || st.url, title: st.name || '', icon: st.favicon || '',
+    mime: st.mime || '', duration_sec: st.durationSec || 0
+  });
+}
+
 async function playFavorite(idx, btn) {
   var st = favStations[idx];
   if (!st) return;
   press(btn);
+  if (isLibraryFav(st)) {
+    var lr = await playLibraryFav(st);
+    if (lr.ok) {
+      forgetStationPlay();
+      showTab('Play');
+      setNow(T.starting + ' ' + (st.name || ''), T.pleaseWait);
+      setTimeout(refreshStatus, 1500);
+      setTimeout(refreshStatus, 3500);
+    } else if (!lr.handled) {
+      searchMsg(T.cantStart, true);
+    }
+    return;
+  }
   var res = await postPlay('/api/play', {
     url: st.url_resolved || st.url,
     title: st.name || '',
