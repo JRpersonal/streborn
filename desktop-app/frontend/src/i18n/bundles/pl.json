@@ -189,7 +189,7 @@
   "spotify.bullet2": "Działa obok istniejących funkcji radia STR.",
   "spotify.bullet3": "Instrukcje ponownego połączenia w aplikacji STR, gdy to się ustabilizuje.",
   "spotify.feedbackPrompt": "Eksperymentalne. Jeśli Spotify już działa lub zawodzi na Twoim głośniku, podziel się szczegółami w zgłoszeniu.",
-  "spotify.issueLink": "Otwórz zgłoszenie #78",
+  "spotify.issueLink": "Zgłoś problem na GitHubie",
   "spotify.versionNote": "Wymaga najnowszej wersji STR na głośniku.",
   "spotify.updateLink": "Otwórz ustawienia głośnika, aby zaktualizować",
   "spotify.presetsTitle": "Zapisz playlistę lub album pod przyciskiem presetu",

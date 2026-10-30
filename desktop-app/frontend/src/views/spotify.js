@@ -137,7 +137,7 @@ export function renderSpotifyAlpha() {
   const link = $('spotifyIssueLink');
   if (link) link.onclick = (e) => {
     e.preventDefault();
-    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/78'); } catch {}
+    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/new?template=bug_report.yml'); } catch {}
   };
   refreshQualityList();
 }

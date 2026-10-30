@@ -189,7 +189,7 @@
   "spotify.bullet2": "Funciona junto con las funciones de radio existentes de STR.",
   "spotify.bullet3": "Instrucciones para volver a emparejar en la aplicación STR cuando sea estable.",
   "spotify.feedbackPrompt": "Experimental. Si Spotify ya funciona o falla en tu altavoz, comparte los detalles en el ticket.",
-  "spotify.issueLink": "Abrir ticket #78",
+  "spotify.issueLink": "Informar de un problema en GitHub",
   "spotify.versionNote": "Requiere la última versión de STR en el altavoz.",
   "spotify.updateLink": "Abrir los ajustes del altavoz para actualizar",
   "spotify.presetsTitle": "Guardar una lista o un álbum en un botón de presintonía",

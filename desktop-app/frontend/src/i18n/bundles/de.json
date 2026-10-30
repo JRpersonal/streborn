@@ -202,7 +202,7 @@
   "spotify.bullet2": "Funktioniert parallel zu den bestehenden STR-Radio-Features.",
   "spotify.bullet3": "Anleitung in der STR-App sobald stabil.",
   "spotify.feedbackPrompt": "Experimentell. Wenn Spotify schon funktioniert oder scheitert, bitte ins Issue.",
-  "spotify.issueLink": "Issue #78 öffnen",
+  "spotify.issueLink": "Problem auf GitHub melden",
   "spotify.versionNote": "Benötigt die neueste STR-Version auf dem Lautsprecher.",
   "spotify.updateLink": "Lautsprecher-Einstellungen zum Aktualisieren öffnen",
   "spotify.presetsTitle": "Playlist oder Album auf eine Preset-Taste legen",
