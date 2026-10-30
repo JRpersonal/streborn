@@ -244,6 +244,47 @@ shows a green tick over a group that is still playing.
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
 
+## Wi-Fi
+
+LAN-only, like every other call here, and refused from outside the private
+address ranges.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/box/wlan/networks` | - | The networks the speaker has stored (names in clear), the current one, `wired`, and two previews: `forgetOthers` (`removable`, `code`) and `forgetAll` (`{"allowed":bool,"code":"..."}`, see `DELETE /api/box/wlan`). |
+| `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). |
+| `DELETE` | `/api/box/wlan` | `{"reboot":false}` (optional) | Forget the Wi-Fi altogether, for a speaker that should run on its network cable only (#969). See below. |
+| `POST`   | `/api/box/wlan/forget-others` | `{"reboot":false}` (optional) | Forget every stored network but the one the speaker is on. Wi-Fi speakers only. |
+
+`DELETE /api/box/wlan` only runs when the speaker is on a network cable AND the
+request reached it over that cable: its default route must leave through a
+live cable, and the address the request arrived on must belong to the cable
+interface. Without Wi-Fi a speaker that has no cable drops off the network for
+good, so everything else is refused with HTTP `409` and
+`{"status":"refused","code":"..."}`:
+
+| Code | Meaning |
+| ---- | ------- |
+| `not-wired` | The speaker is not on a network cable. |
+| `reached-over-wifi` | It is cabled, but this request came in over Wi-Fi. Call its cable address. |
+| `chassis-unsupported` | A BCO chassis (Portable, ST30 scm, ST20 spotty): its Wi-Fi chip doubles as `eth0`, so a cable cannot be told apart from Wi-Fi, and its network list (BoseApp's `AirplayConfiguration.xml` slots) has no verified removal path. Always refused there. |
+
+On the wpa chassis (sm2: ST10, ST20/ST30 sm2, ...) an accepted call clears the
+same stores a Wi-Fi change writes, and nothing else: every `<profile>` in the
+firmware's `NetworkProfiles.xml` (the rest of the file stays byte for byte),
+`/etc/wpa_supplicant.conf` rewritten in full with its global lines and no
+network block, the networks of the running `wpa_supplicant`, and STR's own
+records (`wlan-creds`, the intended-network record, the one-shot apply
+marker), so no boot path puts the network back. The answer counts what went
+(`firmwareRemoved`, `runningRemoved`, `confRewritten`, `strRecordsRemoved`,
+`removedTags`, never a network name). When the firmware store changed, the
+speaker restarts once (`"rebooting":true`) because its network manager reads
+that store at start only; pass `{"reboot":false}` to restart it yourself
+later. An unrecognised store shape answers `500` with
+`"code":"unexpected-store"` and changes nothing. A USB stick that still
+carries `wlan.conf` sets the network up again on the next boot, so take it
+out first.
+
 ## Display
 
 These only do something on a speaker whose display STR can draw on (the

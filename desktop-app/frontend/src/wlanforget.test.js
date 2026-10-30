@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { forgetRefusalKey, storedNetworksView, storedNetworksHtml } from './wlanforget.js';
+import { forgetRefusalKey, forgetAllRefusalKey, storedNetworksView, storedNetworksHtml } from './wlanforget.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const t = (k) => k;
@@ -78,5 +78,49 @@ describe('storedNetworksHtml', () => {
 
   it('says so when the speaker reports none', () => {
     expect(storedNetworksHtml(storedNetworksView({ networks: [] }), t, esc)).toContain('settingsView.wlanStoredNone');
+  });
+});
+
+describe('forget Wi-Fi on a cabled speaker (#969)', () => {
+  const cabled = {
+    mechanism: 'wpa',
+    current: '',
+    wired: true,
+    networks: [{ ssid: 'HomeNet', current: false, open: false, publicHotspot: false }],
+    forgetOthers: { removable: 0, code: 'ethernet', reason: '' },
+    forgetAll: { allowed: true, code: '', reason: '' },
+  };
+
+  it('offers the button when the agent allows it and something is stored', () => {
+    expect(storedNetworksView(cabled).canForgetAll).toBe(true);
+  });
+
+  it('hides it when the agent refuses, for a Wi-Fi speaker or a BCO chassis', () => {
+    for (const code of ['not-wired', 'reached-over-wifi', 'chassis-unsupported']) {
+      const v = storedNetworksView({ ...cabled, forgetAll: { allowed: false, code, reason: 'x' } });
+      expect(v.canForgetAll).toBe(false);
+    }
+  });
+
+  it('hides it for an older agent without the field', () => {
+    const old = { ...cabled };
+    delete old.forgetAll;
+    expect(storedNetworksView(old).canForgetAll).toBe(false);
+    expect(storedNetworksView(null).canForgetAll).toBe(false);
+  });
+
+  it('hides it when nothing is stored', () => {
+    expect(storedNetworksView({ ...cabled, networks: [] }).canForgetAll).toBe(false);
+  });
+
+  it('only a strict true allows it', () => {
+    expect(storedNetworksView({ ...cabled, forgetAll: { allowed: 'yes' } }).canForgetAll).toBe(false);
+  });
+
+  it('maps every refusal code to its sentence', () => {
+    expect(forgetAllRefusalKey('not-wired')).toBe('settingsView.wlanForgetAllRefused.notWired');
+    expect(forgetAllRefusalKey('reached-over-wifi')).toBe('settingsView.wlanForgetAllRefused.overWifi');
+    expect(forgetAllRefusalKey('chassis-unsupported')).toBe('settingsView.wlanForgetAllRefused.chassis');
+    expect(forgetAllRefusalKey('unexpected-store')).toBe('');
   });
 });
