@@ -23,6 +23,7 @@ import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { splitStreamTitle } from '../titleswap.js';
+import { libraryFavFields } from '../libraryfav.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -424,6 +425,25 @@ async function replayLibraryTrack(c, box, art) {
   }
 }
 
+// replayLibraryCard replays a network-library (NAS) card, from Recently played
+// or from Favourites (#1605). It must go the DIRECT library way, not the radio
+// path: that runs the file through the stream proxy built for endless radio,
+// which loops forever on a finite file (#817) and files it under Radio.
+// PlayURL with the stored MIME makes the box play it straight instead.
+// A FOLDER card is not a track. Its key names the media server and the
+// container, so the speaker can rebuild the whole queue; the stored URL is only
+// its first track, and playing that clears the queue, which is why a replayed
+// folder used to play one song and then stop with the indicator sitting amber
+// (#978). Falls back to the single track when the speaker's agent is older
+// than the endpoint.
+export async function replayLibraryCard(c, box) {
+  if (!box) return;
+  const art = (c.art || '').split('|')[0].trim();
+  if (await replayFolderCard(c, box)) return;
+  await replayLibraryTrack(c, box, art);
+  showToast(t('recent.playing', { name: c.name || '' }));
+}
+
 // replayPandoraCard starts a Pandora card on the speaker's own Pandora client,
 // exactly like the Find tab's Pandora row. The stored item type lets the agent
 // rebuild the item when it no longer holds the station list (#1101).
@@ -454,21 +474,7 @@ function wireCard(c, i) {
           await replayPandoraCard(c, c.box || state.currentBox);
           showToast(t('recent.playing', { name: c.name || '' }));
         } else if (c.source === 'upnp') {
-          // A network-library (NAS) track must replay the DIRECT library way, not
-          // the radio path. The radio path runs the file through the stream proxy
-          // built for endless radio, which loops forever on a finite file (#817);
-          // PlayURL with the stored MIME makes the box play it straight instead.
-          const box = c.box || state.currentBox;
-          const art = (c.art || '').split('|')[0].trim();
-          // A FOLDER card is not a track. Its key names the media server and the
-          // container, so the speaker can rebuild the whole queue; the stored URL
-          // is only its first track, and playing that clears the queue, which is
-          // why a replayed folder used to play one song and then stop with the
-          // indicator sitting amber (#978). Falls back to the single track when
-          // the speaker's agent is older than the endpoint.
-          if (await replayFolderCard(c, box)) return;
-          await replayLibraryTrack(c, box, art);
-          showToast(t('recent.playing', { name: c.name || '' }));
+          await replayLibraryCard(c, c.box || state.currentBox);
         } else {
           await deps.playStation(cardStation(c));
         }
@@ -487,7 +493,9 @@ function wireCard(c, i) {
   }
   if (favBtn) {
     favBtn.onclick = () => {
-      const nowFav = deps.toggleFav(cardStation(c));
+      // A library card keeps its library identity on the favourite, so
+      // Favourites plays it the library way too (#1605).
+      const nowFav = deps.toggleFav({ ...cardStation(c), ...libraryFavFields(c) });
       favBtn.classList.toggle('is-fav', nowFav);
       favBtn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
       favBtn.title = nowFav ? t('search.removeFav') : t('search.addFav');
