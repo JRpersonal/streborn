@@ -223,6 +223,8 @@
   "library.root": "Raíz",
   "library.emptyFolder": "Esta carpeta está vacía.",
   "library.play": "Reproducir",
+  "library.playFromHere": "Desde aquí",
+  "library.playFromHereHint": "Reproducir esta pista y todas las siguientes de esta carpeta",
   "library.saveAsPreset": "Guardar como preajuste",
   "library.searchPlaceholder": "Buscar en esta carpeta...",
   "library.wholeSearchPlaceholder": "Busca en toda tu biblioteca de música...",

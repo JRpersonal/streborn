@@ -236,6 +236,8 @@
   "library.root": "Anfang",
   "library.emptyFolder": "Dieser Ordner ist leer.",
   "library.play": "Abspielen",
+  "library.playFromHere": "Ab hier",
+  "library.playFromHereHint": "Diesen Titel und alle folgenden in diesem Ordner abspielen",
   "library.saveAsPreset": "Auf Preset legen",
   "library.searchPlaceholder": "In diesem Ordner suchen...",
   "library.wholeSearchPlaceholder": "Die ganze Musikbibliothek durchsuchen...",

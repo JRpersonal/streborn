@@ -223,6 +223,8 @@
   "library.root": "Корінь",
   "library.emptyFolder": "Ця тека порожня.",
   "library.play": "Відтворити",
+  "library.playFromHere": "Звідси",
+  "library.playFromHereHint": "Відтворити цей трек і всі наступні в цій теці",
   "library.saveAsPreset": "Зберегти як пресет",
   "library.searchPlaceholder": "Пошук у цій теці...",
   "library.wholeSearchPlaceholder": "Шукати в усій музичній бібліотеці...",

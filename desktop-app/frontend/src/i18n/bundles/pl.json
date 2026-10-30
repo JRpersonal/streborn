@@ -223,6 +223,8 @@
   "library.root": "Katalog główny",
   "library.emptyFolder": "Ten folder jest pusty.",
   "library.play": "Odtwórz",
+  "library.playFromHere": "Od tego miejsca",
+  "library.playFromHereHint": "Odtwórz ten utwór i wszystkie następne w tym folderze",
   "library.saveAsPreset": "Zapisz jako zaprogramowane",
   "library.searchPlaceholder": "Szukaj w tym folderze...",
   "library.wholeSearchPlaceholder": "Przeszukaj całą bibliotekę muzyczną...",

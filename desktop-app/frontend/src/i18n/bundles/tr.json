@@ -223,6 +223,8 @@
   "library.root": "Kök klasör",
   "library.emptyFolder": "Bu klasör boş.",
   "library.play": "Çal",
+  "library.playFromHere": "Buradan itibaren",
+  "library.playFromHereHint": "Bu parçayı ve klasördeki sonraki tüm parçaları çal",
   "library.saveAsPreset": "Ön ayar olarak kaydet",
   "library.searchPlaceholder": "Bu klasörde ara...",
   "library.wholeSearchPlaceholder": "Tüm müzik kitaplığında ara...",

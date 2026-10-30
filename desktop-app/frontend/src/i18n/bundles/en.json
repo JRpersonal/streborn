@@ -236,6 +236,8 @@
   "library.root": "Root",
   "library.emptyFolder": "This folder is empty.",
   "library.play": "Play",
+  "library.playFromHere": "From here",
+  "library.playFromHereHint": "Play this track and everything after it in this folder",
   "library.saveAsPreset": "Save as preset",
   "library.searchPlaceholder": "Search this folder...",
   "library.wholeSearchPlaceholder": "Search your whole music library...",

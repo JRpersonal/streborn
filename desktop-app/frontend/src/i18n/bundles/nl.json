@@ -223,6 +223,8 @@
   "library.root": "Hoofdmap",
   "library.emptyFolder": "Deze map is leeg.",
   "library.play": "Afspelen",
+  "library.playFromHere": "Vanaf hier",
+  "library.playFromHereHint": "Dit nummer en alles daarna in deze map afspelen",
   "library.saveAsPreset": "Als voorkeuze opslaan",
   "library.searchPlaceholder": "Zoek in deze map...",
   "library.wholeSearchPlaceholder": "Doorzoek je hele muziekbibliotheek...",

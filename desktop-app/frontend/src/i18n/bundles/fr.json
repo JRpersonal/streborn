@@ -223,6 +223,8 @@
   "library.root": "Racine",
   "library.emptyFolder": "Ce dossier est vide.",
   "library.play": "Lire",
+  "library.playFromHere": "À partir d'ici",
+  "library.playFromHereHint": "Lire ce titre et tous les suivants de ce dossier",
   "library.saveAsPreset": "Enregistrer comme préréglage",
   "library.searchPlaceholder": "Rechercher dans ce dossier...",
   "library.wholeSearchPlaceholder": "Chercher dans toute ta bibliothèque musicale...",

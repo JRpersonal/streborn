@@ -223,6 +223,8 @@
   "library.root": "Šakninis aplankas",
   "library.emptyFolder": "Šis aplankas tuščias.",
   "library.play": "Groti",
+  "library.playFromHere": "Nuo čia",
+  "library.playFromHereHint": "Groti šį kūrinį ir visus tolesnius šiame aplanke",
   "library.saveAsPreset": "Išsaugoti kaip parinktį",
   "library.searchPlaceholder": "Ieškoti šiame aplanke...",
   "library.wholeSearchPlaceholder": "Ieškoti visoje muzikos bibliotekoje...",

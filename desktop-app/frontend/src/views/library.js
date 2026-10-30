@@ -675,7 +675,11 @@ async function probeDelivery(url) {
 // drops anything without a stream URL, and calls StartQueue with the current
 // shuffle/repeat UI state. Single-track clicks stay a plain PlayURL (which clears
 // the queue server-side): auto-advance happens ONLY here, by product decision.
-async function libraryPlayFolder() {
+//
+// fromId starts the queue at that track instead of the first (#1623): an
+// audiobook picked up at chapter 7 plays on from there to the end, and the
+// earlier chapters stay one Previous away.
+async function libraryPlayFolder(fromId) {
   if (!state.currentBox) {
     showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
@@ -693,11 +697,14 @@ async function libraryPlayFolder() {
       artist: it.artist || '',
       // Shown with the artist next to the running song, as on this row (#1033).
       album: it.album || '',
+      id: it.id,
     }));
   if (items.length === 0) {
     showError(t('library.errorNoURL'));
     return;
   }
+  const start = fromId ? Math.max(0, items.findIndex((it) => it.id === fromId)) : 0;
+  for (const it of items) delete it.id;
   // Recently-played card (#220): name the card after the open folder (last
   // breadcrumb), key it on the server UDN + container id so repeated plays of the
   // same folder group together, and seed its cover from the first track's art.
@@ -718,7 +725,7 @@ async function libraryPlayFolder() {
   };
   const payload = {
     items,
-    start: 0,
+    start,
     shuffle: !!libState.shuffle,
     repeat: libState.repeat || 'off',
     card,
@@ -736,13 +743,13 @@ async function libraryPlayFolder() {
     // does not know its first track, so it names the folder without a URL and
     // leaves the location to the speaker's next answer.
     beginLibraryNowPlaying(state, {
-      url: payload.shuffle ? '' : items[0].url,
-      name: payload.shuffle ? card.name : (items[0].title || card.name),
+      url: payload.shuffle ? '' : items[start].url,
+      name: payload.shuffle ? card.name : (items[start].title || card.name),
       art: card.art,
     }, Date.now());
     deps.renderNowPlayingBar();
     setTimeout(deps.refreshStatus, 1500);
-    showToast(t('library.folderQueued', { n: items.length }));
+    showToast(t('library.folderQueued', { n: items.length - start }));
   } catch (e) {
     showError(`StartQueue: ${e}`);
   }
@@ -910,6 +917,10 @@ function libraryListInnerHTML() {
         <span class="library-title">${escapeHtml(c.title)}</span>
         ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
       </li>`).join('');
+  // "From here" only where there is a "rest of the folder" to play: two or
+  // more playable tracks, and no search filter hiding part of the folder.
+  const playable = ((libState.page && libState.page.items) || []).filter((it) => it.streamURL).length;
+  const fromHere = playable > 1 && !libState.filter;
   const items = libraryFilteredItems().map((it) => {
     const meta = [it.artist, it.album].filter(Boolean).join(' — ');
     const dur = it.durationSec > 0 ? ` <span class="library-duration">${deps.formatDuration(it.durationSec)}</span>` : '';
@@ -923,6 +934,7 @@ function libraryListInnerHTML() {
           ${dur}
           <span class="library-actions">
             <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            ${fromHere ? `<button class="btn btn-mini btn-secondary lib-from-here-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.playFromHereHint'))}">${escapeHtml(t('library.playFromHere'))}</button>` : ''}
             <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
           </span>
         </li>`;
@@ -967,6 +979,12 @@ function wireLibraryRows(scope) {
       e.stopPropagation();
       const it = ((libState.page && libState.page.items) || []).find((x) => x.id === btn.dataset.iid);
       if (it) libraryPlay(it);
+    };
+  });
+  scope.querySelectorAll('.lib-from-here-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      libraryPlayFolder(btn.dataset.iid);
     };
   });
   scope.querySelectorAll('.lib-preset-btn').forEach((btn) => {
