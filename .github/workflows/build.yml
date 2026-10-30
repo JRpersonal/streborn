@@ -137,6 +137,14 @@ jobs:
         working-directory: desktop-app
         run: go test ./... -count=1
 
+      # The desktop module under the race detector (#1547). It went green once
+      # the install late-watcher became joinable: tests stop and wait for it
+      # in their cleanup, so it no longer reads package seams while those
+      # cleanups restore them. Keep new test seams joinable the same way.
+      - name: go test -race
+        working-directory: desktop-app
+        run: go test -race ./... -count=1
+
       - name: go build
         working-directory: desktop-app
         run: go build ./...

@@ -61,6 +61,12 @@ type App struct {
 	// and that is the only moment at which anything can know it.
 	installSawSetup bool
 
+	// lateWatch tracks the install late-watchers (installwait.go) so they can
+	// be stopped and joined. At runtime they end with the app context; tests
+	// call stopLateWatchers in their cleanup so no watcher outlives the test
+	// and its stubbed package globals (#1547).
+	lateWatch lateWatchers
+
 	// portCache maps a box host to the agent port last seen answering it.
 	// BCO boxes (Portable/taigan, ST20-spotty) expose the agent only on
 	// the redirected :17008, classic boxes answer :8888 directly, and mDNS
