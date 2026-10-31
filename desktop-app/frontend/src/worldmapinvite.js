@@ -14,6 +14,8 @@
 // have been: a nicer version of the same sentence when the number happens to
 // arrive.
 
+import { getLocale } from './i18n/index.js';
+
 // pinPromptKey returns the i18n key for the prompt line given the rescued-speaker
 // count, and whether that line needs the count interpolated.
 //
@@ -26,4 +28,21 @@ export function pinPromptKey(n) {
   return usable
     ? { key: 'worldMap.countLine', params: { n: Math.floor(n) } }
     : { key: 'worldMap.pinPrompt', params: undefined };
+}
+
+// worldMapURL builds the localized community-map deep link. English is the site
+// root; the other locales live under /<locale>/. ?share opens the "set pin" form
+// and scrolls to the map; src=app lets the site optionally attribute app pins
+// (harmless if unused). Unknown params are ignored by the site.
+//
+// Shared by the classic footer, the celebration card (main.js) and the UI 2.0
+// Help and info page. locale is the app's current language when left out.
+export function worldMapURL(locale) {
+  let loc = locale;
+  if (loc === undefined) {
+    try { loc = getLocale(); } catch { /* default en */ }
+  }
+  loc = loc || 'en';
+  const prefix = loc === 'en' ? '' : '/' + loc;
+  return 'https://st-reborn.de' + prefix + '/?share&src=app#community';
 }

@@ -51,13 +51,17 @@ const UI2P2_VIEWS = ['radio', 'radiorows', 'library', 'recent', 'spotify'].flatM
 const UI2P3_SCREENS = ['list', 'overview', 'sound', 'network', 'keys', 'maintenance', 'groups', 'confirm', 'confirmpair'];
 const UI2P3_VIEWS = UI2P3_SCREENS.flatMap((v) => ['min', 'wide'].flatMap((w) => [`app-ui2p3-${v}-${w}-dark`, `app-ui2p3-${v}-${w}-light`]));
 const UI2P3_SIZES = { min: { width: 1000, height: 700 }, wide: { width: 1600, height: 1000 } };
+// Phase 5, Help and info (shell2/help), in the dark and the light theme at
+// the app's default window: SHOOT_VIEWS=ui2help shoots both (SHOOT_TALL=1 for
+// the whole page in one picture).
+const UI2HELP_VIEWS = ['app-ui2-help-dark', 'app-ui2-help-light'];
 // The same four views in the classic layout (preview off), on the same
 // simulated network and window, to compare a phase 2 view with what it
 // replaces: SHOOT_VIEWS=classicp2.
 const CLASSICP2_VIEWS = ['radio', 'library', 'recent', 'spotify'].map((v) => `app-classic-${v}`);
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
-    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : v === 'ui2p3' ? UI2P3_VIEWS : v === 'classicp2' ? CLASSICP2_VIEWS : [v]))
+    .flatMap((v) => (v === 'ui2' ? UI2_VIEWS : v === 'ui2p2' ? UI2P2_VIEWS : v === 'ui2p3' ? UI2P3_VIEWS : v === 'ui2help' ? UI2HELP_VIEWS : v === 'classicp2' ? CLASSICP2_VIEWS : [v]))
   : ALL_VIEWS;
 
 // ---- per-view driving ------------------------------------------------------
@@ -82,6 +86,9 @@ async function drive(page, view) {
       await driveUi2Phase2(page, view.split('-')[2]);
     } else if (view.startsWith('app-ui2p3-')) {
       await driveUi2Phase3(page, view.split('-')[2]);
+    } else if (view.startsWith('app-ui2-help-')) {
+      await click('#ui2NavHelp');
+      await page.waitForSelector('#view-help:not(.hidden) #hlpTrademark', { timeout: 9000 });
     } else if (view === 'app-ui2-dark') {
       // Scrolled to the offline speaker, so the shot shows it greyed with
       // "Offline" and the Bose original's "Ready for STR" below it.

@@ -91,6 +91,27 @@ describe('UI 2.0 hooks in the app', () => {
     expect(sel).toContain('if (btn.dataset.offline) { pickBox({ ...(box || {}), offline: true }, btn.title); return; }');
   });
 
+  it('opens Help and info as a preview view after Wishes, and hides the footer in every preview view', () => {
+    // Small, outside the scroll area, under Wishes.
+    const small = markup.indexOf('<div class="ui2-side-small">');
+    expect(small).toBeGreaterThan(markup.indexOf('<div class="ui2-side-scroll">'));
+    expect(markup).toContain('<div id="view-help" class="view hidden"></div>');
+    // switchView toggles the node only when it exists (classic has none).
+    expect(srcOf('switchView')).toContain("const helpView = $('view-help'); if (helpView) helpView.classList.toggle('hidden', view !== 'help');");
+    // Mounted lazily from syncShellNav, never at import.
+    const nav = srcOf('syncShellNav');
+    expect(nav).toContain("if (view === 'help') mountHelp(byId('view-help'), deps);");
+    expect(nav).toContain('syncHelpView(view);');
+    // Choosing a speaker on Help and info opens Radio, as on Wishes.
+    expect(srcOf('wireSpeakerList')).toContain("(state.view === 'wishes' || state.view === 'help')");
+    // The credits and the update check come in as deps.
+    expect(main).toMatch(/mountShell2\(\{[\s\S]*?showCredits,[\s\S]*?checkAppUpdate: \(manual\) =>/);
+    // The classic footer stays in the page, hidden on every preview view.
+    expect(shellCss).toContain('html.ui2 #appFooter { display: none; }');
+    expect(shellCss).not.toMatch(/data-view="box"\][^{]*#appFooter/);
+    expect(mount).toContain('move(n.footer, n.fMainInner);');
+  });
+
   it('marks the Layout switch after a late mount', () => {
     expect(srcOf('safeMountShell2')).toContain('syncLayoutPressed();');
     expect(srcOf('syncLayoutPressed')).toContain('#a11yMenu button[data-ui2]');

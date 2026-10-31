@@ -709,12 +709,14 @@ html.ui2 .ui2-main-inner {
   padding: 16px 24px;
 }
 html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
-/* The music views end with their own content: the classic footer (version,
-   donate, world map, links) is support material, and docs/UI-2.0.md keeps
-   that out of the music views. The version line lives in the sidebar
-   (watchAppUpdateBanner); the footer still closes the other views until Help
-   and info (phase 5) takes it. mount.js marks the open view on #ui2Main. */
-html.ui2 .ui2-main:is([data-view="box"], [data-view="library"], [data-view="recent"], [data-view="spotify"]) #appFooter { display: none; }
+/* Every view ends with its own content: the classic footer (version, donate,
+   world map, links) is support material, and Help and info (shell2/help, the
+   small sidebar entry under Wishes) is its one place in the preview. Each of
+   its links has a home there, the version line also sits at the bottom of the
+   sidebar (watchAppUpdateBanner), and the donate buttons show nowhere else.
+   The node stays where mount.js put it, so the classic layout gets it back
+   unchanged when the preview is switched off. */
+html.ui2 #appFooter { display: none; }
 
 /* One view header for Radio, Library, Recently played and Spotify: the title
    at the same place, size and height in all four (a 40px row, so a title

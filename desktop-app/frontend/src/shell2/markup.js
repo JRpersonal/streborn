@@ -79,7 +79,7 @@ export function shellMarkup() {
     </div>
   </div>
   <main class="ui2-main" id="ui2Main" tabindex="-1">
-    <div class="ui2-main-inner" id="ui2MainInner">${speakersAreaHTML()}<div id="view-speakers" class="view hidden"></div></div>
+    <div class="ui2-main-inner" id="ui2MainInner">${speakersAreaHTML()}<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div></div>
   </main>
   <section class="ui2-player" id="ui2Player" aria-label="${escapeAttr(t('ui2.player.label'))}">
     <div class="ui2-player-now"></div>

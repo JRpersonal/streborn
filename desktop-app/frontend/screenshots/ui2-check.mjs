@@ -200,6 +200,39 @@ async function run(page) {
   const slaves = ((form[3] || {}).slaves || []).map((s) => s.ip).sort();
   check(form[1] === host('Living Room'), 'the edit goes to the master of the group it was clicked in');
   check(slaves.join() === [host('Dining room'), host('Office')].sort().join(), 'the edit keeps the member and adds Office, never the master itself');
+
+  // Help and info (phase 5): the small entry under Wishes opens the one place
+  // for help, wishes, community, support and about. The classic footer is
+  // hidden on every preview view, so the donate buttons show only here.
+  const helpEntry = await page.$eval('#ui2Sidebar .ui2-side-small', (el) => [...el.querySelectorAll('.ui2-nav-item')].map((b) => b.dataset.view));
+  check(helpEntry.join() === 'wishes,help', `Wishes and Help and info are the small entries, Help last (${helpEntry.join()})`);
+  const donateBefore = await page.$$eval('[data-donate]', (els) => els.filter((e) => e.offsetParent !== null).length);
+  check(donateBefore === 0, `no donate button on screen outside Help and info (${donateBefore})`);
+  await page.click('#ui2NavHelp');
+  await page.waitForSelector('#view-help:not(.hidden) #hlpTitle', { timeout: 5000 });
+  const helpPage = await page.evaluate(() => {
+    const v = document.getElementById('view-help');
+    const footer = document.getElementById('appFooter');
+    const tm = document.getElementById('hlpTrademark');
+    const donate = [...document.querySelectorAll('[data-donate]')].filter((e) => e.offsetParent !== null);
+    return {
+      sections: [...v.querySelectorAll('section[data-section]')].map((s) => s.dataset.section),
+      labelled: [...v.querySelectorAll('section[data-section]')].every((s) => {
+        const h = document.getElementById(s.getAttribute('aria-labelledby'));
+        return !!h && s.contains(h) && h.textContent.trim().length > 0;
+      }),
+      current: document.getElementById('ui2NavHelp').getAttribute('aria-current'),
+      footerHidden: !footer || footer.offsetParent === null,
+      donateInHelp: donate.length === 3 && donate.every((e) => v.contains(e)),
+      trademark: !!tm && tm.offsetParent !== null && /Bose Corporation/.test(tm.textContent),
+    };
+  });
+  check(helpPage.sections.join() === 'getHelp,wishes,community,support,about', `Help and info lists its sections in order (${helpPage.sections.join()})`);
+  check(helpPage.labelled, 'every Help and info section is labelled by its own heading');
+  check(helpPage.current === 'page', 'the Help entry is marked current');
+  check(helpPage.footerHidden, 'the classic footer is hidden on Help and info');
+  check(helpPage.donateInHelp, 'the three donate buttons show on Help and info, inside it');
+  check(helpPage.trademark, 'the trademark notice is on screen');
 }
 
 await assertPortFree(BASE);
