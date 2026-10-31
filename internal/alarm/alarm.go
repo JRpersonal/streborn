@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/atomicfile"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // Limits on the document, so a malformed save cannot grow the NAND file. Eight
@@ -65,7 +66,8 @@ type Alarm struct {
 	// Days are the weekdays this alarm repeats on, 0=Sunday .. 6=Saturday,
 	// matching time.Weekday. Never empty: see Validate.
 	Days []int `json:"days"`
-	// Slot is the preset to recall, 1 to 6.
+	// Slot is the preset to recall, 1 to 12 (7 to 12 is the second row of
+	// presets, a key pressed twice, #1110).
 	Slot int `json:"slot"`
 	// Volume is the level to set when the alarm fires, 1 to 100. Zero means
 	// leave the speaker at whatever level it remembers.
@@ -177,8 +179,8 @@ func (d *Document) Validate() error {
 		if a.Minute < 0 || a.Minute > 59 {
 			return fmt.Errorf("alarm %d has a minute outside 0 to 59", i+1)
 		}
-		if a.Slot < 1 || a.Slot > 6 {
-			return fmt.Errorf("an alarm can only play preset 1 to 6")
+		if !presets.ValidSlot(a.Slot) {
+			return fmt.Errorf("an alarm can only play preset 1 to %d", presets.MaxSlot)
 		}
 		if a.Volume < 0 || a.Volume > 100 {
 			return fmt.Errorf("alarm volume has to be between 0 and 100")

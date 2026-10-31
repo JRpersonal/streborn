@@ -129,7 +129,7 @@ func TestHandleQueueSaveSlot(t *testing.T) {
 	if rec := post(`{"slot":3}`); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "no-queue") {
 		t.Fatalf("no queue: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := post(`{"slot":9}`); rec.Code != http.StatusBadRequest {
+	if rec := post(`{"slot":13}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad slot: %d", rec.Code)
 	}
 	s.queue.load(queueSaveTracks, 0, true, repeatOff)

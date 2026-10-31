@@ -37,12 +37,14 @@ func TestAFrozenResumeAfterAPauseIsRepairedOnceAtThePausedPosition(t *testing.T)
 		{obsAt(t0, 4, "PLAY_STATE", 14*time.Second), fileResumeStep{}},
 		{obsAt(t0, 8, "PAUSE_STATE", 15*time.Second), fileResumeStep{}},
 		{obsAt(t0, 12, "PAUSE_STATE", 15*time.Second), fileResumeStep{}},
-		// Resumed: PLAYING, the position does not move.
+		// Resumed: PLAYING, the position does not move. Three reads on the
+		// paused second (7 s) before it counts as the freeze.
 		{obsAt(t0, 16, "PLAY_STATE", 15*time.Second), fileResumeStep{hold: true}},
-		{obsAt(t0, 20, "PLAY_STATE", 15*time.Second), fileResumeStep{repair: true, at: 15 * time.Second}},
+		{obsAt(t0, 20, "PLAY_STATE", 15*time.Second), fileResumeStep{hold: true}},
+		{obsAt(t0, 24, "PLAY_STATE", 15*time.Second), fileResumeStep{repair: true, at: 15 * time.Second}},
 		// Still frozen: the one repair this resume gets has been used.
-		{obsAt(t0, 24, "PLAY_STATE", 15*time.Second), fileResumeStep{}},
 		{obsAt(t0, 28, "PLAY_STATE", 15*time.Second), fileResumeStep{}},
+		{obsAt(t0, 32, "PLAY_STATE", 15*time.Second), fileResumeStep{}},
 	}
 	for i, st := range steps {
 		if got := w.observe(st.obs); got != st.want {
@@ -99,6 +101,11 @@ func TestAShortPauseTheWatchNeverSawIsRecognisedByTheKeyPress(t *testing.T) {
 		t.Fatalf("got %+v, want hold", got)
 	}
 	o = obsAt(t0, 12, "PLAY_STATE", 42*time.Second)
+	o.pauseHint = true
+	if got := w.observe(o); !got.hold {
+		t.Fatalf("got %+v, want still a hold after 4 s", got)
+	}
+	o = obsAt(t0, 16, "PLAY_STATE", 42*time.Second)
 	o.pauseHint = true
 	if got := w.observe(o); !got.repair || got.at != 42*time.Second {
 		t.Fatalf("got %+v, want a repair at the frozen position", got)
@@ -199,6 +206,7 @@ func (b *pausedFileBox) commands() []string {
 func shrinkFileRestart(s *Server) {
 	times := productionFileResumeTiming
 	times.seekDelay, times.seekRetry, times.restartQuiet = 5*time.Millisecond, 5*time.Millisecond, 50*time.Millisecond
+	times.confirmGap = 5 * time.Millisecond
 	s.fileResumeTiming = &times
 }
 
@@ -291,7 +299,7 @@ func TestTheEndWatchRepairsAFrozenResumeFromTheSpeakersKey(t *testing.T) {
 	s, rec := singleTrackServer(t, np)
 	shrinkFileRestart(s)
 	// The watch polls at the fast clock, so the freeze is judged at that clock
-	// too (the production 3 s is under one poll of the production 4 s).
+	// too.
 	s.fileResumeTiming.freezeAfter = productionFileResumeTiming.freezeAfter / queueTestScale
 	gen := s.setLastPlay(testFileURL, "Podcast", "", "audio/mpeg")
 	np.set("PLAY_STATE", 14*time.Second, 240*time.Second)
@@ -331,5 +339,122 @@ func TestAnAppPauseKeepsTheEndWatchButAStopEndsIt(t *testing.T) {
 	s.NoteUserStop()
 	if s.pausedNotStopped() {
 		t.Fatal("a stop after the pause was still read as a pause")
+	}
+}
+
+// --- #830 follow-up: the speaker's own resume is never restarted over ----------
+//
+// Reported on an ST10 (FW 27.0.6, v1.0.23) with a 192 kbit/s MP3 on nginx:
+// Pause and Play on the speaker continued correctly (the speaker fetched on
+// from its buffer end), and a few seconds later STR restarted the file at the
+// paused 31 s anyway, a jump back of about ten seconds. now_playing still showed
+// the paused second for two polls, which was all the watch asked for.
+
+// A position that stands still after a pause, but not on the paused second, is
+// not the freeze.
+func TestAStillPositionAwayFromThePausedSecondIsNotTheFreeze(t *testing.T) {
+	t.Parallel()
+	var w fileResumeWatch
+	t0 := time.Now()
+	w.observe(obsAt(t0, 0, "PAUSE_STATE", 31*time.Second))
+	for sec := 4; sec <= 24; sec += 4 {
+		if got := w.observe(obsAt(t0, sec, "PLAY_STATE", 36*time.Second)); got.repair || got.hold {
+			t.Fatalf("t=%ds: got %+v for a position past the pause point", sec, got)
+		}
+	}
+}
+
+// Two reads on the paused second are now_playing trailing a resume, not yet
+// the freeze: the third read moves on and nothing is restarted.
+func TestAResumeThatNowPlayingShowsLateIsNotRestarted(t *testing.T) {
+	t.Parallel()
+	var w fileResumeWatch
+	t0 := time.Now()
+	w.observe(obsAt(t0, 0, "PAUSE_STATE", 31*time.Second))
+	for i, st := range []struct {
+		obs  fileResumeObs
+		want fileResumeStep
+	}{
+		{obsAt(t0, 4, "PLAY_STATE", 31*time.Second), fileResumeStep{hold: true}},
+		{obsAt(t0, 8, "PLAY_STATE", 31*time.Second), fileResumeStep{hold: true}},
+		{obsAt(t0, 12, "PLAY_STATE", 39*time.Second), fileResumeStep{}},
+	} {
+		if got := w.observe(st.obs); got != st.want {
+			t.Fatalf("step %d: got %+v, want %+v", i, got, st.want)
+		}
+	}
+}
+
+// scriptedRelPosition is a renderer clock for relPositionFn: it starts at from
+// and advances by step on every read (0 = frozen). It counts the reads.
+type scriptedRelPosition struct {
+	mu    sync.Mutex
+	pos   time.Duration
+	step  time.Duration
+	reads int
+}
+
+func (p *scriptedRelPosition) read() (time.Duration, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reads++
+	cur := p.pos
+	p.pos += p.step
+	return cur, true
+}
+
+func (p *scriptedRelPosition) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.reads
+}
+
+// pauseAndResumeOnTheKey drives the end watch through the reporter's shape:
+// playing, paused on the speaker's key at 31 s, resumed, and now_playing
+// standing on 31 s afterwards.
+func pauseAndResumeOnTheKey(t *testing.T, rel *scriptedRelPosition) (*Server, *soapRecorder, *fakeNowPlaying) {
+	t.Helper()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	shrinkFileRestart(s)
+	s.fileResumeTiming.freezeAfter = productionFileResumeTiming.freezeAfter / queueTestScale
+	s.relPositionFn = rel.read
+	url := "http://192.0.2.20:8000/hoerspiel.mp3"
+	gen := s.setLastPlay(url, "Episode", "", "audio/mpeg")
+	np.set("PLAY_STATE", 29*time.Second, 1800*time.Second)
+	s.armSingleTrackEnd(singleTrack{boxURL: url, title: "Episode", mime: "audio/mpeg",
+		meta: upnp.TrackMeta{Duration: 1800 * time.Second, Seekable: true}, dur: 1800 * time.Second}, gen)
+	time.Sleep(betweenPolls(1))
+	np.set("PAUSE_STATE", 31*time.Second, 1800*time.Second)
+	time.Sleep(betweenPolls(1))
+	np.set("PLAY_STATE", 31*time.Second, 1800*time.Second)
+	return s, rec, np
+}
+
+func TestTheEndWatchLeavesAResumeTheSpeakerDidItselfAlone(t *testing.T) {
+	t.Parallel()
+	// The renderer's own clock runs on from the paused 31 s.
+	rel := &scriptedRelPosition{pos: 31500 * time.Millisecond, step: time.Second}
+	_, rec, np := pauseAndResumeOnTheKey(t, rel)
+
+	waitForTrackEnd(t, "the watch to check the renderer's clock", func() bool { return rel.count() >= 2 })
+	// now_playing catches up with the speaker.
+	np.set("PLAY_STATE", 40*time.Second, 1800*time.Second)
+	time.Sleep(betweenPolls(3))
+	for _, a := range []string{"Stop", "Seek", "SetAVTransportURI"} {
+		if rec.has(a) {
+			t.Fatalf("a resume the speaker did itself was restarted over (%s sent): %v", a, rec.list())
+		}
+	}
+}
+
+func TestTheEndWatchStillRepairsAResumeThatReallyFroze(t *testing.T) {
+	t.Parallel()
+	rel := &scriptedRelPosition{pos: 31 * time.Second} // frozen on the renderer too
+	_, rec, _ := pauseAndResumeOnTheKey(t, rel)
+
+	waitForTrackEnd(t, "the frozen resume to be restarted", func() bool { return rec.has("Seek") })
+	if got := strings.Join(rec.list(), ","); !strings.Contains(got, "Stop,Play,Seek") {
+		t.Fatalf("actions = %s, want Stop,Play,Seek", got)
 	}
 }

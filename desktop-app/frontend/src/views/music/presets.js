@@ -13,6 +13,7 @@ import {
   SetPreset,
 } from '../../api.js';
 import { presetCopyConflict } from '../../copyreport.js';
+import { boxPresetRows, copyRowsNote, keyNum } from '../../presetrows.js';
 import { t } from '../../i18n/index.js';
 import { extractHost, stationLogoChain } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceLabel } from '../../nativeservice.js';
@@ -518,7 +519,12 @@ export function wirePresetTransferRow() {
     const allOpt = targets.length > 1
       ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
       : '';
-    const body = `<p>${escapeHtml(t('settingsView.copyPresetsHelp'))}</p>`
+    // A speaker with the second row of keys (#1110) copies both rows, and the
+    // confirmation says that both rows on the target are replaced.
+    const twoRows = boxPresetRows(box, state.presets) >= 2;
+    const sourcePresets = state.presets.slice();
+    const body = `<p>${escapeHtml(t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp'))}</p>`
+      + (twoRows ? `<p>${escapeHtml(t('presets.transferReplacesBoth'))}</p>` : '')
       + `<select id="presetXferTarget" class="preset-xfer-select" style="width:100%;box-sizing:border-box;">${opts}${allOpt}</select>`;
     const ok = await confirmWarn(t('settingsView.copyPresetsHeading'), body, {
       confirmLabel: t('presets.transferBtn'),
@@ -540,27 +546,34 @@ export function wirePresetTransferRow() {
       if (val === '__ALL__') {
         let done = 0;
         const failed = [];
+        const row1Only = [];
         for (const tb of targets) {
           try {
             await CopyPresetsAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0);
             done++;
+            if (twoRows && copyRowsNote(sourcePresets, tb) === 'row1Only') row1Only.push(getBoxLabel(tb));
           } catch { failed.push(getBoxLabel(tb)); }
         }
-        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: targets.length, failed: failed.join(', ') }));
-        else showToast(t('settingsView.copyPresetsAllDone', { n: targets.length }));
+        const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
+        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: targets.length, failed: failed.join(', ') }) + rowMsg);
+        else showToast(t('settingsView.copyPresetsAllDone', { n: targets.length }) + rowMsg);
       } else {
         const [thost, tportRaw] = val.split('|');
         const tport = parseInt(tportRaw, 10) || 0;
         const target = targets.find(b => b.host === thost);
         const n = await CopyPresetsAcrossBoxes(box.host, box.port || 0, thost, tport);
-        showToast(t('settingsView.copyPresetsDone', { n, target: target ? getBoxLabel(target) : thost }));
+        const targetName = target ? getBoxLabel(target) : thost;
+        const rowMsg = twoRows && copyRowsNote(sourcePresets, target) === 'row1Only'
+          ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
+          : '';
+        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
       }
     } catch (e) {
       // The target already holds one of the stations on a key this transfer
       // does not rewrite, so it refused the whole set and wrote nothing. That
       // used to surface as the agent's raw 409 JSON in an error dialog (#882).
       const conflict = presetCopyConflict(e);
-      if (conflict) showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: conflict.slot }));
+      if (conflict) showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
       else showError(e);
     } finally {
       btn.textContent = origLabel;

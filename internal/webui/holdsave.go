@@ -85,7 +85,9 @@ func (s *Server) HoldSaveLive(ctx context.Context, slot int) (HoldSaved, error) 
 	if s.presets == nil {
 		return HoldSaved{}, errors.New("presets store not initialized")
 	}
-	if slot < 1 || slot > 6 {
+	// A held key is a hardware key: row 2 (#1110) is reached by a double
+	// press, never by a hold.
+	if !presets.IsBoxSlot(slot) {
 		return HoldSaved{}, fmt.Errorf("invalid slot %d", slot)
 	}
 	src, loc, ok := s.boxNowPlaying(ctx)
@@ -149,7 +151,7 @@ func (s *Server) holdSaveOrSwap(ctx context.Context, p presets.Preset, kind stri
 	saved, err := s.holdSaveThroughPut(ctx, p, kind, live)
 	var refusal *HoldSaveError
 	if !errors.As(err, &refusal) || refusal.Code != "already-on-slot" ||
-		refusal.OtherSlot < 1 || refusal.OtherSlot > 6 || refusal.OtherSlot == p.Slot {
+		!presets.ValidSlot(refusal.OtherSlot) || refusal.OtherSlot == p.Slot {
 		return saved, err
 	}
 	return s.holdSwapKeys(ctx, p.Slot, refusal.OtherSlot, kind)
@@ -192,8 +194,11 @@ func (s *Server) holdSwapKeys(ctx context.Context, slot, other int, kind string)
 			if err := s.writeStorePresetToBox(boxCtx, old); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", other, "err", err)
 			}
-		} else if err := boxcli.RemovePreset(boxCtx, s.boxHost, other); err != nil {
-			s.logger.Warn("preset swap: box-side RemovePreset failed", "slot", other, "err", err)
+		} else if presets.IsBoxSlot(other) {
+			// A row-2 key (7..12) was never on the speaker, nothing to remove.
+			if err := boxcli.RemovePreset(boxCtx, s.boxHost, other); err != nil {
+				s.logger.Warn("preset swap: box-side RemovePreset failed", "slot", other, "err", err)
+			}
 		}
 		cancel()
 	}

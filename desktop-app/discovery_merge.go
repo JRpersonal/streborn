@@ -235,6 +235,11 @@ var boxFieldPolicy = []fieldPolicy{
 	// cache fills it for a cycle in which only the announcement answered.
 	{"AgentBinarySha256", preferNonEmpty, preferVerified},
 	{"AgentRunningSha256", preferNonEmpty, preferVerified},
+	// The second row of keys is a property of the agent build, so it comes
+	// from the same record the version came from: an older agent's "no second
+	// row" is never papered over by a cached "2", and an mDNS-only cycle keeps
+	// the cached answer along with the cached version.
+	{"PresetRows", follows("Version"), follows("Version")},
 	// Per-cycle annotations: the caller sets them on the served copy, the
 	// merge never carries them from one record to the other.
 	{"Offline", keepBase, keepBase},
@@ -264,14 +269,22 @@ var boxFieldPolicy = []fieldPolicy{
 	{"ConflictingMod", keepBase, verifiedReading},
 	{"ForeignCloudURL", keepBase, verifiedReading},
 	{"GroupKeyError", keepBase, verifiedReading},
+	{"GroupKeyErrorKind", keepBase, follows("GroupKeyError")},
 	{"HoldRefusedSource", keepBase, verifiedReading},
 	{"HoldRefusedSlot", keepBase, follows("HoldRefusedSource")},
 	{"StaleFolderKeySlot", keepBase, verifiedReading},
+	{"SpeakerNameUnsafe", keepBase, verifiedReading},
 	{"Storm1036", keepBase, verifiedReading},
 	{"Storm1036SinceSec", keepBase, follows("Storm1036")},
 	{"RecallRefusal", keepBase, verifiedReading},
 	{"RecallRefusalSinceSec", keepBase, follows("RecallRefusal")},
 	{"WLANCredsMissing", keepBase, verifiedReading},
+	// The speaker's own address report (#165) travels like the version: only a
+	// live probe carries it, and a thin cycle keeps the last known one, which
+	// is exactly what the fallback to another address needs while the tile's
+	// address is silent.
+	{"LANAddrs", preferNonEmpty, preferVerified},
+	{"WiredAddrs", preferNonEmpty, preferVerified},
 	{"SerialNumber", preferNonEmpty, preferNonEmpty},
 	{"Kind", stickySTR, keepBase},
 }
@@ -350,6 +363,7 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.Kind = "stock"
 	b.Version = ""
 	b.Build = ""
+	b.PresetRows = ""
 	b.Port = 8090
 	b.PortVerified = false
 	b.OTAPending = false
@@ -359,6 +373,7 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.Internet = ""
 	b.InternetReason = ""
 	b.WLANCredsMissing = false
+	b.SpeakerNameUnsafe = false
 	b.Storm1036 = false
 	b.Storm1036SinceSec = 0
 	b.RecallRefusal = false

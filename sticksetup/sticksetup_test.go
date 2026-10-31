@@ -89,9 +89,13 @@ func TestWriteNameConfigSpecialCharacters(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
+	// Since #1582 "&", "<" and ">" do not reach the stick at all: the
+	// speaker's UPnP renderer cannot survive them, so they are replaced
+	// (speakername). The quotes and the umlaut still arrive as typed.
+	const want = `Bad + Küche oben "Ecke"`
 	raw, err := os.ReadFile(filepath.Join(dir, "name.raw"))
-	if err != nil || string(raw) != cfg.Name {
-		t.Fatalf("name.raw = %q, %v; want the exact name", raw, err)
+	if err != nil || string(raw) != want {
+		t.Fatalf("name.raw = %q, %v; want %q", raw, err, want)
 	}
 
 	conf, err := os.ReadFile(filepath.Join(dir, "name.conf"))
@@ -101,10 +105,10 @@ func TestWriteNameConfigSpecialCharacters(t *testing.T) {
 	if bytesContains(conf, `\u0026`) || bytesContains(conf, `\u003c`) || bytesContains(conf, `\u003e`) {
 		t.Fatalf("name.conf still HTML-escapes: %s", conf)
 	}
-	// The ampersand has to be in there as itself, or the sed parser on the
-	// stick reads something other than what the user typed.
-	if !bytesContains(conf, "&") {
-		t.Fatalf("name.conf lost the ampersand entirely: %s", conf)
+	// The name has to be in there as itself, or the sed parser on the stick
+	// reads something other than what the app wrote.
+	if !bytesContains(conf, `Bad + Küche oben \"Ecke\"`) {
+		t.Fatalf("name.conf does not carry the sanitised name: %s", conf)
 	}
 
 	if err := WriteNameConfig(dir, NameConfig{Name: ""}); err == nil {

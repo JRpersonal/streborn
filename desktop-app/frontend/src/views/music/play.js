@@ -178,6 +178,11 @@ export async function play(slot) {
     if (errStr.toLowerCase().includes('spotify-not-logged-in')) {
       showToast(t('play.errSpotifyLoginHelp'));
     }
+    // Same for a free Spotify account: the tile only says it needs Premium, the
+    // toast says why and how to get the presets playing again (#1636).
+    if (errStr.toLowerCase().includes('spotify-premium-required')) {
+      showToast(t('play.errSpotifyPremiumHelp'));
+    }
     // Half of an old stereo pair: the whole sentence, with where to fix it.
     // "Not ready" on every key, for an hour, is what this replaces (2026-10-04).
     const stale = deps.stereoStaleForError(errStr, (state.currentBox && state.currentBox.host) || '');
@@ -204,6 +209,9 @@ function friendlyPlayError(s, host) {
   // Connect device (no go-librespot credential). Key off the stable backend code,
   // not the English message, so rewording the backend never breaks this (#45).
   if (l.includes('spotify-not-logged-in')) return t('play.errSpotifyLogin');
+  if (l.includes('spotify-premium-required')) return t('play.errSpotifyPremium');
+  // Fallback for a refusal that names Premium without the code. Kept after the
+  // not-logged-in check, whose message also mentions Premium.
   if (l.includes('premium')) return t('play.errSpotifyPremium');
   if (l.includes('no such host') || l.includes('lookup')) return t('play.errNoInternet');
   if (l.includes('timeout') || l.includes('deadline')) return t('play.errSpeakerTimeout');

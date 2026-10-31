@@ -103,10 +103,14 @@ harness: `demo-data.mjs` (fixtures and the speaker roster), `scenario.mjs`
 makes each notice appear), `desktop-mock.mjs` (the in-page model and its
 `window.__strMock`), `agent-routes.mjs` and `phone-mock.mjs`.
 
-The roster: `livingRoom` (current, playing, `demobox.local:8888`), `bedroom`
+The roster: `livingRoom` (current, playing, `demobox.local:8888`, its agent
+reports `presetRows: '2'` and its store holds two keys pressed twice, slots 7
+and 9, #1110), `bedroom`
 (192.0.2.52, standby, volume 18), `office` (192.0.2.53, offline), `kitchen`
 (192.0.2.51:8090, Bose original) and `oldAgent` (Hallway, 192.0.2.54, agent
-v1.0.10, so it needs an update). Default boxes: the first four.
+v1.0.10, so it needs an update). Default boxes: the first four. Only
+`livingRoom` has the second row of keys; `scenario.presets` replaces a
+speaker's starting store (`{ livingRoom: [...] }`).
 
 The UI 2.0 Speakers area (phase 3) has a network of its own:
 `scenario: speakersScenario()` (`testkit/scenario.mjs`) gives ten speakers,

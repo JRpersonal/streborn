@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/internal/alarm"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -118,6 +119,15 @@ type Server struct {
 	// TCP probe and the real media-server resolve.
 	queueHostAnswers func(ctx context.Context, rawURL string) bool
 	queueHealResolve func(ctx context.Context, serverID string) (location string, ok bool)
+	// libraryURLServes and libraryServerResolve are the network steps of the
+	// library key re-resolve (libraryreresolve.go, #919), swapped out in
+	// tests. nil = the real ranged GET and the real media-server resolve.
+	libraryURLServes     func(ctx context.Context, rawURL string) bool
+	libraryServerResolve func(ctx context.Context, udn string) (dlna.Server, bool)
+	// libRefs remembers which media-server object each track URL this agent
+	// listed belongs to, so a key saved from the phone's library carries the
+	// object id too (libraryreresolve.go). The zero value is ready to use.
+	libRefs libraryRefCache
 	// mediaLoc remembers, per media server UDN, the device-description URL the
 	// last successful discovery resolved. A phone library search whose single
 	// M-SEARCH round goes unanswered then re-probes that address directly
@@ -419,6 +429,10 @@ type Server struct {
 	// nil until wired by cmd/agent.
 	boxNameFn func() (name, model string)
 
+	// speakerName tracks whether the speaker's stored name breaks the
+	// firmware's UPnP renderer (speakername.go, #1582). Zero value is ready.
+	speakerName speakerNameHealth
+
 	// nativePresetLocator decides whether a preset can be stored as a native
 	// LOCAL_INTERNET_RADIO station (returning its orion location) instead of a
 	// UPnP stream that the box refuses to activate on its own. nil until wired
@@ -471,6 +485,9 @@ type Server struct {
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
 	wakeForPlayReadRetry  time.Duration
+	// wokenStop is set when a quiet wake left the speaker paused instead of
+	// stopped (a Pandora station, #1629); /api/status then reports it stopped.
+	wokenStop wokenStop
 	// New-play wake seams (newplaywake.go): the standby wake, the level read,
 	// the level write and the stream proxy gate. nil = production
 	// (boxcli.WakeAndWait, boxapi, s.streamProxy). ownLevelSetFn is also what
@@ -585,6 +602,13 @@ type Server struct {
 	// LastActivity) tells it apart from a failing station. See wedge.go.
 	wedge            wedgeState
 	streamActivityFn func() (lastFetch, lastFailure time.Time)
+	// boxPlayFailureFn reports whether the firmware logged a playback failure
+	// of its own (BAD_URL, no first frame, no decoded data, ...) within the
+	// last d, and whether its log is being read at all. A library track the
+	// speaker dropped WITHOUT such a line was never tried: that is the
+	// speaker refusing STR's push, not a file it cannot decode (#1634). nil
+	// when the agent has no log reader. See singletrackrefusal.go.
+	boxPlayFailureFn func(d time.Duration) (failed, logLive bool)
 
 	// lastStationResolve is when the box last resolved a native station
 	// through the LIR/orion descriptor endpoints (unix nanos, 0 = never). The
@@ -750,6 +774,10 @@ type Server struct {
 	// to nowPlayingFn. nil means "", which the single-track end watch reads as
 	// unknown, never as another file.
 	nowPlayingLocationFn func() string
+	// relPositionFn scripts the renderer's own position (GetPositionInfo
+	// RelTime) that confirms a frozen file resume before it is repaired
+	// (resumefile.go). nil reads the renderer.
+	relPositionFn func() (time.Duration, bool)
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
@@ -1273,7 +1301,18 @@ const (
 // speaker reports it stopped, and sends the STOP again when the speaker still
 // plays quietWakeRestopGap later (at most quietWakeMaxStops keys in all). Every
 // read and every key run on fresh deadlines.
+//
+// The state the watch ends on is logged, and a speaker it leaves paused rather
+// than stopped (a Pandora station has no stopped state) is reported stopped by
+// /api/status until it plays again (#1629, wokenstop.go).
 func (s *Server) stopQuietWakeResume() {
+	np, stops := s.watchQuietWakeResume()
+	s.noteQuietWakeEnd(np, stops)
+}
+
+// watchQuietWakeResume is the loop of stopQuietWakeResume. It returns the last
+// state it read and how many STOP keys it sent.
+func (s *Server) watchQuietWakeResume() (nowPlayingSnapshot, int) {
 	deadline := time.Now().Add(quietWakeResumeWatch)
 	stops := 0
 	var lastStop time.Time
@@ -1283,11 +1322,11 @@ func (s *Server) stopQuietWakeResume() {
 		cancel()
 		switch {
 		case np.Source == "" || np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
-			return
+			return np, stops
 		case np.PlayStatus == "PLAY_STATE" || np.PlayStatus == "BUFFERING_STATE":
 			if stops >= quietWakeMaxStops {
 				s.logger.Warn("wake: the speaker kept playing what it resumed after the quiet wake", "stops", stops, "source", np.Source, "playStatus", np.PlayStatus)
-				return
+				return np, stops
 			}
 			if stops > 0 && time.Since(lastStop) < quietWakeRestopGap {
 				break // the last STOP is still taking effect
@@ -1297,7 +1336,7 @@ func (s *Server) stopQuietWakeResume() {
 			cancel()
 			if err != nil {
 				s.logger.Warn("wake: could not stop what the speaker resumed after the quiet wake", "err", err, "stops", stops)
-				return
+				return np, stops
 			}
 			stops++
 			lastStop = time.Now()
@@ -1308,10 +1347,10 @@ func (s *Server) stopQuietWakeResume() {
 			}
 		case stops > 0:
 			// A STOP went out and the speaker no longer plays: done.
-			return
+			return np, stops
 		}
 		if !time.Now().Before(deadline) {
-			return
+			return np, stops
 		}
 		time.Sleep(quietWakeResumePoll)
 	}
@@ -1534,7 +1573,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Deliberately OUTSIDE the "/api/presets/" prefix. An agent older than this
 	// endpoint registers only the prefix, so a move request sent there reaches
 	// the per-slot handler, which parses "move" as a slot number and answers
-	// 400 "invalid slot, must be 1-6". The new endpoint answers exactly that
+	// 400 "invalid slot, must be 1-6" (1-12 since #1110). The new endpoint answers exactly that
 	// sentence for a genuinely out-of-range slot, so the app could not tell an
 	// old agent from a real refusal, and guessing wrong runs a destructive
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
@@ -1580,6 +1619,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
+	mux.HandleFunc("/api/box/name/repair", s.handleBoxNameRepair)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/mute", s.handleBoxMute)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)
@@ -1682,7 +1722,9 @@ func (s *Server) Run(ctx context.Context) error {
 		// store a UNIQUE location per Spotify preset. Without this, two Spotify
 		// presets share the identical location and the box drops one of them
 		// (observed: slot 1 vanished when 1 and 6 both used /spotify/stream.ogg).
-		for slot := 1; slot <= 6; slot++ {
+		// Row-2 slots (7..12, #1110) never reach the box's list, but an app
+		// recall or a double press plays them through the same per-slot URL.
+		for slot := 1; slot <= presets.MaxSlot; slot++ {
 			mux.HandleFunc(fmt.Sprintf("/spotify/stream-%d.ogg", slot), s.spotifyStream)
 		}
 	}

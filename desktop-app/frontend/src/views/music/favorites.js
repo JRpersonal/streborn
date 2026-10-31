@@ -2,7 +2,7 @@
 // and the Favourites mode of the search box.
 
 import { FavoriteRemovals, PushFavorites } from '../../api.js';
-import { applyFavRemovals, parseFavRemovals } from '../../favremovals.js';
+import { applyFavAdditions, applyFavRemovals, parseFavAdditions, parseFavRemovals } from '../../favremovals.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
@@ -17,7 +17,25 @@ import { ensureUi2Radio } from './ui2radio.js';
 const FAV_KEY = 'str.favStations';
 
 export function loadFavStore() {
-  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  let arr;
+  try { arr = JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  const kept = arr.filter((s) => !isSpotifyFav(s));
+  // Drop such stars from the store itself, so this happens once and not on
+  // every read. Only the local copy: the speakers get the cleaned list with
+  // the next save, as every list change does.
+  if (kept.length !== arr.length) {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(kept)); } catch {}
+  }
+  return kept;
+}
+// isSpotifyFav spots a star set on a Spotify playlist that Recently played
+// showed as a radio card (#1077). It is no station: played as one, the speaker
+// refused the spotify: URI as a bad stream URL, and pushed to the speakers it
+// kept the phone page's favourite replaying that error. Such a star is dropped;
+// the playlist plays from its preset key.
+export function isSpotifyFav(s) {
+  return !!s && /^spotify:/i.test(String(s.url_resolved || s.url || ''));
 }
 function saveFavStore(arr) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}
@@ -56,27 +74,33 @@ function favMinimal(s) {
     // When it was starred (#1389). A removal on a phone page only takes a star
     // set BEFORE it, so starring a removed station again here sticks.
     starredAt: s.starredAt || 0,
+    // A music-library item starred from Recently played (#1605): the mark
+    // plus MIME and length, so Favourites plays it the library way. Undefined
+    // on a radio station, and dropped with it.
+    source: s.source === 'upnp' ? 'upnp' : undefined,
+    mime: s.mime || undefined,
+    durationSec: s.durationSec > 0 ? s.durationSec : undefined,
   };
 }
 
 // syncFavRemovals takes the favourites removed on any speaker's phone page off
-// this app's list (#1389), then pushes the shorter list to every speaker, so
-// one that was off when the phone removed it catches up too. Throttled: the
-// box list refreshes often and the notes change only when somebody taps
-// remove on a phone. Best effort, like the push itself.
+// this app's list (#1389) and adds the ones starred there or in a remote app
+// (#1621), then pushes the list to every speaker, so one that was off at the
+// time catches up too. Throttled: the box list refreshes often and the notes
+// change only when somebody taps a star on a phone. Best effort, like the push
+// itself. It runs on an empty list too: the first star may come from a phone.
 let favRemovalsCheckedAt = 0;
 let favRemovalsRunning = false;
 export async function syncFavRemovals() {
   const now = Date.now();
   if (favRemovalsRunning || now - favRemovalsCheckedAt < 60000) return;
-  if (!loadFavStore().length) return;
   favRemovalsCheckedAt = now;
   favRemovalsRunning = true;
   try {
     const boxes = (state.boxes || []).filter((b) => b && !b.offline && b.kind !== 'stock');
     const answers = await Promise.all(boxes.map((b) =>
-      FavoriteRemovals(b.host, b.port).then(parseFavRemovals).catch(() => [])));
-    takeFavRemovals(answers.flat());
+      FavoriteRemovals(b.host, b.port).then(parseFavNotes).catch(() => parseFavNotes(''))));
+    takeFavRemovals(answers.flatMap((a) => a.removed), answers.flatMap((a) => a.added));
   } finally {
     favRemovalsRunning = false;
   }
@@ -95,16 +119,15 @@ let favQuickRunning = false;
 export async function pollFavRemovalsOnCurrentBox() {
   const box = state.currentBox;
   if (favQuickRunning || !box || box.offline || box.kind === 'stock') return false;
-  if (!loadFavStore().length) return false;
   favQuickRunning = true;
   try {
-    let removals;
+    let notes;
     try {
-      removals = parseFavRemovals(await FavoriteRemovals(box.host, box.port));
+      notes = parseFavNotes(await FavoriteRemovals(box.host, box.port));
     } catch {
       return false; // busy or asleep: the next tick, or the minute sync, catches up
     }
-    return takeFavRemovals(removals);
+    return takeFavRemovals(notes.removed, notes.added);
   } finally {
     favQuickRunning = false;
   }
@@ -117,11 +140,19 @@ export function onFavRemovalsApplied(fn) {
   if (typeof fn === 'function') favChangeListeners.push(fn);
 }
 
-// takeFavRemovals applies removal notes to the stored list and, when that took
-// a star away, saves, pushes and repaints everything that shows stars.
-function takeFavRemovals(removals) {
-  const { kept, changed } = applyFavRemovals(loadFavStore(), removals, favId);
-  if (!changed) return false;
+// parseFavNotes reads both kinds of note from one speaker's answer.
+function parseFavNotes(json) {
+  return { removed: parseFavRemovals(json), added: parseFavAdditions(json) };
+}
+
+// takeFavRemovals applies the removal and addition notes to the stored list
+// and, when that changed it, saves, pushes and repaints everything that shows
+// stars. The push is what settles an addition note on the speakers.
+function takeFavRemovals(removals, additions) {
+  const r = applyFavRemovals(loadFavStore(), removals, favId);
+  const a = applyFavAdditions(r.kept, additions, removals, favId);
+  if (!r.changed && !a.changed) return false;
+  const kept = a.changed ? a.kept.map(favMinimal) : a.kept;
   saveFavStore(kept);
   updateFavModeBtn();
   if (state.searchLastMode === 'favorites') {

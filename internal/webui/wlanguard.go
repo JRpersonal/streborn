@@ -189,11 +189,7 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	// to one more owner: while the cable carries the box, the cable decides. Pull
 	// it and the next boot finds no wired uplink and the guard runs as before.
 	if wired := wiredUplinkIface(iface); wired != "" {
-		s.logger.Info("wlan guard: this speaker is on a network cable, leaving the Wi-Fi radio alone",
-			"uplink", wired, "iface", iface, "hasTarget", hasTarget)
-		if hasTarget {
-			noteWlanTargetVerdict("stood-down:"+guardReasonWired, budgetHold)
-		}
+		s.standDownForCable(wired, iface, hasTarget, "at-start")
 		return
 	}
 
@@ -212,7 +208,12 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 		return
 	}
 
-	cur, assoc := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget)
+	cur, assoc, wired := waitAssociationSettled(ctx, iface, wlanGuardSettleBudget,
+		func() string { return wiredUplinkIface(iface) })
+	if wired != "" {
+		s.standDownForCable(wired, iface, hasTarget, "lease-after-start")
+		return
+	}
 	reinited := false
 	if !assoc && s.ownerIsProvisioning(ctx) {
 		// A speaker in its own setup AP is NOT associated, by definition: its
@@ -229,7 +230,7 @@ func (s *Server) StartWLANBootGuard(ctx context.Context, bootReason string) {
 	} else if !assoc {
 		if s.recoverUnassociatedRadio(iface) {
 			reinited = true
-			cur, assoc = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget)
+			cur, assoc, _ = waitAssociationSettled(ctx, iface, wlanReinitRecheckBudget, nil)
 		}
 	}
 
@@ -553,6 +554,17 @@ func (s *Server) recoverUnassociatedRadio(iface string) bool {
 	return true
 }
 
+// standDownForCable ends the guard for a speaker on a network cable. when says
+// whether the cable was there at the start or its lease arrived during the
+// settle wait.
+func (s *Server) standDownForCable(wired, iface string, hasTarget bool, when string) {
+	s.logger.Info("wlan guard: this speaker is on a network cable, leaving the Wi-Fi radio alone",
+		"uplink", wired, "iface", iface, "hasTarget", hasTarget, "when", when)
+	if hasTarget {
+		noteWlanTargetVerdict("stood-down:"+guardReasonWired, budgetHold)
+	}
+}
+
 // wiredUplinkIface returns the non-Wi-Fi interface the box's default route
 // leaves through, or "" when the box has no wired uplink.
 //
@@ -646,18 +658,29 @@ func readFileString(path string) string {
 	return string(b)
 }
 
-func waitAssociationSettled(ctx context.Context, iface string, budget time.Duration) (ssid string, associated bool) {
+// cable, when not nil, is asked on every poll whether a wired uplink has come
+// up meanwhile, and its answer ends the wait. The guard starts with the agent,
+// and a speaker on a cable can get its lease seconds after that: an ST20 in the
+// field got its address four seconds after the stand-down check had already
+// found no cable, sat out the whole settle budget, and had its unused radio
+// power-cycled (v1.2.0 bundle, 2026-10-30).
+func waitAssociationSettled(ctx context.Context, iface string, budget time.Duration, cable func() string) (ssid string, associated bool, wired string) {
 	deadline := time.Now().Add(budget)
 	for {
 		if st := wlanlive.Read(ctx, iface); st.Associated {
-			return st.SSID, true
+			return st.SSID, true, ""
+		}
+		if cable != nil {
+			if w := cable(); w != "" {
+				return "", false, w
+			}
 		}
 		if !time.Now().Before(deadline) {
-			return "", false
+			return "", false, ""
 		}
 		select {
 		case <-ctx.Done():
-			return "", false
+			return "", false, ""
 		case <-time.After(wlanGuardPoll):
 		}
 	}

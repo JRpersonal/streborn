@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFavRemovals, applyFavRemovals } from './favremovals.js';
+import { parseFavRemovals, applyFavRemovals, parseFavAdditions, applyFavAdditions } from './favremovals.js';
 
 const favId = (s) => s && (s.stationuuid || (s.name + '|' + (s.url || '')));
 
@@ -45,5 +45,36 @@ describe('applyFavRemovals (#1389)', () => {
     const { kept, changed } = applyFavRemovals(store, [], favId);
     expect(changed).toBe(false);
     expect(kept).toBe(store);
+  });
+});
+
+describe('favourites starred elsewhere (#1621)', () => {
+  const swr3 = { stationuuid: 'u-9', name: 'SWR3', url_resolved: 'http://example/swr3' };
+  const store = [{ stationuuid: 'u-1', name: '1LIVE', starredAt: 100 }];
+
+  it('reads the addition notes, and nothing from an older agent or junk', () => {
+    expect(parseFavAdditions(JSON.stringify({ removed: [], added: [{ id: 'u-9', at: 700, fav: swr3 }] })))
+      .toEqual([{ id: 'u-9', at: 700, fav: swr3 }]);
+    expect(parseFavAdditions('{"removed":[]}')).toEqual([]);
+    expect(parseFavAdditions('[{"name":"x"}]')).toEqual([]);
+    expect(parseFavAdditions('{"added":[{"id":"u-9","at":1},{"id":"x","at":2,"fav":{}}]}')).toEqual([]);
+  });
+
+  it('adds a favourite starred on a phone, with the star time', () => {
+    const { kept, changed } = applyFavAdditions(store, [{ id: 'u-9', at: 700, fav: swr3 }], [], favId);
+    expect(changed).toBe(true);
+    expect(kept.map((s) => s.name)).toEqual(['1LIVE', 'SWR3']);
+    expect(kept[1].starredAt).toBe(700);
+  });
+
+  it('leaves alone what the app already has, and adds a station once across speakers', () => {
+    const notes = [{ id: 'u-9', at: 700, fav: swr3 }, { id: 'u-9', at: 700, fav: swr3 }];
+    expect(applyFavAdditions(store, notes, [], favId).kept).toHaveLength(2);
+    expect(applyFavAdditions([...store, swr3], notes, [], favId).changed).toBe(false);
+  });
+
+  it('lets a removal noted after the star win', () => {
+    const { changed } = applyFavAdditions(store, [{ id: 'u-9', at: 700, fav: swr3 }], [{ id: 'u-9', at: 800 }], favId);
+    expect(changed).toBe(false);
   });
 });

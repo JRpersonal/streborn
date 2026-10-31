@@ -49,6 +49,9 @@ type fakeBox struct {
 	slotPuts  int
 	conflict  *presetConflict
 	bulkFails bool
+	// presetRows is what the box's /api/agent/version reports: "2" for an
+	// agent that keeps the second row of keys (#1110), empty for an older one.
+	presetRows string
 }
 
 // newFakeBox binds on a caller-chosen loopback address, because a copy refuses
@@ -61,6 +64,15 @@ func newFakeBox(t *testing.T, host string, source []Preset) *fakeBox {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == presetAPIPath:
 			_ = json.NewEncoder(w).Encode(source)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/agent/version":
+			b.mu.Lock()
+			rows := b.presetRows
+			b.mu.Unlock()
+			ver := map[string]string{"version": "v1.0.21"}
+			if rows != "" {
+				ver["presetRows"] = rows
+			}
+			_ = json.NewEncoder(w).Encode(ver)
 		case r.Method == http.MethodPut && r.URL.Path == presetAPIPath:
 			b.mu.Lock()
 			defer b.mu.Unlock()

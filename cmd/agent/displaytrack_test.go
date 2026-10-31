@@ -22,7 +22,7 @@ func TestTrackSourceFollowsSTRsSources(t *testing.T) {
 		"STANDBY": false, "AUX": false, "BLUETOOTH": false, "TUNEIN": false,
 	}
 	for name := range want {
-		trackOnSourceChanged("UPNP", name)
+		trackOnSourceChanged("UPNP", name, nil)
 	}
 	for range want {
 		select {
@@ -44,14 +44,14 @@ func TestTrackReturnsWithSTRsSource(t *testing.T) {
 	setTrackSource = func(string, bool) {}
 	refreshed := make(chan struct{}, 4)
 	refreshTrackPanel = func() { refreshed <- struct{}{} }
-	trackOnSourceChanged("STANDBY", "UPNP")
+	trackOnSourceChanged("STANDBY", "UPNP", nil)
 	select {
 	case <-refreshed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("return from standby did not redraw")
 	}
-	trackOnSourceChanged("UPNP", "LOCAL_INTERNET_RADIO")
-	trackOnSourceChanged("UPNP", "AUX")
+	trackOnSourceChanged("UPNP", "LOCAL_INTERNET_RADIO", nil)
+	trackOnSourceChanged("UPNP", "AUX", nil)
 	select {
 	case <-refreshed:
 		t.Fatal("redraw without a return to STR's source")
@@ -68,8 +68,8 @@ func TestEverySourceSwitchReachesThePanelModel(t *testing.T) {
 	setTrackSource = func(name string, _ bool) { order = append(order, "track:"+name) }
 	notePanelSource = func(name string) { order = append(order, "model:"+name) }
 	refreshTrackPanel = nil
-	trackOnSourceChanged("UPNP", "BLUETOOTH")
-	trackOnSourceChanged("BLUETOOTH", "STANDBY")
+	trackOnSourceChanged("UPNP", "BLUETOOTH", nil)
+	trackOnSourceChanged("BLUETOOTH", "STANDBY", nil)
 	want := []string{"track:BLUETOOTH", "model:BLUETOOTH", "track:STANDBY", "model:STANDBY"}
 	if strings.Join(order, ",") != strings.Join(want, ",") {
 		t.Fatalf("order %v, want %v", order, want)

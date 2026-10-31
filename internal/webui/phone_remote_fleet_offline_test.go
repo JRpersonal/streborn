@@ -63,8 +63,8 @@ func TestPhoneRemoteOfflineStateStandsDownDuringFleetUpdate(t *testing.T) {
 func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 	for _, want := range []string{
 		// Every status read keeps lostSince.
-		"async function load() { var r = await api(SU); if (r && typeof r === 'object') { st = r; lostSince = 0; } else heardNothing(); return r; }",
-		"async function ownStatus() { var r = await api(SU); if (r && typeof r === 'object') { st = r; lostSince = 0; return r; } heardNothing(); return null; }",
+		"async function load() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; } else heardNothing(); return r; }",
+		"async function ownStatus() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; return r; } heardNothing(); return null; }",
 		// render paints an old busy status as silence, not as progress.
 		"if (stBusy && lostSince) {",
 		"else if (polling || fleetPolling) show(T.sfNoAnswer, false, true);",
@@ -82,7 +82,7 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		"function suResume() { if (!polling && lostSince && suBusyState()) poll(); }",
 		"    suResume();\n  });",
 		// A plan or check that got an answer clears the silence too.
-		"if (r && typeof r === 'object') { st = r; lostSince = 0; }\n    render();\n    await probePeers();",
+		"planning = false; planFresh = true;\n    if (r && typeof r === 'object') { st = r; lostSince = 0; }\n    render();",
 		"if (r && typeof r === 'object') { st = r; lostSince = 0; } else show(T.suCheckFail, true);",
 	} {
 		if !strings.Contains(indexHTML, want) {

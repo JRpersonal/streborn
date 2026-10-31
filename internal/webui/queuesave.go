@@ -112,6 +112,8 @@ func (s *Server) LiveQueuePreset(slot int) (presets.Preset, bool) {
 	p, ok := queuePresetFromLive(slot, items, shuffle, folder)
 	if ok {
 		p.Folder = s.queueFolderRef(folder.key)
+		// Each track's object id where this agent listed it (#919).
+		s.fillLibraryRefs(&p)
 	}
 	return p, ok
 }
@@ -188,8 +190,8 @@ func (s *Server) handleQueueSaveSlot(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<12, &req) {
 		return
 	}
-	if req.Slot < 1 || req.Slot > 6 {
-		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+	if !presets.ValidSlot(req.Slot) {
+		http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 		return
 	}
 	p, ok := s.LiveQueuePreset(req.Slot)

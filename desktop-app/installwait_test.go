@@ -112,6 +112,10 @@ func TestAgentNotUpNamesTheSpeakersOwnSetupPhase(t *testing.T) {
 	stubBoxInSetup(t, true)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.Code != speakerInSetupCode {
 		t.Fatalf("code = %q, want %q", res.Code, speakerInSetupCode)
@@ -138,6 +142,10 @@ func TestAgentNotUpKeepsTheStrictVerdictForALiveSpeaker(t *testing.T) {
 	stubBoxInSetup(t, false)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.Code != "agent-not-up" || res.Message != "generic wording" {
 		t.Fatalf("live speaker: code=%q message=%q, want agent-not-up with the caller's wording", res.Code, res.Message)
@@ -171,6 +179,10 @@ func TestAgentNotUpReportsASilentSpeakerAsNotBackYet(t *testing.T) {
 	stubBoxInSetup(t, false)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.OK {
 		t.Fatal("result reads as success")
@@ -206,6 +218,10 @@ func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
 	stubBoxInSetup(t, false)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) {
 		return BoxInfo{Host: "192.0.2.36", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b9"}, true
 	}
@@ -251,6 +267,10 @@ func TestLateRecheckJournalsAStillSilentSpeaker(t *testing.T) {
 	shortWaitCeilings(t)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) { return BoxInfo{}, false }
 	a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "", "generic")
 
@@ -283,6 +303,10 @@ func TestLateRecheckAcceptsARunningProcessOverSSH(t *testing.T) {
 	stubBoxInSetup(t, false)
 
 	a := fastTestApp()
+	// Registered after every stub above, so it runs first: the late watcher
+	// is stopped and joined before the globals it was started with are
+	// restored (#1547).
+	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) { return BoxInfo{}, false }
 	a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "", "generic")
 

@@ -10,6 +10,7 @@ import { t } from '../i18n/index.js';
 import { BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
 import { shell2Mounted } from '../shell2/mount.js';
 import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
+import { qualityOptions, qualityStatusText } from '../spotifyquality.js';
 
 let deps = { switchView: () => {}, strBoxes: () => [] };
 export function initSpotifyView(d) {
@@ -142,7 +143,7 @@ ${shell2Mounted() ? spotifyUi2Markup() : ''}
   const link = $('spotifyIssueLink');
   if (link) link.onclick = (e) => {
     e.preventDefault();
-    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/78'); } catch {}
+    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/new?template=bug_report.yml'); } catch {}
   };
   refreshQualityList();
   if (shell2Mounted()) renderSpotifyUi2(deps);
@@ -151,7 +152,9 @@ ${shell2Mounted() ? spotifyUi2Markup() : ''}
 // refreshQualityList paints one row per STR speaker with its configured
 // engine bitrate (#728). Speakers whose agent predates /spotify/quality (or
 // is unreachable) show a hint instead of a selector. 320 kbps only reaches
-// Premium accounts, which is why the option says so.
+// Premium accounts, which is why the option says so. Below the selector the
+// row names the active bitrate and why ("320 kbps (Premium default)"), see
+// spotifyquality.js.
 async function refreshQualityList() {
   const root = $('spotifyQualityList');
   if (!root) return;
@@ -167,12 +170,14 @@ async function refreshQualityList() {
       return `<div class="quality-row"><span>${escapeHtml(b.name)}</span>` +
         `<span class="muted small">${escapeHtml(t('spotify.qualityUnavailable'))}</span></div>`;
     }
-    const high = st.bitrate === 320;
+    const opts = qualityOptions(st, t).map(o =>
+      `<option value="${o.value}"${o.selected ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+    const status = qualityStatusText(st, t);
     return `<div class="quality-row"><span>${escapeHtml(b.name)}</span>` +
       `<select class="quality-select" data-host="${escapeHtml(b.host)}" data-port="${b.port}">` +
-      `<option value="160"${high ? '' : ' selected'}>160 kbps</option>` +
-      `<option value="320"${high ? ' selected' : ''}>320 kbps (Premium)</option>` +
+      opts +
       `</select>` +
+      (status ? `<span class="muted small quality-active">${escapeHtml(status)}</span>` : '') +
       (st.pending ? `<span class="muted small">${escapeHtml(t('spotify.qualityPending'))}</span>` : '') +
       `</div>`;
   }).join('');
@@ -181,8 +186,13 @@ async function refreshQualityList() {
       sel.disabled = true;
       try {
         const res = await SetSpotifyQuality(sel.dataset.host, parseInt(sel.dataset.port, 10), parseInt(sel.value, 10));
-        if (res && res.ok) showToast(res.applied ? t('spotify.qualitySet') : t('spotify.qualityPending'));
-        else showError(t('spotify.qualityFailed'));
+        if (res && res.ok) {
+          showToast(res.applied ? t('spotify.qualitySet') : t('spotify.qualityPending'));
+          // Repaint so the active bitrate and its reason follow the change.
+          refreshQualityList();
+          return;
+        }
+        showError(t('spotify.qualityFailed'));
       } catch (e) {
         showError(String(e));
       } finally {

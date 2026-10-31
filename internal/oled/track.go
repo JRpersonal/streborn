@@ -816,54 +816,6 @@ func fitRunes(s string, f *smoothFont, w int) int {
 	return n
 }
 
-// wrapText breaks s into at most maxLines lines of cols characters at spaces,
-// splitting a word only when it alone is longer than a line. When s does not
-// fit, the last line ends in "..." and cut is true. s is sanitised for the
-// dot-matrix font (SanitizeText), so one byte is one character. The notices
-// wrap with it; the track screen and the preset notice's station name wrap
-// by pixel width (wrapWidth).
-func wrapText(s string, cols, maxLines int) (lines []string, cut bool) {
-	if s == "" || maxLines <= 0 {
-		return nil, false
-	}
-	cur := ""
-	words := strings.Fields(s)
-	for i := 0; i < len(words); i++ {
-		w := words[i]
-		switch {
-		case cur == "" && len(w) <= cols:
-			cur = w
-		case cur != "" && len(cur)+1+len(w) <= cols:
-			cur += " " + w
-		case cur == "":
-			// a word longer than a line: split it
-			cur = w[:cols]
-			words[i] = w[cols:]
-			i--
-		default:
-			lines = append(lines, cur)
-			cur = ""
-			i--
-		}
-		if len(lines) == maxLines {
-			// a word is still waiting: it does not fit any more
-			cut = true
-			break
-		}
-	}
-	if !cut && cur != "" {
-		lines = append(lines, cur)
-	}
-	if cut {
-		last := lines[len(lines)-1]
-		if len(last)+3 > cols {
-			last = strings.TrimRight(last[:cols-3], " ")
-		}
-		lines[len(lines)-1] = last + "..."
-	}
-	return lines, cut
-}
-
 // clockText is the time as the track screen draws it: "15:42", or "3:42"
 // with "PM" apart when the speaker's clock is set to 12 hours.
 func clockText(now time.Time, hour12 bool) (hm, ampm string) {

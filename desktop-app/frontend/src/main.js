@@ -13,13 +13,17 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { unsafeNameBoxes } from './speakername.js';
+import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
+import { holdsByHost, holdFor } from './installhold.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
   AddBoxByIP,
   RebootBox,
+  RepairSpeakerName,
   RemoveConflictingMod,
   RestoreSTRCloud,
   UpdateFailureReport,
@@ -98,6 +102,7 @@ import {
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
+  InstallHolds,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -226,6 +231,7 @@ import {
   groupCountSplit,
   onZoneLive,
   notifyZoneLive,
+  anyInLiveGroup,
 } from './groups.js';
 import { pairDisplayName, healPairNames } from './stereoNames.js';
 import { findStalePairs, confirmStalePairs, staleFindingFor } from './stalestereo.js';
@@ -418,7 +424,12 @@ initSpotifyView({
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
+initSetupView({
+  switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab,
+  // The speaker list reads the same holds (speakertile.js); repaint it when a
+  // speaker enters or leaves one.
+  installHoldsChanged: () => { renderBoxSelect(); renderShellSpeakers(); },
+});
 initStreamSourceView({
   playStation: (station, playback) => playStation({
     url: playback.streamURL,
@@ -617,6 +628,7 @@ document.querySelector('#app').innerHTML = `
     <div class="modal-content">
       <h3 id="pickTitle">${escapeHtml(t('preset.assignTitle'))}</h3>
       <p class="modal-sub" id="pickSub"></p>
+      <div class="pick-rows hidden" id="pickRows"></div>
       <div class="pick-grid" id="pickGrid"></div>
       <button class="btn btn-secondary" id="pickCancel">${escapeHtml(t('common.cancel'))}</button>
     </div>
@@ -2119,6 +2131,11 @@ function maybeShowSpeakerUpdateCard() {
       `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
       `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
       `<ul class="suc-list">${list}</ul>` +
+      // Several speakers at once restart one after the other; any of them in
+      // a live group leaves it (#1339). One speaker goes through doBoxUpdate,
+      // whose own banner says it for that speaker.
+      (outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)
+        ? `<div class="suc-text" id="sucGroupNote">${escapeHtml(t('updateAll.groupNote'))}</div>` : '') +
       `<div class="suc-actions">` +
         `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
         `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
@@ -2486,10 +2503,15 @@ function checkBoxIssueBanner() {
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
   }
   if (keyErr.length) {
-    const names = keyErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.groupKeyErrorBanner', {
-      name: names, reason: keyErr[0].groupKeyError,
-    })));
+    // A refusal the user can act on reads as a sentence in their language,
+    // one per kind; the agent's raw reason (English, technical) is the line
+    // under it, visible and selectable for a support mail, not hover-only.
+    for (const line of groupKeyErrorBanners(keyErr, getBoxLabel)) {
+      const text = escapeHtml(t(line.key, { name: line.names, reason: line.reason }));
+      msgs.push(line.key === 'speaker.groupKeyErrorBanner'
+        ? text
+        : `${text}<br><small class="muted">${escapeHtml(line.reasons.join(' | '))}</small>`);
+    }
   }
   if (holdErr.length) {
     const names = holdErr.map(b => getBoxLabel(b)).join(', ');
@@ -2503,7 +2525,19 @@ function checkBoxIssueBanner() {
       name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
+  // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
+  // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
+  // music library cannot play while radio still does, and nothing else on
+  // screen says why. Not dismissible; the fix is one tap.
+  const badName = unsafeNameBoxes(boxes);
+  if (badName.length) {
+    const names = badName.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
+  }
   if (!msgs.length) { el.classList.add('hidden'); return; }
+  const badNameBtn = badName.length
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueBadNameBtn">${escapeHtml(t('speaker.badNameFixBtn'))}</button>`
+    : '';
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
   // instead of just telling them to "set it up in the settings": the button
   // jumps straight to that speaker's settings, where the Wi-Fi section is.
@@ -2535,6 +2569,7 @@ function checkBoxIssueBanner() {
     : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${badNameBtn}
     ${cloudBtn}
     ${stormBtn}
     ${conflictBtn}
@@ -2551,6 +2586,26 @@ function checkBoxIssueBanner() {
       showError(String(e));
     } finally {
       sb.disabled = false;
+    }
+  };
+  const bnb = $('boxIssueBadNameBtn');
+  if (bnb) bnb.onclick = async () => {
+    bnb.disabled = true;
+    try {
+      for (const box of badName) {
+        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
+        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
+        box.friendlyName = name || box.friendlyName;
+        box.speakerNameUnsafe = false;
+        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
+        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: box.friendlyName, speakerNameUnsafe: false };
+      }
+      checkBoxIssueBanner();
+      renderBoxSelect();
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      bnb.disabled = false;
     }
   };
   const cloudB = $('boxIssueCloudBtn');
@@ -2860,6 +2915,7 @@ function renderBoxSelect() {
     needsUpdate: boxNeedsUpdate,
     cannotReachInternet: boxCannotReachInternet,
     stereoPairs: livePairs,
+    installHolds: state.installHolds,
   };
   const pill = (b) => {
     const tile = speakerTileState(b, tileCtx);
@@ -2901,9 +2957,17 @@ function renderBoxSelect() {
       // first-time "Ready for STR", so the owner knows this is a repair, not
       // a speaker that never had STR (2026-09-06 report: the card kept the
       // old version badge on a speaker STR had just been removed from).
+      //
+      // A speaker an update from this app is still finishing on says that, and
+      // its tooltip offers no install: the guard would refuse it (field case
+      // 2026-10-30, the badge said "STR not running" and the tooltip "Click
+      // to install STR again" while the update was still coming up).
       const gone = tile.strNotRunning;
-      const badge = `<span class="box-stock-badge${gone ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge'))}</span>`;
-      const stockTitle = off ? offTitle : t(gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
+      const finishing = tile.updateFinishing;
+      const badgeKey = finishing ? 'speaker.updateFinishingBadge' : gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge';
+      const badge = `<span class="box-stock-badge${gone || finishing ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(badgeKey))}</span>`;
+      const stockTitle = off ? offTitle
+        : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
@@ -3125,6 +3189,17 @@ async function pickBox(box, titleHint) {
     // a positive CTA instead of blocking soundbars / adapters. Setup notes the
     // hardware-preset-button caveat for 'limited' models.
     const label = getBoxLabel(box);
+    // An update from this app still finishing on the speaker makes it look
+    // stock (its agent is restarting into the new version), and the install
+    // this dialog invites would be refused by the install guard. Say what is
+    // going on instead (field case 2026-10-30). A failed call falls through to
+    // the usual invitation; the guard stays the backstop.
+    let hold = null;
+    try { hold = holdFor(holdsByHost(await InstallHolds([box.host])), box.host); } catch {}
+    if (hold) {
+      showToast(t('speaker.updateFinishingToast', { label }));
+      return;
+    }
     const ok = await confirmWarn(
       t('speaker.stockConfirmTitle'),
       t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),
@@ -3354,6 +3429,16 @@ onZoneLive(() => { healPairNames(stereoPairsOf(state.zoneLive || {}), state.boxe
 // the speaker's own settings), read both halves straight away rather than at
 // the next status poll, so the slider reads the pair before it is touched.
 onZoneLive(syncVolumeScopeOnZoneLive);
+// The speaker update card usually paints before the first zone round lands.
+// Redraw it once its group note would change, and only then: a redraw resets
+// its button, which may be mid-click (#1339).
+onZoneLive(() => {
+  const el = $('speakerUpdateCard');
+  if (!el || el.classList.contains('hidden')) return;
+  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  const want = outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive);
+  if (want !== !!$('sucGroupNote')) maybeShowSpeakerUpdateCard();
+});
 
 // A speaker stuck as half of a stereo pair that no longer exists (see
 // stalestereo.js). Recomputed after every zone round from data the poll already
@@ -4174,6 +4259,9 @@ async function runUpdateAllBoxes(onStart) {
       }
     } catch { /* headroom unknown (older agent): never block a batch */ }
   }
+  // A grouped speaker leaves its group while it restarts, in a run just as in
+  // a single update (#1339): said once, before the run starts.
+  if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('updateAll.groupNote'));
   hideToast();
   // The prompt used to be one plain string with "\n" separators pushed through
   // innerHTML, where HTML collapses newlines: four speakers plus two notes

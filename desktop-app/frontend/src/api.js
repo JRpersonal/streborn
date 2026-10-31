@@ -24,6 +24,7 @@ export {
   PhoneQR,
   PhoneAddressFor,
   RebootBox,
+  RepairSpeakerName,
   RecordUpdateIntent,
   ClearUpdateIntent,
   PendingUpdateIntent,
@@ -43,6 +44,7 @@ export {
   GetFirmwareGuide,
   FlashBoseFirmware,
   BoxInstallReachable,
+  InstallHolds,
   Pause,
   Resume,
   Stop,
@@ -312,6 +314,12 @@ export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notic
 // Optional binding, per the note above.
 export function SaveNativePreset(host, port, slot, name) {
   return callOptionalBinding('SaveNativePreset', [host, port, slot, name]);
+}
+
+// SavePandoraStationPreset stores a Pandora station from the station list on a
+// key without starting it (#1595). Optional binding, per the note above.
+export function SavePandoraStationPreset(host, port, slot, name, location, type, art) {
+  return callOptionalBinding('SavePandoraStationPreset', [host, port, slot, name, location, type, art]);
 }
 
 // Pandora and iHeartRadio, the services the speaker plays by itself

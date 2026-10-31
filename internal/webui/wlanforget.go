@@ -898,6 +898,10 @@ func (s *Server) handleBoxWLANNetworks(w http.ResponseWriter, r *http.Request) {
 			"reason":    plan.Reason,
 		},
 		"lastForgetVerdict": rec.Verdict,
+		// Whether DELETE /api/box/wlan (forget the Wi-Fi altogether) would
+		// run for this very connection: only on a cabled speaker reached over
+		// its cable (wlanclear.go). The app offers the button on that alone.
+		"forgetAll": wlanClearState(r),
 	})
 }
 

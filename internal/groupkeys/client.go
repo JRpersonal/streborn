@@ -177,14 +177,16 @@ func idIn(ids []string, want string) bool {
 func (c *httpClient) bases(ctx context.Context, master Member) ([]string, error) {
 	master, err := c.resolve(ctx, master)
 	if err != nil {
-		return nil, err
+		// The stored address now belongs to another speaker (or none): a
+		// retry never helps, saving the group again does.
+		return nil, withKind(KindMemberUnresolved, err)
 	}
 	if c.isSelf(master) {
 		return []string{fmt.Sprintf("http://127.0.0.1:%d", c.opts.LocalPort)}, nil
 	}
 	ip := master.IP
 	if ip == "" {
-		return nil, errors.New("the main speaker has no address")
+		return nil, withKind(KindMemberUnresolved, errors.New("the main speaker has no address"))
 	}
 	ports := []string{"17008", "8888"}
 	if c.opts.PortHint != nil {
@@ -209,9 +211,15 @@ func (c *httpClient) bases(ctx context.Context, master Member) ([]string, error)
 // (a stock Bose web server on :8888 answers 404 for every agent path). The
 // response body is read in full, capped, and returned with the status.
 func (c *httpClient) do(ctx context.Context, master Member, method, path, body string, timeout time.Duration) (int, []byte, error) {
+	code, b, _, err := c.doH(ctx, master, method, path, body, timeout)
+	return code, b, err
+}
+
+// doH is do that also hands back the response headers (nil on error).
+func (c *httpClient) doH(ctx context.Context, master Member, method, path, body string, timeout time.Duration) (int, []byte, http.Header, error) {
 	bases, err := c.bases(ctx, master)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	client := &http.Client{Timeout: timeout}
 	var lastErr error
@@ -242,13 +250,17 @@ func (c *httpClient) do(ctx context.Context, master Member, method, path, body s
 			lastErr = fmt.Errorf("%s: 404", base)
 			continue
 		}
-		return resp.StatusCode, b, nil
+		return resp.StatusCode, b, resp.Header, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no agent port answered")
 	}
-	return 0, nil, lastErr
+	return 0, nil, nil, lastErr
 }
+
+// IsSelf reports whether m is this speaker, so a press can tell a main speaker
+// it reaches over loopback from one on the LAN (see Store.act).
+func (c *httpClient) IsSelf(m Member) bool { return c.isSelf(m) }
 
 // zoneAnswer is the subset of GET /api/box/zone the toggle needs.
 type zoneAnswer struct {
@@ -259,8 +271,33 @@ type zoneAnswer struct {
 	} `json:"members"`
 }
 
+// liveZoneRetryDelay is the pause before the one retry of a zone read that
+// timed out or came back as a gateway error. A var so tests need not wait.
+var liveZoneRetryDelay = 1500 * time.Millisecond
+
+// retryableZoneRead reports whether a failed zone read is worth one more try:
+// the agent answered, but the firmware behind it did not (502/503/504). An
+// agent that cannot be reached at all is not retried: every port was already
+// tried, each with its full budget, and the press would only hang longer.
+func retryableZoneRead(code int, err error) bool {
+	if err != nil {
+		return false
+	}
+	return code == http.StatusBadGateway || code == http.StatusServiceUnavailable || code == http.StatusGatewayTimeout
+}
+
 func (c *httpClient) LiveZone(ctx context.Context, master Member) (LiveZone, error) {
 	code, b, err := c.do(ctx, master, http.MethodGet, "/api/box/zone", "", zoneReadTimeout)
+	if (err != nil || code != http.StatusOK) && retryableZoneRead(code, err) && ctx.Err() == nil {
+		// The Bose web server behind the agent stalls for seconds at a time
+		// (a fleet-wide :8090 stall on several ST20s, 2026-10-27): one more
+		// read after a short pause turns many of those presses into a group.
+		select {
+		case <-ctx.Done():
+		case <-time.After(liveZoneRetryDelay):
+			code, b, err = c.do(ctx, master, http.MethodGet, "/api/box/zone", "", zoneReadTimeout)
+		}
+	}
 	if err != nil {
 		return LiveZone{}, err
 	}
@@ -348,7 +385,7 @@ func (c *httpClient) Form(ctx context.Context, tpl Template) (bool, error) {
 	// address now belongs to another speaker stops the form.
 	master, err := c.resolve(ctx, tpl.Master)
 	if err != nil {
-		return false, fmt.Errorf("main speaker: %w", err)
+		return false, withKind(KindMemberUnresolved, fmt.Errorf("main speaker: %w", err))
 	}
 	body := formBody{
 		Master:    wireMember{DeviceID: master.DeviceID, IP: master.IP},
@@ -361,14 +398,14 @@ func (c *httpClient) Form(ctx context.Context, tpl Template) (bool, error) {
 		if err != nil {
 			// The commonest way a press does nothing at all, and the one that
 			// leaves dissolving working: dissolve never resolves a member.
-			return false, fmt.Errorf("member %s: %w", memberLabel(m), err)
+			return false, withKind(KindMemberUnresolved, fmt.Errorf("member %s: %w", memberLabel(m), err))
 		}
 		body.Slaves = append(body.Slaves, wireMember{DeviceID: rm.DeviceID, IP: rm.IP})
 	}
 	b, _ := json.Marshal(body)
 	code, rb, err := c.do(ctx, tpl.Master, http.MethodPost, "/api/box/zone", string(b), formTimeout)
 	if err != nil {
-		return false, fmt.Errorf("reaching the main speaker: %w", err)
+		return false, withKind(KindMasterUnresponsive, fmt.Errorf("reaching the main speaker: %w", err))
 	}
 	if code != http.StatusOK {
 		return false, httpErr(code, rb)
@@ -403,8 +440,15 @@ func (c *httpClient) Dissolve(ctx context.Context, master Member) error {
 // Idle reads the main speaker's now-playing (GET /api/status proxies the
 // firmware's XML) and reports true unless it is playing or buffering. A
 // paused speaker counts as idle: the press is meant to end in music.
+//
+// While the firmware does not answer, the agent serves the last now-playing it
+// had and marks it X-STR-Status-Stale. A stale body that says the speaker
+// plays is still the best estimate: read as idle, the press re-pushed the last
+// STR station over whatever the speaker was playing (Bluetooth, AUX, Spotify).
+// A stale body that does not say it plays proves nothing either way, so that
+// one counts as unknown, which the caller treats as idle.
 func (c *httpClient) Idle(ctx context.Context, master Member) (bool, error) {
-	code, b, err := c.do(ctx, master, http.MethodGet, "/api/status", "", zoneReadTimeout)
+	code, b, hdr, err := c.doH(ctx, master, http.MethodGet, "/api/status", "", zoneReadTimeout)
 	if err != nil {
 		return true, err
 	}
@@ -413,6 +457,9 @@ func (c *httpClient) Idle(ctx context.Context, master Member) (bool, error) {
 	}
 	s := string(b)
 	busy := strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	if !busy && hdr.Get("X-STR-Status-Stale") == "1" {
+		return true, errors.New("the speaker's now-playing is stale (its web server is not answering)")
+	}
 	return !busy, nil
 }
 

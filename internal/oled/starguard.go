@@ -11,8 +11,9 @@ import (
 // our own sprites.
 
 const (
-	sgTop      = 9  // the play area starts under the HUD line
+	sgTop      = 12 // the play area starts under the HUD line (the score's smooth digits are 10 rows)
 	sgShipY    = 92 // top of the ship
+	sgHUDBase  = 9  // baseline of the score in the top line
 	sgShipHalf = 4
 	sgCols     = 8
 	sgColStep  = 13
@@ -537,19 +538,20 @@ func (g *Starguard) Frame(buf []byte) {
 	for _, s := range g.stars {
 		fillRect(buf, s.x, s.y16/16, 1, 1, s.lvl)
 	}
-	// HUD: score on the left, lives as small ships on the right
-	drawDigits(buf, g.Score, 1, 0, 1, 15)
+	// HUD: score on the left in the small face, lives as small ships on the
+	// right, centred on the score's capitals (rows 1..8)
+	drawText(buf, strconv.Itoa(g.Score), smoothSmall, 1, sgHUDBase, 15)
 	for i := 0; i < g.lives && i < 5; i++ {
-		drawSprite(buf, []string{".#.", "###", "#.#"}, Width-4-i*5, 2, 9)
+		drawSprite(buf, []string{".#.", "###", "#.#"}, Width-4-i*5, 4, 9)
 	}
 	if g.shieldOwned {
 		lvl := 4
 		if g.shield {
 			lvl = 12
 		}
-		fillRect(buf, Width-4-5*5-3, 2, 1, 3, lvl)
-		fillRect(buf, Width-4-5*5-2, 1, 3, 1, lvl)
-		fillRect(buf, Width-4-5*5, 2, 1, 3, lvl)
+		fillRect(buf, Width-4-5*5-3, 4, 1, 3, lvl)
+		fillRect(buf, Width-4-5*5-2, 3, 3, 1, lvl)
+		fillRect(buf, Width-4-5*5, 4, 1, 3, lvl)
 	}
 	fillRect(buf, 0, sgTop-2, Width, 1, 2)
 	if g.saucerD != 0 {
@@ -583,10 +585,10 @@ func (g *Starguard) Frame(buf []byte) {
 		}
 	}
 	if g.banner > 0 && !g.over {
-		drawWordNum(buf, "WAVE", g.wave, 38, 15)
+		drawWordNum(buf, "WAVE", g.wave, smoothLarge, 50, 15)
 		// the upgrade blinks in, then stays
 		if g.bannerText != "" && (g.banner < sgBanner-30 || (g.banner/5)%2 == 0) {
-			drawWord(buf, g.bannerText, (Width-len(g.bannerText)*6+1)/2, 54, 1, 11)
+			drawTextCentred(buf, g.bannerText, smoothSmall, Width/2, 64, 11)
 		}
 	}
 	if g.over {
@@ -594,23 +596,18 @@ func (g *Starguard) Frame(buf []byte) {
 		clearRect(buf, 10, 22, Width-20, 62)
 		fillRect(buf, 10, 22, Width-20, 1, 8)
 		fillRect(buf, 10, 83, Width-20, 1, 8)
-		drawWord(buf, "GAME OVER", (Width-9*6+1)/2, 26, 1, 15)
-		n := len(strconv.Itoa(g.Score))
-		drawDigits(buf, g.Score, (Width-(n*11-1))/2, 37, 2, 15)
+		drawTextCentred(buf, "GAME OVER", smoothSmall, Width/2, 33, 15)
+		drawTextCentred(buf, strconv.Itoa(g.Score), smoothLarge, Width/2, 51, 15)
 		if g.Score > g.best && g.Score > 0 {
-			drawWord(buf, "NEW HIGHSCORE", (Width-13*6+1)/2, 58, 1, 15)
+			drawTextCentred(buf, "NEW HIGHSCORE", smoothSmall, Width/2, 66, 15)
 		} else {
-			drawWordNum(buf, "BEST", g.best, 58, 9)
+			drawWordNum(buf, "BEST", g.best, smoothSmall, 66, 9)
 		}
-		drawWordNum(buf, "WAVE", g.wave, 70, 6)
+		drawWordNum(buf, "WAVE", g.wave, smoothSmall, 78, 6)
 	}
 }
 
-// drawWordNum centres "WORD n" on the panel at row y: the letters from the
-// 5x7 font, the number from the 5x7 digits.
-func drawWordNum(buf []byte, word string, n, y, lvl int) {
-	w := len(word)*6 + 6 + len(strconv.Itoa(n))*6 - 1
-	x := (Width - w) / 2
-	drawWord(buf, word, x, y, 1, lvl)
-	drawDigits(buf, n, x+len(word)*6+6, y, 1, lvl)
+// drawWordNum centres "WORD n" in face f on the panel, on the baseline y.
+func drawWordNum(buf []byte, word string, n int, f *smoothFont, y, lvl int) {
+	drawTextCentred(buf, word+" "+strconv.Itoa(n), f, Width/2, y, lvl)
 }

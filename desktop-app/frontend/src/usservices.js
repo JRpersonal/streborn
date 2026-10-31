@@ -23,6 +23,11 @@ const NO_ACCOUNT_NAME = '(no account name)';
 //   'unlinked' enabled, no account on the speaker
 //   'linked'   the speaker holds an account but does not list the source as
 //              READY yet (it logs in and registers it, which takes a while)
+//   'stale'    the speaker still lists an older account from before STR (the
+//              stand-in only carried it over) that is not READY, and nothing
+//              signed in since: no STR registration, no credential. The
+//              speaker never logs it in by itself, so the user has to sign in
+//              again (#1630)
 //   'ready'    the speaker lists the source as READY with an account
 //
 // account is the masked account name the agent reports, '' when it has none.
@@ -38,6 +43,7 @@ export function usServiceState(status, type) {
   const hasBoxAccount = box.hasAccount === 'true' || box.hasAccount === true;
   const boxReady = String(box.status || '').toUpperCase() === 'READY';
   if (hasBoxAccount && boxReady) return { state: 'ready', account };
+  if (hasBoxAccount && !svc.registered && !svc.hasCredential && svc.carriedOver) return { state: 'stale', account };
   if (hasBoxAccount || svc.registered) return { state: 'linked', account };
   return { state: 'unlinked', account };
 }
@@ -62,15 +68,21 @@ export function usServiceStatusKey(st) {
   switch (st && st.state) {
     case 'ready': return named ? 'usServices.stateReady' : 'usServices.stateReadyNoName';
     case 'linked': return named ? 'usServices.stateLinked' : 'usServices.stateLinkedNoName';
+    case 'stale': return named ? 'usServices.stateStale' : 'usServices.stateStaleNoName';
     case 'off': return 'usServices.stateOff';
     default: return 'usServices.stateUnlinked';
   }
 }
 
-// usServiceCanDisconnect says whether a row offers Disconnect instead of the
-// login form.
+// usServiceCanDisconnect says whether a row offers Disconnect. A 'stale' row
+// offers it next to the login form, so the old account can also be removed.
 export function usServiceCanDisconnect(st) {
-  return !!st && (st.state === 'linked' || st.state === 'ready');
+  return !!st && (st.state === 'linked' || st.state === 'ready' || st.state === 'stale');
+}
+
+// usServiceNeedsLogin says whether a row shows the login form.
+export function usServiceNeedsLogin(st) {
+  return !st || (st.state !== 'linked' && st.state !== 'ready');
 }
 
 // pandoraFindVisible is the rule for the Find tab's Pandora entry: only while

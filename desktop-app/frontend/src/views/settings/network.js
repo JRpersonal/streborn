@@ -6,7 +6,7 @@ import { state, saveSearchCountry } from '../../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { COUNTRIES, optFlag } from '../../localization.js';
-import { storedNetworksView, storedNetworksHtml, forgetRefusalKey } from '../../wlanforget.js';
+import { storedNetworksView, storedNetworksHtml, forgetRefusalKey, forgetAllRefusalKey } from '../../wlanforget.js';
 import {
   ListWiFiProfiles,
   BoxWifiScan,
@@ -93,6 +93,10 @@ export function renderNetworkSections(ctx) {
         <ul id="wlanStoredList" class="wlan-stored-list"><li class="muted small">${escapeHtml(t('settingsView.wlanStoredLoading'))}</li></ul>
         <button class="btn btn-mini" id="wlanForgetOthersBtn" hidden>${escapeHtml(t('settingsView.wlanForgetOthersBtn'))}</button>
         <small class="muted small" id="wlanForgetNote" style="display:block"></small>
+        <div id="wlanForgetAllRow" hidden style="margin-top:8px">
+          <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanForgetAllHint'))}</small>
+          <button class="btn btn-danger btn-mini" id="wlanForgetAllBtn">${escapeHtml(t('settingsView.wlanForgetAllBtn'))}</button>
+        </div>
       </div>
     </div>
 
@@ -351,6 +355,8 @@ function wireWlanStored(box) {
   const note = $('wlanForgetNote');
   if (!list || !btn || !note || !box || !box.host) return;
   let view = null;
+  const allRow = $('wlanForgetAllRow');
+  const allBtn = $('wlanForgetAllBtn');
   const load = async () => {
     try {
       const r = await boxFetch(box, '/api/box/wlan/networks', {}, 15000);
@@ -360,6 +366,7 @@ function wireWlanStored(box) {
       list.innerHTML = `<li class="muted small">${escapeHtml(t('settingsView.wlanStoredUnavailable'))}</li>`;
       btn.hidden = true;
       note.textContent = '';
+      if (allRow) allRow.hidden = true;
       return;
     }
     list.innerHTML = storedNetworksHtml(view, t, escapeHtml);
@@ -370,10 +377,48 @@ function wireWlanStored(box) {
     const forgetBox = $('boxWlanForgetOthers');
     if (forgetRow) forgetRow.hidden = !view.forgetSupported;
     if (forgetBox && !view.forgetSupported) forgetBox.checked = false;
-    note.textContent = view.refusalKey && view.networks.length > 1
+    // A cabled speaker gets "Forget Wi-Fi" instead, so the forget-others
+    // refusal ("only works while it is on Wi-Fi") would contradict it.
+    note.textContent = view.refusalKey && view.networks.length > 1 && !view.canForgetAll
       ? t(view.refusalKey)
       : '';
+    if (allRow) allRow.hidden = !view.canForgetAll;
   };
+  // "Forget Wi-Fi" (#969): a speaker on a network cable drops every stored
+  // Wi-Fi network. The agent refuses unless the speaker is cabled AND this
+  // request reached it over the cable, so the button can never cut it off.
+  if (allBtn) allBtn.onclick = () => withButtonPending(allBtn, async () => {
+    if (!view || !view.canForgetAll) return;
+    const speaker = box.friendlyName || box.name || box.host;
+    const ok = await confirmWarn(
+      t('settingsView.wlanForgetAllConfirmTitle'),
+      t('settingsView.wlanForgetAllConfirmBody', { speaker: '<b>' + escapeHtml(speaker) + '</b>' }),
+    );
+    if (!ok) return;
+    try {
+      const r = await boxFetch(box, '/api/box/wlan', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reboot: true }),
+      }, 30000);
+      let res = {};
+      try { res = await r.json(); } catch {}
+      if (!r.ok || res.status !== 'ok') {
+        const key = forgetAllRefusalKey(res.code);
+        showError(key ? t(key) : t('settingsView.wlanForgetAllFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
+        await load();
+        return;
+      }
+      if (allRow) allRow.hidden = true;
+      if (res.rebooting) {
+        showToast(t('settingsView.wlanForgetAllDone'), 9000);
+        setTimeout(deps.discoverBoxes, 90000);
+      } else {
+        showToast(t('settingsView.wlanForgetAllDoneNoRestart'), 7000);
+        await load();
+      }
+    } catch (e) { showError(e); }
+  });
   btn.onclick = () => withButtonPending(btn, async () => {
     if (!view || !view.canForget) return;
     const speaker = box.friendlyName || box.name || box.host;

@@ -102,7 +102,7 @@ Trigger ids, as stored in that file under `buttons`:
 | `thumbsUp`, `thumbsDown` | Thumbs up / Thumbs down on the remote | the press, additional only |
 | `prev`, `next` | Back / Forward on the remote | the press, additional only (also during playback, next to the skip) |
 | `playPause` | Play/Pause on the remote | the press, additional only |
-| `preset1` .. `preset6` | Preset keys (remote and top panel) | the speaker's preset selection; "replace" mode withholds STR's playback |
+| `preset1` .. `preset6` | Preset keys (remote and top panel) | the speaker's preset selection; "replace" mode withholds STR's playback. A double press that plays the key's second-row preset (slot `6+n`) fires the trigger once, for the first press; the second row has no triggers of its own |
 | `aux` | AUX (top panel) | the source change to AUX; not when AUX carries snooze (see "Snooze key") |
 | `power` | Power | the standby transition |
 | `thumb` (top-level field) | either thumbs key | fallback when the thumbs key has no trigger of its own |

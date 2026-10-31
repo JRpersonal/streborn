@@ -205,7 +205,7 @@ describe('the view keeps one copy and both layouts', () => {
     const play = srcOf('libraryPlay');
     expect(play).toContain("showToast(t('library.toastPlaying') + ': ' + (item.title || ''));");
     expect(play).toContain('else showError(`PlayURL: $' + '{e}`);');
-    expect(srcOf('libraryPlayFolder')).toContain("showToast(t('library.folderQueued', { n: items.length }));");
+    expect(srcOf('libraryPlayFolder')).toContain("showToast(t('library.folderQueued', { n: items.length - start }));");
     expect(srcOf('libraryBrowseCurrent')).toMatch(/if \(ui2\(\)\) \{[\s\S]*\} else if \(looksUnreachable\(e\)\) \{/);
   });
 

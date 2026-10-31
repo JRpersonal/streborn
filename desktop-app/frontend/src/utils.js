@@ -978,10 +978,12 @@ export function orionStationPayload(loc) {
 // this covers the v0.9.75 agent, which does not.
 export function isStrOriginLocation(loc) {
   const s = String(loc || '');
-  if (/^http:\/\/127\.0\.0\.1:\d+\/(?:stream\/[1-6]|spotify\/stream(?:-[1-6])?\.ogg)$/.test(s)) return true;
+  // Keys 1 to 12: a speaker with the second row of keys (#1110) has slots
+  // 7 to 12 in the same proxy forms.
+  if (/^http:\/\/127\.0\.0\.1:\d+\/(?:stream\/(?:1[0-2]|[1-9])|spotify\/stream(?:-(?:1[0-2]|[1-9]))?\.ogg)$/.test(s)) return true;
   const payload = orionStationPayload(s);
   const url = payload && typeof payload.streamUrl === 'string' ? payload.streamUrl : '';
-  return /^http:\/\/127\.0\.0\.1:\d+\/stream\/[1-6]$/.test(url);
+  return /^http:\/\/127\.0\.0\.1:\d+\/stream\/(?:1[0-2]|[1-9])$/.test(url);
 }
 
 // WEBHOOK_PLACEHOLDER_NAME is what the agent writes into a "webhook only" key
@@ -1228,6 +1230,6 @@ export function artCarriesBoxForm(art) {
 // the generic URL.
 export function optimisticSpotifyLocation(loopback, slot) {
   const n = Number(slot);
-  if (Number.isInteger(n) && n >= 1 && n <= 6) return `${loopback}/spotify/stream-${n}.ogg`;
+  if (Number.isInteger(n) && n >= 1 && n <= 12) return `${loopback}/spotify/stream-${n}.ogg`;
   return `${loopback}/spotify/stream.ogg`;
 }

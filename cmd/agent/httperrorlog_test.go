@@ -59,17 +59,36 @@ func TestHTTPErrorLogRoutesHandshakeNoiseToDebug(t *testing.T) {
 			// root CA after a bundle regen) and must reach a bundle - it was
 			// previously demoted to DEBUG together with the probe noise.
 			name: "tls bad certificate -> warn",
-			line: "http: TLS handshake error from 192.0.2.1:43566: remote error: tls: bad certificate",
+			line: "http: TLS handshake error from 127.0.0.1:43566: remote error: tls: bad certificate",
 			want: slog.LevelWarn,
 		},
 		{
 			name: "tls unknown authority -> warn",
-			line: "http: TLS handshake error from 192.0.2.1:43567: remote error: tls: unknown certificate authority",
+			line: "http: TLS handshake error from 127.0.0.1:43567: remote error: tls: unknown certificate authority",
 			want: slog.LevelWarn,
 		},
 		{
 			name: "tls expired certificate alert -> warn",
-			line: "http: TLS handshake error from 192.0.2.1:43568: remote error: tls: expired certificate",
+			line: "http: TLS handshake error from 127.0.0.1:43568: remote error: tls: expired certificate",
+			want: slog.LevelWarn,
+		},
+		{
+			// Another device on the LAN refusing our certificate (#841: six
+			// Amazon Echos, about 150 lines a day) says nothing about the box.
+			name: "foreign peer refusal -> debug",
+			line: "http: TLS handshake error from 192.0.2.53:51234: remote error: tls: unknown certificate",
+			want: slog.LevelDebug,
+		},
+		{
+			name: "foreign ipv6 peer refusal -> debug",
+			line: "http: TLS handshake error from [2001:db8::5]:51234: remote error: tls: unknown certificate authority",
+			want: slog.LevelDebug,
+		},
+		{
+			// A peer the parser cannot read is treated as the box, so a
+			// changed stdlib format never hides the clock evidence.
+			name: "unparseable peer refusal -> warn",
+			line: "http: TLS handshake error from somewhere: remote error: tls: bad certificate",
 			want: slog.LevelWarn,
 		},
 	}

@@ -111,6 +111,12 @@ func (m *Manager) rememberAccountPlan(id, product string) {
 	if id == "" || product == "" {
 		return
 	}
+	// Every recorded answer may move the plan-dependent default bitrate
+	// (quality.go). Deferred so it runs after storeWriteMu is released, and
+	// also on the "nothing new" path: the first fresh read of an engine
+	// process can disagree with what the start computed even when the store
+	// already held this value.
+	defer m.reconcilePlanBitrate()
 	// Held across the snapshot AND the write, so two overlapping background
 	// reads can neither rename each other's temp file away nor let an older
 	// snapshot be the last one renamed into place.
@@ -162,6 +168,9 @@ func (m *Manager) noteEngineAccount(user string) {
 			m.productType, m.productCheckedAt = "", time.Time{}
 		}
 		m.productUser = user
+		if user != "" {
+			m.bitrLastUser = user
+		}
 		// A different account is a different question: the line saying a
 		// remembered plan was used has to be able to appear for it too.
 		m.productRememberedLogged = false

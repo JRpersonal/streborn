@@ -36,7 +36,8 @@ import (
 	"github.com/JRpersonal/streborn/internal/presets"
 )
 
-// playingKeyHeader carries the key /api/status found playing, 1 to 6, and is
+// playingKeyHeader carries the key /api/status found playing, 1 to 12 (7 to
+// 12 is the second row, #1110), and is
 // absent when no Spotify key holds what plays.
 const playingKeyHeader = "X-STR-Playing-Key"
 

@@ -244,7 +244,20 @@ func reconcileWlanIntentAt(p wlanIntentPaths, stored []storedNet, live string, l
 	if newNet == "" {
 		return ""
 	}
-	if credsSSID != "" {
+	retireWlanIntentAt(p, credsSSID != "", logger)
+	if logger != nil {
+		logger.Warn("wlan intent: the speaker was moved to another network outside STR; STR stops replaying, re-pushing or steering back to the network it set",
+			"strTag", ssidTag(strSSID), "newTag", ssidTag(newNet), "liveKnown", live != "")
+	}
+	return newNet
+}
+
+// retireWlanIntentAt sets STR's Wi-Fi records aside: the credentials move to
+// the retired path (kept, never deleted), the target and the baseline are
+// removed. Shared by the supersede check and the owner-setup check
+// (wlanownersetup.go).
+func retireWlanIntentAt(p wlanIntentPaths, haveCreds bool, logger *slog.Logger) {
+	if haveCreds {
 		if err := os.Rename(p.creds, p.retired); err != nil && logger != nil {
 			logger.Warn("wlan intent: could not set the old credentials aside", "err", err)
 		}
@@ -253,11 +266,6 @@ func reconcileWlanIntentAt(p wlanIntentPaths, stored []storedNet, live string, l
 		logger.Warn("wlan intent: could not clear the old target", "err", err)
 	}
 	_ = os.Remove(p.known)
-	if logger != nil {
-		logger.Warn("wlan intent: the speaker was moved to another network outside STR; STR stops replaying, re-pushing or steering back to the network it set",
-			"strTag", ssidTag(strSSID), "newTag", ssidTag(newNet), "liveKnown", live != "")
-	}
-	return newNet
 }
 
 // reconcileWlanIntent runs the check on the speaker. ifaces may be nil (the

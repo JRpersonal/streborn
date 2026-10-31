@@ -62,7 +62,15 @@ func (a rejoinAction) String() string {
 // classifyMemberForRejoin decides from a member's own now_playing (source +
 // play status) and its own zone master. Pure function: this is the decision
 // the old periodic re-assert got wrong when it dragged solo players back.
-func classifyMemberForRejoin(npSource, playStatus, memberZoneMaster, ourMaster string) rejoinAction {
+//
+// playKick says the master was just started by somebody on purpose. Then a
+// member playing on its own joins too: starting the main speaker of a
+// permanent group means "the whole group", and leaving a playing member out
+// looked like the group had lost it (#1576). Every path without that intent
+// (the periodic check, the re-form after a member reboots) keeps the solo
+// player out, which is what #342 was about. A member grouped under another
+// master stays out in every case.
+func classifyMemberForRejoin(npSource, playStatus, memberZoneMaster, ourMaster string, playKick bool) rejoinAction {
 	if npSource == "" {
 		return rejoinSkipUnreachable
 	}
@@ -77,7 +85,7 @@ func classifyMemberForRejoin(npSource, playStatus, memberZoneMaster, ourMaster s
 	}
 	// Standalone. Actually rendering audio means somebody chose that on
 	// purpose; a source that merely sits selected but stopped is idle enough.
-	if playStatus == "PLAY_STATE" || playStatus == "BUFFERING_STATE" {
+	if !playKick && (playStatus == "PLAY_STATE" || playStatus == "BUFFERING_STATE") {
 		return rejoinSkipSolo
 	}
 	return rejoinJoin
@@ -260,7 +268,7 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 			mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 			defer mcancel()
 			np := s.rejoinReadNowPlaying(mctx, m.IP)
-			act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
+			act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, true)
 			if act == rejoinWake {
 				s.rejoinWakeMember(mctx, m.IP, s.logger)
 				act = rejoinJoin
@@ -489,7 +497,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 	for _, m := range missing {
 		mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 		np := s.rejoinReadNowPlaying(mctx, m.IP)
-		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
+		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, false)
 		if act == rejoinWake {
 			up := s.rejoinReadAgentUptime(mctx, m.IP)
 			if up < 0 || time.Duration(up)*time.Second > rejoinFreshBootWindow {
@@ -584,7 +592,7 @@ func (s *Server) reformAfterMemberReboot(ctx context.Context, z zones.Zone) bool
 		}
 		mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 		np := s.rejoinReadNowPlaying(mctx, m.IP)
-		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master)
+		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, false)
 		isFresh := false
 		if act == rejoinWake || act == rejoinJoin {
 			up := s.rejoinReadAgentUptime(mctx, m.IP)

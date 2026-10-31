@@ -2,12 +2,14 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -165,5 +167,83 @@ func TestInstallDownloadedFeedsTheHandlerTheVerifiedBody(t *testing.T) {
 	_, _, err = s.installDownloaded(base+"download/v1.0.13/"+updatesig.AgentFile, other, h)
 	if err == nil || len(got) >= len(agent) {
 		t.Fatalf("mismatched hash: err=%v delivered=%d", err, len(got))
+	}
+}
+
+// A check running beside an install (the phone's "plan" asks for the latest
+// release too, and the install checks again when its index is old) leaves the
+// install's state alone. #1339: such a check set "idle" for a moment, the
+// phone polling right then took the update for over, stopped asking and kept
+// "Downloading, 9%" while the speaker finished on its own.
+func TestSelfUpdateCheckLeavesARunningInstallAlone(t *testing.T) {
+	origVer := agentVersion
+	t.Cleanup(func() { agentVersion = origVer })
+	SetAgentVersion("v1.0.12")
+	s, _ := selfUpdateFixture(t, "v1.0.13", []byte("agent-binary"), []byte("engine-binary"), nil)
+
+	for _, state := range []string{"downloading", "installing", "rebooting", "engine"} {
+		s.selfUpd.set(state, "agent")
+		s.selfUpd.progress(9, 100)
+		if _, err := s.selfUpdateCheck(context.Background()); err != nil {
+			t.Fatalf("%s: check failed: %v", state, err)
+		}
+		st := s.selfUpdateStatus()
+		if st.State != state || st.Done != 9 || st.Total != 100 || st.Latest != "v1.0.13" {
+			t.Fatalf("%s: a check beside the install changed it: %+v", state, st)
+		}
+	}
+
+	// An install that starts while a check runs keeps its state when the
+	// check ends, whichever way it ends.
+	s.selfUpd.set("idle", "")
+	if !s.selfUpd.beginCheck() {
+		t.Fatal("an idle updater refused the check")
+	}
+	s.selfUpd.set("downloading", "agent")
+	s.selfUpd.endCheck(nil)
+	s.selfUpd.endCheck(errors.New("could not check for updates: no route to host"))
+	if st := s.selfUpdateStatus(); st.State != "downloading" || st.Error != "" {
+		t.Fatalf("the ending check overwrote the install: %+v", st)
+	}
+
+	// Without an install the check reports as before.
+	s.selfUpd.set("failed", "")
+	if _, err := s.selfUpdateCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.selfUpdateStatus(); st.State != "idle" {
+		t.Fatalf("a plain check did not settle on idle: %+v", st)
+	}
+}
+
+// The phone card never freezes on an old answer (#1339, issue 13): its
+// status reads have a time limit, a list that arrives mid-update makes the
+// card follow that update, and a speaker that said its internet was gone
+// keeps that line through the whole outage.
+func TestPhoneCardFollowsAnUpdateItDidNotSeeEnd(t *testing.T) {
+	page := readIndexHTML(t)
+	js := page[strings.Index(page, "(function wireSelfUpdate(){"):strings.Index(page, "(function wireDiag(){")]
+	get := js[strings.Index(js, "async function suGet()"):]
+	get = get[:strings.Index(get, "\n  }\n")]
+	if !strings.Contains(get, "new AbortController()") || !strings.Contains(get, "ctl.abort()") || !strings.Contains(get, "signal: ctl.signal") {
+		t.Error("the card's status read has no time limit")
+	}
+	for _, fn := range []string{"async function load()", "async function ownStatus()"} {
+		line := js[strings.Index(js, fn):]
+		line = line[:strings.Index(line, "\n")]
+		if !strings.Contains(line, "await suGet()") {
+			t.Errorf("%s does not use the time-limited read: %s", fn, line)
+		}
+	}
+	pl := js[strings.Index(js, "async function plan()"):]
+	pl = pl[:strings.Index(pl, "\n  }\n")]
+	if !strings.Contains(pl, "if (suBusyState() && !polling") || !strings.Contains(pl, "poll();") {
+		t.Error("a list that arrives mid-update does not make the card follow it")
+	}
+	rd := js[strings.Index(js, "if (stBusy && lostSince) {"):]
+	rd = rd[:strings.Index(rd, "else if (st.state === 'checking')")]
+	net, quiet := strings.Index(rd, "st.phase === 'network'"), strings.Index(rd, "show(T.sfNoAnswer")
+	if net < 0 || quiet < 0 || net > quiet || !strings.Contains(rd, "T.sfNetWaitOne") {
+		t.Error("a silent speaker that last said it lost the internet does not keep the no-internet line")
 	}
 }

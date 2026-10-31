@@ -41,7 +41,13 @@ test.describe('UI 2.0 Radio', () => {
     test('1. names the speaker over its six keys and on every key', async ({ app }) => {
       const { page } = app;
       await expect(page.locator('#ui2KeysTitle')).toHaveText(`Keys on ${LR.friendlyName}`);
-      await expect(page.locator('#presets')).toHaveAttribute('aria-labelledby', 'ui2KeysTitle');
+      // Living Room keeps the second row of keys (#1110): Once | Twice sit in
+      // the heading's line, and the grid is their tab panel.
+      const rowTabs = page.locator('.ui2-keys-head #presetRowTabs');
+      await expect(rowTabs).toBeVisible();
+      await expect(rowTabs).toHaveAttribute('aria-label', `Keys on ${LR.friendlyName}`);
+      await expect(page.locator('#presets')).toHaveAttribute('role', 'tabpanel');
+      await expect(page.locator('#presets')).toHaveAttribute('aria-labelledby', 'presetRowTab1');
       const keys = page.locator('#presets .preset');
       await expect(keys).toHaveCount(6);
       await expect(keys.nth(2)).toHaveAttribute('role', 'group');
@@ -58,6 +64,10 @@ test.describe('UI 2.0 Radio', () => {
       const { page } = app;
       await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
       await expect(page.locator('#ui2KeysTitle')).toHaveText(`Keys on ${BR.friendlyName}`);
+      // One row of keys: no tabs, and the heading names the grid.
+      await expect(page.locator('#presetRowTabs')).toBeHidden();
+      await expect(page.locator('#presets')).toHaveAttribute('role', 'group');
+      await expect(page.locator('#presets')).toHaveAttribute('aria-labelledby', 'ui2KeysTitle');
       await expect(page.locator('#presets .preset-body').first()).toHaveAttribute('aria-label', new RegExp(`^Key 1 on ${BR.friendlyName}`));
       // The station rows name the new speaker in their actions too.
       await expect(row(page, ROCK.name).locator('[data-act="play"]')).toHaveAttribute('aria-label', `Play ${ROCK.name} on ${BR.friendlyName}`);
@@ -214,9 +224,12 @@ test.describe('UI 2.0 Radio', () => {
       await expect(page.getByRole('dialog', { name: `Put ${JAZZ.name} on a key of ${LR.friendlyName}` })).toBeVisible();
       const slots = page.locator('#pickGrid .pick-slot');
       await expect(slots.first()).toBeFocused();
-      // Tab stays inside: six keys and Cancel, then back to key 1.
-      for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+      // Tab stays inside: six keys, Cancel and the chosen Once | Twice tab of
+      // this two-row speaker (#1110), then back to key 1.
+      for (let i = 0; i < 8; i++) await page.keyboard.press('Tab');
       await expect(slots.first()).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(page.locator('#pickRowTab1')).toBeFocused();
       await page.keyboard.press('Shift+Tab');
       await expect(page.locator('#pickCancel')).toBeFocused();
       await page.keyboard.press('Escape');

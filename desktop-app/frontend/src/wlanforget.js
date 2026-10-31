@@ -23,6 +23,18 @@ export function forgetRefusalKey(code) {
   }
 }
 
+// forgetAllRefusalKey maps a refusal of DELETE /api/box/wlan (forget the
+// Wi-Fi altogether, cabled speakers only, #969) to its sentence. Unknown codes
+// fall back to the generic failure line with the agent's own reason.
+export function forgetAllRefusalKey(code) {
+  switch (code) {
+    case 'not-wired': return 'settingsView.wlanForgetAllRefused.notWired';
+    case 'reached-over-wifi': return 'settingsView.wlanForgetAllRefused.overWifi';
+    case 'chassis-unsupported': return 'settingsView.wlanForgetAllRefused.chassis';
+    default: return '';
+  }
+}
+
 // storedNetworksView turns the agent's answer into what the settings block
 // shows: the list (current network first), whether the button is offered,
 // the network that stays, how many would go, and a note when it is not.
@@ -45,6 +57,11 @@ export function storedNetworksView(resp) {
     canForget: !code && removable > 0 && !!current,
     refusalKey: code ? forgetRefusalKey(code) : '',
     refusalReason: fo.reason || '',
+    // "Forget Wi-Fi" is offered only when the agent says DELETE /api/box/wlan
+    // would run for this very connection: a cabled speaker reached over its
+    // cable, wpa chassis. An older agent without the field never gets it, and
+    // a speaker with nothing stored has nothing to forget.
+    canForgetAll: !!(resp && resp.forgetAll && resp.forgetAll.allowed === true) && sorted.length > 0,
   };
 }
 

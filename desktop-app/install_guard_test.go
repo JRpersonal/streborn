@@ -112,6 +112,80 @@ func TestOTAHoldExpiresAndThePinHolds(t *testing.T) {
 	}
 }
 
+// The picker asks InstallHolds for every speaker it lists. A speaker whose
+// update is still finishing (verify memo, or the live post-OTA pin) comes back
+// with how long is left; every other speaker, including one whose memo has
+// expired, is absent, so its first install stays on offer.
+func TestInstallHoldsReportsOnlyHeldSpeakers(t *testing.T) {
+	a := fastTestApp()
+	// The field case: update started 10 minutes ago, verify window ended
+	// "unreachable" 4 minutes ago.
+	a.rememberOTAPort("192.0.2.60", 17008)
+	a.otaVerifyMu.Lock()
+	m := a.otaVerify["192.0.2.60"]
+	m.at = time.Now().Add(-10 * time.Minute)
+	m.unconfirmedAt = time.Now().Add(-4 * time.Minute)
+	m.verdict = "unreachable"
+	a.otaVerify["192.0.2.60"] = m
+	a.otaVerifyMu.Unlock()
+
+	// Just pushed: only the post-OTA pin holds it.
+	a.notePostOTA("192.0.2.61")
+
+	// Long past its memo window.
+	a.rememberOTAPort("192.0.2.62", 8888)
+	a.otaVerifyMu.Lock()
+	m = a.otaVerify["192.0.2.62"]
+	m.at = time.Now().Add(-2 * otaVerifyMemoTTL)
+	m.unconfirmedAt = time.Now().Add(-otaVerifyMemoTTL - time.Minute)
+	a.otaVerify["192.0.2.62"] = m
+	a.otaVerifyMu.Unlock()
+
+	list := a.InstallHolds([]string{"192.0.2.60", "192.0.2.61", "192.0.2.62", "192.0.2.63", "", " 192.0.2.60 "})
+	got := map[string]InstallHold{}
+	for _, h := range list {
+		if _, dup := got[h.Host]; dup {
+			t.Errorf("%s listed twice", h.Host)
+		}
+		got[h.Host] = h
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d held speakers %v, want exactly the two with an update still finishing", len(list), list)
+	}
+	h, ok := got["192.0.2.60"]
+	if !ok {
+		t.Fatal("the speaker whose verify window ended unconfirmed is not held")
+	}
+	if h.Host != "192.0.2.60" {
+		t.Errorf("host = %q", h.Host)
+	}
+	if h.SinceSec < 9*60 || h.SinceSec > 11*60 {
+		t.Errorf("sinceSec = %d, want about 600 (the update started 10 minutes ago)", h.SinceSec)
+	}
+	wantLeft := int((otaVerifyMemoTTL - 4*time.Minute) / time.Second)
+	if h.RemainingSec < wantLeft-60 || h.RemainingSec > wantLeft+1 {
+		t.Errorf("remainingSec = %d, want about %d", h.RemainingSec, wantLeft)
+	}
+	since, remaining, _ := a.recentOTAHold("192.0.2.60")
+	if d := h.RemainingSec - int(remaining.Round(time.Second)/time.Second); d < -1 || d > 1 {
+		t.Errorf("InstallHolds says %ds left, recentOTAHold %v: they must agree", h.RemainingSec, remaining)
+	}
+	if d := h.SinceSec - int(since.Round(time.Second)/time.Second); d < -1 || d > 1 {
+		t.Errorf("InstallHolds says started %ds ago, recentOTAHold %v: they must agree", h.SinceSec, since)
+	}
+	if p, ok := got["192.0.2.61"]; !ok || p.RemainingSec <= 0 || p.RemainingSec > int(otaRebootGrace/time.Second) {
+		t.Errorf("live post-OTA pin: ok=%v hold=%+v, want a hold of at most %v", ok, p, otaRebootGrace)
+	}
+	for _, free := range []string{"192.0.2.62", "192.0.2.63", ""} {
+		if _, held := got[free]; held {
+			t.Errorf("%q is held, but nothing is finishing on it", free)
+		}
+	}
+	if empty := a.InstallHolds(nil); empty == nil || len(empty) != 0 {
+		t.Errorf("InstallHolds(nil) = %v, want an empty list, not null (the frontend iterates it)", empty)
+	}
+}
+
 // An STR agent that answers its version means STR is running: the install
 // refuses before it changes anything, with no update memo needed (an app
 // restarted since the update has none).

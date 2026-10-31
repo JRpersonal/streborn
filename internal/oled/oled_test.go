@@ -67,25 +67,43 @@ func TestLogoHoldExits(t *testing.T) {
 	}
 }
 
+// The splash's subtitles (and the games' titles under the same mark) fit the
+// panel in the large face, and are drawn in it: anti-aliased, on the rows
+// under the mark, not in the dot matrix the mark is made of.
 func TestSubtitlesFitAndRender(t *testing.T) {
+	subs := []string{"UPDATING"}
 	for _, k := range []Kind{KindBoot, KindInstalled, KindUpdated} {
-		s := k.subtitle()
-		if w := len(s)*6*subScale - subScale; w > Width {
+		subs = append(subs, k.subtitle())
+	}
+	for _, g := range Games {
+		subs = append(subs, g.Title)
+	}
+	for _, s := range subs {
+		if w := smoothLarge.width(s); w > Width-8 {
 			t.Errorf("%q is %d px wide", s, w)
 		}
-		for _, ch := range s {
-			if _, ok := font[ch]; !ok {
-				t.Errorf("%q: letter %q missing from the font", s, ch)
-			}
+		if sanitizeSmooth(s, trackTextMax) != s {
+			t.Errorf("%q is not drawable as is", s)
+		}
+		buf := make([]byte, FrameSize)
+		NewLogo(s, 6.5, 1).Frame(4, buf)
+		top := subBase - smoothLarge.capH
+		if litIn(buf, 0, top, Width, smoothLarge.capH) < 40 {
+			t.Errorf("%q: subtitle not drawn", s)
+		}
+		if greyIn(buf, 0, top, Width, smoothLarge.capH, subLvl) == 0 {
+			t.Errorf("%q: subtitle has no anti-aliased pixels", s)
 		}
 	}
-	for _, ch := range "UPDATING" {
-		if _, ok := font[ch]; !ok {
-			t.Errorf("UPDATING: letter %q missing", ch)
-		}
+	// While it zooms out, the subtitle grows with the mark and fades.
+	l := NewLogo("UPDATED", 6.5, 1)
+	still, zoom := make([]byte, FrameSize), make([]byte, FrameSize)
+	l.Frame(4, still)
+	l.Frame(5.3, zoom)
+	if litIn(zoom, 0, 0, Width, Height) == 0 || meanLevel(zoom) >= meanLevel(still)*4 {
+		t.Errorf("zoom frame: mean %.2f against %.2f standing", meanLevel(zoom), meanLevel(still))
 	}
 }
-
 func TestDecideKind(t *testing.T) {
 	dir := t.TempDir()
 	SeenPath = filepath.Join(dir, "splash-seen")

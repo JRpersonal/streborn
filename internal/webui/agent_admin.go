@@ -29,6 +29,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/oled"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -90,6 +91,10 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
 	}
+	// This agent keeps a second row of six presets (slots 7..12, a key pressed
+	// twice, #1110). The apps show row 2 only when this is present, so an
+	// older agent that would refuse slot 7 never gets offered one.
+	out["presetRows"] = strconv.Itoa(presets.Rows)
 	// The speaker's effective country and where it came from ("str": the
 	// wizard or app setting, "box": the firmware's countryCode). A US speaker
 	// gets the firmware's own Pandora and iHeartRadio back (usservices.go).
@@ -134,6 +139,17 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		out["boxHealthSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
 	} else {
 		out["boxHealth"] = "ok"
+	}
+	// A speaker name the firmware's UPnP renderer cannot survive (#1582,
+	// speakername.go): Spotify and the music library cannot play until it is
+	// renamed and restarted. The app and the phone page say exactly that and
+	// offer the repair. Emitted only when there is something to report.
+	unsafeName, rendererMissing := s.SpeakerNameIssue()
+	if unsafeName {
+		out["speakerNameUnsafe"] = "true"
+	}
+	if rendererMissing {
+		out["upnpRendererMissing"] = "true"
 	}
 	// Whether the speaker reaches the internet (internal/internet): a passive
 	// verdict fed by the clock sync and the stream proxy, no probe of its own.
@@ -203,6 +219,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.groupKeys != nil {
 		if a, ok := s.groupKeys.LastError(); ok && time.Since(a.At) < groupKeyErrorWindow {
 			out["groupKeyError"] = a.Error
+			// A stable code beside the raw text: the app explains the refusal
+			// in the user's language and keeps the text for the details.
+			if a.Kind != "" {
+				out["groupKeyErrorKind"] = a.Kind
+			}
 			out["groupKeyErrorKey"] = a.Key
 			out["groupKeyErrorAgeSec"] = strconv.FormatInt(int64(time.Since(a.At).Seconds()), 10)
 			if a.Template != "" {
@@ -277,8 +298,19 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// name on the phone-remote QR code rather than an address that changes with
 	// the next DHCP lease. Absent while no responder is running, which is the
 	// only honest answer.
-	if n := mdnsHostName; n != "" {
+	if n := currentMDNSHostName(); n != "" {
 		out["mdnsName"] = n
+	}
+	// A speaker on the cable AND on Wi-Fi answers on two addresses (#165). The
+	// app merges the two sightings by deviceID; these say which address is the
+	// cable (preferred) and which others to fall back to when it stops
+	// answering. Emitted only on a speaker with more than one address, so the
+	// common response stays small (wiredaddrs.go).
+	if all, wired := speakerLANAddrs(); strings.Contains(all, ",") {
+		out["lanAddrs"] = all
+		if wired != "" {
+			out["wiredAddrs"] = wired
+		}
 	}
 	// Which speaker this is, so the app can tell it from another one that got
 	// this address while both restarted (see SetAgentIdentityFn).
@@ -1069,9 +1101,10 @@ const strNANDDir = "/mnt/nv/streborn"
 // real statfs, other hosts report "unknown" so the package stays testable on
 // dev machines.
 
-// selfProxyPathRe matches the agent's own per-slot proxy path (/stream/1..6),
-// which is the box-visible preset location and never a valid station origin.
-var selfProxyPathRe = regexp.MustCompile(`^/stream/([1-6])$`)
+// selfProxyPathRe matches the agent's own per-slot proxy path (/stream/1..12,
+// both preset rows), which is the box-visible preset location and never a
+// valid station origin.
+var selfProxyPathRe = regexp.MustCompile(`^/stream/([1-9]|1[0-2])$`)
 
 // selfProxySlot reports whether raw points at this agent's own /stream/<slot>
 // proxy and which slot it references. Heuristic: the per-slot proxy path plus
@@ -1454,11 +1487,7 @@ func wlanCredsWarningWarranted() bool {
 	if hasSavedWLANCreds() || wlanCredsRetired() {
 		return false
 	}
-	mode, err := os.ReadFile(filepath.Join(strNANDDir, "wlan-mode"))
-	if err != nil {
-		return false
-	}
-	return wlanCredsWarningFor(strings.TrimSpace(string(mode)), firmwareWifiProfileSSID)
+	return wlanCredsWarningFor(readWlanMode(), firmwareWifiProfileSSID)
 }
 
 // wlanCredsWarningFor is the decision for a speaker without STR's own copy,

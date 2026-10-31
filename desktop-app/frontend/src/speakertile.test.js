@@ -9,7 +9,7 @@ const STOCK = { host: '192.0.2.12', port: 8090, deviceID: 'CCC', kind: 'stock' }
 describe('speakerTileState', () => {
   it('starts with every flag off', () => {
     expect(speakerTileState(A, {})).toEqual({
-      offline: false, stock: false, strNotRunning: false, playing: false,
+      offline: false, stock: false, strNotRunning: false, updateFinishing: false, playing: false,
       needsUpdate: false, noInternet: false, isCurrent: false, standby: false, inStereoPair: false,
     });
   });
