@@ -3,8 +3,10 @@
 // later", rule 3; views/settings/shared.js reportError, shell2/speakers/
 // sectionmsg.js). The line names the speaker and what it answered, Details
 // still opens the copyable error dialog, a setting that could not be read
-// stays on screen with Try again (rule 4), and a value the user typed wrong
-// is marked on the field. The classic layout keeps its error dialog.
+// stays on screen with Try again (rule 4) once the speaker showed it before
+// (a model-specific setting never read stays hidden, as in the classic
+// layout), and a value the user typed wrong is marked on the field. The
+// classic layout keeps its error dialog.
 //
 //   E2E_PORT=4183 npx playwright test specs/desktop-ui2-section-errors.spec.mjs
 
@@ -87,11 +89,25 @@ test.describe('UI 2.0 preview: errors where they happen', () => {
     await expect(page.locator('#errorModal')).toBeHidden();
   });
 
-  test('4. a setting that could not be read stays visible with Try again', async ({ app, mock }) => {
+  test('4. a setting that could not be read stays visible with Try again once the speaker showed it', async ({ app, mock }) => {
     const { page } = app;
     await openSpeaker(page, LR.host, LR.friendlyName);
     await tab(page, 'sound').click();
     const section = page.locator('#displaySplashSection');
+    // Never read on this speaker: it may be a model without it, so it stays
+    // hidden as in the classic layout, not offered as unreadable.
+    await expect(section).toBeHidden();
+    await expect(page.locator('.u-sec-status')).toHaveCount(0);
+    // It answers once: the speaker has it.
+    await mock.set('GetDisplaySplash', { value: { supported: true, enabled: false } });
+    await openSpeaker(page, LR.host, LR.friendlyName);
+    await tab(page, 'sound').click();
+    await expect(section).toBeVisible();
+    await expect(section.locator('.u-sec-status')).toHaveCount(0);
+    // The next read does not answer: now it stays, with Try again.
+    await mock.set('GetDisplaySplash', { error: 'timeout' });
+    await openSpeaker(page, LR.host, LR.friendlyName);
+    await tab(page, 'sound').click();
     await expect(section).toBeVisible();
     const status = section.locator('.u-sec-status');
     await expect(status).toContainText(`Could not read this setting from ${LR.friendlyName}.`);

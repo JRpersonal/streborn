@@ -3,8 +3,10 @@
 // main.js). The speaker update card reads --u-surface and --u-text in every
 // theme and names the one speaker that is behind; the wedge and box issue
 // banners are hidden in the preview and say the same, with the same buttons,
-// on the speaker's card in the list and at the top of its Overview; an update
-// that failed hands over its report on the speaker's own page.
+// on the speaker's card in the list and at the top of its Overview (no
+// internet among them), and their buttons report there; an update that
+// failed hands over its report on the speaker's own page, or under its row
+// of the Update all window while that window is open.
 //
 // The classic look of all of it is pinned in desktop-banners.spec.mjs.
 //
@@ -13,6 +15,7 @@
 import { test, expect } from '../fixtures.mjs';
 import { settle } from '../helpers/clock.mjs';
 import { KILL_ANIM } from '../helpers/a11y.mjs';
+import { en } from '../helpers/i18n.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 
@@ -173,5 +176,115 @@ test.describe('an update that failed', () => {
     await expect(page.locator('#updateFailureReport')).toBeEmpty();
     await report.locator('#failReportClose').click();
     await expect(report).toBeHidden();
+  });
+});
+
+// During Update all the report about a speaker that failed stays in the Update
+// all window, under that speaker's row: opening its page would pick it as the
+// speaker you control and change the view behind the window while the other
+// speakers are still updating (review of #1645).
+test.describe('a speaker that fails during Update all', () => {
+  test.use({
+    ui2: true,
+    scenario: {
+      banners: { speakerUpdate: true },
+      routes: { '/api/stick/status': { status: 200, body: { mounted: false } } },
+      bindings: {
+        RunFleetUpdate: { value: { rows: [{ host: OLD.host, outcome: 'failed', err: 'upload refused' }] } },
+        UpdateFailureReport: { value: 'STR update report\nphase: update-all\nerror: upload refused' },
+      },
+    },
+  });
+
+  test('keeps its report in its row of the window, and neither the view nor the controlled speaker changes', async ({ app, mock }) => {
+    const { page } = app;
+    const pick = (host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
+    await expect(pick(LR.host)).toHaveAttribute('aria-current', 'true');
+    await nav(page, 'speakers').click();
+    await page.locator('#view-speakers .spl-act[data-act="updateAll"]').click();
+    await page.locator('#warnConfirm').click();
+    await mock.expectCalled('RunFleetUpdate', { times: 1 });
+    const overlay = page.locator('#updateAllOverlay');
+    await expect(overlay).toBeVisible();
+    const report = overlay.locator(`.ua-row[data-host="${OLD.host}"] .ua-report`);
+    await expect(report).toBeVisible();
+    const heading = report.getByRole('heading', { name: `The update for ${OLD.friendlyName} did not finish` });
+    await expect(heading).toBeFocused();
+    await expect(report.locator('#failReportText')).toHaveValue(/upload refused/);
+    if (process.env.SHOOT_DIR) await overlay.locator('.ua-modal').screenshot({ path: `${process.env.SHOOT_DIR}/dark-24-update-all-row-report.png` });
+    // Behind the window: still the Speakers list, still Living Room in control.
+    await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
+    await expect(page.locator('#ui2SpkPage')).toBeHidden();
+    await expect(pick(LR.host)).toHaveAttribute('aria-current', 'true');
+    await expect(pick(OLD.host)).not.toHaveAttribute('aria-current', 'true');
+    // Nothing on the speaker page, nothing in the classic overlay host.
+    await expect(page.locator('#ui2SpkReport')).toBeHidden();
+    await expect(page.locator('#updateFailureReport')).toBeEmpty();
+    // Close takes the report away; Close on the window leaves the list.
+    await report.locator('#failReportClose').click();
+    await expect(report).toBeHidden();
+    await overlay.locator('#uaClose').click();
+    await expect(overlay).toBeHidden();
+    await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
+  });
+});
+
+// The no-internet notice moves onto its speaker in the preview: the words
+// and the hint on its list card and its Overview, the chip on its own row.
+test.describe('no internet on one speaker', () => {
+  test.use({ ui2: true, fakeClock: true, scenario: { banners: { noInternet: true } } });
+
+  test('is said on that speaker\'s card, Overview and row, not window-wide', async ({ app }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await expect(page.locator('#boxIssueBanner')).toBeHidden();
+    const title = en('speaker.noInternetBanner', { name: LR.friendlyName });
+    const hint = en('speaker.noInternetHint');
+    const lrRow = page.locator('#ui2SpkLists .ui2-spk-row').filter({ has: page.locator(`.ui2-spk-pick[data-host="${LR.host}"]`) });
+    await expect(lrRow.locator('[data-chip="attention"]')).toBeVisible();
+    await expect(page.locator('#ui2SpkLists [data-chip="attention"]')).toHaveCount(1);
+    await nav(page, 'speakers').click();
+    const card = listCard(page, LR.host).locator('.spl-attn');
+    await expect(card).toContainText(title);
+    await expect(card).toContainText(hint);
+    await expect(listCard(page, BR.host).locator('.spl-attn')).toHaveCount(0);
+    await page.locator(`#view-speakers .spl-open[data-host="${LR.host}"]`).click();
+    const attn = page.getByRole('tabpanel', { name: 'Overview' }).locator('.sps-attn');
+    await expect(attn).toContainText(title);
+    await expect(attn).toContainText(hint);
+  });
+});
+
+// The buttons of an attention item report where they were pressed (rule 3),
+// and Save Wi-Fi opens the speaker's page on the tab with the Wi-Fi form.
+test.describe('attention buttons', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      boxPatches: { livingRoom: { wlanCredsMissing: true }, bedroom: { storm1036: true } },
+      bindings: { RebootBox: { error: 'refused' } },
+    },
+  });
+
+  test('Save Wi-Fi opens the Network tab with the form; a refused restart says so in its item', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await nav(page, 'speakers').click();
+    // A refused restart: a line in the Bedroom item, no dialog, no toast.
+    const bed = listCard(page, BR.host).locator('.spl-attn');
+    await bed.getByRole('button', { name: en('speaker.stormRestartBtn') }).click();
+    await mock.expectCalled('RebootBox', { pred: onHost(BR.host) });
+    const line = bed.locator('.spl-attn-item[data-kind="storm"] .u-report');
+    await expect(line).toHaveAttribute('role', 'alert');
+    await expect(line).toContainText('refused');
+    await expect(page.locator('#errorModal')).toBeHidden();
+    await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
+    // Save Wi-Fi: Living Room's page, on Network, the form open.
+    await listCard(page, LR.host).locator('.spl-attn').getByRole('button', { name: en('speaker.wifiSaveBtn') }).click();
+    await settle(page, 2_000);
+    await expect(page.locator('#ui2SpkPageName')).toHaveText(LR.friendlyName);
+    await expect(page.locator('#ui2SpkTab-network')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#wlanSwitchForm')).toBeVisible();
   });
 });

@@ -96,6 +96,20 @@ test('without storage the page works on the current layout and hides the row', a
   expect(phone.errors).toEqual([]);
 });
 
+test('storage that reads but refuses writes hides the row too, so a tap can never do nothing', async ({ phone }) => {
+  const { page } = phone;
+  await bootDone(page);
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); };
+  });
+  await page.reload();
+  await bootDone(page);
+  await expect(page.locator('html')).not.toHaveClass(/(^|\s)ui2(\s|$)/);
+  await openMenu(page);
+  await expect(page.locator('#a11yLayoutGroup')).toBeHidden();
+  expect(phone.errors).toEqual([]);
+});
+
 test('a page opened from the preview list as #ui2 keeps the preview and drops the hash', async ({ phone }) => {
   const { page } = phone;
   await bootDone(page);

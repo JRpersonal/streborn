@@ -48,16 +48,39 @@ for (const [label, ui2] of LAYOUTS) {
         await expect(page.locator('#u2ShowList')).toHaveText('Switch to another speaker');
         // Greyed in words and colour, not faded.
         expect(await page.locator('#statusCard').evaluate((e) => getComputedStyle(e).opacity)).toBe('1');
-        // Nothing disappears: the list keeps every speaker it knew.
+        // Nothing disappears: the list keeps every speaker it knew, and the
+        // keyboard goes to it (its first speaker), above the note.
         await page.locator('#u2ShowList').click();
         await expect(page.locator('#u2List')).toBeVisible();
         await expect(page.locator('#peers a.peer')).toHaveCount(PHONE.PEERS.length);
+        await expect(page.locator('#peers a.peer').first()).toBeFocused();
         await expect(page.locator('#tabSpeakers')).toBeVisible();
-        // Try again asks the speaker again.
+        // Try again asks the speaker again, says it is checking while it does,
+        // and says the answer again: still not answering.
         const asked = () => handler.calls.filter((c) => new URL(c.url).pathname === '/api/status').length;
         const n = asked();
-        await page.locator('#u2Retry').click();
+        await page.evaluate(() => { document.getElementById('u2OfflineTxt').textContent = ''; });
+        const during = await page.evaluate(() => {
+          const b = document.getElementById('u2Retry');
+          b.click();
+          return { text: b.textContent, disabled: b.disabled, busy: b.getAttribute('aria-busy') };
+        });
+        expect(during).toEqual({ text: 'Checking…', disabled: true, busy: 'true' });
         await expect.poll(asked).toBeGreaterThan(n);
+        await expect(page.locator('#u2OfflineTxt')).toHaveText(`${NAME} is still not answering. Check that it has power and is on your Wi-Fi, or pick another speaker from the list at the top.`);
+        await expect(page.locator('#u2Retry')).toHaveText('Try again');
+        await expect(page.locator('#u2Retry')).toBeEnabled();
+        await expect(page.locator('#u2Retry')).not.toHaveAttribute('aria-busy', /.*/);
+        // The speaker answers again: the offline state goes everywhere.
+        const rest = { ...handler.options.overrides };
+        delete rest['/api/status'];
+        delete rest['/api/peers'];
+        handler.options.overrides = rest;
+        await page.evaluate(async () => { await window.refreshStatus(); });
+        await expect(page.locator('#u2Offline')).toBeHidden();
+        await expect(page.locator('#u2Status')).toHaveText('Playing');
+        await expect(page.locator('#statusCard')).not.toHaveClass(/\boffline\b/);
+        await expect(page.locator('#dev')).not.toHaveClass(/\bu2-off\b/);
       } else {
         await expect(page.locator('#u2Offline')).toBeHidden();
         expect(await page.locator('#statusCard').evaluate((e) => getComputedStyle(e).opacity)).toBe('0.6');

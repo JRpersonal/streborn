@@ -183,6 +183,75 @@ test.describe('UI 2.0 preview, grouped', () => {
   });
 });
 
+// The status line on the speaker card, from the state the speaker reports.
+const statusXML = (source, playState) => '<?xml version="1.0" encoding="UTF-8"?>'
+  + `<nowPlaying deviceID="A1B2C3D4E5F6" source="${source}">`
+  + `<ContentItem source="${source}" location="http://example.com/rock" isPresetable="true">`
+  + '<itemName>Best Of Rock.FM</itemName></ContentItem>'
+  + (playState ? `<playStatus>${playState}</playStatus>` : '') + '</nowPlaying>';
+
+test.describe('UI 2.0 preview, a speaker in standby', () => {
+  test.use({ phoneOverrides: { '/api/status': { body: statusXML('STANDBY', ''), contentType: 'application/xml' } } });
+
+  test('says Standby', async ({ phone }) => {
+    const { page } = phone;
+    await preview(page);
+    await expect(page.locator('#u2Status')).toHaveText('Standby');
+  });
+});
+
+test.describe('UI 2.0 preview, a paused speaker', () => {
+  test.use({ phoneOverrides: { '/api/status': { body: statusXML('LOCAL_INTERNET_RADIO', 'PAUSE_STATE'), contentType: 'application/xml' } } });
+
+  test('says Paused', async ({ phone }) => {
+    const { page } = phone;
+    await preview(page);
+    await expect(page.locator('#u2Status')).toHaveText('Paused');
+  });
+});
+
+test.describe('UI 2.0 preview, half of a stereo pair', () => {
+  test.use({
+    phoneOverrides: {
+      '/api/box/zone/volume': { body: { grouped: true, stereo: true, stereoName: 'Living Room pair', members: [
+        { name: 'Left', ip: '192.0.2.50', deviceID: 'A1B2C3D4E5F6', isSelf: true, isMaster: true, volume: 30 },
+        { name: 'Kitchen', ip: '192.0.2.51', deviceID: 'B1B2C3D4E5F6', volume: 30 },
+      ], loudest: 30, average: 30 } },
+    },
+  });
+
+  test('says Playing (stereo) and names the pair in the list, not the half', async ({ phone }) => {
+    const { page } = phone;
+    await preview(page);
+    await expect(page.locator('#u2Status')).toHaveText('Playing (stereo)');
+    await page.locator('#dev').click();
+    const self = page.locator('#peers .u2-self');
+    await expect(self).toContainText('Living Room pair');
+    // The partner is part of this row, not a row of its own.
+    await expect(page.locator('#peers a.peer', { hasText: 'Kitchen' })).toHaveCount(0);
+  });
+});
+
+// A "+" in the list under the speaker card that changed nothing (the speaker
+// refused) gets its button back, not a busy mark for good.
+test.describe('UI 2.0 preview, a join the speaker refuses', () => {
+  test.use({ phoneOverrides: { '/api/box/zone': { body: { ok: false } } } });
+
+  test('the + comes back', async ({ phone }) => {
+    const { page, handler } = phone;
+    await preview(page);
+    await page.locator('#dev').click();
+    const bedroom = page.locator('#peers .peerrow', { has: page.locator('a.peer', { hasText: 'Bedroom' }) });
+    const join = bedroom.locator('.joinbtn');
+    await expect(join).toHaveText('+');
+    await join.click();
+    await expect.poll(() => handler.calls.some((c) => c.method === 'POST' && new URL(c.url).pathname === '/api/box/zone')).toBe(true);
+    const again = page.locator('#peers .peerrow', { has: page.locator('a.peer', { hasText: 'Bedroom' }) }).locator('.joinbtn');
+    await expect(again).toHaveText('+');
+    await expect(again).toBeEnabled();
+  });
+});
+
 test.describe('UI 2.0 preview in German', () => {
   test.use({ phoneLang: 'de' });
 

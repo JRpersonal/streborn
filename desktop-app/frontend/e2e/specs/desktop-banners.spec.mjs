@@ -38,8 +38,9 @@ const KINDS = Object.keys(BANNERS);
 const ORDER = ['appUpdate', 'firewall', 'noInternet', 'speakerUpdate', 'security'];
 
 // Phase 5: in the UI 2.0 preview the no-internet notice is about one speaker,
-// so it moves onto that speaker (sidebar chip, list card, Overview; covered
-// by desktop-ui2-banners.spec.mjs) and is no longer window-wide there.
+// so it moves onto that speaker and is no longer window-wide there. The words
+// on its row chip, list card and Overview are pinned in
+// desktop-ui2-banners.spec.mjs ("no internet on one speaker").
 const PER_SPEAKER_IN_UI2 = new Set(['noInternet']);
 const windowWide = (layout, kinds) => (layout.ui2 ? kinds.filter((k) => !PER_SPEAKER_IN_UI2.has(k)) : kinds);
 

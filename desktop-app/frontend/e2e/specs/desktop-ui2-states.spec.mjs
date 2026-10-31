@@ -84,8 +84,16 @@ test.describe('UI 2.0 states without speakers', () => {
     await expect(page.locator('#ui2SetupWizard')).toBeVisible();
   });
 
+});
+
+// On the page clock: the busy state lasts exactly as long as the search is
+// held open, however loaded the machine running the test is.
+test.describe('UI 2.0 states without speakers, Search again', () => {
+  test.use({ ui2: true, fakeClock: true, scenario: NONE });
+
   test('2. Search again says it is searching, then what it found', async ({ app, mock }) => {
     const { page } = app;
+    await settle(page, 9_000);
     const side = page.locator('#ui2SpkLists .u-state');
     await expect(side).toHaveAttribute('data-phase', 'none');
     await mock.resetCalls();
@@ -94,6 +102,7 @@ test.describe('UI 2.0 states without speakers', () => {
     const busy = page.locator('#ui2SpkLists [data-state-act="search"]');
     await expect(busy).toHaveAttribute('aria-busy', 'true');
     await expect(busy).toHaveText(en('ui2.state.searching'));
+    await runFor(page, 1_000);
     await expect(page.locator('#ui2StateLive')).toHaveText(en('ui2.state.foundNone'));
     await expect(page.locator('#ui2SpkLists [data-state-act="search"]')).toHaveText(en('ui2.state.searchAgain'));
     await expect(page.locator('#ui2SpkLists [data-state-act="search"]')).not.toHaveAttribute('aria-busy', 'true');
@@ -277,6 +286,21 @@ test.describe('UI 2.0 states: the sidebar rows', () => {
     await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
   });
 
+  test('11b. an offline pick whose speaker answers the search again says it is back, and the note goes', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    const back = { ...OFFICE, offline: false, offlineSinceSec: 0 };
+    await mock.set('DiscoverBoxes', { value: [ROSTER.livingRoom, BR, back, ROSTER.kitchen], delayMs: 1_500 });
+    await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${OFFICE.host}"]`).click();
+    const note = row(page, OFFICE.host).locator('.ui2-spk-rownote');
+    await expect(note).toHaveText(en('ui2.state.offlinePick', { name: 'Office', ago: '10 minutes ago' }));
+    await settle(page, 2_000);
+    await expect(row(page, OFFICE.host).locator('.ui2-spk-rownote')).toHaveCount(0);
+    await settle(page, 200);
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.state.backOnline', { name: 'Office' }));
+    await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
+  });
+
   test('12. a "+" that fails says so in its row, and Try again repeats it for the same group', async ({ app, mock }) => {
     const { page } = app;
     await settle(page, 30_000);
@@ -323,6 +347,73 @@ test.describe('UI 2.0 states: the sidebar rows', () => {
     await mock.set('GetZoneState', { value: group });
     await settle(page, 12_000);
     await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.state.playsAlong', { name: 'Bedroom' }));
+    await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveCount(0);
+  });
+
+  test('13b. a "+" the zone poll cannot read back is never announced; after the deadline it says so with Try again', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 30_000);
+    // The speakers stop answering the zone read: only group.js's optimistic
+    // entry (kept by the poll for speakers that miss a round) shows the join.
+    await mock.set('GetZoneState', { error: 'timeout' });
+    const add = row(page, BR.host).locator('.ui2-spk-act[data-act="add"]');
+    await add.click();
+    await runFor(page, 1_000);
+    await mock.expectCalled('FormZone', { times: 1 });
+    await settle(page, 5_000);
+    await expect(page.locator('#ui2SpkLive')).not.toHaveText(en('ui2.state.playsAlong', { name: 'Bedroom' }));
+    await expect(row(page, BR.host).locator('.ui2-spk-act')).toHaveAttribute('aria-busy', 'true');
+    await settle(page, 16_000);
+    const note = row(page, BR.host).locator('.ui2-spk-rownote');
+    await expect(note).toHaveAttribute('role', 'alert');
+    await expect(note).toHaveText(en('ui2.state.groupNoConfirm', { name: 'Bedroom' }));
+    await expect(row(page, BR.host).locator('.ui2-spk-note-act[data-note-act="retry"]')).toBeVisible();
+    await expect(page.locator('#ui2SpkLive')).not.toHaveText(en('ui2.state.playsAlong', { name: 'Bedroom' }));
+  });
+});
+
+// A dissolve the master did not finish is a warning, not an error with a Try
+// again that would toggle the speakers once more: each waits for the zone
+// poll, and one that left is said to be out.
+test.describe('UI 2.0 states: a group dissolve the master does not finish', () => {
+  const BR = ROSTER.bedroom;
+  const LR = ROSTER.livingRoom;
+  const group = {
+    master: LR.deviceID,
+    senderIP: LR.host,
+    members: [{ deviceID: LR.deviceID, ip: LR.host }, { deviceID: BR.deviceID, ip: BR.host }],
+  };
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    // Living Room leads, Bedroom follows; every other speaker plays alone.
+    scenario: {
+      bindings: {
+        GetZoneState: { byHost: { [LR.host]: { value: group }, [BR.host]: { value: group } }, value: {} },
+        DissolveZone: { value: { ok: false, remaining: 1 } },
+      },
+    },
+  });
+  const row = (page, host) => page.locator('#ui2SpkLists .ui2-spk-row')
+    .filter({ has: page.locator(`.ui2-spk-pick[data-host="${host}"]`) });
+
+  test('15. warns in the row without Try again, then says out once the poll shows it', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 30_000);
+    const remove = row(page, BR.host).locator('.ui2-spk-act[data-act="remove"]');
+    await expect(remove).toBeVisible();
+    await remove.click();
+    await runFor(page, 1_500);
+    await mock.expectCalled('DissolveZone', { times: 1 });
+    const note = row(page, BR.host).locator('.ui2-spk-rownote');
+    await expect(note).toHaveText(en('multiroom.dissolveIncompleteN', { n: 1 }));
+    await expect(note).toHaveAttribute('data-tone', 'warn');
+    await expect(row(page, BR.host).locator('.ui2-spk-note-act')).toHaveCount(0);
+    await expect(page.locator('#errorModal')).toBeHidden();
+    // Bedroom did leave after all: the next round says so.
+    await mock.set('GetZoneState', { value: {} });
+    await settle(page, 16_000);
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.state.isOut', { name: 'Bedroom' }));
     await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveCount(0);
   });
 });

@@ -11,6 +11,7 @@
 import { test, expect } from '../fixtures.mjs';
 import { settle } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
+import { ROSTER } from '../../testkit/demo-data.mjs';
 
 const IP = '192.0.2.77';
 const NONE = { boxes: [], current: null, seed: { cachedBoxes: false } };
@@ -79,6 +80,29 @@ test.describe('Connect by address: the minute sweep', () => {
     await mock.expectCalled('DiscoverBoxes');
     await expect(field).toHaveValue('192.0.2.');
     await expect(field).toBeFocused();
+  });
+});
+
+test.describe('Connect by address: an address left after a failed connect', () => {
+  test.use({ ui2: true, fakeClock: true, scenario: { ...NONE, bindings: { AddBoxByIP: { error: 'no answer' } } } });
+
+  test('3b. does not stop the speakers a later search finds from showing', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 3_000);
+    await page.locator('#ui2SpkLists [data-state-act="connect"]').click();
+    const field = page.locator('#ui2SpkLists .u-connect-input');
+    await field.fill(IP);
+    await field.press('Enter');
+    await mock.expectCalled('AddBoxByIP', { times: 1 });
+    await expect(page.locator('#ui2SpkLists .u-connect-error')).toHaveText(en('speaker.manualIpNotFound', { ip: IP }));
+    await expect(field).toHaveValue(IP);
+    // The user moves on; the address stays in the field.
+    await page.locator('#ui2Sidebar .ui2-nav-item[data-view="box"]').focus();
+    // A minute later the search finds the speakers.
+    await mock.set('DiscoverBoxes', { value: [ROSTER.livingRoom, ROSTER.bedroom] });
+    await settle(page, 70_000);
+    await expect(page.locator('#ui2SpkLists .ui2-spk-row')).toHaveCount(2);
+    await expect(page.locator('#ui2SpkLists .u-state[data-phase="none"]')).toHaveCount(0);
   });
 });
 

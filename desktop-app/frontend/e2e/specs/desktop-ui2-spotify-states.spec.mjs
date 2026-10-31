@@ -9,6 +9,7 @@
 
 import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
+import { settle, runFor } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
 
@@ -61,8 +62,19 @@ test.describe('UI 2.0 Spotify states', () => {
     await expect(page.locator('#ui2SpkPageName')).toHaveText(HALL.friendlyName);
   });
 
-  test('2. a quality change reports in its row, "set" only when the speaker applied it', async ({ app, mock }) => {
+  test.describe('on the page clock', () => {
+    // The busy line lasts exactly as long as the write is held open, however
+    // loaded the machine running the test is.
+    test.use({ fakeClock: true });
+
+    test('2. a quality change reports in its row, "set" only when the speaker applied it', async ({ app, mock }) => {
+      await qualityChange(app, mock);
+    });
+  });
+
+  async function qualityChange(app, mock) {
     const { page } = app;
+    await settle(page, 9_000);
     await openSpotify(page);
     const sel = qrow(page, LR.host).locator('select');
     const status = qrow(page, LR.host).locator('.sp2-q-status');
@@ -72,6 +84,7 @@ test.describe('UI 2.0 Spotify states', () => {
     await sel.focus();
     await sel.selectOption('320');
     await expect(status).toHaveText(en('ui2.feedback.qualitySetting', { name: LR.friendlyName, choice: '320 kbps' }));
+    await runFor(page, 1_000);
     await expect(status).toHaveText(en('ui2.feedback.qualitySet', { name: LR.friendlyName, choice: '320 kbps' }));
     await expect(status).toHaveText(`${LR.friendlyName}: 320 kbps set.`);
     await expect(status).toHaveClass(/is-ok/);
@@ -89,7 +102,7 @@ test.describe('UI 2.0 Spotify states', () => {
     await expect(status).toHaveText(en('ui2.feedback.qualityFailed', { name: LR.friendlyName, reason: en('spotify.qualityFailed') }));
     await expect(page.locator('#errorModal')).toBeHidden();
     await expect(page.locator('#toast')).not.toHaveClass(/show/);
-  });
+  }
 
   test('3. the login copy reports under its button', async ({ app, mock }) => {
     const { page } = app;
@@ -144,6 +157,35 @@ test.describe('UI 2.0 Spotify states', () => {
       await page.keyboard.press('Enter');
       expect(await mock.count('SyncSpotifyLogin')).toBe(0);
       await expect(page.locator('#toast')).not.toHaveClass(/show/);
+    });
+  });
+
+  test.describe('when a second speaker is found while the view is open', () => {
+    // The app starts from its remembered list (Living Room alone); the search
+    // that finds Bedroom answers a few seconds later, on the page clock.
+    test.use({
+      fakeClock: true,
+      scenario: {
+        boxes: ['livingRoom', 'bedroom'],
+        seed: { cachedBoxes: ['livingRoom'] },
+        bindings: { SpotifyQuality: { value: QUALITY_OK }, RefreshKnownBoxes: { value: [LR] }, DiscoverBoxes: { delayMs: 5_000 } },
+      },
+    });
+
+    test('5b. the copy button frees itself and the reason goes, without leaving the view', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 100);
+      await openSpotify(page);
+      const btn = page.locator('#spotifySyncBtn');
+      await expect(btn).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#spotifySyncStatus')).toHaveText(en('spotify.syncNeedTwo'));
+      await runFor(page, 6_000);
+      await expect(page.locator('#ui2MainInner > #view-spotify')).toBeVisible();
+      await expect(btn).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#spotifySyncStatus')).toHaveText('');
+      await mock.set('SyncSpotifyLogin', { value: { synced: [BR.host], failed: {}, source: LR.friendlyName } });
+      await btn.click();
+      await mock.expectCalled('SyncSpotifyLogin', { times: 1 });
     });
   });
 });

@@ -189,6 +189,16 @@ test.describe('UI 2.0 Help and info', () => {
     await expect(page.locator('#ui2Version #appUpdateBanner')).toContainText(en('banner.appIsCurrent'));
     await expect(btn).toHaveText(en('banner.checkForAppUpdate'));
     await expect(btn).not.toHaveAttribute('aria-disabled', /.*/);
+    // And next to the button, in a live region, where it was asked.
+    const line = page.locator('#hlpUpdateStatus');
+    await expect(line).toHaveAttribute('role', 'status');
+    await expect(line).toHaveText(en('banner.appIsCurrent'));
+    await expect(line).toHaveAttribute('data-kind', 'done');
+    // A check that cannot run says so there too.
+    await mock.set('CheckAppUpdate', { error: 'dial tcp: i/o timeout' });
+    await btn.click();
+    await expect(line).toHaveText(en('banner.appCheckFailed'));
+    await expect(line).toHaveAttribute('data-kind', 'error');
   });
 
   test.describe('in German', () => {

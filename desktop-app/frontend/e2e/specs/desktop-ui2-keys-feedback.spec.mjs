@@ -102,28 +102,50 @@ test.describe('UI 2.0 key tiles', () => {
 
   test('4. a rename from the keyboard is confirmed in the key, and the keyboard is back on its rename icon', async ({ app, mock }) => {
     const { page } = app;
-    // The speaker renames the key while the call is out (the mock has no
-    // rename of its own).
-    await mock.set('RenamePreset', { delayMs: 600, value: null });
+    // The mock has no rename of its own: the speaker's list takes the new name
+    // while the call is out, after it was sent and before it answered.
+    await mock.set('RenamePreset', { delayMs: 2_000, value: null });
     const ren = tile(page, 3).locator('.ren');
     await ren.focus();
     await page.keyboard.press('Enter');
     const input = page.locator('#presetRenameInput');
     await expect(input).toBeFocused();
     await input.fill('Morning News');
+    await page.keyboard.press('Enter');
+    await mock.expectCalled('RenamePreset', { pred: (c) => c.args[2] === 3 && c.args[3] === 'Morning News' });
+    await expect(line(page, 3)).not.toHaveText(en('ui2.feedback.keyRenamed', { n: 3, speaker: LR.friendlyName, name: 'Morning News' }));
     await page.evaluate(([host]) => {
       const list = window.__strMock.state.presets[host];
       const p = list && list.find((x) => x.slot === 3);
       if (p) p.name = 'Morning News';
     }, [LR.host]);
-    await page.keyboard.press('Enter');
-    await mock.expectCalled('RenamePreset', { pred: (c) => c.args[2] === 3 && c.args[3] === 'Morning News' });
     await expect(line(page, 3)).toHaveText(en('ui2.feedback.keyRenamed', { n: 3, speaker: LR.friendlyName, name: 'Morning News' }), { timeout: 10_000 });
     await expect(page.locator('#toast')).not.toHaveClass(/show/);
     await expect.poll(() => page.evaluate(() => {
       const a = document.activeElement;
       return a && a.closest('.preset') ? `${a.closest('.preset').dataset.slot}:${a.classList.contains('ren') ? 'ren' : a.className}` : '';
     })).toBe('3:ren');
+  });
+
+  test('4b. a rename the speaker accepts but does not keep is not called done', async ({ app, mock }) => {
+    const { page } = app;
+    // RenamePreset answers, but the speaker's list keeps the old name.
+    await mock.set('RenamePreset', { value: null });
+    const before = await page.evaluate(([host]) => {
+      const list = window.__strMock.state.presets[host];
+      const p = list && list.find((x) => x.slot === 3);
+      return p ? p.name : '';
+    }, [LR.host]);
+    expect(before).not.toBe('Morning News');
+    await tile(page, 3).locator('.ren').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('#presetRenameInput').fill('Morning News');
+    await page.keyboard.press('Enter');
+    await mock.expectCalled('RenamePreset', { pred: (c) => c.args[2] === 3 && c.args[3] === 'Morning News' });
+    await expect(line(page, 3)).toHaveText(en('ui2.radio.notConfirmed', { n: 3, speaker: LR.friendlyName }), { timeout: 10_000 });
+    await expect(line(page, 3)).toHaveClass(/is-warn/);
+    await expect(line(page, 3)).not.toHaveText(en('ui2.feedback.keyRenamed', { n: 3, speaker: LR.friendlyName, name: 'Morning News' }));
+    await expect(page.locator('#toast')).not.toHaveClass(/show/);
   });
 
   test('5. Transfer reports under its button, naming both speakers', async ({ app, mock }) => {
