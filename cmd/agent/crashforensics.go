@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/spotify"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // heartbeatPath lives on tmpfs deliberately: no NAND wear, and it disappears
@@ -122,6 +123,14 @@ func noteAgentStart(bootReason string, logger *slog.Logger) {
 	case rep.OOMKill != "":
 		logger.Warn("previous agent run was killed for memory by the kernel",
 			"bootReason", bootReason, "oom", rep.OOMKill, "gapSec", rep.GapSec)
+	case rep.Previous != nil && webui.OTARebootPending():
+		// The agent-only restart an update takes on a coprocessor Wi-Fi ST20
+		// instead of a reboot (internal/webui/otarestart.go): the previous run
+		// exited on purpose. A reboot would have cleared /tmp and with it the
+		// heartbeat. The start-up preset push and the first forced full
+		// re-sync run on every agent start, so nothing boot-only is skipped.
+		logger.Info("previous agent run exited for an agent update; restarted without a box reboot",
+			"bootReason", bootReason, "gapSec", rep.GapSec)
 	case rep.Previous != nil:
 		logger.Warn("previous agent run ended without a shutdown signal, here is its last heartbeat",
 			"bootReason", bootReason,

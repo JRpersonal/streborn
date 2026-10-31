@@ -40,10 +40,11 @@ func TestIsReadOnlyFSErr(t *testing.T) {
 // once, and only reboot after a passing verify. Guard the script's
 // load-bearing pieces so a refactor cannot silently drop one.
 func TestSwapHelperScript(t *testing.T) {
-	script := swapHelperScript(4242, "/dev/shm/streborn-ota.stage",
-		"/mnt/nv/streborn/bin/streborn-armv7l", 12345678, "abc123")
+	script := swapHelperScript(4242, swapHelperWaitSec, "/dev/shm/streborn-ota.stage",
+		"/mnt/nv/streborn/bin/streborn-armv7l", 12345678, "abc123", "reboot")
 	for _, want := range []string{
 		"/proc/4242",
+		`[ "$i" -lt 90 ]`,
 		"kill -9 4242",
 		"swap aborted", // agent still alive -> abort marker, no reboot
 		`cp "/dev/shm/streborn-ota.stage" "/mnt/nv/streborn/bin/streborn-armv7l"`,
@@ -72,5 +73,28 @@ func TestSwapHelperScript(t *testing.T) {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("helper script contains non-POSIX construct %q", forbidden)
 		}
+	}
+}
+
+// On a speaker that restarts only the agent after an update, the swap helper
+// starts the new binary after a passing verify and never reboots; the abort
+// paths still come first, so a failed swap leaves the restart to run.sh's
+// watchdog as before.
+func TestSwapHelperScriptRestartOnly(t *testing.T) {
+	dst := "/mnt/nv/streborn/bin/streborn-armv7l"
+	finish := superviseNewAgentLines(dst, []string{"--listen-webui", ":8888"})
+	script := swapHelperScript(4242, 150, "/dev/shm/streborn-ota.stage", dst, 12345678, "abc123", finish)
+	if strings.Contains(script, "reboot") {
+		t.Errorf("restart-only helper must not reboot:\n%s", script)
+	}
+	if !strings.Contains(script, `[ "$i" -lt 150 ]`) {
+		t.Errorf("helper does not wait the given 150 s for the agent:\n%s", script)
+	}
+	start := strings.Index(script, "'"+dst+"' '--listen-webui' ':8888' >> ")
+	if start < 0 {
+		t.Fatalf("restart-only helper does not start the new agent:\n%s", script)
+	}
+	if strings.LastIndex(script, "exit 1") > start {
+		t.Errorf("abort paths must come before the agent start:\n%s", script)
 	}
 }

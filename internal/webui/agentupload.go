@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/oled"
@@ -73,13 +72,16 @@ func (r *uploadRefusal) bodyText() string {
 // flash-verified, or complete in the RAM stage with the swap helper armed.
 type agentInstalled struct {
 	RAMStaged bool
-	// afterAnswer restarts the speaker. It runs in the background once the
-	// 200 has gone out; the 1.5 s it sleeps first is what lets that answer
-	// reach the app before the box drops off the LAN.
+	// afterAnswer restarts the speaker, or only the agent on a coprocessor
+	// Wi-Fi ST20 (otarestart.go). It runs in the background once the 200 has
+	// gone out; the 1.5 s it sleeps first is what lets that answer reach the
+	// app before the box drops off the LAN.
 	afterAnswer func()
 }
 
 // body is the exact 200 body: {status:"ok",action:"reboot"[,mode:"ram-staged"]}.
+// "reboot" stays on an agent-only restart too: the app waits for the new
+// build the same way either way, and older apps key off the exact body.
 func (a agentInstalled) body() map[string]string {
 	b := map[string]string{"status": "ok", "action": "reboot"}
 	if a.RAMStaged {
@@ -91,7 +93,8 @@ func (a agentInstalled) body() map[string]string {
 // installAgentUpload receives a new stick agent binary, writes it atomically
 // to /mnt/nv/streborn/bin/streborn-armv7l and arms the restart. The body must
 // be the raw ARM binary. On success the speaker still answers 200 OK and then
-// reboots (afterAnswer); the rc.local bootstrap starts the new agent.
+// reboots (afterAnswer); the rc.local bootstrap starts the new agent. A
+// coprocessor Wi-Fi ST20 restarts only the agent instead (otarestart.go).
 func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) {
 	// Lifting wireless power-save first makes the transfer ~17x faster on a
 	// box idling in standby (see boostUploadThroughput); the update's reboot
@@ -182,11 +185,13 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// Tier 3 (#270): the volume writes fine but genuinely cannot hold OLD + NEW
 	// agent side by side even after the reclaim (small ST20 volumes). The
 	// upload already went to the RAM stage when the NAND said no mid-stream; a
-	// detached helper swaps it in after this process exits, then reboots, so
-	// peak NAND need drops to a single copy. errInsufficientNAND still means a
+	// detached helper swaps it in after this process exits, then reboots (or,
+	// on a coprocessor Wi-Fi ST20, starts the new agent), so peak NAND need
+	// drops to a single copy. errInsufficientNAND still means a
 	// REAL failed write (ENOSPC / short write), never a statfs prediction.
 	if got.ramStaged {
-		if serr := s.armRAMStagedSwap(dst, got.size, got.sum); serr != nil {
+		helperPID, restartOnly, serr := s.armRAMStagedSwap(dst, got.size, got.sum)
+		if serr != nil {
 			updateInFlight.Store(false)
 			_ = os.Remove(ramStageTarget)
 			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
@@ -211,6 +216,16 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 				_ = f.Close()
 			} else {
 				s.logger.Warn("could not write OTA-reboot marker (ram-staged); post-OTA resume may fire", "err", werr)
+			}
+			if restartOnly {
+				// The helper starts the new agent itself instead of rebooting
+				// (otarestart.go): it holds run.sh's PID file through the copy,
+				// so the watchdog neither respawns the old binary mid-copy nor
+				// starts a second agent afterwards. The helper's wait covers
+				// the boot-watchdog wait and the clean shutdown.
+				s.waitOutBootWatchdog()
+				s.handOverAndExit(helperPID, "RAM-staged binary swap, the helper starts the new agent, no box reboot")
+				return
 			}
 			s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
 			os.Exit(0)
@@ -249,19 +264,21 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 
 	// A verified write supersedes any earlier tier-3 swap failure.
 	_ = os.Remove(swapFailMarker)
-	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state",
+	s.logger.Info("agent update written and flash-verified, restarting for a clean post-OTA state",
 		"size", got.size, "verifyMs", time.Since(verifyStart).Milliseconds())
 	rebooting = true
-	// Always reboot after an OTA rather than just self-restarting the
-	// process. Jens 2026-06-01: a self-restart left the freshly-updated
-	// box with no presets visible in the app — the boot-time preset push
-	// and the leave-OOB full re-sync (cmd/agent reconcileOnce forceFull)
-	// only run on a real boot, not on a live process restart; and OTA
-	// replaces only the binary, so the NAND run.sh + rc.local otherwise
-	// stay at the pre-OTA vintage (project_ota_only_replaces_binary). A
-	// reboot makes the new binary self-deploy its matching run.sh/rc.local
-	// AND re-run the preset reconcile from clean. Delay so the 200 OK
-	// above flushes to the desktop app before the box drops off the LAN.
+	// Reboot after an OTA rather than just self-restarting the process, on
+	// every chassis but the coprocessor Wi-Fi ST20 (wlan-mode "bco"), where a
+	// soft reboot can leave the speaker dark until it is unplugged and only
+	// the agent restarts (otarestart.go). Jens 2026-06-01: a self-restart left
+	// the freshly-updated box with no presets visible in the app; OTA replaces
+	// only the binary, so the NAND run.sh + rc.local otherwise stay at the
+	// pre-OTA vintage (project_ota_only_replaces_binary). A reboot makes the
+	// new binary self-deploy its matching run.sh/rc.local AND re-run the
+	// preset reconcile from clean. The start-up preset push and the forced
+	// full re-sync now run on every agent start, which is what lets the bco
+	// restart skip the reboot. Delay so the 200 OK above flushes to the
+	// desktop app before the box drops off the LAN.
 	return agentInstalled{afterAnswer: func() {
 		time.Sleep(1500 * time.Millisecond)
 		// Refresh a still-inserted stick BEFORE the reboot: run.sh's boot sync
@@ -284,29 +301,9 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 		// reboot in the project already syncs first — this one now does too.
 		_ = exec.Command("sync").Run()
 		time.Sleep(2 * time.Second)
-		s.logger.Info("post-OTA reboot")
-		_ = dst // the new binary is in place at dst; the boot path runs it
-		if err := exec.Command("reboot").Run(); err != nil {
-			// reboot binary missing or refused — fall back to the detached
-			// process self-restart so we at least run the new binary. The
-			// sleep 70 covers the :8081/:9080 TIME_WAIT window (60 s
-			// tcp_fin_timeout on this kernel) so the new binary does not
-			// crash-loop on "address already in use" (seen 2026-05-17).
-			s.logger.Error("post-OTA reboot failed, falling back to process self-restart", "err", err)
-			quoted := make([]string, 0, len(os.Args))
-			for _, a := range os.Args {
-				quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
-			}
-			shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
-			cmd := exec.Command("sh", "-c", shCmd)
-			cmd.SysProcAttr = sysProcAttrSetsid()
-			if serr := cmd.Start(); serr != nil {
-				s.logger.Error("self-restart fallback also failed", "err", serr)
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-			os.Exit(0)
-		}
+		// The new binary is in place at dst. A reboot lets the boot path run
+		// it; a coprocessor Wi-Fi ST20 restarts only the agent (otarestart.go).
+		s.finishAgentOTA(dst)
 	}}, nil
 }
 

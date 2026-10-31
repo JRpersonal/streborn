@@ -25,7 +25,9 @@ package webui
 //     (releasing ETXTBSY and its pinned blocks), and let the helper copy
 //     RAM -> NAND, verify, sync and reboot. Peak NAND need drops to a single
 //     copy. run.sh starts the swapped binary at the next boot, so even a
-//     helper that dies leaves the box recoverable by a power-cycle.
+//     helper that dies leaves the box recoverable by a power-cycle. On a
+//     coprocessor Wi-Fi ST20 the helper starts the new agent instead of
+//     rebooting (otarestart.go).
 
 import (
 	"errors"
@@ -109,9 +111,15 @@ var errNANDReadOnly = errors.New(
 //   - one retry (after killing any watchdog-respawned agent that re-pinned
 //     the binary); on a second failure it aborts without rebooting and
 //     leaves the marker instead of rebooting into a silently-old binary.
-func swapHelperScript(agentPID int, stage, dst string, size int, sha string) string {
+//
+// waitSec is how long the helper waits for the agent before kill -9
+// (swapHelperWaitSec, longer when the agent first waits out run.sh's boot
+// watchdog). finish is the last step after a passing verify: "reboot", or on
+// a speaker that restarts only the agent after an update (otarestart.go), the
+// lines that start and supervise the new binary.
+func swapHelperScript(agentPID, waitSec int, stage, dst string, size int, sha, finish string) string {
 	return fmt.Sprintf(`i=0
-while [ -d /proc/%d ] && [ "$i" -lt 90 ]; do sleep 1; i=$((i+1)); done
+while [ -d /proc/%d ] && [ "$i" -lt %d ]; do sleep 1; i=$((i+1)); done
 if [ -d /proc/%d ]; then kill -9 %d 2>/dev/null; sleep 3; fi
 if [ -d /proc/%d ]; then
   echo "swap aborted: agent PID %d still alive after kill -9" > %q; sync
@@ -143,8 +151,8 @@ fi
 rm -f %q %q
 sync
 sleep 1
-reboot`,
-		agentPID,
+%s`,
+		agentPID, waitSec,
 		agentPID, agentPID,
 		agentPID,
 		agentPID, swapFailMarker,
@@ -156,7 +164,8 @@ reboot`,
 		stage, dst,
 		swapFailMarker,
 		stage,
-		stage, swapFailMarker)
+		stage, swapFailMarker,
+		finish)
 }
 
 // swapFailMarker is where the swap helper records an aborted/failed tier-3
@@ -164,31 +173,52 @@ reboot`,
 // instead of the failure staying invisible on a stickless box.
 const swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
 
+// swapHelperWaitSec is how long the swap helper waits for the agent to exit
+// before it escalates to kill -9.
+const swapHelperWaitSec = 90
+
 // armRAMStagedSwap implements tier 3 once the upload is complete in the RAM
 // stage (receiveAgentBinary moved it there when the NAND filled up): spawn the
 // detached swap helper and return nil when the caller may answer the client
 // and exit the agent process. The caller MUST exit shortly after (the helper
-// waits for this PID, capped at 90 s). size and sum describe the staged file;
+// waits for this PID, capped at swapHelperWaitSec, plus handOverDelay on a
+// restart-only speaker). size and sum describe the staged file;
 // the helper checks both before it touches dst.
-func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) error {
+//
+// restartOnly reports that the helper ends by starting the new agent instead
+// of rebooting (otarestart.go); the caller then hands run.sh's PID file to
+// helperPID before it exits, so the watchdog neither respawns the old binary
+// during the copy nor starts a second agent after it.
+func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID int, restartOnly bool, err error) {
 	fi, err := os.Stat(ramStageTarget)
 	if err != nil {
-		return fmt.Errorf("RAM stage %s: %w", ramStageTarget, err)
+		return 0, false, fmt.Errorf("RAM stage %s: %w", ramStageTarget, err)
 	}
 	if fi.Size() != size {
-		return fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
+		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
 	}
-	script := swapHelperScript(os.Getpid(), ramStageTarget, dst, int(size), sum)
-	cmd := exec.Command("sh", "-c", script)
+	finish, waitSec := "reboot", swapHelperWaitSec
+	restartOnly = s.otaRestartOnly(dst)
+	if restartOnly {
+		finish = superviseNewAgentLines(dst, agentArgs())
+		// The agent waits out run.sh's boot watchdog before it exits
+		// (waitOutBootWatchdog); the helper must not kill it for that.
+		waitSec += int(handOverDelay().Seconds()) + 1
+	}
+	script := swapHelperScript(os.Getpid(), waitSec, ramStageTarget, dst, int(size), sum, finish)
 	// Own session: the helper must survive this agent's exit and any process-
-	// group teardown on the way down.
-	cmd.SysProcAttr = sysProcAttrSetsid()
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start swap helper: %w", err)
+	// group teardown on the way down. Deliberately not Wait()ed: the helper
+	// outlives us by design.
+	helperPID, err = otaStartDetached(script)
+	if err != nil {
+		return 0, false, fmt.Errorf("start swap helper: %w", err)
 	}
-	// Deliberately not Wait()ed: the helper outlives us by design.
 	swapArmed.Store(true)
-	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and the helper reboots the box",
-		"stage", ramStageTarget, "bytes", size, "helperPID", cmd.Process.Pid)
-	return nil
+	then := "the helper reboots the box"
+	if restartOnly {
+		then = "the helper starts the new agent, no box reboot"
+	}
+	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and "+then,
+		"stage", ramStageTarget, "bytes", size, "helperPID", helperPID)
+	return helperPID, restartOnly, nil
 }
