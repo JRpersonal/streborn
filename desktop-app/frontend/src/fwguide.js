@@ -206,6 +206,23 @@ function identKey(id) {
 // stick wait re-renders every few seconds) picks the progress up again
 // instead of offering the button a second time.
 const flashes = new Map();
+const flashWatchers = new Set();
+
+// fwGuideFlash is the guide's update for a speaker, { phase, text } or null.
+// watchFwGuideFlash(cb) calls cb(host, { phase, text }) on every change of it
+// and returns the unsubscribe. The UI 2.0 setup wizard's check step uses both:
+// an update started from a guide's own "Update now" holds the step the same
+// as one the step started itself.
+export function fwGuideFlash(host) {
+  const st = host && flashes.get(host);
+  return st ? { phase: st.phase, text: st.text } : null;
+}
+
+export function watchFwGuideFlash(cb) {
+  if (typeof cb !== 'function') return () => {};
+  flashWatchers.add(cb);
+  return () => { flashWatchers.delete(cb); };
+}
 
 // firmwareGuideMount is the placeholder a view puts into its HTML. It renders
 // the guide at once (download step "looking up") and wireFirmwareGuides fills in
@@ -320,6 +337,9 @@ async function startFlash(el, id, deps) {
   const set = (p) => {
     const st = { phase: p.phase || 'start', text: fwFlashStatus(p) };
     flashes.set(id.host, st);
+    for (const cb of [...flashWatchers]) {
+      try { cb(id.host, { phase: st.phase, text: st.text }); } catch { /* a watcher's own problem */ }
+    }
     if (typeof document === 'undefined' || !document.querySelectorAll) {
       showFlashState(el, id.host);
       return;

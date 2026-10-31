@@ -458,3 +458,41 @@ export const DEMO = {
   ui2Net: UI2_NET, ui2Zones: UI2_ZONES, ui2Playing: UI2_PLAYING,
   libraryTree: LIBRARY_TREE, librarySearch: LIBRARY_SEARCH,
 };
+
+// ---- UI 2.0 phase 4: the setup wizard's check step (#1288) ----------------
+// GetBoxFirmware answers (app_firmware.go FirmwareInfo) for each firmware case
+// of shell2/setup/check.js, and the Bose file GetFirmwareGuide names for a
+// speaker the one-click update (Route A) can handle. Kitchen is the Bose
+// original of the roster; the model and chassis change per case.
+const fwInfo = (short, extra = {}) => ({
+  reachable: true, model: 'SoundTouch 20', firmware: short ? `${short}.46330.5043500` : '', short,
+  moduleType: 'scm', variant: 'spotty', latest: '27.0.6', outdated: !!short && short !== '27.0.6',
+  deviceId: 'device-id-here', ...extra,
+});
+const LADDER_ARCHIVE = 'https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/';
+export const SETUP_CHECK = {
+  box: STOCK_BOX,
+  current: fwInfo('27.0.6'),
+  routeA: fwInfo('15.0.4', { moduleType: 'sm2' }),
+  ladder: fwInfo('7.0.37', { moduleType: '' }),
+  guide: fwInfo('10.0.11', { model: 'SoundTouch 10', moduleType: 'sm2', variant: 'rhino' }),
+  unknown: fwInfo(''),
+  unreachable: { reachable: false, latest: '27.0.6' },
+  guideOne: {
+    model: 'SoundTouch 20', current: '15.0.4', required: '27.0.6', live: false,
+    files: [{
+      name: 'Update.stu', generation: 'sm2', deviceId: '0x0923', length: 95_900_000, crc: 0x2d5a971e,
+      url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu',
+    }],
+  },
+  guideNone: { model: 'SoundTouch 20', current: '15.0.4', required: '27.0.6', live: false, files: [] },
+  // GetFirmwareLadder for the 7.x first generation SoundTouch 20 (fwladder.js).
+  ladderPlan: {
+    status: 'ladder', family: 'st-scm', model: 'SoundTouch 20', moduleType: 'scm', current: '7.0.37', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {},
+    steps: [
+      { id: 'st-scm-14.00.33', version: '14.00.33', family: 'st-scm', source: 'archive', url: `${LADDER_ARCHIVE}Airplay-1_ST20-30-Portable_14.00.33.zip`, fileName: 'Airplay-1_ST20-30-Portable_14.00.33.zip', innerSize: 93_114_711, liveVerified: true, networkOk: false, fallback: false },
+      { id: 'st-scm-27.0.6', version: '27.0.6', family: 'st-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 105_879_988, liveVerified: false, networkOk: true, fallback: false },
+    ],
+  },
+};

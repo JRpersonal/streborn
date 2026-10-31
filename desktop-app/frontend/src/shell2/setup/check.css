@@ -1,0 +1,144 @@
+/* UI 2.0 preview: the setup wizard's check step (#1288, check.js), as in
+   docs/design/ui-2.0/setup.png. Under html.ui2 only, so the classic layout
+   is untouched. Status is told in words and a mark of its own shape, never by
+   colour alone; every control is at least 40px high. */
+
+html.ui2 .u-check {
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+}
+html.ui2 .u-check-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* The rows: reachable, model, firmware. */
+html.ui2 .u-check-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 .u-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  min-height: 56px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--u-border);
+}
+html.ui2 .u-check-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid currentcolor;
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 1;
+}
+html.ui2 .u-check-mark--ok,
+html.ui2 .u-check-row-status--ok { color: var(--u-ok); }
+html.ui2 .u-check-mark--warn,
+html.ui2 .u-check-row-status--warn { color: var(--u-warn); }
+html.ui2 .u-check-mark--danger,
+html.ui2 .u-check-row-status--danger { color: var(--u-danger); }
+html.ui2 .u-check-mark--accent,
+html.ui2 .u-check-row-status--accent { color: var(--u-accent); }
+html.ui2 .u-check-mark--muted,
+html.ui2 .u-check-row-status--muted { color: var(--u-muted); }
+html.ui2 .u-check-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+html.ui2 .u-check-row-title { font-weight: 600; }
+html.ui2 .u-check-row-detail {
+  color: var(--u-muted);
+  overflow-wrap: anywhere;
+}
+html.ui2 .u-check-row-status {
+  flex: 0 0 auto;
+  font-weight: 600;
+  text-align: end;
+}
+
+/* The callout: what the step says and the one main action. */
+html.ui2 .u-check-callout { margin-top: 16px; }
+html.ui2 .u-check-callout:empty { display: none; }
+html.ui2 .u-check-line { margin: 0 0 8px; line-height: 1.45; }
+html.ui2 .u-check-muted { color: var(--u-muted); }
+html.ui2 .u-check-line--ok { font-weight: 600; }
+html.ui2 .u-check-line--ok::before { content: "\2713\00a0"; color: var(--u-ok); }
+html.ui2 .u-check-line--err { color: var(--u-danger); }
+html.ui2 .u-check-line--err::before { content: "\00d7\00a0"; }
+html.ui2 .u-check-routea {
+  padding: 16px;
+  border: 1px solid var(--u-accent);
+  border-radius: var(--u-radius);
+  background: var(--u-selected);
+}
+html.ui2 .u-check-routea-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+html.ui2 .u-check-routea-act { margin: 8px 0; }
+
+/* The guide or the ladder from the classic layout, inside the step. */
+html.ui2 .u-check-guide:empty { display: none; }
+html.ui2 .u-check-guide { margin-top: 16px; }
+html.ui2 .u-check-other {
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+}
+html.ui2 .u-check-other-sum {
+  display: flex;
+  align-items: center;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+/* A flex summary loses its marker: draw it, closed and open. */
+html.ui2 .u-check-other-sum::before { content: '\25B8' / ''; margin-inline-end: 8px; }
+html.ui2 .u-check-other[open] > .u-check-other-sum::before { content: '\25BE' / ''; }
+html.ui2 .u-check-other-body { padding: 0 16px 16px; }
+/* The reused ladder and guide keep their classic look, but their controls
+   get the preview's 40px targets. */
+html.ui2 .u-check :is(.fw-ladder, .fw-guide) button { min-height: var(--u-target); }
+/* The step's own button does the one-click update; the guide's copy of it
+   stays out, so a speaker never has two update buttons on one screen. */
+html.ui2 .u-check-other .fw-guide-auto { display: none; }
+html.ui2 .u-check-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--u-target);
+  color: var(--u-accent);
+  text-decoration: underline;
+}
+
+html.ui2 .u-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 16px;
+}
+html.ui2 .u-check-actions [hidden] { display: none; }
+html.ui2 .u-check-risk {
+  flex: 1 1 280px;
+  margin: 0;
+  color: var(--u-muted);
+}
+
+html.ui2 .u-check :is(button, a, summary):focus-visible {
+  outline: 3px solid var(--u-focus);
+  outline-offset: 2px;
+}
