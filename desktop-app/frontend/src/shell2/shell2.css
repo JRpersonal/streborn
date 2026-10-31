@@ -317,8 +317,9 @@ html.ui2 #app {
 }
 
 /* The old chrome stays in the page (its tabs still carry the badges and the
-   lookups the app does), it is just not drawn. The donate rail is hidden; the
-   footer link stays at the end of every view. */
+   lookups the app does), it is just not drawn. The donate rail is hidden, and
+   so is the classic footer: its links live in Help and info (#appFooter
+   rule below). */
 html.ui2 .app-header,
 html.ui2 #app > .tabs,
 html.ui2 .donate-side { display: none !important; }
