@@ -7,8 +7,9 @@
 // module none of them has to import each other for.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn } from '../../utils.js';
 import { t } from '../../i18n/index.js';
+import { revealSpeakerTabOf, speakerConfirmTitle } from '../../shell2/speakers/speaker.js';
 
 // Injected main.js helpers (see initSettingsView). These stay in main.js because
 // they are shared across views; the settings code calls them as deps.<name>.
@@ -55,6 +56,15 @@ export async function withButtonPending(btn, fn) {
 // settingsBoxLabel is the name the panels below address the speaker by.
 export function settingsBoxLabel(box) {
   return (box && (box.friendlyName || box.name || box.host)) || '';
+}
+
+// confirmFor is confirmWarn for an action on one speaker. In the UI 2.0
+// preview the dialog's title names the speaker ("Living room: Restart"), so
+// no confirmation has to be read against the page behind it to know which
+// speaker it is about (docs/UI-2.0.md, rule 1). The classic layout keeps its
+// titles exactly as they were.
+export function confirmFor(box, title, body, opts) {
+  return confirmWarn(speakerConfirmTitle(title, settingsBoxLabel(box)), body, opts);
 }
 
 // openInstallFor sends the user to Setup with this speaker pinned as the
@@ -228,6 +238,9 @@ export function discussLink(key) {
 // correct if the grouping is ever changed again.
 export function revealInSettings(el) {
   if (!el) return;
+  // The UI 2.0 preview shows one tab of the speaker page at a time: open the
+  // one that holds el first (a no-op in the classic layout).
+  revealSpeakerTabOf(el);
   let node = el;
   while (node && node !== document.body) {
     if (node.tagName === 'DETAILS') node.open = true;

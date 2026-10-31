@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { DEMO } from '../testkit/demo-data.mjs';
-import { defaultScenario, resolveScenario } from '../testkit/scenario.mjs';
+import { defaultScenario, resolveScenario, speakersScenario } from '../testkit/scenario.mjs';
 import { installDesktopMock } from '../testkit/desktop-mock.mjs';
 import { agentRoutes } from '../testkit/agent-routes.mjs';
 
@@ -36,6 +36,16 @@ export function shotScenario(view, locale) {
     sc.seed.theme = view.endsWith('-light') ? 'light' : view.endsWith('-contrast') ? 'contrast' : 'dark';
     sc.seed.scale = view === 'app-ui2-xl' ? '3' : '1';
     sc.seed.cachedBoxes = true;
+    if (view.startsWith('app-ui2p3-')) {
+      // Phase 3 (the Speakers area) runs on its own network: one speaker in
+      // every state the list and the speaker page show, the stereo pair
+      // "Terrace" and the fixed group Dining room + Hall (SPEAKERS3).
+      const spk = speakersScenario();
+      sc.boxes = spk.boxes;
+      sc.playing = spk.playing;
+      sc.zones = spk.zones;
+      return resolveScenario(sc);
+    }
     sc.boxes = DEMO.ui2Net;
     sc.playing = Object.fromEntries(DEMO.ui2Playing.map((h) => [h, 'PLAY_STATE']));
     sc.zones = DEMO.ui2Zones;

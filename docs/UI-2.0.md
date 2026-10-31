@@ -77,6 +77,21 @@ releases later.
   say "Offline"; Bose originals say "Ready for STR" and open the setup. This
   replaces the room switcher and the separate output popover of the first
   draft.
+- **A speaker's settings live on its page, Speakers > one speaker** (the
+  open question "where do speaker settings live" from the concept). The page
+  always shows the speaker you control: opening a speaker from the Speakers
+  list makes it the controlled one, and choosing another row in the sidebar
+  while the page is open moves the page with it. The sidebar row itself stays
+  one click (choose) plus `+` / `−`; it gets no second settings button.
+  Its five tabs hold every section of today's Speaker settings: Overview
+  (STR and Bose firmware, update, network summary, phone remote, name,
+  language, sources), Sound (volume, balance, bass, levels, display and
+  playback, announcements), Network (Wi-Fi, region, music libraries,
+  Pandora and iHeartRadio), Keys and alarms (button repair, remote key map
+  and key actions, copy keys, keys from an address, voice control) and
+  Maintenance (identify, logs, support, restart, reset, remove STR, backup,
+  SSH, other tools' changes). The checklist is `SPEAKER_SECTIONS` in
+  `shell2/speakers/speaker.js`; every confirmation there names the speaker.
 - **Volume in the player.** While a group plays, the group volume takes the
   place of the speaker volume, and Levels opens the per-speaker sliders.
   Levels only sets levels; choosing speakers stays in the sidebar.
@@ -150,6 +165,10 @@ acceptance criteria for every phase.
 Each phase ships with screenshots, the vitest suite green and every string in
 all bundles. The preview is also checked in a browser against simulated
 speakers in CI (`desktop-app/frontend/screenshots/ui2-check.mjs`).
+
+Decided for later: the update banner gets its UI 2.0 styling in phase 5, and
+a setting that fails on a speaker's page then shows its error in its own
+section instead of a toast across the window.
 
 ## Mockups
 

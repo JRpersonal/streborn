@@ -21,8 +21,13 @@ const BR = ROSTER.bedroom;
 const OFFICE = ROSTER.office;
 const KITCHEN = ROSTER.kitchen;
 
-// Sidebar order (src/shell2/nav.js), Wishes last at the bottom.
-const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'settings', 'multiroom', 'setup', 'wishes'];
+// Sidebar order (src/shell2/nav.js), Wishes last at the bottom. Speakers
+// stands for the list and the three classic tabs under it (phase 3).
+const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes'];
+// Every view, the three reached through the Speakers area included.
+const ALL_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'settings', 'multiroom', 'setup', 'wishes'];
+// The sidebar entry marked current on each view.
+const ENTRY = { settings: 'speakers', multiroom: 'speakers', setup: 'speakers' };
 
 // The group document GetZoneState answers on both halves of a Living Room +
 // Bedroom group (the same shape as demo-data.mjs UI2_GROUP).
@@ -37,8 +42,19 @@ const row = (page, host) => page.locator('#ui2SpkLists .ui2-spk-row')
   .filter({ has: page.locator(`.ui2-spk-pick[data-host="${host}"]`) });
 const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
 
+// openView opens a view the way a user does: its sidebar entry, or for the
+// three under Speakers the area's own places (the speaker you control for
+// Speaker settings).
 async function openView(page, view) {
-  await nav(page, view).click();
+  if (view === 'settings') {
+    await nav(page, 'speakers').click();
+    await page.locator(`#view-speakers .spl-open[data-host="${LR.host}"]`).click();
+  } else if (view === 'multiroom' || view === 'setup') {
+    await nav(page, 'speakers').click();
+    await page.locator(`#ui2SpkSubnav .spa-sub[data-route="${view === 'setup' ? 'add' : 'groups'}"]`).click();
+  } else {
+    await nav(page, view).click();
+  }
   await expect(page.locator(`#ui2MainInner > #view-${view}`)).toBeVisible();
 }
 
@@ -76,14 +92,14 @@ test.describe('UI 2.0 shell', () => {
 
     test('2. every entry opens its view at the top and is the only one marked current', async ({ app }) => {
       const { page } = app;
-      for (const view of NAV_VIEWS) {
+      for (const view of ALL_VIEWS) {
         // Scroll the main pane first, so "starts at the top" is a real check.
         await page.evaluate(() => {
           const m = document.getElementById('ui2Main');
           m.scrollTop = m.scrollHeight;
         });
         await openView(page, view);
-        const item = nav(page, view);
+        const item = nav(page, ENTRY[view] || view);
         await expect(item).toHaveAttribute('aria-current', 'page');
         await expect(item).toHaveClass(/\bis-active\b/);
         await expect(page.locator('#ui2Sidebar .ui2-nav-item[aria-current]')).toHaveCount(1);
@@ -124,7 +140,7 @@ test.describe('UI 2.0 shell', () => {
       await page.keyboard.press('ArrowDown');
       await expect(nav(page, 'wishes')).toBeFocused();
       await page.keyboard.press('ArrowUp');
-      await expect(nav(page, 'setup')).toBeFocused();
+      await expect(nav(page, 'speakers')).toBeFocused();
     });
   });
 
@@ -209,7 +225,7 @@ test.describe('UI 2.0 shell', () => {
     test('9. clicking the Bose original asks, and confirming opens Setup on it', async ({ app }) => {
       const { page } = app;
       await pickStockAndConfirm(page, KITCHEN.host);
-      await expect(nav(page, 'setup')).toHaveAttribute('aria-current', 'page');
+      await expect(nav(page, 'speakers')).toHaveAttribute('aria-current', 'page');
       await expectStockHero(page, KITCHEN);
       // A stock speaker is never the controlled one.
       await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
@@ -235,10 +251,9 @@ test.describe('UI 2.0 shell', () => {
         await mock.expectCalled('GetClockDisplay', { pred: onHost(BR.host) });
         await expect(page.locator('#settingsBoxSelect')).toHaveValue(BR.deviceID);
         await expect(page.locator('#boxNameCombo #boxNameInput')).toHaveValue(BR.friendlyName);
-        await expect(nav(page, 'settings')).toHaveAttribute('aria-current', 'page');
-        // The clock lives in a folded "Display & playback" group.
-        const group = page.locator('#settingsBody details.settings-group').filter({ has: page.locator('#boxClockOn') });
-        if (!(await group.evaluate((d) => d.open))) await group.locator('summary').click();
+        await expect(nav(page, 'speakers')).toHaveAttribute('aria-current', 'page');
+        // The clock lives on the speaker page's Sound tab.
+        await page.locator('#ui2SpkTab-sound').click();
         const on = page.locator('#boxClockOn');
         await expect(on).toBeVisible();
         await mock.resetCalls();
@@ -278,7 +293,7 @@ test.describe('UI 2.0 shell', () => {
       // Setup draws its target picker on entry; clicking the open entry again
       // (switchView('setup')) draws it from state.setupTarget, which shows what
       // a later repaint would show, not just what is still on screen.
-      const redrawSetup = (page) => nav(page, 'setup').click();
+      const redrawSetup = (page) => page.locator('#ui2SpkSubnav .spa-sub[data-route="add"]').click();
       const strHero = (page, host) => page.locator(`#setupPrimaryAction .setup-hero[data-kind="str"][data-host="${host}"]`);
 
       test('14. Setup redraws for the speaker picked, keeps a chosen factory reset, follows a stock pick', async ({ app }) => {
@@ -341,7 +356,7 @@ test.describe('UI 2.0 shell', () => {
     test('16. the player is on every view; in Setup only what plays stays', async ({ app }) => {
       const { page } = app;
       const player = page.locator('#ui2Player');
-      for (const view of NAV_VIEWS.filter((v) => v !== 'setup')) {
+      for (const view of ALL_VIEWS.filter((v) => v !== 'setup')) {
         await openView(page, view);
         await expect(player).toBeVisible();
         await expect(player.locator('.ui2-player-transport')).toBeVisible();
@@ -526,7 +541,7 @@ test.describe('UI 2.0 shell', () => {
     test.describe('a speaker due an update', () => {
       test.use({ fakeClock: true, scenario: { banners: { speakerUpdate: true } } });
 
-      test('26. Speaker settings shows the count with a spoken name', async ({ app }) => {
+      test('26. Speakers shows the count with a spoken name', async ({ app }) => {
         const { page } = app;
         await settle(page, 9_000);
         const badge = page.locator('#ui2SpeakersBadge');

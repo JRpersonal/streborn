@@ -1,0 +1,115 @@
+/* UI 2.0 preview: Speakers > list (#1287, list.js). One card per speaker:
+   the open button (name, what it is, the pill), its list-level action and,
+   for an offline or starting speaker, a note saying what happened and what to
+   do. Under html.ui2 #view-speakers only; reads only the --u-* tokens. */
+
+html.ui2 #view-speakers {
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-speakers .spl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-speakers .spl-item {
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+}
+/* The current speaker: the open button's fill, its accent bar and
+   aria-current, plus the accent edge of the whole card. */
+html.ui2 #view-speakers .spl-item.is-current { border-color: var(--u-accent); }
+/* Offline: greyed with the muted token, never with opacity, so its words
+   keep their contrast; the pill and the note say it in words. */
+html.ui2 #view-speakers .spl-item.is-offline { border-style: dashed; }
+html.ui2 #view-speakers .spl-item.is-offline .spl-name { color: var(--u-muted); }
+html.ui2 #view-speakers .spl-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+html.ui2 #view-speakers .spl-open {
+  flex: 1 1 280px;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 16px;
+}
+html.ui2 #view-speakers .spl-text {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+html.ui2 #view-speakers .spl-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+html.ui2 #view-speakers .spl-meta,
+html.ui2 #view-speakers .spl-now {
+  color: var(--u-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-speakers .spl-now { color: var(--u-text); }
+html.ui2 #view-speakers .spl-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+html.ui2 #view-speakers .spl-actions {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+}
+html.ui2 #view-speakers .spl-halves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+html.ui2 #view-speakers .spl-busy {
+  color: var(--u-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+html.ui2 #view-speakers .spl-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 16px 16px;
+}
+html.ui2 #view-speakers .spl-note-text,
+html.ui2 #view-speakers .spl-note-result {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--u-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+html.ui2 #view-speakers .spl-note-result { flex-basis: 100%; color: var(--u-warn); font-weight: 600; }
+html.ui2 #view-speakers .spl-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--u-border);
+}
+html.ui2 #view-speakers .spl-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+html.ui2 #view-speakers .spl-foot-text { color: var(--u-muted); font-size: 14px; }
+html.ui2 #view-speakers .spl-empty { margin: 0; }

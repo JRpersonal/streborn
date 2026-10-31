@@ -4,7 +4,7 @@
 // the experimental cloud-preset restore.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, confirmWarn, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 // The box-to-box preset copy continues past rejected slots and reports them
 // as one combined error; reconstructing "how many still copied" from that
@@ -32,7 +32,7 @@ import {
   CopyPresetsAcrossBoxes,
   GetPresets,
 } from '../../api.js';
-import { deps, helpBlock, discussLink, revealInSettings } from './shared.js';
+import { deps, helpBlock, discussLink, revealInSettings, confirmFor } from './shared.js';
 
 // Where the voice-control explanation lives. In the repo for now so the link
 // works the day the button ships; move it to the website page when that exists
@@ -108,7 +108,7 @@ export function renderAdvancedSections() {
   return {
     group: 'advanced',
     html: `
-    <details class="settings-section settings-expert" id="announceSection">
+    <details data-ui2-sec="announce" class="settings-section settings-expert" id="announceSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       ${helpBlock(t('settingsView.announceHelp'))}
       <div class="setting-row" style="margin-top:8px">
@@ -147,7 +147,7 @@ export function renderAdvancedSections() {
       ${discussLink('announce')}
     </details>
 
-    <details class="settings-section settings-expert" id="webhookSection">
+    <details data-ui2-sec="keyMap" class="settings-section settings-expert" id="webhookSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
@@ -239,7 +239,7 @@ export function renderAdvancedSections() {
       ${discussLink('webhook')}
     </details>
 
-    <details class="settings-section settings-expert">
+    <details data-ui2-sec="voice" class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.voiceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       ${helpBlock(t('settingsView.voiceHelp'))}
       <div class="setting-row">
@@ -267,7 +267,7 @@ export function renderAdvancedSections() {
       const allOpt = targets.length > 1
         ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
         : '';
-      return `<details class="settings-section settings-expert">
+      return `<details data-ui2-sec="copyPresets" class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp'))}
       <div class="setting-row">
@@ -278,7 +278,7 @@ export function renderAdvancedSections() {
     </details>`;
     })()}
 
-    <details class="settings-section settings-expert">
+    <details data-ui2-sec="urlPreset" class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.urlPresetHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       ${helpBlock(t('settingsView.urlPresetHelp'))}
       <div class="setting-row">
@@ -294,7 +294,7 @@ export function renderAdvancedSections() {
       ${discussLink('urlPreset')}
     </details>
 
-    <details class="settings-section settings-expert">
+    <details data-ui2-sec="restore" class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></summary>
       ${helpBlock(t('settingsView.restoreHelp'), 'p', 'muted small')}
       <label class="muted small" for="boxRestoreXml">${escapeHtml(t('settingsView.restoreXmlLabel'))}</label>
@@ -373,7 +373,7 @@ export function wireAdvancedSections(ctx) {
         out.textContent = parts.join('\n');
       }
       if (r && r.rebootRecommended) {
-        const ok = await confirmWarn(t('speaker.rebootConfirmTitle'), t('settingsView.restoreRebootBody'));
+        const ok = await confirmFor(box, t('speaker.rebootConfirmTitle'), t('settingsView.restoreRebootBody'));
         if (ok) {
           try {
             await RebootBox(box.host, box.port);
@@ -810,7 +810,7 @@ export function wireAdvancedSections(ctx) {
       // "Apply to all": copy this box's 1-6 onto every other STR speaker.
       if (sel.value === '__ALL__') {
         const all = (state.boxes || []).filter(b => b.kind !== 'stock' && b.host !== box.host);
-        const ok = await confirmWarn(
+        const ok = await confirmFor(box, 
           t('settingsView.copyPresetsConfirmTitle'),
           t(confirmBodyKey, { target: t('settingsView.copyPresetsAllTargets') })
         );
@@ -857,7 +857,7 @@ export function wireAdvancedSections(ctx) {
       const tport = parseInt(tportRaw, 10) || 0;
       const target = (state.boxes || []).find(b => b.host === thost);
       const targetName = target ? (target.friendlyName || target.name || target.host) : thost;
-      const ok = await confirmWarn(
+      const ok = await confirmFor(box, 
         t('settingsView.copyPresetsConfirmTitle'),
         t(confirmBodyKey, { target: targetName })
       );

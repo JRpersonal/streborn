@@ -81,12 +81,8 @@
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     },
     "select-name": {
-      "count": 4,
-      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+      "count": 3,
+      "note": "Settings: #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed). (#settingsBoxSelect is not shown in the UI 2.0 speaker page: the page head names the speaker, the sidebar chooses it.)"
     }
   },
   "contrast|ui2|setup": {
@@ -177,12 +173,8 @@
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     },
     "select-name": {
-      "count": 4,
-      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+      "count": 3,
+      "note": "Settings: #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed). (#settingsBoxSelect is not shown in the UI 2.0 speaker page: the page head names the speaker, the sidebar chooses it.)"
     }
   },
   "dark|ui2|setup": {
@@ -293,12 +285,8 @@
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     },
     "select-name": {
-      "count": 4,
-      "note": "Settings: #settingsBoxSelect, #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed)."
-    },
-    "target-size": {
-      "count": 1,
-      "note": "Settings: the rename toggle #boxNameToggle is 22 x 30 px with a neighbour too close, under the 24 px of WCAG 2.5.8. Known, not fixed yet (no issue filed)."
+      "count": 3,
+      "note": "Settings: #boxLangSelect, #boxClockFormat and #appRegionSelect sit next to a caption that is not tied to them with <label for> or aria-labelledby. Known, not fixed yet (no issue filed). (#settingsBoxSelect is not shown in the UI 2.0 speaker page: the page head names the speaker, the sidebar chooses it.)"
     }
   },
   "light|ui2|setup": {

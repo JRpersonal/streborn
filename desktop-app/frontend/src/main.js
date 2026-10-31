@@ -870,7 +870,9 @@ function markViewFeaturesSeen(view) {
 function renderNavDots() {
   const seen = seenFeatureSet();
   document.querySelectorAll('.tab-btn, .ui2-nav-item').forEach(btn => {
-    const want = NEW_FEATURES.some(f => f.view === btn.dataset.view && !seen.has(f.id));
+    // A UI 2.0 area entry (Speakers) stands for several views (data-views).
+    const views = (btn.dataset.views || btn.dataset.view || '').split(' ');
+    const want = NEW_FEATURES.some(f => views.includes(f.view) && !seen.has(f.id));
     const dot = btn.querySelector('.nav-newdot');
     if (want && !dot) {
       const s = document.createElement('span');
@@ -914,6 +916,10 @@ function switchView(view) {
   if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-wishes').classList.toggle('hidden', view !== 'wishes');
+  // The UI 2.0 Speakers list is a view of the preview shell only
+  // (shell2/speakers); without the shell the node does not exist.
+  const speakersView = $('view-speakers');
+  if (speakersView) speakersView.classList.toggle('hidden', view !== 'speakers');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
   // decide.
@@ -1716,6 +1722,12 @@ function safeMountShell2() {
       pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
       toggleGroupMember,
       groupEditPendingHosts,
+      // The Speakers area (shell2/speakers): opening one speaker's page picks
+      // it the way the classic Settings dropdown does (lock-step).
+      speakerPicked: speakerPickedInTab,
+      // Speakers > list: the classic single-speaker and update-all paths.
+      doBoxUpdate,
+      updateAllBoxes,
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not
