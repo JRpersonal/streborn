@@ -279,7 +279,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // speaker's own XML with the station name STR started (withStationName) and a
 // quiet wake's leftover pause reported as stopped (wokenStop, #1629).
 func (s *Server) statusForClients(body []byte) []byte {
-	return s.wokenStop.apply(s.withStationName(body))
+	return s.applyWokenStop(s.withStationName(body))
 }
 
 // withStationName puts the station STR started back into a now_playing body

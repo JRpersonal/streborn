@@ -996,6 +996,11 @@ func (s *Server) NoteBoxZoneState(master string) {
 	if strings.TrimSpace(master) != "" {
 		// Joined a zone: a level muted for a quiet group wake comes back now.
 		s.restoreQuietWakeVolume("zone joined")
+		// A member switches to the master's item about two seconds from now;
+		// when the quiet wake left both paused, the member's woken-stop mark
+		// follows it there (#1629). On the master the item does not change
+		// and the window simply runs out.
+		s.wokenStop.armHandoff(time.Now().Add(wokenStopHandoff))
 	}
 	if s.zones == nil {
 		return

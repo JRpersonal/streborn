@@ -100,6 +100,118 @@ func TestWokenStopClearsOnAnotherSourceOrStation(t *testing.T) {
 	}
 }
 
+const groupAlbumLoc = "0$albums$*a2"
+
+// storedMusicBody is the master's resumed item as a member's now_playing shows
+// it once the member mirrors the master.
+func storedMusicBody(status string) string {
+	return `<nowPlaying deviceID="device-id-here" source="STORED_MUSIC" sourceAccount="device-id-here/0">` +
+		`<ContentItem source="STORED_MUSIC" location="` + groupAlbumLoc + `" sourceAccount="device-id-here/0" isPresetable="true">` +
+		`<itemName>Album</itemName></ContentItem><playStatus>` + status + `</playStatus></nowPlaying>`
+}
+
+// #1629 follow-up: a group member is quiet-woken, stopped and marked on its
+// own resumed item (PANDORA here), then joins the zone and about two seconds
+// later mirrors the master's item, which the master's quiet wake left paused
+// too. The mark follows the member onto that item, so the member reports the
+// group stopped, as the master does.
+func TestWokenStopFollowsMemberOntoMastersItem(t *testing.T) {
+	var logBuf bytes.Buffer
+	s := &Server{logger: slog.New(slog.NewTextHandler(&logBuf, nil)), boxHost: "192.0.2.10"}
+	s.wokenStop.mark("PANDORA", pandoraLoc)
+	s.NoteBoxZoneState("device-id-here") // zone joined: arms the handoff
+	got := servedStatus(s, storedMusicBody("PAUSE_STATE"))
+	if !strings.Contains(got, "<playStatus>STOP_STATE</playStatus>") {
+		t.Fatalf("the master's paused item served on the member as %q, want STOP_STATE", got)
+	}
+	if !s.wokenStop.active() || s.wokenStop.source != "STORED_MUSIC" || s.wokenStop.location != groupAlbumLoc {
+		t.Fatalf("mark not moved to the master's item: set=%v %s %s", s.wokenStop.active(), s.wokenStop.source, s.wokenStop.location)
+	}
+	if !strings.Contains(logBuf.String(), "reported as stopped on this member too") ||
+		!strings.Contains(logBuf.String(), "fromSource=PANDORA") || !strings.Contains(logBuf.String(), "toSource=STORED_MUSIC") {
+		t.Fatalf("handoff not logged:\n%s", logBuf.String())
+	}
+	// The next poll still serves STOP_STATE, without a second log line.
+	if got := servedStatus(s, storedMusicBody("PAUSE_STATE")); !strings.Contains(got, "STOP_STATE") {
+		t.Fatalf("second poll served %q, want STOP_STATE", got)
+	}
+	if n := strings.Count(logBuf.String(), "reported as stopped on this member too"); n != 1 {
+		t.Fatalf("handoff logged %d times, want once", n)
+	}
+}
+
+func TestWokenStopWithoutHandoffClearsOnAnotherItem(t *testing.T) {
+	var w wokenStop
+	w.mark("PANDORA", pandoraLoc)
+	body := storedMusicBody("PAUSE_STATE")
+	if out := w.apply([]byte(body)); string(out) != body {
+		t.Fatalf("body rewritten to %q without a zone join", out)
+	}
+	if w.active() {
+		t.Fatal("mark survived another item without a handoff window")
+	}
+}
+
+// After the handoff, the speaker playing clears the mark as usual, and a pause
+// the user makes from there keeps its label.
+func TestWokenStopHandoffThenPlayClears(t *testing.T) {
+	var w wokenStop
+	w.mark("PANDORA", pandoraLoc)
+	w.armHandoff(time.Now().Add(wokenStopHandoff))
+	if out := w.apply([]byte(storedMusicBody("PAUSE_STATE"))); !bytes.Contains(out, stopStatePlayStatus) {
+		t.Fatalf("handoff served %q, want STOP_STATE", out)
+	}
+	w.apply([]byte(storedMusicBody("PLAY_STATE")))
+	if w.active() {
+		t.Fatal("mark survived the group playing")
+	}
+	if out := w.apply([]byte(storedMusicBody("PAUSE_STATE"))); !bytes.Contains(out, pauseStatePlayStatus) {
+		t.Fatalf("a pause the user made was served as %q, want PAUSE_STATE", out)
+	}
+}
+
+func TestWokenStopArmHandoffWithoutMarkIsNoop(t *testing.T) {
+	var w wokenStop
+	w.armHandoff(time.Now().Add(wokenStopHandoff))
+	if w.active() || !w.handoffUntil.IsZero() {
+		t.Fatal("armHandoff without a mark changed the state")
+	}
+	if out := w.apply([]byte(storedMusicBody("PAUSE_STATE"))); !bytes.Contains(out, pauseStatePlayStatus) {
+		t.Fatalf("unmarked pause served as %q", out)
+	}
+}
+
+func TestWokenStopExpiredHandoffClears(t *testing.T) {
+	var w wokenStop
+	w.mark("PANDORA", pandoraLoc)
+	w.armHandoff(time.Now().Add(-time.Second))
+	body := storedMusicBody("PAUSE_STATE")
+	if out := w.apply([]byte(body)); string(out) != body {
+		t.Fatalf("body rewritten to %q after the window ran out", out)
+	}
+	if w.active() {
+		t.Fatal("mark survived another item after the window ran out")
+	}
+}
+
+// Only one handoff per window: a second item change inside it clears.
+func TestWokenStopHandsOffOnce(t *testing.T) {
+	var w wokenStop
+	w.mark("PANDORA", pandoraLoc)
+	w.armHandoff(time.Now().Add(wokenStopHandoff))
+	w.apply([]byte(storedMusicBody("PAUSE_STATE")))
+	if !w.active() {
+		t.Fatal("first handoff cleared the mark")
+	}
+	body := strings.Replace(storedMusicBody("PAUSE_STATE"), groupAlbumLoc, "0$albums$*a9", 1)
+	if out := w.apply([]byte(body)); string(out) != body {
+		t.Fatalf("second item change rewritten to %q", out)
+	}
+	if w.active() {
+		t.Fatal("mark followed a second item change")
+	}
+}
+
 func TestQuietWakeStoppedSpeakerSetsNoMark(t *testing.T) {
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	stops := 0
