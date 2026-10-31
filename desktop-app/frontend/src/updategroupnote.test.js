@@ -138,3 +138,19 @@ describe('the single-speaker update banner', () => {
     expect(de).not.toMatch(/\bSie\b/);
   });
 });
+
+// The note used to say "an ordinary group you form again afterwards", which a
+// reporter could not map to anything on screen (#1339). It now names the
+// Multi-room button by its own label, so the label has to be the bundle's
+// actual button text, word for word.
+describe('the group note names the real button', () => {
+  it('quotes multiroom.createBtn verbatim in every bundle', () => {
+    for (const l of langs) {
+      const b = JSON.parse(readFileSync(join(bundleDir, l + '.json'), 'utf8'));
+      const btn = b['multiroom.createBtn'];
+      expect(btn, l).toBeTruthy();
+      expect(b[KEY], l).toContain(btn);
+      expect(b[ALL_KEY], l).toContain(btn);
+    }
+  });
+});

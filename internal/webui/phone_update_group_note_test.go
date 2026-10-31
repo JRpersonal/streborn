@@ -128,3 +128,43 @@ func TestPhoneUpdateCardSeesAGroupFormedLater(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneGroupNoteNamesTheJoinControl pins the wording asked for on #1339:
+// the note says where an ordinary group is formed again on this page, the +
+// next to the speakers under the "Speakers & groups" heading, by that
+// heading's own text in each locale.
+func TestPhoneGroupNoteNamesTheJoinControl(t *testing.T) {
+	peersRe := regexp.MustCompile(`peers:"([^"]*)"`)
+	noteRe := regexp.MustCompile(`suGrpNote:"([^"]*)"`)
+	langRe := regexp.MustCompile(`^  (\w+):\{`)
+	peersOf := map[string]string{}
+	singles := 0
+	for _, line := range strings.Split(indexHTML, "\n") {
+		m := langRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		if p := peersRe.FindStringSubmatch(line); p != nil {
+			peersOf[m[1]] = p[1]
+		}
+		if n := noteRe.FindStringSubmatch(line); n != nil {
+			singles++
+			p := peersOf[m[1]]
+			if p == "" || !strings.Contains(n[1], p) || !strings.Contains(n[1], "+") {
+				t.Errorf("%s: suGrpNote does not name the + under %q: %q", m[1], p, n[1])
+			}
+		}
+	}
+	if singles != 12 {
+		t.Fatalf("checked %d suGrpNote bundles, want 12", singles)
+	}
+	all := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"\},$`).FindAllStringSubmatch(indexHTML, -1)
+	if len(all) != 12 {
+		t.Fatalf("suGrpAllNote in %d locales, want 12", len(all))
+	}
+	for _, v := range all {
+		if p := peersOf[v[1]]; p == "" || !strings.Contains(v[2], p) || !strings.Contains(v[2], "+") {
+			t.Errorf("%s: suGrpAllNote does not name the + under %q: %q", v[1], p, v[2])
+		}
+	}
+}
