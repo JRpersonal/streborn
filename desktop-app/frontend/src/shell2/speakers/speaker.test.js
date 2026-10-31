@@ -55,7 +55,7 @@ describe('the classic-section checklist', () => {
     for (const k of ['status', 'name', 'speakerInfo', 'phone', 'netSummary']) expect(sectionTab(k), k).toBe('overview');
     for (const k of ['volume', 'bass', 'levels']) expect(sectionTab(k), k).toBe('sound');
     for (const k of ['wifi', 'region']) expect(sectionTab(k), k).toBe('network');
-    for (const k of ['hwKeys', 'keyMap', 'copyPresets']) expect(sectionTab(k), k).toBe('keys');
+    for (const k of ['hwKeys', 'syncKeys', 'keyMap']) expect(sectionTab(k), k).toBe('keys');
   });
 
   it('shows a section nobody mapped yet on Overview rather than nowhere', () => {

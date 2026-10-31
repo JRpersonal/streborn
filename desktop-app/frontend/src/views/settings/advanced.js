@@ -1,16 +1,12 @@
 // views/settings/advanced.js: the Advanced group of Speaker settings, the
 // Playground. Announcements, the smart-home webhooks with the remote key map,
-// voice control, the box-to-box preset copy, a custom URL on a preset, and
-// the experimental cloud-preset restore.
+// voice control, repairing the preset keys on the speaker, a custom URL on a
+// preset, and the experimental cloud-preset restore.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showToast, hideToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
-// The box-to-box preset copy continues past rejected slots and reports them
-// as one combined error; reconstructing "how many still copied" from that
-// message is a pure decision in copyreport.js (vitest-covered).
-import { summarizePresetCopyError, countValidPresetSlots, presetCopyConflict } from '../../copyreport.js';
-import { boxMaxSlot, boxPresetRows, copyRowsNote, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
+import { boxPresetRows, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc, webhookPresent, keyMapTarget, validWolMac } from '../../groupkeys.js';
@@ -29,12 +25,11 @@ import {
   SaveKeyActions,
   SaveWebhookConfig,
   TestWebhookAction,
-  CopyPresetsAcrossBoxes,
-  GetPresets,
+  SyncBoxPresets,
 } from '../../api.js';
 import {
   deps, helpBlock, discussLink, revealInSettings, confirmFor,
-  reportError, reportDone, reportWarn, reportFieldError, clearFieldErrors, reportsInline,
+  reportError, reportDone, reportFieldError, clearFieldErrors,
 } from './shared.js';
 
 // Where the voice-control explanation lives. In the repo for now so the link
@@ -251,35 +246,13 @@ export function renderAdvancedSections() {
       ${discussLink('voice')}
     </details>
 
-    ${(() => {
-      // Box-to-box preset copy (Expert): source is THIS speaker (the one whose
-      // settings are open), the user picks a target to push keys 1-6 onto. Only
-      // rendered when at least one other STR speaker exists, so a single-speaker
-      // user never sees it.
-      const src = state.settingsBox;
-      const targets = (state.boxes || []).filter(b => b.kind !== 'stock' && src && b.host !== src.host);
-      if (!targets.length) return '';
-      // A speaker with the second row of keys (#1110) copies both rows.
-      const twoRows = boxPresetRows(src) >= 2;
-      const opts = targets.map(b => {
-        const lbl = (b.friendlyName || b.name || b.host) + (b.model && b.model !== 'SoundTouch' ? ' (' + b.model + ')' : '');
-        return `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(lbl)}</option>`;
-      }).join('');
-      // With more than one other speaker, offer "apply to all" so a multi-box
-      // user gets the same 1-6 on every speaker in one go (Gerald, 4 boxes).
-      const allOpt = targets.length > 1
-        ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
-        : '';
-      return `<details data-ui2-sec="copyPresets" class="settings-section settings-expert">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
-      ${helpBlock(t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp'))}
+    <details data-ui2-sec="syncKeys" class="settings-section settings-expert" id="syncKeysSection">
+      <summary class="settings-expert-summary">${escapeHtml(t('ui2.speakers.speaker.hwKeysHeading'))}</summary>
+      <p class="muted small" id="boxSyncPresetsHelp">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
       <div class="setting-row">
-        <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
-        <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t(twoRows ? 'settingsView.copyPresetsBtnAll' : 'settingsView.copyPresetsBtn'))}</button>
+        <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
       </div>
-      ${discussLink('copyPresets')}
-    </details>`;
-    })()}
+    </details>
 
     <details data-ui2-sec="urlPreset" class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.urlPresetHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
@@ -783,133 +756,22 @@ export function wireAdvancedSections(ctx) {
     };
   }
 
-  // Box-to-box preset copy (Expert): copy keys 1-6 from this speaker (the
-  // settings source) onto a chosen target speaker, behind a warning confirm
-  // because it overwrites the target's presets.
-  const copyBtn = $('copyPresetBtn');
-  if (copyBtn) {
-    copyBtn.onclick = async () => {
-      const sel = $('copyPresetTarget');
-      if (!sel || !sel.value) return;
-      // The backend copies past rejected slots and reports them in ONE
-      // combined error; the Wails rejection carries only that message, so the
-      // copied count is reconstructed as source-slots minus rejected slots.
-      // Counted lazily (only when a rejection needs it) to keep the happy
-      // path at one round trip.
-      const sourceSlotCount = async () => {
-        try { return countValidPresetSlots(await GetPresets(box.host, box.port), maxSlotFor(sel.value)); }
-        catch { return null; }
-      };
-      // The keys the copy can carry: a target without the second row of keys
-      // takes row 1 only, and the result says so (#1110).
-      const twoRows = boxPresetRows(box) >= 2;
-      const maxSlotFor = (val) => {
-        const tb = (state.boxes || []).find(b => b.host === String(val).split('|')[0]);
-        return twoRows ? boxMaxSlot(tb) : 6;
-      };
-      let sourcePresets = null;
-      const row2Note = async (tb) => {
-        if (!twoRows) return '';
-        if (sourcePresets === null) {
-          try { sourcePresets = await GetPresets(box.host, box.port) || []; } catch { sourcePresets = []; }
-        }
-        return copyRowsNote(sourcePresets, tb);
-      };
-      const confirmBodyKey = twoRows ? 'settingsView.copyPresetsConfirmBodyAll' : 'settingsView.copyPresetsConfirmBody';
-      // "Apply to all": copy this box's 1-6 onto every other STR speaker.
-      if (sel.value === '__ALL__') {
-        const all = (state.boxes || []).filter(b => b.kind !== 'stock' && b.host !== box.host);
-        const ok = await confirmFor(box, 
-          t('settingsView.copyPresetsConfirmTitle'),
-          t(confirmBodyKey, { target: t('settingsView.copyPresetsAllTargets') })
-        );
-        if (!ok) return;
-        copyBtn.disabled = true;
-        showToast(t('settingsView.copyPresetsProgress'), 0);
-        let done = 0;
-        const failed = [];
-        const slotIssues = [];
-        let totalSlots;
-        const row1Only = [];
-        for (const tb of all) {
-          const tbName = tb.friendlyName || tb.name || tb.host;
-          try {
-            await CopyPresetsAcrossBoxes(box.host, box.port, tb.host, tb.port || 0);
-            done++;
-            if (await row2Note(tb) === 'row1Only') row1Only.push(tbName);
-            if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
-          } catch (e) {
-            if (totalSlots === undefined) totalSlots = await sourceSlotCount();
-            const part = summarizePresetCopyError(e, totalSlots);
-            if (part && part.copied !== 0) {
-              // Most slots arrived on this target: count it as reached, but
-              // keep the per-slot detail for the honest summary below.
-              done++;
-              slotIssues.push(`${tbName}: ${part.detail}`);
-              if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
-            } else {
-              failed.push(tbName);
-            }
-          }
-        }
-        copyBtn.disabled = false;
-        const slotMsg = slotIssues.length
-          ? t('settingsView.copyPresetsAllSlotIssues', { detail: slotIssues.join(' | ') })
-          : '';
-        const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
-        // The outcome moves into the card in the preview: the sticky progress
-        // toast goes, and a copy that reached some speakers is a warning.
-        if ((failed.length || slotMsg) && reportsInline(copyBtn)) hideToast();
-        if (failed.length) {
-          const msg = t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : '') + rowMsg;
-          if (done > 0) reportWarn(copyBtn, msg);
-          else reportError(copyBtn, msg);
-        } else if (slotMsg) reportWarn(copyBtn, slotMsg + rowMsg);
-        else reportDone(copyBtn, t('settingsView.copyPresetsAllDone', { n: all.length }) + rowMsg);
-        return;
-      }
-      const [thost, tportRaw] = sel.value.split('|');
-      const tport = parseInt(tportRaw, 10) || 0;
-      const target = (state.boxes || []).find(b => b.host === thost);
-      const targetName = target ? (target.friendlyName || target.name || target.host) : thost;
-      const ok = await confirmFor(box, 
-        t('settingsView.copyPresetsConfirmTitle'),
-        t(confirmBodyKey, { target: targetName })
-      );
-      if (!ok) return;
-      copyBtn.disabled = true;
-      showToast(t('settingsView.copyPresetsProgress'), 0);
+  // Repair the hardware keys: push every preset to the speaker again. STR
+  // already does this by itself (after every start, on every wake from standby
+  // and in the idle pass), so the action sits here in the expert area for the
+  // rare key that stays dead after a restart.
+  const syncBtn = $('boxSyncPresetsBtn');
+  if (syncBtn) {
+    syncBtn.onclick = async () => {
+      syncBtn.disabled = true;
+      syncBtn.textContent = t('settingsView.syncing');
       try {
-        const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
-        const rowMsg = await row2Note(target) === 'row1Only'
-          ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
-          : '';
-        reportDone(copyBtn, t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
-        if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
-      } catch (e) {
-        // The target already holds one of the stations on a key this transfer
-        // does not rewrite, so it refused the whole set and wrote nothing. The
-        // user used to get the agent's raw 409 JSON in an error dialog (#882).
-        const conflict = presetCopyConflict(e);
-        if (reportsInline(copyBtn)) hideToast();
-        if (conflict) {
-          reportError(copyBtn, t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
-          copyBtn.disabled = false;
-          return;
-        }
-        // A per-slot rejection is usually a PARTIAL success (the other slots
-        // copied); saying only "error" hid that and read as all-or-nothing.
-        const part = summarizePresetCopyError(e, await sourceSlotCount());
-        if (part && part.copied !== 0) {
-          reportWarn(copyBtn, part.copied === null
-            ? t('settingsView.copyPresetsSomeFailed', { target: targetName, detail: part.detail })
-            : t('settingsView.copyPresetsPartial', { n: part.copied, target: targetName, detail: part.detail }), { classicToast: true });
-          if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
-        } else {
-          reportError(copyBtn, e);
-        }
-      }
-      copyBtn.disabled = false;
+        const r = await SyncBoxPresets(box.host, box.port);
+        const synced = r && r.synced != null ? r.synced : 0;
+        reportDone(syncBtn, t('settingsView.syncDoneToast', { n: synced }));
+      } catch (e) { reportError(syncBtn, e); }
+      syncBtn.disabled = false;
+      syncBtn.textContent = t('settingsView.syncHardwareKeys');
     };
   }
 

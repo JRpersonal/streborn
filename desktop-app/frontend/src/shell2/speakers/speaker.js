@@ -58,9 +58,10 @@
 //                displaySplash, displayNotices, arcade, airplay, announce;
 //   network      wifi (network, switch form, stored networks, forget),
 //                region, musicLib, usServices (Pandora and iHeartRadio);
-//   keys         hwKeys (new: the "Repair speaker buttons" action), keyMap
-//                (remote key map, key actions incl. sleep, snooze and bass,
-//                webhooks), copyPresets, urlPreset, voice;
+//   keys         hwKeys (new: the "Repair speaker buttons" action, taken out
+//                of the classic syncKeys expert section), keyMap (remote key
+//                map, key actions incl. sleep, snooze and bass, webhooks),
+//                urlPreset, voice;
 //   maintenance  actions (identify, save logs, support mail, restart, remove
 //                a conflicting tool or cloud address, factory reset, remove
 //                STR), backup, ssh, foreign (other tools' changes), restore.
@@ -120,8 +121,8 @@ export const SPEAKER_SECTIONS = Object.freeze([
   ['musicLib', 'network'],
   ['usServices', 'network'],
   ['hwKeys', 'keys'],
+  ['syncKeys', 'keys'],
   ['keyMap', 'keys'],
-  ['copyPresets', 'keys'],
   ['urlPreset', 'keys'],
   ['voice', 'keys'],
   ['actions', 'maintenance'],
@@ -371,14 +372,17 @@ export function arrangeSpeakerSections(ctx = {}) {
     return el;
   };
   // Keys and alarms: "Repair speaker buttons" and its help, moved (handler
-  // and all) out of the Actions grid into a card of their own.
+  // and all) out of the classic expert section into a card of their own; the
+  // emptied expert section goes.
   const sync = body.querySelector('#boxSyncPresetsBtn');
   if (sync) {
-    const help = sync.nextElementSibling && sync.nextElementSibling.tagName === 'P' ? sync.nextElementSibling : null;
+    const home = sync.closest('[data-ui2-sec="syncKeys"]');
+    const help = body.querySelector('#boxSyncPresetsHelp');
     const card = section('hwKeys', `<h3>${escapeHtml(t('ui2.speakers.speaker.hwKeysHeading'))}</h3><div class="actions-grid"></div>`);
     const grid = card.querySelector('.actions-grid');
     grid.appendChild(sync);
     if (help) grid.appendChild(help);
+    if (home) home.remove();
     body.appendChild(card);
   }
   // Overview: the Network summary, read from the same answer the Network tab
