@@ -161,6 +161,48 @@ func TestTrackEndNet(t *testing.T) {
 			want: endNetFrozen,
 		},
 		{
+			name: "stale key length: box echoes 429 s, position climbing at 431 s, 435 s after the push",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 435 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 431 * sec, sinceLastPos: moved},
+			want: endNetNone,
+		},
+		{
+			name: "stale key length: the same reading, the position frozen since",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 450 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 431 * sec, sinceLastPos: prod.frozenTimeout},
+			want: endNetWallClock,
+		},
+		{
+			name: "stale key length: position ran far past it, frozen at the file's real end",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 1520 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 1500 * sec, sinceLastPos: prod.frozenTimeout},
+			want: endNetFrozen,
+		},
+		{
+			name: "echoed claim: position climbing onto the echoed total is not the end",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 432 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 429 * sec, sinceLastPos: moved, echoedTotal: true},
+			want: endNetNone,
+		},
+		{
+			name: "echoed claim: position one second short of the echoed total, climbing",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 432 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 428 * sec, sinceLastPos: moved, echoedTotal: true},
+			want: endNetNone,
+		},
+		{
+			name: "echoed claim: position stopped on the echoed total ends it",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 436 * sec, dur: 429 * sec,
+				obsTotal: 429 * sec, lastPos: 429 * sec, sinceLastPos: oneTik, echoedTotal: true},
+			want: endNetWallClock,
+		},
+		{
+			name: "#1190: zone master on the one-second poll at 255/256, still climbing, still advances at its own end",
+			in: trackEndInput{sawPlay: true, playing: true, elapsed: 258 * sec, dur: 256 * sec,
+				obsTotal: 256 * sec, lastPos: 255 * sec, sinceLastPos: moved},
+			want: endNetWallClock,
+		},
+		{
 			name: "estimated length: still climbing at the estimate is not an end",
 			in: trackEndInput{sawPlay: true, playing: true, elapsed: 202 * sec, hint: 200 * sec,
 				lastPos: 200 * sec, sinceLastPos: moved},

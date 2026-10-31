@@ -653,10 +653,13 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	s.healLibraryKeyIfMoved(playCtx, slot, &p)
 	if mime := s.directFileMime(playCtx, p); mime != "" {
 		s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime, "custom", p.Source == "")
-		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, recallStart); err != nil {
+		// The app path already holds boxCmdMu here (playSlot), as the MIME
+		// probe above does; keyLengthCheckBudget bounds the wait.
+		length := s.keyRecallLength(playCtx, p, mime)
+		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, length, recallStart); err != nil {
 			return playResult{}, playFailed("Track could not be played", err)
 		}
-		s.recentNoteLibraryCard(p.StreamURL, p.Name, p.Art, p.StreamURL, mime, s.recentPresetLengthSec(p)) // #135
+		s.recentNoteLibraryCard(p.StreamURL, p.Name, p.Art, p.StreamURL, mime, int(length.d/time.Second)) // #135
 		recallDelivered = true
 		return playResult{Slot: slot, Name: p.Name}, nil
 	}
@@ -941,16 +944,6 @@ func (s *Server) recentNotePandora(location, name, itemType, art string) {
 		return
 	}
 	s.recentNoteEntry(recent.Entry{Source: "pandora", CardKey: "pandora:" + location, CardName: name, CardArt: art, CardURL: location, ItemType: itemType})
-}
-
-// recentPresetLengthSec is the length to record for a library key's recall:
-// the stored one, else the one learned from an earlier direct play. Quiet twin
-// of libraryPresetLength, which already logged the fallback for this recall.
-func (s *Server) recentPresetLengthSec(p presets.Preset) int {
-	if p.DurationSec > 0 {
-		return p.DurationSec
-	}
-	return int(s.trackLens.get(p.StreamURL) / time.Second)
 }
 
 // recentNoteEntry adds a card-start entry and remembers the card for the live

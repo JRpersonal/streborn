@@ -2,10 +2,12 @@ package webui
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
@@ -46,10 +48,11 @@ func libraryFileMime(p presets.Preset) string {
 
 // playLibraryFilePresetLocked hands a library-track preset to the speaker as
 // the file itself, records it as the last play and starts the recall verify.
+// length is keyRecallLength's answer, taken before the caller locked the box.
 // The caller holds boxCmdMu.
-func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Preset, mime string, recallStart time.Time) error {
+func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Preset, mime string, length recallLength, recallStart time.Time) error {
 	directURL := p.StreamURL
-	dur := s.libraryPresetLength(p)
+	dur := length.d
 	// The length goes to the speaker as well, the way the plain play sends it:
 	// without it the box reports total=0 and nothing can see the track end.
 	var meta upnp.TrackMeta
@@ -79,10 +82,181 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	// key showing "playing" for ~20 s after the song had ended (#978).
 	// The verify's re-push above does not bump the recall generation, so it
 	// does not call the watch off.
+	// A length that was not read from the file for this press is only a claim
+	// (see keyRecallLength): the speaker echoes it back as its total, so its
+	// position reaching that total proves nothing while it still climbs.
 	s.armSingleTrackEnd(singleTrack{
 		boxURL: directURL, title: name, art: art, mime: mime, meta: meta, dur: dur,
+		claimedLength: dur > 0 && !length.fromFile,
 	}, gen)
 	return nil
+}
+
+// A key whose file changes under the same URL.
+//
+// A library key keeps the file's URL and, since v1.0.11, the length the file
+// had when the key was saved (#978). Nothing refreshed that length. A nightly
+// recording that a media server replaces under the same URL (MiniDLNA,
+// .../MediaItems/<id>.m4a) kept the first night's 7:09 on the key, and every
+// press since was stopped at 7:09: the speaker was handed 429 s, echoed it back
+// as its total, and the end watch read a position at that total as the end of
+// the file while the speaker was still playing it, its buffer full.
+//
+// So a press asks the file how long it is now. One HEAD tells its size; the
+// length is read from the file (filelength.go) only when the size differs from
+// the last read of that URL, so a file replaced in place gets a fresh length
+// and an unchanged one costs one header round trip on the LAN. Nothing is
+// written to the preset store: no flash write per key press.
+
+const (
+	// keyLengthCheckBudget bounds the whole check on a press: the HEAD, a
+	// ranged GET when the HEAD says nothing, and the few small reads of a
+	// length. A media server on the LAN answers in milliseconds; one that does
+	// not falls back to the length stored on the key.
+	keyLengthCheckBudget = 3 * time.Second
+	// keyLengthDrift is how far the file's length may differ from the one
+	// stored on the key before it counts as a different file. A server rounds
+	// its DIDL length, so a second or two is noise.
+	keyLengthDrift = 3 * time.Second
+	// fileLengthsCap bounds the per-URL length cache; six keys and a handful
+	// of custom URLs never come near it. The oldest entry goes first.
+	fileLengthsCap = 32
+)
+
+// defaultKeyLengthClient is the client keyRecallLength asks the media server
+// with when a Server sets no keyLengthClientFn: the probe's guarded client.
+// The package tests replace it (TestMain) with one that returns nil, which
+// skips the check, so a test with a placeholder server address never dials
+// it; a test that exercises the check sets its own Server.keyLengthClientFn.
+var defaultKeyLengthClient = func() *http.Client { return customFileProbeClient() }
+
+// recallLength is the length a direct-file key recall plays with.
+type recallLength struct {
+	d time.Duration
+	// fromFile: d was read exactly from the file at its URL for this press
+	// (or from an earlier read of the same-sized file). A length stored on
+	// the key, learned from an earlier play, or guessed from an MP3's bitrate
+	// is only a claim about the file.
+	fromFile bool
+}
+
+// fileLength is one cached read: the file's size when it was read and the
+// length read from it (0 when none could be read).
+type fileLength struct {
+	size   int64
+	length time.Duration
+	exact  bool
+}
+
+// fileLengths caches the length read from each file, keyed by URL. The zero
+// value is ready to use.
+type fileLengths struct {
+	mu    sync.Mutex
+	byURL map[string]fileLength
+	order []string
+}
+
+func (c *fileLengths) get(url string) (fileLength, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	fl, ok := c.byURL[url]
+	return fl, ok
+}
+
+func (c *fileLengths) put(url string, fl fileLength) {
+	if url == "" || fl.size <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.byURL == nil {
+		c.byURL = make(map[string]fileLength)
+	}
+	if _, have := c.byURL[url]; !have {
+		c.order = append(c.order, url)
+		if len(c.order) > fileLengthsCap {
+			delete(c.byURL, c.order[0])
+			c.order = c.order[1:]
+		}
+	}
+	c.byURL[url] = fl
+}
+
+// currentFileLength asks the server for the size of the file at url now and
+// returns the length of that file: from the cache when the size matches the
+// last read, else read from the file. readNow says the length was read on this
+// call. ok is false when the server gave no size (unreachable, a stream, a
+// server that serves no ranges); a size without a readable length is ok with
+// length 0.
+func currentFileLength(ctx context.Context, cl *http.Client, cache *fileLengths, url, mime string) (fl fileLength, readNow, ok bool) {
+	if netutil.SafeHTTPURL(url) != nil {
+		return fileLength{}, false, false
+	}
+	verdict, size := probeFileStep(ctx, cl, http.MethodHead, url)
+	if verdict == fileUnknown {
+		verdict, size = probeFileStep(ctx, cl, http.MethodGet, url)
+	}
+	if verdict != fileFinite || size <= 0 {
+		return fileLength{}, false, false
+	}
+	if c, hit := cache.get(url); hit && c.size == size {
+		return c, false, true
+	}
+	d, exact := readFileLengthKind(ctx, cl, url, mime, size)
+	fl = fileLength{size: size, length: d, exact: exact}
+	// A read cut short by the budget (a NAS disk still spinning up) says
+	// nothing about the file; caching it would pin length 0 on this URL until
+	// the file's size changes. Only a read that ran to its end is kept, so an
+	// unreadable format is not re-read on every press either.
+	if d > 0 || ctx.Err() == nil {
+		cache.put(url, fl)
+	}
+	return fl, true, true
+}
+
+// keyRecallLength is the length a direct-file key is played with: the length
+// of the file at its URL now, when it can be read exactly, else the length
+// stored on the key or learned before (libraryPresetLength). Asks the media
+// server; call it before taking boxCmdMu.
+//
+// A bitrate guess for an MP3 without a frame count does not replace a stored
+// length: for a VBR file it is the less reliable of the two. The stored
+// length then stays a claim, and the end watch does not take the speaker's
+// echo of it as proof of the end.
+func (s *Server) keyRecallLength(ctx context.Context, p presets.Preset, mime string) recallLength {
+	stored := s.libraryPresetLength(p)
+	clientFn := s.keyLengthClientFn
+	if clientFn == nil {
+		clientFn = defaultKeyLengthClient
+	}
+	cl := clientFn()
+	if mime == "" || cl == nil {
+		return recallLength{d: stored}
+	}
+	ctx, cancel := context.WithTimeout(ctx, keyLengthCheckBudget)
+	defer cancel()
+	start := time.Now()
+	fl, readNow, ok := currentFileLength(ctx, cl, &s.fileLens, p.StreamURL, mime)
+	if !ok || fl.length <= 0 || !fl.exact {
+		if readNow || !ok {
+			s.logger.Info("library key: no exact length from the file, using the stored one",
+				"slot", p.Slot, "name", p.Name, "reachable", ok, "fileSec", int(fl.length.Seconds()),
+				"storedSec", int(stored.Seconds()), "checkMs", time.Since(start).Milliseconds())
+		}
+		return recallLength{d: stored}
+	}
+	if readNow {
+		if keyLen := time.Duration(p.DurationSec) * time.Second; keyLen > 0 && absDur(fl.length-keyLen) > keyLengthDrift {
+			s.logger.Info("library key: the file changed since the key was saved, playing it with its current length",
+				"slot", p.Slot, "name", p.Name, "keySec", p.DurationSec,
+				"fileSec", int(fl.length.Seconds()), "size", fl.size)
+		} else {
+			s.logger.Info("library key: read the file's length",
+				"slot", p.Slot, "name", p.Name, "fileSec", int(fl.length.Seconds()),
+				"size", fl.size, "checkMs", time.Since(start).Milliseconds())
+		}
+	}
+	return recallLength{d: fl.length, fromFile: true}
 }
 
 // libraryPresetLength is the length a library-track recall plays with: the one
@@ -250,6 +424,8 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	if mime == "" {
 		return false
 	}
+	// The file's length is asked for here, outside the box lock, like the MIME.
+	length := s.keyRecallLength(ctx, p, mime)
 	// The press supersedes any verify still running from an earlier one, and a
 	// library queue that is still playing must not advance over this track
 	// later (the same reasons NoteLastPlay gives for the radio keys).
@@ -261,7 +437,7 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	defer s.boxCmdMu.Unlock()
 	s.logger.Info("preset slot recall (hardware): library track, playing the file directly",
 		"slot", slot, "mime", mime, "custom", p.Source == "")
-	if err := s.playLibraryFilePresetLocked(ctx, p, mime, recallStart); err != nil {
+	if err := s.playLibraryFilePresetLocked(ctx, p, mime, length, recallStart); err != nil {
 		s.logger.Warn("hardware library track recall failed", "slot", slot, "err", err)
 	}
 	return true

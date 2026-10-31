@@ -543,6 +543,13 @@ type Server struct {
 	// fileProbes caches, per URL, whether a custom URL preset is a finite
 	// file the speaker can be handed directly (#830). See customfile.go.
 	fileProbes fileProbes
+	// fileLens caches, per URL, the size and length last read from a file a
+	// key plays directly, so a press reads the length again only when the
+	// file changed. See keyRecallLength in librarykey.go.
+	fileLens fileLengths
+	// keyLengthClientFn overrides the HTTP client of that check for tests.
+	// nil means defaultKeyLengthClient; a nil client skips the check.
+	keyLengthClientFn func() *http.Client
 
 	// play is the stream STR last told the box to play and the bookkeeping
 	// that travels with it: recall generation, re-push latch, stuck-buffer

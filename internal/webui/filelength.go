@@ -48,19 +48,29 @@ const (
 // readFileLength returns the play length of the file at url (size bytes,
 // served in ranges) for the formats STR can read one from, else 0.
 func readFileLength(ctx context.Context, cl *http.Client, url, mime string, size int64) time.Duration {
+	d, _ := readFileLengthKind(ctx, cl, url, mime, size)
+	return d
+}
+
+// readFileLengthKind is readFileLength that also says whether the length is
+// exact: read from the file's own header (an MP4 movie header, a FLAC
+// STREAMINFO, an MP3 Xing/Info or VBRI frame count). An MP3 without a frame
+// count is only its first frame's bitrate times the size, which is right for a
+// CBR file and wrong for a VBR one.
+func readFileLengthKind(ctx context.Context, cl *http.Client, url, mime string, size int64) (time.Duration, bool) {
 	var d time.Duration
 	switch mime {
 	case "audio/mpeg":
-		return estimateMP3Length(ctx, cl, url, size)
+		return estimateMP3LengthKind(ctx, cl, url, size)
 	case "audio/mp4":
 		d = mp4Length(ctx, cl, url, size)
 	case "audio/flac":
 		d = flacLengthFrom(fetchRange(ctx, cl, url, 0, flacHeadRead))
 	}
 	if d < learnedLengthMin || d > mp3LengthMax {
-		return 0
+		return 0, false
 	}
-	return d
+	return d, true
 }
 
 // mp4Length walks the top-level boxes of the MP4 at url to its moov and reads
