@@ -22,6 +22,8 @@ func TestPhoneRemoteUI2SwitchIsOffByDefault(t *testing.T) {
 		"try { return localStorage.getItem(UI2_KEY)==='1'; } catch (e) {}",
 		"window.ui2Set=function(on){",
 		"window.ui2CanKeep=function(){",
+		// Keeping the choice needs a write, not only a read.
+		"localStorage.setItem(probe,'1');",
 		"if (window.ui2Get()) el.classList.add('ui2'); else el.classList.remove('ui2');",
 		"if (location.hash==='#ui2') {",
 		"history.replaceState(null,'',location.pathname+location.search);",
@@ -40,7 +42,9 @@ func TestPhoneRemoteUI2SwitchIsOffByDefault(t *testing.T) {
 		`<button type="button" data-layout="classic" aria-pressed="true">Current</button>`,
 		`<button type="button" data-layout="ui2" aria-pressed="false">UI 2.0 preview</button>`,
 		"if (lyGroup && !(window.ui2CanKeep && window.ui2CanKeep())) lyGroup.hidden = true;",
-		"if (window.ui2Set && window.ui2Set(on)) location.reload();",
+		"if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }",
+		// A write refused after the menu was shown takes the row away.
+		"if (lyGroup) lyGroup.hidden = true;",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("the Aa menu's Layout row lost %q", want)

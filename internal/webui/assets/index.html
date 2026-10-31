@@ -598,8 +598,18 @@ html.ui2 .tabbar button .ti { display:none; }
     try { localStorage.setItem(UI2_KEY,want); return localStorage.getItem(UI2_KEY)===want; } catch (e) {}
     return false;
   };
+  // Keeping the choice needs a write: a phone whose storage reads but refuses
+  // writes (full, or a locked-down private mode) cannot keep it either. The
+  // probe key is taken out again, so what the phone stored stays as it was.
   window.ui2CanKeep=function(){
-    try { if (!window.localStorage) return false; localStorage.getItem(UI2_KEY); return true; } catch (e) {}
+    try {
+      if (!window.localStorage) return false;
+      var probe='str.ui2Probe';
+      localStorage.setItem(probe,'1');
+      var ok=localStorage.getItem(probe)==='1';
+      localStorage.removeItem(probe);
+      return ok;
+    } catch (e) {}
     return false;
   };
   // A tap on another speaker in the preview's list opens its page with #ui2,
@@ -3809,12 +3819,14 @@ async function loadVersion() {
     b.onclick = function() { a11ySetTheme(b.dataset.theme); sync('data-theme', b.dataset.theme); };
   });
   // The new layout is a reload, like the desktop's: only when the choice was
-  // really stored, so the page never claims a layout it cannot keep.
+  // really stored, so the page never claims a layout it cannot keep. A write
+  // refused after all takes the group away, as for a phone that never could.
   menu.querySelectorAll('button[data-layout]').forEach(function(b) {
     b.onclick = function() {
       var on = b.dataset.layout === 'ui2';
       if (on === !!(window.ui2Get && window.ui2Get())) { close(); return; }
-      if (window.ui2Set && window.ui2Set(on)) location.reload();
+      if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }
+      if (lyGroup) lyGroup.hidden = true;
     };
   });
   sync('data-scale', a11yGetScale());

@@ -117,10 +117,21 @@ describe('phone remote UI 2.0 switch', () => {
     expect(run({ store: fakeStorage({}, { missing: true }) }).window.ui2CanKeep()).toBe(false);
     // The menu wiring hides the group on exactly that answer.
     expect(page).toContain("if (lyGroup && !(window.ui2CanKeep && window.ui2CanKeep())) lyGroup.hidden = true;");
-    // ui2CanKeep only reads: probing must not change what the phone stored.
+    // Probing must not change what the phone stored.
     const r = run({ store: fakeStorage({ 'str.ui2Preview': '0' }) });
     r.window.ui2CanKeep();
     expect(r.store.data).toEqual({ 'str.ui2Preview': '0' });
+  });
+
+  it('ui2CanKeep is false when storage reads but refuses writes, so the Layout group hides', () => {
+    // Full storage, or a private mode that throws on setItem only: a tap on
+    // the preview could never be kept there.
+    const ro = run({ store: fakeStorage({}, { throwSet: true }) });
+    expect(ro.window.ui2Get()).toBe(false);
+    expect(ro.window.ui2CanKeep()).toBe(false);
+    // And a write refused after the menu was shown takes the group away.
+    expect(page).toContain('if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }');
+    expect(page).toContain('if (lyGroup) lyGroup.hidden = true;');
   });
 
   it('a page opened as #ui2 turns the preview on, keeps it and drops the hash', () => {
