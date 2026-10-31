@@ -10,6 +10,7 @@ import { t } from '../i18n/index.js';
 import { BoxAgentVersion, BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
 import { shell2Mounted } from '../shell2/mount.js';
 import { openSpeakers } from '../shell2/speakers/index.js';
+import { state } from '../state.js';
 import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
 import { qualityOptions, qualityStatusText } from '../spotifyquality.js';
 
@@ -27,6 +28,7 @@ export function renderSpotifyAlpha() {
     // live state, so they refresh on every visit.
     refreshQualityList();
     if (shell2Mounted()) renderSpotifyUi2(deps);
+    syncButtonUi2();
     return;
   }
   root.dataset.rendered = '1';
@@ -311,10 +313,12 @@ async function refreshQualityListUi2(root, boxes) {
   // No quality answer: ask the agent's version, which every STR agent has.
   // An answer there means the speaker is on but its agent predates the
   // setting; none means the speaker is not reachable.
+  // A speaker the roster already knows as offline is not asked.
+  const offline = (b) => !!(state.boxes || []).find((x) => x && x.host === b.host && x.offline);
   const reach = await Promise.allSettled(boxes.map((b, i) => {
     const st = states[i].status === 'fulfilled' ? states[i].value : null;
     if (st && st.ok) return Promise.resolve(true);
-    if (b.offline) return Promise.resolve(false);
+    if (offline(b)) return Promise.resolve(false);
     return BoxAgentVersion(b.host, b.port).then((v) => !!v);
   }));
   root.setAttribute('aria-busy', 'false');
