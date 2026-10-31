@@ -27,9 +27,9 @@ func Bass(level, lo, hi int) Notice {
 	l2 := ""
 	switch {
 	case hi > lo && level >= hi:
-		l2 = "MAXIMUM"
+		l2 = "Maximum"
 	case hi > lo && level <= lo:
-		l2 = "MINIMUM"
+		l2 = "Minimum"
 	}
 	n := keyNotice(NoticeBass, iconBass, 0, l1, l2, bassNoticeHold, 2)
 	// The bar draws only above 0, so the bottom of the range keeps a sliver

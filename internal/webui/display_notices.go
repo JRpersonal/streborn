@@ -83,7 +83,7 @@ func (s *Server) handleIdentify(w http.ResponseWriter, r *http.Request) {
 // already held shows nothing, and neither does the internal write of a held
 // key (that path shows its own notice, cmd/agent/holdsave.go).
 func (s *Server) noticeAppSave(ua string, prev presets.Preset, had bool, now presets.Preset) {
-	if ua == holdSaveUA {
+	if speakerKeyUA(ua) {
 		return
 	}
 	if had && sameKeyItem(prev, now) {
@@ -95,7 +95,7 @@ func (s *Server) noticeAppSave(ua string, prev presets.Preset, had bool, now pre
 // noticeAppRefused puts "ON KEY M / ALREADY SAVED" on the display for a save
 // the one-station-one-key rule refused (#836).
 func (s *Server) noticeAppRefused(ua string, otherSlot int) {
-	if ua == holdSaveUA {
+	if speakerKeyUA(ua) {
 		return
 	}
 	oled.Show(oled.AlreadyOnKey(otherSlot))

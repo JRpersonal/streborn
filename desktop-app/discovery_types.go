@@ -126,6 +126,12 @@ type BoxInfo struct {
 	// apart from a push that landed and did not boot; either one alone gets one
 	// of those two cases wrong.
 	AgentRunningSha256 string `json:"agentRunningSha256,omitempty"`
+	// PresetRows is "2" when the speaker's agent keeps a second row of six
+	// keys, played by pressing a hardware key twice quickly (#1110); empty for
+	// an agent that predates it. The app shows the Once | Twice switch only
+	// where this says so. It belongs to the agent build, so it travels with
+	// Version through both merges.
+	PresetRows string `json:"presetRows,omitempty"`
 	// Offline marks a speaker that was seen earlier but has missed every probe
 	// for longer than its reboot grace window (e.g. it is rebooting for a long
 	// time, powered off, or off the LAN). The tile stays listed greyed out
@@ -193,6 +199,11 @@ type BoxInfo struct {
 	// it was recent. Before this the refusal was invisible: the owner pressed
 	// the key, nothing happened, and only a diagnostic bundle explained why.
 	GroupKeyError string `json:"groupKeyError,omitempty"`
+	// GroupKeyErrorKind classifies GroupKeyError (master-unresponsive,
+	// member-unresolved, form-refused, dissolve-failed, other), so the app
+	// explains the refusal in the user's language and keeps the raw reason
+	// for the details. Empty from an agent that predates it.
+	GroupKeyErrorKind string `json:"groupKeyErrorKind,omitempty"`
 	// HoldRefusedSource is what the speaker was playing when a long press on a
 	// key could not be kept, empty when there was none. Typically SPOTIFY: STR
 	// has no preset form for it, so the firmware keeps the old station and the
@@ -204,6 +215,11 @@ type BoxInfo struct {
 	// typically after a USB stick swap on a router's media server), empty
 	// when none. Only saving the folder on the key again cures it.
 	StaleFolderKeySlot string `json:"staleFolderKeySlot,omitempty"`
+	// SpeakerNameUnsafe is true while the speaker's stored name carries a
+	// character its firmware's UPnP renderer cannot survive ("&", "<", ">" or
+	// invalid UTF-8): Spotify and the music library cannot play on it until it
+	// is renamed and restarted (#1582).
+	SpeakerNameUnsafe bool `json:"speakerNameUnsafe,omitempty"`
 	// Storm1036 is true while the box rejects essentially every preset recall
 	// (Bose error 1036, "not logged in"). Nothing the user presses will play
 	// until the state clears, and the remedy people reach for on their own,
@@ -222,6 +238,14 @@ type BoxInfo struct {
 	// the user on the next cold boot. The UI warns the user to run STR's own
 	// Wi-Fi setup (#270).
 	WLANCredsMissing bool `json:"wlanCredsMissing,omitempty"`
+	// LANAddrs and WiredAddrs are the agent's own report of every address the
+	// speaker answers on and the subset on the network cable, comma-joined
+	// (#165). Only a speaker with more than one address sends them. The
+	// same-device collapse uses them to keep the cable address over the Wi-Fi
+	// one, and the known-box refresh to fall back to another address when the
+	// one the tile holds stops answering.
+	LANAddrs   string `json:"lanAddrs,omitempty"`
+	WiredAddrs string `json:"wiredAddrs,omitempty"`
 	// SerialNumber is the human-readable Bose PackagedProduct serial
 	// (the sticker on the bottom of the speaker, e.g.
 	// "000000P00000000AA"). Pulled from /info on 8090; empty if the

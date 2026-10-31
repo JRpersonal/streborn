@@ -39,7 +39,7 @@ func (w httpErrorLogWriter) Write(p []byte) (int, error) {
 	if msg == "" {
 		return len(p), nil
 	}
-	if strings.Contains(msg, "TLS handshake error") && !tlsHandshakeIsRejection(msg) {
+	if strings.Contains(msg, "TLS handshake error") && (!tlsHandshakeIsRejection(msg) || !tlsHandshakeFromLoopback(msg)) {
 		w.logger.Debug("http server error", "comp", w.name, "msg", msg)
 	} else {
 		w.logger.Warn("http server error", "comp", w.name, "msg", msg)
@@ -62,6 +62,32 @@ func tlsHandshakeIsRejection(msg string) bool {
 		}
 	}
 	return false
+}
+
+// tlsHandshakeFromLoopback reports whether the handshake error came from the
+// speaker itself. The firmware reaches marge-tls through the /etc/hosts entry
+// 127.0.0.1 streaming.bose.com, so its own refusals arrive from loopback. The
+// listener also answers on the LAN, where other devices (Amazon Echos, routers,
+// home hubs) probe port 443 and refuse a certificate they were never meant to
+// trust: 1221 of 1237 refusals in the field bundles of 2026-08/10, about 150 a
+// day on one ST20 with six Echos nearby (#841). Those say nothing about the
+// box, so they stay below info and off the NAND log. A line whose peer cannot
+// be parsed counts as the box, so evidence is never dropped by a format change.
+func tlsHandshakeFromLoopback(msg string) bool {
+	_, rest, ok := strings.Cut(msg, "TLS handshake error from ")
+	if !ok {
+		return true
+	}
+	addr, _, ok := strings.Cut(rest, ": ")
+	if !ok {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || ip.IsLoopback()
 }
 
 // newHTTPErrorLog returns the *log.Logger to wire into http.Server.ErrorLog so

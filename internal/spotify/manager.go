@@ -61,7 +61,25 @@ type Manager struct {
 	fallback  string // device name used until the box's friendly name is known
 	apiAddr   string // host:port of go-librespot's HTTP API
 	logger    *slog.Logger
-	bitr      int // 96/160/320 (persisted preference, see quality.go)
+	// bitr is the bitrate config.yml carries (96/160/320): the explicit choice
+	// when there is one, otherwise the plan-dependent default; see quality.go.
+	bitr int
+	// bitrChoice is the explicit per-speaker choice, bitrateAuto (0) while the
+	// default applies. Persisted in sp-bitrate.txt + sp-bitrate.choice.
+	bitrChoice int
+	// bitrReason says which rule produced bitr (bitrateReason* constants).
+	bitrReason string
+	// bitrStarted is the bitrate of the engine process last started (before
+	// the first start: the one the warm header cache was loaded for), so a
+	// start at a different bitrate drops the late-joiner header set.
+	bitrStarted int
+	// bitrLastUser is the account the engine was last seen logged in as. Unlike
+	// productUser it survives an engine start, so the next start can still
+	// look up that account's remembered plan when state.json names nobody.
+	bitrLastUser string
+	// bitrPlanTried is the account|kbps of the last plan-driven bitrate change
+	// owed to a restart, so one is never owed twice per agent process.
+	bitrPlanTried string
 	// bitrPending: a bitrate change arrived while the box was streaming; the
 	// config is written, only the engine restart is owed. The box's next
 	// detach from the Ogg stream performs it (applyPendingBitrateAfterDetach).
@@ -103,6 +121,9 @@ type Manager struct {
 	// credReject tracks Spotify refusing the saved login (BadCredentials) and
 	// what the supervisor did about it; see credreject.go. Guarded by mu.
 	credReject credRejectState
+	// stateRepair is the last time a damaged state.json was set aside before an
+	// engine start; see staterepair.go. Guarded by mu.
+	stateRepair stateRepair
 	// MemAvailKB reads the box's MemAvailable in KB, negative when unknown.
 	// Wired by the agent from /proc/meminfo before Run; nil in tests. The
 	// chain cutter (oggchain.go) reads it a couple of times a minute while a
@@ -162,6 +183,14 @@ type Manager struct {
 	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
 	onTrack           func(TrackChange)
 	lastNotifiedTrack string
+	// recallTrackArmed lifts that dedup once, for the first metadata event after
+	// a recall: a recall opens a new Recently played card, and a song with the
+	// same name as the last one recorded (the same album recalled twice) was
+	// otherwise never filed under it, leaving a card with no song and no time
+	// (#1592). Only the engine's metadata event consumes it, never a /status
+	// poll, so the previous track still cached in curName cannot be filed under
+	// the new card.
+	recallTrackArmed bool
 	// onSinkDetach fires when the box lets go of a Spotify stream it had been
 	// playing for a while, so the watchdog that already recovers a dropped
 	// internet-radio stream can recover this one too. nil until wired; the
@@ -256,6 +285,13 @@ type Manager struct {
 	lastGroupedRefusalAt time.Time
 	keyRefusalRun        int
 	keyRefusalGaveUpAt   time.Time
+	// engineKeyDeniedAt / engineKeyDeniedMsg: the newer engine's own
+	// session-level refusal (playback_error kind key_denied), see keydenied.go.
+	// engineStopsOnKeyDenial latches once the engine has shown it stops by
+	// itself, which makes the agent's refusal-run pause redundant.
+	engineKeyDeniedAt      time.Time
+	engineKeyDeniedMsg     string
+	engineStopsOnKeyDenial bool
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on
@@ -535,7 +571,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		credStore:  filepath.Join(filepath.Dir(configDir), "sp-accounts"),
 		apiAddr:    "127.0.0.1:3678",
 		logger:     logger,
-		bitr:       loadBitrate(bitratePath(configDir)),
+		bitrChoice: loadBitrateChoice(configDir),
 		client:     &http.Client{Timeout: 5 * time.Second},
 		playClient: &http.Client{Timeout: 25 * time.Second},
 		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),
@@ -544,6 +580,11 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 	// on NAND (a sibling of configDir), so it survives reboots and OTA agent
 	// swaps (which replace only the binary).
 	m.resume = newResumeStore(filepath.Join(filepath.Dir(configDir), "sp-resume.json"), logger)
+	// The bitrate the first config.yml carries: the choice, or the default for
+	// the plan remembered for the account the engine will log in as. Every
+	// engine start re-settles it (prepareBitrateForStart).
+	m.bitr, m.bitrReason = effectiveBitrate(m.bitrChoice, m.startPlan())
+	m.bitrStarted = m.bitr
 	// Warm the Ogg header cache from the last session so the very first box
 	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
 	// (the "service unavailable" flash). Best-effort; absent on a fresh install.

@@ -43,15 +43,23 @@ describe('summarizePresetCopyError', () => {
 });
 
 describe('countValidPresetSlots', () => {
-  it('mirrors the backend filter: slot 1..6 with a non-empty name', () => {
+  it('mirrors the backend filter: slot 1..12 with a non-empty name', () => {
     expect(countValidPresetSlots([
       { slot: 1, name: 'A' },
       { slot: 6, name: 'B' },
-      { slot: 7, name: 'out of range' },
+      { slot: 7, name: 'Key 1 pressed twice' },
+      { slot: 12, name: 'Key 6 pressed twice' },
+      { slot: 13, name: 'out of range' },
       { slot: 0, name: 'out of range' },
       { slot: 3, name: '' },
       null,
-    ])).toBe(2);
+    ])).toBe(4);
+  });
+  it('counts row 1 only for a target without the second row of keys (#1110)', () => {
+    expect(countValidPresetSlots([
+      { slot: 1, name: 'A' },
+      { slot: 7, name: 'B' },
+    ], 6)).toBe(1);
   });
   it('tolerates an empty or missing list', () => {
     expect(countValidPresetSlots([])).toBe(0);

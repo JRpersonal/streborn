@@ -58,7 +58,9 @@ describe('the Install button stays out of reach under the wait panel', () => {
 
   it('stopAll re-enables it, so a finished wait leaves a usable screen', () => {
     const stop = panel.slice(panel.indexOf('const stopAll = () => {'));
-    expect(stop.slice(0, 400)).toContain('disabled = false');
+    // Re-enabled unless an update from this app is still finishing on the
+    // speaker, which keeps it disabled (installhold.test.js).
+    expect(stop.slice(0, 400)).toContain('hero.disabled = !!currentHeroHold()');
   });
 });
 

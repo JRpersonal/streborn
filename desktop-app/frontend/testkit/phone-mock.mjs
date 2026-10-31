@@ -7,17 +7,23 @@
 //   await context.route('**/*', phone.handle);
 //   phone.calls      // [{ method, url, t }] every request it answered
 //   phone.unmocked   // Set of 'GET /api/x' paths it had no model for (answered {})
-//   phone.options    // mutable: grouped, view, overrides
+//   phone.options    // mutable: grouped, view, overrides, presetRows, row2, playing
 //
 // It serves the placeholder origin http://demobox.local:8888, the
 // radio-browser.info search the page makes from the phone, and a fake art
 // host; every other request is aborted, so nothing leaves the browser.
 // overrides maps a path to { status, body } or { abort: true }.
+//
+// The second row of keys (#1110): presetRows (default true) makes the agent
+// version say presetRows "2", false answers like an agent without the row;
+// row2 (default false) adds PHONE.PRESETS_ROW2 to the presets; playing
+// { name, loc, key } replaces what the speaker plays (key is the
+// X-STR-Playing-Key header, default '2').
 
 import { PHONE } from './demo-data.mjs';
 
-export function phoneHandler({ indexHTML, iconPNG, view = '', grouped = false, overrides = {} } = {}) {
-  const options = { view, grouped, overrides };
+export function phoneHandler({ indexHTML, iconPNG, view = '', grouped = false, overrides = {}, presetRows = true, row2 = false, playing = null } = {}) {
+  const options = { view, grouped, overrides, presetRows, row2, playing };
   const calls = [];
   const unmocked = new Set();
 
@@ -56,12 +62,17 @@ export function phoneHandler({ indexHTML, iconPNG, view = '', grouped = false, o
     if (p === '/share.json') return route.fulfill({ status: 404, body: '' }); // share card stays hidden
 
     if (p === '/api/status') {
-      return route.fulfill({ status: 200, contentType: 'application/xml', headers: { 'X-STR-Playing-Key': '2' }, body: PHONE.STATUS_PLAYING });
+      const pl = options.playing;
+      return route.fulfill({
+        status: 200, contentType: 'application/xml',
+        headers: { 'X-STR-Playing-Key': pl ? String(pl.key || '') : '2' },
+        body: pl ? PHONE.statusXML(pl.name, pl.loc) : PHONE.STATUS_PLAYING,
+      });
     }
     if (p === '/api/stream/title') return json({ title: 'The Demo Band - Morning Light' });
-    if (p === '/api/presets') return json(PHONE.PRESETS);
+    if (p === '/api/presets') return json(options.row2 ? [...PHONE.PRESETS, ...PHONE.PRESETS_ROW2] : PHONE.PRESETS);
     if (p === '/api/box/settings') return json(PHONE.SETTINGS);
-    if (p === '/api/agent/version') return json(PHONE.VERSION);
+    if (p === '/api/agent/version') return json(options.presetRows === false ? PHONE.VERSION_ONE_ROW : PHONE.VERSION);
     if (p === '/api/alarms') return json(PHONE.ALARMS);
     if (p === '/api/recent') return json(PHONE.RECENT);
     if (p === '/api/favorites') return json(PHONE.FAVORITES);

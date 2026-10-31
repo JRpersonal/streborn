@@ -966,6 +966,9 @@ body {
    tell whether it existed and had no x to remove it (Jens 2026-09-06). */
 .box-group-stored { border-style: dashed; --bg-color: var(--c-muted); }
 .box-group-stored .zone-frame-chip { opacity: 0.8; }
+/* A stored member of a live permanent group that is not playing along (#1576). */
+.zone-chip-out { opacity: 0.6; border-style: dashed; }
+.zone-chip-out-note { font-size: 0.85em; font-style: italic; }
 .zone-frame-note { flex-basis: 100%; font-size: 11px; color: var(--c-muted); margin: 0 2px; }
 /* Small speaker icon on a tile whose speaker is currently playing. */
 /* Green, matching the "playing" status bar (--signal-green), so the icon means
@@ -1333,6 +1336,14 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   flex-wrap: wrap;
 }
 .quality-row > span:first-child { min-width: 160px; }
+/* The active bitrate and why, on its own line under the selector, so every
+   row reads the same whatever the length of the translation. */
+.quality-row > .quality-active {
+  flex: 1 0 100%;
+  padding-left: 170px;
+  margin-top: -4px;
+  box-sizing: border-box;
+}
 
 /* ---------- Library view ---------- */
 .library-header h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
@@ -1631,6 +1642,52 @@ html.a11y-contrast .btn-warning:disabled {
    own row. grid-auto-rows: 1fr makes every row match the tallest, so all
    buttons stay the same size. */
 #presets { grid-auto-rows: 1fr; }
+/* The second row of keys (#1110): Once | Twice above the grid and in the "Put
+   on key" window. A chosen tab is told apart by weight, a 3px underline and
+   aria-selected, never by its fill alone. Each tab is at least 40px high. */
+.preset-row-tabs, .pick-rows { display: flex; gap: 6px; margin-bottom: 8px; border-bottom: 1px solid var(--c-border); }
+.preset-row-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; min-width: 96px; padding: 6px 14px;
+  background: transparent; color: var(--c-text-2);
+  border: 1px solid transparent; border-bottom: 3px solid transparent;
+  border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  font: inherit; font-size: 14px; cursor: pointer;
+}
+.preset-row-tab:hover { background: var(--c-surface-2); color: var(--c-text); }
+.preset-row-tab[aria-selected="true"] {
+  background: var(--brand-bg); color: var(--brand-text);
+  border-color: var(--c-border); border-bottom-color: var(--brand);
+  font-weight: 700;
+}
+.prt-count {
+  min-width: 20px; padding: 0 6px; border-radius: 10px; line-height: 18px;
+  font-size: 12px; font-weight: 700; text-align: center;
+  border: 1px solid var(--brand-border); color: var(--brand-text-mid);
+}
+.preset-row-tab[aria-selected="true"] .prt-count { color: var(--brand-text); }
+.prt-new {
+  padding: 0 6px; border-radius: 10px; line-height: 18px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  background: var(--brand); color: var(--c-bg);
+}
+.prt-playing { color: var(--signal-green); font-size: 11px; }
+.preset-row2-intro {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 14px;
+  margin-bottom: 8px; padding: 10px 12px;
+  background: var(--brand-bg); border: 1px solid var(--brand-border); border-radius: 6px;
+}
+.preset-row2-intro p { margin: 0; color: var(--brand-text); font-size: 14px; line-height: 1.4; flex: 1 1 260px; }
+.preset-row2-intro .btn { min-height: 40px; }
+.row2-badge {
+  display: inline-block; margin-inline-end: 5px; padding: 0 5px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; line-height: 16px;
+  background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border);
+}
+/* "Key 1" never breaks between word and number; at large text the badge may
+   sit on its own line above it instead. */
+.row2-key { white-space: nowrap; }
+.status-bar .now-key { color: var(--c-text-2); font-weight: 600; }
 .preset {
   background: var(--c-surface-2);
   border: 1px solid var(--c-border);
@@ -3572,3 +3629,8 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .setup-done-group[open] > summary::before { transform: rotate(90deg); }
 .setup-done-group > summary:hover { border-color: var(--c-text-2); }
 .setup-done-group[open] > summary { margin-bottom: 6px; }
+
+/* Example of the speaker display next to its settings: the panel's own
+   pixels, kept sharp when scaled. */
+.display-preview { margin: 8px 0 10px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.display-preview img { width: 192px; height: 150px; image-rendering: pixelated; background: #000; border: 1px solid var(--border, #333); border-radius: 6px; }

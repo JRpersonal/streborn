@@ -50,6 +50,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// text), then log it as unrecognized.
 		c.logger.Debug("box ws xml parse error", "err", err)
 	}
+	if f.NowPlaying != nil {
+		c.noteNowPlayingFrame(data)
+	}
 
 	// AUX webhook (beta): fire once when the active source transitions to AUX.
 	// STR never selects AUX itself, so this is always a user press (front panel

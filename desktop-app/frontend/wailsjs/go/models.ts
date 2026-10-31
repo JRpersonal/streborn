@@ -159,6 +159,7 @@ export namespace main {
 	    build: string;
 	    agentBinarySha256?: string;
 	    agentRunningSha256?: string;
+	    presetRows?: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
 	    strNotRunning?: boolean;
@@ -171,14 +172,18 @@ export namespace main {
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
 	    groupKeyError?: string;
+	    groupKeyErrorKind?: string;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
 	    staleFolderKeySlot?: string;
+	    speakerNameUnsafe?: boolean;
 	    storm1036?: boolean;
 	    storm1036SinceSec?: number;
 	    recallRefusal?: boolean;
 	    recallRefusalSinceSec?: number;
 	    wlanCredsMissing?: boolean;
+	    lanAddrs?: string;
+	    wiredAddrs?: string;
 	    serialNumber: string;
 	    kind: string;
 	    portVerified: boolean;
@@ -200,6 +205,7 @@ export namespace main {
 	        this.build = source["build"];
 	        this.agentBinarySha256 = source["agentBinarySha256"];
 	        this.agentRunningSha256 = source["agentRunningSha256"];
+	        this.presetRows = source["presetRows"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.strNotRunning = source["strNotRunning"];
@@ -212,14 +218,18 @@ export namespace main {
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];
+	        this.groupKeyErrorKind = source["groupKeyErrorKind"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
 	        this.staleFolderKeySlot = source["staleFolderKeySlot"];
+	        this.speakerNameUnsafe = source["speakerNameUnsafe"];
 	        this.storm1036 = source["storm1036"];
 	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.recallRefusal = source["recallRefusal"];
 	        this.recallRefusalSinceSec = source["recallRefusalSinceSec"];
 	        this.wlanCredsMissing = source["wlanCredsMissing"];
+	        this.lanAddrs = source["lanAddrs"];
+	        this.wiredAddrs = source["wiredAddrs"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
 	        this.portVerified = source["portVerified"];
@@ -601,6 +611,22 @@ export namespace main {
 	        this.engineOnly = source["engineOnly"];
 	    }
 	}
+	export class InstallHold {
+	    host: string;
+	    sinceSec: number;
+	    remainingSec: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new InstallHold(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.sinceSec = source["sinceSec"];
+	        this.remainingSec = source["remainingSec"];
+	    }
+	}
 	export class InstallResult {
 	    step: string;
 	    code: string;
@@ -937,6 +963,7 @@ export namespace main {
 	    repeat?: boolean;
 	    native?: number[];
 	    folder?: number[];
+	    track?: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -961,6 +988,7 @@ export namespace main {
 	        this.repeat = source["repeat"];
 	        this.native = source["native"];
 	        this.folder = source["folder"];
+	        this.track = source["track"];
 	    }
 	}
 	export class RadioSearchOpts {
@@ -1195,6 +1223,9 @@ export namespace main {
 	    bitrate: number;
 	    pending: boolean;
 	    applied: boolean;
+	    autoSupported: boolean;
+	    choice: number;
+	    reason: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyQualityState(source);
@@ -1206,6 +1237,9 @@ export namespace main {
 	        this.bitrate = source["bitrate"];
 	        this.pending = source["pending"];
 	        this.applied = source["applied"];
+	        this.autoSupported = source["autoSupported"];
+	        this.choice = source["choice"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class SpotifySyncTarget {

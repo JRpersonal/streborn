@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"streborn-app/bosefw"
@@ -89,11 +90,31 @@ func TestFetchBoseFileRefusesForeignHost(t *testing.T) {
 	}
 }
 
+// uploadRecord is what fakeUpdatePage saw. Guarded: the handler runs on the
+// server goroutine, and when it hangs up without a reply nothing else orders
+// its writes before the test's reads.
+type uploadRecord struct {
+	mu   sync.Mutex
+	got  []byte
+	name string
+}
+
+func (u *uploadRecord) body() []byte {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.got
+}
+
+func (u *uploadRecord) fileName() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.name
+}
+
 // fakeUpdatePage reads the upload like Bose's page does and records the file.
-func fakeUpdatePage(t *testing.T, reply func(w http.ResponseWriter)) (*httptest.Server, *[]byte, *string) {
+func fakeUpdatePage(t *testing.T, reply func(w http.ResponseWriter)) (*httptest.Server, *uploadRecord) {
 	t.Helper()
-	var got []byte
-	var name string
+	rec := &uploadRecord{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
@@ -109,12 +130,14 @@ func fakeUpdatePage(t *testing.T, reply func(w http.ResponseWriter)) (*httptest.
 		if p.FormName() != "filename" {
 			t.Errorf("field %q, want filename", p.FormName())
 		}
-		name = p.FileName()
-		got, _ = io.ReadAll(p)
+		b, _ := io.ReadAll(p)
+		rec.mu.Lock()
+		rec.name, rec.got = p.FileName(), b
+		rec.mu.Unlock()
 		reply(w)
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &got, &name
+	return srv, rec
 }
 
 func writeTemp(t *testing.T, b []byte) string {
@@ -128,18 +151,18 @@ func writeTemp(t *testing.T, b []byte) string {
 
 func TestUploadBoseFileSendsTheFormField(t *testing.T) {
 	payload := bytes.Repeat([]byte{1, 2, 3}, 100000)
-	srv, got, name := fakeUpdatePage(t, func(w http.ResponseWriter) { w.WriteHeader(http.StatusOK) })
+	srv, rec := fakeUpdatePage(t, func(w http.ResponseWriter) { w.WriteHeader(http.StatusOK) })
 	err := (&App{}).uploadBoseFile(context.Background(), "h", srv.URL+"/update.html", writeTemp(t, payload), "Update_x.stu")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *name != "Update_x.stu" || !bytes.Equal(*got, payload) {
-		t.Fatalf("page got %q with %d bytes", *name, len(*got))
+	if got, name := rec.body(), rec.fileName(); name != "Update_x.stu" || !bytes.Equal(got, payload) {
+		t.Fatalf("page got %q with %d bytes", name, len(got))
 	}
 }
 
 func TestUploadBoseFileClosedWithoutReplyIsSent(t *testing.T) {
-	srv, got, _ := fakeUpdatePage(t, func(w http.ResponseWriter) {
+	srv, rec := fakeUpdatePage(t, func(w http.ResponseWriter) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
 			t.Fatal("no hijacker")
@@ -151,13 +174,13 @@ func TestUploadBoseFileClosedWithoutReplyIsSent(t *testing.T) {
 	if err := (&App{}).uploadBoseFile(context.Background(), "h", srv.URL, writeTemp(t, payload), "Update_x.stu"); err != nil {
 		t.Fatalf("all bytes in and the page hung up: that is not a failure, got %v", err)
 	}
-	if len(*got) != len(payload) {
-		t.Fatalf("page read %d of %d bytes", len(*got), len(payload))
+	if got := rec.body(); len(got) != len(payload) {
+		t.Fatalf("page read %d of %d bytes", len(got), len(payload))
 	}
 }
 
 func TestUploadBoseFileRefusal(t *testing.T) {
-	srv, _, _ := fakeUpdatePage(t, func(w http.ResponseWriter) { http.Error(w, "wrong file", http.StatusBadRequest) })
+	srv, _ := fakeUpdatePage(t, func(w http.ResponseWriter) { http.Error(w, "wrong file", http.StatusBadRequest) })
 	err := (&App{}).uploadBoseFile(context.Background(), "h", srv.URL, writeTemp(t, []byte("abc")), "Update_x.stu")
 	if err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Fatalf("want a refusal, got %v", err)

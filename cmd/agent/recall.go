@@ -21,8 +21,10 @@ func isSTRStreamURL(u string) bool {
 // ownBoxPresetLocRe matches exactly the locations STR itself writes into the
 // box's preset slots (boxurl.Preset / boxurl.StreamSlot / boxurl.SpotifySlot).
 // The reconcile prune keys DELETION off this, so it must never match a foreign
-// station URL that merely contains "/stream/".
-var ownBoxPresetLocRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/(?:stream/[1-6]|spotify/stream(?:-[1-6])?\.ogg)$`)
+// station URL that merely contains "/stream/". Slots 7..12 (the second row,
+// #1110) are never written to the box, but they are STR's own shape all the
+// same, e.g. a row-2 stream the firmware kept through a hold on another key.
+var ownBoxPresetLocRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/(?:stream/(?:[1-9]|1[0-2])|spotify/stream(?:-(?:[1-9]|1[0-2]))?\.ogg)$`)
 
 // ownNativePresetLocPrefix is the second shape STR writes: a native
 // LOCAL_INTERNET_RADIO station whose descriptor is served by this agent's own

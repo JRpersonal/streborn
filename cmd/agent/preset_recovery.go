@@ -232,7 +232,7 @@ func pruneStaleKeysOnEmptyStore(store *presets.Store, wh *webhooks.Store, boxHos
 		return false
 	}
 	publishBoxPresetList(entries)
-	if stick := store.All(); len(stick) > 0 || len(webhookOnlySlots(wh, stick)) > 0 {
+	if stick := boxRowPresets(store.All()); len(stick) > 0 || len(webhookOnlySlots(wh, stick)) > 0 {
 		logger.Info("preset reconcile: the store filled while the box list was read (a restore or a save landed), leaving the keys to the next pass",
 			"storeCount", len(stick))
 		return false

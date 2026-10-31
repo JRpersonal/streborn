@@ -191,8 +191,8 @@ export function stationLogoChain(s) {
 }
 
 // SPOTIFY_LOGO is a self-contained green Spotify glyph (SVG data URI), shown on
-// Recently-played cards, and on a Spotify preset key until (or instead of,
-// when it has none or it fails) the cover stored on the key loads.
+// a Spotify preset key and a Spotify Recently-played card until (or instead of,
+// when it has none or it fails) the stored cover loads.
 export const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
 
 // spotifyCoverImgTag renders a Spotify key's tile image: the playlist or album

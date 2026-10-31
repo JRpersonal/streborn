@@ -228,35 +228,74 @@ func TestNoticeStopRequeues(t *testing.T) {
 	}
 }
 
-func TestSanitizeText(t *testing.T) {
-	cases := []struct {
-		in    string
-		limit int
-		want  string
-	}{
-		{"Über Größe", 21, "UEBER GROESSE"},
-		{"Café Noël – Señor", 21, "CAFE NOEL - SENOR"},
-		{"  Radio   Bob! ", 21, "RADIO BOB"},
-		{"1LIVE diggi", 10, "1LIVE DIGG"},
-		{"Rock & Pop 80s/90s", 21, "ROCK + POP 80S/90S"},
-		{"Ζ日本", 21, ""},
-		{"A B", 2, "A"},
+// Every notice line is in a smooth face (the big line in the large one, the
+// small lines in the small one), keeps its case and accents, and is cut with
+// an ellipsis instead of running off the panel.
+func TestNoticeLinesAreSmoothText(t *testing.T) {
+	n := Identify("Küche & Bad")
+	if n.Line1 != "HELLO" || n.Line2 != "Küche & Bad" {
+		t.Errorf("identify lines %q / %q: the name lost its case or accents", n.Line1, n.Line2)
 	}
-	for _, c := range cases {
-		if got := SanitizeText(c.in, c.limit); got != c.want {
-			t.Errorf("SanitizeText(%q, %d) = %q, want %q", c.in, c.limit, got, c.want)
+	n = SavedByKey(3, "Absolut relax - Entspannungsmusik und mehr für den ganzen Tag")
+	if !strings.HasSuffix(n.Line2, "…") || smoothSmall.width(n.Line2) > noticeTextW {
+		t.Errorf("long name %q (%d px) not cut to %d px with an ellipsis", n.Line2, smoothSmall.width(n.Line2), noticeTextW)
+	}
+	if n := SavedByKey(1, "  Radio \t Bob!  "); n.Line2 != "Radio Bob!" {
+		t.Errorf("whitespace not folded: %q", n.Line2)
+	}
+}
+
+// assertNoticeLinesFit checks that n's lines are drawable as they are in
+// their faces and fit the panel without being cut: a fixed text that needs
+// the ellipsis is a text that has to be shortened.
+func assertNoticeLinesFit(t *testing.T, n Notice) {
+	t.Helper()
+	for i, l := range []struct {
+		s string
+		f *smoothFont
+	}{{n.Line1, smoothLarge}, {n.Line2, smoothSmall}, {n.Line3, smoothSmall}} {
+		if n.Kind == NoticePreset {
+			l.f = n.face
+		}
+		if sanitizeSmooth(l.s, trackTextMax) != l.s {
+			t.Errorf("%s line %d %q is not drawable as is", n.Kind, i+1, l.s)
+		}
+		if strings.HasSuffix(l.s, "…") && !strings.HasSuffix(l.s, "Saving…") {
+			t.Errorf("%s line %d %q had to be cut: shorten the text", n.Kind, i+1, l.s)
+		}
+		if w := l.f.width(l.s); w > noticeTextW {
+			t.Errorf("%s line %d %q is %d px wide, the panel holds %d", n.Kind, i+1, l.s, w, noticeTextW)
 		}
 	}
 }
 
-func TestFontCoversNoticeAlphabet(t *testing.T) {
-	for _, ch := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/.:-,= " {
-		if _, ok := font[ch]; !ok {
-			t.Errorf("font misses %q", ch)
-		}
+// Every notice with a fixed text fits the panel in its faces as it is.
+func TestFixedNoticeTextsFit(t *testing.T) {
+	for _, n := range []Notice{
+		SavedFromApp(6), AlreadyOnKey(2), AlreadyOnKey(12), Swapped(5, 6, "x"), Swapped(2, 3, ""),
+		NotSaved(5), EmptyKey(1), KeysRestored(6), KeysRestored(1), KeyHeld(6), KeyHeldRowTwo(6),
+		PresetFailed(4, "x"), FolderMoved(1), SleepSet(60), SleepOff(), Snooze("06:39"),
+		Bass(-10, -10, 10), Bass(10, -10, 10), SavedOnRowTwo(6, "x"), SavedByKey(6, "x"), Identify("x"),
+	} {
+		assertNoticeLinesFit(t, n)
 	}
 }
 
+// greyIn counts the pixels in the box that are lit below level lvl: the
+// edge pixels of anti-aliased text. Text in the dot matrix lights every
+// pixel it touches at its full level, so a text box without any grey is
+// text drawn in the dot matrix.
+func greyIn(buf []byte, x0, y0, w, h int, lvl byte) int {
+	n := 0
+	for y := max(y0, 0); y < min(y0+h, Height); y++ {
+		for x := max(x0, 0); x < min(x0+w, Width); x++ {
+			if v := buf[y*Width+x]; v > 0 && v < lvl {
+				n++
+			}
+		}
+	}
+	return n
+}
 func levelAt(buf []byte, x, y int) byte { return buf[y*Width+x] }
 
 func litIn(buf []byte, x0, y0, w, h int) int {
@@ -290,25 +329,9 @@ func TestNoticesRender(t *testing.T) {
 	}
 	buf := make([]byte, FrameSize)
 	for _, n := range all {
-		// The preset notice's lines are the station name in the smooth
-		// font, laid out by TestPresetPlayingSmoothFont.
-		dotMatrix := n.Kind != NoticePreset
-		for _, l := range []struct {
-			s     string
-			limit int
-		}{{n.Line1, line1Max}, {n.Line2, line2Max}, {n.Line3, line2Max}} {
-			if !dotMatrix {
-				break
-			}
-			if len(l.s) > l.limit {
-				t.Errorf("%s: %q longer than %d", n.Kind, l.s, l.limit)
-			}
-			for _, ch := range l.s {
-				if _, ok := font[ch]; !ok {
-					t.Errorf("%s: %q not in the font", n.Kind, ch)
-				}
-			}
-		}
+		// The preset notice's lines are the station name in one face, laid
+		// out by TestPresetPlayingSmoothFont.
+		lined := n.Kind != NoticePreset
 		r := newNoticeRenderer(n)
 		r.frame(0, buf)
 		if m := meanLevel(buf); m != 0 {
@@ -323,14 +346,27 @@ func TestNoticesRender(t *testing.T) {
 		if litIn(buf, iconX, iconY, 40, 40) < 30 {
 			t.Errorf("%s: icon area nearly empty", n.Kind)
 		}
-		if dotMatrix && litIn(buf, 0, line1Y, Width, 14) < 40 {
+		l1Top, l2Top := line1Y-smoothLarge.capH, line2Y-smoothSmall.capH
+		if lined && litIn(buf, 0, l1Top, Width, smoothLarge.capH) < 40 {
 			t.Errorf("%s: line 1 not drawn", n.Kind)
 		}
-		if dotMatrix && n.Line2 != "" && litIn(buf, 0, line2Y, Width, 7) < 15 {
+		if lined && greyIn(buf, 0, l1Top, Width, smoothLarge.capH, lvlLine1) == 0 {
+			t.Errorf("%s: line 1 has no anti-aliased pixels, drawn in the dot matrix?", n.Kind)
+		}
+		if lined && n.Line2 != "" && litIn(buf, 0, l2Top, Width, smoothSmall.capH) < 15 {
 			t.Errorf("%s: line 2 not drawn", n.Kind)
 		}
-		if dotMatrix && litIn(buf, 0, line3Y, Width, Height-line3Y) > 0 && n.Line3 == "" && n.Bar == 0 && n.Kind != NoticeIdentify {
+		if lined && n.Line2 != "" && greyIn(buf, 0, l2Top, Width, smoothSmall.capH, lvlLine2) == 0 {
+			t.Errorf("%s: line 2 has no anti-aliased pixels, drawn in the dot matrix?", n.Kind)
+		}
+		below := line2Y + smoothSmall.bottom
+		if lined && litIn(buf, 0, below, Width, Height-below) > 0 && n.Line3 == "" && n.Bar == 0 && n.Kind != NoticeIdentify {
 			t.Errorf("%s: pixels below line 2 without a third line", n.Kind)
+		}
+		if lined && n.Line3 != "" {
+			if y := line3Y + smoothSmall.bottom; y > barY || y >= Height {
+				t.Errorf("%s: line 3 ends at row %d, into the bar or off the panel", n.Kind, y)
+			}
 		}
 		// Burn-in budget like the splash: a mostly dark screen.
 		if m := meanLevel(buf); m > 2 {
@@ -367,6 +403,66 @@ func TestNoticesRender(t *testing.T) {
 	}
 	if meanLevel(on[:Width*40]) == meanLevel(off[:Width*40]) {
 		t.Error("rings do not pulse")
+	}
+}
+
+// The number inside the preset key is smooth text, not the doubled dot
+// matrix: anti-aliased, on the rows the old number used (13..26, the
+// round digits' overshoot one row above), and its ink centred in the key.
+// A hardware preset press used to show the speaker's own smooth number and
+// then STR's blocky one in the frame (discussion #1305).
+func TestPresetKeyNumberIsSmooth(t *testing.T) {
+	// inside the key's outline (columns 51..76, rows 7..32), clear of its
+	// rounded corners
+	const x0, y0, w, h = iconX + 7, iconY + 4, 18, 24
+	for key := 1; key <= 6; key++ {
+		for _, n := range []Notice{PresetPlaying(key, "WDR 2"), SavedByKey(key, "WDR 2"), EmptyKey(key), KeyHeldRowTwo(key)} {
+			buf := make([]byte, FrameSize)
+			newNoticeRenderer(n).frame(1, buf)
+			lvl := byte(15)
+			if n.Kind == NoticeEmptyKey {
+				lvl = 11
+			}
+			if greyIn(buf, x0, y0, w, h, lvl) == 0 {
+				t.Errorf("%s key %d: number has no anti-aliased pixels, drawn in the dot matrix?", n.Kind, key)
+			}
+			lo, hi, top, bottom := Width, -1, Height, -1
+			for y := y0; y < y0+h; y++ {
+				for x := x0; x < x0+w; x++ {
+					// the badge reaches into the key's bottom right corner
+					if dx, dy := x-badgeCX, y-badgeCY; dx*dx+dy*dy <= 9*9 {
+						continue
+					}
+					if buf[y*Width+x] > 0 {
+						lo, hi, top, bottom = min(lo, x), max(hi, x), min(top, y), max(bottom, y)
+					}
+				}
+			}
+			if hi < 0 {
+				t.Errorf("%s key %d: no number in the key", n.Kind, key)
+				continue
+			}
+			if top < keyNumY-smoothKey.capH-1 || bottom > keyNumY {
+				t.Errorf("%s key %d: number on rows %d..%d, want within %d..%d", n.Kind, key, top, bottom, keyNumY-smoothKey.capH-1, keyNumY)
+			}
+			if off := lo + hi + 1 - 2*keyCX; off < -2 || off > 2 {
+				t.Errorf("%s key %d: number spans %d..%d, not centred on %d", n.Kind, key, lo, hi, keyCX)
+			}
+		}
+	}
+}
+
+// The sleep notice's crescent is shaded at its edge like the text under it,
+// not stepped: well beyond the two stars' few dim pixels, its curve is drawn
+// in between levels.
+func TestBigMoonIsShaded(t *testing.T) {
+	buf := make([]byte, FrameSize)
+	newNoticeRenderer(SleepSet(30)).frame(1, buf)
+	if g := greyIn(buf, iconX, iconY, 32, 32, 15); g < 30 {
+		t.Errorf("only %d shaded pixels in the moon symbol", g)
+	}
+	if litIn(buf, iconX, iconY, 32, 32) < 150 {
+		t.Error("moon symbol not drawn")
 	}
 }
 

@@ -100,7 +100,7 @@ func clockStatusSnapshot() any {
 //
 // First round after a short delay, then with a short ticker until the model
 // is detected (race recovery), after which the ticker drops back to 30s.
-func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregion.Resolver, ann *discovery.Announcer, logger *slog.Logger) {
+func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregion.Resolver, ann *discovery.Announcer, onName func(name string, notUTF8 bool), logger *slog.Logger) {
 	if boxHost == "" || ann == nil {
 		return
 	}
@@ -155,6 +155,12 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregi
 		// that already agrees costs nothing and logs nothing.
 		boxID := strings.ToUpper(strings.TrimSpace(s.Info.DeviceID))
 		name := strings.TrimSpace(s.Info.Name)
+		// A name the firmware's UPnP renderer cannot survive (#1582) is
+		// recognised here, on the read the agent makes anyway: at start and
+		// after every rename, including one made with the Bose app.
+		if name != "" && onName != nil {
+			onName(name, s.Info.NameNotUTF8)
+		}
 		newModel, newBoxID, newName := "", "", ""
 		if model != "" && model != lastModel {
 			newModel = model

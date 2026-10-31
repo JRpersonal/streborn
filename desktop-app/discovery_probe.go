@@ -166,9 +166,11 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 		ConflictingMod:     jsonStringField(s, "conflictingMod"),
 		ForeignCloudURL:    jsonStringField(s, "foreignCloudURL"),
 		GroupKeyError:      jsonStringField(s, "groupKeyError"),
+		GroupKeyErrorKind:  jsonStringField(s, "groupKeyErrorKind"),
 		HoldRefusedSource:  jsonStringField(s, "holdRefusedSource"),
 		HoldRefusedSlot:    jsonStringField(s, "holdRefusedSlot"),
 		StaleFolderKeySlot: jsonStringField(s, "staleFolderKeySlot"),
+		SpeakerNameUnsafe:  jsonStringField(s, "speakerNameUnsafe") == "true",
 		Storm1036:          jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))
@@ -180,12 +182,15 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 			return n
 		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
+		LANAddrs:         jsonStringField(s, "lanAddrs"),
+		WiredAddrs:       jsonStringField(s, "wiredAddrs"),
 		// The hash of the agent binary this speaker is actually running. It is
 		// the only answer about "is this box current" that no clock can spoil,
 		// and v0.9.88 needed it: the release stamped the app one minute later
 		// than the agent it embeds, so every speaker looked permanently behind.
 		AgentBinarySha256:  jsonStringField(s, "agentBinarySha256"),
 		AgentRunningSha256: jsonStringField(s, "agentRunningSha256"),
+		PresetRows:         jsonStringField(s, "presetRows"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable
@@ -268,12 +273,31 @@ func jsonStringField(s, key string) string {
 	if len(rest) == 0 || rest[0] != '"' {
 		return ""
 	}
-	rest = rest[1:]
-	e := strings.IndexByte(rest, '"')
+	// Find the closing quote, stepping over escapes. Stopping at the first
+	// '"' cut every value that carried an escaped quote: a refused group-key
+	// press whose reason quotes a URL reached the user as "... Get \" and
+	// nothing after it (2026-10-27).
+	e := -1
+	for j := 1; j < len(rest); j++ {
+		if rest[j] == '\\' {
+			j++
+			continue
+		}
+		if rest[j] == '"' {
+			e = j
+			break
+		}
+	}
 	if e < 0 {
 		return ""
 	}
-	return rest[:e]
+	quoted := rest[:e+1]
+	// JSON escapes are Go escapes except "\/", which Go's encoder never
+	// writes but another encoder may.
+	if v, err := strconv.Unquote(strings.ReplaceAll(quoted, `\/`, `/`)); err == nil {
+		return v
+	}
+	return quoted[1 : len(quoted)-1]
 }
 
 // probeStock checks ip:8090/info for the Bose SoundTouch device XML.

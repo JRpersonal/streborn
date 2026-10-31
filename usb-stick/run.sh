@@ -2194,6 +2194,24 @@ box_in_setup() {
     fi
     return 1
 }
+str_creds_current() {
+    # $1 = SSID, $2 = password, $3 = the NAND wlan-creds file (defaults to
+    # $WLAN_CREDS_NAND). True only while that file still holds exactly this
+    # SSID AND this password.
+    #
+    # The offline rescue and the BCO re-association watchdog push the set
+    # they read at boot, for minutes. In that time the agent may retire it
+    # (the owner set the speaker up through Bose's own setup page, #1573, or
+    # moved it to another network) or STR may store a new one, and the old
+    # compare looked at the SSID alone, so a new password for the same
+    # network still let the old one through goform, the call that programs
+    # the chip. Re-read before every push.
+    _scc_f="${3:-${WLAN_CREDS_NAND:-}}"
+    [ -n "$1" ] && [ -r "$_scc_f" ] || return 1
+    [ "$(sed -n 's/^SSID=\(.*\)$/\1/p' "$_scc_f" 2>/dev/null | head -1)" = "$1" ] || return 1
+    [ "$(sed -n 's/^PASS=\(.*\)$/\1/p' "$_scc_f" 2>/dev/null | head -1)" = "${2:-}" ] || return 1
+    return 0
+}
 wpa_globals_only() {
     # $1 = a wpa_supplicant.conf. Prints every line OUTSIDE a network block,
     # verbatim, and drops the network blocks.
@@ -2376,18 +2394,23 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 setup_log "hands-off: no lease after 90s - starting the pure-rescue goform watchdog (non-destructive re-push only, no profile writes)"
                 (
                     _rw=0
+                    _rw_total=0
                     _rw_said_setup=""
-                    while [ "$_rw" -lt 720 ]; do
+                    while [ "$_rw" -lt 720 ] && [ "$_rw_total" -lt 3600 ]; do
                         sleep 60
-                        _rw=$(( _rw + 60 ))
+                        _rw_total=$(( _rw_total + 60 ))
                         if current_sta_lease >/dev/null 2>&1; then
-                            setup_log "hands-off rescue: lease present at +${_rw}s, done"
+                            setup_log "hands-off rescue: lease present at +${_rw_total}s, done"
                             break
                         fi
                         # A speaker in SETUP has no lease either, and pushing the
                         # stored credentials at it is exactly what ends the setup
-                        # the user started. Skip, and keep counting: if they give
-                        # up, the rest of the budget still rescues a stranded box.
+                        # the user started. Skip, and do NOT count the minute
+                        # against the rescue budget: the agent holds a setup
+                        # access point the firmware raised by itself for ten
+                        # minutes (#1573), and a budget spent during that hold
+                        # would leave a #157 cold-boot strand with no rescue
+                        # once the hold ends. _rw_total still bounds the loop.
                         if box_in_setup; then
                             if [ -z "$_rw_said_setup" ]; then
                                 _rw_said_setup=1
@@ -2395,18 +2418,20 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                             fi
                             continue
                         fi
+                        _rw=$(( _rw + 60 ))
                         # The agent sets the credentials aside once the owner has
                         # moved the speaker to a network of their own outside STR
-                        # (internal/webui/wlansupersede.go). goform is the call that
-                        # SWITCHES the chip's network, so pushing the old set now
-                        # would drag the speaker back to a network the owner left,
-                        # quite possibly one that is switched off. Re-read before
-                        # every push: the agent may decide this after the loop began.
-                        if [ "$(sed -n 's/^SSID=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" 2>/dev/null | head -1)" != "$SSID" ]; then
+                        # (internal/webui/wlansupersede.go) or set it up through
+                        # Bose's own setup page (wlanownersetup.go). goform is the
+                        # call that PROGRAMS the chip, so pushing the old set now
+                        # would replace what the owner gave it. Re-read SSID AND
+                        # password before every push: the agent may decide this
+                        # after the loop began.
+                        if ! str_creds_current "$SSID" "$PASS"; then
                             setup_log "hands-off rescue: STR's stored network was retired or replaced since boot; not pushing it"
                             break
                         fi
-                        setup_log "hands-off rescue: still no lease at +${_rw}s, non-destructive goform re-push"
+                        setup_log "hands-off rescue: still no lease at +${_rw_total}s, non-destructive goform re-push"
                         goform_wlan_push "$SSID" "$PASS"
                     done
                 ) &
@@ -3810,12 +3835,20 @@ WPAEOF
     if [ "$BCO_MODE" = "1" ] && [ -n "$SSID" ] && [ -n "$PASS" ]; then
         (
             _rw=0
+            _rw_total=0
             _rw_said_setup=""
-            while [ "$_rw" -lt 720 ]; do
+            # Whether the set this watchdog pushes is STR's stored one. Then the
+            # agent may retire or replace it while the loop runs (#1573), and
+            # the loop must stop; a fresh stick's set that never made it into
+            # NAND has nothing there to compare against and keeps the #157
+            # behaviour.
+            _rw_nand=""
+            if str_creds_current "$SSID" "$PASS"; then _rw_nand=1; fi
+            while [ "$_rw" -lt 720 ] && [ "$_rw_total" -lt 3600 ]; do
                 sleep 60
-                _rw=$(( _rw + 60 ))
+                _rw_total=$(( _rw_total + 60 ))
                 if current_sta_lease >/dev/null 2>&1; then
-                    setup_log "reassoc-watchdog: lease present at +${_rw}s, done"
+                    setup_log "reassoc-watchdog: lease present at +${_rw_total}s, done"
                     break
                 fi
                 # The twin of the hands-off rescue, and it had the same blind
@@ -3836,7 +3869,14 @@ WPAEOF
                     fi
                     continue
                 fi
-                setup_log "reassoc-watchdog: no lease at +${_rw}s, non-destructive goform re-push"
+                # Minutes in SETUP do not count against the budget, see the
+                # hands-off rescue; _rw_total bounds the loop.
+                _rw=$(( _rw + 60 ))
+                if [ -n "$_rw_nand" ] && ! str_creds_current "$SSID" "$PASS"; then
+                    setup_log "reassoc-watchdog: STR's stored network was retired or replaced since boot; not pushing it"
+                    break
+                fi
+                setup_log "reassoc-watchdog: no lease at +${_rw_total}s, non-destructive goform re-push"
                 goform_wlan_push "$SSID" "$PASS"
             done
         ) &
@@ -4903,7 +4943,7 @@ iptables_install_redirect_series_one() {
 # of silently bailing inside the backgrounded subshell where the error
 # is swallowed by 2>/dev/null — that silence is exactly what hid the
 # original current_sta_lease subshell-scope bug for months.
-for _need in setup_log redirect_lan_ip setup_gateway_is_lan_addr current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent box_in_setup iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+for _need in setup_log redirect_lan_ip setup_gateway_is_lan_addr current_sta_lease current_sta_ssid forget_sta_lease lease_is_on_ssid wpa_globals_only pid_is_our_agent box_in_setup str_creds_current iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
     command -v "$_need" >/dev/null 2>&1 || \
         setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
 done

@@ -140,6 +140,10 @@ type presetWsHandler struct {
 	// it is acted on (powergate.go). Wired to boxws.Client.Connected. nil
 	// means "assume down": the ring delivers at once.
 	busLive func() bool
+	// wakeChecks carries the check of a switch out of standby from the
+	// source hook to the standby-exit hook of the same frame (phantomwake.go).
+	// Zero value ready.
+	wakeChecks wakeChecks
 	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
 	// when the BOX itself reports its pair torn down, which is how a teardown
 	// done in the Bose app (or one that reached only the other member) reaches
@@ -302,6 +306,25 @@ type presetWsHandler struct {
 	// (webui.Server.StaleFolderKeySince). That press already put its own,
 	// specific notice on the display. nil-safe.
 	staleFolderKeySince func(slot int, t time.Time) bool
+
+	// doublePress pairs selection frames into double presses, group tracks
+	// whether the speaker is in a zone or pair (doublepress.go, #1110).
+	doublePress doublePressDetector
+	group       groupMembership
+	// playSlotFn recalls a preset slot through the app's path (webui
+	// PlaySlotForKey): how a double press plays the second row. nil = off.
+	playSlotFn func(ctx context.Context, slot int) (string, error)
+	// Test seams for the double-press detector. nil = the real ones:
+	// ownSelection, the key trace's PhysicalPressesSince, a /getZone read.
+	ownSelectionFn func(key int) bool
+	tracePressesFn func(key int, since time.Time) int
+	zoneProbe      func(ctx context.Context) (bool, error)
+
+	// nowPlaying keeps the bus's last now-playing documents, and snapshotFn
+	// turns one into what a save of it would store (webui SnapshotPlaying):
+	// what played before a tap, for the tap+hold save (tapholdsave.go).
+	nowPlaying nowPlayingHistory
+	snapshotFn func(doc []byte) webui.PlayingSnapshot
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's
@@ -556,6 +579,34 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
 	pressAt := time.Now()
+	// The frame may be the tap of a tap+hold: note it with what played before
+	// it, before this press's recall changes anything (tapholdsave.go).
+	h.noteTap(slot, pressAt)
+	// A second press of the same key moments after the first plays the key's
+	// second-row preset (#1110, doublepress.go). The first press has already
+	// started row 1 by now; it is never held back waiting for a second one.
+	switch plan, row2, first := h.planPress(slot, pressAt); plan {
+	case planRow2:
+		// Bumped here on the read loop, so the first press's recall stands
+		// down from this instant on. The webhook stays with the first press.
+		seq := h.pressSeq.Add(1)
+		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), "second press within the window")
+		return
+	case planConfirm:
+		// Inside a group one press can arrive as two frames. The first press's
+		// recall keeps running while the key trace is asked; this frame is
+		// either row 2 or, as before, an ordinary press of the key.
+		go h.confirmDoublePress(ctx, slot, first, pressAt, row2, location, title)
+		return
+	}
+	h.ordinaryPress(ctx, pressAt, slot, location, title, true)
+}
+
+// ordinaryPress is a preset key press as it was before the second row existed:
+// the per-key webhook, then the recall of the key's own (row 1) preset. A
+// frame the double-press detector handed back (a group's echo of one press)
+// arrives here with fireHook false, so the webhook still fires once per press.
+func (h *presetWsHandler) ordinaryPress(ctx context.Context, pressAt time.Time, slot int, location, title string, fireHook bool) {
 	// Per-key webhook (beta): fire the configured "preset<slot>" webhook on a
 	// hardware preset press (front panel or remote; app recalls take a different
 	// path and never reach here). In replace mode, withhold the preset playback
@@ -563,15 +614,18 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// slot); in additional mode, the preset plays AND the webhook fires. The
 	// replace decision is a config read and stays synchronous; the HTTP fire
 	// runs in a goroutine because a slow webhook target stalled the read loop
-	// for up to 8s per press, delaying every queued frame.
-	if h.webhooks != nil && slot >= 1 && slot <= 6 {
+	// for up to 8s per press, delaying every queued frame. Keys 1..6 only: the
+	// second row has no triggers of its own.
+	if h.webhooks != nil && presets.IsBoxSlot(slot) {
 		id := fmt.Sprintf("preset%d", slot)
 		replace := h.webhooks.ButtonReplaceEnabled(id)
-		go func() {
-			if h.webhooks.FireButton(ctx, id) {
-				h.logger.Info("preset webhook fired", "slot", slot, "replace", replace)
-			}
-		}()
+		if fireHook {
+			go func() {
+				if h.webhooks.FireButton(ctx, id) {
+					h.logger.Info("preset webhook fired", "slot", slot, "replace", replace)
+				}
+			}()
+		}
 		if replace {
 			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
 			return
@@ -1200,6 +1254,9 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	// logs before wiring a post-wake reconciliation push. Best-effort, off the
 	// hot path.
 	go h.logStandbyRaceSignature()
+	// One zone read per connect, so the double-press detector knows whether
+	// this speaker is grouped before the first zone frame says so.
+	go h.refreshGroupMembership(context.Background())
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
@@ -1212,6 +1269,27 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // that silently de-registered the key layer during standby (#487, where dead
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
+	// A switch onto STR's source can be the speaker answering STR's own
+	// transport commands without ever leaving standby (phantomwake.go). Such
+	// a frame is checked against the speaker's own word first: acting on it
+	// would cancel a held standby, record a wake that never happened and ask
+	// for a key re-sync of a sleeping speaker. A real wake answers the first
+	// read, so it acts after one now_playing read; a speaker that does not
+	// answer at all is taken at the frame's word, as before.
+	if w := h.wakeChecks.take(); w != nil {
+		go func() {
+			if w.settled() == wakeStandby {
+				return // settleWakeCheck logs it
+			}
+			h.actOnStandbyExit()
+		}()
+		return
+	}
+	h.actOnStandbyExit()
+}
+
+// actOnStandbyExit is OnStandbyExit for a frame that is a wake.
+func (h *presetWsHandler) actOnStandbyExit() {
 	// A ring standby still waiting for the bus is stale now: the box is on
 	// again (powergate.go).
 	if h.powerGate.cancelHeldStandby(false) {
@@ -1269,10 +1347,14 @@ func (h *presetWsHandler) logStandbyRaceSignature() {
 	}
 	// Let the reconnect and the box's own (failing) self-activation settle.
 	time.Sleep(4 * time.Second)
+	readAt := time.Now()
 	np, ok := fetchNowPlaying(h.boxHost)
 	if !ok {
 		return
 	}
+	// The same read tells a tap soon after the reconnect what played, until
+	// the bus carries its own now-playing frame (tapholdsave.go).
+	h.nowPlaying.seed(np.Raw, readAt)
 	source, location, playing := np.Source, np.Location(), np.IsPlaying()
 	if isSTRStreamURL(location) && !playing {
 		h.logger.Warn("standby-race probe: box parked on an STR preset stream but NOT playing after a gabbo reconnect; candidate missed first-press (#435)",
@@ -1371,6 +1453,9 @@ func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 // withdraws a doubt the firmware's own mid-change dissolve had recorded against
 // a group that then formed fine. Neither call writes to the reconcile store.
 func (h *presetWsHandler) OnZoneChanged(_ context.Context, z boxws.ZoneState) {
+	// The double-press detector needs to know: inside a zone one press can
+	// arrive as two selection frames (doublepress.go).
+	h.group.zone.Store(membership(z.Master != ""))
 	if z.Master == "" {
 		h.logger.Info("zone changed: dissolved")
 	} else {
@@ -1401,6 +1486,7 @@ func (h *presetWsHandler) OnZoneChanged(_ context.Context, z boxws.ZoneState) {
 // letting the right-hand speaker write its own view is the divergence that
 // desynced pairs in the first place.
 func (h *presetWsHandler) OnGroupChanged(_ context.Context, g boxws.GroupState) {
+	h.group.pair.Store(membership(g.Paired()))
 	if g.Paired() {
 		h.logger.Info("stereo pair changed on the box", "id", g.ID, "master", g.Master, "members", len(g.Members))
 		return
@@ -1520,6 +1606,14 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 		c()
 	}
 	h.triggerPairAsync(6 * time.Second)
+	// A newer press owns the engine now. This matters most for a second press
+	// of the same key that plays row 2 (#1110): loading this context again
+	// would take the "re-press of the playing key = next track" fast path and
+	// skip a song the listener is about to leave anyway.
+	if h.pressSeq.Load() != seq {
+		h.logger.Info("spotify recall superseded before the context load, standing down", "slot", slot)
+		return
+	}
 	// Load the playlist (audio): a default preset resumes where the user left off
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
 	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle, Repeat: p.Repeat}); err != nil {

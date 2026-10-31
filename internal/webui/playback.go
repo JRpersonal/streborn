@@ -5,6 +5,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -76,7 +77,12 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.webhooks.Set(c); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			code := http.StatusInternalServerError
+			var inv *webhooks.InvalidError
+			if errors.As(err, &inv) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
 			return
 		}
 		writeJSON(w, http.StatusOK, s.webhooks.Get())
@@ -139,6 +145,17 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.URL == "" {
 		http.Error(w, "url required", http.StatusBadRequest)
+		return
+	}
+	// Only an http(s) stream can be played here; the stream proxy refuses
+	// anything else anyway. A spotify: URI that reached this path (a stray
+	// favourite or a mislabelled Recently-played card) used to wake the box,
+	// end in AUDIO_ERROR_BAD_URL and still be filed as a "radio" card, which
+	// then relabelled the real Spotify card of the same URI (#1077). Refused
+	// before the speaker is touched and before anything is recorded.
+	if !isHTTPURL(req.URL) {
+		s.logger.Warn("play request refused: not a stream URL", "url", req.URL)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
 		return
 	}
 	if s.refuseIfIncompletePair(w) {
@@ -322,6 +339,21 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res.body())
+}
+
+// PlaySlotForKey recalls slot exactly the way the app's POST /api/play/<slot>
+// does, for a hardware key that asks for a preset the speaker itself does not
+// hold: the second row (slots 7..12, #1110), reached by pressing a key twice.
+// It returns the preset's name on success, or the refusal as an error.
+func (s *Server) PlaySlotForKey(ctx context.Context, slot int) (string, error) {
+	res, ref := s.playSlot(ctx, slot)
+	if ref != nil {
+		if ref.Code != "" {
+			return "", fmt.Errorf("recall refused (%d %s): %s", ref.Status, ref.Code, ref.Error)
+		}
+		return "", fmt.Errorf("recall refused (%d): %s", ref.Status, ref.Error)
+	}
+	return res.Name, nil
 }
 
 // recallUnavailable is the pair of 503s a recall answers before it looks at

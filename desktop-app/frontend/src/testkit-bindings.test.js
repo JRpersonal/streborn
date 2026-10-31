@@ -61,7 +61,7 @@ describe('testkit desktop mock', () => {
     expect(bedroom.info.name).toBe('Bedroom');
     expect(bedroom.volume.actual).toBe(18);
     expect(await App.GetPresets('demobox.local', 8888)).toEqual([]);
-    expect((await App.GetPresets('demobox.local', 8888)).length).toBe(6);
+    expect((await App.GetPresets('demobox.local', 8888)).length).toBe(8); // six keys plus two pressed twice (#1110)
     await App.PlaySlot('192.0.2.52', 8888, 4);
     expect(await App.Status('192.0.2.52', 8888)).toContain('<itemName>Jazz24</itemName>');
     expect(win.__strMock.calls.map((c) => c.name)).toEqual(['BoxSettings', 'BoxSettings', 'GetPresets', 'GetPresets', 'PlaySlot', 'Status']);
@@ -82,7 +82,21 @@ describe('testkit desktop mock', () => {
     await App.SetPreset('demobox.local', 8888, 5, 'FM', 'http://192.0.2.9/fm', '', 128, 'https://example.com', 'AAC+');
     expect(await slot(5)).toMatchObject({ name: 'FM', type: 'radio', homepage: 'https://example.com', codec: 'AAC+' });
     expect((await slot(5)).uri).toBeUndefined();
-    expect((await App.GetPresets('demobox.local', 8888)).length).toBe(6);
+    expect((await App.GetPresets('demobox.local', 8888)).length).toBe(8);
+  });
+
+  it('models the second row of keys only on the speaker that reports it (#1110)', async () => {
+    fakePage();
+    installDesktopMock({ scenario: resolveScenario({}), demo: DEMO });
+    const App = globalThis.window.go.main.App;
+    expect((await App.BoxAgentVersion('demobox.local', 8888)).presetRows).toBe('2');
+    expect((await App.BoxAgentVersion('192.0.2.52', 8888)).presetRows).toBeUndefined();
+    expect((await App.GetPresets('192.0.2.52', 8888)).length).toBe(6);
+    // The bedroom keeps one row, so the copy carries row 1 only.
+    expect(await App.CopyPresetsAcrossBoxes('demobox.local', 8888, '192.0.2.52', 8888)).toBe(6);
+    expect((await App.GetPresets('192.0.2.52', 8888)).every((p) => p.slot <= 6)).toBe(true);
+    await App.DeletePreset('demobox.local', 8888, 7);
+    expect((await App.GetPresets('demobox.local', 8888)).map((p) => p.slot)).toEqual([1, 2, 3, 4, 5, 6, 9]);
   });
 
   it('delivers emitted events to EventsOn listeners until they are removed', () => {

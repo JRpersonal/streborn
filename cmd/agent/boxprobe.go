@@ -89,6 +89,11 @@ func boxSetupState(boxHost string) (state, systemState string) {
 type setupEpisodeSink interface {
 	NoteBoxSetupEpisode()
 	NoteBoxSetupCleared()
+	// NoteSetupWifiPass lets STR's stored Wi-Fi yield to a setup the owner
+	// did through the speaker's own setup page (#1573): it snapshots the
+	// speaker's Wi-Fi store when a setup starts and retires STR's records
+	// when a profile appears that STR did not write.
+	NoteSetupWifiPass(inSetup bool)
 }
 
 const (
@@ -232,6 +237,51 @@ func setupWasAsked(now time.Time, askedAt int64) bool {
 	return d >= -time.Second && d <= leaveSetupAskedWindow
 }
 
+// leaveSetupOOBHold is how long the watcher leaves a setup access point open
+// that the firmware raised by itself on a speaker with no network. See
+// leaveSetupHoldsOOB.
+const leaveSetupOOBHold = 10 * time.Minute
+
+// leaveSetupHoldsOOB reports whether the watcher must leave this SETUP open for
+// now instead of POSTing SETUP_LEAVE. Pure.
+//
+// setupState is the firmware's /setup state, gateway the IPv4 default route's
+// gateway ("" or "0.0.0.0" when there is none), heldSince when this episode's
+// hold began (zero when it has not begun yet).
+//
+// Field case (#1573, Series-I ST20, BCO chassis, 2026-10-28): the owner set the
+// speaker up again through Bose's own setup page, and on a later boot it could
+// not join, had no lease and no gateway, and the firmware raised its setup
+// access point (SETUP_AP_OOB) by itself. That access point was the speaker's
+// own way back onto a network, and the watcher closed it with SETUP_LEAVE.
+//
+// Bounded, not open-ended. "SETUP_AP_OOB with no gateway" also matches a BCO
+// speaker whose association merely failed at a cold boot (#157); leaving its
+// access point up for good would strand it, because run.sh's goform rescue
+// stays away from a speaker in setup. So the hold gives a person standing at
+// the speaker leaveSetupOOBHold to use the setup page, and then the watcher
+// clears it as before and the rescue gets its turn (run.sh does not count the
+// minutes in setup against the rescue's budget). A key combination still
+// opens the setup for as long as the owner wants (setupWasAsked).
+//
+// Unchanged, and still cleared at once:
+//   - #367's stuck source: SETUP_INACTIVE while now_playing says SETUP;
+//   - the out-of-box setup the watcher was written for (ST300 + scm-ST30,
+//     2026-07-09), a speaker that installed STR over the network and so has a
+//     gateway;
+//   - a setup page that has done its job: the speaker joined the network and
+//     sits in SETUP_AP_OOB + SETUP_LANG_NOT_SET, with a gateway, waiting for
+//     the SETUP_LEAVE the Bose app used to send.
+func leaveSetupHoldsOOB(setupState, gateway string, heldSince, now time.Time) bool {
+	if setupState != setupStateAPOOB {
+		return false
+	}
+	if gateway != "" && gateway != "0.0.0.0" {
+		return false
+	}
+	return heldSince.IsZero() || now.Sub(heldSince) < leaveSetupOOBHold
+}
+
 // leaveSetupSourceWatcher clears a stuck out-of-box SETUP source so the box can
 // play. A POST /setup SETUP_LEAVE is harmless when the box is not in setup, so
 // a stray check costs nothing. See boxapi.LeaveSetup.
@@ -266,9 +316,17 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 		// pass. Edge-triggered, like run.sh's fw_sig line: said on the first
 		// failure of a run of them and again after the next success.
 		warnedFailure bool
+		// holdSince is when this episode's hold of a firmware-raised setup
+		// access point began, zero when none is running. See
+		// leaveSetupHoldsOOB. holding is whether the last pass held it.
+		holdSince time.Time
+		holding   bool
 	)
 	for {
-		backingOff := inSetup && leaveSetupBudgetSpent(attempts)
+		// A held setup access point is watched at the backoff cadence: the only
+		// things STR waits for are the hold running out and a network coming
+		// back, and neither needs a fifteen-second poll.
+		backingOff := inSetup && (leaveSetupBudgetSpent(attempts) || holding)
 		delay := leaveSetupCadence(time.Now(), fastUntil, inSetup, backingOff)
 		// The gabbo setupAPUpdated frame can cut the wait short, but only while
 		// the budget still allows a clear: once STR is backing off, a nil
@@ -296,7 +354,15 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 			continue
 		}
 		if src != "SETUP" {
+			if holding {
+				holding = false
+				logger.Info("leave-setup: the speaker left the setup access point it raised by itself",
+					"source", src, "episode", episodes)
+			}
 			inSetup = false
+			if sink != nil {
+				sink.NoteSetupWifiPass(false)
+			}
 			continue
 		}
 		// Every SETUP observation refreshes the app-facing counter; that side
@@ -304,6 +370,7 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 		// state it reports stays "active" for as long as this really lasts.
 		if sink != nil {
 			sink.NoteBoxSetupEpisode()
+			sink.NoteSetupWifiPass(true)
 		}
 		reentered := !inSetup
 		// A NEW episode extends the fast window and refills the clear budget:
@@ -316,6 +383,8 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 			attempts = 0
 			asked = false
 			warnedFailure = false
+			holdSince = time.Time{}
+			holding = false
 			fastUntil = now.Add(leaveSetupFastWindow)
 		}
 		lastSetupSeen = now
@@ -352,6 +421,30 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 			// The language gate is what keeps raising this; let the gate
 			// check run now rather than after its first delay.
 			nudgeBoxLanguage()
+		}
+		gateway, gatewayIface := defaultRouteV4()
+		if leaveSetupHoldsOOB(setupState, gateway, holdSince, now) {
+			// Said once per hold, not per pass: every line lands in the
+			// NAND-mirrored agent log.
+			if holdSince.IsZero() {
+				holdSince = now
+				logger.Info("leave-setup: the speaker raised its own setup access point and has no network, leaving it open for a while so it can be set up again",
+					"setupState", setupState, "systemState", systemState,
+					"holdSec", int(leaveSetupOOBHold.Seconds()), "episode", episodes)
+			}
+			holding = true
+			continue
+		}
+		if holding {
+			holding = false
+			reason := "hold-elapsed"
+			if gateway != "" && gateway != "0.0.0.0" {
+				reason = "network-back"
+			}
+			logger.Info("leave-setup: ending the hold of the speaker's own setup access point, clearing it",
+				"reason", reason, "setupState", setupState, "systemState", systemState,
+				"gatewayIface", gatewayIface, "heldSec", int(now.Sub(holdSince).Seconds()),
+				"episode", episodes)
 		}
 		attempts++
 		lctx, cancel := context.WithTimeout(ctx, 20*time.Second)

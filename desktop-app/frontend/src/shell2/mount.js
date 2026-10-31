@@ -460,6 +460,7 @@ function paintSpeakers(force) {
     needsUpdate: deps.boxNeedsUpdate,
     cannotReachInternet: deps.boxCannotReachInternet,
     stereoPairs: stereoPairsOf(state.zoneLive || {}),
+    installHolds: state.installHolds || {},
     zoneLive: state.zoneLive || {},
     pending: typeof deps.groupEditPendingHosts === 'function' ? deps.groupEditPendingHosts() : new Set(),
     searching: !speakersSettled && !(state.boxes || []).length,

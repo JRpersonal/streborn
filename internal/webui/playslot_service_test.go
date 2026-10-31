@@ -190,7 +190,7 @@ func TestHandlePlaySlotWire(t *testing.T) {
 			s.spotifyPremiumRequired = func() bool { return true }
 			return s
 		}, http.StatusUnprocessableEntity,
-			`{"code":"spotify-premium-required","error":"This speaker's Spotify account is free. Spotify preset recall needs Spotify Premium.","name":"Mix","slot":1}` + "\n"},
+			`{"code":"spotify-premium-required","error":"The Spotify account on this speaker is a free account. Spotify presets only play with Spotify Premium.","name":"Mix","slot":1}` + "\n"},
 		{"stereo incomplete", http.MethodPost, "/api/play/1", func(t *testing.T) *Server {
 			s, _ := newPlayTestServer(t)
 			seedRadioPreset(t, s, 1)

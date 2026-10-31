@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/JRpersonal/streborn/speakername"
 )
 
 // BoxSettings fetches name/volume/bass/network/sources of the box via the stick.
@@ -28,9 +30,50 @@ func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	return out, nil
 }
 
-// SetBoxName changes the display name of the Bose box.
+// SetBoxName changes the display name of the Bose box. The name is sanitised
+// here as well as in the agent (speakername): an agent older than #1582 would
+// otherwise store an "&" that takes the speaker's UPnP renderer down on the
+// next boot, and Spotify and the music library with it.
 func (a *App) SetBoxName(host string, port int, name string) error {
-	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": name})
+	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": speakername.Sanitise(name)})
+}
+
+// RepairSpeakerName is the one-tap fix for a speaker whose stored name its
+// firmware cannot survive (#1582): the name is rewritten without the bad
+// characters and the speaker restarts, which is what brings its UPnP renderer,
+// and with it Spotify and the music library, back. Returns the stored name.
+//
+// The agent does it in one call (/api/box/name/repair), because only the
+// agent can see a name stored as invalid UTF-8. An agent older than that
+// endpoint answers its phone page instead, so the app then renames with
+// knownName and restarts the speaker itself.
+func (a *App) RepairSpeakerName(host string, port int, knownName string) (string, error) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/name/repair", "application/json", "")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+		return "", readHTTPError(resp)
+	}
+	var out struct {
+		Name string `json:"name"`
+	}
+	isJSON := strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json")
+	if resp.StatusCode < 400 && isJSON && json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out) == nil && out.Name != "" {
+		a.recordOTA(host, "reboot: STR renamed the speaker to a name its firmware can handle and restarted it (the user asked for it)")
+		boxSSHClients.invalidateHost(host)
+		return out.Name, nil
+	}
+	// Older agent: no such endpoint.
+	name := speakername.Sanitise(knownName)
+	if name == "" {
+		name = "SoundTouch"
+	}
+	if err := a.SetBoxName(host, port, name); err != nil {
+		return "", err
+	}
+	return name, a.rebootBoxFor(host, port, "the speaker name was repaired, the user asked for it")
 }
 
 // SetBoxVolume sets the volume (0-100).

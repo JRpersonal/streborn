@@ -21,6 +21,7 @@ export const state = {
   wlanStoreFor: null,  // host whose Settings should open on the Wi-Fi form ("Save Wi-Fi" banner)
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
+  presetRow: 1,        // the row of keys the grid shows: 1 = pressed once, 2 = pressed twice (#1110)
   boxSnapshot: null,   // agent's pre-takeover snapshot (warns about lost cloud sources like Deezer)
   searchResults: [],
   drives: [],
@@ -123,6 +124,11 @@ export const state = {
   // accidentally prepare a stick "into the void" and then have the
   // install step land on the wrong speaker.
   setupTarget: null,
+  // Speakers an update from this app is still finishing on, as
+  // { host: { host, sinceSec, remainingSec } } from the InstallHolds binding
+  // (installhold.js). The setup picker refreshes it on every render; while a
+  // speaker is in it, nothing offers that speaker an install.
+  installHolds: {},
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after
@@ -185,7 +191,8 @@ function isRoutableHost(h) {
 // fills it in a moment later anyway.
 const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
   'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'foreignCloudURL', 'updateAvailable',
-  'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending', 'internet', 'internetReason'];
+  'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending', 'internet', 'internetReason',
+  'speakerNameUnsafe'];
 
 function withoutTransientState(b) {
   const out = { ...b };

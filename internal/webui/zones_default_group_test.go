@@ -31,29 +31,34 @@ func TestClassifyMemberForRejoin(t *testing.T) {
 	const master = "MASTER01"
 	for _, tc := range []struct {
 		name, src, status, zoneMaster string
+		playKick                      bool
 		want                          rejoinAction
 	}{
-		{"unreachable", "", "", "", rejoinSkipUnreachable},
-		{"standby wakes", "STANDBY", "", "", rejoinWake},
-		{"idle joins", "INVALID_SOURCE", "", "", rejoinJoin},
-		{"stopped source joins", "LOCAL_INTERNET_RADIO", "STOP_STATE", "", rejoinJoin},
-		{"paused source joins", "UPNP", "PAUSE_STATE", "", rejoinJoin},
-		{"solo player stays out", "SPOTIFY", "PLAY_STATE", "", rejoinSkipSolo},
-		{"buffering solo stays out", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", rejoinSkipSolo},
-		{"already ours rejoins even while playing", "UPNP", "PLAY_STATE", master, rejoinJoin},
-		{"other group stays out", "UPNP", "PLAY_STATE", "OTHER99", rejoinSkipOtherZone},
-		{"other group even idle stays out", "INVALID_SOURCE", "", "OTHER99", rejoinSkipOtherZone},
+		{"unreachable", "", "", "", false, rejoinSkipUnreachable},
+		{"standby wakes", "STANDBY", "", "", false, rejoinWake},
+		{"idle joins", "INVALID_SOURCE", "", "", false, rejoinJoin},
+		{"stopped source joins", "LOCAL_INTERNET_RADIO", "STOP_STATE", "", false, rejoinJoin},
+		{"paused source joins", "UPNP", "PAUSE_STATE", "", false, rejoinJoin},
+		{"solo player stays out", "SPOTIFY", "PLAY_STATE", "", false, rejoinSkipSolo},
+		{"buffering solo stays out", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", false, rejoinSkipSolo},
+		{"already ours rejoins even while playing", "UPNP", "PLAY_STATE", master, false, rejoinJoin},
+		{"other group stays out", "UPNP", "PLAY_STATE", "OTHER99", false, rejoinSkipOtherZone},
+		{"other group even idle stays out", "INVALID_SOURCE", "", "OTHER99", false, rejoinSkipOtherZone},
+		{"solo player joins on the master's play kick", "SPOTIFY", "PLAY_STATE", "", true, rejoinJoin},
+		{"buffering solo joins on the play kick", "LOCAL_INTERNET_RADIO", "BUFFERING_STATE", "", true, rejoinJoin},
+		{"other group stays out on the play kick", "UPNP", "PLAY_STATE", "OTHER99", true, rejoinSkipOtherZone},
+		{"standby still wakes on the play kick", "STANDBY", "", "", true, rejoinWake},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyMemberForRejoin(tc.src, tc.status, tc.zoneMaster, master); got != tc.want {
-				t.Errorf("classify(%q,%q,%q) = %v, want %v", tc.src, tc.status, tc.zoneMaster, got, tc.want)
+			if got := classifyMemberForRejoin(tc.src, tc.status, tc.zoneMaster, master, tc.playKick); got != tc.want {
+				t.Errorf("classify(%q,%q,%q,%v) = %v, want %v", tc.src, tc.status, tc.zoneMaster, tc.playKick, got, tc.want)
 			}
 		})
 	}
 }
 
-// The play-triggered re-form must wake the standby member, keep the solo
-// player out, and assert the zone with exactly the qualifying members. All
+// The play-triggered re-form must wake the standby member, take the solo
+// player along (#1576), and assert the zone with exactly the qualifying members. All
 // firmware/member traffic goes through the seams.
 func TestFormDefaultGroupOnPlay(t *testing.T) {
 	t.Parallel()
@@ -136,8 +141,10 @@ func TestFormDefaultGroupOnPlay(t *testing.T) {
 	for _, m := range setSlaves {
 		ids[m.DeviceID] = true
 	}
-	if !ids["SLEEPY"] || !ids["IDLE"] || ids["SOLO"] {
-		t.Errorf("joined = %v, want SLEEPY+IDLE without SOLO", ids)
+	// #1576: the master was started on purpose, so the member playing on its
+	// own comes along too.
+	if !ids["SLEEPY"] || !ids["IDLE"] || !ids["SOLO"] {
+		t.Errorf("joined = %v, want SLEEPY+IDLE+SOLO", ids)
 	}
 
 	// Cooldown: a second kick right after must not drive the firmware again.
@@ -466,5 +473,24 @@ func TestReformAfterMemberRebootLeavesItAlone(t *testing.T) {
 				t.Error("a member was woken")
 			}
 		})
+	}
+}
+
+// #1576: a stored member that is not in the live group is reported, matched by
+// deviceID first and by address for a member stored without one.
+func TestNotJoinedMembers(t *testing.T) {
+	t.Parallel()
+	live := []boxapi.ZoneMember{{DeviceID: "MASTER01", IP: "10.0.0.1"}, {DeviceID: "sleepy", IP: "10.0.0.2"}}
+	stored := []rememberedMember{
+		{DeviceID: "SLEEPY", IP: "10.0.0.9"},
+		{DeviceID: "SOLO", IP: "10.0.0.3", Name: "Kitchen"},
+		{IP: "10.0.0.1"},
+	}
+	got := notJoinedMembers(live, stored)
+	if len(got) != 1 || got[0].DeviceID != "SOLO" || got[0].Name != "Kitchen" {
+		t.Fatalf("notJoined = %+v, want only SOLO", got)
+	}
+	if notJoinedMembers(live, nil) != nil {
+		t.Error("no stored members must report none")
 	}
 }

@@ -146,6 +146,82 @@ func TestSTRsOwnPlaybackKeepsTheCeiling(t *testing.T) {
 	}
 }
 
+// Series-I ST20, 2026-10-28: "forced pass ran anyway, the hold ceiling passed
+// ... source=SETUP heldFor=5m1s". A speaker in setup is being provisioned or is
+// raising its own access point for lack of a network; the pass waits for it to
+// leave setup however long that takes, and runs once it has.
+func TestForcedWriteHoldNeverWritesIntoSetup(t *testing.T) {
+	now := time.Now()
+	for _, src := range []string{"SETUP", "SETUP_AP_OOB", "SETUP_INACTIVE"} {
+		for _, c := range []struct {
+			name         string
+			playing      bool
+			everFullDone bool
+			heldSince    time.Time
+		}{
+			{"first registration", false, false, time.Time{}},
+			{"hold just began", false, true, time.Time{}},
+			{"at the ceiling", false, true, now.Add(-forcedPlayHoldCeiling)},
+			{"long past the ceiling", true, true, now.Add(-time.Hour)},
+		} {
+			hold, ceiling := forcedWriteHold(src, c.playing, true, c.everFullDone, c.heldSince, now)
+			if !hold || ceiling {
+				t.Errorf("src=%q %s: a speaker in setup must stay held with no ceiling: hold=%v ceiling=%v",
+					src, c.name, hold, ceiling)
+			}
+		}
+	}
+	// Once the source has left setup the pass is free to run.
+	if hold, ceiling := forcedWriteHold("STANDBY", false, true, true, time.Time{}, now); hold || ceiling {
+		t.Fatalf("after setup the held pass must run: hold=%v ceiling=%v", hold, ceiling)
+	}
+	for _, src := range []string{"", "STANDBY", "UPNP", "LOCAL_INTERNET_RADIO", "BLUETOOTH"} {
+		if isSetupSource(src) {
+			t.Errorf("%q is not setup", src)
+		}
+	}
+}
+
+// The setup hold has no ceiling while the speaker has no network (it is being
+// provisioned or raising its own access point), and a ten-minute one once it
+// has a default gateway: a Portable that finished Bose's setup page, and #873
+// speakers, can keep reporting SETUP for good.
+func TestSetupWriteHoldCeilingOnlyOnceOnTheNetwork(t *testing.T) {
+	now := time.Now()
+
+	// No gateway: held however long, and the clock never starts.
+	for _, gw := range []string{"", "0.0.0.0"} {
+		hold, since := setupWriteHold(gw, now.Add(-time.Hour), now)
+		if !hold || !since.IsZero() {
+			t.Errorf("gw=%q: must hold with the clock reset: hold=%v since=%v", gw, hold, since)
+		}
+	}
+
+	// Gateway first seen now: the clock starts and the pass waits.
+	hold, since := setupWriteHold("192.0.2.1", time.Time{}, now)
+	if !hold || !since.Equal(now) {
+		t.Fatalf("first sight of a gateway must start the clock and hold: hold=%v since=%v", hold, since)
+	}
+	// Just below the ceiling: still held, clock kept.
+	if hold, s := setupWriteHold("192.0.2.1", since, now.Add(forcedSetupHoldCeiling-time.Second)); !hold || !s.Equal(since) {
+		t.Errorf("below the ceiling: hold=%v since=%v", hold, s)
+	}
+	// At the ceiling: the pass runs.
+	if hold, _ := setupWriteHold("192.0.2.1", since, now.Add(forcedSetupHoldCeiling)); hold {
+		t.Error("at the ceiling on a network the pass must run")
+	}
+	// The gateway drops away near the ceiling: held again and the clock
+	// restarts from zero when it comes back.
+	hold, s := setupWriteHold("", since, now.Add(forcedSetupHoldCeiling-time.Second))
+	if !hold || !s.IsZero() {
+		t.Fatalf("losing the gateway must hold and reset: hold=%v since=%v", hold, s)
+	}
+	later := now.Add(forcedSetupHoldCeiling + time.Minute)
+	if hold, s := setupWriteHold("192.0.2.1", s, later); !hold || !s.Equal(later) {
+		t.Errorf("a gateway back after a gap restarts the clock: hold=%v since=%v", hold, s)
+	}
+}
+
 func TestUserChosenSource(t *testing.T) {
 	for _, src := range []string{"AIRPLAY", "BLUETOOTH", "AUX", "SPOTIFY", "PRODUCT", "STORED_MUSIC", "SOMETHING_NEW"} {
 		if !userChosenSource(src) {

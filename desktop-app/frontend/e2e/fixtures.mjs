@@ -11,6 +11,7 @@
 //   ready       selector that means "booted" (null: the layout's default)
 //   preInit     an init script added BEFORE the mock (e.g. storage that throws)
 //   phoneLang, phoneView, phoneGrouped, phoneOverrides   for the phone fixture
+//   phonePresetRows, phoneRow2, phonePlaying   the second row of keys (phone-mock.mjs)
 //
 // Fixtures:
 //   app    boots the desktop frontend on the mock; { page, api, errors, scenario }
@@ -69,6 +70,9 @@ export const test = base.extend({
   phoneView: ['', { option: true }],
   phoneGrouped: [false, { option: true }],
   phoneOverrides: [{}, { option: true }],
+  phonePresetRows: [true, { option: true }],
+  phoneRow2: [false, { option: true }],
+  phonePlaying: [null, { option: true }],
 
   // Registered first, so every route added later wins over it.
   netGuard: [async ({ page, baseURL }, use) => {
@@ -105,13 +109,15 @@ export const test = base.extend({
     expect(errors, 'uncaught page errors').toEqual([]);
   },
 
-  phone: async ({ page, netGuard, phoneLang, phoneView, phoneGrouped, phoneOverrides }, use) => {
+  phone: async ({ page, netGuard, phoneLang, phoneView, phoneGrouped, phoneOverrides, phonePresetRows, phoneRow2, phonePlaying }, use) => {
     void netGuard;
-    const handler = phoneHandler({ ...loadPhoneAssets(), view: phoneView, grouped: phoneGrouped, overrides: phoneOverrides });
+    const handler = phoneHandler({
+      ...loadPhoneAssets(), view: phoneView, grouped: phoneGrouped, overrides: phoneOverrides,
+      presetRows: phonePresetRows, row2: phoneRow2, playing: phonePlaying,
+    });
     await page.addInitScript((lang) => {
       try {
         localStorage.setItem('str.remote.lang', lang);
-        localStorage.setItem('coachSeen', '1'); // the first-visit hint bubble
       } catch (e) {}
     }, phoneLang);
     // Owns every request: it serves the placeholder origin and aborts the rest.

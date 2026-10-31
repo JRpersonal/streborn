@@ -189,6 +189,89 @@ const (
 	OutcomeFailed    Outcome = "failed"
 )
 
+// Kinds of a failed press, a stable code next to the reason text so the app
+// can say what went wrong in the user's language instead of quoting Go error
+// text into a translated sentence.
+const (
+	// KindMasterUnresponsive: the main speaker (or the Bose web server on it)
+	// did not answer in time. Pressing again usually works.
+	KindMasterUnresponsive = "master-unresponsive"
+	// KindMemberUnresolved: a speaker of the template is not where the group
+	// remembers it (addresses changed); saving the group again fixes it.
+	KindMemberUnresolved = "member-unresolved"
+	// KindFormRefused: the main speaker refused to form the group.
+	KindFormRefused = "form-refused"
+	// KindDissolveFailed: the group could not be taken apart.
+	KindDissolveFailed = "dissolve-failed"
+	// KindOther: anything else.
+	KindOther = "other"
+)
+
+// errZoneRead prefixes a failed read of the main speaker's live zone.
+var errZoneRead = errors.New("read the main speaker's group")
+
+// kindError tags an error with its Kind without changing its text.
+type kindError struct {
+	kind string
+	err  error
+}
+
+func (e *kindError) Error() string { return e.err.Error() }
+func (e *kindError) Unwrap() error { return e.err }
+
+func withKind(kind string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &kindError{kind: kind, err: err}
+}
+
+// errorKind classifies a failed press for the app.
+func errorKind(err error) string {
+	if err == nil {
+		return ""
+	}
+	var ke *kindError
+	if errors.As(err, &ke) {
+		return ke.kind
+	}
+	msg := err.Error()
+	switch {
+	case slowAnswer(msg):
+		// "Press again" only helps a main speaker that answered too slowly.
+		// One that refused the connection, has no route or sits at another
+		// address gets the generic notice with its reason instead.
+		return KindMasterUnresponsive
+	case errors.Is(err, errZoneRead):
+		return KindOther
+	case strings.HasPrefix(msg, "dissolve:"):
+		return KindDissolveFailed
+	case strings.HasPrefix(msg, "form:"):
+		return KindFormRefused
+	}
+	return KindOther
+}
+
+// slowAnswer reports whether an error text says the speaker was reached but
+// answered too slowly: a timeout, or the agent's gateway error for a firmware
+// that did not answer it in time.
+func slowAnswer(msg string) bool {
+	for _, s := range []string{"is not answering", "deadline exceeded", "Client.Timeout", "i/o timeout",
+		"http 502", "http 503", "http 504"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// masterIsSelf reports whether the client reaches m over loopback, i.e. m is
+// this speaker. A client that cannot say counts as "not self".
+func masterIsSelf(c MasterClient, m Member) bool {
+	sc, ok := c.(interface{ IsSelf(Member) bool })
+	return ok && sc.IsSelf(m)
+}
+
 // toggleMinGap is the shortest distance between two presses of the same key
 // that both act. A form or dissolve takes seconds, and a double press is
 // almost always one intent.
@@ -205,6 +288,9 @@ type Action struct {
 	Template string    `json:"template,omitempty"`
 	Outcome  Outcome   `json:"outcome"`
 	Error    string    `json:"error,omitempty"`
+	// Kind classifies Error (one of the Kind* constants), so the app can
+	// explain a refused press in the user's language.
+	Kind string `json:"kind,omitempty"`
 }
 
 // Store is the NAND-persisted document plus the toggle state machine.
@@ -221,6 +307,16 @@ type Store struct {
 	inFlight map[string]bool
 	lastAt   map[string]time.Time
 	lastWarn map[string]time.Time
+	// formedBy remembers, per key, the template the key's last successful
+	// press formed (cleared by a dissolve, by another key's switch, and by a
+	// zone read that shows the group gone). It is what lets a press dissolve a
+	// group that formed without a member that was offline at the time; see
+	// templatePartlyLive. Memory only: after an agent restart the first press
+	// on such a group forms again, the next one dissolves.
+	formedBy map[string]string
+	// ignoredLogged marks a key whose ignored press (busy or too soon) was
+	// already logged since its last acting press, so a burst logs one line.
+	ignoredLogged map[string]bool
 
 	lastAction Action
 	lastError  Action
@@ -237,6 +333,9 @@ func Load(path string, logger *slog.Logger) (*Store, error) {
 		inFlight: map[string]bool{},
 		lastAt:   map[string]time.Time{},
 		lastWarn: map[string]time.Time{},
+		formedBy: map[string]string{},
+
+		ignoredLogged: map[string]bool{},
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -387,17 +486,29 @@ func (s *Store) Toggle(ctx context.Context, key string) Outcome {
 	}
 	s.togMu.Lock()
 	if s.inFlight[key] {
+		logIt := !s.ignoredLogged[key]
+		s.ignoredLogged[key] = true
 		s.togMu.Unlock()
-		s.logger.Debug("group key: press ignored, the previous one is still running", "key", key, "template", name)
+		// INFO once per press episode: a bundle has to show what became of
+		// each press, and "pressed" with no outcome read as a lost press.
+		if logIt {
+			s.logger.Info("group key: press ignored, the previous one is still running", "key", key, "template", name)
+		}
 		return OutcomeBusy
 	}
 	if last, ok := s.lastAt[key]; ok && time.Since(last) < toggleMinGap {
+		logIt := !s.ignoredLogged[key]
+		s.ignoredLogged[key] = true
 		s.togMu.Unlock()
-		s.logger.Debug("group key: press ignored (rate limit)", "key", key, "template", name)
+		if logIt {
+			s.logger.Info("group key: press ignored, too soon after the previous one", "key", key, "template", name,
+				"min_gap", toggleMinGap.String())
+		}
 		return OutcomeRateLimit
 	}
 	s.lastAt[key] = time.Now()
 	s.inFlight[key] = true
+	s.ignoredLogged[key] = false
 	s.togMu.Unlock()
 	defer func() {
 		s.togMu.Lock()
@@ -419,14 +530,61 @@ func (s *Store) Toggle(ctx context.Context, key string) Outcome {
 // act runs the state machine for one press; see Toggle.
 func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Template) (Outcome, error) {
 	live, err := client.LiveZone(ctx, tpl.Master)
+	unknown := false
 	if err != nil {
-		return OutcomeFailed, fmt.Errorf("read the main speaker's group: %w", err)
-	}
-	if templateLive(tpl, live) {
-		if err := client.Dissolve(ctx, tpl.Master); err != nil {
-			return OutcomeFailed, fmt.Errorf("dissolve: %w", err)
+		if !masterIsSelf(client, tpl.Master) {
+			return OutcomeFailed, fmt.Errorf("%w: %w", errZoneRead, err)
 		}
-		return OutcomeDissolved, nil
+		// THIS speaker leads the template and its own firmware did not say
+		// what group it is in (the Bose web server stalls for seconds at a
+		// time, 2026-10-27). Refusing the press here made the key dead for as
+		// long as the stall lasted. The key's own last press is the best guess
+		// of what is live: it formed this template -> dissolve, otherwise ->
+		// form. The form keeps its own probe of the main speaker as the gate.
+		s.logger.Info("group key: could not read this speaker's own group, going by the key's last press",
+			"key", key, "template", tpl.Name, "err", err)
+		unknown = true
+		live = LiveZone{}
+	}
+	if !unknown && !leads(tpl, live) {
+		// The template's main speaker leads no group, so whatever this key
+		// formed last has ended some other way (dissolved in the app, the
+		// main speaker went to standby, the other key switched groups). The
+		// memory must not outlive it: left set, a later press during a zone
+		// stall was taken for a dissolve and did nothing.
+		s.forgetFormed(key)
+	}
+	formedLast := s.formedLast(key, tpl.Name)
+	if templateLive(tpl, live) || (formedLast && templatePartlyLive(tpl, live)) {
+		return s.dissolve(ctx, client, tpl)
+	}
+
+	// readIdle asks whether the main speaker plays. Unknown counts as idle: a
+	// press that ends in silence is the complaint this feature exists to
+	// avoid. Logged, because a main speaker that cannot be read here usually
+	// cannot be formed either, and the form error alone does not say that
+	// came first.
+	readIdle := func() bool {
+		idle, ierr := client.Idle(ctx, tpl.Master)
+		if ierr != nil {
+			s.logger.Info("group key: could not read whether the main speaker is playing, assuming it is not",
+				"key", key, "template", tpl.Name, "err", ierr)
+			return true
+		}
+		return idle
+	}
+	idleKnown, idle := false, false
+	if unknown && formedLast {
+		// The zone could not be read, and the key formed this template last.
+		// That group may have ended since (dissolved in the app, the main
+		// speaker went to standby), so the memory alone does not dissolve: a
+		// main speaker that is asleep or idle almost never leads a live group
+		// (the firmware drops the zone when its leader goes to standby), so
+		// only a playing one is taken apart; an idle one forms.
+		idle, idleKnown = readIdle(), true
+		if !idle {
+			return s.dissolve(ctx, client, tpl)
+		}
 	}
 
 	// Another bound template live on a DIFFERENT main speaker: take it apart
@@ -445,22 +603,17 @@ func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Te
 			continue
 		}
 		s.logger.Info("group key: other group dissolved before switching", "key", key, "other", other.Name)
+		s.forgetFormedTemplate(other.Name)
 		outcome = OutcomeSwitched
 	}
 
 	// Ask before forming: the form itself wakes a standby main speaker, so
 	// after it the speaker is awake and idle either way, and only the
-	// before-picture says whether the press has to start the music.
-	idle, ierr := client.Idle(ctx, tpl.Master)
-	if ierr != nil {
-		// Unknown counts as idle: a press that ends in silence is the
-		// complaint this feature exists to avoid, and a resume on a speaker
-		// that already plays its own station is a no-op. Logged, because a
-		// main speaker that cannot be read here usually cannot be formed
-		// either, and the form error alone does not say that came first.
-		s.logger.Info("group key: could not read whether the main speaker is playing, assuming it is not",
-			"key", key, "template", tpl.Name, "err", ierr)
-		idle = true
+	// before-picture says whether the press has to start the music. Asked
+	// after the switch, because the main speaker may have been a follower of
+	// the group just taken apart.
+	if !idleKnown || outcome == OutcomeSwitched {
+		idle = readIdle()
 	}
 	deferred, ferr := client.Form(ctx, tpl)
 	if ferr != nil {
@@ -486,6 +639,14 @@ func (s *Store) act(ctx context.Context, client MasterClient, key string, tpl Te
 	return outcome, nil
 }
 
+// dissolve takes the template's group apart.
+func (s *Store) dissolve(ctx context.Context, client MasterClient, tpl Template) (Outcome, error) {
+	if err := client.Dissolve(ctx, tpl.Master); err != nil {
+		return OutcomeFailed, fmt.Errorf("dissolve: %w", err)
+	}
+	return OutcomeDissolved, nil
+}
+
 // otherBoundTemplates lists the templates bound to the OTHER keys whose main
 // speaker differs from tpl's.
 func (s *Store) otherBoundTemplates(key string, tpl Template) []Template {
@@ -505,14 +666,50 @@ func (s *Store) otherBoundTemplates(key string, tpl Template) []Template {
 	return out
 }
 
+// formedLast reports whether the last successful press of key formed the
+// template called name.
+func (s *Store) formedLast(key, name string) bool {
+	s.togMu.Lock()
+	defer s.togMu.Unlock()
+	return s.formedBy[key] != "" && strings.EqualFold(s.formedBy[key], name)
+}
+
+// forgetFormed drops what key formed last.
+func (s *Store) forgetFormed(key string) {
+	s.togMu.Lock()
+	defer s.togMu.Unlock()
+	delete(s.formedBy, key)
+}
+
+// forgetFormedTemplate drops the memory of every key that formed the template
+// called name last, for a group taken apart by another key's switch.
+func (s *Store) forgetFormedTemplate(name string) {
+	s.togMu.Lock()
+	defer s.togMu.Unlock()
+	for k, n := range s.formedBy {
+		if strings.EqualFold(n, name) {
+			delete(s.formedBy, k)
+		}
+	}
+}
+
 // finish records the outcome and writes the one log line per press.
 func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	a := Action{At: time.Now(), Key: key, Template: name, Outcome: outcome}
 	if err != nil {
 		a.Error = err.Error()
+		a.Kind = errorKind(err)
 	}
 	s.togMu.Lock()
 	s.lastAction = a
+	if err == nil {
+		switch outcome {
+		case OutcomeFormed, OutcomeDeferred, OutcomeSwitched:
+			s.formedBy[key] = name
+		case OutcomeDissolved:
+			delete(s.formedBy, key)
+		}
+	}
 	if err != nil {
 		s.lastError = a
 	}
@@ -530,7 +727,9 @@ func (s *Store) finish(key, name string, outcome Outcome, err error) Outcome {
 	case warnNow:
 		s.logger.Warn("group key: press failed", "key", key, "template", name, "err", err)
 	default:
-		s.logger.Debug("group key: press failed (warned recently)", "key", key, "template", name, "err", err)
+		// INFO, not DEBUG: a diagnostic bundle has to show every press's
+		// outcome, and a repeat failure was invisible there (2026-10-27).
+		s.logger.Info("group key: press failed again", "key", key, "template", name, "err", err)
 	}
 	return outcome
 }
@@ -554,13 +753,25 @@ func leads(tpl Template, live LiveZone) bool {
 // address, because a two-chip chassis is enrolled under its firmware id while
 // discovery announced its other MAC.
 func templateLive(tpl Template, live LiveZone) bool {
-	if !leads(tpl, live) {
-		return false
-	}
-	for _, want := range tpl.Members {
+	return leads(tpl, live) && containsAll(live.Members, tpl.Members)
+}
+
+// templatePartlyLive reports whether the live zone is what is left of the
+// template's group with some members missing: the template's main speaker
+// leads it, it has at least one follower, and every follower it has is a
+// template member. On its own that cannot tell "a member was offline when the
+// key formed the group" from "the user grouped two of the speakers by hand",
+// so act only counts it as live when this key formed this template last.
+func templatePartlyLive(tpl Template, live LiveZone) bool {
+	return leads(tpl, live) && len(live.Members) > 0 && containsAll(tpl.Members, live.Members)
+}
+
+// containsAll reports whether every speaker of want is in have.
+func containsAll(have, want []Member) bool {
+	for _, w := range want {
 		found := false
-		for _, have := range live.Members {
-			if sameSpeaker(want, have) {
+		for _, h := range have {
+			if sameSpeaker(w, h) {
 				found = true
 				break
 			}

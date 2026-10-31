@@ -157,7 +157,7 @@ func run() error {
 		logLevel        = flag.String("log-level", "info", "Log level: debug, info, warn, error")
 		boxHost         = flag.String("box-host", "127.0.0.1", "Bose box IP for UPnP calls (webui /api/play). 127.0.0.1 when the agent runs on the box, otherwise the LAN IP.")
 		regionFile      = flag.String("region-file", "", "Path to region.txt with the ISO country code (from the setup wizard). The default radio country and language are derived from it.")
-		pendingNameFile = flag.String("pending-name-file", "", "Path to name.txt from the setup wizard. Its contents are applied once as the box name, verbatim, and the file is deleted afterwards.")
+		pendingNameFile = flag.String("pending-name-file", "", "Path to name.txt from the setup wizard. Its contents are applied once as the box name (only the characters the firmware cannot handle are replaced) and the file is deleted afterwards.")
 		printVersion    = flag.Bool("version", false, "Print the version and exit")
 	)
 	flag.Parse()

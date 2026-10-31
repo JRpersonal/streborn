@@ -151,9 +151,27 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 		}
 	}
 
+	// 3. A key's own stream: copy that key. 4. Otherwise the stream itself.
+	p, kind, ref, refusal := s.playingStreamPreset(now)
+	if refusal != nil {
+		return HoldSaved{}, refusal
+	}
+	if ref == slot {
+		return HoldSaved{Slot: slot, Kind: kind, Name: p.Name, Unchanged: true}, nil
+	}
+	p.Slot = slot
+	return s.saveThroughPut(ctx, p, kind, false, ua, remote)
+}
+
+// playingStreamPreset is steps 3 and 4 of SavePlaying with the slot left
+// open: a copy of the key whose own stream plays (kind "copy", ref that key),
+// or the stream itself (kind "stream"), named and pictured from the agent's
+// record of the play when it matches. Shared with the tap+hold snapshot
+// (SnapshotPlaying), so both keep a stream the same way.
+func (s *Server) playingStreamPreset(now boxNowItem) (p presets.Preset, kind string, ref int, refusal *savePlayingRefusal) {
+	loc := now.Location
 	// 3. A key's own stream: copy that key, the speaker's name and art for it
 	// are only the proxy's.
-	ref := 0
 	if n, self := selfProxySlot(loc); self {
 		ref = n
 	}
@@ -164,14 +182,10 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 	if ref > 0 {
 		src, have := s.presets.Get(ref)
 		if !have {
-			return HoldSaved{}, &savePlayingRefusal{Code: "source-preset-empty",
+			return presets.Preset{}, "", 0, &savePlayingRefusal{Code: "source-preset-empty",
 				Message: "The key that is playing holds nothing to copy."}
 		}
-		if ref == slot {
-			return HoldSaved{Slot: slot, Kind: "copy", Name: src.Name, Unchanged: true}, nil
-		}
-		src.Slot = slot
-		return s.saveThroughPut(ctx, src, "copy", false, ua, remote)
+		return src, "copy", ref, nil
 	}
 
 	// 4. The stream itself.
@@ -205,10 +219,10 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 	}
 	stream = unwrapRawStreamProxy(stream)
 	if !isHTTPURL(stream) || isOwnProxyURL(stream) {
-		return HoldSaved{}, &savePlayingRefusal{Code: "nothing-saveable",
+		return presets.Preset{}, "", 0, &savePlayingRefusal{Code: "nothing-saveable",
 			Message: "What the speaker plays has no stream that can be kept on a key."}
 	}
-	p := presets.Preset{Slot: slot, Type: "radio", StreamURL: stream, Name: name, Art: art}
+	p = presets.Preset{Type: "radio", StreamURL: stream, Name: name, Art: art}
 	if recorded {
 		p.Homepage, p.Codec, p.Bitrate = lp.homepage, lp.codec, lp.bitrate
 		// No bitrate came with the play: the one the stream proxy measured
@@ -226,7 +240,7 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 	if p.Name == "" {
 		p.Name = savePlayingFallbackName(stream)
 	}
-	return s.saveThroughPut(ctx, p, "stream", false, ua, remote)
+	return p, "stream", 0, nil
 }
 
 // lastPlayMatches reports whether the agent's record of the play (recorded,
@@ -293,8 +307,8 @@ func (s *Server) handleSavePlaying(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<12, &req) {
 		return
 	}
-	if req.Slot < 1 || req.Slot > 6 {
-		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+	if !presets.ValidSlot(req.Slot) {
+		http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 		return
 	}
 	saved, err := s.SavePlaying(r, req.Slot)

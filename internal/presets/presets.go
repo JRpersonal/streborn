@@ -102,6 +102,32 @@ type Preset struct {
 	// folder again instead of only moving the host. Optional/additive: nil on
 	// every other type and on folder keys saved before this.
 	Folder *FolderRef `json:"folder,omitempty"`
+	// Track names the media-server object a single library track on a key
+	// was saved from: the server's UDN, the item's object id and the folder
+	// it sat in. Some servers hand out file URLs that only live as long as
+	// the server's session (Windows media sharing builds them around ids it
+	// renumbers on every restart, #919), so the stored StreamURL dies while
+	// the track has not moved. With the object id a recall whose URL no
+	// longer serves can ask the server for the track's current URL instead.
+	// Optional/additive: nil on every other type and on keys saved before
+	// this, which keep playing their stored URL exactly as before.
+	Track *TrackRef `json:"track,omitempty"`
+}
+
+// TrackRef identifies a single media-server track independently of its file
+// URL (Preset.Track).
+type TrackRef struct {
+	// ServerUDN is the media server's UPnP UDN ("uuid:...").
+	ServerUDN string `json:"server_udn,omitempty"`
+	// ObjectID is the item's ContentDirectory object id on that server.
+	ObjectID string `json:"object_id,omitempty"`
+	// ParentID is the container the item was listed in. A server that
+	// renumbered the item itself is searched there by Title.
+	ParentID string `json:"parent_id,omitempty"`
+	// Title is the item's title as the server gave it at save time. The
+	// preset's Name may have been renamed since, so the lookup by title
+	// uses this one.
+	Title string `json:"title,omitempty"`
 }
 
 // FolderRef identifies a media-server folder independently of its file
@@ -233,6 +259,11 @@ type PresetItem struct {
 	// Album is the track's album from the media server, shown with the artist
 	// next to the running song (#1033). Optional/additive like Artist.
 	Album string `json:"album,omitempty"`
+	// ObjectID is the track's ContentDirectory object id on the folder's
+	// server (Preset.Folder), so a folder whose file URLs died can be matched
+	// up track by track when it is browsed again (#919). Optional/additive:
+	// without it the tracks are matched by title.
+	ObjectID string `json:"object_id,omitempty"`
 }
 
 // MaxQueueItems bounds how many tracks a queue preset (Type=="queue") stores on
@@ -275,6 +306,7 @@ type rawPreset struct {
 	Items     []PresetItem `json:"items"`
 	Native    *NativeItem  `json:"native"`
 	Folder    *FolderRef   `json:"folder"`
+	Track     *TrackRef    `json:"track"`
 }
 
 // rawWrapper supports the object format {"presets": [...]}.
@@ -403,6 +435,7 @@ func normalize(in []rawPreset) []Preset {
 			Items:       p.Items,
 			Native:      p.Native,
 			Folder:      p.Folder,
+			Track:       p.Track,
 		})
 	}
 	return out

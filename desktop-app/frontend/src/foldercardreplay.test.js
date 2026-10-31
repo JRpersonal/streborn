@@ -71,8 +71,11 @@ describe('replaying a Recently-played folder card', () => {
 
   it('is asked before the single-track replay runs', () => {
     // The order is the fix. If PlayURL ran first the queue would be cleared.
+    // The upnp branch of a card's play button hands off to replayLibraryCard,
+    // which Favourites shares (#1605); the order lives there.
     const card = srcOf('wireCard');
-    const branch = card.slice(card.indexOf("} else if (c.source === 'upnp') {"));
+    expect(card.slice(card.indexOf("} else if (c.source === 'upnp') {"))).toContain('await replayLibraryCard(c, ');
+    const branch = srcOf('replayLibraryCard');
     const askedAt = branch.indexOf('if (await replayFolderCard(c, box)) return;');
     const playedAt = branch.indexOf('await replayLibraryTrack(');
     expect(askedAt).toBeGreaterThan(-1);

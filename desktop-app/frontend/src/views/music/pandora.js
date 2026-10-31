@@ -1,10 +1,11 @@
 // views/music/pandora.js: the Pandora station list of the search box (US services).
 
-import { PandoraStations, PlayPandoraStation, SaveNativePreset, USServicesStatus } from '../../api.js';
+import { PandoraStations, PlayPandoraStation, SavePandoraStationPreset, USServicesStatus } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
-import { $, escapeAttr, escapeHtml, showError, showToast, sleep } from '../../utils.js';
+import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
+import { keyNum } from '../../presetrows.js';
 import { showSlotPicker } from './picker.js';
 import { listButtonClick, syncSearchModeButtons } from './search.js';
 import { refreshStatus } from './status.js';
@@ -139,30 +140,15 @@ export function renderPandoraStations() {
   });
 }
 
-// playPandoraAndWait starts the station unless it already plays and waits
-// until the speaker reports it. The key is saved from the speaker's own
-// now-playing (SaveNativePreset), so it has to be the station on the key.
-async function playPandoraAndWait(s) {
-  const box = state.currentBox;
-  try { await refreshStatus(); } catch {}
-  if (state.nowLocation === s.location) return;
-  await PlayPandoraStation(box.host, box.port, s.location, s.name, s.type);
-  for (let i = 0; i < 12; i++) {
-    await sleep(1000);
-    try { await refreshStatus(); } catch {}
-    if (state.nowLocation === s.location) return;
-  }
-}
-
+// The key is saved from the station item the list carried, so the station is
+// not started first (#1595); a save from the Library does not play either.
 export function openPandoraPick(s) {
   showSlotPicker({
     title: t('preset.assignStationTitle'),
     subtitle: s.name + ' (Pandora)',
     onPick: async (slot) => {
-      showToast(t('pandora.savePlayingFirst', { name: s.name }));
-      await playPandoraAndWait(s);
-      await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, s.name);
-      showToast(t('preset.savedToKey', { n: slot, name: s.name }));
+      await SavePandoraStationPreset(state.currentBox.host, state.currentBox.port, slot, s.name, s.location, s.type || '', s.art || '');
+      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: s.name }));
     },
   });
 }

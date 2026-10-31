@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,15 +109,28 @@ func Load(path string) (*Store, error) {
 		Recent []Entry `json:"recent"`
 	}
 	if err := json.Unmarshal(b, &wrap); err == nil && wrap.Recent != nil {
-		s.data = capTail(collapse(wrap.Recent))
+		s.data = capTail(collapse(heal(wrap.Recent)))
 		return s, nil
 	}
 	var arr []Entry
 	if err := json.Unmarshal(b, &arr); err == nil {
-		s.data = capTail(collapse(arr))
+		s.data = capTail(collapse(heal(arr)))
 		return s, nil
 	}
 	return s, fmt.Errorf("recent parse: unknown format in %s", path)
+}
+
+// heal corrects rows an older agent wrote with the wrong source. A spotify:
+// URI is never a radio stream, yet the play-a-URL path used to file one under
+// "radio" when a client pushed it there, and the fold then kept that label for
+// the real Spotify recalls of the same card. Such a row is a Spotify card.
+func heal(in []Entry) []Entry {
+	for i := range in {
+		if in[i].Source == "radio" && strings.HasPrefix(in[i].CardKey, "spotify:") {
+			in[i].Source = "spotify"
+		}
+	}
+	return in
 }
 
 // capTail keeps only the newest maxEntries of in (which is oldest-first).
@@ -183,7 +197,13 @@ func (s *Store) Add(e Entry) {
 
 	if n := len(s.data); n > 0 {
 		last := &s.data[n-1]
-		if last.CardKey == e.CardKey {
+		// A row only folds into the newest one when both the card AND its
+		// source match. The same key under another source is a new session
+		// that replaces the old one: a Spotify playlist once filed as "radio"
+		// (a spotify: URI pushed through the play-a-URL path) otherwise kept
+		// that label for every later key recall, because the fold never
+		// touched Source.
+		if last.CardKey == e.CardKey && last.Source == e.Source {
 			// Fold into the current row unless this is a genuinely new, distinct
 			// track: a card-start placeholder (last.Track == "") gets filled, a
 			// repeat or a metadata-only refresh updates in place. Only when both

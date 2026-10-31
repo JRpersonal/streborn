@@ -16,6 +16,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
+	"github.com/JRpersonal/streborn/internal/dnsboot"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -41,6 +42,22 @@ const webhookPlaceholderName = "Webhook"
 // The fix is to keep something in the slot so the firmware treats the key as
 // assigned and reports the press; the replace-mode branch in OnPresetSelected
 // then withholds the playback, which is exactly what the mode promised.
+// boxRowPresets returns the presets that belong on the speaker's own keys:
+// row 1, slots 1..6. The second row (7..12, #1110) lives only in STR's store
+// and is reached by a double press, so every pass that maps the store onto
+// the speaker's preset list starts from this, never from store.All(): a
+// row-2 slot counted as "missing on the box" would be re-written (and
+// refused) on every pass, forever.
+func boxRowPresets(all []presets.Preset) []presets.Preset {
+	out := make([]presets.Preset, 0, len(all))
+	for _, p := range all {
+		if presets.IsBoxSlot(p.Slot) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
 	slots := wh.ReplacePresetSlots()
 	if len(slots) == 0 {
@@ -264,8 +281,8 @@ func initialSyncShouldStandDown() bool {
 
 func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
 	time.Sleep(30 * time.Second)
-	specs := make([]boxcli.PresetSpec, 0, 6)
-	for _, p := range store.All() {
+	specs := make([]boxcli.PresetSpec, 0, presets.BoxSlots)
+	for _, p := range boxRowPresets(store.All()) {
 		if p.IsNative() {
 			// A Pandora or iHeartRadio key is the speaker's own item; the
 			// reconcile writes it back if the speaker lost it (nativeslots.go).
@@ -383,6 +400,13 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// on (#1035), "" when it is not. It keeps the hold line to one per source
 	// and lets the release say what was protected.
 	userHeldSrc := ""
+	// setupHeldSrc is the setup source the forced pass was held on, "" when
+	// it was not. One hold line per stretch in setup, and the release names it.
+	setupHeldSrc := ""
+	// setupNetSince is when the speaker, still in setup, was first seen with a
+	// default gateway in the current stretch; zero while it has none. Only that
+	// time counts towards forcedSetupHoldCeiling (see setupWriteHold).
+	var setupNetSince time.Time
 	// groupWakeHeld keeps the group-wake hold line to one per episode, the
 	// same way retryHoldLogged does for the playback hold.
 	groupWakeHeld := false
@@ -600,15 +624,45 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			}
 			startHoldLogged = false
 			userSrc := userChosenSource(src)
-			if userSrc {
+			setupSrc := isSetupSource(src)
+			if userSrc || setupSrc {
 				// The ceiling bounds a wait on STR's own playback only. Time
-				// spent on the listener's AirPlay or Bluetooth must not count
-				// towards it, or the moment they switch to an STR station the
-				// pass would write straight into it.
+				// spent on the listener's AirPlay or Bluetooth, or in the
+				// speaker's setup, must not count towards it, or the moment
+				// the speaker moves on to an STR station the pass would write
+				// straight into it.
 				forceHeldSince = time.Time{}
 			}
 			hold, ceilingHit := forcedWriteHold(src, playing, playKnown, everFullDone, forceHeldSince, time.Now())
+			setupHold := false
+			if setupSrc {
+				// One /proc/net/route read per retry, and only while a forced
+				// pass is held on a speaker in setup.
+				setupHold, setupNetSince = setupWriteHold(dnsboot.DefaultGateway(), setupNetSince, time.Now())
+			} else {
+				setupNetSince = time.Time{}
+			}
 			switch {
+			case setupSrc && setupHold:
+				// One line per stretch in setup, not per retry.
+				if setupHeldSrc == "" {
+					logger.Info("preset reconcile: forced pass held, the speaker is in setup; it runs once the speaker leaves setup",
+						"source", src, "firstPass", !everFullDone)
+				}
+				setupHeldSrc = src
+				forceHeld = true
+				time.Sleep(forcedPlayHoldRetry)
+				continue
+			case setupSrc:
+				// The speaker is on the network and has still not left setup
+				// after the setup ceiling: a Portable that finished Bose's
+				// setup page keeps reporting SETUP, and so do #873 speakers.
+				// Waiting longer would leave its keys unregistered for good.
+				logger.Warn("preset reconcile: forced pass ran anyway, the speaker has had a network for the whole setup ceiling but still reports setup",
+					"source", src, "ceiling", forcedSetupHoldCeiling.String(),
+					"onNetworkFor", time.Since(setupNetSince).Round(time.Second).String())
+				setupNetSince = time.Time{}
+				setupHeldSrc = "" // it has not left setup; no release line
 			case hold && userSrc:
 				// One line per source, not per retry: a held pass re-reads the
 				// box every 30 s for as long as the session lasts.
@@ -686,6 +740,11 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			}
 			ceilingListedLogged = false
 			forceKeysDead = false
+			if setupHeldSrc != "" {
+				logger.Info("preset reconcile: the speaker left setup, running the held pass",
+					"heldOn", setupHeldSrc, "source", src)
+				setupHeldSrc = ""
+			}
 			if userHeldSrc != "" {
 				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
 					"heldOn", userHeldSrc, "source", src)
@@ -858,6 +917,12 @@ const userPlayStartHoldRetry = 5 * time.Second
 // while his PC was searching for it. So the source NAME decides too, exactly as
 // it has for the insurance pass since 2026-08-02.
 func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
+	if isSetupSource(src) {
+		// No playback ceiling and no first-pass exception: see isSetupSource.
+		// The setup hold has its own ceiling, setupWriteHold, which only runs
+		// once the speaker is on a network.
+		return true, false
+	}
 	if !forcedWriteBusy(src, playing, playKnown) {
 		return false, false
 	}
@@ -875,6 +940,47 @@ func forcedWriteHold(src string, playing, playKnown, everFullDone bool, heldSinc
 		return false, true
 	}
 	return true, false
+}
+
+// isSetupSource reports whether the speaker is in its setup: the SETUP source
+// or any of the SETUP_* family. A forced pass is never written into it, however
+// long it has been held. A preset write makes the firmware touch its source,
+// and a speaker in setup is either being provisioned by the person at it
+// (Bose's setup page) or raising its own setup access point because it has no
+// network; the write helps neither and can end the setup. Field case,
+// Series-I ST20 2026-10-28: "forced pass ran anyway, the hold ceiling passed
+// ... source=SETUP heldFor=5m1s". The pass runs once the source leaves setup;
+// the leave-setup watcher clears a merely stuck SETUP source within seconds,
+// so a networked speaker is not held for long. Where the source stays SETUP on
+// a speaker that is already on the network, setupWriteHold ends the wait.
+func isSetupSource(src string) bool {
+	return strings.HasPrefix(src, "SETUP")
+}
+
+// forcedSetupHoldCeiling bounds how long a forced pass waits on a speaker that
+// reports a setup source while it HAS a default gateway. A Portable that
+// finished Bose's setup page can keep reporting SETUP (its /setup stays at
+// SETUP_AP_OOB), and so can a #873 speaker; without a ceiling its hardware
+// keys would never be registered. Ten minutes leaves room for someone still
+// working through the setup page after the speaker joined.
+const forcedSetupHoldCeiling = 10 * time.Minute
+
+// setupWriteHold decides whether a forced pass on a speaker in setup keeps
+// waiting. gateway is the IPv4 default gateway ("" or "0.0.0.0" for none),
+// netSince is when the speaker was first seen with a gateway in this stretch of
+// setup (zero for not yet), and the updated value is returned for the next
+// call. Without a gateway the speaker is being provisioned or is raising its
+// own access point for lack of a network, and the hold has no ceiling: the
+// clock restarts every time the gateway goes away. With one, the hold ends
+// forcedSetupHoldCeiling after the gateway was first seen.
+func setupWriteHold(gateway string, netSince, now time.Time) (hold bool, since time.Time) {
+	if gateway == "" || gateway == "0.0.0.0" {
+		return true, time.Time{}
+	}
+	if netSince.IsZero() {
+		netSince = now
+	}
+	return now.Sub(netSince) < forcedSetupHoldCeiling, netSince
 }
 
 // userChosenSource reports whether src is a source the listener picked outside
@@ -958,7 +1064,7 @@ func keysMissingOnBox(store *presets.Store, boxHost string, wh *webhooks.Store) 
 	if err != nil {
 		return nil, err
 	}
-	stick := store.All()
+	stick := boxRowPresets(store.All())
 	return slotsMissingOnBox(stick, webhookOnlySlots(wh, stick), entries), nil
 }
 
@@ -981,7 +1087,7 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 		want[slot] = true
 	}
 	var missing []int
-	for slot := 1; slot <= 6; slot++ {
+	for slot := 1; slot <= presets.BoxSlots; slot++ {
 		if want[slot] && !listed[slot] {
 			missing = append(missing, slot)
 		}
@@ -990,7 +1096,7 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 }
 
 func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
-	stick := store.All()
+	stick := boxRowPresets(store.All())
 	// Keys configured as "webhook only" need a placeholder even when the store
 	// is completely empty, which is the shape the second #536 reporter was in:
 	// no presets anywhere, six dead keys, and a webhook that could never fire.
@@ -1395,7 +1501,7 @@ func fetchBoxPresetsFull(boxHost string) ([]boxPresetEntry, error) {
 	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {
 		slot := 0
 		fmt.Sscanf(blk[1], "%d", &slot)
-		if slot < 1 || slot > 6 {
+		if !presets.IsBoxSlot(slot) {
 			continue
 		}
 		e := boxPresetEntry{Slot: slot}

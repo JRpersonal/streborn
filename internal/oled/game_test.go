@@ -114,6 +114,64 @@ func TestBlockfallFrameFits(t *testing.T) {
 	}
 }
 
+// The games' words and scores are smooth text like the rest of the panel
+// (the blocks, aliens and ships stay pixel art): anti-aliased, and inside
+// the boxes the layout gives them.
+func TestGameTextIsSmooth(t *testing.T) {
+	bf := NewBlockfall(4)
+	bf.Score, bf.best = 1234, 5678
+	buf := make([]byte, FrameSize)
+	bf.Frame(buf)
+	const hud = bfX0 - 4
+	for _, box := range []struct {
+		name       string
+		y, h, lvl  int
+		minLit, x0 int
+	}{
+		{"NEXT", 0, 9, 6, 20, 0},
+		{"BEST", 50, 9, 6, 20, 0},
+		{"best score", 61, 10, 9, 20, 0},
+		{"SCORE", 74, 9, 6, 20, 0},
+		{"score", 86, 14, 15, 40, 0},
+	} {
+		if litIn(buf, box.x0, box.y, hud, box.h) < box.minLit {
+			t.Errorf("blockfall %s not drawn", box.name)
+		}
+		if greyIn(buf, box.x0, box.y, hud, box.h, byte(box.lvl)) == 0 {
+			t.Errorf("blockfall %s has no anti-aliased pixels", box.name)
+		}
+	}
+	if litIn(buf, hud, 0, 2, Height) != 0 {
+		t.Error("blockfall HUD text runs into the board's border")
+	}
+	bf.Over, bf.Score = true, 9876
+	bf.Frame(buf)
+	if greyIn(buf, bfX0+3, 39, bfW*bfCell-6, 42, 15) == 0 {
+		t.Error("blockfall GAME OVER / NEW BEST plate has no anti-aliased pixels")
+	}
+	bf.Score = 123456 // too wide for the large face: the small one
+	bf.Frame(buf)
+	if litIn(buf, 0, 86, hud, 14) < 20 || litIn(buf, hud, 86, 2, 14) != 0 {
+		t.Error("a six-digit blockfall score does not fit the HUD column")
+	}
+
+	sg := NewStarguard(5)
+	sg.Score = 1230
+	sg.banner = 0
+	sg.Frame(buf)
+	if greyIn(buf, 0, 0, 40, sgHUDBase+1, 15) == 0 {
+		t.Error("starguard score has no anti-aliased pixels")
+	}
+	if litIn(buf, 0, sgTop-2, 40, 1) > 40 {
+		t.Error("starguard score runs into the HUD line")
+	}
+	sg.over, sg.best = true, 900
+	sg.Frame(buf)
+	if greyIn(buf, 11, 23, Width-22, 59, 15) < 40 {
+		t.Error("starguard end screen has no anti-aliased text")
+	}
+}
+
 func TestEggCodes(t *testing.T) {
 	now := time.Now()
 	for _, g := range Games {

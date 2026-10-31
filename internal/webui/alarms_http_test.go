@@ -82,7 +82,7 @@ func TestAlarmsEndpointRejectsWithTheMessage(t *testing.T) {
 		want string
 	}{
 		{"no days", `{"alarms":[{"id":"a","enabled":true,"hour":6,"minute":30,"days":[],"slot":3}]}`, "at least one day"},
-		{"bad slot", `{"alarms":[{"id":"a","enabled":true,"hour":6,"minute":30,"days":[1],"slot":9}]}`, "preset 1 to 6"},
+		{"bad slot", `{"alarms":[{"id":"a","enabled":true,"hour":6,"minute":30,"days":[1],"slot":13}]}`, "preset 1 to 12"},
 		{"bad zone", `{"zone":"Mars/Olympus","alarms":[]}`, "unknown time zone"},
 	}
 	for _, tc := range tests {

@@ -419,10 +419,10 @@ path: the box's UPnP renderer pulls from the agent's stream proxy
 (`/stream/...`, `/spotify/stream.ogg`) or directly from a radio CDN. No
 source ever depends on the dead Bose cloud.
 
-**In progress.** Two more sources reuse this pattern: **podcasts**
-(search, play, subscribe-a-show-to-a-preset; design in #215) and
-**Deezer** (read and create Deezer presets; see [`ROADMAP.md`](./ROADMAP.md)).
-SoundCloud (#241), SiriusXM (#242), and Pandora (#243) are at feasibility.
+**Wishes.** More sources would reuse this pattern: podcasts (#1167),
+Deezer (#1239), SoundCloud (#1122) and SiriusXM (#997) are in the Ideas
+list, ordered by votes. Pandora and iHeartRadio play through the speaker's
+own clients instead (see [`streaming/us-services.md`](streaming/us-services.md)).
 Each runs through a bridge STR controls and hands the box a stream URL,
 never a cloud credential.
 
@@ -822,7 +822,7 @@ sequenceDiagram
   App->>App: compare remote version to running
   alt remote is newer
     App->>App: show "update available" banner
-    Note over App,GH: today the banner links to the release.<br/>Planned (#71): in-app download + sha256 verify + relaunch
+    Note over App,GH: the app downloads the asset, checks its sha256<br/>and replaces itself (Windows, Linux, and the .app bundle on macOS)
   end
 ```
 

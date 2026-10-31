@@ -31,12 +31,12 @@ const sleepNoticeMax = 30 * time.Second
 
 // SleepSet: the sleep timer now runs for minutes.
 func SleepSet(minutes int) Notice {
-	return keyNotice(NoticeSleep, iconMoon, 0, "SLEEP "+strconv.Itoa(minutes), "MINUTES", sleepNoticeHold, 2)
+	return keyNotice(NoticeSleep, iconMoon, 0, "SLEEP "+strconv.Itoa(minutes), "Minutes", sleepNoticeHold, 2)
 }
 
 // SleepOff: the sleep timer was switched off.
 func SleepOff() Notice {
-	return keyNotice(NoticeSleep, iconMoon, 0, "SLEEP OFF", "TIMER CANCELLED", sleepNoticeHold, 2)
+	return keyNotice(NoticeSleep, iconMoon, 0, "SLEEP OFF", "Timer cancelled", sleepNoticeHold, 2)
 }
 
 // NoticeSnooze is a snoozed alarm's notice (internal/webui alarmsnooze.go).
@@ -49,7 +49,7 @@ const snoozeNoticeHold = 4 * time.Second
 // Snooze: a ringing alarm was snoozed and rings again at until, already
 // formatted as the alarm's local "15:04".
 func Snooze(until string) Notice {
-	return keyNotice(NoticeSnooze, iconMoon, 0, "SNOOZE", "UNTIL "+until, snoozeNoticeHold, 2)
+	return keyNotice(NoticeSnooze, iconMoon, 0, "SNOOZE", "Until "+until, snoozeNoticeHold, 2)
 }
 
 // supersedes reports whether n may take over from a notice of kind last
@@ -209,20 +209,34 @@ func (c canvas) moonIcon(x, y, lvl int) {
 }
 
 // bigMoon is the sleep notice's symbol: a crescent filling the 32x32 icon
-// box, with two small stars beside it.
+// box, with two small stars beside it. Like moonIcon it is drawn with 4x4
+// samples a pixel, so its curves are shaded like the text under it rather
+// than stepped.
 func (c canvas) bigMoon() {
-	const cx, cy, r = iconX + 15, iconY + 17, 13
-	const ox, oy, or = iconX + 23, iconY + 10, 11
-	for y := cy - r; y <= cy+r; y++ {
-		for x := cx - r; x <= cx+r; x++ {
-			dx, dy := x-cx, y-cy
-			if dx*dx+dy*dy > r*r+r {
-				continue
+	const (
+		cx, cy, r  = iconX + 15.5, iconY + 17.5, 13.5
+		ox, oy, or = iconX + 23.5, iconY + 10.5, 11.5
+		ss         = 4
+	)
+	for py := int(cy - r - 1); py <= int(cy+r+1); py++ {
+		for px := int(cx - r - 1); px <= int(cx+r+1); px++ {
+			n := 0
+			for sy := 0; sy < ss; sy++ {
+				for sx := 0; sx < ss; sx++ {
+					fx := float64(px) + (float64(sx)+0.5)/ss
+					fy := float64(py) + (float64(sy)+0.5)/ss
+					if (fx-cx)*(fx-cx)+(fy-cy)*(fy-cy) > r*r {
+						continue
+					}
+					if (fx-ox)*(fx-ox)+(fy-oy)*(fy-oy) <= or*or {
+						continue
+					}
+					n++
+				}
 			}
-			if ex, ey := x-ox, y-oy; ex*ex+ey*ey <= or*or+or {
-				continue
+			if n > 0 {
+				c.px(px, py, (15*n+ss*ss/2)/(ss*ss))
 			}
-			c.px(x, y, 15)
 		}
 	}
 	// two stars: small plus signs in the cut-out's sky

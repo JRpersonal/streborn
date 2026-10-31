@@ -31,8 +31,8 @@ All request and response bodies are JSON.
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
-| `POST` | `/api/play` | `{"url":"https://...","title":"...","mime":"audio/mpeg"}` | Play any stream URL. `title`, `icon`, `mime` are optional. |
-| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`6`. |
+| `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. `codec` is the station codec (`MP3`, `AAC`, `AAC+`); an HE-AAC stream without it can play silence. Do not send `mime` for a stream: it marks a music-library file and hands the URL straight to the speaker. |
+| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
 | `POST` | `/api/stop` | - | Stop. |
@@ -58,12 +58,14 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/presets` | - | The STR preset store (what the six slots point at). |
-| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on key `N` to key `M` (1-6), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
-| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on key `N` (1-6): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
-| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename key `1`-`6`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
-| `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them. |
-| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). |
+| `GET`  | `/api/presets` | - | The STR preset store (what the twelve slots point at). |
+| `PUT`  | `/api/presets` | `[{...},...]` | Write a whole set (at most 12, slots 1-12) in one go; slots the set does not name are left alone. |
+| `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`12`. |
+| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-12, also between the rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
+| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`12`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
+| `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
+| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so the second row is not reachable here; use `/api/play/<slot>`. |
 
 `POST /api/play/<slot>` is usually what you want to start a preset from
 automation; `presets/recall` mirrors a physical button press.
@@ -72,7 +74,35 @@ A station lives on one key at a time. Saving one that is already on another
 key is refused with `409` and `{"code":"already-on-slot","slot":N,"name":"..."}`,
 because clearing that other key without being asked is how presets got lost.
 `POST /api/box/preset-move` is the explicit way to do it: it writes the new key
-and frees the old one in a single store write.
+and frees the old one in a single store write. The rule spans both rows, so the
+`slot` in that answer can be `7`-`12`.
+
+### The second row (slots 7-12)
+
+Slots `7`-`12` are a second row of six presets: slot `6+n` is preset key `n`
+pressed twice quickly. The agent stores them exactly like `1`-`6` and every
+preset endpoint above, the alarms and `/api/play/<slot>` accept them. They
+never reach the speaker's own preset list (its keys are 1 to 6), so
+`/api/box/presets` and `/api/box/presets/recall` stay at 1-6, and a row-2 slot
+plays the way `/api/play/<slot>` plays any slot (`/stream/7`-`/stream/12`,
+`/spotify/stream-7.ogg`-`stream-12.ogg`). An agent that has the second row
+reports `"presetRows":"2"` in `/api/agent/version`; an older one has no such
+key and answers `400` for slot 7 and up.
+
+On the speaker itself, tapping key `n` and then holding it down (press it a
+second time within a moment and keep it down until the display says
+`SAVED 2X n`) stores what played just before the tap on slot `6+n` and plays
+it. The tap still starts key `n`'s own station for a moment; that cannot be
+prevented. Key `n` (row 1) is never changed by this gesture, neither by STR
+nor by the speaker's own hold-to-store. Radio, Spotify, a library song or
+folder and the speaker's own services are kept the way a plain hold keeps
+them. If nothing that can be kept played (standby, AUX, Bluetooth), nothing
+is stored and the display says `NOT SAVED`. If the item already sits on
+another slot it is not stored a second time: the display says where it sits
+(`ON KEY m` or `ON 2X m`) and that slot plays. A key combination (for example
+1 and volume down) is never this gesture. In a zone or stereo pair the gesture
+needs the speaker's key trace, as the double press does. There is no endpoint
+for the gesture; its result is an ordinary preset on slot `6+n`.
 
 ## Pandora stations
 
@@ -93,6 +123,21 @@ the speaker and `{"code":"not-linked"}` when it lists no Pandora account, and
 with `PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`: the agent
 takes the item from what the speaker plays.
 
+## Favourites
+
+The starred stations the desktop app keeps and the phone remote shows. The
+desktop app owns the list: it pushes the whole list to every speaker whenever
+it changes, and it learns a removal or addition made elsewhere only from the
+speaker's notes.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/favorites` | - | The list: `[{"stationuuid","name","url","url_resolved","codec","bitrate","favicon","country","homepage","source","mime","durationSec"}]`. A favourite's key is `stationuuid`, else `name\|url`. |
+| `DELETE` | `/api/favorites?id=<key>` | - | Remove one favourite. This is the call for a remote app. It writes a removal note, hands the removal on to every other STR speaker, and the desktop app takes the favourite off its own list within seconds. |
+| `POST`   | `/api/favorites` | one favourite: `{"stationuuid","name","url","url_resolved",...}` | Add one favourite. This is the call for a remote app. `name` and an http(s) `url` or `url_resolved` are required. It stores the favourite, writes an addition note, hands it on to every other STR speaker, and the desktop app stars it within seconds. Answers `{"ok":true,"added":<bool>,"id":"<key>"}`; `added` is false when the speaker already had it. |
+| `GET`    | `/api/favorites?removed=1` | - | The notes: `{"removed":[{"id","at"}],"added":[{"id","at","fav"}]}`. An addition note lasts until the desktop app has taken the favourite over. |
+| `PUT`    | `/api/favorites` | the whole list | The desktop app's sync. Do not use it to add or remove a favourite: a changed list writes no note, so the desktop app undoes it with its next push and the other speakers never hear of it. |
+
 ## Alarm clock
 
 | Method | Path | Body | Notes |
@@ -102,7 +147,7 @@ takes the item from what the speaker plays.
 
 An alarm is
 `{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
-`days` are weekdays with `0` = Sunday, `slot` is a preset 1-6, `volume` is
+`days` are weekdays with `0` = Sunday, `slot` is a preset 1-12, `volume` is
 1-100 or `0` to leave the speaker's own level alone, `autoOff` switches the
 speaker off that many minutes after the alarm starts (1-720, or `0` for never),
 and `snooze` is how many minutes a snoozed alarm stays quiet (`5`, `9`, `10` or
@@ -156,7 +201,25 @@ alone.
 | `POST`   | `/api/box/zone/volume` | `{"value":N}` or `{"ip":"...","value":N}` | Every member, or one of them. |
 
 The form body is
-`{"master":{"deviceID","ip"},"slaves":[{"deviceID","ip"}],"mode","permanent","defineOnly","stereo"}`.
+`{"master":{"deviceID","ip"},"slaves":[{"deviceID","ip"}],"mode","permanent","defineOnly","stereo","name"}`.
+
+### Stereo pair names
+
+The speakers hold a stereo pair's name, in the same pair record the Bose app
+reads and edits. Every client sees the same name that way, so set it there:
+
+- `name` in the form body (with `"stereo":true`) names a new pair. Left out or
+  blank, the pair is called `Stereo pair`.
+- `POST /api/box/zone/stereo-name` with `{"name":"..."}` renames a live pair.
+  Send it to BOTH members; each one holds its own copy of the record.
+- `GET /api/box/zone` reports the name as `stereo.name`, and
+  `GET /api/box/zone/volume` as `stereoName`.
+- `DELETE /api/box/zone?stereo=1` undoes the pair, and the name goes with it.
+  A pair formed again from the same two speakers starts as `Stereo pair`.
+
+The desktop app shows the speakers' name. It only falls back to a name of its
+own when the speakers carry the default, and it never writes that name back over
+`Stereo pair` (#1579).
 
 Two fields decide more than they look like they do.
 
@@ -177,10 +240,51 @@ shows a green tick over a group that is still playing.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, and `"presetRows":"2"` on an agent with the second preset row (slots 7-12). The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
+
+## Wi-Fi
+
+LAN-only, like every other call here, and refused from outside the private
+address ranges.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/box/wlan/networks` | - | The networks the speaker has stored (names in clear), the current one, `wired`, and two previews: `forgetOthers` (`removable`, `code`) and `forgetAll` (`{"allowed":bool,"code":"..."}`, see `DELETE /api/box/wlan`). |
+| `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). |
+| `DELETE` | `/api/box/wlan` | `{"reboot":false}` (optional) | Forget the Wi-Fi altogether, for a speaker that should run on its network cable only (#969). See below. |
+| `POST`   | `/api/box/wlan/forget-others` | `{"reboot":false}` (optional) | Forget every stored network but the one the speaker is on. Wi-Fi speakers only. |
+
+`DELETE /api/box/wlan` only runs when the speaker is on a network cable AND the
+request reached it over that cable: its default route must leave through a
+live cable, and the address the request arrived on must belong to the cable
+interface. Without Wi-Fi a speaker that has no cable drops off the network for
+good, so everything else is refused with HTTP `409` and
+`{"status":"refused","code":"..."}`:
+
+| Code | Meaning |
+| ---- | ------- |
+| `not-wired` | The speaker is not on a network cable. |
+| `reached-over-wifi` | It is cabled, but this request came in over Wi-Fi. Call its cable address. |
+| `chassis-unsupported` | A BCO chassis (Portable, ST30 scm, ST20 spotty): its Wi-Fi chip doubles as `eth0`, so a cable cannot be told apart from Wi-Fi, and its network list (BoseApp's `AirplayConfiguration.xml` slots) has no verified removal path. Always refused there. |
+
+On the wpa chassis (sm2: ST10, ST20/ST30 sm2, ...) an accepted call clears the
+same stores a Wi-Fi change writes, and nothing else: every `<profile>` in the
+firmware's `NetworkProfiles.xml` (the rest of the file stays byte for byte),
+`/etc/wpa_supplicant.conf` rewritten in full with its global lines and no
+network block, the networks of the running `wpa_supplicant`, and STR's own
+records (`wlan-creds`, the intended-network record, the one-shot apply
+marker), so no boot path puts the network back. The answer counts what went
+(`firmwareRemoved`, `runningRemoved`, `confRewritten`, `strRecordsRemoved`,
+`removedTags`, never a network name). When the firmware store changed, the
+speaker restarts once (`"rebooting":true`) because its network manager reads
+that store at start only; pass `{"reboot":false}` to restart it yourself
+later. An unrecognised store shape answers `500` with
+`"code":"unexpected-store"` and changes nothing. A USB stick that still
+carries `wlan.conf` sets the network up again on the next boot, so take it
+out first.
 
 ## Display
 

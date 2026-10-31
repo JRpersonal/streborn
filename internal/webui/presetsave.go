@@ -87,13 +87,13 @@ func writePresetRefusal(w http.ResponseWriter, ref *presetRefusal) {
 }
 
 // presetUnavailable is the pair of answers every per-slot request gets
-// before its verb is looked at: no store, or a slot outside 1-6.
+// before its verb is looked at: no store, or a slot outside 1-12.
 func (s *Server) presetUnavailable(slot int) *presetRefusal {
 	if s.presets == nil {
 		return textPresetRefusal(http.StatusServiceUnavailable, "presets store not initialized")
 	}
-	if slot < 1 || slot > 6 {
-		return textPresetRefusal(http.StatusBadRequest, "invalid slot, must be 1-6")
+	if !presets.ValidSlot(slot) {
+		return textPresetRefusal(http.StatusBadRequest, invalidSlotMsg)
 	}
 	return nil
 }
@@ -120,6 +120,10 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 	// self-proxy stream heal below; the box side re-wraps at write time
 	// anyway, so the display loses nothing.
 	p.Art = healSelfArtProxy(p.Art)
+	// A library key saved from a listing this agent served (the phone page)
+	// gets the track's object id, so a server that renumbers its file URLs
+	// does not kill it (#919, libraryreresolve.go).
+	s.fillLibraryRefs(&p)
 	// A Pandora or iHeartRadio station (type native) is the speaker's own
 	// item and has no stream to gate; see nativeservice.go.
 	if p.Type == presets.TypeNative {
