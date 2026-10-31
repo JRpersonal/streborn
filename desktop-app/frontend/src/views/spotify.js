@@ -10,6 +10,7 @@ import { t } from '../i18n/index.js';
 import { BoxAgentVersion, BrowserOpenURL, SyncSpotifyLogin, SpotifyQuality, SetSpotifyQuality } from '../api.js';
 import { shell2Mounted } from '../shell2/mount.js';
 import { openSpeakers } from '../shell2/speakers/index.js';
+import { onStatesChange } from '../shell2/state.js';
 import { state } from '../state.js';
 import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
 import { qualityOptions, qualityStatusText } from '../spotifyquality.js';
@@ -180,9 +181,16 @@ function setSyncStatus(text, kind = '') {
 
 // syncButtonUi2 marks the copy-login button in the preview: with fewer than
 // two speakers it is aria-disabled (still focusable) and the reason is
-// visible text right under it, not a toast after the click.
+// visible text right under it, not a toast after the click. It follows the
+// speaker list while the view is open (a second speaker found meanwhile frees
+// the button), through the states' change hook, wired on first use.
+let followingSpeakers = false;
 function syncButtonUi2() {
   if (!shell2Mounted()) return;
+  if (!followingSpeakers) {
+    followingSpeakers = true;
+    onStatesChange(() => { if (state.view === 'spotify') syncButtonUi2(); });
+  }
   const btn = $('spotifySyncBtn');
   if (!btn) return;
   const boxes = (deps.strBoxes ? deps.strBoxes() : []) || [];
@@ -202,6 +210,9 @@ function syncButtonUi2() {
 // syncUi2 copies the Spotify login in the preview and reports in the line
 // under the button: the source speaker, how many took it, or why not.
 async function syncUi2(btn) {
+  if (btn.getAttribute('aria-busy') === 'true') return;
+  // The speaker list may have changed since the button was last marked.
+  syncButtonUi2();
   if (btn.getAttribute('aria-disabled') === 'true') return;
   const boxes = (deps.strBoxes ? deps.strBoxes() : []) || [];
   if (boxes.length < 2) { syncButtonUi2(); return; }
