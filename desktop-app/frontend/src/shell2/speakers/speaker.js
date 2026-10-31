@@ -85,6 +85,7 @@ import { inStereoPair, pairMemberBoxes, stereoPairsOf } from '../../groups.js';
 import { speakerTileState } from '../../speakertile.js';
 import { chipHTML, speakerChipKinds, speakerPillKind, statusPillHTML } from '../pill.js';
 import { SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, normalizeTab, tabIndexFor } from './routes.js';
+import { connectBusy, listStateNow, noSpeakersState } from '../state.js';
 import './speaker.css';
 
 const tabId = (tab) => `ui2SpkTab-${tab}`;
@@ -235,7 +236,7 @@ export function speakerFrameHTML(tab = SPEAKER_TABS[0]) {
     + '<p class="sps-meta" id="ui2SpkPageMeta"></p>'
     + '<p class="sps-state" id="ui2SpkPageState" hidden></p>'
     + '<p class="sps-half" id="ui2SpkPageHalf" hidden></p>'
-    + `<p class="sps-none" id="ui2SpkPageNone" hidden>${escapeHtml(t('ui2.speakers.none'))}</p>`
+    + `<div class="sps-none" id="ui2SpkPageNone" hidden>${escapeHtml(t('ui2.speakers.none'))}</div>`
     + '</div>'
     + '<div class="sps-head-actions" id="ui2SpkPageActions"></div>'
     + '</div>'
@@ -513,10 +514,29 @@ export function renderSpeakerPage(root, ctx = {}) {
     }
     half.hidden = !other;
   }
-  if (none) none.hidden = !!head;
+  if (none) {
+    none.hidden = !!head;
+    if (!head) paintPageState(none);
+  }
   if (tabs) {
     tabs.hidden = !head;
     if (head) tabs.setAttribute('aria-label', tabsLabel(head));
   }
   selectSpeakerTab(ctx.tab || activeTab);
+}
+
+// paintPageState is the page without a speaker (phase 5): no speaker on the
+// network yet (searching, none found, the search failed: Search again,
+// Connect by address, Add speaker), or speakers but none chosen (the way to
+// the sidebar's list and to All speakers). Repainted only when it changed,
+// and never under somebody typing an address.
+function paintPageState(el) {
+  const has = (state.boxes || []).some((b) => b && b.host);
+  const st = listStateNow();
+  const html = has
+    ? noSpeakersState('noneChosen', { id: 'spsState', body: t('ui2.state.pageChoose'), actions: ['allSpeakers', 'list'], level: 3 })
+    : noSpeakersState(st.phase, { id: 'spsState', error: st.error, actions: ['search', 'connect', 'add'], level: 3 });
+  if (el.dataset.sig === html || connectBusy(el)) return;
+  el.dataset.sig = html;
+  el.innerHTML = html;
 }

@@ -314,6 +314,7 @@ import {
   renderShellSpeakers,
   syncShellPlayer,
   mirrorShellBadges,
+  shellOfflinePick,
 } from './shell2/mount.js';
 import { playerOnScreen } from './statusrefreshscope.js';
 import { watchTabs } from './tabfit.js';
@@ -1746,6 +1747,14 @@ function safeMountShell2() {
       // Speakers > list: the classic single-speaker and update-all paths.
       doBoxUpdate,
       updateAllBoxes,
+      // Phase 5 (states): where the search stands (state.discovery, set in
+      // discoverBoxes) and Connect by address, the classic AddBoxByIP plus a
+      // search, so the speaker it finds joins the list.
+      discovery: () => state.discovery,
+      addBoxByIp: async (ip) => {
+        await AddBoxByIP(ip);
+        await discoverBoxes();
+      },
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not
@@ -1846,6 +1855,10 @@ function emptyStateOnScreen() {
 
 async function discoverBoxes() {
   const hadBoxes = state.boxes.length > 0;
+  // UI 2.0 states (shell2/state.js): where the search stands. A repeat keeps
+  // the answer of the last finished search in `last`, so the empty list does
+  // not toggle between two screens on every sweep. Read by the preview only.
+  state.discovery = { phase: 'searching', error: '', at: Date.now(), last: state.discovery ? (state.discovery.phase === 'searching' ? state.discovery.last : state.discovery) : null };
   if (!hadBoxes && !emptyStateOnScreen() && !manualIpInputBusy()) {
     // The FIRST search of a session, with nothing on screen yet: an explicit
     // message, so the user understands the app is doing something.
@@ -1878,6 +1891,7 @@ async function discoverBoxes() {
       } catch {}
     }
     const list = await DiscoverBoxes(4);
+    state.discovery = { phase: 'done', error: '', at: Date.now(), found: (list || []).length };
     applyBoxList(list || []);
     if (firewallSpeakersFound !== (list || []).length > 0) {
       firewallSpeakersFound = (list || []).length > 0;
@@ -1895,6 +1909,7 @@ async function discoverBoxes() {
     // new name via mDNS, search again every 4 s (driven by pendingNames).
     scheduleNextAutoRefresh();
   } catch (e) {
+    state.discovery = { phase: 'failed', error: String(e), at: Date.now() };
     // Do NOT overwrite the picker with the raw exception. That took the retry
     // button and the connect-by-IP field away with it, so a blocked first
     // discovery left nothing to press. Repaint the picker and put the
@@ -3196,6 +3211,9 @@ function renderBoxSelect() {
 async function pickBox(box, titleHint) {
   if (!box) return;
   if (box.offline) {
+    // UI 2.0 preview: no toast across the window; the speaker's own row says
+    // it is not reachable and that the search runs, then what came of it.
+    if (shell2Mounted() && shellOfflinePick(box, discoverBoxes())) return;
     const title = titleHint || (box.host ? offlineTitle(box) : '');
     showToast(title || t('speaker.offlineTooltip', { ago: '' }));
     discoverBoxes();

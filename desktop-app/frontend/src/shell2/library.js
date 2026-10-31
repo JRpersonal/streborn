@@ -25,6 +25,12 @@ import './library.css';
 import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../utils.js';
 import { KEYS_ICON, keyButtonHTML } from './keybtn.js';
+import { statusHTML } from './state.js';
+
+// The feedback line and the empty, loading and error states moved to
+// shell2/state.js (phase 5), shared by every view of the preview. Re-exported
+// here unchanged: the views and the tests import them from this file.
+export { loadingHTML, stateHTML, statusHTML } from './state.js';
 
 // The depth the first crumb stands for: the list of media servers, one step
 // above a server's own root (depth 0 of libState.stack).
@@ -84,16 +90,6 @@ export function countLine(nFolders, nTracks) {
   return parts.join(' · ');
 }
 
-// statusHTML is the feedback line of a row or of the folder actions. It is
-// always in the page, empty until there is news, so a screen reader hears it
-// change (role=status) without the row being redrawn. tone: busy, ok, warn or
-// error; the words say it, the colour only repeats them.
-export function statusHTML(key, st) {
-  const tone = (st && st.tone) || '';
-  const text = (st && st.text) || '';
-  return `<span class="lib2-status${tone ? ` lib2-status--${tone}` : ''}" role="status" data-skey="${escapeAttr(key)}">${escapeHtml(text)}</span>`;
-}
-
 // headerHTML is the top of the view on every level: the title, which speaker
 // plays what is started here, and the search across every media server.
 export function headerHTML({ speaker = '', search = null, fields = [] } = {}) {
@@ -136,30 +132,6 @@ export function trailHTML(crumbs) {
       ${back}
       <ol class="lib2-crumbs">${items}</ol>
     </nav>`;
-}
-
-// stateHTML is an empty, loading or error state that says what happened and
-// what to do next (docs/UI-2.0.md: no dead ends). actions: [{ id, label,
-// primary }]. An error is announced at once (alert); the rest politely.
-export function stateHTML({ tone = 'info', title = '', body = '', detail = '', actions = [], extra = '' } = {}) {
-  const role = tone === 'error' ? 'alert' : 'status';
-  const acts = actions.length
-    ? `<div class="lib2-state-acts">${actions.map((a) =>
-      `<button type="button" class="u-btn ${a.primary ? 'u-btn--primary' : 'u-btn--secondary'}" id="${escapeAttr(a.id)}">${escapeHtml(a.label)}</button>`).join('')}</div>`
-    : '';
-  return `
-    <div class="lib2-state lib2-state--${escapeAttr(tone)}" role="${role}">
-      ${title ? `<h3 class="lib2-state-title lib2-focus-target" tabindex="-1">${escapeHtml(title)}</h3>` : ''}
-      ${body ? `<p class="lib2-state-body">${escapeHtml(body)}</p>` : ''}
-      ${detail ? `<p class="lib2-state-detail">${escapeHtml(detail)}</p>` : ''}
-      ${extra}
-      ${acts}
-    </div>`;
-}
-
-// loadingHTML is a level that is on its way.
-export function loadingHTML(text) {
-  return `<p class="lib2-loading" role="status"><span class="lib2-spinner" aria-hidden="true"></span>${escapeHtml(text)}</p>`;
 }
 
 // levelHeadHTML is a level's own heading (focused after a step, so a screen

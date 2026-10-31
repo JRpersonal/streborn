@@ -1,0 +1,154 @@
+/* shell2/state.css: the states of the UI 2.0 preview (shell2/state.js).
+   Everything under html.ui2: the classic layout never matches a rule here. The
+   card variants are shell2.css's u-card--empty / --offline / --error; this
+   file only lays out what is inside them. Every state says itself in words
+   (the kicker and the heading); a border colour only repeats them. */
+
+html.ui2 .u-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+}
+html.ui2 .u-state-word {
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+html.ui2 .u-card--error .u-state-word { color: var(--u-danger); }
+html.ui2 .u-state-title {
+  margin: 0;
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+html.ui2 .u-state-title:focus { outline: none; }
+html.ui2 .u-state-title:focus-visible { outline: 2px solid var(--u-focus); outline-offset: 2px; }
+html.ui2 .u-state-body {
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+html.ui2 .u-state-detail { color: var(--u-muted); font-size: 13px; }
+html.ui2 .u-state-detail summary { cursor: pointer; min-height: 24px; }
+html.ui2 .u-state-error {
+  margin: 4px 0 0;
+  font-family: ui-monospace, "Consolas", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+html.ui2 .u-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 .u-state-act[aria-busy="true"] { cursor: progress; }
+
+/* Connect by address: the label above the field, the field and its button in
+   one row that wraps, the progress and the failure under them. */
+html.ui2 .u-connect { display: flex; flex-direction: column; gap: 4px; }
+html.ui2 .u-connect[hidden] { display: none; }
+html.ui2 .u-connect-label { color: var(--u-text); font-size: 13px; font-weight: 600; }
+html.ui2 .u-connect-row { display: flex; flex-wrap: wrap; gap: 8px; }
+html.ui2 .u-connect-input {
+  flex: 1 1 10em;
+  min-width: 0;
+  min-height: var(--u-target);
+  padding: 0 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font: inherit;
+  font-size: 14px;
+}
+html.ui2 .u-connect-input[aria-invalid="true"] { border-color: var(--u-danger); }
+html.ui2 .u-connect-status,
+html.ui2 .u-connect-error { margin: 0; font-size: 13px; }
+html.ui2 .u-connect-status { color: var(--u-muted); }
+html.ui2 .u-connect-error { color: var(--u-danger); }
+html.ui2 .u-connect-status:empty,
+html.ui2 .u-connect-error:empty { display: none; }
+
+/* A report in its own section (sectionReport). */
+html.ui2 .u-report { margin: 4px 0 0; font-size: 13px; color: var(--u-text); }
+html.ui2 .u-report[data-tone="ok"] { color: var(--u-ok); }
+html.ui2 .u-report[data-tone="warn"] { color: var(--u-warn); }
+html.ui2 .u-report[data-tone="error"] { color: var(--u-danger); }
+html.ui2 .u-report:empty { display: none; }
+
+/* The sidebar is narrow: the state card there is smaller and its buttons take
+   the whole width. */
+html.ui2 .ui2-spk .u-state {
+  margin: 4px 8px;
+  padding: 12px;
+  gap: 6px;
+}
+html.ui2 .ui2-spk .u-state-title { font-size: 14px; }
+html.ui2 .ui2-spk .u-state-body { font-size: 12px; }
+html.ui2 .ui2-spk .u-state-acts { flex-direction: column; }
+html.ui2 .ui2-spk .u-state-acts .u-btn { width: 100%; }
+html.ui2 .ui2-spk-summary { margin: 4px 8px 8px; }
+
+/* A note in a speaker row: what happened to it, under its name, with the next
+   step. role=alert only for a failure; the rest is said by the live region. */
+html.ui2 .ui2-spk-row.has-note { flex-wrap: wrap; }
+html.ui2 .ui2-spk-row > .ui2-spk-rownote {
+  flex: 1 0 100%;
+  margin: 0 8px 4px 16px;
+  color: var(--u-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+html.ui2 .ui2-spk-rownote[data-tone="error"] { color: var(--u-danger); }
+html.ui2 .ui2-spk-rownote[data-tone="warn"] { color: var(--u-warn); }
+html.ui2 .ui2-spk-row > .ui2-spk-note-act { margin: 0 8px 6px 16px; min-height: 32px; font-size: 13px; }
+html.ui2 .ui2-spk-attn { color: var(--u-warn); border-color: currentcolor; }
+
+/* The player without a live speaker: the line and its buttons. With an
+   offline speaker it sits next to what was playing. */
+html.ui2 .ui2-player-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+html.ui2 .ui2-player.is-offline .ui2-player-empty { grid-column: 2 / -1; justify-content: flex-end; }
+html.ui2 .ui2-player-state-text { margin: 0; }
+html.ui2 .ui2-player-state-acts { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+html.ui2 .ui2-player-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--u-danger);
+  font-size: 13px;
+}
+html.ui2 .ui2-player-status:empty { display: none; }
+
+/* The Speakers list and the one-speaker page without a speaker. */
+html.ui2 #view-speakers .u-state,
+html.ui2 #ui2SpkPage .u-state { margin-block: 8px 16px; }
+html.ui2 .spl-cannot-see .u-connect { flex: 1 1 100%; }
+html.ui2 .ui2-grp-two { margin-block: 8px; }
+html.ui2 .w2-search-result { margin: 8px 0 0; color: var(--u-text); font-size: 14px; }
+html.ui2 .w2-search-result:empty { display: none; }
+html.ui2 .w2-empty .u-connect { margin-top: 8px; max-width: 480px; }
+
+/* The classic "no speaker found" panel of the settings body: the page's own
+   state above it says the same and offers more. */
+html.ui2 #ui2SpkPage #settingsBody .empty-state:has(#settingsGoSetup) { display: none; }
+
+/* Toasts in the preview's colours: a polite status (mount.js), the words in
+   the surface's text colour, a plain border. */
+html.ui2 .toast {
+  background: var(--u-surface);
+  color: var(--u-text);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  font-family: var(--u-font);
+  font-size: 14px;
+}

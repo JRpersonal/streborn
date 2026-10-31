@@ -8,6 +8,7 @@ import { nowKeyTag } from '../../presetrows.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
+import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import { applyPositionReading, resetProgress } from '../../trackprogress.js';
@@ -38,7 +39,8 @@ export async function action(kind) {
       : kind === 'next' ? Next
         : kind === 'prev' ? Prev
           : Stop;
-  try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
+  const box = state.currentBox;
+  try { await fn(box.host, box.port); } catch (e) { transportFailed(kind === 'pause' || kind === 'resume' || kind === 'next' || kind === 'prev' ? kind : 'stop', e, box); }
   // Skip lands on a new track fast; poll a touch sooner so the title updates.
   setTimeout(refreshStatus, (kind === 'next' || kind === 'prev') ? 600 : 1000);
 }
@@ -48,8 +50,18 @@ export async function action(kind) {
 // new position / toggle state promptly.
 export async function queueAction(fn) {
   if (!state.currentBox) return;
-  try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
+  const box = state.currentBox;
+  try { await fn(box.host, box.port); } catch (e) { transportFailed('queue', e, box); }
   setTimeout(refreshStatus, 600);
+}
+
+// transportFailed is a transport or queue press the speaker refused. The UI
+// 2.0 preview says it in the player, naming the speaker (the report hook
+// mount.js sets); without the hook, the error dialog as always.
+function transportFailed(kind, e, box) {
+  const report = reportHook('transport');
+  if (report) report({ kind, error: e, box });
+  else showError(e);
 }
 
 // queueKeyFields joins the queue fields that pick the lit key besides the card,

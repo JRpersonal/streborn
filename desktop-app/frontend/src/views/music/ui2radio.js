@@ -29,6 +29,7 @@ import { putStationOnKey, showSlotPicker } from './picker.js';
 import { doRefilter, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
 import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
 import './ui2radio.css';
+import { noSpeakersState, onStatesChange, speakersPhase } from '../../shell2/state.js';
 
 let built = false;
 // The list the rows were drawn from, for the delegated row handler.
@@ -65,6 +66,14 @@ export function ensureUi2Radio() {
   title.className = 'ui2-radio-title';
   title.textContent = t('ui2.nav.radio');
   head.insertBefore(title, head.firstChild);
+  // Phase 5: the state of the speakers under the title (no speaker, none
+  // chosen, only Bose originals), filled by fillUi2RadioState.
+  const stateSlot = document.createElement('div');
+  stateSlot.id = 'ui2RadioState';
+  stateSlot.hidden = true;
+  head.parentNode.insertBefore(stateSlot, head.nextSibling);
+  onStatesChange(fillUi2RadioState);
+  fillUi2RadioState();
 
   // The hold hint is said once here, not on every tile (ui2radio.css hides
   // the tiles' own line), and Transfer sits at the end of the same row, so
@@ -500,4 +509,30 @@ function lockPicker(lock) {
   grid.querySelectorAll('.pick-slot').forEach((b) => {
     if (lock) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
   });
+}
+
+// fillUi2RadioState is the Radio view without a speaker to play on (phase 5,
+// no dead ends): no speaker yet (searching, none found, the search failed),
+// every speaker unreachable, speakers but none chosen (Go to the speaker
+// list), or only Bose originals (Set up STR). Empty and hidden while a
+// speaker is chosen. Repainted when the speakers change (state.js
+// onStatesChange), only when what it says changed.
+function fillUi2RadioState() {
+  const slot = $('ui2RadioState');
+  if (!slot || !on()) return;
+  const boxes = (state.boxes || []).filter((b) => b && b.host);
+  let html = '';
+  if (boxes.length && boxes.every((b) => b.kind === 'stock')) {
+    html = noSpeakersState('none', {
+      id: 'ui2RadioStateCard', title: t('speaker.stockConfirmTitle'), body: t('speaker.stockTooltip'), actions: ['setup'], level: 2,
+    });
+  } else {
+    const p = speakersPhase({ boxes, currentBox: state.currentBox, discovery: state.discovery });
+    if (p.phase) html = noSpeakersState(p.phase, { id: 'ui2RadioStateCard', error: p.error, level: 2 });
+  }
+  slot.hidden = !html;
+  if (slot.dataset.sig === html) return;
+  if (slot.querySelector('.u-connect-input') && slot.querySelector('.u-connect-input').value) return;
+  slot.dataset.sig = html;
+  slot.innerHTML = html;
 }

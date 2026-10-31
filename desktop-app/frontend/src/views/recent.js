@@ -25,6 +25,7 @@ import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { splitStreamTitle } from '../titleswap.js';
 import { shell2Mounted } from '../shell2/mount.js';
 import { keyButtonHTML } from '../shell2/keybtn.js';
+import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
@@ -856,6 +857,16 @@ function ui2DaysHTML(cards, playingIdx) {
 // ui2EmptyHTML explains an empty history in the preview: what fills it, for
 // the speaker (or all of them) the view shows.
 function ui2EmptyHTML() {
+  // No speaker with STR (phase 5): no history can exist yet, so the state
+  // says why (no speaker found, the search failed, only Bose originals) and
+  // offers the next step instead of "nothing played".
+  if (!recentStrBoxes().length) {
+    const stock = (state.boxes || []).some((b) => b && b.kind === 'stock');
+    const st = listStateNow();
+    return stock
+      ? noSpeakersState('none', { id: 'rcState', title: t('speaker.stockConfirmTitle'), body: t('speaker.stockTooltip'), actions: ['setup'], level: 3 })
+      : noSpeakersState(st.phase, { id: 'rcState', error: st.error, level: 3 });
+  }
   const boxes = recentSelectedBoxes();
   const body = (state.recentAllBoxes || boxes.length !== 1)
     ? t('ui2.recent.emptyAll')
