@@ -439,3 +439,16 @@ func TestNowPlayingHistorySeed(t *testing.T) {
 		t.Fatalf("history holds %d, want %d", len(n.frames), nowPlayingHistoryLen)
 	}
 }
+
+// Every now-playing frame also reaches the webui's woken-stop mark (#1629),
+// so a group member's switch is decided on the speaker without an app poll.
+func TestNowPlayingFrameReachesWokenStop(t *testing.T) {
+	var got []string
+	h := &presetWsHandler{onNowPlaying: func(raw []byte) { got = append(got, string(raw)) }}
+	h.OnNowPlayingFrame(boxws.NowPlayingFrame{At: time.Now(), Raw: []byte("doc")})
+	if len(got) != 1 || got[0] != "doc" {
+		t.Fatalf("woken-stop hook got %q, want the frame once", got)
+	}
+	// Unwired: the frame is still kept and nothing panics.
+	(&presetWsHandler{}).OnNowPlayingFrame(boxws.NowPlayingFrame{At: time.Now(), Raw: []byte("doc")})
+}

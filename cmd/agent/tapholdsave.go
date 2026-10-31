@@ -329,9 +329,12 @@ func (n *nowPlayingHistory) before(cut time.Time) []byte {
 }
 
 // OnNowPlayingFrame keeps the bus's now-playing documents (boxws optional
-// hook). Must not block.
+// hook) and hands each one to the webui's woken-stop mark. Must not block.
 func (h *presetWsHandler) OnNowPlayingFrame(f boxws.NowPlayingFrame) {
 	h.nowPlaying.add(f)
+	if h.onNowPlaying != nil {
+		h.onNowPlaying(f.Raw)
+	}
 }
 
 // noteTap hands a selection frame to the hold saver as a possible tap, with

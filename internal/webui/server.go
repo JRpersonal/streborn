@@ -488,6 +488,11 @@ type Server struct {
 	// wokenStop is set when a quiet wake left the speaker paused instead of
 	// stopped (a Pandora station, #1629); /api/status then reports it stopped.
 	wokenStop wokenStop
+	// Woken-stop seams (wokenstop.go): how a master check or the fallback
+	// reads after a zone join are run, and the read of the master agent's
+	// /api/status. nil = production (a goroutine, peerAgentStatus).
+	wokenRunFn        func(func())
+	peerAgentStatusFn func(ctx context.Context, ip string) []byte
 	// New-play wake seams (newplaywake.go): the standby wake, the level read,
 	// the level write and the stream proxy gate. nil = production
 	// (boxcli.WakeAndWait, boxapi, s.streamProxy). ownLevelSetFn is also what
