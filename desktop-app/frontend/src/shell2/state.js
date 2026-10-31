@@ -187,6 +187,12 @@ function stateActionHTML(act, ctx, i) {
   if (act === 'setup') return `<button type="button" class="${cls}" data-state-act="add">${escapeHtml(t('ui2.speakers.list.setUp'))}</button>`;
   if (act === 'list') return `<button type="button" class="${cls}" data-state-act="list">${escapeHtml(t('ui2.state.goToList'))}</button>`;
   if (act === 'allSpeakers') return `<button type="button" class="${cls}" data-state-act="allSpeakers">${escapeHtml(t('ui2.speakers.all'))}</button>`;
+  if (act === 'connect' && ctx.connectTarget) {
+    // The block lives elsewhere on the page (the Speakers list's foot): the
+    // button takes the keyboard there.
+    return `<button type="button" class="${cls}" data-state-act="connect" data-connect-focus="1" aria-controls="${escapeAttr(ctx.connectTarget)}">`
+      + `${escapeHtml(t('ui2.state.connect'))}</button>`;
+  }
   if (act === 'connect') {
     const id = `${ctx.id}-connect`;
     const open = !!ctx.connectOpen;
@@ -204,6 +210,8 @@ function stateActionHTML(act, ctx, i) {
 //   ctx.actions      replaces the phase's actions (same names)
 //   ctx.level        the heading level (default 3)
 //   ctx.title/body   replace the words of the phase
+//   ctx.connectTarget  the id of a Connect by address block elsewhere on the
+//                    page: Connect by address focuses it, no second block
 // Its heading takes focus (tabindex=-1) when a view lands on it; a failure is
 // announced at once (alert), every other phase politely (status).
 export function noSpeakersState(phase, ctx = {}) {
@@ -222,7 +230,9 @@ export function noSpeakersState(phase, ctx = {}) {
   const detail = p === 'failed' && c.error && !noNetworkText(c.error)
     ? `<details class="u-state-detail"><summary>${escapeHtml(t('ui2.state.details'))}</summary><p class="u-state-error">${escapeHtml(String(c.error))}</p></details>`
     : '';
-  const connect = (c.actions || PHASE_ACTIONS[p]).includes('connect') ? connectHTML(`${c.id}-connect`, { hidden: !c.connectOpen }) : '';
+  const connect = (c.actions || PHASE_ACTIONS[p]).includes('connect') && !c.connectTarget
+    ? connectHTML(`${c.id}-connect`, { hidden: !c.connectOpen })
+    : '';
   return `<div class="u-card u-card--${tone} u-state" data-phase="${p}" id="${escapeAttr(c.id)}" role="${p === 'failed' ? 'alert' : 'status'}">`
     + `<p class="u-state-word">${escapeHtml(t(PHASE_WORD[p]))}</p>`
     + `<h${level} class="u-state-title" tabindex="-1">${escapeHtml(title)}</h${level}>`
@@ -455,6 +465,15 @@ function onStateClick(e) {
       const id = btn.getAttribute('aria-controls');
       const form = id ? document.getElementById(id) : null;
       if (!form) break;
+      if (btn.dataset.connectFocus) {
+        form.hidden = false;
+        const f = form.querySelector('.u-connect-input');
+        if (f) {
+          f.focus();
+          try { f.scrollIntoView({ block: 'nearest' }); } catch (_) { /* old engine */ }
+        }
+        break;
+      }
       const open = form.hidden;
       form.hidden = !open;
       btn.setAttribute('aria-expanded', String(open));

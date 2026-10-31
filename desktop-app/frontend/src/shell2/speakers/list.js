@@ -385,7 +385,10 @@ export function speakerListHTML(model, opts = {}) {
       : '';
     body = searching + summary + `<ul class="spl-list" aria-labelledby="ui2SpkAreaTitle">${m.rows.map(cardHTML).join('')}</ul>`;
   } else {
-    body = noSpeakersState(opts.phase || 'none', { id: 'splState', error: opts.error || '', actions: ['search', 'connect', 'add'], level: 3 });
+    // Connect by address leads to the block at the foot of the list.
+    body = noSpeakersState(opts.phase || 'none', {
+      id: 'splState', error: opts.error || '', actions: ['search', 'connect', 'add'], connectTarget: 'splConnect', level: 3,
+    });
   }
   return body + footHTML(m);
 }

@@ -134,13 +134,15 @@ html.ui2 #view-speakers .u-state,
 html.ui2 #ui2SpkPage .u-state { margin-block: 8px 16px; }
 html.ui2 .spl-cannot-see .u-connect { flex: 1 1 100%; }
 html.ui2 .ui2-grp-two { margin-block: 8px; }
+html.ui2 .ui2-grp-two-text { margin: 0 0 8px; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-editor[hidden] { display: none; }
 html.ui2 .w2-search-result { margin: 8px 0 0; color: var(--u-text); font-size: 14px; }
 html.ui2 .w2-search-result:empty { display: none; }
 html.ui2 .w2-empty .u-connect { margin-top: 8px; max-width: 480px; }
 
 /* The classic "no speaker found" panel of the settings body: the page's own
    state above it says the same and offers more. */
-html.ui2 #ui2SpkPage #settingsBody .empty-state:has(#settingsGoSetup) { display: none; }
+html.ui2 #settingsBody .empty-state:has(> #settingsGoSetup) { display: none; }
 
 /* Toasts in the preview's colours: a polite status (mount.js), the words in
    the surface's text colour, a plain border. */
