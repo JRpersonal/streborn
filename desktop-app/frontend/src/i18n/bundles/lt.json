@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Į diegimą",
   "speaker.strNotRunningBadge": "STR neveikia",
   "speaker.strNotRunningTooltip": "Ši kolonėlė atsako savo Bose programine įranga, bet STR joje neveikia. Spustelėkite, kad iš naujo įdiegtumėte STR.",
+  "speaker.updateFinishingBadge": "baigiamas atnaujinimas",
+  "speaker.updateFinishingTooltip": "ST Reborn dar baigia atnaujinti šią kolonėlę, todėl nėra ką įdiegti. Palik ją įjungtą; kai atnaujinimas baigsis, ji vėl parodys savo ST Reborn versiją.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> atsako savo Bose programine įranga, bet STR joje nebeveikia. Pakartotinis STR diegimas per jūsų tinklą tai sutvarko, USB atmintinės nereikia.<br><br>Tęsti diegimą?",
   "speaker.updateFinishingToast": "ST Reborn dar baigia atnaujinti kolonėlę {{label}}. Palik ją įjungtą; kai atnaujinimas baigsis, ji vėl parodys savo ST Reborn versiją.",
   "controls.pause": "Pauzė",

@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Naar de installatie",
   "speaker.strNotRunningBadge": "STR draait niet",
   "speaker.strNotRunningTooltip": "Deze speaker antwoordt met zijn Bose-firmware, maar STR draait er niet op. Klik om STR opnieuw te installeren.",
+  "speaker.updateFinishingBadge": "update bezig",
+  "speaker.updateFinishingTooltip": "ST Reborn rondt op deze speaker nog een update af, dus er valt niets te installeren. Laat hem aan staan; zodra de update klaar is, toont hij weer zijn ST Reborn-versie.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> antwoordt met zijn Bose-firmware, maar STR draait er niet meer op. STR opnieuw installeren via je netwerk herstelt dit, zonder USB-stick.<br><br>Doorgaan naar de installatie?",
   "speaker.updateFinishingToast": "ST Reborn rondt op {{label}} nog een update af. Laat hem aan staan; zodra de update klaar is, toont hij weer zijn ST Reborn-versie.",
   "controls.pause": "Pauze",

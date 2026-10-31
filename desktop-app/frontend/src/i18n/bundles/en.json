@@ -372,6 +372,8 @@
   "speaker.stockConfirmCta": "To the install",
   "speaker.strNotRunningBadge": "STR not running",
   "speaker.strNotRunningTooltip": "STR has not answered on this speaker for a few minutes. If it is simply switched off or in standby, this goes away by itself. Click to install STR again.",
+  "speaker.updateFinishingBadge": "update finishing",
+  "speaker.updateFinishingTooltip": "ST Reborn is still finishing an update on this speaker, so there is nothing to install. Leave it switched on; it shows its ST Reborn version again once the update is done.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> has not answered with STR for a few minutes.<br><br>If the speaker is off or in standby there is nothing to do, this clears by itself. If it is running and still silent, installing STR again over your network repairs it, with no USB stick.<br><br>Continue to the installation?",
   "speaker.updateFinishingToast": "ST Reborn is still finishing an update on {{label}}. Leave it switched on; it shows its ST Reborn version again once the update is done.",
   "controls.pause": "Pause",

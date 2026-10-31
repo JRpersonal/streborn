@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "インストールへ",
   "speaker.strNotRunningBadge": "STR が動作していません",
   "speaker.strNotRunningTooltip": "このスピーカーは Bose のファームウェアで応答していますが、STR は動作していません。クリックすると STR を再インストールできます。",
+  "speaker.updateFinishingBadge": "更新の完了待ち",
+  "speaker.updateFinishingTooltip": "ST Reborn はこのスピーカーの更新をまだ仕上げているため、インストールするものはありません。電源を入れたままにしてください。更新が終わると、ST Reborn のバージョンが再び表示されます。",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> は Bose のファームウェアで応答していますが、STR はもう動作していません。あなたのネットワーク経由で STR を再インストールすると修復できます。USB メモリは不要です。<br><br>インストールに進みますか？",
   "speaker.updateFinishingToast": "ST Reborn は {{label}} の更新をまだ仕上げています。電源を入れたままにしてください。更新が終わると、ST Reborn のバージョンが再び表示されます。",
   "controls.pause": "一時停止",

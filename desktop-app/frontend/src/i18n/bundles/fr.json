@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Vers l'installation",
   "speaker.strNotRunningBadge": "STR ne tourne pas",
   "speaker.strNotRunningTooltip": "Cette enceinte répond avec son firmware Bose, mais STR n'y tourne pas. Cliquez pour réinstaller STR.",
+  "speaker.updateFinishingBadge": "mise à jour en cours",
+  "speaker.updateFinishingTooltip": "ST Reborn termine encore une mise à jour sur cette enceinte : il n'y a donc rien à installer. Laisse-la allumée ; elle affichera de nouveau sa version de ST Reborn dès que la mise à jour sera terminée.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> répond avec son firmware Bose, mais STR n'y tourne plus. Réinstaller STR via votre réseau la répare, sans clé USB.<br><br>Continuer vers l'installation ?",
   "speaker.updateFinishingToast": "ST Reborn termine encore une mise à jour sur {{label}}. Laisse-la allumée ; elle affichera de nouveau sa version de ST Reborn dès que la mise à jour sera terminée.",
   "controls.pause": "Pause",

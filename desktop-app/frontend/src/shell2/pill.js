@@ -16,7 +16,7 @@ import { escapeHtml } from '../utils.js';
 // only in phase 1: nothing in the app derives them yet (the install flow keeps
 // its own wording until the setup wizard of phase 4).
 export const PILL_KINDS = Object.freeze([
-  'playing', 'standby', 'strNotRunning', 'boseOriginal',
+  'playing', 'standby', 'updateFinishing', 'strNotRunning', 'boseOriginal',
   'notReachable', 'stereoPair', 'startingUp', 'installFailed',
 ]);
 
@@ -25,6 +25,7 @@ export const PILL_KINDS = Object.freeze([
 export const PILL_LABEL_KEYS = Object.freeze({
   playing: 'ui2.pill.playing',
   standby: 'ui2.pill.standby',
+  updateFinishing: 'speaker.updateFinishingBadge',
   strNotRunning: 'speaker.strNotRunningBadge',
   boseOriginal: 'speaker.needsInstallBadge',
   notReachable: 'ui2.pill.offline',
@@ -37,6 +38,7 @@ export const PILL_LABEL_KEYS = Object.freeze({
 const PILL_TONE = Object.freeze({
   playing: 'ok',
   standby: 'muted',
+  updateFinishing: 'muted',
   strNotRunning: 'warn',
   boseOriginal: 'accent',
   notReachable: 'danger',
@@ -57,7 +59,13 @@ export const CHIP_LABEL_KEYS = Object.freeze({
 export function speakerPillKind(tile) {
   if (!tile) return '';
   if (tile.offline) return 'notReachable';
-  if (tile.stock) return tile.strNotRunning ? 'strNotRunning' : 'boseOriginal';
+  if (tile.stock) {
+    // An update from this app still finishing on it comes first: it is neither
+    // a repair nor a first install, and saying either invites the install the
+    // guard refuses (field case 2026-10-30).
+    if (tile.updateFinishing) return 'updateFinishing';
+    return tile.strNotRunning ? 'strNotRunning' : 'boseOriginal';
+  }
   if (tile.playing) return 'playing';
   if (tile.isCurrent && tile.standby) return 'standby';
   if (tile.inStereoPair) return 'stereoPair';

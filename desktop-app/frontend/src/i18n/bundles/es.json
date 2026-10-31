@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "A la instalación",
   "speaker.strNotRunningBadge": "STR no está en marcha",
   "speaker.strNotRunningTooltip": "Este altavoz responde con su firmware de Bose, pero STR no se está ejecutando en él. Haz clic para instalar STR de nuevo.",
+  "speaker.updateFinishingBadge": "actualización en curso",
+  "speaker.updateFinishingTooltip": "ST Reborn aún está terminando una actualización en este altavoz, así que no hay nada que instalar. Déjalo encendido; cuando la actualización termine, volverá a mostrar su versión de ST Reborn.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> responde con su firmware de Bose, pero STR ya no se está ejecutando en él. Instalar STR de nuevo por tu red lo repara, sin memoria USB.<br><br>¿Continuar con la instalación?",
   "speaker.updateFinishingToast": "ST Reborn aún está terminando una actualización en {{label}}. Déjalo encendido; cuando la actualización termine, volverá a mostrar su versión de ST Reborn.",
   "controls.pause": "Pausa",

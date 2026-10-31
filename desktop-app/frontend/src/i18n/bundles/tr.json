@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Kuruluma geç",
   "speaker.strNotRunningBadge": "STR çalışmıyor",
   "speaker.strNotRunningTooltip": "Bu hoparlör Bose yazılımıyla yanıt veriyor ancak üzerinde STR çalışmıyor. STR'yi yeniden kurmak için tıklayın.",
+  "speaker.updateFinishingBadge": "güncelleme sürüyor",
+  "speaker.updateFinishingTooltip": "ST Reborn bu hoparlörde hâlâ bir güncellemeyi tamamlıyor, bu yüzden kurulacak bir şey yok. Hoparlörü açık bırak; güncelleme bitince yeniden ST Reborn sürümünü gösterecek.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> Bose yazılımıyla yanıt veriyor ancak üzerinde STR artık çalışmıyor. STR'yi ağınız üzerinden yeniden kurmak bunu onarır, USB bellek gerekmez.<br><br>Kuruluma devam edilsin mi?",
   "speaker.updateFinishingToast": "ST Reborn, {{label}} üzerinde hâlâ bir güncellemeyi tamamlıyor. Hoparlörü açık bırak; güncelleme bitince yeniden ST Reborn sürümünü gösterecek.",
   "controls.pause": "Duraklat",

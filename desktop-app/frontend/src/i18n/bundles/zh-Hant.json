@@ -372,6 +372,8 @@
   "speaker.stockConfirmCta": "前往安裝",
   "speaker.strNotRunningBadge": "STR 未執行",
   "speaker.strNotRunningTooltip": "這台喇叭以 Bose 韌體回應，但 STR 並未在上面執行。點一下即可重新安裝 STR。",
+  "speaker.updateFinishingBadge": "更新完成中",
+  "speaker.updateFinishingTooltip": "ST Reborn 仍在這台喇叭上完成更新，所以沒有需要安裝的東西。請讓它保持開機；更新完成後，它會再次顯示其 ST Reborn 版本。",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> 以 Bose 韌體回應，但 STR 已不再於上面執行。透過你的網路重新安裝 STR 即可修復，不用 USB 隨身碟。<br><br>要繼續安裝嗎？",
   "speaker.updateFinishingToast": "ST Reborn 仍在 {{label}} 上完成更新。請讓它保持開機；更新完成後，它會再次顯示其 ST Reborn 版本。",
   "controls.pause": "暫停",

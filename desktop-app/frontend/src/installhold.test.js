@@ -16,6 +16,9 @@ vi.mock('./api.js', () => ({}));
 
 const { holdsByHost, holdFor, sameHeldHosts, holdMinutes, stockCardText, heldInstallNote } = await import('./installhold.js');
 const { setLocale } = await import('./i18n/index.js');
+const { speakerTileState } = await import('./speakertile.js');
+const { speakerPillKind, statusPillHTML } = await import('./shell2/pill.js');
+const { roomItems } = await import('./shell2/rooms.js');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bundleDir = join(here, 'i18n', 'bundles');
@@ -103,7 +106,7 @@ describe('the setup picker card of a held speaker', () => {
     const refresh = srcOf('refreshInstallHolds');
     expect(refresh).toContain('await InstallHolds(hosts)');
     expect(refresh).toContain('sameHeldHosts(state.installHolds, next)');
-    expect(refresh).toContain('if (changed) renderSetupTargetPicker();');
+    expect(refresh).toMatch(/if \(changed\) \{\s*renderSetupTargetPicker\(\);/);
   });
 });
 
@@ -164,10 +167,73 @@ describe('Speaker settings and the speaker list during the hold', () => {
   });
 });
 
+describe('the speaker list badge of a held speaker', () => {
+  beforeAll(async () => { await setLocale('en'); });
+  const degraded = { host: '192.0.2.10', port: 8090, deviceID: 'device-id-here', kind: 'stock', strNotRunning: true, friendlyName: 'Kitchen' };
+  const holds = holdsByHost([held]);
+
+  it('reads "update finishing", not "STR not running"', () => {
+    const tile = speakerTileState(degraded, { installHolds: holds });
+    expect(tile.updateFinishing).toBe(true);
+    expect(tile.strNotRunning).toBe(false);
+    expect(speakerPillKind(tile)).toBe('updateFinishing');
+    const pill = statusPillHTML('updateFinishing');
+    expect(pill).toContain('update finishing');
+    expect(pill).not.toContain('STR not running');
+  });
+
+  it('goes back to "STR not running" once the hold is over', () => {
+    const tile = speakerTileState(degraded, { installHolds: {} });
+    expect(tile.updateFinishing).toBe(false);
+    expect(tile.strNotRunning).toBe(true);
+    expect(speakerPillKind(tile)).toBe('strNotRunning');
+    expect(speakerTileState(degraded).updateFinishing).toBe(false);
+  });
+
+  it('says "not reachable" for an offline speaker, whatever the hold', () => {
+    const tile = speakerTileState({ ...degraded, offline: true }, { installHolds: holds });
+    expect(tile.updateFinishing).toBe(false);
+    expect(speakerPillKind(tile)).toBe('notReachable');
+  });
+
+  it('never marks a speaker that runs STR', () => {
+    const tile = speakerTileState({ ...degraded, kind: 'str', strNotRunning: false }, { installHolds: holds });
+    expect(tile.updateFinishing).toBe(false);
+  });
+
+  it('gives the sidebar row a tooltip that offers no install', () => {
+    const [row] = roomItems([degraded], { installHolds: holds });
+    expect(row.pill).toBe('updateFinishing');
+    expect(row.title).toContain('still finishing an update');
+    expect(row.title).not.toMatch(/click to install/i);
+    const [plain] = roomItems([degraded], {});
+    expect(plain.pill).toBe('strNotRunning');
+    expect(plain.title).toBe('');
+  });
+
+  it('is what the Music tab speaker picker draws, from the same holds', () => {
+    const select = srcOf('renderBoxSelect');
+    expect(select).toContain('installHolds: state.installHolds');
+    expect(select).toContain("finishing ? 'speaker.updateFinishingBadge'");
+    expect(select).toContain("t(finishing ? 'speaker.updateFinishingTooltip'");
+    expect(srcOf('paintSpeakers')).toContain('installHolds: state.installHolds');
+    // A speaker entering or leaving the hold repaints both lists.
+    expect(srcOf('refreshInstallHolds')).toContain('deps.installHoldsChanged()');
+  });
+
+  it('matches the setup card badge and never says click to install', () => {
+    for (const [lang, b] of Object.entries(bundles)) {
+      expect(b['speaker.updateFinishingBadge'], lang).toBe(b['setup.targetCardBadgeUpdating']);
+    }
+    expect(bundles.en['speaker.updateFinishingTooltip']).not.toMatch(/click|install STR/i);
+  });
+});
+
 describe('the hold strings', () => {
   const keys = [
     'setup.targetCardKindUpdating', 'setup.targetCardBadgeUpdating', 'setup.installHeldNote',
     'settingsView.updateFinishingTitle', 'settingsView.updateFinishingHelp', 'speaker.updateFinishingToast',
+    'speaker.updateFinishingBadge', 'speaker.updateFinishingTooltip',
   ];
 
   it('exist in every bundle with their placeholders', () => {

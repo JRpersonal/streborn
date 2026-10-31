@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Przejdź do instalacji",
   "speaker.strNotRunningBadge": "STR nie działa",
   "speaker.strNotRunningTooltip": "Ten głośnik odpowiada swoim oprogramowaniem Bose, ale STR na nim nie działa. Kliknij, aby zainstalować STR ponownie.",
+  "speaker.updateFinishingBadge": "aktualizacja w toku",
+  "speaker.updateFinishingTooltip": "ST Reborn wciąż kończy aktualizację tego głośnika, więc nie ma nic do zainstalowania. Zostaw go włączonego; gdy aktualizacja się zakończy, znów pokaże swoją wersję ST Reborn.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> odpowiada swoim oprogramowaniem Bose, ale STR już na nim nie działa. Ponowna instalacja STR przez Twoją sieć to naprawi, bez pendrive'a USB.<br><br>Przejść do instalacji?",
   "speaker.updateFinishingToast": "ST Reborn wciąż kończy aktualizację głośnika {{label}}. Zostaw go włączonego; gdy aktualizacja się zakończy, znów pokaże swoją wersję ST Reborn.",
   "controls.pause": "Pauza",

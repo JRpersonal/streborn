@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "إلى التثبيت",
   "speaker.strNotRunningBadge": "STR لا يعمل",
   "speaker.strNotRunningTooltip": "تستجيب هذه السماعة ببرنامج Bose الثابت الخاص بها، لكن STR لا يعمل عليها. انقر لإعادة تثبيت STR.",
+  "speaker.updateFinishingBadge": "التحديث قيد الإكمال",
+  "speaker.updateFinishingTooltip": "ما زال ST Reborn يُكمل تحديثًا على هذه السماعة، لذا لا يوجد ما يُثبَّت. اتركها قيد التشغيل؛ ستعرض إصدار ST Reborn الخاص بها من جديد عند اكتمال التحديث.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> تستجيب ببرنامج Bose الثابت الخاص بها، لكن STR لم يعد يعمل عليها. إعادة تثبيت STR عبر شبكتك تُصلح ذلك، دون الحاجة إلى ذاكرة USB.<br><br>المتابعة إلى التثبيت؟",
   "speaker.updateFinishingToast": "ما زال ST Reborn يُكمل تحديثًا على السماعة {{label}}. اتركها قيد التشغيل؛ ستعرض إصدار ST Reborn الخاص بها من جديد عند اكتمال التحديث.",
   "controls.pause": "إيقاف مؤقّت",

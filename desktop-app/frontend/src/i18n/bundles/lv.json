@@ -346,6 +346,8 @@
   "speaker.stockConfirmCta": "Uz instalēšanu",
   "speaker.strNotRunningBadge": "STR nedarbojas",
   "speaker.strNotRunningTooltip": "Šis skaļrunis atbild ar savu Bose programmatūru, bet STR tajā nedarbojas. Noklikšķiniet, lai instalētu STR vēlreiz.",
+  "speaker.updateFinishingBadge": "atjauninājums vēl notiek",
+  "speaker.updateFinishingTooltip": "ST Reborn vēl pabeidz atjauninājumu šajā skaļrunī, tāpēc nav ko instalēt. Atstāj to ieslēgtu; kad atjauninājums būs pabeigts, tas atkal parādīs savu ST Reborn versiju.",
   "speaker.strNotRunningConfirmBody": "<b>{{label}}</b> atbild ar savu Bose programmatūru, bet STR tajā vairs nedarbojas. Atkārtota STR instalēšana caur jūsu tīklu to salabo, USB zibatmiņa nav vajadzīga.<br><br>Turpināt uz instalēšanu?",
   "speaker.updateFinishingToast": "ST Reborn vēl pabeidz atjauninājumu skaļrunī {{label}}. Atstāj to ieslēgtu; kad atjauninājums būs pabeigts, tas atkal parādīs savu ST Reborn versiju.",
   "controls.pause": "Pauze",

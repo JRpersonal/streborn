@@ -188,6 +188,10 @@ let deps = {
   // from the target picker but was missing from this list, which made it look
   // optional; the no-op default keeps every call site safe either way.
   speakerPicked: () => {},
+  // installHoldsChanged(): a speaker entered or left the update hold
+  // (refreshInstallHolds); main.js repaints the speaker list, whose badge and
+  // tooltip read the same holds.
+  installHoldsChanged: () => {},
 };
 export function initSetupView(d) {
   deps = { ...deps, ...d };
@@ -662,8 +666,12 @@ async function refreshInstallHolds(hosts) {
   }
   const changed = !sameHeldHosts(state.installHolds, next);
   state.installHolds = next;
-  if (changed) renderSetupTargetPicker();
-  else syncHeroInstallHold();
+  if (changed) {
+    renderSetupTargetPicker();
+    deps.installHoldsChanged();
+  } else {
+    syncHeroInstallHold();
+  }
 }
 
 // currentHeroHold is the hold on the speaker the network-install card is for,

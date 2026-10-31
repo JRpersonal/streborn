@@ -13,6 +13,7 @@
 import { pairMasterBox, pairMemberBoxes } from '../groups.js';
 import { speakerTileState } from '../speakertile.js';
 import { speakerChipKinds, speakerPillKind } from './pill.js';
+import { t } from '../i18n/index.js';
 
 const label = (ctx, b) => (typeof ctx.label === 'function' ? ctx.label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
 
@@ -88,6 +89,7 @@ function rowOf(box, tile, name, ctx, hosts) {
     pill: speakerPillKind(tile),
     chips: speakerChipKinds(tile),
     isCurrent: tile.isCurrent && !tile.stock,
-    title: tile.offline && typeof ctx.offlineTitle === 'function' ? ctx.offlineTitle(box) : '',
+    title: tile.offline && typeof ctx.offlineTitle === 'function' ? ctx.offlineTitle(box)
+      : tile.updateFinishing ? t('speaker.updateFinishingTooltip') : '',
   };
 }
