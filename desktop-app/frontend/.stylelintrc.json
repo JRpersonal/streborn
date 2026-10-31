@@ -1,7 +1,7 @@
 {
   "plugins": ["stylelint-value-no-unknown-custom-properties"],
   "rules": {
-    "csstools/value-no-unknown-custom-properties": true,
+    "csstools/value-no-unknown-custom-properties": [true, { "importFrom": ["src/shell2/shell2.css"] }],
     "property-no-unknown": true,
     "declaration-property-value-no-unknown": true,
     "unit-no-unknown": true,

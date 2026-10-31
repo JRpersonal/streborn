@@ -356,7 +356,11 @@ export function syncShellNav(view) {
     else btn.removeAttribute('aria-current');
   });
   const main = byId('ui2Main');
-  if (main) main.scrollTop = 0;
+  if (main) {
+    // shell2.css reads it: the music views leave the classic footer out.
+    main.dataset.view = view || '';
+    main.scrollTop = 0;
+  }
 }
 
 // syncShellPlayer shows the player only with a speaker to control. Without
@@ -422,13 +426,18 @@ function applyPlayerGroup() {
 }
 
 // levelsText names who plays along with the controlled speaker, from the same
-// group the sidebar pins (sidebarModel), so the two never disagree.
+// group the sidebar pins (sidebarModel), so the two never disagree. full is
+// the sentence ("Living Room + 1 more"), the button's title and the end of
+// its name; short ("Living Room +1") is what the button shows, so a long word
+// for "more" never cuts the name off.
 function levelsText(model) {
   const cur = state.currentBox;
-  if (!cur) return '';
+  if (!cur) return { full: '', short: '' };
   const name = label(cur);
   const n = model.memberCount || 0;
-  return n > 0 ? t('ui2.player.outputGroup', { name, n }) : t('ui2.player.outputSolo', { name });
+  if (n > 0) return { full: t('ui2.player.outputGroup', { name, n }), short: `${name} +${n}` };
+  const solo = t('ui2.player.outputSolo', { name });
+  return { full: solo, short: solo };
 }
 
 // renderShellSpeakers repaints the sidebar's speaker list from the shared
@@ -491,7 +500,18 @@ function paintSpeakers(force) {
     }
   }
   const text = byId('ui2LevelsText');
-  if (text) text.textContent = levels;
+  if (text) text.textContent = levels.short;
+  const btn = byId('ui2LevelsBtn');
+  if (btn) {
+    if (levels.full) {
+      const name = `${t('ui2.player.levels')}: ${levels.full}`;
+      btn.setAttribute('aria-label', name);
+      btn.title = name;
+    } else {
+      btn.removeAttribute('aria-label');
+      btn.removeAttribute('title');
+    }
+  }
 }
 
 // holdSpeakerFloor sets how far the speaker section may shrink when the
@@ -570,6 +590,33 @@ function holdSpeakerFloor(lists) {
   // The one scroll box is cut at a row too, measured as it now stands.
   if (squeezed) floor = halfRowCut(lists, floor - pad) + pad;
   section.style.minHeight = floor > 0 ? `${Math.ceil(floor)}px` : '';
+  lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list').forEach((el) => endOnRow(el, squeezed));
+}
+
+// endOnRow lets a scrolling list end below a whole row instead of through
+// one: the height the sidebar gives it is cut back to the last row that fits
+// whole (its focus ring room included). What is left goes to the navigation
+// below; the shadow at the cut edge (shell2.css) says the list goes on. A list
+// that shows every row, and the squeezed lists (one scroll box), keep theirs.
+function endOnRow(list, squeezed) {
+  list.style.maxHeight = '';
+  if (squeezed) return;
+  const room = list.clientHeight;
+  if (list.scrollHeight <= room + 1) return;
+  const top = layoutTop(list);
+  const pad = 4;
+  const rows = [...list.querySelectorAll('.ui2-spk-row')];
+  let best = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const bottom = layoutTop(rows[i]) - top + rows[i].offsetHeight;
+    if (bottom + pad > room) break;
+    // The visible box (the padding included) stops where the next row
+    // starts, so not even the edge of its button shows.
+    const next = rows[i + 1];
+    best = next ? Math.min(bottom + pad, layoutTop(next) - top) : bottom + pad;
+  }
+  // content-box: the max-height counts the rows; the padding comes on top.
+  if (best > 2 * pad) list.style.maxHeight = `${best - 2 * pad}px`;
 }
 
 // halfRowCut is the largest height up to room that ends halfway down a row of

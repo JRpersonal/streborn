@@ -48,10 +48,6 @@
     }
   },
   "contrast|ui2|box": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
@@ -61,27 +57,15 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "contrast|ui2|pop-levels": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 5,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
     }
   },
   "contrast|ui2|pop-more": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
@@ -160,10 +144,6 @@
     }
   },
   "dark|ui2|box": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
@@ -173,27 +153,15 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "dark|ui2|pop-levels": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 5,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
     }
   },
   "dark|ui2|pop-more": {
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
@@ -276,10 +244,6 @@
       "count": 1,
       "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
     },
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
@@ -293,20 +257,12 @@
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
-    },
-    "select-name": {
-      "count": 2,
-      "note": "Library: the speaker picker #libraryBoxSelect and the media server picker #libServerSelect have a visual caption but no programmatic label. Known, not fixed yet (no issue filed)."
     }
   },
   "light|ui2|pop-levels": {
     "color-contrast": {
       "count": 1,
       "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
     },
     "label-content-name-mismatch": {
       "count": 5,
@@ -317,10 +273,6 @@
     "color-contrast": {
       "count": 1,
       "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
-    "image-alt": {
-      "count": 6,
-      "note": "The six preset logos (.preset-body > img.preset-logo) carry no alt; the station name is the text right next to them, so the fix is alt=\"\" on the logo. Known, not fixed yet (no issue filed)."
     },
     "label-content-name-mismatch": {
       "count": 4,

@@ -23,9 +23,12 @@ import { preferMp3SiblingForBox } from './search.js';
 //
 // The picker is a real dialog for the keyboard: named by its title, focus moves
 // to the first key, Tab stays inside, Escape closes it, and closing puts focus
-// back on the control that opened it.
+// back on the control that opened it (in the UI 2.0 preview, when a repaint
+// replaced that control, on the same control of the same row or card). There a key
+// that is pressed while another is saving does nothing (ui2radio.js lockPicker
+// marks the keys aria-disabled, which keeps the focus on the pressed one).
 export function showSlotPicker({ title, subtitle, onPick, box }) {
-  opener = document.activeElement;
+  opener = openerMark(document.activeElement);
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
   // The second row of keys (#1110): the window opens on the row the key grid
@@ -93,6 +96,7 @@ function renderPickSlots({ row, rows, onPick, target }) {
       : escapeHtml(keyLabel(i, t));
     b.innerHTML = '<div class="ps-num">' + num + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
     b.onclick = async () => {
+      if (b.getAttribute('aria-disabled') === 'true') return;
       try {
         await onPick(i);
         closePick();
@@ -116,6 +120,34 @@ function renderPickSlots({ row, rows, onPick, target }) {
 
 // opener is the control the open picker returns focus to.
 let opener = null;
+
+// openerMark remembers the control that opened the picker, and how to find it
+// again if a repaint replaces it meanwhile: the row or card it sits in (a
+// Radio row's data-key, a Recently played card's data-ck) and the control's
+// own data-act or first class of its own.
+export function openerMark(el) {
+  if (!el || typeof el.closest !== 'function') return null;
+  const host = el.closest('[data-ck], [data-key]');
+  if (!host) return { el, host: null };
+  const attr = host.hasAttribute('data-ck') ? 'ck' : 'key';
+  const cls = [...el.classList].find((c) => !c.startsWith('u-') && !c.startsWith('is-')) || '';
+  return { el, host: { attr, val: host.dataset[attr], act: el.dataset.act || '', cls } };
+}
+
+// openerTarget finds the control openerMark noted: itself while it is still
+// on the page, else the same control in the row or card that now stands for it.
+export function openerTarget(mark, doc = typeof document !== 'undefined' ? document : null) {
+  if (!mark) return null;
+  if (mark.el && mark.el.isConnected) return mark.el;
+  const h = mark.host;
+  if (!doc || !h || (!h.act && !h.cls)) return null;
+  const hosts = [...doc.querySelectorAll(`[data-${h.attr}]`)].filter((n) => n.dataset[h.attr] === h.val);
+  for (const n of hosts) {
+    const hit = h.act ? n.querySelector(`[data-act="${h.act}"]`) : n.querySelector(`.${h.cls}`);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 // dialogSemantics makes #pickModal a named modal dialog and keeps the keyboard
 // inside it. Set on the first open.
@@ -152,14 +184,20 @@ export function openPick(station) {
     title: t('preset.assignStationTitle'),
     subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
     onPick: async (i) => {
-      const logo = stationLogoChain(station);
-      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
-      if (station.stationuuid) {
-        RadioVote(station.stationuuid).catch(() => {});
-      }
+      await putStationOnKey(state.currentBox, i, station);
       showToast(t('preset.savedToKey', { n: keyNum(i, t), name: station.name }));
     },
   });
+}
+
+// putStationOnKey writes a station from a list onto key i of box, and gives it
+// a vote on radio-browser. Shared with the UI 2.0 preview's Radio (ui2radio.js).
+export async function putStationOnKey(box, i, station) {
+  const logo = stationLogoChain(station);
+  await SetPreset(box.host, box.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
+  if (station.stationuuid) {
+    RadioVote(station.stationuuid).catch(() => {});
+  }
 }
 function closePick() {
   const modal = $('pickModal');
@@ -167,7 +205,16 @@ function closePick() {
   modal.classList.add('hidden');
   const back = opener;
   opener = null;
-  if (wasOpen && back && back.isConnected && typeof back.focus === 'function') back.focus();
+  if (!wasOpen || !back) return;
+  if (!state.ui2Shell) {
+    // The current layout keeps its plain return: the opener itself, if still there.
+    if (back.el && back.el.isConnected && typeof back.el.focus === 'function') back.el.focus();
+    return;
+  }
+  const el = openerTarget(back);
+  if (el && typeof el.focus === 'function') {
+    try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+  }
 }
 
 // mountPicker attaches the handlers that used to be wired at module scope in

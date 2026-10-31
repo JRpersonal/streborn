@@ -289,7 +289,7 @@ import {
 // pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
-import { renderRecent, initRecentView, repaintRecentFavStars } from './views/recent.js';
+import { renderRecent, initRecentView, repaintRecentFavStars, recentFollowsShellPick } from './views/recent.js';
 import { shareModalHTML, openShareModal } from './share.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
@@ -337,7 +337,7 @@ import {
 // pattern as the views above. openLibrary is the entry point switchView calls;
 // showSlotPicker / formatDuration are main.js-local helpers it reuses, injected
 // below.
-import { openLibrary, initLibraryView } from './views/library.js';
+import { openLibrary, initLibraryView, libraryFollowSpeaker } from './views/library.js';
 // USB stick setup / install wizard view (extracted from this monolith, same
 // pattern as the views above). renderSetupTargetPicker is the entry point
 // switchView calls; refreshDrives + loadWifiProfiles are also called from
@@ -3228,6 +3228,11 @@ async function pickBoxFromShell(box) {
     loadBoxSettings();
   } else if (view === 'setup' && state.setupTarget !== prevTarget) {
     renderSetupTargetPicker();
+  } else if (view === 'library') {
+    // Its play and key actions name the speaker they act on.
+    libraryFollowSpeaker();
+  } else if (view === 'recent') {
+    recentFollowsShellPick();
   }
 }
 

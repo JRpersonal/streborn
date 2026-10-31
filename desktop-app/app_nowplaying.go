@@ -188,6 +188,11 @@ type SpotifyNow struct {
 	Cover   string `json:"cover"`
 	Context string `json:"context"` // current playlist/album URI (for a long-press save)
 	Account string `json:"account"` // current go-librespot login
+	// AccountNames maps every account id the speaker has learned a display name
+	// for to that name (internal/spotify/accountnames.go). The app prints a
+	// preset's account and the Spotify view's login list from it, never the id.
+	// Without the field here the decode dropped it and no name ever arrived.
+	AccountNames map[string]string `json:"accountNames,omitempty"`
 	// PremiumRequired is true when the box's Spotify account is free/open, which
 	// cannot do the autonomous on-demand playback a preset recall needs (#45). The
 	// Spotify view shows a "recall needs Premium" note when set.
