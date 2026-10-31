@@ -99,3 +99,32 @@ func TestPhoneFleetUpdateWarnsGroupedSpeakers(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneUpdateCardSeesAGroupFormedLater pins why the note went missing on a
+// reporter's leader speaker (#1339): the page read the group once on open, the
+// group was formed in the desktop app afterwards, and the slow group poll only
+// asked again while a group was already known or the Speakers tab was open.
+// A single failed read also turned a known group into "alone" for good. The
+// behaviour itself is exercised in
+// desktop-app/frontend/src/phoneupdategroupnote.test.js.
+func TestPhoneUpdateCardSeesAGroupFormedLater(t *testing.T) {
+	for _, want := range []string{
+		// A failed read keeps the last known group.
+		"if (z == null) return;",
+		// Only the newest of several overlapping reads counts.
+		"if (seq !== zoneSeq) return;",
+		// The More tab, where the update card lives, reads the group on open
+		// and keeps polling it.
+		"if (name === 'More') loadZone();",
+		"if (zonePollDue()) loadZone(); }, 15000);",
+		"(mo && !mo.hidden)",
+		// "Only this speaker" reads the group fresh.
+		"if (onlyThis) loadZone().catch(function(){});",
+		// One gate, testable on its own.
+		"function suGroupNoteDue(rows) { return groupNoteDue(zone, rows); }",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("index.html lacks %q", want)
+		}
+	}
+}
