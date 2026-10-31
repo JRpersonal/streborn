@@ -943,7 +943,7 @@ then keeps the repair) is the other candidate. The bundles cannot tell: their
 150-line syslog tails start two and three minutes after the last restart, and
 where they show a running play, RelTime moves in lockstep with the syslog
 clock below (`RelTime 0:09:44 -> 0:09:45 -> 0:09:46` beside
-`Audio path offset 585 -> 586`, RelTime = offset - 1 s, the same number as
+`Audio path offset 585 -> 586`, RelTime equal to the newest offset line, the same number as
 `UpnpState ... PLAYING end 0 time 585`). If RelTime does freeze through the
 self-resume, the offset may well freeze with it.
 

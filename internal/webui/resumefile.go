@@ -33,7 +33,7 @@ import (
 // the RelTime veto below did not stop the restart. Why it did not is NOT
 // measured: the bundles' syslog tails start minutes after each restart, and
 // where they show a running play, RelTime and the syslog's "Audio path offset
-// N" move in lockstep (RelTime = offset - 1 s, the same number as UpnpState's
+// N" move in lockstep (RelTime equals the newest offset line, the same number as UpnpState's
 // "time N", one clock). A frozen RelTime during the self-resume is the working
 // guess; an unreadable RelTime is the other candidate. So the offset is used
 // as a second clock where it helps either way (it is read even when RelTime is

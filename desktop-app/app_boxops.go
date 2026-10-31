@@ -224,9 +224,11 @@ func friendlyError(resp *http.Response) string {
 }
 
 // Pause / Stop pro Box.
-func (a *App) Pause(host string, port int) error  { return a.doAction(host, port, "pause") }
-func (a *App) Resume(host string, port int) error { return a.doAction(host, port, "resume") }
-func (a *App) Stop(host string, port int) error   { return a.doAction(host, port, "stop") }
+func (a *App) Pause(host string, port int) error { return a.doAction(host, port, "pause") }
+func (a *App) Resume(host string, port int) error {
+	return a.doActionTimeout(host, port, "resume", resumeCallTimeout)
+}
+func (a *App) Stop(host string, port int) error { return a.doAction(host, port, "stop") }
 
 // Next / Prev advance or rewind the current track. Source-aware on the agent:
 // it skips go-librespot when Spotify is the live source, otherwise the STR play
@@ -235,8 +237,19 @@ func (a *App) Stop(host string, port int) error   { return a.doAction(host, port
 func (a *App) Next(host string, port int) error { return a.doAction(host, port, "next") }
 func (a *App) Prev(host string, port int) error { return a.doAction(host, port, "prev") }
 
+// resumeCallTimeout covers the agent's resume of a paused music file: a plain
+// Play, up to 4 s watching whether the file moves, and only then the restart at
+// the paused position (Stop, Play, 2 s, Seek). That runs past the shared 6 s,
+// and the app would report a failed resume the speaker then carried out (#830).
+const resumeCallTimeout = 15 * time.Second
+
 func (a *App) doAction(host string, port int, action string) error {
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/"+action, "application/json", "")
+	return a.doActionTimeout(host, port, action, 0)
+}
+
+// doActionTimeout is doAction with a per-call deadline; 0 uses the shared 6 s.
+func (a *App) doActionTimeout(host string, port int, action string, timeout time.Duration) error {
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/"+action, "application/json", "", timeout)
 	if err != nil {
 		return err
 	}

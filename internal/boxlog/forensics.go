@@ -590,7 +590,7 @@ type forensics struct {
 	// audioOffset is the newest "HandleAudioStatus: Audio path offset N" the
 	// UPnP account logged, and audioOffsetAt when it was read: the speaker's
 	// play clock in seconds, one line a second while a UPnP play runs, the
-	// same number RelTime reports plus one (#830). Never classified, it would
+	// same number RelTime reports once the line is out (#830). Never classified, it would
 	// flood the event ring; see Reader.AudioPathOffset.
 	audioOffset   int
 	audioOffsetAt time.Time

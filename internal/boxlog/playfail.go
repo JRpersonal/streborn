@@ -99,7 +99,7 @@ func (r *Reader) PresetRefusalsSince(since time.Time) []PresetRefusal {
 // It is a second clock beside GetPositionInfo RelTime for telling a resume
 // the speaker did by itself from the frozen resume of #830. In the field
 // bundles of an ST10 (FW 27.0.6) it moves in lockstep with RelTime while a
-// file plays (RelTime = offset - 1 s); what both do through a resume is not
+// file plays (RelTime equals the newest offset line); what both do through a resume is not
 // measured yet. Safe for concurrent use; a nil reader reports ok=false.
 func (r *Reader) AudioPathOffset() (offset int, at time.Time, ok bool) {
 	if r == nil || r.forensics == nil {
