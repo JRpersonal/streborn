@@ -772,7 +772,15 @@ async function verifyLibraryPlayback(item, target, report) {
 // what was just sent plays: 'playing' once it does, 'rejected' when the speaker
 // turned it down, 'timeout' when it never got there, 'gone' when no speaker is
 // selected any more.
-export async function waitForPlayState(box, deadline) {
+//
+// expect (optional, the UI 2.0 preview's honest "Playing on X") makes
+// 'playing' mean "plays what was sent", not "plays something": { before, url,
+// name }, where before is nowPlayingSig of the speaker read before the press.
+// A PLAY_STATE counts once the speaker plays url or name, or once its
+// now-playing differs from before or passed through another state since the
+// press (playConfirmed). Without expect, any PLAY_STATE counts, as always.
+export async function waitForPlayState(box, deadline, expect) {
+  let moved = false;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
@@ -785,10 +793,45 @@ export async function waitForPlayState(box, deadline) {
     }
     const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
-    if (ps === 'PLAY_STATE') return 'playing'; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) return 'rejected'; // box rejected it
+    if (ps !== 'PLAY_STATE') { moved = true; continue; }
+    if (!expect || playConfirmed(xml, expect, moved)) return 'playing'; // decoded and playing: all good
   }
   return 'timeout';
+}
+
+const XML_ENT = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'" };
+const unXml = (v) => String(v || '').replace(/&(amp|lt|gt|quot|apos);/g, (m) => XML_ENT[m]);
+
+// statusSig is a speaker's now-playing in one string (source, location, item
+// name) from its /now_playing XML: what tells one play from another.
+export function statusSig(xml) {
+  const x = String(xml || '');
+  const src = (x.match(/source="([^"]+)"/) || [])[1] || '';
+  const loc = (x.match(/location="([^"]*)"/) || [])[1] || '';
+  const name = (x.match(/<itemName>([^<]*)<\/itemName>/) || [])[1] || '';
+  return `${src}|${unXml(loc)}|${unXml(name)}`;
+}
+
+// nowPlayingSig reads the speaker once and returns its statusSig, '' when it
+// did not answer.
+export async function nowPlayingSig(box) {
+  if (!box) return '';
+  try { return statusSig(await Status(box.host, box.port)); } catch { return ''; }
+}
+
+// playConfirmed: a speaker in PLAY_STATE (xml) plays what was sent. It plays
+// expect.url or expect.name, or its now-playing is not the one read before
+// the press (expect.before), or it went through another state since the press
+// (moved). The same thing playing on as before the press, unchanged, is not
+// a confirmation: a refused recall leaves exactly that.
+export function playConfirmed(xml, expect = {}, moved = false) {
+  const sig = statusSig(xml);
+  const [, loc, name] = sig.split('|');
+  if (expect.url && loc && loc === expect.url) return true;
+  if (expect.name && name && name === expect.name) return true;
+  if (moved) return true;
+  return !!expect.before && sig !== expect.before;
 }
 
 // probeDelivery asks the Go side whether the media server hands over the first

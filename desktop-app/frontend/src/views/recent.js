@@ -29,7 +29,7 @@ import { keyButtonHTML } from '../shell2/keybtn.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { loadingHTML } from '../shell2/library.js';
 import { keyHolds, keySavingVerdict, keyVerdict, startingVerdict, verdictFromPlayState } from '../shell2/feedback.js';
-import { waitForPlayState } from './library.js';
+import { nowPlayingSig, waitForPlayState } from './library.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
@@ -640,6 +640,9 @@ function wireCard(c, i) {
       const speaker = box ? recentBoxDisplayLabel(box) : '';
       let took = false;
       if (busy) setCardStatus(c, startingVerdict(speaker));
+      // What the speaker plays before the press: "Playing on X" is said only
+      // once it plays this card, not because it plays on (waitForPlayState).
+      const before = busy && box ? await nowPlayingSig(box) : '';
       try {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
@@ -679,7 +682,7 @@ function wireCard(c, i) {
         if (busy) { playsInFlight.delete(c.cardKey); setPlayBusy(c, playBtn, false); }
       }
       if (busy && took && box) {
-        const verdict = await waitForPlayState(box, Date.now() + 26000);
+        const verdict = await waitForPlayState(box, Date.now() + 26000, { before, url: c.url || '', name: c.name || '' });
         setCardStatus(c, verdictFromPlayState(speaker, verdict));
       }
     };

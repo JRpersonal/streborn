@@ -214,7 +214,7 @@ describe('the view keeps one copy and both layouts', () => {
     expect(play).toContain("t('ui2.library.starting', { name })");
     expect(play.indexOf("t('ui2.library.playingOn'")).toBeGreaterThan(play.indexOf('verifyLibraryPlayback(item, target, (r)'));
     expect(srcOf('libraryPlayFolder')).toContain("if (v === 'gone')");
-    expect(srcOf('waitForPlayState')).toContain("if (ps === 'PLAY_STATE') return 'playing';");
+    expect(srcOf('waitForPlayState')).toContain("if (!expect || playConfirmed(xml, expect, moved)) return 'playing';");
   });
 
   it('follows a speaker chosen in the sidebar', () => {
