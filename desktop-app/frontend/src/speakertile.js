@@ -16,6 +16,8 @@
 //   ctx.needsUpdate(b)      boxNeedsUpdate from main.js
 //   ctx.cannotReachInternet(b)  boxCannotReachInternet from nointernet.js
 //   ctx.stereoPairs         live pairs (groups.js stereoPairsOf)
+//   ctx.installHolds        { host: hold } of speakers an update from this app
+//                           is still finishing on (installhold.js)
 
 import { inStereoPair } from './groups.js';
 
@@ -37,12 +39,21 @@ export function speakerTileState(b, ctx = {}) {
   const standby = isCurrent && !playing
     && (ctx.nowSource === 'STANDBY' || ctx.nowPlayState === 'STANDBY_STATE');
   const pairs = ctx.stereoPairs || [];
+  // An update from this app is still finishing on it: the agent is silent
+  // because it is restarting into the new version, so the speaker looks stock
+  // (or "STR not running") without being either, and nothing may invite an
+  // install on it (field case 2026-10-30).
+  const holds = ctx.installHolds || {};
+  const updateFinishing = stock && !offline && !!box.host
+    && Object.prototype.hasOwnProperty.call(holds, box.host) && !!holds[box.host];
   return {
     offline,
     stock,
     // A box STR once ran on whose agent went silent while the stock firmware
-    // still answers: a repair, not a first install.
-    strNotRunning: stock && !!box.strNotRunning,
+    // still answers: a repair, not a first install. Not while an update is
+    // finishing on it, which is neither.
+    strNotRunning: stock && !updateFinishing && !!box.strNotRunning,
+    updateFinishing,
     playing,
     // Stock speakers have no agent to update and no agent to ask about the
     // internet, so both chips are STR-only.

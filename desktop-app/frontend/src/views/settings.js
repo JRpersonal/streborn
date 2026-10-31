@@ -34,7 +34,9 @@ import { networkView } from '../netview.js';
 import {
   BoxSettings,
   RefreshKnownBoxes,
+  InstallHolds,
 } from '../api.js';
+import { holdsByHost, holdFor, holdMinutes } from '../installhold.js';
 import { deps, initSettingsDeps, renderSTRRemovedPanel, openInstallFor, settingsBoxLabel } from './settings/shared.js';
 import { renderStatusSection, renderPhoneSection, wireStatusSections } from './settings/status.js';
 import { renderBasicsSections, wireBasicsSections, refreshBoxBalanceRow, refreshStartVolume } from './settings/basics.js';
@@ -222,6 +224,44 @@ function renderSTRNotRunningPanel(body, box, withRetry) {
   if (back) back.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
 }
 
+// updateHoldOf asks the backend whether an update from this app is still
+// finishing on the speaker (the hold install_guard.go enforces) and returns
+// that hold, or null. A failed call is null: the panel this picks is a hint
+// in front of the install guard, never the guard itself.
+async function updateHoldOf(box) {
+  if (!box || !box.host) return null;
+  try {
+    return holdFor(holdsByHost(await InstallHolds([box.host])), box.host);
+  } catch {
+    return null;
+  }
+}
+
+// renderUpdateFinishingPanel stands in for the "STR is not running" and
+// "STR not installed yet" panels while an update from this app is still
+// finishing on the speaker. Its agent is silent because it is restarting into
+// the new version, so neither "install STR again" nor "open the setup" is the
+// right offer: the install would be refused (field case 2026-10-30: the
+// speaker was degraded to "STR not running" six minutes after its update was
+// accepted, and the app offered the reinstall the guard exists to stop).
+function renderUpdateFinishingPanel(body, box, hold) {
+  body.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-state-title">${escapeHtml(t('settingsView.updateFinishingTitle'))}</div>
+      <div class="empty-state-text">
+        ${escapeHtml(t('settingsView.updateFinishingHelp', { name: settingsBoxLabel(box), min: holdMinutes(hold) }))}
+      </div>
+      <div class="empty-state-buttons">
+        <button class="btn btn-primary btn-mini" id="settingsRetry">${escapeHtml(t('common.retry'))}</button>
+        <button class="btn btn-mini" id="settingsBackToBoxes">${escapeHtml(t('settingsView.backToSpeakerList'))}</button>
+      </div>
+    </div>`;
+  const r = document.getElementById('settingsRetry');
+  if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
+  const back = document.getElementById('settingsBackToBoxes');
+  if (back) back.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+}
+
 // boseAnswersWithoutSTR asks the backend for a fresh direct probe of the
 // selected speaker and reports whether its Bose firmware answered while the
 // STR agent did not: a degraded "STR not running" record, a plain stock
@@ -269,6 +309,18 @@ export async function loadBoxSettings() {
       state.strRemovedHost = null;
     } else {
       renderSTRRemovedPanel(body, state.settingsBox);
+      return;
+    }
+  }
+  // A stock-looking speaker an update from this app is still finishing on is
+  // neither "not running" nor "not installed": say what is going on, and offer
+  // no install while the guard would refuse it anyway.
+  if (state.settingsBox && state.settingsBox.kind === 'stock') {
+    const asked = state.settingsBox;
+    const hold = await updateHoldOf(asked);
+    if (state.settingsBox !== asked) return; // the user picked another speaker meanwhile
+    if (hold) {
+      renderUpdateFinishingPanel(body, asked, hold);
       return;
     }
   }
@@ -436,7 +488,9 @@ export async function loadBoxSettings() {
       return;
     }
     if (await boseAnswersWithoutSTR(state.settingsBox)) {
-      renderSTRNotRunningPanel(body, state.settingsBox, true);
+      const hold = await updateHoldOf(state.settingsBox);
+      if (hold) renderUpdateFinishingPanel(body, state.settingsBox, hold);
+      else renderSTRNotRunningPanel(body, state.settingsBox, true);
       return;
     }
     body.innerHTML = `

@@ -16,6 +16,7 @@ import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './noint
 import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
+import { holdsByHost, holdFor } from './installhold.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
@@ -101,6 +102,7 @@ import {
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
+  InstallHolds,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -422,7 +424,12 @@ initSpotifyView({
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
+initSetupView({
+  switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab,
+  // The speaker list reads the same holds (speakertile.js); repaint it when a
+  // speaker enters or leaves one.
+  installHoldsChanged: () => { renderBoxSelect(); renderShellSpeakers(); },
+});
 initStreamSourceView({
   playStation: (station, playback) => playStation({
     url: playback.streamURL,
@@ -2896,6 +2903,7 @@ function renderBoxSelect() {
     needsUpdate: boxNeedsUpdate,
     cannotReachInternet: boxCannotReachInternet,
     stereoPairs: livePairs,
+    installHolds: state.installHolds,
   };
   const pill = (b) => {
     const tile = speakerTileState(b, tileCtx);
@@ -2937,9 +2945,17 @@ function renderBoxSelect() {
       // first-time "Ready for STR", so the owner knows this is a repair, not
       // a speaker that never had STR (2026-09-06 report: the card kept the
       // old version badge on a speaker STR had just been removed from).
+      //
+      // A speaker an update from this app is still finishing on says that, and
+      // its tooltip offers no install: the guard would refuse it (field case
+      // 2026-10-30, the badge said "STR not running" and the tooltip "Click
+      // to install STR again" while the update was still coming up).
       const gone = tile.strNotRunning;
-      const badge = `<span class="box-stock-badge${gone ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge'))}</span>`;
-      const stockTitle = off ? offTitle : t(gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
+      const finishing = tile.updateFinishing;
+      const badgeKey = finishing ? 'speaker.updateFinishingBadge' : gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge';
+      const badge = `<span class="box-stock-badge${gone || finishing ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(badgeKey))}</span>`;
+      const stockTitle = off ? offTitle
+        : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
@@ -3161,6 +3177,17 @@ async function pickBox(box, titleHint) {
     // a positive CTA instead of blocking soundbars / adapters. Setup notes the
     // hardware-preset-button caveat for 'limited' models.
     const label = getBoxLabel(box);
+    // An update from this app still finishing on the speaker makes it look
+    // stock (its agent is restarting into the new version), and the install
+    // this dialog invites would be refused by the install guard. Say what is
+    // going on instead (field case 2026-10-30). A failed call falls through to
+    // the usual invitation; the guard stays the backstop.
+    let hold = null;
+    try { hold = holdFor(holdsByHost(await InstallHolds([box.host])), box.host); } catch {}
+    if (hold) {
+      showToast(t('speaker.updateFinishingToast', { label }));
+      return;
+    }
     const ok = await confirmWarn(
       t('speaker.stockConfirmTitle'),
       t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),

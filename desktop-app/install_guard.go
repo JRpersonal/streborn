@@ -124,6 +124,52 @@ func (a *App) recentOTAHold(host string) (since time.Duration, remaining time.Du
 	return since, remaining, ok
 }
 
+// InstallHold is one speaker the install guard holds because an update from
+// this app is still finishing on it: how long ago the update started and how
+// much longer the hold lasts, in whole seconds.
+type InstallHold struct {
+	Host         string `json:"host"`
+	SinceSec     int    `json:"sinceSec"`
+	RemainingSec int    `json:"remainingSec"`
+}
+
+// InstallHolds reports, for the given hosts, which ones recentOTAHold holds
+// right now, in the order asked. Only held hosts are in the list (a slice, not
+// a map, so the generated bindings carry the InstallHold type). It exists so the install picker
+// can say "ST Reborn is finishing an update on this speaker" and keep the
+// install button disabled up front, instead of presenting the speaker as stock
+// firmware ready for a first install and refusing only after the click.
+//
+// Field case 2026-10-30 (SoundTouch 20 Series I, app v1.2.1): the update was
+// accepted, the speaker was slow to come back, discovery degraded it to "STR
+// not running", and four minutes later the picker showed it as "Bose stock
+// firmware, first install" with the network install ready. The guard refused
+// the click, as it should, but the picker had already offered precisely the
+// action the guard is there to stop. The guard stays the backstop; this only
+// moves the answer in front of the button. It does no network I/O, so the
+// picker may call it on every render.
+func (a *App) InstallHolds(hosts []string) []InstallHold {
+	out := []InstallHold{}
+	asked := map[string]bool{}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if h == "" || asked[h] {
+			continue
+		}
+		asked[h] = true
+		since, remaining, held := a.recentOTAHold(h)
+		if !held {
+			continue
+		}
+		out = append(out, InstallHold{
+			Host:         h,
+			SinceSec:     int(since.Round(time.Second) / time.Second),
+			RemainingSec: max(1, int(remaining.Round(time.Second)/time.Second)),
+		})
+	}
+	return out
+}
+
 // runningAgentVersion asks the speaker's STR agent for its version and
 // returns it when the agent answers. A port that is not the agent (a 404 from
 // a stock port, a daemon that never replies) is not an answer.

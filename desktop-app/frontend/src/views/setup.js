@@ -69,6 +69,7 @@ import {
   RecordUpdateIntent,
   RepairInstallViaSSH,
   BoxInstallReachable,
+  InstallHolds,
   ProbeSetupAP,
   PushWLANToBox,
   GetBoxFirmware,
@@ -88,6 +89,7 @@ import {
 import { takeShareOffer, wireShareOffer } from '../share.js';
 import { stereoInstallChoices, dissolveHosts, restoreMessage } from '../stereoinstall.js';
 import { verifyInstalledLoop, waitForStableAgent } from '../agentsettle.js';
+import { holdsByHost, holdFor, sameHeldHosts, stockCardText, heldInstallNote } from '../installhold.js';
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
 // app's local Wi-Fi setup still works after the cloud shutdown, so it is the
@@ -186,6 +188,10 @@ let deps = {
   // from the target picker but was missing from this list, which made it look
   // optional; the no-op default keeps every call site safe either way.
   speakerPicked: () => {},
+  // installHoldsChanged(): a speaker entered or left the update hold
+  // (refreshInstallHolds); main.js repaints the speaker list, whose badge and
+  // tooltip read the same holds.
+  installHoldsChanged: () => {},
 };
 export function initSetupView(d) {
   deps = { ...deps, ...d };
@@ -495,9 +501,15 @@ export function renderSetupTargetPicker() {
     // for a normal stock speaker. The neutral .stc-badge base (--c-text on
     // --c-surface-3) is high-contrast in every theme and is what the #833 fix
     // intended before it landed on the wrong element.
+    //
+    // A speaker an update from this app is still finishing on looks stock to
+    // discovery (its agent is not answering yet), but it is not a first
+    // install, and saying so is what invites the very click the install guard
+    // refuses (field case 2026-10-30). Its card says what is going on instead.
+    const card = stockCardText(holdFor(state.installHolds, b.host));
     cards += cardHTML('stock', b.host, label,
-      boxIdentLine(b, t('setup.targetCardKindStock')),
-      t('setup.targetCardBadgeStock'), '');
+      boxIdentLine(b, card.kind),
+      card.badge, '');
     // Soundbars / home-cinema systems / adapters ('limited') install fine but
     // have no hardware preset buttons 1-6; say so honestly under the card.
     if (boxModelSupport(b.model) === 'limited') {
@@ -627,6 +639,60 @@ export function renderSetupTargetPicker() {
       console.warn('setup-ap push panel render failed', err);
     });
   }
+
+  refreshInstallHolds(stockBoxes.map(b => b.host));
+}
+
+// installHoldsInFlight keeps refreshInstallHolds to one question at a time:
+// the picker re-renders on every discovery refresh and on every click.
+let installHoldsInFlight = false;
+
+// refreshInstallHolds asks the backend which of the listed stock speakers an
+// update from this app is still finishing on (install_guard.go, the same hold
+// the install guard enforces) and repaints the picker when a speaker entered
+// or left that hold. The answer costs no network I/O on the Go side. A failed
+// call keeps the last answer: it is a hint in front of the guard, never the
+// guard itself.
+async function refreshInstallHolds(hosts) {
+  if (installHoldsInFlight) return;
+  installHoldsInFlight = true;
+  let next;
+  try {
+    next = holdsByHost(hosts.length ? await InstallHolds(hosts) : []);
+  } catch {
+    return;
+  } finally {
+    installHoldsInFlight = false;
+  }
+  const changed = !sameHeldHosts(state.installHolds, next);
+  state.installHolds = next;
+  if (changed) {
+    renderSetupTargetPicker();
+    deps.installHoldsChanged();
+  } else {
+    syncHeroInstallHold();
+  }
+}
+
+// currentHeroHold is the hold on the speaker the network-install card is for,
+// or null.
+function currentHeroHold() {
+  const sel = state.setupTarget;
+  return sel && sel.kind === 'stock' && sel.box ? holdFor(state.installHolds, sel.box.host) : null;
+}
+
+// syncHeroInstallHold shows or hides the "an update is still finishing" note
+// on the network-install card and disables its button while the hold lasts.
+// It updates the card in place: rebuilding it would wipe what the owner typed.
+function syncHeroInstallHold() {
+  const hold = currentHeroHold();
+  const note = $('setupHeroHold');
+  if (note) {
+    note.textContent = heldInstallNote(hold);
+    note.hidden = !hold;
+  }
+  const btn = $('setupHeroInstall');
+  if (btn) btn.disabled = networkInstallRunning || installWaitPanelLive || !!hold;
 }
 
 // renderSetupAPPushPanel populates the in-card panel that drives
@@ -867,13 +933,18 @@ function renderPrimaryAction() {
         && existingHero.getAttribute('data-host') === b.host) {
       // Nothing to repaint, and deliberately no touch of the stick <details>:
       // this runs every few seconds, so collapsing it here would slam shut the
-      // fallback that a failed install had just opened for the user.
+      // fallback that a failed install had just opened for the user. Only the
+      // update hold may have changed, and that is updated in place.
+      syncHeroInstallHold();
       return;
     }
     const model = b.model || 'SoundTouch';
     const curName = b.friendlyName || b.name || '';
     host.innerHTML =
       `<div class="setup-hero" data-kind="stock" data-host="${escapeAttr(b.host)}">` +
+        // Up front, not after the click: while an update from this app is still
+        // finishing on the speaker, the install is refused anyway.
+        `<div class="setup-warn setup-hero-hold" id="setupHeroHold" role="status" hidden></div>` +
         `<p class="setup-hero-body">${escapeHtml(t('setup.cardPitch', { model }))}</p>` +
         `<div class="setup-hero-field">` +
           `<label class="setup-hero-wifi-label" for="netBoxName">${escapeHtml(t('setup.cardNameLabel'))}</label>` +
@@ -906,6 +977,7 @@ function renderPrimaryAction() {
       `</div>`;
     const btn = $('setupHeroInstall');
     if (btn) btn.onclick = () => startNetworkInstall(b);
+    syncHeroInstallHold();
     const showPass = $('netWlanShowPass');
     if (showPass) showPass.onclick = () => {
       const inp = $('netWlanPass');
@@ -1059,7 +1131,7 @@ async function startNetworkInstall(box) {
     // is drawn, not when it resolves, so re-enabling here would hand the button
     // back under the one screen that exists to keep it out of reach.
     const b2 = $('setupHeroInstall');
-    if (b2 && !installWaitPanelLive) b2.disabled = false;
+    if (b2 && !installWaitPanelLive) b2.disabled = !!currentHeroHold();
   }
 }
 
@@ -2628,7 +2700,7 @@ function verifyInstalledState(box, onState) {
       offLate = offWaiting = null;
       installWaitPanelLive = false;
       const hero = $('setupHeroInstall');
-      if (hero) hero.disabled = false;
+      if (hero) hero.disabled = !!currentHeroHold();
     };
     // The panel owns a marker element, so a screen the user has navigated away
     // from is never overwritten by a late event.

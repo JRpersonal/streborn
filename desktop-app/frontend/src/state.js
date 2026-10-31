@@ -124,6 +124,11 @@ export const state = {
   // accidentally prepare a stick "into the void" and then have the
   // install step land on the wrong speaker.
   setupTarget: null,
+  // Speakers an update from this app is still finishing on, as
+  // { host: { host, sinceSec, remainingSec } } from the InstallHolds binding
+  // (installhold.js). The setup picker refreshes it on every render; while a
+  // speaker is in it, nothing offers that speaker an install.
+  installHolds: {},
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after
