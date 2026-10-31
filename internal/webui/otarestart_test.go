@@ -5,8 +5,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testAgentBin = "/mnt/nv/streborn/bin/streborn-armv7l"
@@ -45,15 +47,25 @@ type otaSeams struct {
 	started   []string
 	startErr  error
 	exited    []int
+	shutdowns int
 	engineOff int
+	slept     []time.Duration
+	// pidAtShutdown and markerAtShutdown are what run.sh's PID file and the
+	// hand-over marker held when the clean shutdown began.
+	pidAtShutdown    string
+	markerAtShutdown string
 }
 
 func installOTASeams(t *testing.T, mode, running string) (*otaSeams, *Server) {
 	t.Helper()
 	rec := &otaSeams{}
-	oldMode, oldRun, oldReboot, oldStart, oldExit, oldPID := otaWLANMode, otaRunningBinary, otaReboot, otaStartDetached, otaExit, agentPIDFile
+	oldMode, oldRun, oldReboot, oldStart, oldExit := otaWLANMode, otaRunningBinary, otaReboot, otaStartDetached, otaExit
+	oldShutdown, oldAge, oldSleep := otaShutdown, otaAgentAge, otaSleep
+	oldPID, oldMarker := agentPIDFile, agentHandOverMarker
 	t.Cleanup(func() {
-		otaWLANMode, otaRunningBinary, otaReboot, otaStartDetached, otaExit, agentPIDFile = oldMode, oldRun, oldReboot, oldStart, oldExit, oldPID
+		otaWLANMode, otaRunningBinary, otaReboot, otaStartDetached, otaExit = oldMode, oldRun, oldReboot, oldStart, oldExit
+		otaShutdown, otaAgentAge, otaSleep = oldShutdown, oldAge, oldSleep
+		agentPIDFile, agentHandOverMarker = oldPID, oldMarker
 	})
 	otaWLANMode = func() string { return mode }
 	otaRunningBinary = func() string { return running }
@@ -66,28 +78,42 @@ func installOTASeams(t *testing.T, mode, running string) (*otaSeams, *Server) {
 		return 31337, nil
 	}
 	otaExit = func(code int) { rec.exited = append(rec.exited, code) }
-	agentPIDFile = filepath.Join(t.TempDir(), "agent.pid")
+	otaAgentAge = func() time.Duration { return time.Hour }
+	otaSleep = func(d time.Duration) { rec.slept = append(rec.slept, d) }
+	dir := t.TempDir()
+	agentPIDFile = filepath.Join(dir, "agent.pid")
+	agentHandOverMarker = filepath.Join(dir, "handover")
 	if err := os.WriteFile(agentPIDFile, []byte("1234\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	otaShutdown = func() {
+		rec.shutdowns++
+		rec.pidAtShutdown = readFileTrim(agentPIDFile)
+		rec.markerAtShutdown = readFileTrim(agentHandOverMarker)
 	}
 	s := &Server{logger: slog.New(slog.DiscardHandler)}
 	s.spotifyStop = func() bool { rec.engineOff++; return true }
 	return rec, s
 }
 
-func readPIDFile(t *testing.T) string {
-	t.Helper()
-	b, err := os.ReadFile(agentPIDFile)
+func readFileTrim(p string) string {
+	b, err := os.ReadFile(p)
 	if err != nil {
-		t.Fatal(err)
+		return ""
 	}
 	return strings.TrimSpace(string(b))
 }
 
+func readPIDFile(t *testing.T) string {
+	t.Helper()
+	return readFileTrim(agentPIDFile)
+}
+
 // The coprocessor Wi-Fi ST20: no reboot. A detached helper starts the new
 // binary, holds run.sh's PID file so the watchdog does not start a second
-// agent, the Spotify engine is stopped so it is not orphaned, and the agent
-// exits.
+// agent, the exit is marked as a hand-over, the Spotify engine is stopped so
+// it is not orphaned, and the agent shuts down cleanly (not os.Exit, which
+// would skip the Recently played flush and the mDNS goodbye).
 func TestFinishAgentOTARestartsAgentOnBCO(t *testing.T) {
 	rec, s := installOTASeams(t, "bco", testAgentBin)
 	s.finishAgentOTA(testAgentBin)
@@ -101,8 +127,10 @@ func TestFinishAgentOTARestartsAgentOnBCO(t *testing.T) {
 	for _, want := range []string{
 		"/proc/",  // waits for this agent to exit
 		"kill -9", // and does not wait forever
-		"exec '" + testAgentBin + "'",
-		"agent.pid", // a temp path here; %q doubles Windows backslashes
+		"'" + testAgentBin + "'",
+		`wait "$bpid"`, // supervises the new agent instead of exec'ing it
+		"agent.pid",    // a temp path here; %q doubles Windows backslashes
+		"handover",
 		agentLogPath,
 	} {
 		if !strings.Contains(script, want) {
@@ -114,19 +142,63 @@ func TestFinishAgentOTARestartsAgentOnBCO(t *testing.T) {
 			t.Errorf("restart helper contains %q:\n%s", forbidden, script)
 		}
 	}
-	if got := readPIDFile(t); got != "31337" {
-		t.Errorf("PID file holds %q, want the helper's PID 31337", got)
+	if rec.pidAtShutdown != "31337" {
+		t.Errorf("PID file held %q at shutdown, want the helper's PID 31337", rec.pidAtShutdown)
+	}
+	if want := strconv.Itoa(os.Getpid()); rec.markerAtShutdown != want {
+		t.Errorf("hand-over marker held %q at shutdown, want this process's PID %s", rec.markerAtShutdown, want)
 	}
 	if rec.engineOff != 1 {
 		t.Errorf("engine stopped %d times, want 1", rec.engineOff)
 	}
-	if len(rec.exited) != 1 || rec.exited[0] != 0 {
-		t.Errorf("exits = %v, want one exit(0)", rec.exited)
+	if rec.shutdowns != 1 || len(rec.exited) != 0 {
+		t.Errorf("clean shutdowns = %d, hard exits = %v; want one clean shutdown and no os.Exit", rec.shutdowns, rec.exited)
+	}
+	if len(rec.slept) != 0 {
+		t.Errorf("an agent an hour old waited %v before the hand-over, want no wait", rec.slept)
+	}
+}
+
+// An agent younger than run.sh's boot watchdog window keeps serving until it
+// is out of it, and only then starts the helper: a helper alive but unbound
+// inside that window would make the watchdog start a second agent.
+func TestFinishAgentOTAWaitsOutTheBootWatchdog(t *testing.T) {
+	rec, s := installOTASeams(t, "bco", testAgentBin)
+	otaAgentAge = func() time.Duration { return 100 * time.Second }
+	otaSleep = func(d time.Duration) {
+		if len(rec.started) != 0 {
+			t.Errorf("helper started before the wait")
+		}
+		rec.slept = append(rec.slept, d)
+	}
+	s.finishAgentOTA(testAgentBin)
+	if len(rec.slept) != 1 || rec.slept[0] != otaHandOverMinAgentAge-100*time.Second {
+		t.Errorf("waited %v, want one wait of %v", rec.slept, otaHandOverMinAgentAge-100*time.Second)
+	}
+	if len(rec.started) != 1 || rec.shutdowns != 1 {
+		t.Errorf("after the wait: %d helpers, %d shutdowns; want 1 and 1", len(rec.started), rec.shutdowns)
+	}
+}
+
+func TestHandOverDelay(t *testing.T) {
+	old := otaAgentAge
+	t.Cleanup(func() { otaAgentAge = old })
+	for _, c := range []struct{ age, want time.Duration }{
+		{0, otaHandOverMinAgentAge},
+		{60 * time.Second, otaHandOverMinAgentAge - 60*time.Second},
+		{otaHandOverMinAgentAge, 0},
+		{time.Hour, 0},
+	} {
+		otaAgentAge = func() time.Duration { return c.age }
+		if got := handOverDelay(); got != c.want {
+			t.Errorf("handOverDelay at age %v = %v, want %v", c.age, got, c.want)
+		}
 	}
 }
 
 // A helper that cannot start still ends the process: run.sh's watchdog then
 // respawns the agent from the same NAND path, and the PID file is left to it.
+// No hand-over marker: nothing supervises a hand-over that did not happen.
 func TestFinishAgentOTAHelperFailureLeavesItToTheWatchdog(t *testing.T) {
 	rec, s := installOTASeams(t, "bco", testAgentBin)
 	rec.startErr = errors.New("fork failed")
@@ -137,8 +209,11 @@ func TestFinishAgentOTAHelperFailureLeavesItToTheWatchdog(t *testing.T) {
 	if got := readPIDFile(t); got != "1234" {
 		t.Errorf("PID file holds %q, want it untouched", got)
 	}
-	if len(rec.exited) != 1 {
-		t.Errorf("exits = %v, want one", rec.exited)
+	if rec.markerAtShutdown != "" {
+		t.Errorf("hand-over marker %q written without a helper", rec.markerAtShutdown)
+	}
+	if rec.shutdowns != 1 {
+		t.Errorf("shutdowns = %d, want one", rec.shutdowns)
 	}
 }
 
@@ -155,16 +230,20 @@ func TestFinishAgentOTARebootsElsewhere(t *testing.T) {
 	} {
 		t.Run(c.mode+"|"+c.running, func(t *testing.T) {
 			rec, s := installOTASeams(t, c.mode, c.running)
+			otaAgentAge = func() time.Duration { return 0 }
 			s.finishAgentOTA(testAgentBin)
 			if rec.rebooted != 1 {
 				t.Errorf("rebooted %d times, want 1", rec.rebooted)
 			}
-			if len(rec.started) != 0 || len(rec.exited) != 0 || rec.engineOff != 0 {
-				t.Errorf("reboot path also started %d helpers, exited %v, stopped the engine %d times",
-					len(rec.started), rec.exited, rec.engineOff)
+			if len(rec.started) != 0 || len(rec.exited) != 0 || rec.shutdowns != 0 || rec.engineOff != 0 || len(rec.slept) != 0 {
+				t.Errorf("reboot path also started %d helpers, exited %v, shut down %d times, stopped the engine %d times, slept %v",
+					len(rec.started), rec.exited, rec.shutdowns, rec.engineOff, rec.slept)
 			}
 			if got := readPIDFile(t); got != "1234" {
 				t.Errorf("PID file holds %q, want it untouched", got)
+			}
+			if _, err := os.Stat(agentHandOverMarker); err == nil {
+				t.Errorf("reboot path wrote the hand-over marker")
 			}
 		})
 	}
@@ -184,22 +263,37 @@ func TestFinishAgentOTARebootFailureFallsBack(t *testing.T) {
 	}
 }
 
-// The helper's own guard: should the watchdog have started an agent after all,
-// the helper steps aside instead of starting a second one; otherwise it claims
-// the PID file and execs the new binary with run.sh's flags, quoted.
-func TestExecNewAgentLines(t *testing.T) {
-	old := agentPIDFile
-	t.Cleanup(func() { agentPIDFile = old })
+// The helper's own guard: unless run.sh's PID file names the helper, it steps
+// aside for the watchdog; otherwise it starts the new binary with run.sh's
+// flags, quoted, as its child, hands the PID file to that child and records an
+// exit that is not a hand-over in run.sh's NAND logs.
+func TestSuperviseNewAgentLines(t *testing.T) {
+	oldPID, oldLog, oldSetup, oldCrash, oldMarker := agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker
+	t.Cleanup(func() {
+		agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker = oldPID, oldLog, oldSetup, oldCrash, oldMarker
+	})
 	agentPIDFile = "/mnt/nv/streborn/agent.pid"
-	got := execNewAgentLines(testAgentBin, []string{"--presets", "/mnt/nv/streborn/presets.json", "--name", "it's"})
+	agentLogPath = "/tmp/streborn-agent.log"
+	agentSetupLogPath = "/mnt/nv/streborn/setup.log"
+	agentCrashLogPath = "/mnt/nv/streborn/logs/agent-crash.log"
+	agentHandOverMarker = "/tmp/streborn-agent-handover"
+	got := superviseNewAgentLines(testAgentBin, []string{"--presets", "/mnt/nv/streborn/presets.json", "--name", "it's"})
 	for _, want := range []string{
 		`cur=$(cat "/mnt/nv/streborn/agent.pid" 2>/dev/null)`,
-		`[ "$cur" != "$$" ] && [ -d "/proc/$cur" ]; then exit 0; fi`,
-		`echo "$$" > "/mnt/nv/streborn/agent.pid"`,
-		`exec '` + testAgentBin + `' '--presets' '/mnt/nv/streborn/presets.json' '--name' 'it'\''s' >> "/tmp/streborn-agent.log" 2>&1`,
+		`if [ -n "$cur" ] && [ "$cur" != "$$" ]; then exit 0; fi`,
+		`'` + testAgentBin + `' '--presets' '/mnt/nv/streborn/presets.json' '--name' 'it'\''s' >> "/tmp/streborn-agent.log" 2>&1 &`,
+		`echo "$bpid" > "/mnt/nv/streborn/agent.pid"`,
+		`wait "$bpid"`,
+		`if [ "$(cat "/tmp/streborn-agent-handover" 2>/dev/null)" = "$bpid" ]; then rm -f "/tmp/streborn-agent-handover"; exit 0; fi`,
+		`>> "/mnt/nv/streborn/setup.log"`,
+		`tail -n 40 "/tmp/streborn-agent.log"`,
+		`>> "/mnt/nv/streborn/logs/agent-crash.log"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "exec ") {
+		t.Errorf("the helper must supervise the new agent, not exec it:\n%s", got)
 	}
 }

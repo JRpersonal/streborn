@@ -112,12 +112,14 @@ var errNANDReadOnly = errors.New(
 //     the binary); on a second failure it aborts without rebooting and
 //     leaves the marker instead of rebooting into a silently-old binary.
 //
-// finish is the last step after a passing verify: "reboot", or on a speaker
-// that restarts only the agent after an update (otarestart.go), the lines that
-// start the new binary in the helper's own process.
-func swapHelperScript(agentPID int, stage, dst string, size int, sha, finish string) string {
+// waitSec is how long the helper waits for the agent before kill -9
+// (swapHelperWaitSec, longer when the agent first waits out run.sh's boot
+// watchdog). finish is the last step after a passing verify: "reboot", or on
+// a speaker that restarts only the agent after an update (otarestart.go), the
+// lines that start and supervise the new binary.
+func swapHelperScript(agentPID, waitSec int, stage, dst string, size int, sha, finish string) string {
 	return fmt.Sprintf(`i=0
-while [ -d /proc/%d ] && [ "$i" -lt 90 ]; do sleep 1; i=$((i+1)); done
+while [ -d /proc/%d ] && [ "$i" -lt %d ]; do sleep 1; i=$((i+1)); done
 if [ -d /proc/%d ]; then kill -9 %d 2>/dev/null; sleep 3; fi
 if [ -d /proc/%d ]; then
   echo "swap aborted: agent PID %d still alive after kill -9" > %q; sync
@@ -150,7 +152,7 @@ rm -f %q %q
 sync
 sleep 1
 %s`,
-		agentPID,
+		agentPID, waitSec,
 		agentPID, agentPID,
 		agentPID,
 		agentPID, swapFailMarker,
@@ -171,11 +173,16 @@ sleep 1
 // instead of the failure staying invisible on a stickless box.
 const swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
 
+// swapHelperWaitSec is how long the swap helper waits for the agent to exit
+// before it escalates to kill -9.
+const swapHelperWaitSec = 90
+
 // armRAMStagedSwap implements tier 3 once the upload is complete in the RAM
 // stage (receiveAgentBinary moved it there when the NAND filled up): spawn the
 // detached swap helper and return nil when the caller may answer the client
 // and exit the agent process. The caller MUST exit shortly after (the helper
-// waits for this PID, capped at 90 s). size and sum describe the staged file;
+// waits for this PID, capped at swapHelperWaitSec, plus handOverDelay on a
+// restart-only speaker). size and sum describe the staged file;
 // the helper checks both before it touches dst.
 //
 // restartOnly reports that the helper ends by starting the new agent instead
@@ -190,12 +197,15 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID
 	if fi.Size() != size {
 		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
 	}
-	finish := "reboot"
+	finish, waitSec := "reboot", swapHelperWaitSec
 	restartOnly = s.otaRestartOnly(dst)
 	if restartOnly {
-		finish = execNewAgentLines(dst, agentArgs())
+		finish = superviseNewAgentLines(dst, agentArgs())
+		// The agent waits out run.sh's boot watchdog before it exits
+		// (waitOutBootWatchdog); the helper must not kill it for that.
+		waitSec += int(handOverDelay().Seconds()) + 1
 	}
-	script := swapHelperScript(os.Getpid(), ramStageTarget, dst, int(size), sum, finish)
+	script := swapHelperScript(os.Getpid(), waitSec, ramStageTarget, dst, int(size), sum, finish)
 	// Own session: the helper must survive this agent's exit and any process-
 	// group teardown on the way down. Deliberately not Wait()ed: the helper
 	// outlives us by design.

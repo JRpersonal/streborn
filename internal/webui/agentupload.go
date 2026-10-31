@@ -221,11 +221,11 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 				// The helper starts the new agent itself instead of rebooting
 				// (otarestart.go): it holds run.sh's PID file through the copy,
 				// so the watchdog neither respawns the old binary mid-copy nor
-				// starts a second agent afterwards.
-				s.claimAgentPIDFile(helperPID)
-				s.stopEngineForRestart()
-				s.logger.Info("exiting for the RAM-staged binary swap; the helper starts the new agent, no box reboot")
-				os.Exit(0)
+				// starts a second agent afterwards. The helper's wait covers
+				// the boot-watchdog wait and the clean shutdown.
+				s.waitOutBootWatchdog()
+				s.handOverAndExit(helperPID, "RAM-staged binary swap, the helper starts the new agent, no box reboot")
+				return
 			}
 			s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
 			os.Exit(0)

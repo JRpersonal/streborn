@@ -40,10 +40,11 @@ func TestIsReadOnlyFSErr(t *testing.T) {
 // once, and only reboot after a passing verify. Guard the script's
 // load-bearing pieces so a refactor cannot silently drop one.
 func TestSwapHelperScript(t *testing.T) {
-	script := swapHelperScript(4242, "/dev/shm/streborn-ota.stage",
+	script := swapHelperScript(4242, swapHelperWaitSec, "/dev/shm/streborn-ota.stage",
 		"/mnt/nv/streborn/bin/streborn-armv7l", 12345678, "abc123", "reboot")
 	for _, want := range []string{
 		"/proc/4242",
+		`[ "$i" -lt 90 ]`,
 		"kill -9 4242",
 		"swap aborted", // agent still alive -> abort marker, no reboot
 		`cp "/dev/shm/streborn-ota.stage" "/mnt/nv/streborn/bin/streborn-armv7l"`,
@@ -81,12 +82,15 @@ func TestSwapHelperScript(t *testing.T) {
 // watchdog as before.
 func TestSwapHelperScriptRestartOnly(t *testing.T) {
 	dst := "/mnt/nv/streborn/bin/streborn-armv7l"
-	finish := execNewAgentLines(dst, []string{"--listen-webui", ":8888"})
-	script := swapHelperScript(4242, "/dev/shm/streborn-ota.stage", dst, 12345678, "abc123", finish)
+	finish := superviseNewAgentLines(dst, []string{"--listen-webui", ":8888"})
+	script := swapHelperScript(4242, 150, "/dev/shm/streborn-ota.stage", dst, 12345678, "abc123", finish)
 	if strings.Contains(script, "reboot") {
 		t.Errorf("restart-only helper must not reboot:\n%s", script)
 	}
-	start := strings.Index(script, "exec '"+dst+"' '--listen-webui' ':8888'")
+	if !strings.Contains(script, `[ "$i" -lt 150 ]`) {
+		t.Errorf("helper does not wait the given 150 s for the agent:\n%s", script)
+	}
+	start := strings.Index(script, "'"+dst+"' '--listen-webui' ':8888' >> ")
 	if start < 0 {
 		t.Fatalf("restart-only helper does not start the new agent:\n%s", script)
 	}
