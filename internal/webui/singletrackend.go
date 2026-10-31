@@ -49,6 +49,12 @@ type singleTrack struct {
 	mime   string
 	meta   upnp.TrackMeta
 	dur    time.Duration // the length the caller knew, 0 when unknown
+	// claimedLength: dur is a length stored on a key (or learned, or guessed)
+	// and was not read from the file for this play. The speaker echoes the
+	// length it is handed back as its own total, so a position at that total
+	// is no proof of the end while it still climbs: a file replaced under the
+	// same URL was cut at the old length every night (librarykey.go).
+	claimedLength bool
 }
 
 // armSingleTrackEnd watches one directly played file and stops the box when it
@@ -409,6 +415,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// off (#1065).
 		in := s.trackEndSnapshot(sawPlay, ps, start, tr.dur, obsTotal, lastPos, lastPosAt)
 		in.ranAhead = ranAhead
+		in.echoedTotal = tr.claimedLength && obsTotal > 0 && absDur(obsTotal-tr.dur) <= qt.ownEndSlack
 		if net := trackEndNet(in); net != endNetNone {
 			s.learnSingleTrackLength(tr, net, lastPos, ranAhead)
 			return s.finishSingleTrack(title, net.why(), lastPos, end), gen

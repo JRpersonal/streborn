@@ -1224,6 +1224,11 @@ type trackEndInput struct {
 	// (a bitrate x size guess for an MP3 without a frame count), 0 when none.
 	// It only lets the frozen-position net confirm an end sooner.
 	hint time.Duration
+	// echoedTotal: the box's total is only the length STR handed it, and that
+	// length was a claim (a length stored on a key, not read from the file for
+	// this play). The box's position reaching such a total says nothing about
+	// the file, so it only counts as the end once the position stops moving.
+	echoedTotal bool
 	// timing is the clock the nets judge the readings by: nil means the
 	// production clock, so a bare literal (the table tests) needs none.
 	timing *queueTiming
@@ -1340,10 +1345,24 @@ func trackEndNet(in trackEndInput) endNet {
 // same iteration it asks this, so a position that just climbed is milliseconds
 // old and one that did not is at least a poll interval old), and whether it sits
 // on the box's own reported total.
+//
+// A position that is still climbing and already past the box's total is not at
+// the end: the total is wrong and the box is still playing. That is the case
+// when the total is only STR's own length echoed back (a key that kept the
+// length of a file since replaced under the same URL, cut at 431/429 with the
+// speaker's buffer still full). Once the position runs past the length by more
+// than overrunSlack, trackEndNet drops the length and the frozen net ends the
+// track at the real end. The #1190 zone master (254/256, still below its total)
+// is not touched by this. An echoed claim (echoedTotal) goes further: there the
+// position at the total only counts once it stops moving, which closes the
+// second or so before the total that the first rule cannot see.
 func (in trackEndInput) endSignals() (climbing, atOwnEnd bool) {
 	qt := in.times()
 	climbing = in.lastPos > 0 && in.sinceLastPos < qt.pollInterval/2
 	atOwnEnd = in.obsTotal > 0 && in.lastPos >= in.obsTotal-qt.ownEndSlack
+	if climbing && (in.lastPos > in.obsTotal || in.echoedTotal) {
+		atOwnEnd = false
+	}
 	return climbing, atOwnEnd
 }
 
