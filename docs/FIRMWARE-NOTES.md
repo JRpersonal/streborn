@@ -571,18 +571,20 @@ received (`internal/oled`). It can be switched off per speaker
 
 **Display notices.** The same panel carries STR's short notices for things the
 firmware never shows because STR does them behind its back
-(`internal/oled/notice.go`): a 32x32 symbol and up to three lines in the 5x7
-font, 150 ms fade-in, then the panel goes back to BoseApp.
+(`internal/oled/notice.go`): a 32x32 symbol and up to three lines in the track
+screen's smooth faces (the first line in the large face, the others in the
+small one, the key's number in a 14 px face of its own), 150 ms fade-in, then
+the panel goes back to BoseApp.
 
 | Notice | When | Text | Shown for |
 | ------ | ---- | ---- | --------- |
-| Key + busy dots | a physical preset key is still down 1.8 s after the press (before the firmware's own hold reaction at 2.0 s on the Portable); replaced in place by the outcome below | `KEY N`, `SAVING...` | until the outcome, at most 6 s |
+| Key + busy dots | a physical preset key is still down 1.8 s after the press (before the firmware's own hold reaction at 2.0 s on the Portable); replaced in place by the outcome below | `KEY N`, `Saving…` | until the outcome, at most 6 s |
 | Key + check | a held key stored what plays (`cmd/agent/holdsave.go` for STR's own stream, `holdstore.go` for the speaker's own store gesture) | `SAVED N`, the item's name | 2.5 s |
-| Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `FROM STR APP` | 2 s |
-| Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `ALREADY SAVED` | 3 s |
-| Key + X | a held key could not be saved (STR has no preset form for what plays) | `NOT SAVED`, `SOURCE NOT SUPPORTED` | 3 s |
-| Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `EMPTY. SET IN STR APP` | 2.5 s |
-| Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `RESTORED AFTER REBOOT` | 2 s, once per boot |
+| Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `From STR app` | 2 s |
+| Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `Already saved` | 3 s |
+| Key + X | a held key could not be saved (STR has no preset form for what plays) | `NOT SAVED`, `Source not supported` | 3 s |
+| Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `Empty. Set in STR app` | 2.5 s |
+| Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `Restored after reboot` | 2 s, once per boot |
 | Rings + border | `POST /api/box/identify` ("find this speaker" in the app and on the phone page) | `HELLO`, the speaker's name | 5 s |
 
 **Held key.** Holding a preset key while STR plays a UPnP push (Spotify, a

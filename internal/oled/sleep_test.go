@@ -165,25 +165,22 @@ func TestTrackSleepRenderAndCache(t *testing.T) {
 
 func TestSnoozeNoticeText(t *testing.T) {
 	n := Snooze("06:39")
-	if n.Kind != NoticeSnooze || n.Line1 != "SNOOZE" || n.Line2 != "UNTIL 06:39" {
+	if n.Kind != NoticeSnooze || n.Line1 != "SNOOZE" || n.Line2 != "Until 06:39" {
 		t.Errorf("snooze notice %+v", n)
 	}
 }
 
 func TestSleepNoticeTexts(t *testing.T) {
 	n := SleepSet(30)
-	if n.Kind != NoticeSleep || n.Line1 != "SLEEP 30" || n.Line2 != "MINUTES" {
+	if n.Kind != NoticeSleep || n.Line1 != "SLEEP 30" || n.Line2 != "Minutes" {
 		t.Errorf("set notice %+v", n)
 	}
 	o := SleepOff()
 	if o.Kind != NoticeSleep || o.Line1 != "SLEEP OFF" {
 		t.Errorf("off notice %+v", o)
 	}
-	for _, s := range []string{n.Line1, n.Line2, o.Line1, o.Line2} {
-		if SanitizeText(s, 30) != s {
-			t.Errorf("%q is not drawable as is", s)
-		}
-	}
+	assertNoticeLinesFit(t, n)
+	assertNoticeLinesFit(t, o)
 	r := newNoticeRenderer(n)
 	if litIn(r.full, iconX, iconY, 32, 32) == 0 {
 		t.Error("moon symbol not drawn")
