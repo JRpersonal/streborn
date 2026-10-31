@@ -589,10 +589,9 @@ type forensics struct {
 	presetRefusals []PresetRefusal
 	// audioOffset is the newest "HandleAudioStatus: Audio path offset N" the
 	// UPnP account logged, and audioOffsetAt when it was read: the speaker's
-	// play clock in seconds, one line a second while a UPnP play runs. On an
-	// ST10 it kept counting through a resume while GetPositionInfo and
-	// now_playing both stood on the paused second (#830). Never classified,
-	// it would flood the event ring; see Reader.AudioPathOffset.
+	// play clock in seconds, one line a second while a UPnP play runs, the
+	// same number RelTime reports plus one (#830). Never classified, it would
+	// flood the event ring; see Reader.AudioPathOffset.
 	audioOffset   int
 	audioOffsetAt time.Time
 	// lastStaleURL is when the firmware last discarded a re-opened file as
@@ -661,17 +660,21 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	tailLine += " " + msg
 	class, classified := Classify(l)
 	offset, isOffset := parseAudioPathOffset(l.Message)
+	// The play clock and the stale-URL stamp are read as "now" by the file
+	// resume, so a line logread -f replays from the ring at its (re)start
+	// must not land there as if it had just been logged (see lineIsBacklog).
+	backlog := (isOffset || class == ClassPlayStaleURL) && lineIsBacklog(l.Stamp, now)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
 	f.feedSetupTailLocked(tailLine)
-	if isOffset {
+	if isOffset && !backlog {
 		f.audioOffset, f.audioOffsetAt = offset, now
 	}
 	if !classified {
 		return ev, false, false
 	}
-	if class == ClassPlayStaleURL {
+	if class == ClassPlayStaleURL && !backlog {
 		f.lastStaleURL = now
 	}
 	if class == ClassSetupAP {
@@ -736,6 +739,45 @@ func parseAudioPathOffset(m string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// stampBacklogAge is how far a line's own syslog stamp may lag the moment
+// the reader sees it and still be a live line. busybox `logread -f` first
+// prints the whole ring, then follows it, and the reader restarts it whenever
+// it ends (a field bundle shows such a restart mid-play): every line of that
+// replay arrives at once, stamped by the reader with the same "now". A live
+// line reaches the reader well inside a second; ten seconds leaves room for a
+// busy speaker without letting a replayed line count.
+const stampBacklogAge = 10 * time.Second
+
+// lineIsBacklog reports whether a line's syslog stamp says it was logged
+// longer than stampBacklogAge before now, which is a line logread replayed
+// from the ring rather than one it just delivered. The stamp is read in now's
+// location: syslogd and the agent run on the same speaker and share its local
+// time. A line without a readable stamp is not backlog, as before, and a stamp
+// ahead of now (a clock that disagrees) never is: the check can only drop a
+// line, never invent one.
+func lineIsBacklog(stamp string, now time.Time) bool {
+	t, ok := parseSyslogStamp(stamp, now)
+	return ok && now.Sub(t) > stampBacklogAge
+}
+
+// parseSyslogStamp reads busybox's "Mon _d HH:MM:SS" stamp, which carries no
+// year, as the time nearest before or at now's year: a December line read in
+// January belongs to the year before.
+func parseSyslogStamp(stamp string, now time.Time) (time.Time, bool) {
+	if stamp == "" {
+		return time.Time{}, false
+	}
+	p, err := time.ParseInLocation("Jan _2 15:04:05", stamp, now.Location())
+	if err != nil {
+		return time.Time{}, false
+	}
+	t := time.Date(now.Year(), p.Month(), p.Day(), p.Hour(), p.Minute(), p.Second(), 0, now.Location())
+	if t.After(now.Add(24 * time.Hour)) {
+		t = t.AddDate(-1, 0, 0)
+	}
+	return t, true
 }
 
 // isStaleURLLine matches the two lines of the stale-URL-id discard measured

@@ -932,33 +932,51 @@ else, and before it restarts anything reads the renderer's own clock
 (`GetPositionInfo` RelTime) twice: a position past the paused one, or one that
 moves, means the speaker resumed by itself, and nothing is sent.
 
-**RelTime freezes on a healthy resume too (2026-10-31, ST10, FW 27.0.6).** A
-second field bundle showed the speaker resuming a directly played file
-correctly by itself while `GetPositionInfo` RelTime and the `now_playing`
-`<time>` both stayed on the paused second. Both of STR's clocks then agreed on
-a freeze that was not there, the end watch restarted a healthy play (the start
-of the file for about two seconds, then a seek back to the stale second), and
-the app's resume did the same on every pause. RelTime is therefore not a
-discriminator on its own.
+**A second healthy resume restarted anyway (2026-10-31, ST10, FW 27.0.6).**
+Two field bundles from the same reporter show the end watch restarting a
+directly played file over a resume the listener heard play on by itself (the
+start of the file for about two seconds, then a seek back), on every pause,
+although the RelTime veto above was in place. Why the veto let it through is
+**not measured**. The working guess is that RelTime stood on the paused second
+during the self-resume, like `now_playing`; an unreadable RelTime (the veto
+then keeps the repair) is the other candidate. The bundles cannot tell: their
+150-line syslog tails start two and three minutes after the last restart, and
+where they show a running play, RelTime moves in lockstep with the syslog
+clock below (`RelTime 0:09:44 -> 0:09:45 -> 0:09:46` beside
+`Audio path offset 585 -> 586`, RelTime = offset - 1 s, the same number as
+`UpnpState ... PLAYING end 0 time 585`). If RelTime does freeze through the
+self-resume, the offset may well freeze with it.
 
-The speaker's syslog is. Once a second while a UPnP play runs, the UPnP
-account logs
+The syslog clock: once a second while a UPnP play runs, the UPnP account logs
 
     STSCertified: [(..):UpnpAccount:INFO]HandleAudioStatus: Audio path offset 586
 
-and that offset counted on with the music, matching the true position, while
-RelTime stood still. The real freeze has its own lines (`urlId mismatch`,
-`PLAYING error #0 for stale UrlID`). So STR reads both from the ring
-(`internal/boxlog`: `AudioPathOffset`, `StaleURLIDSince`, class
-`play_stale_url` in `box_syslog_events`): an offset that moves with no
-stale-URL line since the resume means the speaker plays on, and nothing is
-restarted. The app's resume now sends the plain Play first and only falls back
-to Stop, Play, Seek on a stale-URL line or when no clock moves within about
-three seconds. The fresh offset is also the paused position a restart seeks
-to, in preference to a RelTime that may still name an older pause. Without
-the syslog (another chassis, the reader not running) both fall back to
-RelTime alone. Not yet measured: whether the offset keeps counting during the
-real freeze; until it is, a stale-URL line overrides a moving offset.
+and it follows a seek (seek to 106 s, offset 304 three minutes later; seek to
+467 s, offset 585 two minutes later). The real freeze has its own lines
+(`urlId mismatch`, `PLAYING error #0 for stale UrlID`). STR reads both from the
+ring (`internal/boxlog`: `AudioPathOffset`, `StaleURLIDSince`, class
+`play_stale_url` in `box_syslog_events`; lines `logread -f` replays from the
+ring at a restart are skipped by their own stamp) and uses the offset as a
+second clock beside RelTime: either one moving, with no stale-URL line since
+the resume, means the speaker plays on, and nothing is restarted. That helps
+in the unreadable-RelTime case and costs nothing otherwise. The app's resume
+sends the plain Play first and falls back to Stop, Play, Seek only on a
+stale-URL line or when, within four seconds of the speaker's answer, neither
+an offset line past the paused offset nor a moving RelTime shows up. A fresh
+offset is also the paused position a restart seeks to. Without the syslog
+(another chassis, the reader not running) both fall back to RelTime alone.
+
+Every verdict logs both clocks raw (`relTime1`/`relTime2` and
+`offset1`/`offset2` with the line's age on the end watch's repair,
+`relTimeBefore`/`relTimeAfter` and `offsetBase`/`offsetFirst`/`offsetLast` on
+the app's resume), so the next bundle that covers a resume settles which
+clock froze. Not yet measured either: whether the offset keeps counting during
+the real freeze; until it is, a stale-URL line overrides a moving offset.
+
+The end watch also no longer counts a pause on its wall clock. Before, every
+pause on these speakers ended in a restart that re-anchored it; a resume that
+needs none would otherwise have cut the file short by the pause's length once
+`now_playing` stopped climbing.
 
 ## NetManager owns wpa_supplicant, and the conf file holds no credential
 

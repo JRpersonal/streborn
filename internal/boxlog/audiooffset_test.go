@@ -83,6 +83,61 @@ func TestStaleURLIDLines(t *testing.T) {
 	}
 }
 
+// TestReplayedRingLinesDoNotCountAsNow: logread -f prints the whole ring
+// before it follows, and the reader restarts it whenever it ends. A replayed
+// offset or stale-URL line arrives with a stamp minutes behind the moment it
+// is read; it must not become the play clock or a stale URL "since" a resume,
+// while the same line read live does.
+func TestReplayedRingLinesDoNotCountAsNow(t *testing.T) {
+	r := &Reader{forensics: newForensics()}
+	// The reader restarts logread at 12:05:00; the ring still holds the
+	// offset line and a stale-URL line of 12:00:18.
+	restart := time.Date(2026, 10, 31, 12, 5, 0, 0, time.UTC)
+	staleLine := `Oct 31 12:00:18 rhino local0.info APServer[1877]: [(002101):AudioIF:INFO]Audio Path state 'PLAYING error #0 for stale UrlID 12`
+	r.forensics.observe(lineAudioOffset586, restart)
+	if ev, _, ok := r.forensics.observe(staleLine, restart); !ok || ev.Class != ClassPlayStaleURL {
+		t.Fatalf("a replayed stale-URL line is still classified for the event ring, got %q ok=%v", ev.Class, ok)
+	}
+	if off, _, ok := r.AudioPathOffset(); ok {
+		t.Fatalf("a replayed offset line became the play clock: %d", off)
+	}
+	if r.StaleURLIDSince(restart.Add(-time.Minute)) {
+		t.Fatal("a replayed stale-URL line counted as logged since a minute ago")
+	}
+	// Read live (within a second of its stamp) the same lines count.
+	live := time.Date(2026, 10, 31, 12, 0, 18, 400*int(time.Millisecond), time.UTC)
+	r.forensics.observe(lineAudioOffset586, live)
+	r.forensics.observe(staleLine, live)
+	if off, at, ok := r.AudioPathOffset(); !ok || off != 586 || !at.Equal(live) {
+		t.Fatalf("live offset line = %d at %v ok=%v, want 586 at %v", off, at, ok, live)
+	}
+	if !r.StaleURLIDSince(live) {
+		t.Fatal("a live stale-URL line must count")
+	}
+}
+
+func TestLineIsBacklog(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 5, 0, time.UTC)
+	cases := []struct {
+		stamp string
+		want  bool
+	}{
+		{"Jan  1 00:00:04", false}, // one second old: live
+		{"Jan  1 00:00:05", false}, // same second
+		{"Jan  1 00:00:00", false}, // five seconds: still live
+		{"Jan  1 00:00:20", false}, // ahead of now: never backlog
+		{"Dec 31 23:59:50", true},  // last year's December, fifteen seconds old
+		{"Dec 31 23:59:00", true},  // a minute old
+		{"", false},                // no stamp
+		{"not a stamp at all", false},
+	}
+	for _, c := range cases {
+		if got := lineIsBacklog(c.stamp, now); got != c.want {
+			t.Errorf("lineIsBacklog(%q) = %v, want %v", c.stamp, got, c.want)
+		}
+	}
+}
+
 func TestParseAudioPathOffset(t *testing.T) {
 	cases := []struct {
 		in   string

@@ -260,10 +260,10 @@ func (s *Server) notePausePosition(ctx context.Context) {
 	rctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	rel, _, ok := s.renderer.PositionInfo(rctx)
-	// The speaker's syslog clock wins over RelTime while it is current: on
-	// some ST10s RelTime stands on an older pause through a resume the speaker
-	// did by itself (#830). Only when the renderer has a position at all, so
-	// radio keeps whatever it reported before.
+	// The speaker's syslog clock wins over RelTime while it is current, in
+	// case RelTime stands on an older pause after a resume the speaker did by
+	// itself (#830, not measured, see resumefile.go). Only when the renderer
+	// has a position at all, so radio keeps whatever it reported before.
 	fromLog := false
 	if ok {
 		if lp, fresh := s.logPlayPosition(audioOffsetFresh); fresh {

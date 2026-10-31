@@ -660,9 +660,9 @@ type Server struct {
 	pausePosMu sync.Mutex
 	pausePos   time.Duration
 	// pausePosFromLog says pausePos came from the speaker's syslog play
-	// clock (audioPathOffsetFn) rather than from GetPositionInfo, which on
-	// some ST10s stands still through a resume the speaker did by itself and
-	// so names an older pause (#830). A resume then trusts it over RelTime.
+	// clock (audioPathOffsetFn) rather than from GetPositionInfo, which may
+	// stand on an older pause after a resume the speaker did by itself (#830,
+	// not measured, see resumefile.go). A resume then trusts it over RelTime.
 	pausePosFromLog bool
 	// pauseReqAt is when the app last asked for a pause. The lone-file end
 	// watch reads it to tell a pause (keep watching, the track continues

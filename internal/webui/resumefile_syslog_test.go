@@ -11,17 +11,20 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
-// #830, second field report: RelTime frozen through a healthy resume.
+// #830, second field report: STR restarted a healthy resume.
 //
-// An ST10 (FW 27.0.6, 2026-10-31) resumed a directly played file correctly by
-// itself, but GetPositionInfo RelTime and now_playing kept the paused second.
-// STR restarted the healthy play: the file's start for two seconds, then a seek
-// back to the stale second. The speaker's syslog "Audio path offset N" counted
-// on with the music; the real freeze logs "for stale UrlID" instead.
+// An ST10 (FW 27.0.6, 2026-10-31) resumed a directly played file by itself,
+// and STR restarted it anyway: the file's start for two seconds, then a seek
+// back. Why the RelTime veto let that through is not measured (a frozen or an
+// unreadable RelTime); these tests pin the behaviour with the syslog's "Audio
+// path offset N" as a second clock and "for stale UrlID" as the freeze's own
+// signature.
 
 // scriptedOffset is the syslog play clock for audioPathOffsetFn: it starts at
 // sec and advances by step on every read (0 = frozen), stamped with the read's
-// own time so it is always fresh.
+// own time so it is always fresh. It does not model the line's real timing
+// (one a second, stamped when the reader saw it); the single-line test below
+// does.
 type scriptedOffset struct {
 	mu   sync.Mutex
 	sec  int
@@ -211,6 +214,114 @@ func TestAppResumeRestartsAPlainPlayThatFroze(t *testing.T) {
 				t.Fatalf("seek target = %v, want 0:00:15", box.seekTo)
 			}
 		})
+	}
+}
+
+// The offset line comes once a second, and a resume that re-buffers can leave
+// a single one inside the plain Play's window. Read against the paused offset
+// the syslog recorded, that one line is the evidence; RelTime (frozen on the
+// fake speaker's 0:00:15) adds nothing. The line is stamped once, when the
+// speaker took the Play, and never again: a real line, not one per read.
+func TestAppResumeKeepsAPlainPlayWithASingleOffsetLine(t *testing.T) {
+	t.Parallel()
+	s, box, logs := newLoggedPausedFileServer(t)
+	armTestFile(s)
+	var (
+		mu     sync.Mutex
+		lineAt time.Time
+	)
+	s.SetBoxLogPlayClockFns(func() (int, time.Time, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if lineAt.IsZero() {
+			for _, c := range box.commands() {
+				if c == "Play" {
+					lineAt = time.Now()
+				}
+			}
+		}
+		if lineAt.IsZero() {
+			// Paused: the last line before the pause, long stopped coming.
+			return 42, time.Now().Add(-time.Minute), true
+		}
+		return 43, lineAt, true
+	}, staleAfter(time.Time{}))
+	s.notePausedAtFrom(42*time.Second, true)
+	if _, err := s.resumePlayback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(box.commands(), ","); got != "Play" {
+		t.Fatalf("commands = %s, want the plain Play alone: one offset line past the paused 42 s is a resume that worked", got)
+	}
+	out := logs.String()
+	for _, want := range []string{"the plain play continued it", `offsetBase="42s (paused)"`, `offsetFirst="43s age`, "relTimeBefore=15s"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// Every repair verdict logs both clocks' raw readings, so a field bundle shows
+// what RelTime and the offset did through the resume, not only the verdict.
+func TestTheRepairLogsBothClocksRaw(t *testing.T) {
+	t.Parallel()
+	s, _, logs := newLoggedPausedFileServer(t)
+	armTestFile(s)
+	s.relPositionFn = (&scriptedRelPosition{pos: 15 * time.Second}).read
+	s.SetBoxLogPlayClockFns((&scriptedOffset{sec: 15}).read, staleAfter(time.Time{}))
+
+	s.repairFrozenFileResume(testPodcast(), s.RecallGeneration(), 15*time.Second, time.Now().Add(-time.Minute))
+
+	out := logs.String()
+	for _, want := range []string{"froze on the speaker", "relTime1=15s", "relTime2=15s", "offset1=\"15s age", "offset2=\"15s age", "evidence=\"no clock moved\""} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("repair log lacks %s:\n%s", want, out)
+		}
+	}
+}
+
+// A resume that needed no restart must not leave the pause on the end watch's
+// clock. Before, every pause on the speakers that freeze ended in a restart,
+// which re-anchored the clock; a resume the speaker did by itself (or a plain
+// Play that worked) has none, and with now_playing standing on the paused
+// second the wall-clock net then cut the file short by the pause's length.
+func TestALongPauseWithoutARestartDoesNotCutTheFileShort(t *testing.T) {
+	t.Parallel()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	logs := &syncBuffer{}
+	s.logger = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(logs.String())
+		}
+	})
+	shrinkFileRestart(s)
+	s.fileResumeTiming.freezeAfter = productionFileResumeTiming.freezeAfter / queueTestScale
+	// The renderer's clock runs on through the resume: the repair is vetoed.
+	rel := &scriptedRelPosition{pos: 6 * time.Second, step: time.Second}
+	s.relPositionFn = rel.read
+	url := "http://192.0.2.20:8000/song.mp3"
+	gen := s.setLastPlay(url, "Song", "", "audio/mpeg")
+	np.set("PLAY_STATE", 5*qsec, 48*qsec)
+	s.armSingleTrackEnd(singleTrack{boxURL: url, title: "Song", mime: "audio/mpeg",
+		meta: upnp.TrackMeta{Duration: 48 * qsec, Seekable: true}, dur: 48 * qsec}, gen)
+	time.Sleep(betweenPolls(1))
+	// Paused for longer than the whole track.
+	np.set("PAUSE_STATE", 6*qsec, 48*qsec)
+	time.Sleep(60 * qsec)
+	// Resumed; now_playing stands on the paused second from here on.
+	np.set("PLAY_STATE", 6*qsec, 48*qsec)
+
+	// About 12 qsec after the resume the watch asks the renderer's clock and
+	// leaves the play alone. Two polls later the file has played some 30 of
+	// its 48 qsec; the clock with the pause on it says 90.
+	waitForTrackEnd(t, "the watch to veto the repair on the renderer's clock", func() bool { return rel.count() >= 1 })
+	time.Sleep(betweenPolls(2))
+	for _, a := range []string{"Stop", "Seek", "SetAVTransportURI"} {
+		if rec.has(a) {
+			t.Fatalf("the file was cut short after a long pause (%s sent): %v", a, rec.list())
+		}
 	}
 }
 

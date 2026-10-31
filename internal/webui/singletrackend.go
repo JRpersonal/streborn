@@ -187,6 +187,14 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// pause must not overwrite it with RelTime, and the repair seeks to
 		// it. Only while the watch still holds this pause (resume.pausedSeen).
 		logPausedAt time.Duration
+		// pausedSince is the first poll of the current pause. The end nets
+		// time the track from start, so the pause must not count: when the
+		// play goes on, start moves forward by the pause. A restart used to
+		// re-anchor start after every pause on the speakers that freeze; a
+		// resume that needs none (the speaker's own, or a plain Play that
+		// worked) has to get the same, or a long pause cuts the track short
+		// by its own length once the position stops climbing in now_playing.
+		pausedSince time.Time
 	)
 	for {
 		select {
@@ -214,6 +222,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			resume.restarted()
 			lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
 			start = time.Now().Add(-s.pausePosition())
+			pausedSince = time.Time{}
 			continue
 		}
 		// A pause from the app records a user stop as well, but the file stays
@@ -228,6 +237,15 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			// Powered off mid-track. Never a track end, and STR must not send
 			// anything to a sleeping box (#219).
 			return false, gen
+		}
+		// The pause's own time leaves the track's clock (see pausedSince).
+		if ps == "PAUSE_STATE" {
+			if pausedSince.IsZero() {
+				pausedSince = time.Now()
+			}
+		} else if !pausedSince.IsZero() {
+			start = start.Add(time.Since(pausedSince))
+			pausedSince = time.Time{}
 		}
 		if tornDown && !sawPlay && !retried && time.Since(start) < qt.stallTimeout {
 			// Not started yet, and the source reads torn down: on a speaker
@@ -295,10 +313,10 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			if ps == "PAUSE_STATE" {
 				// The speaker's syslog clock is the paused position while its
 				// last line is recent enough to be this pause's (one poll plus
-				// the line's own second): RelTime can still stand on an older
-				// pause after a resume the speaker did by itself (#830). Once
-				// taken it holds for the rest of this pause, when the lines
-				// have stopped coming.
+				// the line's own second), in case RelTime still stands on an
+				// older pause after a resume the speaker did by itself (#830,
+				// not measured, see resumefile.go). Once taken it holds for the
+				// rest of this pause, when the lines have stopped coming.
 				if lp, fresh := s.logPlayPosition(qt.pollInterval + audioOffsetFresh); fresh {
 					logPausedAt = lp
 					s.notePausedAtFrom(lp, true)
