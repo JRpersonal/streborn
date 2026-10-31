@@ -277,16 +277,20 @@ export function connectHTML(id, opts = {}) {
 }
 
 // connectBusy reports whether a Connect by address block inside root is in
-// use: holding an address somebody typed, or connecting. A repaint of root
-// must wait while it is, or the minute sweep wipes what is being typed. An
-// empty field that only has focus does not hold a repaint back (the speaker
-// a connect just found must show); the caller puts the focus back.
+// use: connecting, or somebody typing in it (the field has the focus and
+// holds an address). A repaint of root must wait while it is, or the minute
+// sweep wipes what is being typed and moves the caret. An address left in a
+// field that has no focus (after a failed connect, say) holds nothing back:
+// the block keeps it (connects, read again by connectHTML), and the speakers
+// a search found meanwhile must show. An empty field that only has focus does
+// not hold a repaint back either; the caller puts the focus back.
 export function connectBusy(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return false;
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
   for (const form of root.querySelectorAll('.u-connect')) {
     const field = form.querySelector('.u-connect-input');
     if (connectOf(form.dataset.connect).busy) return true;
-    if (field && (field.value || '').trim()) return true;
+    if (field && field === active && (field.value || '').trim()) return true;
   }
   return false;
 }
@@ -648,4 +652,27 @@ export function transportErrorText(kind, name, err) {
   const key = TRANSPORT_KEYS[kind] || TRANSPORT_KEYS.queue;
   const msg = String((err && err.message) || err || '').trim() || t('common.error');
   return t(key, { name, err: msg });
+}
+
+// groupEditVerdict decides a sidebar group edit the speakers accepted and the
+// zone state has not shown yet (rule 2: done only when the speaker confirmed).
+//   w        { want: 'in' | 'out', master, at }: master is the group's master
+//            host, at when the edit was accepted
+//   host     the speaker the edit is about
+//   round    groups.js lastZoneRound(): { startedAt, answered: Set of hosts }
+//   inGroup  whether the zone state now lists host in master's group
+// 'confirmed' only from a zone round that started at least after ms past the
+// edit (a follower's own report lags the change by about a second) and that
+// both speakers answered: the optimistic entry written at the edit and an
+// entry carried over from a round a speaker missed say nothing. 'failed'
+// once within ms passed without that; 'wait' until then.
+export function groupEditVerdict(w, host, round, inGroup, now, { after = 1000, within = 20000 } = {}) {
+  if (!w) return 'wait';
+  const r = round || {};
+  const answered = r.answered && typeof r.answered.has === 'function' ? r.answered : new Set();
+  const fresh = typeof r.startedAt === 'number' && r.startedAt >= w.at + after
+    && answered.has(host) && (!w.master || answered.has(w.master));
+  if (fresh && (w.want === 'in') === !!inGroup) return 'confirmed';
+  if (now - w.at > within) return 'failed';
+  return 'wait';
 }

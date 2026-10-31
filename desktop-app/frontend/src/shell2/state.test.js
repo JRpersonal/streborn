@@ -8,7 +8,7 @@ const ui = vi.hoisted(() => ({ showToast: vi.fn(), showError: vi.fn() }));
 vi.mock('../utils.js', async (orig) => ({ ...(await orig()), showToast: ui.showToast, showError: ui.showError }));
 
 import {
-  NO_SPEAKER_PHASES, connectHTML, discoveryPhase, loadingHTML, noNetworkText, noSpeakersState, playerStateHTML,
+  NO_SPEAKER_PHASES, connectBusy, connectHTML, discoveryPhase, groupEditVerdict, loadingHTML, noNetworkText, noSpeakersState, playerStateHTML,
   playerStateModel, reportHook, sectionReport, setReportHook, speakersPhase, stateHTML, statusHTML,
   transportErrorText, wireStates,
 } from './state.js';
@@ -267,5 +267,70 @@ describe('the module', () => {
     for (const [k, v] of Object.entries(en)) {
       if (k.startsWith('ui2.state.')) expect(v, k).not.toMatch(/[–—]/);
     }
+  });
+});
+
+// A group edit in the sidebar is confirmed only by the speakers (rule 2): a
+// zone round that started after the edit (plus the follower's lag) and that
+// both speakers answered. The optimistic entry group.js writes at once, and
+// an entry carried over from a round a speaker missed, are not rounds.
+describe('groupEditVerdict', () => {
+  const at = 10_000;
+  const w = { want: 'in', master: '192.0.2.1', at };
+  const round = (startedAt, answered) => ({ startedAt, answered: new Set(answered) });
+  const both = ['192.0.2.1', '192.0.2.2'];
+
+  it('waits while only the optimistic state says so (no round since the edit)', () => {
+    expect(groupEditVerdict(w, '192.0.2.2', round(at - 5_000, both), true, at + 1_600)).toBe('wait');
+    expect(groupEditVerdict(w, '192.0.2.2', round(0, []), true, at + 1_600)).toBe('wait');
+  });
+
+  it('waits for a round that started too soon after the edit', () => {
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 200, both), true, at + 1_600)).toBe('wait');
+  });
+
+  it('waits when a speaker did not answer the round (a carried entry)', () => {
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 1_200, ['192.0.2.1']), true, at + 3_000)).toBe('wait');
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 1_200, ['192.0.2.2']), true, at + 3_000)).toBe('wait');
+  });
+
+  it('confirms from a later round both answered', () => {
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 1_200, both), true, at + 3_000)).toBe('confirmed');
+    expect(groupEditVerdict({ ...w, want: 'out' }, '192.0.2.2', round(at + 1_200, both), false, at + 3_000)).toBe('confirmed');
+  });
+
+  it('keeps waiting while the round shows the opposite, and fails after the deadline', () => {
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 1_200, both), false, at + 3_000)).toBe('wait');
+    expect(groupEditVerdict(w, '192.0.2.2', round(at + 1_200, both), false, at + 20_001)).toBe('failed');
+    expect(groupEditVerdict(w, '192.0.2.2', round(at - 1, both), true, at + 20_001)).toBe('failed');
+  });
+});
+
+// Connect by address holds a repaint back only while somebody types in it
+// or it connects; an address left in a field without focus (after a failed
+// connect) must not freeze the lists around it.
+describe('connectBusy', () => {
+  const field = (value) => ({ value });
+  const root = (forms) => ({ querySelectorAll: () => forms });
+  const form = (id, f) => ({ dataset: { connect: id }, querySelector: () => f });
+  const withActive = (el, fn) => {
+    const prev = globalThis.document;
+    globalThis.document = { activeElement: el };
+    try { fn(); } finally { if (prev === undefined) delete globalThis.document; else globalThis.document = prev; }
+  };
+
+  it('is busy while the field has focus and holds an address', () => {
+    const f = field('192.0.2.50');
+    withActive(f, () => expect(connectBusy(root([form('cbTest1', f)]))).toBe(true));
+  });
+
+  it('is not busy for an address left in a field that has no focus', () => {
+    const f = field('192.0.2.50');
+    withActive(null, () => expect(connectBusy(root([form('cbTest2', f)]))).toBe(false));
+  });
+
+  it('is not busy for an empty field with focus', () => {
+    const f = field('');
+    withActive(f, () => expect(connectBusy(root([form('cbTest3', f)]))).toBe(false));
   });
 });

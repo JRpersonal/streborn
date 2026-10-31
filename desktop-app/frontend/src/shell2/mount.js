@@ -23,7 +23,7 @@
 
 import { state } from '../state.js';
 import { t } from '../i18n/index.js';
-import { groupMembersOf, stereoPairsOf } from '../groups.js';
+import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
 import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
@@ -31,8 +31,8 @@ import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 import { agoText } from './speakers/list.js';
 import {
-  configureStates, connectBusy, connectFocus, notifyStates, restoreConnectFocus, paintPlayerState, playerStateModel, setReportHook,
-  stateSearchBusy, transportErrorText, wireStates,
+  configureStates, connectBusy, connectFocus, groupEditVerdict, notifyStates, restoreConnectFocus, paintPlayerState, playerStateModel,
+  setReportHook, stateSearchBusy, transportErrorText, wireStates,
 } from './state.js';
 // Phase 5: the banner region's cards in the shell's tokens (html.ui2 only).
 import './banners.css';
@@ -273,6 +273,8 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  // A group edit waiting for the speakers is decided when a zone round lands.
+  onZoneLive(() => { if (state.ui2Shell && awaiting.size) paintSpeakers(false); });
   // The Speakers area (phase 3): its row of places and its routes.
   initSpeakersArea(frame, deps);
   wireStatesEnv(frame);
@@ -390,8 +392,44 @@ export function shellOfflinePick(box, search) {
 //          poll shows it, then "Kitchen plays along" / "Kitchen is out"
 //   error  a note in the row (alert) with Try again: the same toggle, the
 //          same master
+//   warn   no Try again that would make it worse:
+//          stale    the group changed before the edit ran and nothing was
+//                   sent; the note says so, and the row's own "+" or "-"
+//                   already aims at the group as it is now
+//          partial  a dissolve the master did not finish: every speaker
+//                   waits for the zone poll; one that left is said to be
+//                   out, one still in gets the not-confirmed note with Try
+//                   again, which then takes out only that one
 function groupReport(r = {}) {
   const hosts = (r.hosts || []).filter(Boolean);
+  if (r.tone === 'warn' && (r.kind === 'stale' || r.kind === 'partial')) {
+    const now = Date.now();
+    for (const h of hosts) {
+      const b = (state.boxes || []).find((x) => x && x.host === h);
+      rowNotes.set(h, { tone: 'warn', text: r.text || t('common.error'), kind: r.kind, host: h });
+      if (r.kind === 'partial') {
+        awaiting.set(h, { want: 'out', master: r.master || '', name: b ? label(b) : h, port: (r.ports && r.ports[h]) || '', at: now, partial: true });
+      } else {
+        awaiting.delete(h);
+      }
+    }
+    paintSpeakers(true);
+    if (r.text) announceSpeakers(r.text);
+    if (r.kind === 'partial') setTimeout(() => paintSpeakers(false), CONFIRM_WITHIN_MS + 100);
+    // The stale note is news about one moment: it goes after a while, unless
+    // something newer took its place.
+    else {
+      setTimeout(() => {
+        let gone = false;
+        for (const h of hosts) {
+          const n = rowNotes.get(h);
+          if (n && n.kind === 'stale' && n.text === r.text) { rowNotes.delete(h); gone = true; }
+        }
+        if (gone) paintSpeakers(true);
+      }, CONFIRM_WITHIN_MS);
+    }
+    return;
+  }
   if (r.tone === 'error' || r.tone === 'warn') {
     for (const h of hosts) {
       awaiting.delete(h);
@@ -412,27 +450,29 @@ function groupReport(r = {}) {
   mark(r.added, 'in');
   mark(r.removed, 'out');
   paintSpeakers(true);
-  // A repaint after the confirming zone fetch and after the deadline, in case
-  // nothing else repaints then.
-  setTimeout(() => paintSpeakers(false), CONFIRM_AFTER_MS + 600);
+  // A repaint after the deadline, in case nothing else repaints then. A zone
+  // round that lands repaints by itself (onZoneLive in wire).
   setTimeout(() => paintSpeakers(false), CONFIRM_WITHIN_MS + 100);
 }
 
-// confirmAwaiting checks the waiting group edits against the zone poll: the
-// optimistic update group.js writes at once does not count, only what the
-// poll shows after it.
+// confirmAwaiting checks the waiting group edits against the zone poll
+// (groupEditVerdict): neither the optimistic update group.js writes at once
+// nor an entry carried over from a round a speaker missed counts, only a
+// round both speakers answered after the edit.
 function confirmAwaiting() {
   if (!awaiting.size) return;
   const now = Date.now();
   const boxes = state.boxes || [];
+  const round = lastZoneRound();
   for (const [h, w] of [...awaiting]) {
-    if (now - w.at < CONFIRM_AFTER_MS) continue;
     const m = boxes.find((b) => b && b.host === w.master);
     const inGroup = !!m && groupMembersOf(m, state.zoneLive || {}, boxes).some((x) => x && x.ip === h);
-    if ((w.want === 'in') === inGroup) {
+    const verdict = groupEditVerdict(w, h, round, inGroup, now, { after: CONFIRM_AFTER_MS, within: CONFIRM_WITHIN_MS });
+    if (verdict === 'confirmed') {
       awaiting.delete(h);
+      if (w.partial) rowNotes.delete(h);
       announceSpeakers(t(w.want === 'in' ? 'ui2.state.playsAlong' : 'ui2.state.isOut', { name: w.name }));
-    } else if (now - w.at > CONFIRM_WITHIN_MS) {
+    } else if (verdict === 'failed') {
       awaiting.delete(h);
       rowNotes.set(h, { tone: 'error', text: t('ui2.state.groupNoConfirm', { name: w.name }), action: 'retry', master: w.master, port: w.port, host: h });
     }

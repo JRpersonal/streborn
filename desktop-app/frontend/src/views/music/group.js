@@ -226,9 +226,12 @@ let pendingGroupReport = null;
 //
 // report (optional, the UI 2.0 sidebar) takes the batch's result instead of
 // the toast and the error dialog: report({ tone: 'ok' | 'warn' | 'error',
-// text, hosts, ports, master, added, removed }), so the sidebar can keep the
-// row pending until the zone poll confirms and put a failure into the row
-// itself. Without it, the toasts and the dialog say it exactly as before.
+// text, hosts, ports, master, added, removed, kind }), so the sidebar can keep
+// the row pending until the zone poll confirms and put a failure into the row
+// itself. kind tells the two warnings apart: 'stale' (the group changed
+// before the edit ran; nothing was sent) and 'partial' (a dissolve the master
+// did not finish). Without report, the toasts and the dialog say it exactly
+// as before.
 //
 // masterHost names the group explicitly. The UI 2.0 sidebar pins the group
 // that PLAYS, which is not the selected speaker's while you control an idle
@@ -344,7 +347,7 @@ async function runGroupMemberToggle(edits, masterHost, report) {
   const lead = masterHost ? (state.boxes || []).find(b => b && b.host === masterHost) : null;
   const box = lead && resolvePlayTarget(lead, state.zoneLive, state.boxes) === lead ? lead : null;
   if (!box) {
-    if (masterHost) say(t('group.editStale'), 'warn');
+    if (masterHost) say(t('group.editStale'), 'warn', { kind: 'stale' });
     return;
   }
   if (box.kind === 'stock') return;
@@ -382,7 +385,7 @@ async function runGroupMemberToggle(edits, masterHost, report) {
       // playing while the app says it is gone.
       const res = await DissolveZone(box.host, box.port);
       if (res && res.ok === false) {
-        say(dissolveIncompleteMessage(res), 'warn');
+        say(dissolveIncompleteMessage(res), 'warn', { kind: 'partial', removed: targets.map((x) => x.host) });
       } else {
         // Stop the ex-followers we can reach (their agent port is only known
         // for discovered boxes).
