@@ -23,7 +23,9 @@ import {
   loadLadderState,
   loadLadderStateAny,
   noLadderYet,
+  notStartedStartKey,
   persistable,
+  portMaybeOtg,
   powerOffKey,
   resumeState,
   saveLadderState,
@@ -247,14 +249,77 @@ describe('screen C: on the speaker', () => {
     expect(st20).not.toContain(esc(en['fwLadder.c3Unconfirmed']));
     expect(powerOffKey('SoundTouch 30')).toBe('fwLadder.c1');
   });
-  it('after an unchanged version shows W6 and offers the smaller steps once', () => {
+  it('after an unchanged version asks whether the update started before it offers anything', () => {
     const st = { started: true, screen: 'C', recheck: { state: 'same', version: '7.0.37' } };
     const html = ladderHtml(ident, plan7x, st);
+    expect(html).toContain(esc(en['fwLadder.stalled'].replace('{{version}}', '7.0.37')));
+    expect(html).toContain(esc(en['fwLadder.startedQ']));
+    expect(html).toContain('data-ladder="started-yes"');
+    expect(html).toContain('data-ladder="started-no"');
+    expect(html).not.toContain('data-ladder="smaller"');
+    expect(html).not.toContain('data-ladder="retry"');
+    expect(html).not.toContain(esc(en['fwLadder.w6']));
+  });
+  it('the update ran: shows W6 and offers the smaller steps once', () => {
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '7.0.37', started: true } };
+    const html = ladderHtml(ident, plan7x, st);
+    expect(html).not.toContain('data-ladder="started-yes"');
     expect(html).toContain(esc(en['fwLadder.w6']));
     expect(html).toContain('data-ladder="retry"');
     expect(html).toContain('data-ladder="smaller"');
     expect(ladderHtml(ident, plan5x, st)).not.toContain('data-ladder="smaller"');
     expect(ladderHtml(ident, plan7x, { ...st, fallbackFor: 'st-scm-14.00.33', stepId: fb09.id })).not.toContain('data-ladder="smaller"');
+  });
+  it('the update ran on 9.0.41 below 14.00.33: the smaller step left is offered', () => {
+    // The field case: an ST20 scm on 9.0.41. Only 12.00.09 is left below
+    // 14.00.33, and only after the user says the update really ran.
+    const on9 = { ...plan7x, current: '9.0.41' };
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '9.0.41', started: true } };
+    const html = ladderHtml(ident, on9, st);
+    expect(html).toContain('data-ladder="smaller"');
+    expect(html).toContain('data-ladder="retry"');
+  });
+  it('the update never started: the start checklist and Retry, never smaller steps', () => {
+    const on9 = { ...plan7x, current: '9.0.41' };
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '9.0.41', started: false } };
+    const html = ladderHtml(ident, on9, st);
+    expect(html).toContain('data-ladder-note="not-started"');
+    expect(html).toContain(esc(en['fwLadder.notStarted']));
+    expect(html).toContain(esc(en['fwLadder.nsKeys']));
+    expect(html).toContain(esc(en['fwLadder.nsPort']));
+    expect(html).toContain(esc(en['fwLadder.nsStick']));
+    expect(html).toContain(esc(en['fwLadder.nsReset']));
+    expect(html).toContain('data-ladder="retry"');
+    expect(html).not.toContain('data-ladder="smaller"');
+    expect(html).not.toContain(esc(en['fwLadder.w6']));
+    expect(html).not.toContain('data-ladder="started-yes"');
+  });
+  it('the start checklist uses the power button on the Portable', () => {
+    expect(notStartedStartKey('SoundTouch Portable')).toBe('fwLadder.nsKeysBattery');
+    expect(notStartedStartKey('SoundTouch 20')).toBe('fwLadder.nsKeys');
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '14.0.33', started: false } };
+    const html = ladderHtml(ident, { ...plan1433, model: 'SoundTouch Portable' }, st);
+    expect(html).toContain(esc(en['fwLadder.nsKeysBattery']));
+    expect(html).not.toContain(esc(en['fwLadder.nsKeys']));
+  });
+  it('the port hint adds the OTG "may" for an ST20/30 of the older hardware only', () => {
+    expect(portMaybeOtg('SoundTouch 20', 'scm')).toBe(true);
+    expect(portMaybeOtg('SoundTouch 30', 'SCM')).toBe(true);
+    expect(portMaybeOtg('SoundTouch 20', 'sm2')).toBe(false);
+    expect(portMaybeOtg('SoundTouch 20', '')).toBe(false);
+    expect(portMaybeOtg('SoundTouch Portable', 'scm')).toBe(false);
+    const scm = ladderHtml(ident, plan7x, { started: true, screen: 'C' });
+    expect(scm).toContain(esc(en['fwLadder.w4']));
+    expect(scm).toContain(esc(en['fwLadder.w4Scm']));
+    const sm2 = ladderHtml(ident, { ...plan7x, moduleType: 'sm2' }, { started: true, screen: 'C' });
+    expect(sm2).toContain(esc(en['fwLadder.w4']));
+    expect(sm2).not.toContain(esc(en['fwLadder.w4Scm']));
+    const portable = ladderHtml(ident, { ...plan1433, model: 'SoundTouch Portable' }, { started: true, screen: 'C' });
+    expect(portable).not.toContain(esc(en['fwLadder.w4Scm']));
+  });
+  it('the answer is never saved: after a restart the question comes back', () => {
+    const back = persistable({ started: true, screen: 'C', recheck: { state: 'same', version: '7.0.37', started: false } });
+    expect(back).not.toHaveProperty('recheck');
   });
   it('asks for the version when the speaker cannot be reached', () => {
     const html = ladderHtml(ident, plan5x, { started: true, screen: 'C', recheck: { state: 'unknown' } });
@@ -284,7 +349,8 @@ describe('the fallback sub-ladder', () => {
     expect(activeSteps(on12, { fallbackFor: s1400.id }).map(s => s.version)).toEqual(['14.00.33', '15.00.20', '27.0.6']);
     const on10 = { ...plan7x, current: '10.0.0' };
     expect(fallbacksFor(on10, s1400.id).map(s => s.version)).toEqual(['12.00.09', '14.00.33']);
-    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '12.0.9' } };
+    const st = { started: true, screen: 'C', recheck: { state: 'same', version: '12.0.9', started: true } };
+    expect(ladderHtml(ident, on12, st)).toContain('data-ladder="retry"');
     expect(ladderHtml(ident, on12, st)).not.toContain('data-ladder="smaller"');
   });
 });
@@ -338,10 +404,18 @@ describe('resume per speaker', () => {
 });
 
 describe('every bundle has every ladder string', () => {
-  it('EN and DE are complete', async () => {
+  it('EN and DE are complete, and the start question is in every bundle', async () => {
     const de = (await import('./i18n/bundles/de.json')).default;
     const keys = Object.keys(en).filter(k => k.startsWith('fwLadder.'));
     expect(keys.length).toBeGreaterThan(80);
     for (const k of keys) expect(de[k], k).toBeTruthy();
+    const added = ['w4Scm', 'startedQ', 'startedWhy', 'startedYes', 'startedNo', 'notStarted', 'nsKeys', 'nsKeysBattery', 'nsPort', 'nsStick', 'nsReset'];
+    for (const loc of ['de', 'fr', 'es', 'nl', 'pl', 'tr', 'uk', 'lt', 'lv', 'ar', 'ja', 'zh-Hant']) {
+      const b = (await import(`./i18n/bundles/${loc}.json`)).default;
+      for (const k of added) {
+        expect(b[`fwLadder.${k}`], `${loc} ${k}`).toBeTruthy();
+        expect(b[`fwLadder.${k}`], `${loc} ${k}`).not.toBe(en[`fwLadder.${k}`]);
+      }
+    }
   });
 });
