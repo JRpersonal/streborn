@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
 import {
@@ -772,7 +772,7 @@ async function verifyLibraryPlayback(item, target, report) {
 // what was just sent plays: 'playing' once it does, 'rejected' when the speaker
 // turned it down, 'timeout' when it never got there, 'gone' when no speaker is
 // selected any more.
-async function waitForPlayState(box, deadline) {
+export async function waitForPlayState(box, deadline) {
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
@@ -1205,7 +1205,7 @@ export async function libraryWholeSearch(query, field) {
   s.field = field || 'any';
   if (!q) return;
   const token = ++s.token;
-  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false });
+  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false, failed: '' });
   renderLibrary();
   let res = null;
   let failed = false;
@@ -1213,6 +1213,9 @@ export async function libraryWholeSearch(query, field) {
     res = await SearchLibrary(q, s.field);
   } catch (e) {
     failed = true;
+    // The UI 2.0 preview tells a search that did not run apart from servers
+    // that stayed silent (ui2SearchHTML); the current layout keeps its note.
+    s.failed = String((e && e.message) || e || t('modal.unknownError'));
   }
   if (token !== s.token) return;
   s.loading = false;
@@ -1442,6 +1445,17 @@ function ui2SearchHTML() {
   const s = libState.search;
   let html = levelHeadHTML(t('ui2.library.results', { q: (s.query || '').trim() }));
   if (s.loading) return html + loadingHTML(t('library.wholeSearching'));
+  // The call itself failed: not "every server was silent" but a search that
+  // did not run, with Try again for the same words and field.
+  if (s.failed) {
+    return html + stateHTML({
+      tone: 'error',
+      title: t('ui2.feedback.searchFailedTitle'),
+      body: t('ui2.feedback.searchFailedBody'),
+      detail: friendlyErrorText(s.failed),
+      actions: [{ id: 'lib2SearchRetry', label: t('ui2.feedback.tryAgain'), primary: true }],
+    });
+  }
   const speaker = speakerName();
   const rows = s.items.map((it, idx) => trackRowHTML(it, {
     key: statusKey(it),
@@ -1454,6 +1468,17 @@ function ui2SearchHTML() {
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);
+  // No hits from servers that all answered: what to try next, and the way
+  // back to the search field.
+  if (note && !s.items.length && !s.unanswered.length && !s.partial) {
+    const any = (LIB_SEARCH_FIELDS.find(([v]) => v === 'any') || [])[1] || 'library.fieldAll';
+    return html + stateHTML({
+      tone: 'info',
+      title: note,
+      body: s.field !== 'any' ? t('ui2.feedback.tryAnotherField', { field: t(any) }) : '',
+      actions: [{ id: 'lib2SearchFocus', label: t('ui2.library.searchAgain'), primary: true }],
+    });
+  }
   if (note) html += `<p class="lib2-note" role="status">${escapeHtml(note)}</p>`;
   return html;
 }
@@ -1634,6 +1659,18 @@ function wireLibraryUi2(el) {
       return;
     }
     if (hit('#lib2Retry')) { libState.ui2.focus = 'heading'; libraryBrowseCurrent(); return; }
+    // The search that did not run, again with the same words and field.
+    if (hit('#lib2SearchRetry')) {
+      libState.ui2.focus = 'heading';
+      libraryWholeSearch(libState.search.query, libState.search.field);
+      return;
+    }
+    // No hits: back to the search field, its words selected.
+    if (hit('#lib2SearchFocus')) {
+      const q = $('libWholeQ');
+      if (q) { q.focus(); q.select(); }
+      return;
+    }
     if (hit('#lib2Up')) { const up = trailParent(ui2Crumbs()); if (up) ui2GoTo(up.depth); return; }
     if (hit('#libRefreshBtn')) { libState.ui2.focus = 'heading'; loadMediaServers({ autoOpen: false }); return; }
     if ((b = hit('#libOnSpeakersBtn'))) { libraryPutServerOnSpeakers(b); return; }

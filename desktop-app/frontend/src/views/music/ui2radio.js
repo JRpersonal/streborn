@@ -24,11 +24,19 @@ import { parsePresetConflict } from '../../presetmove.js';
 import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
+import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
 import { isFav, loadFavorites, loadFavStore, toggleFav } from './favorites.js';
 import { putStationOnKey, showSlotPicker } from './picker.js';
-import { doRefilter, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
+import { doRefilter, openBoxWifiSetup, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
 import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
 import './ui2radio.css';
+
+// What each key tile reports in the preview (phase 5, rule 2 and 3): the last
+// recall, save, rename, clear or pick of that key, per speaker and slot, in
+// the tile's own status line. Kept across the tile rebuilds renderPresets
+// does on every status change, so an answer stays until it was read.
+const keyStatus = new Map();
+const keyStatusId = (host, slot) => `${host}|${slot}`;
 
 let built = false;
 // The list the rows were drawn from, for the delegated row handler.
@@ -190,6 +198,7 @@ export function syncUi2Keys() {
     const fresh = !tile.dataset.ui2Key;
     tile.dataset.ui2Key = '1';
     const slot = parseInt(tile.dataset.slot, 10);
+    keyStatusLine(tile, box, slot);
     // "3" on the first row, "3 · 2×" on the second (#1110).
     const n = keyNum(slot, t);
     const body = tile.querySelector('.preset-body');
@@ -233,6 +242,9 @@ export function syncUi2Keys() {
       });
     }
   });
+  // A row that was sent but not yet playing turns "Playing" once the status
+  // poll (which rebuilt these tiles) says the speaker plays it.
+  upgradeSentRows();
   // Another speaker was chosen: the rows' actions name the new one.
   if (rows.length && speaker !== rowsSpeaker && state.searchLastMode !== 'pandora') renderSearchResults();
   // Discover starts with the top list, once, the first time Radio shows with
@@ -274,6 +286,66 @@ export function restoreKeyFocus(mark) {
   try { el.focus({ preventScroll: true }); } catch { el.focus(); }
 }
 
+// keyStatusLine gives a tile its status line (role=status), filled with what
+// that key of that speaker last reported. Each rebuilt tile gets a new line;
+// the words in it are the kept ones, so nothing is read out twice.
+function keyStatusLine(tile, box, slot) {
+  let line = tile.querySelector('.ui2-key-status');
+  if (!line) {
+    line = document.createElement('p');
+    line.setAttribute('role', 'status');
+    tile.appendChild(line);
+  }
+  const st = box ? keyStatus.get(keyStatusId(box.host, slot)) : null;
+  line.className = `ui2-key-status${st && st.kind ? ` is-${st.kind}` : ''}`;
+  line.textContent = (st && st.text) || '';
+}
+
+// keyReport is the report hook a key action takes in the preview: report(text,
+// kind) writes the answer into that key's status line (kind busy, ok, warn or
+// error; a null text clears it). The line belongs to the speaker the action
+// was for, so an answer that arrives after another speaker was chosen waits
+// for that speaker's tiles. Null without the shell: every key action then
+// keeps its toasts and dialogs exactly as before.
+export function keyReport(slot, box = state.currentBox) {
+  if (!on() || !box || !(slot > 0)) return null;
+  const id = keyStatusId(box.host, slot);
+  const host = box.host;
+  return (text, kind = 'ok') => {
+    if (text) keyStatus.set(id, { kind, text }); else keyStatus.delete(id);
+    if (!state.currentBox || state.currentBox.host !== host) return;
+    const tile = [...document.querySelectorAll('#presets .preset')].find((el) => parseInt(el.dataset.slot, 10) === slot);
+    if (tile) keyStatusLine(tile, state.currentBox, slot);
+  };
+}
+
+// keyStatusOf is what a key's status line says now ({ kind, text }), for the
+// checks.
+export function keyStatusOf(slot, box = state.currentBox) {
+  return box ? keyStatus.get(keyStatusId(box.host, slot)) || null : null;
+}
+
+// transferReport is the report hook of the Transfer button in the preview:
+// report(text, kind) writes the result into the line under the button
+// (role=status) instead of a toast or the error dialog. Null without the
+// shell.
+export function transferReport() {
+  if (!on()) return null;
+  const btn = $('presetTransferBtn');
+  if (!btn) return null;
+  return (text, kind = 'ok') => {
+    let line = $('ui2XferStatus');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'ui2XferStatus';
+      line.setAttribute('role', 'status');
+      btn.insertAdjacentElement('afterend', line);
+    }
+    line.className = `ui2-xfer-status${kind ? ` is-${kind}` : ''}`;
+    line.textContent = text || '';
+  };
+}
+
 // syncUi2RadioTabs marks the tab that matches what the search box shows
 // (tabFor) and lets the panel hide what only Discover has (the search field,
 // the filters, the genres). Called from renderSearchResults.
@@ -294,6 +366,15 @@ export function syncUi2RadioTabs() {
   panel.setAttribute('aria-labelledby', `ui2RadioTab-${cur}`);
   // A saved country or language arrives with the first list.
   syncFilterSummary();
+}
+
+// openUi2RadioTab opens Discover or Favorites as a click on the tab does (the
+// empty Favorites list's "Open Discover"), and puts the keyboard on the tab.
+export function openUi2RadioTab(id) {
+  if (!on()) return;
+  openTab(id);
+  const tab = $(`ui2RadioTab-${id}`);
+  if (tab) tab.focus();
 }
 
 function openTab(id) {
@@ -343,6 +424,7 @@ export function renderUi2Stations(res, list, hintHtml) {
     const key = stationKey(s);
     return stationRowHTML(s, i, { speaker, fav: isFav(s), open: open.has(key), status: status.get(key) || null });
   }).join('')}</ul>`;
+  res.querySelectorAll('.ui2-st').forEach((li) => rowFix(li, status.get(li.dataset.key) || null));
 }
 
 // setStatus records what a station's row reports and repaints only that line,
@@ -357,6 +439,42 @@ function setStatus(key, st) {
   // replaced arrives already holding its words, and is not read out.
   line.className = `ui2-st-status${st && st.kind ? ` is-${st.kind}` : ''}`;
   line.textContent = (st && st.text) || '';
+  rowFix(li, st);
+}
+
+// rowFix puts the way out of a row's problem next to its status line: for a
+// speaker without internet, a button to that speaker's Wi-Fi. Every other
+// status has none, and a row whose status changed loses the button.
+function rowFix(li, st) {
+  const old = li.querySelector('.ui2-st-fix');
+  const box = st && st.wifiHost ? (state.boxes || []).find((b) => b && b.host === st.wifiHost) : null;
+  if (!box) { if (old) old.remove(); return; }
+  if (old && old.dataset.host === box.host) return;
+  if (old) old.remove();
+  const line = li.querySelector('.ui2-st-status');
+  if (!line) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'u-btn u-btn--secondary ui2-st-fix';
+  btn.dataset.act = 'wifi';
+  btn.dataset.host = box.host;
+  const play = li.querySelector('[data-act="play"]');
+  if (play) btn.dataset.i = play.dataset.i;
+  btn.textContent = t('ui2.feedback.wifiOf', { speaker: getBoxLabel(box) });
+  line.insertAdjacentElement('afterend', btn);
+}
+
+// upgradeSentRows turns a row that says "Sent to Kitchen. It has not started
+// yet." into "Playing on Kitchen" once the speaker reports that it plays that
+// station, and only then (rule 2).
+function upgradeSentRows() {
+  const box = state.currentBox;
+  if (!box || state.nowPlayState !== 'PLAY_STATE' || !state.nowLocation) return;
+  for (const [key, st] of status) {
+    const p = st && st.pending;
+    if (!p || p.host !== box.host) continue;
+    if (state.nowLocation === p.url || state.nowName === p.name) setStatus(key, playVerdict(p.speaker, true));
+  }
 }
 
 // wireRows handles the row buttons, delegated, so a repaint never loses one.
@@ -375,6 +493,7 @@ function wireRows(res) {
     else if (act === 'key') putOnKey(s);
     else if (act === 'details') toggleDetails(s, btn);
     else if (act === 'site' && /^https?:\/\//i.test(s.homepage || '')) BrowserOpenURL(s.homepage);
+    else if (act === 'wifi') openBoxWifiSetup((state.boxes || []).find((b) => b && b.host === btn.dataset.host));
   });
 }
 
@@ -384,22 +503,31 @@ function wireRows(res) {
 // says why, in its row.
 async function playRow(s) {
   const key = stationKey(s);
+  const box = state.currentBox;
   const speaker = speakerName();
   const url = s.url_resolved || s.url;
-  setStatus(key, { kind: 'busy', text: t('ui2.radio.starting', { speaker }) });
+  setStatus(key, startingVerdict(speaker));
   let failed = false;
   const ok = await playStation(s, {
-    report: (msg, kind) => {
+    report: (msg, kind, onBox) => {
       if (kind === 'info') { setStatus(key, { kind: 'busy', text: msg }); return; }
       failed = true;
+      // The speaker has no internet: the row says so, with its Wi-Fi as the
+      // way out (no modal, rule 3).
+      if (kind === 'nointernet') { setStatus(key, { kind: 'error', text: msg, wifiHost: onBox ? onBox.host : '' }); return; }
       setStatus(key, { kind: 'error', text: t('ui2.radio.playFailed', { speaker, reason: msg }) });
     },
   });
   if (failed) return;
   // Not ok without a report: the speaker was switched meanwhile, nothing to say.
-  const playing = ok && state.nowPlayState === 'PLAY_STATE' && !!state.nowLocation
+  if (!ok) { setStatus(key, null); return; }
+  const playing = state.nowPlayState === 'PLAY_STATE' && !!state.nowLocation
     && (state.nowLocation === url || state.nowName === s.name);
-  setStatus(key, playing ? { kind: 'ok', text: t('ui2.radio.playing', { speaker }) } : null);
+  // Sent is not playing: the speaker took the station but does not report it
+  // yet. The status poll upgrades the line once it does (upgradeSentRows).
+  const verdict = playVerdict(speaker, playing);
+  if (!playing && box) verdict.pending = { host: box.host, url, name: s.name, speaker };
+  setStatus(key, verdict);
 }
 
 function favRow(s, btn) {

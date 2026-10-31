@@ -60,8 +60,37 @@ import { openPick } from './picker.js';
 import { renderPresets } from './presettiles.js';
 import { refreshStatus } from './status.js';
 import { loadLanguagesForCountry, renderGenreChips } from './taxonomy.js';
-import { renderUi2Stations, syncUi2RadioTabs } from './ui2radio.js';
+import { openUi2RadioTab, renderUi2Stations, syncFilterSummary, syncUi2RadioTabs } from './ui2radio.js';
 import { discoverFiltersApply } from './ui2stations.js';
+import { loadingHTML, stateHTML } from '../../shell2/library.js';
+
+// The UI 2.0 preview's station list says what went wrong where the list
+// would be (docs/UI-2.0.md, rule 3): listError holds the failed directory
+// fetch until the next one, so a filter change that repaints the list
+// (renderSearchResults) cannot paint the old stations over the error. Only
+// the preview reads it; the current layout keeps its one muted line.
+let listError = null;
+
+// searchListError is the failed fetch the preview shows, or null.
+export function searchListError() {
+  return listError;
+}
+
+// ui2Busy marks the preview's Radio panel busy while a list is on its way
+// (aria-busy), so a screen reader waits for the new list.
+function ui2Busy(on) {
+  if (!state.ui2Shell) return;
+  const panel = $('ui2RadioPanel');
+  if (panel) panel.setAttribute('aria-busy', on ? 'true' : 'false');
+}
+
+// listLoadingHTML is the line while stations load: the preview's spinner
+// line (role=status), the current layout's muted line.
+function listLoadingHTML() {
+  return state.ui2Shell
+    ? loadingHTML(t('search.loadingStations'))
+    : `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
+}
 
 // updateFilterIndicators setzt die has-filter CSS Klasse auf jene Filter
 // Dropdowns die einen anderen Wert als "alle" haben. Damit erkennt der
@@ -150,9 +179,11 @@ async function doSearch() {
 // binding set, or a directory outage) render the synthetic card instead, so
 // a pasted URL always ends in something playable and long-press-savable.
 async function searchByStreamURL(url) {
-  $('searchResults').innerHTML = `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
+  listError = null;
+  $('searchResults').innerHTML = listLoadingHTML();
   $('loadMoreRow').classList.add('hidden');
   state.searchRelaxed = false;
+  ui2Busy(true);
   let list = [];
   try {
     list = await RadioStationsByURL(url) || [];
@@ -169,6 +200,7 @@ async function searchByStreamURL(url) {
     // odd server never stops a URL that actually works.
     let kind = null;
     try { kind = await ClassifyStreamURL(url); } catch { kind = null; }
+    ui2Busy(false);
     if (kind && kind.kind === 'website' && state.searchListOpen) {
       $('searchResults').innerHTML =
         `<div class="muted">${escapeHtml(t('search.urlIsWebsite'))}</div>`
@@ -178,6 +210,7 @@ async function searchByStreamURL(url) {
     }
     list = [syntheticStationForURL(url)];
   }
+  ui2Busy(false);
   state.searchResults = list;
   renderSearchResults();
 }
@@ -227,9 +260,11 @@ function buildSearchOpts() {
 
 async function fetchSearchPage(append) {
   if (!append) {
-    $('searchResults').innerHTML = `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
+    listError = null;
+    $('searchResults').innerHTML = listLoadingHTML();
     $('loadMoreRow').classList.add('hidden');
   }
+  ui2Busy(true);
   try {
     // Query radio-browser DIRECTLY from the app (reliable internet, real CPU)
     // instead of routing through the box agent — the box only ever needs the
@@ -256,6 +291,7 @@ async function fetchSearchPage(append) {
     }
     // The list was closed by a second click while this page was on its way.
     if (!state.searchListOpen) return;
+    listError = null;
     // Relaxed is per result set: a fresh search resets it (and the dismiss),
     // a "load more" keeps the hint once any page needed relaxing.
     state.searchRelaxed = append ? (state.searchRelaxed || relaxed) : relaxed;
@@ -298,9 +334,104 @@ async function fetchSearchPage(append) {
     $('loadMoreRow').classList.toggle('hidden', page.length < PAGE_SIZE);
   } catch (e) {
     if (!state.searchListOpen) return;
+    if (state.ui2Shell) {
+      $('loadMoreRow').classList.add('hidden');
+      listError = { detail: searchErrorText(e) };
+      renderSearchResults();
+      return;
+    }
     $('searchResults').innerHTML = `<div class="muted">${escapeHtml(searchErrorText(e))}</div>`;
     $('loadMoreRow').classList.add('hidden');
+  } finally {
+    ui2Busy(false);
   }
+}
+
+// paintUi2ListError draws the preview's failed directory fetch in place of
+// the list: what happened, the reason, and Try again, which asks again with
+// the same mode and filters. An alert, so it is heard at once; the keyboard
+// stays where it was (the tab or the filter that started the fetch).
+function paintUi2ListError(res) {
+  res.innerHTML = stateHTML({
+    tone: 'error',
+    title: t('ui2.feedback.stationsErrorTitle'),
+    body: t('ui2.feedback.stationsErrorBody'),
+    detail: listError.detail,
+    actions: [{ id: 'ui2StationsRetry', label: t('ui2.feedback.tryAgain'), primary: true }],
+  });
+  const retry = $('ui2StationsRetry');
+  if (retry) retry.onclick = () => doRefilter();
+}
+
+// ui2EmptyList is the preview's empty station list, one of three: no
+// favourites yet, the speaker filter hiding everything the directory found,
+// or nothing that matches. Each says what to do next and offers it.
+function ui2EmptyList(res, hintHtml, boseHidAll) {
+  let st;
+  if (state.searchLastMode === 'favorites') {
+    st = {
+      title: t('ui2.feedback.noFavTitle'),
+      body: t('ui2.feedback.noFavBody'),
+      actions: [{ id: 'ui2OpenDiscover', label: t('ui2.feedback.openDiscover'), primary: true }],
+    };
+  } else if (boseHidAll) {
+    st = {
+      title: t('ui2.feedback.boseOnlyTitle'),
+      body: t('ui2.feedback.boseOnlyBody'),
+      actions: [{ id: 'ui2ShowHttps', label: t('ui2.feedback.showHttps'), primary: true }],
+    };
+  } else {
+    st = {
+      title: t('ui2.feedback.noMatchTitle'),
+      body: t('ui2.feedback.noMatchBody'),
+      actions: [
+        { id: 'ui2ClearFilters', label: t('ui2.feedback.clearFilters'), primary: true },
+        { id: 'ui2AddMissing', label: t('ui2.feedback.addMissing') },
+      ],
+    };
+  }
+  res.innerHTML = hintHtml + stateHTML({ tone: 'info', ...st });
+  const wire = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+  wire('ui2OpenDiscover', () => openUi2RadioTab('discover'));
+  wire('ui2ShowHttps', () => {
+    state.searchOnlyBose = false;
+    const cb = $('searchOnlyBose');
+    if (cb) cb.checked = false;
+    syncFilterSummary();
+    doRefilter();
+  });
+  wire('ui2ClearFilters', clearDiscoverFilters);
+  wire('ui2AddMissing', () => {
+    const guide = $('addStationBox');
+    if (!guide) return;
+    guide.open = true;
+    const sum = guide.querySelector('summary');
+    if (!sum) return;
+    sum.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    sum.focus();
+  });
+}
+
+// clearDiscoverFilters sets country, language and minimum bitrate back to
+// "all" (the same steps their own selects take) and asks the directory again.
+function clearDiscoverFilters() {
+  state.searchCountry = '';
+  state.searchLang = '';
+  state.searchMinBitrate = 0;
+  const cc = $('searchCountry');
+  if (cc) cc.value = '';
+  const ls = $('searchLang');
+  if (ls) ls.value = '';
+  const br = $('searchBitrate');
+  if (br) br.value = '0';
+  saveSearchCountry('');
+  updateFilterIndicators();
+  state.languages = [];
+  loadLanguagesForCountry();
+  state.showMoreGenres = false;
+  renderGenreChips();
+  syncFilterSummary();
+  doRefilter();
 }
 
 // cleanForSort strips leading non-alphanumeric characters (tab,
@@ -361,7 +492,7 @@ function streamErrorMessage(reason) {
 // and expands + scrolls to the WLAN switch section. Used from the "speaker has
 // no internet" prompt so a box that landed on a dead Wi-Fi can be re-provisioned
 // in one tap instead of a manual factory reset (#375).
-function openBoxWifiSetup(box) {
+export function openBoxWifiSetup(box) {
   if (!box) return;
   deps.speakerPickedInTab(box);
   deps.switchView('settings');
@@ -560,7 +691,7 @@ export async function playStation(s, options = {}) {
       state.nowLocation = '';
       state.lastAppPlay = null;
       renderPresets();
-      showToast(streamErrorMessage(fail.reason));
+      say(streamErrorMessage(fail.reason), 'error');
       return false;
     }
 
@@ -575,6 +706,13 @@ export async function playStation(s, options = {}) {
       state.nowLocation = '';
       state.lastAppPlay = null;
       renderPresets();
+      // The UI 2.0 preview says it in the station's row, with the speaker's
+      // Wi-Fi as a button there (ui2radio.js), instead of a window-wide modal
+      // for what is one speaker's problem (rule 3).
+      if (options.report && state.ui2Shell) {
+        say(t('ui2.feedback.noInternet', { speaker: getBoxLabel(box) }), 'nointernet', box);
+        return false;
+      }
       if (options.report) say(t('speaker.noInternetTitle'), 'error');
       const fix = await confirmWarn(
         t('speaker.noInternetTitle'),
@@ -622,6 +760,13 @@ export function renderSearchResults() {
     return;
   }
   if (state.searchLastMode === 'pandora') { renderPandoraStations(); return; }
+  // The preview keeps a failed fetch on screen until the next one.
+  if (state.ui2Shell && listError) {
+    const c = $('searchCount');
+    if (c) c.classList.add('hidden');
+    paintUi2ListError(res);
+    return;
+  }
   // Optional client-side Bose compatibility filter: drop HTTPS
   // streams and exotic codecs so the user does not hit 502 errors
   // on play.
@@ -682,6 +827,13 @@ export function renderSearchResults() {
       if (h) h.remove();
     };
   };
+  if (list.length === 0 && state.ui2Shell) {
+    const boseHidAll = totalRaw > 0 && filtersApply && !!state.searchOnlyBose
+      && (state.searchResults || []).filter(isBoseCompatible).length === 0;
+    ui2EmptyList(res, hintHtml, boseHidAll);
+    wireRelaxedDismiss();
+    return;
+  }
   if (list.length === 0) {
     const msg = state.searchLastMode === 'favorites'
       ? t('search.favEmpty')

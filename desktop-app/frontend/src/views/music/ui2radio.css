@@ -357,3 +357,115 @@ html.ui2 #view-box .preset :is(.ren, .del):focus-visible {
   outline: 2px solid var(--u-focus) !important;
   outline-offset: -2px !important;
 }
+
+/* ---------- Feedback in place (phase 5) ---------- */
+
+/* What a key reports (recall, save, rename, clear, pick), in its own tile.
+   Empty, the line takes no room; the words say the outcome, the colour only
+   repeats it. */
+html.ui2 #view-box .preset .ui2-key-status {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--u-muted);
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-box .preset .ui2-key-status:empty { display: none; }
+html.ui2 #view-box .preset .ui2-key-status.is-ok { color: var(--u-ok); }
+html.ui2 #view-box .preset .ui2-key-status.is-warn { color: var(--u-warn); }
+html.ui2 #view-box .preset .ui2-key-status.is-error { color: var(--u-danger); }
+/* The Transfer result, under the Transfer button. */
+html.ui2 #view-box .ui2-xfer-status {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--u-muted);
+}
+html.ui2 #view-box .ui2-xfer-status:empty { display: none; }
+html.ui2 #view-box .ui2-xfer-status.is-ok { color: var(--u-ok); }
+html.ui2 #view-box .ui2-xfer-status.is-warn { color: var(--u-warn); }
+html.ui2 #view-box .ui2-xfer-status.is-error { color: var(--u-danger); }
+/* A station row's way out of its problem (a speaker without internet: its
+   Wi-Fi), right under the row's status line. */
+html.ui2 #view-box .ui2-st .ui2-st-fix {
+  align-self: flex-start;
+  margin-top: 4px;
+  min-height: var(--u-target);
+}
+html.ui2 #view-box .ui2-st .ui2-st-fix:focus-visible {
+  outline: 2px solid var(--u-focus) !important;
+  outline-offset: 2px !important;
+}
+/* The station list's loading line and its empty and error states (the
+   Library's look, shell2/library.js stateHTML and loadingHTML). */
+html.ui2 #view-box #searchResults .lib2-state {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: 12px;
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #view-box #searchResults .lib2-state--error { border-color: var(--u-danger); }
+html.ui2 #view-box #searchResults .lib2-state-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-box #searchResults .lib2-state--error .lib2-state-title { color: var(--u-danger); }
+html.ui2 #view-box #searchResults .lib2-state-body { margin: 0 0 8px; font-size: 14px; line-height: 1.45; }
+html.ui2 #view-box #searchResults .lib2-state-detail {
+  margin: 0 0 8px;
+  color: var(--u-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-box #searchResults .lib2-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+html.ui2 #view-box #searchResults .lib2-state-acts .u-btn:focus-visible {
+  outline: 2px solid var(--u-focus) !important;
+  outline-offset: 2px !important;
+}
+html.ui2 #view-box #searchResults .lib2-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #view-box #searchResults .lib2-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--u-border);
+  border-top-color: var(--u-accent);
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.ui2 #view-box #searchResults .lib2-spinner,
+  html.ui2 #view-recent .lib2-spinner { animation: lib2-spin 900ms linear infinite; }
+}
+
+/* The Spotify tools' row and result lines (views/spotify.js, preview only):
+   one status line per speaker row and one under the copy-login button. They
+   sit here with the other row status lines of the music views. */
+html.ui2 #view-spotify .sp2-q-row { flex-wrap: wrap; row-gap: 4px; }
+html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status, .sp2-q-loading) {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--u-muted);
+}
+html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status):empty { display: none; }
+html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-ok { color: var(--u-ok); }
+html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-warn { color: var(--u-warn); }
+html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-error { color: var(--u-danger); }
+html.ui2 #view-spotify .sp2-q-note { color: var(--u-muted); font-size: 13px; }
+html.ui2 #view-spotify #spotifySyncBtn[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
+html.ui2 #view-spotify .sp2-acct-open { margin-top: 8px; }

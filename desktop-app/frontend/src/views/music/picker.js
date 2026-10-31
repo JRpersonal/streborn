@@ -1,13 +1,14 @@
 // views/music/picker.js: the slot picker modal (#pickModal, "save on which key?"),
 // shared with the Library and Recent views.
 
-import { RadioVote, SetPreset } from '../../api.js';
+import { GetPresets, RadioVote, SetPreset } from '../../api.js';
 import { t } from '../../i18n/index.js';
+import { keyFailedVerdict, keyHolds, keySavingVerdict, keyVerdict } from '../../shell2/feedback.js';
 import { stationLogoChain } from '../../logos.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { state } from '../../state.js';
 import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, rowSlots, slotKey } from '../../presetrows.js';
-import { $, escapeHtml, getBoxLabel, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, friendlyErrorText, getBoxLabel, showError, showToast } from '../../utils.js';
 import { loadPresets } from './presets.js';
 import { wireRowTabs } from './presettiles.js';
 import { presetMoveOffer } from './save.js';
@@ -27,7 +28,11 @@ import { preferMp3SiblingForBox } from './search.js';
 // replaced that control, on the same control of the same row or card). There a key
 // that is pressed while another is saving does nothing (ui2radio.js lockPicker
 // marks the keys aria-disabled, which keeps the focus on the pressed one).
-export function showSlotPicker({ title, subtitle, onPick, box }) {
+//
+// report(text, kind), when given (the UI 2.0 preview: the row, card or key the
+// pick was started from), takes a refusal instead of the error dialog, named
+// with the key and the speaker; the picker closes so the line can be read.
+export function showSlotPicker({ title, subtitle, onPick, box, report = null }) {
   opener = openerMark(document.activeElement);
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
@@ -39,7 +44,7 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
   const own = !box || (state.currentBox && box.host === state.currentBox.host);
   const rows = boxPresetRows(target, own ? state.presets : null);
   const row = clampRow(state.presetRow, rows);
-  renderPickSlots({ row, rows, onPick, target });
+  renderPickSlots({ row, rows, onPick, target, report });
   const modal = $('pickModal');
   modal.classList.remove('hidden');
   dialogSemantics(modal);
@@ -49,7 +54,7 @@ export function showSlotPicker({ title, subtitle, onPick, box }) {
 
 // renderPickSlots draws the row switch (when the speaker has two rows) and the
 // six slots of the chosen row, each with what is on it now.
-function renderPickSlots({ row, rows, onPick, target }) {
+function renderPickSlots({ row, rows, onPick, target, report = null }) {
   const switcher = $('pickRows');
   if (switcher) {
     if (rows < 2) {
@@ -69,7 +74,7 @@ function renderPickSlots({ row, rows, onPick, target }) {
       switcher.classList.remove('hidden');
       wireRowTabs(switcher, (r) => {
         if (r === 2) markRow2Seen();
-        renderPickSlots({ row: r, rows, onPick, target });
+        renderPickSlots({ row: r, rows, onPick, target, report });
         const el = $('pickRowTab' + r);
         if (el) el.focus();
       });
@@ -109,6 +114,12 @@ function renderPickSlots({ row, rows, onPick, target }) {
         if (conflict && target) {
           closePick();
           presetMoveOffer(conflict, i, target);
+          return;
+        }
+        if (report) {
+          closePick();
+          const speaker = target ? getBoxLabel(target) : '';
+          report(keyFailedVerdict(keyNum(i, t), speaker, friendlyErrorText(String((err && err.message) || err))).text, 'error');
           return;
         }
         showError(err);
@@ -176,16 +187,32 @@ function dialogSemantics(modal) {
   });
 }
 
-export function openPick(station) {
+// report(text, kind), when given (the UI 2.0 preview: a Recently played card),
+// takes the outcome instead of the toast and the dialog: the key is called
+// done only once the preset list read back from the speaker holds the station
+// on it.
+export function openPick(station, report = null) {
   // Presets play on the box only, so the same MP3-over-AAC sibling preference
   // as playStation applies to an assignment from the search list (#252).
   station = preferMp3SiblingForBox(station, state.searchResults);
   showSlotPicker({
     title: t('preset.assignStationTitle'),
     subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
+    report,
     onPick: async (i) => {
-      await putStationOnKey(state.currentBox, i, station);
-      showToast(t('preset.savedToKey', { n: keyNum(i, t), name: station.name }));
+      const box = state.currentBox;
+      await putStationOnKey(box, i, station);
+      if (!report) {
+        showToast(t('preset.savedToKey', { n: keyNum(i, t), name: station.name }));
+        return;
+      }
+      const n = keyNum(i, t);
+      const speaker = box ? getBoxLabel(box) : '';
+      report(keySavingVerdict(n, speaker).text, 'busy');
+      let fresh = null;
+      try { fresh = box ? await GetPresets(box.host, box.port) : null; } catch { fresh = null; }
+      const v = keyVerdict(n, speaker, keyHolds(fresh, i, station.name));
+      report(v.text, v.kind);
     },
   });
 }
