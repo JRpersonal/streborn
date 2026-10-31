@@ -387,6 +387,11 @@ func embeddedBootstrapStamp() string {
 // An unreadable or unknown mode returns "", i.e. the caller keeps its old
 // behaviour. This gate must never turn a chassis we cannot classify into one
 // that silently stops updating its boot path.
+//
+// The update's own reboot has a gate of its own in internal/webui/otarestart.go,
+// narrower than this one: only "bco" restarts the agent instead of rebooting,
+// because a soft reboot left an scm ST20 dark until it was unplugged after
+// every update, while the Portable (taigan-bco) is Verified with the reboot.
 func coprocessorWLANMode() string { return coprocessorWLANModeAt(wlanModePath) }
 
 // wlanModePath is the on-NAND file run.sh writes its chassis verdict to. A
