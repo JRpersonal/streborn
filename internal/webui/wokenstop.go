@@ -149,7 +149,7 @@ func (w *wokenStop) clear() {
 	w.handoffUntil = time.Time{}
 }
 
-// active reports whether the mark is set (for tests and diagnostics).
+// active reports whether the mark is set.
 func (w *wokenStop) active() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -192,12 +192,44 @@ func (w *wokenStop) apply(body []byte) []byte {
 // applyAt is apply at the given time, returning the master check a switch
 // inside the handoff window needs.
 func (w *wokenStop) applyAt(body []byte, now time.Time) ([]byte, *wokenCheck) {
+	if !w.active() {
+		// The common case on every bus frame and poll: no mark, nothing to
+		// parse.
+		return body, nil
+	}
 	status, item := parseWokenBody(body)
 	rewrite, check := w.observe(status, item, now)
 	if rewrite {
 		return bytes.Replace(body, pauseStatePlayStatus, stopStatePlayStatus, 1), check
 	}
 	return body, check
+}
+
+// rewriteOnly is observe for bodies that may be older than the last bus frame
+// (the /api/status cache, the stale fallback). It reports the marked item's
+// PAUSE_STATE as stopped and still ends the mark on a play, a real stop or
+// standby, but a PAUSE on another item is left alone: that can be the item
+// from before a group handoff, and clearing on it would undo the move the bus
+// had just made, so the member would report the group's stopped item as
+// paused again. It never starts a master check.
+func (w *wokenStop) rewriteOnly(body []byte) []byte {
+	if !w.active() {
+		return body
+	}
+	status, item := parseWokenBody(body)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.set {
+		return body
+	}
+	onMark := item.source == w.source && item.location == w.location
+	switch {
+	case onMark && status == "PAUSE_STATE":
+		return bytes.Replace(body, pauseStatePlayStatus, stopStatePlayStatus, 1)
+	case status == "PLAY_STATE" || status == "STOP_STATE" || item.source == "STANDBY":
+		w.clear()
+	}
+	return body
 }
 
 // observe takes one look at the speaker's state and says whether a

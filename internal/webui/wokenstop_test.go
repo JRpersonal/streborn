@@ -420,11 +420,38 @@ func TestWokenStopHandsOffOnce(t *testing.T) {
 		t.Fatal("first handoff cleared the mark")
 	}
 	body := strings.Replace(storedMusicBody("PAUSE_STATE"), groupAlbumLoc, "0$albums$*a9", 1)
+	s.NoteBoxNowPlaying([]byte(body))
 	if out := servedStatus(s, body); out != body {
 		t.Fatalf("second item change rewritten to %q", out)
 	}
 	if s.wokenStop.active() || len(*asked) != 1 {
 		t.Fatalf("mark followed a second item change (set=%v, asked %v)", s.wokenStop.active(), *asked)
+	}
+}
+
+// The /api/status cache can still hold the member's own paused item from just
+// before the bus moved the mark to the group's item. Served from the cache, it
+// must not undo the handoff: the next fresh look still reports the group's
+// item as stopped.
+func TestWokenStopCachedBodyDoesNotUndoAHandoff(t *testing.T) {
+	withHandoffReads(t, nil)
+	var logBuf bytes.Buffer
+	s, _ := groupMemberServer(&logBuf, masterSays(storedMusicBody("STOP_STATE")))
+	s.wokenStop.mark("PANDORA", pandoraLoc, time.Now())
+	s.NoteBoxZoneState(testMasterID)
+	s.NoteBoxNowPlaying([]byte(storedMusicBody("PAUSE_STATE")))
+	if !s.wokenStop.active() {
+		t.Fatal("the handoff cleared the mark")
+	}
+	old := pandoraBody("PAUSE_STATE")
+	if out := servedStatus(s, old); out != old {
+		t.Fatalf("the cached pre-handoff body was rewritten to %q", out)
+	}
+	if !s.wokenStop.active() {
+		t.Fatal("a cached body from before the handoff cleared the mark")
+	}
+	if out := servedStatus(s, storedMusicBody("PAUSE_STATE")); !strings.Contains(out, "STOP_STATE") {
+		t.Fatalf("the group's item after the handoff is served as %q, want STOP_STATE", out)
 	}
 }
 
