@@ -154,18 +154,57 @@ describe('preview: errors in the card they belong to', () => {
     expect(card.querySelector('.sps-msg').textContent).toContain('refused');
   });
 
-  it('keeps an unreadable toggle visible with Try again, refuses a press, and reads again', async () => {
+  it('keeps a model-specific toggle hidden when its first read fails, as the classic layout does', async () => {
+    // A setting only some models have (a display, AirPlay, SSH): a speaker
+    // that never answered for it must not be offered it as unreadable.
+    const { card } = toggleCard('airplayOpt');
+    speakerPage(doc, { sound: [card] }, 'sound');
+    wireSettingToggle({
+      sectionId: 'airplayOptSection', onId: 'airplayOptOn', offId: 'airplayOptOff',
+      get: async () => { throw new Error('timeout'); },
+      stateFn: (r) => ({ show: !!r.supported, enabled: !!r.enabled }),
+      set: async () => ({}),
+      toastKey: 'settingsView.displayMsgSavedToast',
+    });
+    await flush();
+    expect(card.classList.contains('hidden')).toBe(true);
+    expect(card.querySelector('.u-sec-status')).toBe(null);
+  });
+
+  it('keeps a toggle the call site always shows visible as unreadable from the first read', async () => {
+    const { card, on } = toggleCard('resumeOnPower');
+    speakerPage(doc, { sound: [card] }, 'sound');
+    wireSettingToggle({
+      sectionId: 'resumeOnPowerSection', onId: 'resumeOnPowerOn', offId: 'resumeOnPowerOff',
+      get: async () => { throw new Error('timeout'); },
+      stateFn: () => ({ show: true, enabled: true }),
+      onGetError: { show: true, enabled: true },
+      set: async () => ({}),
+      toastKey: 'settingsView.displayMsgSavedToast',
+    });
+    await flush();
+    expect(card.classList.contains('hidden')).toBe(false);
+    expect(card.querySelector('.u-sec-status').textContent).toContain('Kitchen');
+    expect(on.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('keeps an unreadable toggle visible with Try again once it read as shown, refuses a press, and reads again', async () => {
     const { card, on } = toggleCard('displayMsg');
     speakerPage(doc, { sound: [card] }, 'sound');
-    let fail = true;
+    let fail = false;
     const set = vi.fn(async () => ({}));
-    wireSettingToggle({
+    const handle = wireSettingToggle({
       sectionId: 'displayMsgSection', onId: 'displayMsgOn', offId: 'displayMsgOff',
       get: async () => { if (fail) throw new Error('timeout'); return { enabled: true }; },
       stateFn: (r) => ({ show: true, enabled: !!r.enabled }),
       set,
       toastKey: 'settingsView.displayMsgSavedToast',
     });
+    await flush();
+    expect(card.classList.contains('hidden')).toBe(false);
+    // The next read of this speaker does not answer.
+    fail = true;
+    handle.load();
     await flush();
     expect(card.classList.contains('hidden')).toBe(false);
     const status = card.querySelector('.u-sec-status');

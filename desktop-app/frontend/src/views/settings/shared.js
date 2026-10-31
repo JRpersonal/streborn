@@ -131,14 +131,25 @@ export function endpointMissing(e) {
 
 const NOT_THERE = Object.freeze({ notThere: true });
 
+// What the last successful read of a toggle said about its section, per
+// speaker: 'host|sectionId' -> shown. Many of these settings exist only on
+// some models (a display, AirPlay, SSH), and only a read tells: a section
+// that never read as shown on this speaker is not one to keep on screen as
+// unreadable.
+const shownBefore = new Map();
+
 // wireSettingToggle wires one On/Off section of Speaker settings.
 //
 // Classic: wireToggleSection exactly as before, a read failure hides the
 // section (or paints the call site's onGetError). Preview: a setting that
 // could not be read stays visible (rule 4, nothing disappears): its buttons
 // are aria-disabled, a press is refused, and a status line says the speaker
-// did not answer, with Try again. A setting the agent does not know (404)
-// stays hidden in both layouts.
+// did not answer, with Try again. That is for a setting known to be there:
+// one the call site shows on a failed read anyway (its onGetError says show),
+// or one an earlier read on this speaker showed. Any other unreadable section
+// stays hidden as in the classic layout, so a model is never offered a
+// setting it does not have. A setting the agent does not know (404) stays
+// hidden in both layouts.
 export function wireSettingToggle(opts) {
   const deps = toggleDepsFor(opts.sectionId, opts.onId);
   if (!state.ui2Shell) return wireToggleSection(opts, deps);
@@ -146,6 +157,10 @@ export function wireSettingToggle(opts) {
   let handle = null;
   const host = $(opts.sectionId);
   const buttons = [$(opts.onId), $(opts.offId)];
+  const key = () => `${(state.settingsBox && state.settingsBox.host) || ''}|${opts.sectionId}`;
+  // togglesection.js takes onGetError once, as a value: this object is it,
+  // and every failed read sets what it says before the failure reaches there.
+  const onGetError = { show: false, enabled: null, readFailed: false };
   const wrapped = {
     ...opts,
     get: async () => {
@@ -156,11 +171,19 @@ export function wireSettingToggle(opts) {
       } catch (e) {
         if (endpointMissing(e)) { failed = false; return NOT_THERE; }
         failed = true;
+        const known = shownBefore.get(key()) === true || !!(opts.onGetError && opts.onGetError.show);
+        if (known) Object.assign(onGetError, { show: true, enabled: null, readFailed: true });
+        else Object.assign(onGetError, { show: false, enabled: null }, opts.onGetError || {}, { readFailed: false });
         throw e;
       }
     },
-    stateFn: (r) => (r === NOT_THERE ? (opts.onGetError || { show: false, enabled: null }) : opts.stateFn(r)),
-    onGetError: { show: true, enabled: null, readFailed: true },
+    stateFn: (r) => {
+      if (r === NOT_THERE) return opts.onGetError || { show: false, enabled: null };
+      const st = opts.stateFn(r);
+      shownBefore.set(key(), !!(st && st.show));
+      return st;
+    },
+    onGetError,
     onLoaded: (st) => {
       paintReadState(host, !!(st && st.readFailed), {
         name: settingsBoxLabel(state.settingsBox),
