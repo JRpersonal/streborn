@@ -86,7 +86,8 @@ test.describe('UI 2.0 Speakers area', () => {
     await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
     expect(await shownViews(page)).toEqual(['view-setup']);
     await expect(sub(page, 'add')).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('#view-setup .setup-target-card').first()).toBeVisible();
+    // Add speaker is the setup wizard (phase 4); its first step lists the speakers.
+    await expect(page.locator('#view-setup #ui2SetupWizard #w2FindList input.w2-radio').first()).toBeVisible();
     await sub(page, 'list').click();
     await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
     // Outside the area its head goes away.
@@ -172,9 +173,8 @@ test.describe('UI 2.0 Speakers area', () => {
     await listRow(page, KITCHEN.host).click();
     await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
     await expect(sub(page, 'add')).toHaveAttribute('aria-current', 'page');
-    const hero = page.locator('#setupPrimaryAction .setup-hero');
-    await expect(hero).toHaveAttribute('data-kind', 'stock');
-    await expect(hero).toHaveAttribute('data-host', KITCHEN.host);
+    // The wizard's Find step opens with it chosen (phase 4).
+    await expect(page.locator(`#w2FindList input.w2-radio[value="${KITCHEN.host}"]`)).toBeChecked();
     // A stock speaker is never the controlled one.
     await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
   });

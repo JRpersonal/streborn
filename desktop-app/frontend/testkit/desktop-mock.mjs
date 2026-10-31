@@ -34,7 +34,7 @@ export const MODELLED_BINDINGS = [
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CopyPresetsAcrossBoxes', 'DeletePreset',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
-  'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
+  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
@@ -285,6 +285,18 @@ export function installDesktopMock({ scenario, demo }) {
     SetDisplayClock: () => undefined,
     GetClockFormat24: () => true,
     BoxInstallReachable: () => true,
+    // The Bose firmware (app_firmware.go FirmwareInfo), which the setup
+    // wizard's check step reads first: every speaker that answers is on
+    // 27.0.6, so the check passes on its own. The other firmware cases are
+    // binding overrides (demo-data.mjs SETUP_CHECK).
+    GetBoxFirmware: ([h]) => {
+      const b = boxByHost(h);
+      if (!b || b.offline) return { reachable: false, latest: '27.0.6' };
+      return {
+        reachable: true, model: b.model || '', firmware: '27.0.6.46330.5043500', short: '27.0.6',
+        moduleType: '', variant: '', latest: '27.0.6', outdated: false, deviceId: 'device-id-here',
+      };
+    },
     CheckStereoBeforeInstall: () => ({ known: false, paired: false, status: '', partnerIP: '', partnerOnline: false, partnerHasSTR: false }),
     DissolvePairBeforeInstall: () => ({ allClear: true, results: {} }),
     // No speaker is finishing an update in the demo; an empty list, never null.
@@ -329,6 +341,37 @@ export function installDesktopMock({ scenario, demo }) {
     SetAppLocale: () => undefined,
     LogClientError: () => undefined,
   };
+
+  // ---- UI 2.0 setup wizard (phase 4): a Bose original that becomes STR ------
+  // With scenario.installFlow a stock speaker behaves like the real one: its
+  // Bose firmware has no /api/agent/version, so BoxAgentVersion fails for it,
+  // and once InstallSTROnBox answered ok for it, discovery lists it as an STR
+  // speaker on :8888 and its agent answers with the app's build and the
+  // Spotify engine present (so the classic install's verify ends at once).
+  // Without the flag nothing here changes the models above.
+  if (sc.installFlow) {
+    state.installed = state.installed || {};
+    const stockAt = (h) => { const b = boxByHost(h); return !!(b && b.kind === 'stock'); };
+    const asInstalled = (list) => list.map((b) => (b && state.installed[b.host]
+      ? Object.assign({}, b, { kind: 'str', port: 8888, version: appInfo.version, build: appInfo.build, offline: false })
+      : b));
+    const install = models.InstallSTROnBox;
+    const agent = models.BoxAgentVersion;
+    const discover = models.DiscoverBoxes;
+    const known = models.RefreshKnownBoxes;
+    models.InstallSTROnBox = (args) => {
+      const r = install(args);
+      if (r && r.ok) state.installed[args[0]] = true;
+      return r;
+    };
+    models.BoxAgentVersion = (args) => {
+      const h = args[0];
+      if (stockAt(h) && !state.installed[h]) throw new Error(`agent not reachable on ${h}`);
+      return Object.assign({}, agent(args), { goLibrespot: 'present' });
+    };
+    models.DiscoverBoxes = (args) => asInstalled(discover(args));
+    models.RefreshKnownBoxes = (args) => asInstalled(known(args));
+  }
 
   // ---- recording and overrides ---------------------------------------------
   const overrides = Object.assign({}, sc.bindings || {});

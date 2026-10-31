@@ -69,6 +69,24 @@ async function pickStockAndConfirm(page, host) {
   await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
 }
 
+// Add speaker is the setup wizard (phase 4): a Bose original picked in the
+// sidebar is the one chosen in its Find step.
+const findRadio = (page, value) => page.locator(`#w2FindList input.w2-radio[value="${value}"]`);
+async function expectStockChosen(page, box) {
+  await expect(page.locator('#ui2SetupWizard')).toBeVisible();
+  await expect(findRadio(page, box.host)).toBeChecked();
+  await expect(page.locator(`.setup-target-card[data-kind="stock"][data-host="${box.host}"]`)).toHaveAttribute('aria-checked', 'true');
+}
+
+// passCheck goes through the wizard's Check step to Install: the mock's
+// speaker is on 27.0.6, so the check passes and Install unlocks in the footer.
+async function passCheck(page) {
+  const go = page.locator('#w2Foot .w2-act[data-act="install"]');
+  await expect(go).not.toHaveAttribute('aria-disabled', 'true');
+  await go.click();
+  await expect(page.locator('#w2PanelInstall')).toBeVisible();
+}
+
 async function expectStockHero(page, box) {
   const hero = page.locator('#setupPrimaryAction .setup-hero');
   await expect(hero).toHaveAttribute('data-kind', 'stock');
@@ -226,7 +244,7 @@ test.describe('UI 2.0 shell', () => {
       const { page } = app;
       await pickStockAndConfirm(page, KITCHEN.host);
       await expect(nav(page, 'speakers')).toHaveAttribute('aria-current', 'page');
-      await expectStockHero(page, KITCHEN);
+      await expectStockChosen(page, KITCHEN);
       // A stock speaker is never the controlled one.
       await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
     });
@@ -294,34 +312,34 @@ test.describe('UI 2.0 shell', () => {
       // (switchView('setup')) draws it from state.setupTarget, which shows what
       // a later repaint would show, not just what is still on screen.
       const redrawSetup = (page) => page.locator('#ui2SpkSubnav .spa-sub[data-route="add"]').click();
-      const strHero = (page, host) => page.locator(`#setupPrimaryAction .setup-hero[data-kind="str"][data-host="${host}"]`);
-
-      test('14. Setup redraws for the speaker picked, keeps a chosen factory reset, follows a stock pick', async ({ app }) => {
+      test('14. Add speaker follows the classic target: an STR pick chooses nothing, a factory reset stays, a stock pick replaces it', async ({ app }) => {
         const { page } = app;
         await openView(page, 'setup');
-        await expect(strHero(page, LR.host)).toBeVisible();
-        // An STR speaker picked in the sidebar redraws the picker for it.
+        await expect(page.locator('#ui2SetupWizard')).toBeVisible();
+        // An STR speaker is never an install target (phase 4): picking one in
+        // the sidebar chooses nothing in Find.
         await pick(page, BR.host).click();
         await expect(pick(page, BR.host)).toHaveAttribute('aria-current', 'true');
-        await expect(strHero(page, BR.host)).toBeVisible();
-        await expect(page.locator(`.setup-target-card[data-kind="str"][data-host="${BR.host}"]`)).toHaveAttribute('aria-checked', 'true');
+        await expect(page.locator('#w2FindList input.w2-radio:checked')).toHaveCount(0);
         // A chosen factory reset survives a pick in the sidebar, and a repaint.
         const factory = page.locator('.setup-target-card[data-kind="factory-reset"]');
-        await factory.click();
+        await findRadio(page, '__factory').check();
         await expect(factory).toHaveAttribute('aria-checked', 'true');
         await expect(page.locator('.setup-target-factory-help').first()).toBeVisible();
         await pick(page, LR.host).click();
         await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
         await expect(page.locator('#ui2MainInner > #view-setup')).toBeVisible();
         await expect(factory).toHaveAttribute('aria-checked', 'true');
+        await expect(findRadio(page, '__factory')).toBeChecked();
         await redrawSetup(page);
         await expect(factory).toHaveAttribute('aria-checked', 'true');
+        await expect(findRadio(page, '__factory')).toBeChecked();
         await expect(page.locator('.setup-target-factory-help').first()).toBeVisible();
         await expect(page.locator('#setupPrimaryAction .setup-hero')).toHaveCount(0);
         // A stock speaker replaces it (pickBox asks first).
         await pickStockAndConfirm(page, KITCHEN.host);
         await expect(factory).toHaveAttribute('aria-checked', 'false');
-        await expectStockHero(page, KITCHEN);
+        await expectStockChosen(page, KITCHEN);
       });
 
       test.describe('running install', () => {
@@ -330,6 +348,9 @@ test.describe('UI 2.0 shell', () => {
         test('15. a running install keeps its target', async ({ app, mock }) => {
           const { page } = app;
           await pickStockAndConfirm(page, KITCHEN.host);
+          await expectStockChosen(page, KITCHEN);
+          await page.locator('#w2Foot .w2-act[data-act="next"]').click();
+          await passCheck(page);
           await expectStockHero(page, KITCHEN);
           await page.locator('#setupHeroInstall').click();
           await mock.expectCalled('InstallSTROnBox', { pred: onHost(KITCHEN.host), times: 1 });
