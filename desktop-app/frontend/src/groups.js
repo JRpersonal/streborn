@@ -264,6 +264,17 @@ export function resolveBoxByRef(ref, boxes) {
 
 let _fetchedAt = 0;
 let _inFlight = null;
+// The last round that completed: when it started and the hosts that answered
+// it. A group edit is confirmed from a round that started after the edit and
+// that both speakers answered, never from the optimistic entry
+// applyOptimisticZone writes, nor from an entry carried over from a missed
+// round (UI 2.0 sidebar, shell2/mount.js).
+let _lastRound = { startedAt: 0, answered: new Set() };
+
+// lastZoneRound is that record: { startedAt, answered: Set of hosts }.
+export function lastZoneRound() {
+  return _lastRound;
+}
 
 // fetchZoneLive queries every STR speaker's live zone in parallel and folds
 // the round into state.zoneLive via mergeZoneLive. Returns true when the
@@ -288,10 +299,15 @@ export async function fetchZoneLive(boxes, { maxAgeMs = 0, minBoxes = 1 } = {}, 
   }
   if (maxAgeMs > 0 && Date.now() - _fetchedAt < maxAgeMs) return false;
   _fetchedAt = Date.now();
+  const startedAt = _fetchedAt;
   _inFlight = (async () => {
     try {
       const results = await Promise.allSettled(strBoxes.map(b => fetchZone(b.host, b.port)));
       state.zoneLive = mergeZoneLive(state.zoneLive, strBoxes, results);
+      _lastRound = {
+        startedAt,
+        answered: new Set(strBoxes.filter((b, i) => results[i] && results[i].status === 'fulfilled' && results[i].value).map(b => b.host)),
+      };
       notifyZoneLive();
     } catch { /* keep previous entries */ }
   })();

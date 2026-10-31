@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
 import {
@@ -772,7 +772,15 @@ async function verifyLibraryPlayback(item, target, report) {
 // what was just sent plays: 'playing' once it does, 'rejected' when the speaker
 // turned it down, 'timeout' when it never got there, 'gone' when no speaker is
 // selected any more.
-async function waitForPlayState(box, deadline) {
+//
+// expect (optional, the UI 2.0 preview's honest "Playing on X") makes
+// 'playing' mean "plays what was sent", not "plays something": { before, url,
+// name }, where before is nowPlayingSig of the speaker read before the press.
+// A PLAY_STATE counts once the speaker plays url or name, or once its
+// now-playing differs from before or passed through another state since the
+// press (playConfirmed). Without expect, any PLAY_STATE counts, as always.
+export async function waitForPlayState(box, deadline, expect) {
+  let moved = false;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
@@ -785,10 +793,45 @@ async function waitForPlayState(box, deadline) {
     }
     const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
-    if (ps === 'PLAY_STATE') return 'playing'; // decoded and playing: all good
     if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) return 'rejected'; // box rejected it
+    if (ps !== 'PLAY_STATE') { moved = true; continue; }
+    if (!expect || playConfirmed(xml, expect, moved)) return 'playing'; // decoded and playing: all good
   }
   return 'timeout';
+}
+
+const XML_ENT = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'" };
+const unXml = (v) => String(v || '').replace(/&(amp|lt|gt|quot|apos);/g, (m) => XML_ENT[m]);
+
+// statusSig is a speaker's now-playing in one string (source, location, item
+// name) from its /now_playing XML: what tells one play from another.
+export function statusSig(xml) {
+  const x = String(xml || '');
+  const src = (x.match(/source="([^"]+)"/) || [])[1] || '';
+  const loc = (x.match(/location="([^"]*)"/) || [])[1] || '';
+  const name = (x.match(/<itemName>([^<]*)<\/itemName>/) || [])[1] || '';
+  return `${src}|${unXml(loc)}|${unXml(name)}`;
+}
+
+// nowPlayingSig reads the speaker once and returns its statusSig, '' when it
+// did not answer.
+export async function nowPlayingSig(box) {
+  if (!box) return '';
+  try { return statusSig(await Status(box.host, box.port)); } catch { return ''; }
+}
+
+// playConfirmed: a speaker in PLAY_STATE (xml) plays what was sent. It plays
+// expect.url or expect.name, or its now-playing is not the one read before
+// the press (expect.before), or it went through another state since the press
+// (moved). The same thing playing on as before the press, unchanged, is not
+// a confirmation: a refused recall leaves exactly that.
+export function playConfirmed(xml, expect = {}, moved = false) {
+  const sig = statusSig(xml);
+  const [, loc, name] = sig.split('|');
+  if (expect.url && loc && loc === expect.url) return true;
+  if (expect.name && name && name === expect.name) return true;
+  if (moved) return true;
+  return !!expect.before && sig !== expect.before;
 }
 
 // probeDelivery asks the Go side whether the media server hands over the first
@@ -1205,7 +1248,7 @@ export async function libraryWholeSearch(query, field) {
   s.field = field || 'any';
   if (!q) return;
   const token = ++s.token;
-  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false });
+  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false, failed: '' });
   renderLibrary();
   let res = null;
   let failed = false;
@@ -1213,6 +1256,9 @@ export async function libraryWholeSearch(query, field) {
     res = await SearchLibrary(q, s.field);
   } catch (e) {
     failed = true;
+    // The UI 2.0 preview tells a search that did not run apart from servers
+    // that stayed silent (ui2SearchHTML); the current layout keeps its note.
+    s.failed = String((e && e.message) || e || t('modal.unknownError'));
   }
   if (token !== s.token) return;
   s.loading = false;
@@ -1442,6 +1488,17 @@ function ui2SearchHTML() {
   const s = libState.search;
   let html = levelHeadHTML(t('ui2.library.results', { q: (s.query || '').trim() }));
   if (s.loading) return html + loadingHTML(t('library.wholeSearching'));
+  // The call itself failed: not "every server was silent" but a search that
+  // did not run, with Try again for the same words and field.
+  if (s.failed) {
+    return html + stateHTML({
+      tone: 'error',
+      title: t('ui2.feedback.searchFailedTitle'),
+      body: t('ui2.feedback.searchFailedBody'),
+      detail: friendlyErrorText(s.failed),
+      actions: [{ id: 'lib2SearchRetry', label: t('ui2.feedback.tryAgain'), primary: true }],
+    });
+  }
   const speaker = speakerName();
   const rows = s.items.map((it, idx) => trackRowHTML(it, {
     key: statusKey(it),
@@ -1454,6 +1511,17 @@ function ui2SearchHTML() {
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);
+  // No hits from servers that all answered: what to try next, and the way
+  // back to the search field.
+  if (note && !s.items.length && !s.unanswered.length && !s.partial) {
+    const any = (LIB_SEARCH_FIELDS.find(([v]) => v === 'any') || [])[1] || 'library.fieldAll';
+    return html + stateHTML({
+      tone: 'info',
+      title: note,
+      body: s.field !== 'any' ? t('ui2.feedback.tryAnotherField', { field: t(any) }) : '',
+      actions: [{ id: 'lib2SearchFocus', label: t('ui2.library.searchAgain'), primary: true }],
+    });
+  }
   if (note) html += `<p class="lib2-note" role="status">${escapeHtml(note)}</p>`;
   return html;
 }
@@ -1634,6 +1702,18 @@ function wireLibraryUi2(el) {
       return;
     }
     if (hit('#lib2Retry')) { libState.ui2.focus = 'heading'; libraryBrowseCurrent(); return; }
+    // The search that did not run, again with the same words and field.
+    if (hit('#lib2SearchRetry')) {
+      libState.ui2.focus = 'heading';
+      libraryWholeSearch(libState.search.query, libState.search.field);
+      return;
+    }
+    // No hits: back to the search field, its words selected.
+    if (hit('#lib2SearchFocus')) {
+      const q = $('libWholeQ');
+      if (q) { q.focus(); q.select(); }
+      return;
+    }
     if (hit('#lib2Up')) { const up = trailParent(ui2Crumbs()); if (up) ui2GoTo(up.depth); return; }
     if (hit('#libRefreshBtn')) { libState.ui2.focus = 'heading'; loadMediaServers({ autoOpen: false }); return; }
     if ((b = hit('#libOnSpeakersBtn'))) { libraryPutServerOnSpeakers(b); return; }

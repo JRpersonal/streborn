@@ -216,16 +216,28 @@ let groupEditTimer = null;
 // Kitchen the group's master AND its own follower in one FormZone. Choosing
 // any other speaker in that window sent the edit to that speaker's group.
 let pendingGroupMaster = '';
+// The report callback of the waiting batch (toggleGroupMember's report), or
+// null: the batch then says its result with the classic toasts and dialog.
+let pendingGroupReport = null;
 
 // toggleGroupMember is the one way a speaker is taken in or out of the group
 // led by the selected speaker: the Music view's chips and the UI 2.0 sidebar's
 // "+" and "-" both call it, so there is a single group edit path.
 //
+// report (optional, the UI 2.0 sidebar) takes the batch's result instead of
+// the toast and the error dialog: report({ tone: 'ok' | 'warn' | 'error',
+// text, hosts, ports, master, added, removed, kind }), so the sidebar can keep
+// the row pending until the zone poll confirms and put a failure into the row
+// itself. kind tells the two warnings apart: 'stale' (the group changed
+// before the edit ran; nothing was sent) and 'partial' (a dissolve the master
+// did not finish). Without report, the toasts and the dialog say it exactly
+// as before.
+//
 // masterHost names the group explicitly. The UI 2.0 sidebar pins the group
 // that PLAYS, which is not the selected speaker's while you control an idle
 // one, and its "+" must add to that music (#1284), so it passes the pinned
 // group's master. Without it the group is the selected speaker's.
-export function toggleGroupMember(host, port, masterHost) {
+export function toggleGroupMember(host, port, masterHost, report) {
   if (groupOpPending.has(host)) return groupOpChain;
   const lead = masterHost ? null : groupControlBox();
   const leadHost = masterHost || (lead && lead.host) || '';
@@ -236,7 +248,11 @@ export function toggleGroupMember(host, port, masterHost) {
     if (groupEditTimer) clearTimeout(groupEditTimer);
     runPendingGroupEdits();
   }
-  if (!pendingGroupEdits.size) pendingGroupMaster = leadHost;
+  if (!pendingGroupEdits.size) {
+    pendingGroupMaster = leadHost;
+    pendingGroupReport = null;
+  }
+  if (typeof report === 'function') pendingGroupReport = report;
   // Toggling the same speaker twice before the edit runs is a change of mind,
   // and the two cancel out rather than queueing.
   if (pendingGroupEdits.has(host)) pendingGroupEdits.delete(host);
@@ -276,13 +292,15 @@ function runPendingGroupEdits() {
   groupEditTimer = null;
   const edits = [...pendingGroupEdits.entries()];
   const masterHost = pendingGroupMaster;
+  const report = pendingGroupReport;
   pendingGroupEdits.clear();
   pendingGroupMaster = '';
+  pendingGroupReport = null;
   if (edits.length === 0) return;
   edits.forEach(([h]) => groupOpPending.add(h));
   markGroupChipPending();
   groupOpChain = groupOpChain
-    .then(() => runGroupMemberToggle(edits, masterHost))
+    .then(() => runGroupMemberToggle(edits, masterHost, report))
     .catch(() => {})
     .finally(() => {
       edits.forEach(([h]) => groupOpPending.delete(h));
@@ -305,7 +323,21 @@ export function dissolveIncompleteMessage(res) {
 // runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
 // edits is [[host, port], ...]; a single click is simply a batch of one.
 // masterHost is the master the batch was clicked for (toggleGroupMember).
-async function runGroupMemberToggle(edits, masterHost) {
+// report, when set, takes every result the toasts and the dialog would say.
+async function runGroupMemberToggle(edits, masterHost, report) {
+  const base = {
+    hosts: edits.map(([h]) => h),
+    ports: Object.fromEntries(edits.map(([h, p]) => [h, p])),
+    master: masterHost || '',
+  };
+  const say = (text, tone = 'ok', extra = {}) => {
+    if (typeof report === 'function') report({ ...base, ...extra, tone, text });
+    else showToast(text);
+  };
+  const fail = (text) => {
+    if (typeof report === 'function') report({ ...base, tone: 'error', text });
+    else showError(text);
+  };
   // Edit the group the clicks were made in. When a follower was selected, its
   // master is the box that must receive the FormZone/DissolveZone (a follower
   // rejects zone control); groupControlBox resolved that at click time. A
@@ -315,7 +347,7 @@ async function runGroupMemberToggle(edits, masterHost) {
   const lead = masterHost ? (state.boxes || []).find(b => b && b.host === masterHost) : null;
   const box = lead && resolvePlayTarget(lead, state.zoneLive, state.boxes) === lead ? lead : null;
   if (!box) {
-    if (masterHost) showToast(t('group.editStale'));
+    if (masterHost) say(t('group.editStale'), 'warn', { kind: 'stale' });
     return;
   }
   if (box.kind === 'stock') return;
@@ -330,7 +362,7 @@ async function runGroupMemberToggle(edits, masterHost) {
   // error after the zone budget.
   const inPair = targets.filter(tgt => inAnyStereoPair(tgt, state.zoneLive));
   if (inPair.length) {
-    showError(t('multiroom.pairNotGroupable'));
+    fail(t('multiroom.pairNotGroupable'));
     if (inPair.length === targets.length) return;
   }
   const members = groupMembersOf(box, state.zoneLive, state.boxes);
@@ -353,12 +385,13 @@ async function runGroupMemberToggle(edits, masterHost) {
       // playing while the app says it is gone.
       const res = await DissolveZone(box.host, box.port);
       if (res && res.ok === false) {
-        showToast(dissolveIncompleteMessage(res));
+        say(dissolveIncompleteMessage(res), 'warn', { kind: 'partial', removed: targets.map((x) => x.host) });
       } else {
         // Stop the ex-followers we can reach (their agent port is only known
         // for discovered boxes).
         await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
-        showToast(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'));
+        say(t(res && res.nothing ? 'multiroom.nothingToUngroup' : 'group.dissolvedToast'), 'ok',
+          { added: [], removed: targets.map((x) => x.host) });
       }
     } else {
       // Preserve the group's mode when the agent reports one (a mirror group
@@ -420,7 +453,7 @@ async function runGroupMemberToggle(edits, masterHost) {
         // sent the logs (mail 2026-09-25), which is a round trip he should
         // never have been sent on.
         const inPair = Array.isArray(res.inPair) && res.inPair.length;
-        showError(inPair
+        fail(inPair
           ? t('multiroom.pairNotGroupable')
           : ((res.error && String(res.error)) || t('multiroom.formedNone')));
         deps.refreshMusicZones(true);
@@ -477,10 +510,11 @@ async function runGroupMemberToggle(edits, masterHost) {
           }
         } catch { /* the agent is the authority; this is only the seed */ }
       }
+      const moved = { added: added.map((x) => x.host), removed: removed.map((x) => x.host) };
       if (targets.length === 1) {
-        showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+        say(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }), 'ok', moved);
       } else {
-        showToast(t('group.batchToast', { count: targets.length }));
+        say(t('group.batchToast', { count: targets.length }), 'ok', moved);
       }
     }
     // Optimistic zone update so the chips + frames + Multi-Room summary
@@ -491,7 +525,7 @@ async function runGroupMemberToggle(edits, masterHost) {
     notifyZoneLive();
     deps.renderBoxSelect();
   } catch (e) {
-    showError(String(e));
+    fail(String(e));
   }
   // Confirming fetch: force past the 8s debounce, which used to swallow this
   // call entirely and left the optimistic state on screen until the next

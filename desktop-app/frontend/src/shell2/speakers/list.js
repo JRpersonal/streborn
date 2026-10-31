@@ -37,6 +37,8 @@ import { getLocale, t } from '../../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../../utils.js';
 import { roomItems } from '../rooms.js';
 import { chipHTML, pillLabel, statusPillHTML, CHIP_LABEL_KEYS } from '../pill.js';
+import { connectBusy, connectFocus, connectHTML, listStateNow, noSpeakersState, restoreConnectFocus } from '../state.js';
+import { attentionItems, attentionNoteHTML, attentionSig, runAttentionAction } from '../attention.js';
 import './list.css';
 
 // The pills of the list, in precedence order: a card shows the first that
@@ -296,6 +298,14 @@ function noteHTML(row) {
 }
 
 // halvesHTML: on a stereo pair's card, one button per half to its own page.
+// attnHTML: what this speaker (and on a pair's card, either half) needs from
+// you, the per-speaker side of the classic wedge and issue banners
+// (attention.js), as a note on its card.
+function attnHTML(row) {
+  const hosts = [row.host, ...((row.halves || []).map((h) => h.host))].filter((h, i, a) => h && a.indexOf(h) === i);
+  return attentionNoteHTML(hosts.flatMap((h) => attentionItems(h)));
+}
+
 function halvesHTML(row) {
   if (!row.halves || !row.halves.length) return '';
   return '<div class="spl-halves">'
@@ -337,6 +347,7 @@ function cardHTML(row) {
     + '</div>'
     + halvesHTML(row)
     + noteHTML(row)
+    + attnHTML(row)
     + '</li>';
 }
 
@@ -359,14 +370,36 @@ function footHTML(model) {
   lines.push('<div class="spl-foot-row">'
     + `<span class="spl-foot-text">${escapeHtml(t('ui2.speakers.list.addText'))}</span>`
     + `<button type="button" class="u-btn u-btn--primary spl-act" data-act="add">${escapeHtml(t('ui2.speakers.add'))}</button></div>`);
+  // Phase 5: a speaker the network search cannot see (guest Wi-Fi, a VPN,
+  // isolation) is added by its address, here as in the empty list.
+  lines.push('<div class="spl-foot-row spl-cannot-see">'
+    + `<span class="spl-foot-text">${escapeHtml(t('ui2.state.cannotSee'))}</span>`
+    + `${connectHTML('splConnect')}</div>`);
   return `<div class="spl-foot">${lines.join('')}</div>`;
 }
 
-export function speakerListHTML(model) {
+// speakerListHTML: opts.phase is where the search stands without a card
+// (state.js listStateNow: searching, none or failed; none when not given),
+// opts.error the failed search's message, opts.searching a search running
+// while cards are shown.
+export function speakerListHTML(model, opts = {}) {
   const m = Array.isArray(model) ? { rows: model, waiting: 0 } : (model || { rows: [], waiting: 0 });
-  const body = m.rows.length
-    ? `<ul class="spl-list" aria-labelledby="ui2SpkAreaTitle">${m.rows.map(cardHTML).join('')}</ul>`
-    : `<p class="spl-empty u-card u-card--empty">${escapeHtml(t('ui2.side.empty'))}</p>`;
+  let body;
+  if (m.rows.length) {
+    // Every speaker unreachable: said once above the cards, which stay.
+    const summary = m.rows.every((r) => r.offline)
+      ? noSpeakersState('allOffline', { id: 'splOffline', actions: ['search'], level: 3 })
+      : '';
+    const searching = opts.searching
+      ? `<p class="spl-searching" role="status">${escapeHtml(t('ui2.state.searchingTitle'))}</p>`
+      : '';
+    body = searching + summary + `<ul class="spl-list" aria-labelledby="ui2SpkAreaTitle">${m.rows.map(cardHTML).join('')}</ul>`;
+  } else {
+    // Connect by address leads to the block at the foot of the list.
+    body = noSpeakersState(opts.phase || 'none', {
+      id: 'splState', error: opts.error || '', actions: ['search', 'connect', 'add'], connectTarget: 'splConnect', level: 3,
+    });
+  }
   return body + footHTML(m);
 }
 
@@ -422,6 +455,7 @@ function announce(text) {
 }
 
 function onClick(root, e) {
+  if (runAttentionAction(e.target)) return;
   const ctx = lastCtx;
   const act = e.target.closest('.spl-act');
   if (act) {
@@ -473,14 +507,19 @@ export function renderSpeakerList(root, ctx = {}) {
     if (!b || !b.offline) search.delete(h);
   }
   const model = speakerListModel(ctx.boxes, { ...ctx, search });
-  const sig = JSON.stringify([model, getLocale()]);
+  const st = listStateNow();
+  const sig = JSON.stringify([model, getLocale(), st, attentionSig()]);
   if (sig === lastSig && root.firstChild) return;
+  // Connect by address holds what is being typed: the repaint waits.
+  if (root.firstChild && connectBusy(root)) return;
   lastSig = sig;
+  const keepField = connectFocus(root);
   const active = document.activeElement;
   const inside = !!active && root.contains(active) && !!active.dataset;
   const keepHost = inside ? active.dataset.host || '' : '';
   const keepAct = inside ? active.dataset.act || '' : '';
-  root.innerHTML = speakerListHTML(model);
+  root.innerHTML = speakerListHTML(model, st);
+  restoreConnectFocus(root, keepField);
   if (inside) {
     const sel = keepAct ? `.spl-act[data-act="${keepAct}"]` : '.spl-open';
     const again = [...root.querySelectorAll(sel)].find((b) => (b.dataset.host || '') === keepHost)

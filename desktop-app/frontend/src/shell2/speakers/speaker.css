@@ -161,3 +161,238 @@ html.ui2 #ui2SpkPanels .settings-section > small.muted {
 }
 /* A closed card is only its summary: no gap under it. */
 html.ui2 #ui2SpkPanels details.settings-section:not([open]) > summary { margin-bottom: 0; }
+
+/* ---------- Phase 5: states and outcomes on the speaker's page ---------- */
+
+/* A refused setting, in the card it happened in (sectionmsg.js): the danger
+   colour for the bar and the words, and the words say it failed, so the state
+   never rests on colour alone. A partial outcome uses the warn colour. */
+html.ui2 #ui2SpkPanels .sps-msg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-danger);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-danger);
+  font-size: 14px;
+  line-height: 1.45;
+}
+html.ui2 #ui2SpkPanels .sps-msg--warn {
+  border-inline-start-color: var(--u-warn);
+  color: var(--u-warn);
+}
+html.ui2 #ui2SpkPanels .sps-msg-text {
+  flex: 1 1 16rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2SpkPanels .sps-msg-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A field error sits right under its field, one line, no buttons. */
+html.ui2 #ui2SpkPanels .sps-field-err { margin: 4px 0 8px; padding: 4px 12px; }
+html.ui2 #ui2SpkPanels [aria-invalid="true"] {
+  border-color: var(--u-danger);
+  outline: 2px solid var(--u-danger);
+  outline-offset: 1px;
+}
+/* A setting that could not be read: visible, its toggles dashed and refused,
+   the reason and Try again under them. */
+html.ui2 #ui2SpkPanels .u-sec-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #ui2SpkPanels .u-sec-status-text { flex: 1 1 14rem; min-width: 0; }
+html.ui2 #ui2SpkPanels .settings-section .btn[aria-disabled="true"] {
+  border-style: dashed;
+  color: var(--u-muted);
+  cursor: not-allowed;
+}
+html.ui2 #ui2SpkPanels .sps-msg .u-btn:focus-visible,
+html.ui2 #ui2SpkPanels .u-sec-status .u-btn:focus-visible,
+html.ui2 #ui2SpkPanels .sps-attn .u-btn:focus-visible,
+html.ui2 #view-speakers .spl-attn .u-btn:focus-visible,
+html.ui2 #ui2SpkPanels .sps-report .btn:focus-visible,
+html.ui2 #ui2SpkPanels .sps-report .failreport-title:focus-visible,
+html.ui2 #ui2SpkPanels .sps-report textarea:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+
+/* The loading line, the reconnect banner and the panels a load can end on
+   (speaker unreachable, STR not running, an update finishing): cards in the
+   shell's tokens, start-aligned like the rest of the page. */
+html.ui2 #view-settings .reconnect-banner,
+html.ui2 #view-settings .empty-state {
+  box-sizing: border-box;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  text-align: start;
+}
+html.ui2 #view-settings .reconnect-banner { border-inline-start: 4px solid var(--u-warn); }
+html.ui2 #view-settings .reconnect-banner b,
+html.ui2 #view-settings .empty-state-title {
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+html.ui2 #view-settings .reconnect-banner small,
+html.ui2 #view-settings .empty-state-text {
+  color: var(--u-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+html.ui2 #view-settings .empty-state-buttons { justify-content: flex-start; flex-wrap: wrap; }
+html.ui2 #view-settings .empty-state .btn { min-height: var(--u-target); }
+html.ui2 #view-settings .empty-state .btn-primary { align-self: flex-start; }
+html.ui2 #view-settings .empty-state .btn:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+
+/* What this speaker needs from you (attention.js): at the top of Overview,
+   and as a note on its card in Speakers > list. */
+html.ui2 #ui2SpkPanels .sps-attn-slot[hidden],
+html.ui2 #ui2SpkPanels .sps-report[hidden] { display: none; }
+html.ui2 #ui2SpkPanels .sps-attn,
+html.ui2 #view-speakers .spl-attn {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-warn);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #view-speakers .spl-attn { margin: 8px 0 0; padding: 8px 12px; }
+html.ui2 #ui2SpkPanels .sps-attn--danger,
+html.ui2 #view-speakers .spl-attn--danger { border-inline-start-color: var(--u-danger); }
+html.ui2 #ui2SpkPanels .sps-attn-head {
+  margin: 0 0 8px;
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+html.ui2 #ui2SpkPanels .sps-attn-list,
+html.ui2 #view-speakers .spl-attn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #ui2SpkPanels .sps-attn-text,
+html.ui2 #view-speakers .spl-attn-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2SpkPanels .sps-attn-detail,
+html.ui2 #view-speakers .spl-attn-detail {
+  margin: 4px 0 0;
+  color: var(--u-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2SpkPanels .sps-attn-acts,
+html.ui2 #view-speakers .spl-attn-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* An update outcome about this speaker (main.js ui2ReportHost), in Overview:
+   the classic report's content in a card. */
+html.ui2 #ui2SpkPanels .sps-report {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-danger);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #ui2SpkPanels .sps-report .failreport-inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--u-text);
+}
+html.ui2 #ui2SpkPanels .sps-report .failreport-title {
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+html.ui2 #ui2SpkPanels .sps-report .muted { color: var(--u-muted); padding: 0; }
+html.ui2 #ui2SpkPanels .sps-report .failreport-text {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+}
+html.ui2 #ui2SpkPanels .sps-report .btn { min-height: var(--u-target); }
+
+/* An update outcome during Update all (main.js updateAllRowReport): under the
+   row of the speaker it is about, in the Update all window, the classic
+   report's content in a card. */
+html.ui2 #updateAllOverlay .ua-report {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-danger);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--u-text);
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-title {
+  color: var(--u-text);
+  font-weight: 700;
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-title:focus-visible,
+html.ui2 #updateAllOverlay .ua-report .btn:focus-visible,
+html.ui2 #updateAllOverlay .ua-report textarea:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+html.ui2 #updateAllOverlay .ua-report .muted { color: var(--u-muted); padding: 0; }
+html.ui2 #updateAllOverlay .ua-report .failreport-text {
+  box-sizing: border-box;
+  width: 100%;
+  /* The window lists every speaker: the report keeps its buttons in sight
+     and the text scrolls (it can still be dragged taller). */
+  height: 9em;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+}

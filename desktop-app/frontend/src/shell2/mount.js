@@ -23,12 +23,20 @@
 
 import { state } from '../state.js';
 import { t } from '../i18n/index.js';
-import { stereoPairsOf } from '../groups.js';
+import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
 import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
-import { initSpeakersArea, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
+import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
+import { agoText } from './speakers/list.js';
+import {
+  configureStates, connectBusy, connectFocus, groupEditVerdict, notifyStates, restoreConnectFocus, paintPlayerState, playerStateModel,
+  setReportHook, stateSearchBusy, transportErrorText, wireStates,
+} from './state.js';
+// Phase 5: the banner region's cards in the shell's tokens (html.ui2 only).
+import './banners.css';
+import { mountHelp, syncHelpView } from './help/help.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -43,6 +51,18 @@ let rovingHost = '';
 // so the two never fight over the same flag.
 let playerLive = false;
 let groupShown = false;
+// Phase 5 (states): what happened to a sidebar row, host -> note (an offline
+// pick that searches again, a group edit that failed or was not confirmed).
+// Part of the row model and of the repaint signature.
+const rowNotes = new Map();
+// A group edit the speakers have accepted but the zone poll has not shown
+// yet: host -> { want: 'in' | 'out', master, name, port, at }. The row stays
+// pending until the poll shows the change (honest feedback).
+const awaiting = new Map();
+const CONFIRM_AFTER_MS = 1000;
+const CONFIRM_WITHIN_MS = 20000;
+// The speaker the player's error line spoke about.
+let playerStatusHost = '';
 
 const byId = (id) => document.getElementById(id);
 const label = (b) => (typeof deps.getBoxLabel === 'function' ? deps.getBoxLabel(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
@@ -154,6 +174,11 @@ export function mountShell2(d) {
     insert(skip, n.app);
     insert(frame, n.app);
     n.banners.forEach((b) => move(b, n.fBanners));
+    // The speaker update card is a landmark of its own in the banner region,
+    // named by its title (the attributes go with the undo log's node, and
+    // mean nothing to the classic layout's styles).
+    n.speakerUpdateCard.setAttribute('role', 'region');
+    n.speakerUpdateCard.setAttribute('aria-label', t('speakerUpdate.title'));
     n.views.forEach((v) => move(v, n.fMainInner));
     move(n.footer, n.fMainInner);
     move(n.statusBar, n.fNow);
@@ -170,6 +195,8 @@ export function mountShell2(d) {
     move(n.tagline, n.fBrand);
     move(n.supported, n.fBrand);
   } catch (e) {
+    n.speakerUpdateCard.removeAttribute('role');
+    n.speakerUpdateCard.removeAttribute('aria-label');
     for (let i = log.length - 1; i >= 0; i--) {
       const { node, parent, next } = log[i];
       try {
@@ -184,6 +211,7 @@ export function mountShell2(d) {
 
   // Phase 3: wire and activate.
   quietPlayerClock();
+  announceToasts();
   wire(frame, skip);
   state.ui2Shell = true;
   document.documentElement.classList.add('ui2');
@@ -211,6 +239,16 @@ function quietPlayerClock() {
   main.setAttribute('aria-live', 'polite');
 }
 
+// announceToasts makes the window's toast a polite status in the preview, so
+// what it says is heard and not only seen; state.css gives it the preview's
+// colours. The classic layout keeps its toast as it was.
+function announceToasts() {
+  const toast = byId('toast');
+  if (!toast) return;
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+}
+
 function wire(frame, skip) {
   const main = frame.querySelector('#ui2Main');
   skip.addEventListener('click', () => { if (main) main.focus(); });
@@ -235,8 +273,210 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  // A group edit waiting for the speakers is decided when a zone round lands.
+  onZoneLive(() => { if (state.ui2Shell && awaiting.size) paintSpeakers(false); });
   // The Speakers area (phase 3): its row of places and its routes.
   initSpeakersArea(frame, deps);
+  wireStatesEnv(frame);
+}
+
+// wireStatesEnv hands the states of phase 5 (state.js) what their buttons
+// act with, and wires them once, by delegation. Search again, Add speaker,
+// Connect by address and Go to the speaker list work in every view that
+// draws a state.
+function wireStatesEnv(frame) {
+  configureStates({
+    discoverBoxes: () => (typeof deps.discoverBoxes === 'function' ? deps.discoverBoxes() : Promise.resolve()),
+    addBoxByIp: (ip) => (typeof deps.addBoxByIp === 'function' ? deps.addBoxByIp(ip) : Promise.reject(new Error('no addBoxByIp'))),
+    open: (route, opts) => openSpeakers(route, opts),
+    focusSpeakerList,
+    boxes: () => state.boxes || [],
+    repaint: () => { if (state.ui2Shell) renderShellSpeakers(true); },
+  });
+  wireStates(document);
+  // The transport and the queue report their failures in the player, naming
+  // the speaker (nowplaying.js asks for this hook; without it, the dialog).
+  setReportHook('transport', reportTransport);
+  const transport = frame.querySelector('.ui2-player-transport');
+  const more = frame.querySelector('#ui2MoreBody');
+  // A new press clears the last failure; its own result writes a new one.
+  for (const el of [transport, more]) {
+    if (el) el.addEventListener('click', () => setPlayerStatus(''), true);
+  }
+  ensureSpeakerLive(frame);
+}
+
+// focusSpeakerList is "Go to the speaker list": the keyboard lands on the row
+// that takes Tab in the sidebar (roving), or the sidebar's first row.
+function focusSpeakerList() {
+  const lists = byId('ui2SpkLists');
+  if (!lists) return;
+  const btn = lists.querySelector('.ui2-spk-pick[tabindex="0"]') || lists.querySelector('.ui2-spk-pick');
+  if (btn) {
+    btn.focus();
+    try { btn.scrollIntoView({ block: 'nearest' }); } catch (_) { /* old engine */ }
+  }
+}
+
+// The sidebar's live region: outside the repainted lists, in the page before
+// the first result is written into it.
+function ensureSpeakerLive(frame) {
+  const section = (frame && frame.querySelector('#ui2Speakers')) || byId('ui2Speakers');
+  if (!section || section.querySelector('#ui2SpkLive')) return;
+  const live = document.createElement('div');
+  live.id = 'ui2SpkLive';
+  live.className = 'u-sr-only';
+  live.setAttribute('role', 'status');
+  live.setAttribute('aria-live', 'polite');
+  section.appendChild(live);
+}
+
+function announceSpeakers(text) {
+  const live = byId('ui2SpkLive');
+  if (!live || !text) return;
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 50);
+}
+
+// reportTransport is the transport's and the queue's failure, in the player:
+// "Kitchen did not pause: ...".
+function reportTransport({ kind, error, box } = {}) {
+  const b = box || state.currentBox;
+  setPlayerStatus(transportErrorText(kind, label(b), error), b ? b.host : '');
+}
+
+function setPlayerStatus(text, host = '') {
+  const el = byId('ui2PlayerStatus');
+  if (!el) return;
+  playerStatusHost = text ? host : '';
+  // The same words again are news too: clear first, so the alert speaks.
+  el.textContent = '';
+  if (text) setTimeout(() => { el.textContent = text; }, 30);
+}
+
+// shellOfflinePick is choosing an unreachable speaker in the preview: no
+// toast across the window, a note in the speaker's own row ("Kitchen is not
+// reachable, last seen 5 minutes ago. Searching again..."), and when the
+// search comes back without it, "Still not reachable." with What to try.
+// search is the discovery the pick started (main.js pickBox).
+export function shellOfflinePick(box, search) {
+  if (!state.ui2Shell || !box || !box.host) return false;
+  const host = box.host;
+  const name = label(box);
+  const sec = typeof box.offlineSinceSec === 'number' && box.offlineSinceSec > 0 ? box.offlineSinceSec : 0;
+  const ago = sec ? agoText(sec) : '';
+  const text = ago ? t('ui2.state.offlinePick', { name, ago }) : t('ui2.state.offlinePickNoAgo', { name });
+  rowNotes.set(host, { tone: 'busy', text, host });
+  rovingHost = host;
+  paintSpeakers(true);
+  announceSpeakers(text);
+  Promise.resolve(search).catch(() => {}).then(() => {
+    const again = (state.boxes || []).find((b) => b && b.host === host);
+    const note = rowNotes.get(host);
+    if (!note || note.text !== text) return;
+    if (again && !again.offline) {
+      rowNotes.delete(host);
+      paintSpeakers(true);
+      announceSpeakers(t('ui2.state.backOnline', { name: label(again) }));
+      return;
+    }
+    rowNotes.set(host, { tone: 'warn', text: t('ui2.state.stillOffline'), action: 'whatToTry', host });
+    paintSpeakers(true);
+    announceSpeakers(`${name}: ${t('ui2.state.stillOffline')}`);
+  });
+  return true;
+}
+
+// groupReport is the sidebar's "+" and "-" result (group.js, report hook):
+//   ok     the speakers accepted it; the row stays pending until the zone
+//          poll shows it, then "Kitchen plays along" / "Kitchen is out"
+//   error  a note in the row (alert) with Try again: the same toggle, the
+//          same master
+//   warn   no Try again that would make it worse:
+//          stale    the group changed before the edit ran and nothing was
+//                   sent; the note says so, and the row's own "+" or "-"
+//                   already aims at the group as it is now
+//          partial  a dissolve the master did not finish: every speaker
+//                   waits for the zone poll; one that left is said to be
+//                   out, one still in gets the not-confirmed note with Try
+//                   again, which then takes out only that one
+function groupReport(r = {}) {
+  const hosts = (r.hosts || []).filter(Boolean);
+  if (r.tone === 'warn' && (r.kind === 'stale' || r.kind === 'partial')) {
+    const now = Date.now();
+    for (const h of hosts) {
+      const b = (state.boxes || []).find((x) => x && x.host === h);
+      rowNotes.set(h, { tone: 'warn', text: r.text || t('common.error'), kind: r.kind, host: h });
+      if (r.kind === 'partial') {
+        awaiting.set(h, { want: 'out', master: r.master || '', name: b ? label(b) : h, port: (r.ports && r.ports[h]) || '', at: now, partial: true });
+      } else {
+        awaiting.delete(h);
+      }
+    }
+    paintSpeakers(true);
+    if (r.text) announceSpeakers(r.text);
+    if (r.kind === 'partial') setTimeout(() => paintSpeakers(false), CONFIRM_WITHIN_MS + 100);
+    // The stale note is news about one moment: it goes after a while, unless
+    // something newer took its place.
+    else {
+      setTimeout(() => {
+        let gone = false;
+        for (const h of hosts) {
+          const n = rowNotes.get(h);
+          if (n && n.kind === 'stale' && n.text === r.text) { rowNotes.delete(h); gone = true; }
+        }
+        if (gone) paintSpeakers(true);
+      }, CONFIRM_WITHIN_MS);
+    }
+    return;
+  }
+  if (r.tone === 'error' || r.tone === 'warn') {
+    for (const h of hosts) {
+      awaiting.delete(h);
+      rowNotes.set(h, {
+        tone: 'error', text: r.text || t('common.error'), action: 'retry',
+        master: r.master || '', port: (r.ports && r.ports[h]) || '', host: h,
+      });
+    }
+    paintSpeakers(true);
+    return;
+  }
+  const now = Date.now();
+  const mark = (list, want) => (list || []).forEach((h) => {
+    const b = (state.boxes || []).find((x) => x && x.host === h);
+    rowNotes.delete(h);
+    awaiting.set(h, { want, master: r.master || '', name: b ? label(b) : h, port: (r.ports && r.ports[h]) || '', at: now });
+  });
+  mark(r.added, 'in');
+  mark(r.removed, 'out');
+  paintSpeakers(true);
+  // A repaint after the deadline, in case nothing else repaints then. A zone
+  // round that lands repaints by itself (onZoneLive in wire).
+  setTimeout(() => paintSpeakers(false), CONFIRM_WITHIN_MS + 100);
+}
+
+// confirmAwaiting checks the waiting group edits against the zone poll
+// (groupEditVerdict): neither the optimistic update group.js writes at once
+// nor an entry carried over from a round a speaker missed counts, only a
+// round both speakers answered after the edit.
+function confirmAwaiting() {
+  if (!awaiting.size) return;
+  const now = Date.now();
+  const boxes = state.boxes || [];
+  const round = lastZoneRound();
+  for (const [h, w] of [...awaiting]) {
+    const m = boxes.find((b) => b && b.host === w.master);
+    const inGroup = !!m && groupMembersOf(m, state.zoneLive || {}, boxes).some((x) => x && x.ip === h);
+    const verdict = groupEditVerdict(w, h, round, inGroup, now, { after: CONFIRM_AFTER_MS, within: CONFIRM_WITHIN_MS });
+    if (verdict === 'confirmed') {
+      awaiting.delete(h);
+      if (w.partial) rowNotes.delete(h);
+      announceSpeakers(t(w.want === 'in' ? 'ui2.state.playsAlong' : 'ui2.state.isOut', { name: w.name }));
+    } else if (verdict === 'failed') {
+      awaiting.delete(h);
+      rowNotes.set(h, { tone: 'error', text: t('ui2.state.groupNoConfirm', { name: w.name }), action: 'retry', master: w.master, port: w.port, host: h });
+    }
+  }
 }
 
 // wireSpeakerList handles the sidebar list, delegated, so a repaint never
@@ -253,10 +493,31 @@ function wireSpeakerList(root) {
     return (state.boxes || []).find((b) => b && b.host === host && b.port === port) || null;
   };
   root.addEventListener('click', (e) => {
+    const note = e.target.closest('.ui2-spk-note-act');
+    if (note) {
+      const host = note.dataset.host;
+      rovingHost = host;
+      if (note.dataset.noteAct === 'retry') {
+        rowNotes.delete(host);
+        if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(host, parseInt(note.dataset.port, 10), note.dataset.master || '', groupReport);
+        paintSpeakers(true);
+        const pick = [...root.querySelectorAll('.ui2-spk-pick')].find((b) => b.dataset.host === host);
+        if (pick) pick.focus();
+      } else if (note.dataset.noteAct === 'whatToTry') {
+        openSpeakers('list');
+        // The speaker's card, once the list has painted.
+        setTimeout(() => {
+          const card = document.querySelector(`#view-speakers .spl-item[data-host="${CSS.escape(host)}"]`);
+          const target = card && (card.querySelector('.spl-act[data-act="search"]') || card.querySelector('.spl-open'));
+          if (target) target.focus();
+        }, 0);
+      }
+      return;
+    }
     const act = e.target.closest('.ui2-spk-act');
     if (act) {
       rovingHost = act.dataset.host;
-      if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10), act.dataset.master || '');
+      if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10), act.dataset.master || '', groupReport);
       return;
     }
     const pick = e.target.closest('.ui2-spk-pick');
@@ -265,10 +526,10 @@ function wireSpeakerList(root) {
     const box = boxFor(pick);
     if (!box || typeof deps.pickBox !== 'function') return;
     Promise.resolve(deps.pickBox(box)).then(() => {
-      // Wishes has nothing about a speaker to show: choosing one there opens
-      // Radio, so the main area shows the speaker you just chose. Every other
-      // view stays open and follows the speaker.
-      if (state.view === 'wishes' && state.currentBox && state.currentBox.host === box.host
+      // Wishes and Help and info have nothing about a speaker to show:
+      // choosing one there opens Radio, so the main area shows the speaker you
+      // just chose. Every other view stays open and follows the speaker.
+      if ((state.view === 'wishes' || state.view === 'help') && state.currentBox && state.currentBox.host === box.host
         && typeof deps.switchView === 'function') deps.switchView('box');
     }).catch(() => {});
   });
@@ -362,11 +623,15 @@ export function syncShellNav(view) {
   });
   const main = byId('ui2Main');
   if (main) {
-    // shell2.css reads it: the music views leave the classic footer out.
+    // The open view, for styles and tests that key on it.
     main.dataset.view = view || '';
     main.scrollTop = 0;
   }
   syncSpeakersArea(view);
+  // Help and info (shell2/help): wired the first time it opens, painted on
+  // every visit.
+  if (view === 'help') mountHelp(byId('view-help'), deps);
+  syncHelpView(view);
 }
 
 // syncShellPlayer shows the player only with a speaker to control. Without
@@ -379,11 +644,18 @@ export function syncShellNav(view) {
 // speaker update runs nothing keeps them in sync, so they are not on screen
 // there either, and a slider never shows a level the speaker left long ago.
 // What is playing stays, it is kept current there too.
+//
+// Phase 5: a controlled speaker that is offline is no live player either
+// (its transport would only fail): the controls go, and the player says
+// "Kitchen is not reachable." with Search again. Without a speaker the empty
+// slot says why (searching, none found, none chosen) with the next step.
 export function syncShellPlayer(hasBox = !!state.currentBox) {
   if (!state.ui2Shell) return;
   const player = byId('ui2Player');
   if (!player) return;
-  const live = !!hasBox && playerOnScreen({ view: state.view, persistentPlayer: true, otaInProgress: !!state.otaInProgress });
+  const ps = playerStateModel({ currentBox: hasBox ? state.currentBox : null, boxes: state.boxes || [], discovery: discoveryNow(), label });
+  const offline = ps.kind === 'offline';
+  const live = !!hasBox && !offline && playerOnScreen({ view: state.view, persistentPlayer: true, otaInProgress: !!state.otaInProgress });
   const show = (sel, on) => player.querySelectorAll(sel).forEach((el) => {
     el.hidden = !on;
     el.inert = !on;
@@ -391,7 +663,14 @@ export function syncShellPlayer(hasBox = !!state.currentBox) {
   show('.ui2-player-now', !!hasBox);
   show('.ui2-player-transport, .ui2-player-more, .ui2-player-volume, .ui2-player-groupvol', live);
   const empty = player.querySelector('.ui2-player-empty');
-  if (empty) empty.hidden = !!hasBox;
+  if (empty) {
+    empty.hidden = !!hasBox && !offline;
+    paintPlayerState(empty, ps);
+  }
+  player.classList.toggle('is-offline', offline);
+  // The error line spoke about one speaker: another one, or none, clears it.
+  const curHost = hasBox && state.currentBox ? state.currentBox.host : '';
+  if (playerStatusHost && playerStatusHost !== curHost) setPlayerStatus('');
   if (!live && pops.more) pops.more.close(false);
   playerLive = live;
   applyPlayerGroup();
@@ -454,13 +733,32 @@ export function renderShellSpeakers(force) {
   if (!state.ui2Shell) return;
   speakersSettled = true;
   paintSpeakers(!!force);
+  // The player follows the same list: an offline speaker you control loses
+  // its controls, and gets them back when it answers again.
+  syncShellPlayer();
   // The Speakers area reads the same state: its list and the open speaker's
   // head follow every change the sidebar does.
   refreshSpeakersArea();
+  // The views that draw a state of their own (Radio) follow too.
+  notifyStates();
+}
+
+// discoveryNow is main.js state.discovery, handed in through deps; null
+// before the first search started (which reads as searching).
+function discoveryNow() {
+  if (typeof deps.discovery === 'function') return deps.discovery() || null;
+  return state.discovery || null;
 }
 
 function paintSpeakers(force) {
   if (!state.ui2Shell) return;
+  confirmAwaiting();
+  // Notes about speakers that answer again, or left the list, go.
+  for (const [h, n] of [...rowNotes]) {
+    const b = (state.boxes || []).find((x) => x && x.host === h);
+    if (!b || (n.action === 'whatToTry' && !b.offline)) rowNotes.delete(h);
+  }
+  const pendingEdit = typeof deps.groupEditPendingHosts === 'function' ? deps.groupEditPendingHosts() : new Set();
   const ctx = {
     currentBox: state.currentBox,
     nowPlayState: state.nowPlayState,
@@ -471,8 +769,12 @@ function paintSpeakers(force) {
     stereoPairs: stereoPairsOf(state.zoneLive || {}),
     installHolds: state.installHolds || {},
     zoneLive: state.zoneLive || {},
-    pending: typeof deps.groupEditPendingHosts === 'function' ? deps.groupEditPendingHosts() : new Set(),
+    pending: new Set([...pendingEdit, ...awaiting.keys()]),
     searching: !speakersSettled && !(state.boxes || []).length,
+    // Phase 5: the empty list says why from the discovery itself.
+    discovery: typeof deps.discovery === 'function' ? discoveryNow() : undefined,
+    notes: rowNotes,
+    attention: deps.speakerAttention,
     label,
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
@@ -482,11 +784,16 @@ function paintSpeakers(force) {
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,
     alone: model.pairAlone, searching: model.searching, levels,
+    empty: model.emptyPhase, emptyError: model.emptyError, allOffline: model.allOffline, busy: stateSearchBusy(),
   });
   if (!force && sig === lastSpeakersSig) return;
+  const lists = byId('ui2SpkLists');
+  // Connect by address in the empty list holds what is being typed: no
+  // repaint (not even a forced one) takes it away; the next one after it
+  // catches up.
+  if (lists && connectBusy(lists)) return;
   lastSpeakersSig = sig;
 
-  const lists = byId('ui2SpkLists');
   if (lists) {
     // A repaint keeps the keyboard where it was (same speaker, same button)
     // and both lists where they were scrolled to.
@@ -496,7 +803,9 @@ function paintSpeakers(force) {
     const keepAct = inList && active.classList.contains('ui2-spk-act');
     const scrolls = [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].map((el) => el.scrollTop);
     const listsTop = lists.scrollTop;
+    const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
+    restoreConnectFocus(lists, keepField);
     holdSpeakerFloor(lists);
     [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].forEach((el, i) => {
       if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];

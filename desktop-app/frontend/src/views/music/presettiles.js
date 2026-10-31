@@ -1,7 +1,8 @@
 // views/music/presettiles.js: renderPresets, the six preset tiles with their rename,
 // long-press and drag handling.
 
-import { DeletePreset, RenamePreset } from '../../api.js';
+import { DeletePreset, GetPresets, RenamePreset } from '../../api.js';
+import { keyFailedVerdict, keyHolds } from '../../shell2/feedback.js';
 import { t } from '../../i18n/index.js';
 import { logoImgTag, monogramDataUri, spotifyCoverImgTag } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceActive, nativeServiceBadge } from '../../nativeservice.js';
@@ -29,6 +30,7 @@ import {
   confirmWarn,
   escapeAttr,
   escapeHtml,
+  friendlyErrorText,
   getBoxLabel,
   isKeyChrome,
   nativeSlotStale,
@@ -56,7 +58,7 @@ import {
   wirePresetTransferRow,
 } from './presets.js';
 import { saveCurrentToSlot } from './save.js';
-import { keyFocusMark, restoreKeyFocus, syncUi2Keys } from './ui2radio.js';
+import { keyFocusMark, keyReport, restoreKeyFocus, syncUi2Keys } from './ui2radio.js';
 
 export function renderPresets() {
   const grid = $('presets');
@@ -377,11 +379,18 @@ export function renderPresets() {
       // A dead STR key: a tap explains, it never sends a recall the speaker
       // cannot fulfil. The long-press save stays allowed, it is one of the
       // two ways the key comes back (the other is the copy the toast names).
-      attachPresetHandlers(div, i, bp, { onPlay: () => showToast(t('preset.lostOnSpeakerToast')) });
+      // The UI 2.0 preview says it in the key's own line, naming key and speaker.
+      attachPresetHandlers(div, i, bp, {
+        onPlay: () => {
+          const report = keyReport(i);
+          if (report) lostKeyNotice(i, report);
+          else showToast(t('preset.lostOnSpeakerToast'));
+        },
+      });
     } else if (bp) {
       // Box-native preset: click recalls it; no long-press save so the user's
       // own (e.g. Deezer) preset can't be clobbered by STR's current station.
-      attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i), allowSave: false });
+      attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i, keyReport(i)), allowSave: false });
     } else {
       attachPresetHandlers(div, i, p);
     }
@@ -399,15 +408,13 @@ export function renderPresets() {
       const slot = parseInt(el.dataset.slot, 10);
       const p = state.presets.find(x => x.slot === slot);
       const senderName = p && p.name ? escapeHtml(p.name) : t('preset.placeholderSender');
+      const mark = keyFocusMark();
       const ok = await confirmWarn(
         t('preset.confirmClearTitle'),
         t('preset.confirmClearBody', { n: keyNum(slot, t), name: senderName })
       );
       if (!ok) return;
-      try {
-        await DeletePreset(state.currentBox.host, state.currentBox.port, slot);
-        loadPresets();
-      } catch (err) { showError(err); }
+      await clearPresetKey(slot, keyReport(slot), mark);
     };
   });
   renderPresetRowChrome(rows, shownRow, playingRows);
@@ -427,6 +434,68 @@ export function renderPresets() {
 
 // lastLitKey is the key the now-playing line was last told about.
 let lastLitKey = null;
+
+// lostKeyNotice explains, in the UI 2.0 preview's key line, a key left over
+// from before STR was reinstalled, with key and speaker named. The current
+// layout keeps its toast (renderPresets).
+export function lostKeyNotice(slot, report) {
+  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  report(t('ui2.feedback.keyLost', { n: keyNum(slot, t), speaker }), 'warn');
+}
+
+// clearPresetKey empties a key after the user confirmed it. The current
+// layout reloads the keys and shows the error dialog on a refusal. With report
+// (the UI 2.0 preview's key line) a refusal stays in the key, and "empty" is
+// said only once the preset list read back from the speaker has nothing on
+// that key any more.
+//
+// mark is where the keyboard was before the confirmation (keyFocusMark); the
+// preview puts it back on that key once the answer is in.
+export async function clearPresetKey(slot, report = null, mark = null) {
+  const box = state.currentBox;
+  if (!box) return;
+  const n = keyNum(slot, t);
+  const speaker = getBoxLabel(box);
+  try {
+    await DeletePreset(box.host, box.port, slot);
+    if (!report) { loadPresets(); return; }
+  } catch (err) {
+    if (!report) { showError(err); return; }
+    report(t('ui2.feedback.keyClearFailed', { n, speaker, reason: friendlyErrorText(String((err && err.message) || err)) }), 'error');
+    restoreKeyFocus(mark);
+    return;
+  }
+  let fresh = null;
+  try { fresh = await GetPresets(box.host, box.port); } catch { fresh = null; }
+  await loadPresets();
+  if (fresh && !keyHolds(fresh, slot)) report(t('ui2.feedback.keyCleared', { n, speaker }), 'ok');
+  else report(t('ui2.radio.notConfirmed', { n, speaker }), 'warn');
+  restoreKeyFocus(mark);
+}
+
+// renameOutcome says how a rename went (err: the refusal, or null). The
+// current layout shows the error dialog, or toasts and reloads the keys. With
+// report (the UI 2.0 preview's key line) the outcome stays in the key, and the
+// new name is called done only once the preset list read back from the
+// speaker carries it.
+export async function renameOutcome(slot, name, err, report = null, box = state.currentBox) {
+  const n = keyNum(slot, t);
+  if (!report) {
+    if (err) { showError(err); return; }
+    showToast(t('preset.renamedKey', { n, name }));
+    loadPresets();
+    return;
+  }
+  const speaker = box ? getBoxLabel(box) : '';
+  if (err) {
+    report(keyFailedVerdict(n, speaker, friendlyErrorText(String((err && err.message) || err))).text, 'error');
+    return;
+  }
+  await loadPresets();
+  const same = !!box && !!state.currentBox && state.currentBox.host === box.host;
+  if (same && keyHolds(state.presets, slot, name)) report(t('ui2.feedback.keyRenamed', { n, speaker, name }), 'ok');
+  else report(t('ui2.radio.notConfirmed', { n, speaker }), 'warn');
+}
 
 // keyNumHTML is the number line of a tile. A row-2 key wears the "2×" badge in
 // front of its number ("2× Key 1"); assistive technology reads the full label
@@ -560,6 +629,8 @@ async function renamePresetKey(slot) {
   const p = state.presets.find(x => x.slot === slot);
   if (!p) return;
   const current = p.name || '';
+  // The preview puts the keyboard back on the key's rename icon afterwards.
+  const mark = keyFocusMark();
   const answer = confirmWarn(
     t('preset.renameHeading'),
     `<p>${escapeHtml(t('preset.renameBody', { n: keyNum(slot, t) }))}</p>`
@@ -589,17 +660,24 @@ async function renamePresetKey(slot) {
       if (confirmBtn) confirmBtn.click();
     };
   }
-  if (!await answer) return;
-  const name = (input ? input.value : '').trim();
-  if (!name || name === current) return;
   try {
-    await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
-  } catch (err) {
-    showError(err);
-    return;
+    if (!await answer) return;
+    const name = (input ? input.value : '').trim();
+    if (!name || name === current) return;
+    // The preview's key line names the key and the speaker (null: toasts).
+    const box = state.currentBox;
+    const report = keyReport(slot, box);
+    if (report) report(t('ui2.feedback.keyRenaming', { n: keyNum(slot, t), speaker: getBoxLabel(box) }), 'busy');
+    let failed = null;
+    try {
+      await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
+    } catch (err) {
+      failed = err;
+    }
+    await renameOutcome(slot, name, failed, report, box);
+  } finally {
+    restoreKeyFocus(mark);
   }
-  showToast(t('preset.renamedKey', { n: keyNum(slot, t), name }));
-  loadPresets();
 }
 
 // applyTrackScroll turns an overflowing line into a gentle marquee: it pauses
@@ -684,7 +762,9 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
       timer = setTimeout(async () => {
         if (!armed) return;
         firedLong = true;
-        await saveCurrentToSlot(slot);
+        // The preview reports the save in the key's own line (keyReport is
+        // null in the current layout, which keeps its toasts).
+        await saveCurrentToSlot(slot, keyReport(slot));
         armed = false;
         el.classList.remove('long-press');
         if (bar) bar.style.width = '0%';

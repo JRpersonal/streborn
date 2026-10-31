@@ -9,8 +9,12 @@
 // Speakers > one speaker, Multi-room is Speakers > Groups (who plays along
 // right now stays in the sidebar speaker list) and Set up speaker is
 // Speakers > Add speaker. The entry stands for all four views of the area
-// (area: speakers/routes.js) and is marked current on each of them. Help and
-// info arrives with phase 5.
+// (area: speakers/routes.js) and is marked current on each of them.
+//
+// Phase 5 adds Help and info under Wishes: the one place for help, wishes,
+// community, support and about (shell2/help/help.js). It is a view of the
+// preview only; the classic layout keeps its footer, its donate rail and its
+// Wishes tab.
 
 import { SPEAKERS_AREA_VIEWS } from './speakers/routes.js';
 
@@ -35,10 +39,12 @@ export const NAV = Object.freeze({
       ]),
     }),
   ]),
-  // Small, at the bottom of the sidebar: Wishes stay visible without
-  // competing with the places people listen from.
+  // Small, at the bottom of the sidebar and outside its scroll area: Wishes
+  // and Help and info stay visible without competing with the places people
+  // listen from.
   bottom: Object.freeze([
     Object.freeze({ view: 'wishes', labelKey: 'nav.wishes', small: true, id: 'ui2NavWishes' }),
+    Object.freeze({ view: 'help', labelKey: 'ui2.nav.help', small: true, id: 'ui2NavHelp' }),
   ]),
 });
 

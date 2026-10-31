@@ -85,6 +85,8 @@ import { inStereoPair, pairMemberBoxes, stereoPairsOf } from '../../groups.js';
 import { speakerTileState } from '../../speakertile.js';
 import { chipHTML, speakerChipKinds, speakerPillKind, statusPillHTML } from '../pill.js';
 import { SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, normalizeTab, tabIndexFor } from './routes.js';
+import { connectBusy, listStateNow, noSpeakersState } from '../state.js';
+import { attentionCardHTML, attentionItems, attentionSig, runAttentionAction } from '../attention.js';
 import './speaker.css';
 
 const tabId = (tab) => `ui2SpkTab-${tab}`;
@@ -227,15 +229,20 @@ export function speakerFrameHTML(tab = SPEAKER_TABS[0]) {
       + ` aria-controls="${panelId(k)}" aria-selected="${sel}" tabindex="${sel ? 0 : -1}">`
       + `${escapeHtml(t(SPEAKER_TAB_LABEL_KEYS[k]))}</button>`;
   }).join('');
+  // Overview opens with two slots of phase 5, above the settings body:
+  // what this speaker needs from you (attention.js) and an update outcome
+  // about it (main.js showUpdateFailureReport, speakerReportSlot).
+  const slots = '<div class="sps-attn-slot" id="ui2SpkAttention" hidden></div>'
+    + '<div class="sps-report hidden" id="ui2SpkReport"></div>';
   const panels = SPEAKER_TABS.map((k) => `<div class="sps-panel" role="tabpanel" id="${panelId(k)}" data-tab="${k}"`
-    + ` aria-labelledby="${tabId(k)}" tabindex="0"${k === on ? '' : ' hidden'}></div>`).join('');
+    + ` aria-labelledby="${tabId(k)}" tabindex="0"${k === on ? '' : ' hidden'}>${k === 'overview' ? slots : ''}</div>`).join('');
   return '<div class="sps-head">'
     + '<div class="sps-head-text">'
     + '<h3 class="sps-name" id="ui2SpkPageName"></h3>'
     + '<p class="sps-meta" id="ui2SpkPageMeta"></p>'
     + '<p class="sps-state" id="ui2SpkPageState" hidden></p>'
     + '<p class="sps-half" id="ui2SpkPageHalf" hidden></p>'
-    + `<p class="sps-none" id="ui2SpkPageNone" hidden>${escapeHtml(t('ui2.speakers.none'))}</p>`
+    + `<div class="sps-none" id="ui2SpkPageNone" hidden>${escapeHtml(t('ui2.speakers.none'))}</div>`
     + '</div>'
     + '<div class="sps-head-actions" id="ui2SpkPageActions"></div>'
     + '</div>'
@@ -404,6 +411,48 @@ export function arrangeSpeakerSections(ctx = {}) {
   placeSettingsBody();
 }
 
+// speakerReportSlot is the place in host's Overview where the preview shows
+// an update outcome about that speaker (main.js ui2ReportHost), or null when
+// the page is not built. The slot remembers the speaker: on another speaker's
+// page it stays out of sight (paintSlots), and it is back on this one.
+export function speakerReportSlot(host) {
+  if (!state.ui2Shell || !panelsEl || !host) return null;
+  const slot = panelsEl.querySelector('#ui2SpkReport');
+  if (!slot) return null;
+  slot.dataset.host = host;
+  // In sight only on this speaker's own page (paintSlots keeps it so).
+  slot.hidden = !(state.settingsBox && state.settingsBox.host === host);
+  return slot;
+}
+
+let lastAttnSig = '';
+// paintSlots shows the Overview's attention card for the speaker on the page,
+// and its update report only on the page of the speaker it is about.
+function paintSlots(box, label) {
+  if (!panelsEl) return;
+  const host = (box && box.host) || '';
+  const report = panelsEl.querySelector('#ui2SpkReport');
+  if (report) report.hidden = !host || report.dataset.host !== host;
+  const slot = panelsEl.querySelector('#ui2SpkAttention');
+  if (!slot) return;
+  const items = attentionItems(host);
+  const name = box ? ((typeof label === 'function' && label(box)) || box.friendlyName || box.name || box.host) : '';
+  const sig = `${host}|${name}|${attentionSig()}|${items.length}`;
+  if (sig === lastAttnSig) return;
+  lastAttnSig = sig;
+  const hadFocus = slot.contains(document.activeElement) ? document.activeElement : null;
+  const keep = hadFocus ? hadFocus.dataset.attn : '';
+  slot.innerHTML = attentionCardHTML(items, name);
+  slot.hidden = !items.length;
+  if (keep) {
+    const again = slot.querySelector(`.attn-act[data-attn="${keep}"]`) || slot.querySelector('.sps-attn-head');
+    if (again) {
+      if (!again.matches('button')) again.tabIndex = -1;
+      again.focus();
+    }
+  }
+}
+
 // revealSpeakerTabOf opens the tab that holds el (revealInSettings: a control
 // another place points at). False when the page does not hold it.
 export function revealSpeakerTabOf(el) {
@@ -480,7 +529,10 @@ export function renderSpeakerPage(root, ctx = {}) {
     panelsEl = root.querySelector('#ui2SpkPanels');
     lastState = '';
     lastHalf = '';
+    lastAttnSig = '';
     wireFrame(root);
+    const attn = panelsEl && panelsEl.querySelector('#ui2SpkAttention');
+    if (attn) attn.addEventListener('click', (e) => { runAttentionAction(e.target); });
   }
   const head = speakerHead(ctx.box, ctx.label);
   hasHead = !!head;
@@ -513,10 +565,30 @@ export function renderSpeakerPage(root, ctx = {}) {
     }
     half.hidden = !other;
   }
-  if (none) none.hidden = !!head;
+  paintSlots(head ? ctx.box : null, ctx.label);
+  if (none) {
+    none.hidden = !!head;
+    if (!head) paintPageState(none);
+  }
   if (tabs) {
     tabs.hidden = !head;
     if (head) tabs.setAttribute('aria-label', tabsLabel(head));
   }
   selectSpeakerTab(ctx.tab || activeTab);
+}
+
+// paintPageState is the page without a speaker (phase 5): no speaker on the
+// network yet (searching, none found, the search failed: Search again,
+// Connect by address, Add speaker), or speakers but none chosen (the way to
+// the sidebar's list and to All speakers). Repainted only when it changed,
+// and never under somebody typing an address.
+function paintPageState(el) {
+  const has = (state.boxes || []).some((b) => b && b.host);
+  const st = listStateNow();
+  const html = has
+    ? noSpeakersState('noneChosen', { id: 'spsState', body: t('ui2.state.pageChoose'), actions: ['allSpeakers', 'list'], level: 3 })
+    : noSpeakersState(st.phase, { id: 'spsState', error: st.error, actions: ['search', 'connect', 'add'], level: 3 });
+  if (el.dataset.sig === html || connectBusy(el)) return;
+  el.dataset.sig = html;
+  el.innerHTML = html;
 }

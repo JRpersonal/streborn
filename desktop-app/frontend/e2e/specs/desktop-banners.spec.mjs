@@ -37,6 +37,13 @@ const KINDS = Object.keys(BANNERS);
 // The DOM order the notices keep (index.html, main.js, shell2/mount.js).
 const ORDER = ['appUpdate', 'firewall', 'noInternet', 'speakerUpdate', 'security'];
 
+// Phase 5: in the UI 2.0 preview the no-internet notice is about one speaker,
+// so it moves onto that speaker and is no longer window-wide there. The words
+// on its row chip, list card and Overview are pinned in
+// desktop-ui2-banners.spec.mjs ("no internet on one speaker").
+const PER_SPEAKER_IN_UI2 = new Set(['noInternet']);
+const windowWide = (layout, kinds) => (layout.ui2 ? kinds.filter((k) => !PER_SPEAKER_IN_UI2.has(k)) : kinds);
+
 const LAYOUTS = [
   { name: 'classic layout', ui2: false, main: '#view-box' },
   { name: 'UI 2.0 preview', ui2: true, main: '#ui2Main' },
@@ -57,6 +64,9 @@ async function expectOnly(page, kinds) {
   for (const k of KINDS) {
     const loc = page.locator(BANNERS[k].shown);
     if (kinds.includes(k)) await expect(loc, `${k} shown`).toBeVisible();
+    // The preview keeps a per-speaker notice in the DOM for the classic
+    // layout but never shows it window-wide.
+    else if (PER_SPEAKER_IN_UI2.has(k) && await page.locator('html.ui2').count()) await expect(loc, `${k} not shown`).toBeHidden();
     else await expect(loc, `${k} not shown`).toHaveCount(0);
   }
 }
@@ -130,9 +140,10 @@ for (const layout of LAYOUTS) {
         test('stack in order, apart, and leave the view usable (the speaker card waits for the app)', async ({ app }) => {
           const { page } = app;
           await boot(page);
-          await expectOnly(page, kinds);
-          await expectPlacement(page, layout.ui2, kinds);
-          await expectUsableMain(page, layout, kinds);
+          const shown = windowWide(layout, kinds);
+          await expectOnly(page, shown);
+          await expectPlacement(page, layout.ui2, shown);
+          await expectUsableMain(page, layout, shown);
         });
       });
 
@@ -143,9 +154,10 @@ for (const layout of LAYOUTS) {
         test('stack in order, apart, and leave the view usable', async ({ app }) => {
           const { page } = app;
           await boot(page);
-          await expectOnly(page, kinds);
-          await expectPlacement(page, layout.ui2, kinds);
-          await expectUsableMain(page, layout, kinds);
+          const shown = windowWide(layout, kinds);
+          await expectOnly(page, shown);
+          await expectPlacement(page, layout.ui2, shown);
+          await expectUsableMain(page, layout, shown);
         });
       });
 
@@ -156,9 +168,10 @@ for (const layout of LAYOUTS) {
         test('stack in order, apart, and leave the view usable', async ({ app }) => {
           const { page } = app;
           await boot(page);
-          await expectOnly(page, kinds);
-          await expectPlacement(page, layout.ui2, kinds);
-          await expectUsableMain(page, layout, kinds);
+          const shown = windowWide(layout, kinds);
+          await expectOnly(page, shown);
+          await expectPlacement(page, layout.ui2, shown);
+          await expectUsableMain(page, layout, shown);
         });
       });
     });
@@ -171,9 +184,21 @@ for (const layout of LAYOUTS) {
           test(`only the ${kind} notice shows`, async ({ app }) => {
             const { page } = app;
             await boot(page);
-            await expectOnly(page, [kind]);
-            await expectPlacement(page, layout.ui2, [kind]);
-            await expectUsableMain(page, layout, [kind]);
+            const shown = windowWide(layout, [kind]);
+            await expectOnly(page, shown);
+            if (shown.length) {
+              await expectPlacement(page, layout.ui2, shown);
+              await expectUsableMain(page, layout, shown);
+            } else {
+              // Preview: no window-wide notice; the speaker's row carries it.
+              await expect(page.locator('#ui2Main')).toBeVisible();
+              await expect(page.locator('#ui2SpkLists [data-chip="attention"]').first()).toBeVisible();
+            }
+            // The UI 2.0 card styling (shell2/banners.css) never reaches the
+            // classic layout: its card keeps the light blue of style.css.
+            if (!layout.ui2 && kind === 'speakerUpdate') {
+              expect(await page.locator('#speakerUpdateCard').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(234, 242, 254)');
+            }
           });
         });
       }
@@ -193,17 +218,18 @@ for (const layout of LAYOUTS) {
           test(`closing ${c.kind} moves the view up and keeps the others`, async ({ app }) => {
             const { page } = app;
             await boot(page);
-            await expectOnly(page, [c.kind, ...c.stay]);
+            const stay = windowWide(layout, c.stay);
+            await expectOnly(page, [c.kind, ...stay]);
             const before = await mainTop(page, layout.main);
             await page.locator(BANNERS[c.kind].close).click();
-            await expectOnly(page, c.stay);
+            await expectOnly(page, stay);
             await expect.poll(() => mainTop(page, layout.main), { message: 'view top after dismissing' }).toBeLessThan(before - 1);
             // Stays closed through the polls that follow (status, discovery,
             // the SSH check on every refresh).
             await runFor(page, 65_000);
-            await expectOnly(page, c.stay);
-            await expectPlacement(page, layout.ui2, c.stay);
-            await expectUsableMain(page, layout, c.stay);
+            await expectOnly(page, stay);
+            await expectPlacement(page, layout.ui2, stay);
+            await expectUsableMain(page, layout, stay);
           });
         });
       }

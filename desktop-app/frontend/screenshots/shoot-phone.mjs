@@ -17,6 +17,11 @@
 // page's theme, SHOOT_WIDTH=320 shoots a narrower phone. The phone-keys-*,
 // phone-save-row2 and phone-alarm-row2 views show the second row of keys
 // (#1110); they are not in the default set.
+//
+// SHOOT_UI2=1 shoots the UI 2.0 preview (Aa > Layout, localStorage
+// str.ui2Preview) into a ui2/ folder level, with its own default views:
+// phone-list (the speaker list under the speaker card) and phone-more (Help
+// and info) in place of phone-alarm. Point SHOOT_OUT at a review folder.
 
 import { chromium } from 'playwright';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -35,12 +40,15 @@ const THEMES = (process.env.SHOOT_THEMES && process.env.SHOOT_THEMES.trim())
 const WIDTH = Number(process.env.SHOOT_WIDTH) || 390;
 const ROW2_FILLED = ['phone-keys-row1', 'phone-keys-row2-playing', 'phone-save-row2', 'phone-alarm-row2'];
 const ORIGIN = PHONE.ORIGIN; // a placeholder origin, never resolved
+const UI2 = process.env.SHOOT_UI2 === '1';
 
 const ALL_LANGS = ['en', 'de'];
 const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
   ? process.env.SHOOT_LANGS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_LANGS;
-const ALL_VIEWS = ['phone-play', 'phone-alarm', 'phone-browse', 'phone-speakers'];
+const ALL_VIEWS = UI2
+  ? ['phone-play', 'phone-list', 'phone-browse', 'phone-speakers', 'phone-more']
+  : ['phone-play', 'phone-alarm', 'phone-browse', 'phone-speakers'];
 const VIEWS = (process.env.SHOOT_VIEWS && process.env.SHOOT_VIEWS.trim())
   ? process.env.SHOOT_VIEWS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_VIEWS;
@@ -105,6 +113,20 @@ async function drive(page, view) {
     await page.click('#alarmRowSw button[data-row="2"]');
     await page.click('#alarmSlots [data-alarm-slot="9"]');
     await scrollTo('#alarmTime', 120);
+  } else if (view === 'phone-list') {
+    await page.click('#dev');
+    await page.waitForSelector('#u2List #peers a.peer', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-more') {
+    await tab('More');
+    await page.waitForSelector('#u2lHelp', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } else if (view === 'phone-speakers' && UI2) {
+    // The list lives under the speaker card in the preview; this tab shows
+    // the group and this speaker's own settings.
+    await tab('Speakers');
+    await page.waitForSelector('#groupCard:not([style*="none"]) #members', { timeout: 9000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
   } else if (view === 'phone-speakers') {
     await tab('Speakers');
     await page.waitForSelector('#peers .peer', { timeout: 9000 });
@@ -124,23 +146,25 @@ const browser = await chromium.launch({ headless: true });
 let ok = 0, fail = 0;
 try {
   for (const theme of THEMES) for (const lang of LANGS) {
-    const dir = theme ? path.join(OUT, theme, lang) : path.join(OUT, lang);
+    const base = UI2 ? path.join(OUT, 'ui2') : OUT;
+    const dir = theme ? path.join(base, theme, lang) : path.join(base, lang);
     await mkdir(dir, { recursive: true });
     const ctx = await browser.newContext({
       viewport: { width: WIDTH, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       locale: lang, timezoneId: 'Europe/Berlin',
       userAgent: PHONE.USER_AGENT,
     });
-    await ctx.addInitScript(([l, th]) => {
+    await ctx.addInitScript(([l, th, ui2]) => {
       try {
         localStorage.setItem('str.remote.lang', l);
         if (th) localStorage.setItem('a11yTheme', th);
+        if (ui2) localStorage.setItem('str.ui2Preview', '1');
       } catch (e) {}
-    }, [lang, theme]);
+    }, [lang, theme, UI2]);
     await ctx.route('**/*', phone.handle);
     for (const view of VIEWS) {
       phone.options.view = view;
-      phone.options.grouped = view === 'phone-speakers';
+      phone.options.grouped = view === 'phone-speakers' || (UI2 && view === 'phone-list');
       // The second row of keys: filled for these shots, empty for the rest
       // (the explainer); the playing shot plays key 3 pressed twice.
       phone.options.row2 = ROW2_FILLED.includes(view);

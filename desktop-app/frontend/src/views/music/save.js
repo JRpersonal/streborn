@@ -24,6 +24,8 @@ import {
   appArtFromBoxArt,
   confirmWarn,
   escapeHtml,
+  friendlyErrorText,
+  getBoxLabel,
   libraryPlayMatches,
   orionStationPayload,
   queueSaveFallsThrough,
@@ -33,8 +35,41 @@ import {
   showToast,
   spotifySaveContextURI,
 } from '../../utils.js';
+import { keyFailedVerdict, keyHolds, keySavingVerdict, keyVerdict } from '../../shell2/feedback.js';
 import { decodeProxyUrl, loadPresets } from './presets.js';
 import { refreshStatus } from './status.js';
+
+// keyWords names a key and its speaker for the report lines of the UI 2.0
+// preview ("key 3", "Kitchen").
+function keyWords(slot, box = state.currentBox) {
+  return { n: keyNum(slot, t), speaker: box ? getBoxLabel(box) : '' };
+}
+
+// reportKeyFailed puts a save that did not happen into the key's own line,
+// with the reason in the app's words.
+function reportKeyFailed(report, slot, reason, kind = 'error') {
+  const { n, speaker } = keyWords(slot);
+  report(keyFailedVerdict(n, speaker, reason).text, kind);
+}
+
+// announceSaved is the end of every successful save. The current layout
+// toasts and reloads the keys, exactly as before. With report (the UI 2.0
+// preview's key line, ui2radio.js keyReport) the key says done only after the
+// preset list read back from the speaker (loadPresets reads GetPresets) holds
+// it on that key, under the name it was saved with when that is known.
+async function announceSaved(slot, toastText, report, name = '') {
+  if (!report) {
+    showToast(toastText);
+    await loadPresets();
+    return;
+  }
+  const box = state.currentBox;
+  const { n, speaker } = keyWords(slot, box);
+  await loadPresets();
+  const same = !!box && !!state.currentBox && state.currentBox.host === box.host;
+  const v = keyVerdict(n, speaker, same && keyHolds(state.presets, slot, name));
+  report(v.text, v.kind);
+}
 
 // APP_PLAY_FRESH_MS is how long the app trusts its own record of an ad-hoc
 // station it started (state.lastAppPlay) over the box-reported now-playing
@@ -50,17 +85,27 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 // not an error, so it becomes the note naming the collision plus the offer to
 // move the station onto the key the user pressed (#709/#925). slot is that key;
 // without one there is nothing to move to and the plain note is all that is left.
-function showPresetSaveError(err, slot) {
+//
+// report, when given (the UI 2.0 preview's key line), takes the note and the
+// errors instead of the toast and the dialog; the move offer stays a question.
+function showPresetSaveError(err, slot, report = null) {
   const conflict = parsePresetConflict(err);
   if (conflict) {
     if (slot >= 1 && slot <= 2 * ROW_SIZE && state.currentBox) {
+      if (report) report(null);
       presetMoveOffer(conflict, slot);
+    } else if (report) {
+      report(presetConflictNote(conflict, t), 'warn');
     } else {
       showToast(presetConflictNote(conflict, t));
     }
     return;
   }
   const refusal = savePlayingRefusalKey(err);
+  if (report) {
+    reportKeyFailed(report, slot, refusal ? t(refusal) : friendlyErrorText(String(err && err.message ? err.message : err)), refusal ? 'warn' : 'error');
+    return;
+  }
   if (refusal) {
     showError(t(refusal));
     return;
@@ -111,14 +156,14 @@ function voteForWhatPlays() {
 // saveNativeToSlot keeps the Pandora or iHeartRadio station the speaker is
 // playing on a key. The app sends only the name: the agent reads the exact
 // item from the speaker's own now-playing.
-async function saveNativeToSlot(slot) {
+async function saveNativeToSlot(slot, report = null) {
   const nname = state.nowName || nativeServiceLabel(state.nowSource);
   try {
     await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, nname);
-    showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: nname }));
-    await loadPresets();
+    await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: nname }), report, nname);
   } catch (err) {
-    showPresetSaveError(err, slot);
+    if (report) showPresetSaveError(err, slot, report);
+    else showPresetSaveError(err, slot);
   }
 }
 
@@ -131,14 +176,24 @@ async function saveNativeToSlot(slot) {
 // repeating the hint on every save would nag exactly those users.
 let spotifyPlanHintShown = false;
 
-export async function saveCurrentToSlot(slot) {
+//
+// report(text, kind), when given (the UI 2.0 preview: the held key's own line,
+// ui2radio.js keyReport), takes every outcome instead of the toasts and the
+// error dialog, named with the key and the speaker, and done is said only
+// after the read-back (announceSaved). Without it everything is as before.
+export async function saveCurrentToSlot(slot, report = null) {
+  if (report) {
+    const { n, speaker } = keyWords(slot);
+    report(keySavingVerdict(n, speaker).text, 'busy');
+  }
   // Refresh from the speaker first. On a hardware key press,
   // state.nowLocation / nowName often lag behind (the boxws event
   // arrives late). Without the refresh we would save "Station" as
   // the name or the previous station.
   try { await refreshStatus(); } catch {}
   if (!state.nowLocation) {
-    showToast(t('preset.noCurrentStation'));
+    if (report) reportKeyFailed(report, slot, t('preset.noCurrentStation'), 'warn');
+    else showToast(t('preset.noCurrentStation'));
     return;
   }
 
@@ -146,7 +201,8 @@ export async function saveCurrentToSlot(slot) {
   // item lives only on the speaker, so the agent reads it from there and keeps
   // it on the key as the speaker's own item. No stream URL is involved.
   if (nativeServiceSaveable(state.nowSource)) {
-    await saveNativeToSlot(slot);
+    if (report) await saveNativeToSlot(slot, report);
+    else await saveNativeToSlot(slot);
     return;
   }
 
@@ -170,12 +226,11 @@ export async function saveCurrentToSlot(slot) {
   if (saveCase === 'queue') {
     try {
       const fname = await SaveQueuePreset(state.currentBox.host, state.currentBox.port, slot);
-      showToast(t('library.folderPresetSaved', { n: keyNum(slot, t), name: fname || state.nowName || '' }));
-      await loadPresets();
+      await announceSaved(slot, t('library.folderPresetSaved', { n: keyNum(slot, t), name: fname || state.nowName || '' }), report, fname || '');
       return;
     } catch (err) {
       if (!queueSaveFallsThrough(err)) {
-        showPresetSaveError(err, slot);
+        showPresetSaveError(err, slot, report);
         return;
       }
       saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null, libraryMatch);
@@ -184,7 +239,20 @@ export async function saveCurrentToSlot(slot) {
 
   // Case Spotify: the speaker is playing a Spotify playlist (saveSpotifyToSlot).
   if (saveCase === 'spotify') {
-    await saveSpotifyToSlot(slot);
+    if (!report) {
+      await saveSpotifyToSlot(slot);
+      return;
+    }
+    // The preview: the notices (needs a login, needs Premium) join the
+    // verdict, which waits for the read-back like every other save.
+    const sr = keySpotifyReport(slot, report);
+    const box = state.currentBox;
+    if (await saveSpotifyToSlot(slot, sr, box)) {
+      const { n, speaker } = keyWords(slot, box);
+      const same = !!box && !!state.currentBox && state.currentBox.host === box.host;
+      const v = keyVerdict(n, speaker, same && keyHolds(state.presets, slot));
+      report([v.text, ...sr.notes].join(' '), sr.notes.length && v.kind === 'ok' ? 'warn' : v.kind);
+    }
     return;
   }
 
@@ -202,10 +270,9 @@ export async function saveCurrentToSlot(slot) {
         name: lname, url: lib.url, art: lib.art || '', source: lib.source || '',
         durationSec: lib.durationSec || 0, ref: lib.ref || null,
       });
-      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: lname }));
-      await loadPresets();
+      await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: lname }), report, lname);
     } catch (err) {
-      showPresetSaveError(err, slot);
+      showPresetSaveError(err, slot, report);
     }
     return;
   }
@@ -237,13 +304,12 @@ export async function saveCurrentToSlot(slot) {
           state.currentBox.host, state.currentBox.port,
           slot, aname, app.url, app.icon || '', app.bitrate || 0, app.homepage || '', app.codec || ''
         );
-        showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: aname }));
-        await loadPresets();
+        await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: aname }), report, aname);
         if (app.uuid) {
           RadioVote(app.uuid).catch(() => {});
         }
       } catch (err) {
-        showPresetSaveError(err, slot);
+        showPresetSaveError(err, slot, report);
       }
       return;
     }
@@ -254,18 +320,18 @@ export async function saveCurrentToSlot(slot) {
           state.currentBox.host, state.currentBox.port,
           slot, src.name, src.stream_url, src.art || '', src.bitrate || 0, src.homepage || '', src.codec || ''
         );
-        showToast(t('preset.copiedToKey', { n: keyNum(slot, t), name: src.name }));
-        await loadPresets();
+        await announceSaved(slot, t('preset.copiedToKey', { n: keyNum(slot, t), name: src.name }), report, src.name);
         return;
       } catch (err) {
-        showPresetSaveError(err, slot);
+        showPresetSaveError(err, slot, report);
         return;
       }
     }
     // No stored preset to copy from (empty source slot) and no fresh app
     // play record: the only URL available is the box's own /stream/<n>
     // proxy location, which must never be saved as a preset.
-    showError(t('preset.saveFailed', { err: 'source preset empty' }));
+    if (report) reportKeyFailed(report, slot, t('preset.sourceKeyEmpty'));
+    else showError(t('preset.saveFailed', { err: 'source preset empty' }));
     return;
   }
 
@@ -283,13 +349,12 @@ export async function saveCurrentToSlot(slot) {
     const shown = saved.name || state.nowName || t('preset.placeholderSender');
     // A key's own stream is a copy of that key, and is announced as one.
     const toast = saved.kind === 'copy' ? 'preset.copiedToKey' : 'preset.savedToKey';
-    showToast(t(toast, { n: keyNum(slot, t), name: shown }));
-    await loadPresets();
+    await announceSaved(slot, t(toast, { n: keyNum(slot, t), name: shown }), report, saved.name || '');
     voteForWhatPlays();
     return;
   } catch (err) {
     if (!savePlayingFallsThrough(err)) {
-      showPresetSaveError(err, slot);
+      showPresetSaveError(err, slot, report);
       return;
     }
   }
@@ -331,10 +396,9 @@ export async function saveCurrentToSlot(slot) {
         slot, oname, decodeProxyUrl(orion.streamUrl), oart,
         state.nowBitrate || 0, '', ''
       );
-      showToast(t('preset.savedToKey', { n: keyNum(slot, t), name: oname }));
-      await loadPresets();
+      await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: oname }), report, oname);
     } catch (err) {
-      showPresetSaveError(err, slot);
+      showPresetSaveError(err, slot, report);
     }
     return;
   }
@@ -354,12 +418,26 @@ export async function saveCurrentToSlot(slot) {
       state.currentBox.host, state.currentBox.port,
       slot, name, decodeProxyUrl(state.nowLocation), appArtFromBoxArt(state.nowIcon), state.nowBitrate || 0, '', codec
     );
-    showToast(t('preset.savedToKey', { n: keyNum(slot, t), name }));
-    await loadPresets();
+    await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name }), report, name);
     voteForWhatPlays();
   } catch (err) {
-    showPresetSaveError(err, slot);
+    showPresetSaveError(err, slot, report);
   }
+}
+
+// keySpotifyReport is how a Spotify save speaks in the UI 2.0 preview's key
+// line: the errors there, the notices collected for the verdict that follows
+// the read-back, and nothing at all for a speaker switched meanwhile.
+function keySpotifyReport(slot, report) {
+  const notes = [];
+  return {
+    notes,
+    saved: () => {},
+    notice: (key) => { notes.push(t(key)); },
+    error: (key) => reportKeyFailed(report, slot, t(key)),
+    failed: (err) => showPresetSaveError(err, slot, report),
+    switched: () => report(null),
+  };
 }
 
 // toastSpotifyReport is how a Spotify save speaks in the Music view: toasts,

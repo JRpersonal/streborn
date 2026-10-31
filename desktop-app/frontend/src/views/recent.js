@@ -17,6 +17,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
+import { keyNum } from '../presetrows.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
 import { logoImgTag, spotifyCoverImgTag } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
@@ -25,6 +26,10 @@ import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { splitStreamTitle } from '../titleswap.js';
 import { shell2Mounted } from '../shell2/mount.js';
 import { keyButtonHTML } from '../shell2/keybtn.js';
+import { listStateNow, noSpeakersState } from '../shell2/state.js';
+import { loadingHTML } from '../shell2/library.js';
+import { keyHolds, keySavingVerdict, keyVerdict, startingVerdict, verdictFromPlayState } from '../shell2/feedback.js';
+import { nowPlayingSig, waitForPlayState } from './library.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
@@ -207,8 +212,13 @@ export function groupRecentCards(entries) {
 // also fetches each box's presets so a Spotify card whose playlist is saved as a
 // preset (= the box holds that account's token) can offer a play button that
 // recalls the slot. One presets fetch per box on view-open: app-side, no box poll.
-async function loadRecentCards() {
+//
+// It resolves to { cards, unanswered }: unanswered names the speakers whose
+// history read failed, so the UI 2.0 preview can say whose history is missing
+// instead of a list that silently lacks it. The current layout ignores it.
+export async function loadRecentCards() {
   const boxes = recentSelectedBoxes();
+  const unanswered = [];
   const results = await Promise.all(boxes.map(async (b) => {
     const boxKey = recentBoxKey(b);
     // friendlyName first: the backend always fills Name with a "str-<IP>" fallback,
@@ -216,7 +226,7 @@ async function loadRecentCards() {
     // A stereo pair shows its own STR name here instead of the single box (#775).
     const boxName = recentBoxDisplayLabel(b);
     let list = [];
-    try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; }
+    try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; unanswered.push(boxName); }
     // Map Spotify playlist URI -> preset slot on this box. A match means the box
     // can recall (and holds the token), so the card gets a play button.
     const spotifySlots = {};
@@ -229,7 +239,7 @@ async function loadRecentCards() {
     return list.map((e) => ({ ...e, _box: b, _boxKey: boxKey, _boxName: boxName, _spotifySlots: spotifySlots }));
   }));
   const merged = results.flat().sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-  return groupRecentCards(merged);
+  return { cards: groupRecentCards(merged), unanswered };
 }
 
 function recentSourceLabel(src) {
@@ -479,7 +489,9 @@ function showCardError(c, err) {
   const line = cardErrLine(c);
   if (!line) { showError(err); return; }
   const msg = friendlyErrorText(String(err && err.message ? err.message : err || t('modal.unknownError')));
+  cardStatus.delete(c.cardKey);
   cardErrors.set(c.cardKey, msg);
+  line.className = 'rc-err';
   line.textContent = msg;
 }
 
@@ -487,8 +499,34 @@ function showCardError(c, err) {
 // makes the line an alert again for that action's answer.
 function clearCardError(c) {
   cardErrors.delete(c.cardKey);
+  cardStatus.delete(c.cardKey);
   const line = cardErrLine(c);
-  if (line) { line.textContent = ''; line.setAttribute('role', 'alert'); }
+  if (line) { line.className = 'rc-err'; line.textContent = ''; line.setAttribute('role', 'alert'); }
+}
+
+// cardStatus keeps the last verdict of each card's play or key action in the
+// preview ({ kind, text }; kind busy, ok, warn or error), so the 30 s repaint
+// keeps "Starting on Kitchen..." or "Playing on Kitchen" on the card.
+const cardStatus = new Map();
+
+// setCardStatus writes a verdict into the card's line (the error line, with
+// a tone): "Starting on Kitchen...", then "Playing on Kitchen" only once the
+// speaker reported it, or "Sent to Kitchen. It has not started yet." A
+// status, not an alert, unless it is an error.
+function setCardStatus(c, st) {
+  cardErrors.delete(c.cardKey);
+  if (st) cardStatus.set(c.cardKey, st); else cardStatus.delete(c.cardKey);
+  const line = cardErrLine(c);
+  if (!line) return;
+  line.className = `rc-err${st && st.kind ? ` rc-err--${st.kind}` : ''}`;
+  line.setAttribute('role', st && st.kind === 'error' ? 'alert' : 'status');
+  line.textContent = (st && st.text) || '';
+}
+
+// cardStatusReport is the report hook a card hands to a play or key action in
+// the preview: report(text, kind) lands in the card's line.
+function cardStatusReport(c) {
+  return (text, kind = 'ok') => setCardStatus(c, text ? { kind, text } : null);
 }
 
 // cardErrorLine is the card's error line. Empty, it is an alert that speaks
@@ -496,25 +534,32 @@ function clearCardError(c) {
 // screen reader does not hear the same error again on every refresh.
 function cardErrorLine(c, i) {
   const msg = cardErrors.get(c.cardKey) || '';
+  const st = msg ? null : cardStatus.get(c.cardKey);
+  if (st) return `<div class="rc-err${st.kind ? ` rc-err--${escapeAttr(st.kind)}` : ''}" id="recErr${i}">${escapeHtml(st.text || '')}</div>`;
   return `<div class="rc-err" id="recErr${i}"${msg ? '' : ' role="alert"'}>${escapeHtml(msg)}</div>`;
 }
 
 // replayFolderCard starts a folder card as a whole queue again. Returns true when
 // it took the play, false when this card is not a folder card or the speaker
 // cannot do it yet, in which case the caller replays the single stored track.
+//
+// The UI 2.0 preview hands in a copy of the card that carries ui2Quiet (no
+// toast: the card's own line follows the speaker's answer) and ui2OnError (a
+// refusal goes to the card's line, showCardError, not the dialog).
 async function replayFolderCard(c, box) {
   if (!box || !String(c.cardKey || '').startsWith('queue:')) return false;
   const art = (c.art || '').split('|')[0].trim();
   try {
     await ReplayFolderCard(box.host, box.port, c.cardKey, c.name || '', art);
-    showToast(t('recent.playing', { name: c.name || '' }));
+    if (!c.ui2Quiet) showToast(t('recent.playing', { name: c.name || '' }));
     return true;
   } catch (err) {
     const msg = String(err && err.message ? err.message : err);
     if (isMissingBinding(err) || msg.includes('folder_replay_unsupported')) return false;
     // A real refusal (server offline, folder gone) is the user's answer. Playing
     // the one stored track instead would hide it and look like the old bug.
-    showError(err);
+    if (typeof c.ui2OnError === 'function') c.ui2OnError(err);
+    else showError(err);
     return true;
   }
 }
@@ -553,7 +598,7 @@ export async function replayLibraryCard(c, box) {
   const art = (c.art || '').split('|')[0].trim();
   if (await replayFolderCard(c, box)) return;
   await replayLibraryTrack(c, box, art);
-  showToast(t('recent.playing', { name: c.name || '' }));
+  if (!c.ui2Quiet) showToast(t('recent.playing', { name: c.name || '' }));
 }
 
 // replayPandoraCard starts a Pandora card on the speaker's own Pandora client,
@@ -589,21 +634,56 @@ function wireCard(c, i) {
         clearCardError(c);
         setPlayBusy(c, playBtn, true);
       }
+      // The preview's card line follows the play: "Starting on Kitchen...",
+      // then "Playing on Kitchen" only once the speaker reports it (rule 2).
+      const box = cardPlayBox(c);
+      const speaker = box ? recentBoxDisplayLabel(box) : '';
+      let took = false;
+      if (busy) setCardStatus(c, startingVerdict(speaker));
+      // What the speaker plays before the press: "Playing on X" is said only
+      // once it plays this card, not because it plays on (waitForPlayState).
+      const before = busy && box ? await nowPlayingSig(box) : '';
       try {
         if (c.source === 'spotify') {
           // Token present (matched a preset slot): recall it, same as a preset.
           await PlaySlot(c.box.host, c.box.port, c.playSlot);
-          showToast(t('recent.playing', { name: c.name || '' }));
+          if (!busy) showToast(t('recent.playing', { name: c.name || '' }));
+          took = true;
         } else if (c.source === 'pandora') {
           await replayPandoraCard(c, c.box || state.currentBox);
-          showToast(t('recent.playing', { name: c.name || '' }));
+          if (!busy) showToast(t('recent.playing', { name: c.name || '' }));
+          took = true;
         } else if (c.source === 'upnp') {
-          await replayLibraryCard(c, c.box || state.currentBox);
+          if (busy) {
+            // A copy of the card that keeps quiet and sends a refusal to
+            // this card's line (replayFolderCard).
+            let refused = false;
+            const quiet = { ...c, ui2Quiet: true, ui2OnError: (err) => { refused = true; showCardError(c, err); } };
+            await replayLibraryCard(quiet, c.box || state.currentBox);
+            took = !refused;
+          } else {
+            await replayLibraryCard(c, c.box || state.currentBox);
+          }
         } else {
-          await deps.playStation(cardStation(c));
+          let failed = false;
+          const opts = busy ? {
+            report: (msg, kind) => {
+              if (kind === 'info') { setCardStatus(c, { kind: 'busy', text: msg }); return; }
+              failed = true;
+              setCardStatus(c, { kind: 'error', text: t('ui2.radio.playFailed', { speaker, reason: msg }) });
+            },
+          } : undefined;
+          const ok = await deps.playStation(cardStation(c), opts);
+          took = !!ok && !failed;
+          // A play dropped because another speaker was chosen meanwhile: nothing to say.
+          if (busy && !ok && !failed) setCardStatus(c, null);
         }
       } catch (err) { showCardError(c, err); } finally {
         if (busy) { playsInFlight.delete(c.cardKey); setPlayBusy(c, playBtn, false); }
+      }
+      if (busy && took && box) {
+        const verdict = await waitForPlayState(box, Date.now() + 26000, { before, url: c.url || '', name: c.name || '' });
+        setCardStatus(c, verdictFromPlayState(speaker, verdict));
       }
     };
   }
@@ -614,7 +694,11 @@ function wireCard(c, i) {
         if (deps.openPandoraPick) deps.openPandoraPick({ location: c.url, name: c.name || '', type: c.itemType || '' });
         return;
       }
-      deps.openPick(cardStation(c)); // radio: identical to the search "+" action
+      // radio: identical to the search "+" action; the preview reports the
+      // key in the card's line, done only after the speaker's read-back.
+      if (shell2Mounted()) { clearCardError(c); deps.openPick(cardStation(c), cardStatusReport(c)); return undefined; }
+      deps.openPick(cardStation(c));
+      return undefined;
     };
   }
   if (favBtn) {
@@ -679,6 +763,10 @@ export async function deleteRecentStation(c, del, fallbackBox) {
 function saveSpotifyCard(c) {
   const box = c.box || state.currentBox;
   if (!box || !deps.showSlotPicker) return;
+  // The preview reports in the card's line: a refusal there instead of the
+  // dialog, and "On key 3 of Kitchen" only after the speaker's read-back.
+  const report = shell2Mounted() ? cardStatusReport(c) : null;
+  if (report) clearCardError(c);
   deps.showSlotPicker({
     title: t('recent.saveTitle'),
     subtitle: c.name || '',
@@ -686,7 +774,19 @@ function saveSpotifyCard(c) {
     // needs to know which speaker it is writing to: a refusal there is answered
     // with a move on that same speaker.
     box,
+    ...(report ? { report } : {}),
     onPick: async (i) => {
+      if (report) {
+        const n = keyNum(i, t);
+        const speaker = recentBoxDisplayLabel(box);
+        report(keySavingVerdict(n, speaker).text, 'busy');
+        await SaveSpotifyPreset(box.host, box.port, i, c.name || '', c.url, c.account || '');
+        let fresh = null;
+        try { fresh = await GetPresets(box.host, box.port); } catch { fresh = null; }
+        const v = keyVerdict(n, speaker, keyHolds(fresh, i, c.name || ''));
+        report(v.text, v.kind);
+        return;
+      }
       await SaveSpotifyPreset(box.host, box.port, i, c.name || '', c.url, c.account || '');
       showToast(t('recent.saved', { name: c.name || '' }));
     },
@@ -777,15 +877,19 @@ async function syncCurrentNowPlaying() {
 export async function refreshRecentList() {
   if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
   await syncCurrentNowPlaying();
-  const cards = await loadRecentCards();
+  const { cards, unanswered } = await loadRecentCards();
   const listEl = $('recentList');
   if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch
   const keep = shell2Mounted() ? recentFocusMark(listEl) : null;
+  // The preview names the speakers that did not answer, above the list, with
+  // Try again (rule 2: a list missing a speaker says so).
+  const note = shell2Mounted() ? unansweredNoteHTML(unanswered) : '';
   if (!cards.length) {
     paintedCards = [];
     listEl.innerHTML = shell2Mounted()
-      ? ui2EmptyHTML()
+      ? note + ui2EmptyHTML()
       : `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
+    wireRecentStateButtons(listEl);
     restoreRecentFocus(listEl, keep);
     return;
   }
@@ -797,10 +901,48 @@ export async function refreshRecentList() {
   const playingIdx = cards.findIndex(cardIsPlaying);
   paintedCards = cards;
   listEl.innerHTML = shell2Mounted()
-    ? ui2DaysHTML(cards, playingIdx)
+    ? note + ui2DaysHTML(cards, playingIdx)
     : cards.map((c, i) => recentCardHTML(c, i, i === playingIdx)).join('');
   cards.forEach((c, i) => wireCard(c, i));
+  wireRecentStateButtons(listEl);
   restoreRecentFocus(listEl, keep);
+}
+
+// unansweredNoteHTML is the preview's note above the list for speakers whose
+// history could not be read, with Try again. Empty when every one answered.
+export function unansweredNoteHTML(names) {
+  if (!names || !names.length) return '';
+  return `<div class="rc-unanswered" role="status"><p class="rc-unanswered-text">${escapeHtml(t('ui2.feedback.recentUnanswered', { names: names.join(', ') }))}</p>`
+    + `<button type="button" class="u-btn u-btn--secondary" id="recentUnansweredRetry">${escapeHtml(t('ui2.feedback.tryAgain'))}</button></div>`;
+}
+
+// wireRecentStateButtons wires the preview's state buttons in the list: Try
+// again under the unanswered note, and the empty history's way to Radio,
+// Library and Spotify.
+function wireRecentStateButtons(listEl) {
+  const retry = listEl.querySelector('#recentUnansweredRetry');
+  if (retry) {
+    retry.onclick = async () => {
+      if (retry.getAttribute('aria-disabled') === 'true') return;
+      retry.setAttribute('aria-disabled', 'true');
+      await refreshRecentList();
+      // The note is drawn again (or gone): the keyboard goes to its button,
+      // or to the list's first control.
+      const again = $('recentUnansweredRetry') || listEl.querySelector('.recent-card button, .rc-empty-acts button');
+      if (again) again.focus();
+    };
+  }
+  listEl.querySelectorAll('.rc-empty-acts [data-view]').forEach((b) => {
+    b.onclick = () => goToView(b.dataset.view);
+  });
+}
+
+// goToView opens another view of the preview the way its sidebar entry does
+// (the same switchView behind the same button), so nothing here needs main.js.
+function goToView(view) {
+  if (typeof deps.switchView === 'function') { deps.switchView(view); return; }
+  const nav = [...document.querySelectorAll('#ui2Shell .ui2-nav-item[data-view]')].find((b) => b.dataset.view === view);
+  if (nav) nav.click();
 }
 
 // RECENT_CONTROLS are a card's controls, in their order on the card.
@@ -856,12 +998,29 @@ function ui2DaysHTML(cards, playingIdx) {
 // ui2EmptyHTML explains an empty history in the preview: what fills it, for
 // the speaker (or all of them) the view shows.
 function ui2EmptyHTML() {
+  // No speaker with STR (phase 5): no history can exist yet, so the state
+  // says why (no speaker found, the search failed, only Bose originals) and
+  // offers the next step instead of "nothing played".
+  if (!recentStrBoxes().length) {
+    const stock = (state.boxes || []).some((b) => b && b.kind === 'stock');
+    const st = listStateNow();
+    return stock
+      ? noSpeakersState('none', { id: 'rcState', title: t('speaker.stockConfirmTitle'), body: t('speaker.stockTooltip'), actions: ['setup'], level: 3 })
+      : noSpeakersState(st.phase, { id: 'rcState', error: st.error, level: 3 });
+  }
   const boxes = recentSelectedBoxes();
   const body = (state.recentAllBoxes || boxes.length !== 1)
     ? t('ui2.recent.emptyAll')
     : t('ui2.recent.emptyOne', { speaker: recentBoxDisplayLabel(boxes[0]) });
   return `<div class="recent-empty rc-empty2"><p class="rc-empty-title">${escapeHtml(t('ui2.recent.emptyTitle'))}</p>`
-    + `<p class="rc-empty-body">${escapeHtml(body)}</p></div>`;
+    + `<p class="rc-empty-body">${escapeHtml(body)}</p>${ui2EmptyActionsHTML()}</div>`;
+}
+
+// ui2EmptyActionsHTML is the empty history's way forward: the three places
+// where something to listen to is started.
+function ui2EmptyActionsHTML() {
+  const btn = (view, key, primary) => `<button type="button" class="u-btn ${primary ? 'u-btn--primary' : 'u-btn--secondary'}" data-view="${view}">${escapeHtml(t(key))}</button>`;
+  return `<div class="rc-empty-acts">${btn('box', 'ui2.feedback.openRadio', true)}${btn('library', 'ui2.feedback.openLibrary')}${btn('spotify', 'ui2.feedback.openSpotify')}</div>`;
 }
 
 // recentFollowsShellPick is called when a speaker is chosen in the UI 2.0
@@ -919,7 +1078,9 @@ export async function renderRecent() {
   html += `</div><div class="recent-sub muted">${escapeHtml(t('recent.subtitle'))}</div>`
     // UI 2.0: what clearing could not do is said under the header (rule 3).
     + (ui2 ? `<div class="rc-clear-err" id="recentClearErr" role="alert"></div>` : '')
-    + `<div class="recent-list" id="recentList"><div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div></div>`;
+    + `<div class="recent-list" id="recentList">${ui2
+      ? loadingHTML(t('recent.loading'))
+      : `<div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div>`}</div>`;
   root.innerHTML = html;
 
   const sel = $('recentBoxSelect');

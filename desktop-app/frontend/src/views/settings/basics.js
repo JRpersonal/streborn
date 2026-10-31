@@ -9,7 +9,6 @@ import {
   escapeAttr,
   debounce,
   showError,
-  showToast,
   balanceLabel,
   balanceStateLabel,
   bassControlsDisabled,
@@ -29,7 +28,7 @@ import {
   readBoxBalanceInfo,
   writeBoxBalance,
 } from '../../api.js';
-import { deps, withButtonPending, wireCombobox, formatRel } from './shared.js';
+import { deps, withButtonPending, wireCombobox, formatRel, reportError, reportDone } from './shared.js';
 import { sanitizeSpeakerName } from '../../speakername.js';
 
 // uidSuffixFor returns the last 4 characters of the device ID as a
@@ -202,9 +201,9 @@ export function wireBasicsSections(ctx) {
       const v = langSel.value;
       try {
         await SetBoxLanguage(boseHost, parseInt(v, 10) || 0);
-        showToast(t('settingsView.langSavedToast', { v: boseLangLabel(v) }));
+        reportDone(langSave, t('settingsView.langSavedToast', { v: boseLangLabel(v) }));
         langCurrent.textContent = boseLangLabel(v);
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(langSave, e); }
     });
   }
 
@@ -220,7 +219,7 @@ export function wireBasicsSections(ctx) {
     const finalName = ensureWithUID(desired, box);
     try {
       await SetBoxName(box.host, box.port, finalName);
-      showToast(desired !== typed
+      reportDone('boxNameSave', desired !== typed
         ? t('settingsView.speakerNameAdjustedToast', { name: finalName })
         : t('settingsView.speakerNameSavedToast', { name: finalName }));
       $('boxNameInput').value = finalName;
@@ -237,7 +236,7 @@ export function wireBasicsSections(ctx) {
       state.pendingNames[box.deviceID] = { name: finalName, until: Date.now() + 90000 };
       renderSettingsBoxSelect();
       deps.renderBoxSelect();
-    } catch (e) { showError(e); }
+    } catch (e) { reportError('boxNameSave', e); }
   });
   $('boxVolume').oninput = () => {
     $('boxVolumeVal').textContent = $('boxVolume').value;
@@ -269,7 +268,7 @@ export function wireBasicsSections(ctx) {
     $('boxBassVal').textContent = formatRel(0);
     try {
       await SetBoxBass(box.host, box.port, bass.default || 0);
-    } catch (e) { showError(e); }
+    } catch (e) { reportError('boxBassReset', e); }
   };
 }
 
@@ -457,7 +456,7 @@ export async function refreshStartVolume(box) {
       await SetStartVolume(box.host, box.port, next);
       saved = next;
     } catch (e) {
-      showError(e);
+      reportError(check, e);
       vol = saved;
       paint();
     }

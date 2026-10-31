@@ -20,6 +20,7 @@
 
 import { t } from '../../i18n/index.js';
 import { escapeHtml, escapeAttr, boxModelSupport } from '../../utils.js';
+import { connectBusy, connectFocus, connectHTML, restoreConnectFocus } from '../state.js';
 
 // FACTORY is the radio value of "not on the network yet".
 export const FACTORY = '__factory';
@@ -125,14 +126,21 @@ function strRowHTML(r) {
     + '</li>';
 }
 
-// findHTML is the whole list of the step.
-export function findHTML(model) {
+// findHTML is the whole list of the step. opts.searching: the first search
+// of the session has not finished yet, so "none found" would be a guess. The
+// empty state offers Connect by address for a speaker the search cannot see.
+export function findHTML(model, opts = {}) {
   const legend = t('ui2.setup.wizard.find.legend');
   let html = '';
   if (model.empty) {
-    html += '<div class="w2-empty" role="status">'
-      + `<p>${escapeHtml(t('ui2.setup.wizard.find.empty'))}</p>`
-      + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`
+    html += '<div class="w2-empty">'
+      + '<div role="status">'
+      + (opts.searching
+        ? `<p>${escapeHtml(t('ui2.state.searchingTitle'))}</p>`
+        : `<p>${escapeHtml(t('ui2.setup.wizard.find.empty'))}</p>`
+          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`)
+      + '</div>'
+      + connectHTML('w2Connect')
       + '</div>';
   }
   html += '<fieldset class="w2-group">'
@@ -155,10 +163,13 @@ export function findHTML(model) {
 // paintFind renders the list into host, but only when it changed: discovery
 // repaints every few seconds, and a rebuild under the pointer would eat a
 // click and drop the keyboard focus.
-export function paintFind(host, model) {
+export function paintFind(host, model, opts = {}) {
   if (!host) return false;
-  const html = findHTML(model);
+  const html = findHTML(model, opts);
   if (host.dataset.sig === html) return false;
+  // Connect by address holds what is being typed: the repaint waits.
+  if (connectBusy(host)) return false;
+  const keepField = connectFocus(host);
   const details = host.querySelector('#w2OnStr');
   const open = !!(details && details.open);
   const focused = host.contains(document.activeElement) ? document.activeElement : null;
@@ -166,6 +177,7 @@ export function paintFind(host, model) {
   const focusCls = focused ? (focused.classList.contains('w2-open') ? 'w2-open' : 'w2-radio') : '';
   host.innerHTML = html;
   host.dataset.sig = html;
+  restoreConnectFocus(host, keepField);
   const d2 = host.querySelector('#w2OnStr');
   if (d2 && open) d2.open = true;
   if (focusKey) {

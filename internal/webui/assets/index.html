@@ -513,6 +513,54 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 }
 #sleepGroupWrap { display:flex; align-items:center; gap:8px; margin-top:10px; min-height:44px; }
 #sleepGroupWrap[hidden] { display:none; }
+
+/* ---------------------------------------------------------------------------
+   UI 2.0 preview (Aa > Layout, html.ui2). Every rule below is scoped to
+   html.ui2 or to a .ui2-only element, which does not render without it, so
+   the current layout is untouched. Structure: the speaker card on top (the
+   sticky header) with the speaker list disclosed under it on every tab, then
+   Listen, Find, Speakers and More (Help and info).
+   --------------------------------------------------------------------------- */
+html:not(.ui2) .ui2-only { display:none !important; }
+html.ui2 header img, html.ui2 header .brand { display:none !important; }
+html.ui2 header .devwrap { margin-left:0; flex:1 1 auto; }
+html.ui2 header .dev, html.ui2 header .dev.haspeers { display:grid; grid-template-columns:auto minmax(0,1fr) auto; column-gap:8px; align-items:center; width:100%; min-height:48px; padding:6px 10px; text-align:start; cursor:pointer; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+html.ui2 header .dev .spk { display:inline; grid-column:1; grid-row:1 / span 2; color:var(--accent); }
+html.ui2 header #devName { grid-column:2; grid-row:1; }
+html.ui2 header .dev .u2-status { grid-column:2; grid-row:2; font-size:12px; font-weight:400; color:var(--muted); line-height:1.3; }
+html.ui2 header .dev .u2-status:empty { display:none; }
+html.ui2 header .dev .chev { display:inline; grid-column:3; grid-row:1 / span 2; font-size:12px; transition:transform .15s; }
+html.ui2 header .dev.u2-open .chev { transform:rotate(180deg); }
+html.ui2 header .dev .cnt { display:none !important; }
+html.ui2 header .dev.u2-off .spk { color:var(--muted); }
+#u2List #peersCard { margin-top:0; }
+html.ui2 #u2List a.peer { justify-content:flex-start; }
+/* The donate card's lead is a sentence of fact in the preview, not a shout. */
+html.ui2 #lblSupport { text-transform:none; letter-spacing:0; font-size:13px; line-height:1.4; }
+.u2-self { display:flex; align-items:center; gap:8px; min-height:44px; padding:10px; border:1px solid var(--accent); border-radius:8px; background:var(--card2); font-size:14px; }
+.u2-self .u2-pn { flex:1; min-width:0; overflow-wrap:anywhere; font-weight:600; }
+.u2-tag, .u2-offword { flex:none; font-size:12px; color:var(--muted); }
+.u2-offword { margin-inline-start:auto; }
+/* An offline speaker is greyed with --muted, never with opacity, so its name
+   keeps its contrast (docs/UI-2.0.md). */
+html.ui2 #statusCard.offline { opacity:1; }
+html.ui2 #statusCard.offline .now { color:var(--muted); }
+.u2-note p { margin:8px 0 0; font-size:13px; line-height:1.4; }
+.u2-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.u2-btns .btn { flex:1 1 auto; }
+.u2-link { display:inline; position:relative; padding:0; margin:0; background:none; border:0; font:inherit; color:var(--accent); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+.u2-link::after { content:""; position:absolute; left:-6px; right:-6px; top:-11px; bottom:-11px; }
+.grid-note .u2-retry { display:flex; margin-top:8px; }
+.u2-sec { font-size:15px; font-weight:700; color:var(--fg); margin:18px 2px 6px; letter-spacing:.1px; }
+.u2-links { display:flex; flex-wrap:wrap; gap:4px 16px; }
+.u2-links a { display:inline-flex; align-items:center; min-height:44px; color:var(--accent); text-decoration:none; }
+html.ui2 footer .web, html.ui2 footer .ver { display:none; }
+.u2-brand { display:block; font-weight:700; color:var(--fg); }
+.u2-brand span { color:var(--accent); }
+/* The Speakers tab is always there in the preview, alone or not. */
+html.ui2 #tabSpeakers[hidden] { display:flex !important; }
+.tabbar button .ti2 svg { display:block; }
+html.ui2 .tabbar button .ti { display:none; }
 </style>
 <script>
 // Display preferences (text size + theme). Applied to <html> here in <head>,
@@ -537,9 +585,46 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
     try { var v=localStorage.getItem(THEME_KEY); if (v==='dark'||v==='light'||v==='contrast') return v; } catch (e) {}
     return osTheme();
   };
+  // UI 2.0 preview (Aa > Layout). Off unless this phone stored exactly '1';
+  // a phone without storage keeps the current layout and never sees the
+  // choice. Applied here with the theme, so the preview has no flash either.
+  var UI2_KEY='str.ui2Preview';
+  window.ui2Get=function(){
+    try { return localStorage.getItem(UI2_KEY)==='1'; } catch (e) {}
+    return false;
+  };
+  window.ui2Set=function(on){
+    var want=on ? '1' : '0';
+    try { localStorage.setItem(UI2_KEY,want); return localStorage.getItem(UI2_KEY)===want; } catch (e) {}
+    return false;
+  };
+  // Keeping the choice needs a write: a phone whose storage reads but refuses
+  // writes (full, or a locked-down private mode) cannot keep it either. The
+  // probe key is taken out again, so what the phone stored stays as it was.
+  window.ui2CanKeep=function(){
+    try {
+      if (!window.localStorage) return false;
+      var probe='str.ui2Probe';
+      localStorage.setItem(probe,'1');
+      var ok=localStorage.getItem(probe)==='1';
+      localStorage.removeItem(probe);
+      return ok;
+    } catch (e) {}
+    return false;
+  };
+  // A tap on another speaker in the preview's list opens its page with #ui2,
+  // so the layout follows the user from speaker to speaker (each speaker is
+  // its own origin with its own storage). The hash is taken off at once.
+  try {
+    if (location.hash==='#ui2') {
+      window.ui2Set(true);
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  } catch (e) {}
   window.a11yApply=function(){
     var el=document.documentElement;
     el.classList.remove('a11y-scale-l','a11y-scale-xl','a11y-light','a11y-contrast');
+    if (window.ui2Get()) el.classList.add('ui2'); else el.classList.remove('ui2');
     var s=window.a11yGetScale();
     if (s===2) el.classList.add('a11y-scale-l'); else if (s===3) el.classList.add('a11y-scale-xl');
     var t=window.a11yGetTheme();
@@ -560,7 +645,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
 <div class="devwrap">
-<button type="button" class="dev" id="dev"><svg class="spk" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path></svg><span id="devName"></span><span class="chev" aria-hidden="true">&#9662;</span><span class="cnt" id="devCnt" aria-hidden="true"></span></button>
+<button type="button" class="dev" id="dev"><svg class="spk" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"></path><path d="M16.5 8.5a5 5 0 0 1 0 7"></path></svg><span id="devName"></span><span class="u2-status ui2-only" id="u2Status"></span><span class="chev" aria-hidden="true">&#9662;</span><span class="cnt" id="devCnt" aria-hidden="true"></span></button>
 </div>
 <button type="button" class="pwr" id="powerBtn" onclick="togglePower()" aria-label="Power" aria-pressed="true" title="Power"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2.5" x2="12" y2="12"></line><path d="M7.5 6.3a7 7 0 1 0 9 0"></path></svg></button>
 <div class="a11y">
@@ -582,9 +667,19 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <button type="button" data-theme="contrast" aria-pressed="false">High contrast</button>
 </div>
 </div>
+<div class="a11y-group" id="a11yLayoutGroup">
+<div class="a11y-glabel" id="a11yLayoutLabel">Layout</div>
+<div class="a11y-seg" role="group" aria-labelledby="a11yLayoutLabel">
+<button type="button" data-layout="classic" aria-pressed="true">Current</button>
+<button type="button" data-layout="ui2" aria-pressed="false">UI 2.0 preview</button>
+</div>
+</div>
 </div>
 </div>
 </header>
+<!-- UI 2.0 preview: the speaker list, disclosed under the speaker card on
+     every tab. mountUi2 moves #peersCard in here; empty and hidden otherwise. -->
+<div id="u2List" class="ui2-only" hidden></div>
 
 <main>
 
@@ -620,6 +715,10 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <span class="tt" id="trackEl">0:00</span>
 <div class="tbar" id="trackBar"><div class="tfill" id="trackFill"></div></div>
 <span class="tt" id="trackTot"></span>
+</div>
+<div class="u2-note ui2-only" id="u2Offline" role="status" hidden>
+<p id="u2OfflineTxt"></p>
+<div class="u2-btns"><button type="button" class="btn" id="u2Retry">Try again</button><button type="button" class="btn" id="u2ShowList">Switch to another speaker</button></div>
 </div>
 </div>
 
@@ -773,6 +872,8 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 
 <!-- ===================== SPEAKERS ===================== -->
 <section class="panel" id="panelSpeakers" role="tabpanel" aria-labelledby="tabSpeakers" hidden>
+<!-- UI 2.0 preview: a home with one speaker says so here, the tab stays. -->
+<div class="card ui2-only" id="u2OnlyOne" hidden><div class="sum" id="u2OnlyOneTxt" style="margin:0"></div></div>
 
 <div class="card" id="peersCard">
 <div class="label" id="lblPeers">Switch to another speaker</div>
@@ -802,6 +903,10 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div id="musicLibList"></div>
 <div class="msg" id="musicLibMsg"></div>
 </div>
+
+<!-- UI 2.0 preview: this speaker's own settings (bass, find it, display),
+     moved here from More by mountUi2 under a heading that names it. -->
+<div class="ui2-only" id="u2SpkSettings"><h2 class="u2-sec" id="u2SpkHead"></h2></div>
 
 </section>
 
@@ -840,6 +945,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div class="msg" id="dispMsg"></div>
 </div>
 
+<h2 class="u2-sec ui2-only" id="u2lUpdates">Updates</h2>
 <div class="card" id="suCard">
 <div class="label" id="lblSu">Software update</div>
 <div class="sum" id="suStatus"></div>
@@ -853,12 +959,16 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div class="msg" id="suMsg"></div>
 </div>
 
+<h2 class="u2-sec ui2-only" id="u2lHelp">Help and info</h2>
 <div class="card">
 <div class="label" id="lblDiag">Report a problem</div>
 <div class="sum" id="lblDiagSum">Saves a file describing this speaker's state. Send it with your report and I can see what happened.</div>
 <button class="btn" id="btnDiag" style="width:100%"><span id="lblDiagBtn">Save diagnostic file</span></button>
 <div class="msg" id="diagMsg"></div>
+<a class="btn ui2-only" id="u2Issues" href="https://github.com/JRpersonal/streborn/issues" target="_blank" rel="noopener" style="width:100%;margin-top:8px;text-align:center"><span id="u2lIssues">Report on GitHub</span></a>
 <a class="btn" id="lnkVoteIdeas" href="https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop" target="_blank" rel="noopener" style="width:100%;margin-top:8px;text-align:center"><span id="lblVoteIdeas">Vote on what comes next</span></a>
+<a class="btn ui2-only" id="u2Source" href="https://github.com/JRpersonal/streborn" target="_blank" rel="noopener" style="width:100%;margin-top:8px;text-align:center"><span id="u2lSource">Source code</span></a>
+<a class="btn ui2-only" id="u2WorldMap" href="https://st-reborn.de/?share&amp;src=app#community" target="_blank" rel="noopener" style="width:100%;margin-top:8px;text-align:center"><span id="u2lWorldMap">World map</span></a>
 </div>
 
 <div class="card">
@@ -878,7 +988,16 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div id="shareRow" hidden></div>
 </div>
 
+<!-- UI 2.0 preview: About, with the version and the website's legal pages.
+     The footer's own link and version line give way to it in the preview. -->
+<div class="card ui2-only" id="u2About">
+<div class="label" id="u2lAbout">About ST Reborn</div>
+<div class="sum" id="u2Ver" style="margin:0 0 8px"></div>
+<div class="u2-links"><a href="https://st-reborn.de" target="_blank" rel="noopener">st-reborn.de</a><a id="u2Privacy" href="https://st-reborn.de/privacy/" target="_blank" rel="noopener">Privacy</a><a id="u2Imprint" href="https://st-reborn.de/imprint/" target="_blank" rel="noopener">Imprint</a></div>
+</div>
+
 <footer>
+<span class="u2-brand ui2-only">ST <span>Reborn</span></span>
 <a class="web" href="https://st-reborn.de" target="_blank" rel="noopener">st-reborn.de</a>
 <span class="love" id="lblMadeWith">Made with &#9829; in Germany</span>
 <span class="ver" id="ver"></span>
@@ -890,10 +1009,10 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 </main>
 
 <nav class="tabbar" role="tablist" aria-label="Sections">
-<button type="button" id="tabPlay" role="tab" aria-selected="true" aria-controls="panelPlay" data-tab="Play"><span class="ti" aria-hidden="true">&#9654;&#65039;</span><span class="tl" id="tlPlay">Play</span></button>
-<button type="button" id="tabBrowse" role="tab" aria-selected="false" aria-controls="panelBrowse" data-tab="Browse"><span class="ti" aria-hidden="true">&#128269;</span><span class="tl" id="tlBrowse">Find</span></button>
-<button type="button" id="tabSpeakers" role="tab" aria-selected="false" aria-controls="panelSpeakers" data-tab="Speakers" hidden><span class="ti" aria-hidden="true">&#128266;</span><span class="tl" id="tlSpeakers">Speakers</span><span class="tabdot" id="tabDot" hidden></span></button>
-<button type="button" id="tabMore" role="tab" aria-selected="false" aria-controls="panelMore" data-tab="More"><span class="ti" aria-hidden="true">&#9776;</span><span class="tl" id="tlMore">More</span></button>
+<button type="button" id="tabPlay" role="tab" aria-selected="true" aria-controls="panelPlay" data-tab="Play"><span class="ti2 ui2-only" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v-5a8 8 0 0 1 16 0v5"></path><path d="M20 18a2 2 0 0 1-2 2h-1v-6h3zM4 18a2 2 0 0 0 2 2h1v-6H4z"></path></svg></span><span class="ti" aria-hidden="true">&#9654;&#65039;</span><span class="tl" id="tlPlay">Play</span></button>
+<button type="button" id="tabBrowse" role="tab" aria-selected="false" aria-controls="panelBrowse" data-tab="Browse"><span class="ti2 ui2-only" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="20" y1="20" x2="16" y2="16"></line></svg></span><span class="ti" aria-hidden="true">&#128269;</span><span class="tl" id="tlBrowse">Find</span></button>
+<button type="button" id="tabSpeakers" role="tab" aria-selected="false" aria-controls="panelSpeakers" data-tab="Speakers" hidden><span class="ti2 ui2-only" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2"></rect><circle cx="12" cy="14.5" r="3.5"></circle><line x1="12" y1="6.5" x2="12" y2="6.6"></line></svg></span><span class="ti" aria-hidden="true">&#128266;</span><span class="tl" id="tlSpeakers">Speakers</span><span class="tabdot" id="tabDot" hidden></span></button>
+<button type="button" id="tabMore" role="tab" aria-selected="false" aria-controls="panelMore" data-tab="More"><span class="ti2 ui2-only" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="11" x2="12" y2="16.5"></line><line x1="12" y1="7.5" x2="12" y2="7.6"></line></svg></span><span class="ti" aria-hidden="true">&#9776;</span><span class="tl" id="tlMore">More</span></button>
 </nav>
 
 <script>
@@ -987,6 +1106,8 @@ function pickDict(){
   for (var k2 in base2) out[k2] = (sel2[k2] != null ? sel2[k2] : base2[k2]);
   var base3 = I18N3.en, sel3 = I18N3[code] || base3;
   for (var k3 in base3) out[k3] = (sel3[k3] != null ? sel3[k3] : base3[k3]);
+  var base4 = I18N4.en, sel4 = I18N4[code] || base4;
+  for (var k4 in base4) out[k4] = (sel4[k4] != null ? sel4[k4] : base4[k4]);
   return out;
 }
 // A third dictionary with short lines: one locale per line and only a few
@@ -1007,7 +1128,26 @@ var I18N3 = {
   lv:{suGrpAllNote:"Grupā esošie skaļruņi pamet savu grupu, kamēr tie atjauninājumam tiek restartēti. Pastāvīga grupa atgriežas pati. Jebkura cita grupa pēc tam būs jāizveido no jauna ar pogu + blakus skaļruņiem sadaļā “Skaļruņi un grupas”."},
   uk:{suGrpAllNote:"Динаміки в групі виходять зі своєї групи, поки перезапускаються для оновлення. Постійна група повертається сама. Будь-яку іншу групу потім доведеться створити знову кнопкою + біля динаміків у розділі «Динаміки та групи»."},
 };
+// A fourth dictionary for the UI 2.0 preview (Aa > Layout), one locale per
+// line like I18N3. Only preview code reads these keys; pickDict merges them
+// with the same per-key English fall-through.
+var I18N4 = {
+  en:{tListen:"Listen",tSpk2:"Speakers",keysOn:"Keys on {{name}}",findSumOn:"Search the worldwide station directory and play it on {{name}}.",offlineOn:"{{name}} is not answering right now. Check that it has power and is on your Wi-Fi, or pick another speaker from the list at the top.",tryAgain:"Try again",noKeysOn:"No keys are saved on {{name}} yet. Play a station, then hold a key to save it there.",onlyOne:"Only {{name}} so far. Other speakers with ST Reborn on the same network show up here by themselves.",helpInfo:"Help and info",updates:"Updates",issues:"Report on GitHub",source:"Source code",worldMap:"World map",supportLead:"ST Reborn is free and open source. It is funded by donations.",about:"About ST Reborn",privacy:"Privacy",imprint:"Imprint",offlineWord:"Offline",withNames:"with {{names}}",stereoTag:"(stereo)",checkingNow:"Checking…",stillOffOn:"{{name}} is still not answering. Check that it has power and is on your Wi-Fi, or pick another speaker from the list at the top."},
+  de:{tListen:"Hören",tSpk2:"Lautsprecher",keysOn:"Tasten auf {{name}}",findSumOn:"Durchsuche das weltweite Senderverzeichnis und spiel den Sender auf {{name}} ab.",offlineOn:"{{name}} antwortet gerade nicht. Prüf, ob er Strom hat und im WLAN ist, oder wähl oben in der Liste einen anderen Lautsprecher.",tryAgain:"Erneut versuchen",noKeysOn:"Auf {{name}} sind noch keine Tasten belegt. Spiel einen Sender und halte dann eine Taste gedrückt, um ihn dort zu speichern.",onlyOne:"Bisher nur {{name}}. Weitere Lautsprecher mit ST Reborn im selben Netzwerk erscheinen hier von selbst.",helpInfo:"Hilfe und Infos",updates:"Updates",issues:"Auf GitHub melden",source:"Quellcode",worldMap:"Weltkarte",supportLead:"ST Reborn ist kostenlos und quelloffen. Es wird durch Spenden finanziert.",about:"Über ST Reborn",privacy:"Datenschutz",imprint:"Impressum",offlineWord:"Offline",withNames:"mit {{names}}",stereoTag:"(Stereo)",checkingNow:"Wird geprüft…",stillOffOn:"{{name}} antwortet immer noch nicht. Prüf, ob er Strom hat und im WLAN ist, oder wähl oben in der Liste einen anderen Lautsprecher."},
+  nl:{tListen:"Luisteren",tSpk2:"Speakers",keysOn:"Toetsen op {{name}}",findSumOn:"Doorzoek de wereldwijde zenderlijst en speel de zender af op {{name}}.",offlineOn:"{{name}} reageert nu niet. Controleer of hij stroom heeft en op je wifi zit, of kies bovenaan in de lijst een andere speaker.",tryAgain:"Opnieuw proberen",noKeysOn:"Op {{name}} zijn nog geen toetsen opgeslagen. Speel een zender en houd dan een toets ingedrukt om hem daar op te slaan.",onlyOne:"Tot nu toe alleen {{name}}. Andere speakers met ST Reborn op hetzelfde netwerk verschijnen hier vanzelf.",helpInfo:"Hulp en info",updates:"Updates",issues:"Melden op GitHub",source:"Broncode",worldMap:"Wereldkaart",supportLead:"ST Reborn is gratis en open source. Het wordt betaald uit donaties.",about:"Over ST Reborn",privacy:"Privacy",imprint:"Colofon",offlineWord:"Offline",withNames:"met {{names}}",stereoTag:"(stereo)",checkingNow:"Bezig met controleren…",stillOffOn:"{{name}} reageert nog steeds niet. Controleer of hij stroom heeft en op je wifi zit, of kies bovenaan in de lijst een andere speaker."},
+  fr:{tListen:"Écouter",tSpk2:"Enceintes",keysOn:"Touches de {{name}}",findSumOn:"Cherchez dans l'annuaire mondial des stations et écoutez-la sur {{name}}.",offlineOn:"{{name}} ne répond pas pour le moment. Vérifiez qu'elle est alimentée et connectée à votre Wi-Fi, ou choisissez une autre enceinte dans la liste en haut.",tryAgain:"Réessayer",noKeysOn:"Aucune touche n'est encore enregistrée sur {{name}}. Lancez une station, puis maintenez une touche pour l'y enregistrer.",onlyOne:"Seulement {{name}} pour l'instant. Les autres enceintes avec ST Reborn sur le même réseau apparaissent ici d'elles-mêmes.",helpInfo:"Aide et infos",updates:"Mises à jour",issues:"Signaler sur GitHub",source:"Code source",worldMap:"Carte du monde",supportLead:"ST Reborn est gratuit et open source. Il est financé par des dons.",about:"À propos de ST Reborn",privacy:"Confidentialité",imprint:"Mentions légales",offlineWord:"Hors ligne",withNames:"avec {{names}}",stereoTag:"(stéréo)",checkingNow:"Vérification…",stillOffOn:"{{name}} ne répond toujours pas. Vérifiez qu'elle est alimentée et connectée à votre Wi-Fi, ou choisissez une autre enceinte dans la liste en haut."},
+  es:{tListen:"Escuchar",tSpk2:"Altavoces",keysOn:"Teclas de {{name}}",findSumOn:"Busca en el directorio mundial de emisoras y reprodúcela en {{name}}.",offlineOn:"{{name}} no responde ahora mismo. Comprueba que tiene corriente y está en tu wifi, o elige otro altavoz en la lista de arriba.",tryAgain:"Reintentar",noKeysOn:"Todavía no hay teclas guardadas en {{name}}. Pon una emisora y mantén pulsada una tecla para guardarla ahí.",onlyOne:"Por ahora solo {{name}}. Otros altavoces con ST Reborn en la misma red aparecen aquí solos.",helpInfo:"Ayuda e información",updates:"Actualizaciones",issues:"Informar en GitHub",source:"Código fuente",worldMap:"Mapa mundial",supportLead:"ST Reborn es gratuito y de código abierto. Se financia con donaciones.",about:"Acerca de ST Reborn",privacy:"Privacidad",imprint:"Aviso legal",offlineWord:"Sin conexión",withNames:"con {{names}}",stereoTag:"(estéreo)",checkingNow:"Comprobando…",stillOffOn:"{{name}} sigue sin responder. Comprueba que tiene corriente y está en tu wifi, o elige otro altavoz en la lista de arriba."},
+  pl:{tListen:"Słuchaj",tSpk2:"Głośniki",keysOn:"Przyciski: {{name}}",findSumOn:"Przeszukaj światowy katalog stacji i odtwórz stację na {{name}}.",offlineOn:"{{name}} w tej chwili nie odpowiada. Sprawdź, czy ma zasilanie i jest w Twojej sieci Wi-Fi, albo wybierz inny głośnik z listy na górze.",tryAgain:"Spróbuj ponownie",noKeysOn:"Na {{name}} nie ma jeszcze zapisanych przycisków. Włącz stację, a potem przytrzymaj przycisk, aby ją na nim zapisać.",onlyOne:"Na razie tylko {{name}}. Inne głośniki z ST Reborn w tej samej sieci pojawią się tutaj same.",helpInfo:"Pomoc i informacje",updates:"Aktualizacje",issues:"Zgłoś na GitHubie",source:"Kod źródłowy",worldMap:"Mapa świata",supportLead:"ST Reborn jest darmowy i ma otwarty kod źródłowy. Utrzymuje się z darowizn.",about:"O ST Reborn",privacy:"Prywatność",imprint:"Nota prawna",offlineWord:"Offline",withNames:"z {{names}}",stereoTag:"(stereo)",checkingNow:"Sprawdzanie…",stillOffOn:"{{name}} nadal nie odpowiada. Sprawdź, czy ma zasilanie i jest w Twojej sieci Wi-Fi, albo wybierz inny głośnik z listy na górze."},
+  tr:{tListen:"Dinle",tSpk2:"Hoparlörler",keysOn:"Tuşlar: {{name}}",findSumOn:"Dünya çapındaki istasyon dizininde arayın ve istasyonu {{name}} üzerinde çalın.",offlineOn:"{{name}} şu anda yanıt vermiyor. Elektriğe ve Wi-Fi ağına bağlı olduğunu kontrol edin ya da üstteki listeden başka bir hoparlör seçin.",tryAgain:"Tekrar deneyin",noKeysOn:"{{name}} üzerinde henüz kayıtlı tuş yok. Bir istasyon çalın, sonra oraya kaydetmek için bir tuşu basılı tutun.",onlyOne:"Şimdilik yalnızca {{name}}. Aynı ağda ST Reborn çalıştıran diğer hoparlörler burada kendiliğinden görünür.",helpInfo:"Yardım ve bilgi",updates:"Güncellemeler",issues:"GitHub'da bildirin",source:"Kaynak kodu",worldMap:"Dünya haritası",supportLead:"ST Reborn ücretsiz ve açık kaynaklıdır. Bağışlarla finanse edilir.",about:"ST Reborn hakkında",privacy:"Gizlilik",imprint:"Künye",offlineWord:"Çevrimdışı",withNames:"{{names}} ile",stereoTag:"(stereo)",checkingNow:"Kontrol ediliyor…",stillOffOn:"{{name}} hâlâ yanıt vermiyor. Elektriğe ve Wi-Fi ağına bağlı olduğunu kontrol edin ya da üstteki listeden başka bir hoparlör seçin."},
+  ar:{tListen:"استماع",tSpk2:"السمّاعات",keysOn:"أزرار {{name}}",findSumOn:"ابحث في دليل المحطات العالمي وشغّل المحطة على {{name}}.",offlineOn:"{{name}} لا تستجيب الآن. تأكّد من أنها موصولة بالكهرباء ومتصلة بشبكة Wi-Fi، أو اختر سمّاعة أخرى من القائمة في الأعلى.",tryAgain:"حاول مرة أخرى",noKeysOn:"لا توجد أزرار محفوظة على {{name}} بعد. شغّل محطة، ثم اضغط مطولًا على زر لحفظها عليه.",onlyOne:"{{name}} فقط حتى الآن. تظهر هنا تلقائيًا السمّاعات الأخرى التي تعمل بـ ST Reborn على الشبكة نفسها.",helpInfo:"المساعدة والمعلومات",updates:"التحديثات",issues:"الإبلاغ على GitHub",source:"الشيفرة المصدرية",worldMap:"خريطة العالم",supportLead:"ST Reborn مجاني ومفتوح المصدر. ويُموَّل من التبرعات.",about:"حول ST Reborn",privacy:"الخصوصية",imprint:"بيانات الناشر",offlineWord:"غير متصلة",withNames:"مع {{names}}",stereoTag:"(ستيريو)",checkingNow:"جارٍ التحقق…",stillOffOn:"{{name}} لا تزال لا تستجيب. تأكّد من أنها موصولة بالكهرباء ومتصلة بشبكة Wi-Fi، أو اختر سمّاعة أخرى من القائمة في الأعلى."},
+  ja:{tListen:"聴く",tSpk2:"スピーカー",keysOn:"{{name}} のキー",findSumOn:"世界中の放送局ディレクトリを検索して、{{name}}で再生します。",offlineOn:"{{name}}は現在応答していません。電源が入っていてWi-Fiにつながっているか確認するか、上のリストから別のスピーカーを選んでください。",tryAgain:"もう一度試す",noKeysOn:"{{name}}にはまだキーが保存されていません。放送局を再生してから、キーを長押しして保存してください。",onlyOne:"今のところ{{name}}だけです。同じネットワークでST Rebornを使う他のスピーカーは、ここに自動で表示されます。",helpInfo:"ヘルプと情報",updates:"アップデート",issues:"GitHubで報告",source:"ソースコード",worldMap:"世界地図",supportLead:"ST Rebornは無料のオープンソースです。寄付で運営されています。",about:"ST Rebornについて",privacy:"プライバシー",imprint:"運営者情報",offlineWord:"オフライン",withNames:"{{names}}と一緒",stereoTag:"(ステレオ)",checkingNow:"確認中…",stillOffOn:"{{name}}はまだ応答していません。電源が入っていてWi-Fiにつながっているか確認するか、上のリストから別のスピーカーを選んでください。"},
+  lt:{tListen:"Klausytis",tSpk2:"Garsiakalbiai",keysOn:"Mygtukai: {{name}}",findSumOn:"Ieškokite pasauliniame stočių kataloge ir paleiskite stotį per {{name}}.",offlineOn:"{{name}} šiuo metu neatsako. Patikrinkite, ar jis įjungtas į elektros tinklą ir prisijungęs prie Wi-Fi, arba pasirinkite kitą garsiakalbį iš sąrašo viršuje.",tryAgain:"Bandyti dar kartą",noKeysOn:"{{name}} dar neturi išsaugotų mygtukų. Paleiskite stotį, tada palaikykite mygtuką, kad ją ten išsaugotumėte.",onlyOne:"Kol kas tik {{name}}. Kiti garsiakalbiai su ST Reborn tame pačiame tinkle čia atsiras patys.",helpInfo:"Pagalba ir informacija",updates:"Atnaujinimai",issues:"Pranešti per GitHub",source:"Šaltinio kodas",worldMap:"Pasaulio žemėlapis",supportLead:"ST Reborn yra nemokamas ir atvirojo kodo. Jis finansuojamas iš aukų.",about:"Apie ST Reborn",privacy:"Privatumas",imprint:"Rekvizitai",offlineWord:"Neprisijungęs",withNames:"su {{names}}",stereoTag:"(stereo)",checkingNow:"Tikrinama…",stillOffOn:"{{name}} vis dar neatsako. Patikrinkite, ar jis įjungtas į elektros tinklą ir prisijungęs prie Wi-Fi, arba pasirinkite kitą garsiakalbį iš sąrašo viršuje."},
+  lv:{tListen:"Klausīties",tSpk2:"Skaļruņi",keysOn:"Pogas: {{name}}",findSumOn:"Meklē pasaules staciju katalogā un atskaņo staciju ierīcē {{name}}.",offlineOn:"{{name}} pašlaik neatbild. Pārbaudi, vai tam ir strāva un tas ir pievienots Wi-Fi, vai izvēlies citu skaļruni sarakstā augšpusē.",tryAgain:"Mēģināt vēlreiz",noKeysOn:"Ierīcē {{name}} vēl nav saglabātu pogu. Atskaņo staciju un tad turi nospiestu pogu, lai to tur saglabātu.",onlyOne:"Pagaidām tikai {{name}}. Citi skaļruņi ar ST Reborn tajā pašā tīklā šeit parādīsies paši.",helpInfo:"Palīdzība un informācija",updates:"Atjauninājumi",issues:"Ziņot GitHub",source:"Pirmkods",worldMap:"Pasaules karte",supportLead:"ST Reborn ir bezmaksas un atvērtā koda. To finansē ziedojumi.",about:"Par ST Reborn",privacy:"Privātums",imprint:"Rekvizīti",offlineWord:"Bezsaistē",withNames:"ar {{names}}",stereoTag:"(stereo)",checkingNow:"Pārbauda…",stillOffOn:"{{name}} joprojām neatbild. Pārbaudi, vai tam ir strāva un tas ir pievienots Wi-Fi, vai izvēlies citu skaļruni sarakstā augšpusē."},
+  uk:{tListen:"Слухати",tSpk2:"Колонки",keysOn:"Кнопки: {{name}}",findSumOn:"Шукайте у світовому каталозі станцій і вмикайте станцію на {{name}}.",offlineOn:"{{name}} зараз не відповідає. Перевірте, чи є живлення і чи підключено до Wi-Fi, або виберіть іншу колонку зі списку вгорі.",tryAgain:"Спробувати ще раз",noKeysOn:"На {{name}} ще немає збережених кнопок. Увімкніть станцію, а потім утримуйте кнопку, щоб зберегти її туди.",onlyOne:"Поки що лише {{name}}. Інші колонки з ST Reborn у тій самій мережі з'являться тут самі.",helpInfo:"Довідка та інформація",updates:"Оновлення",issues:"Повідомити на GitHub",source:"Вихідний код",worldMap:"Карта світу",supportLead:"ST Reborn безкоштовний і має відкритий код. Він існує завдяки пожертвам.",about:"Про ST Reborn",privacy:"Конфіденційність",imprint:"Вихідні дані",offlineWord:"Не в мережі",withNames:"з {{names}}",stereoTag:"(стерео)",checkingNow:"Перевіряємо…",stillOffOn:"{{name}} досі не відповідає. Перевірте, чи є живлення і чи підключено до Wi-Fi, або виберіть іншу колонку зі списку вгорі."}
+};
 var T = pickDict();
+// The UI 2.0 preview switch, read once (the head script set html.ui2 from it).
+var ui2On = !!(window.ui2Get && window.ui2Get());
 // fmt fills {n}/{name} placeholders. Values are inserted as TEXT by every
 // caller, never as markup.
 // boxLang is the speaker's own display language as a two-letter code, or ''
@@ -1116,6 +1256,7 @@ function applyStaticI18n() {
   var bs = document.getElementById('btnSearch'); if (bs) bs.setAttribute('aria-label', T.searchBtn);
   var bd = document.getElementById('btnDiag'); if (bd) bd.setAttribute('aria-label', T.diagBtn);
   buildShareButtons();
+  if (ui2On) ui2ApplyI18n();
 }
 
 // Recommend STR (phone remote). No share targets are listed here: the agent
@@ -2180,6 +2321,7 @@ async function loadPresets() {
     lastPresetSig = null;
     grid.classList.add('has-note');
     grid.innerHTML = '<div class="grid-note">' + escapeHtml(T.offline) + '</div>';
+    if (ui2On) ui2GridNote(grid, 'offline');
     return;
   }
   const list = Array.isArray(raw) ? raw : [];
@@ -2331,6 +2473,7 @@ function renderPresetGrid() {
     // words, because six dashed tiles alone read like a page that failed to
     // load (#882: "the remote shows all presets empty").
     grid.innerHTML = '<div class="grid-note">' + escapeHtml(T.noPresets) + '</div>';
+    if (ui2On) ui2GridNote(grid, 'empty');
   }
   rowSlots(row).forEach(function (i) {
     const p = list.find(x => x.slot === i);
@@ -2905,6 +3048,7 @@ function playRefusal(detail) {
 // the old message went, and it is why "no error message appears" is a fair
 // description of what the reporter saw.
 function showPlayNotice(msg) {
+  if (ui2On) ui2FindNotice(msg);
   var card = document.getElementById('moveCard');
   if (!card) { setNow(T.cantStart, msg); return; }
   card.innerHTML = '';
@@ -3261,6 +3405,7 @@ async function refreshStatus() {
       setNow(T.offline || 'The speaker is not reachable right now.', '');
       var sc = document.getElementById('statusCard');
       if (sc) sc.classList.add('offline');
+      if (ui2On) ui2ShowOffline(true);
     }
     return;
   }
@@ -3284,6 +3429,7 @@ async function refreshStatus() {
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
   applyTransportUI(state);
+  if (ui2On) ui2NoteState(state, src);
   // INVALID_PLAY_STATUS is what a speaker reports while it has no transport at
   // all, e.g. during Bluetooth pairing. It is a state like the others, so it
   // belongs in the map rather than in a fallback (#961).
@@ -3493,6 +3639,11 @@ function queueGroupOp(key, fn, btn) {
   if (btn) { btn.textContent = '···'; btn.disabled = true; }
   groupChain = groupChain.then(fn).catch(function(){}).then(function(){
     delete groupBusy[key];
+    // The preview's list under the speaker card rebuilds only on a change it
+    // can see; an edit that changed nothing (refused, not shown yet) would
+    // leave this button on its busy mark. Forget the list's signature so the
+    // next paint draws every row, and its buttons, again.
+    ui2PeersSig = null;
     return loadZone().catch(function(){});
   }).then(function(){ return loadPeers().catch(function(){}); });
   return groupChain;
@@ -3541,6 +3692,7 @@ function peerBtn(p) {
   if (online) { a.href = p.url; }
   else { a.setAttribute('aria-disabled', 'true'); a.style.opacity = '0.5'; a.style.pointerEvents = 'none'; a.title = (p.name || p.url); }
   a.innerHTML = '<span class="dot"' + (online ? '' : ' style="background:#9ca3af"') + '></span>' + escapeHtml(p.name || p.url);
+  if (ui2On) ui2PeerLook(a, p, online);
   return a;
 }
 
@@ -3565,11 +3717,14 @@ async function loadPeers() {
   // Forward-compatible: the /api/peers endpoint is added with the peer-browse
   // step; until then this 404s and the section stays hidden.
   const list = await api('/api/peers');
+  // UI 2.0 preview: no answer is not "no speakers"; the list stays as it was.
+  if (ui2On && list == null) return;
   peersList = list || [];
   // The group card offers the joinable ones too, so it has to follow a peer
   // appearing or going away.
   try { renderGroupAdd(); } catch (e) {}
   renderDevMenu();
+  if (ui2On) { ui2PeersKnown = true; ui2PaintPeers(); return; }
   // A home with one speaker gets three tabs, not four. A tab that can only ever
   // say "there is nothing here" is worse than no tab: it invites a tap, answers
   // nothing, and teaches the user that the bar is not worth exploring. It
@@ -3598,6 +3753,7 @@ async function loadVersion() {
   const v = await api('/api/agent/version');
   notePresetRows(v);
   if (v && v.version) document.getElementById('ver').textContent = 'ST Reborn ' + v.version;
+  if (ui2On && v && v.version) { var u2v = document.getElementById('u2Ver'); if (u2v) u2v.textContent = 'ST Reborn ' + v.version; }
 }
 
 // Wire the "Aa" display-options menu. The preferences are applied instantly by
@@ -3612,18 +3768,18 @@ async function loadVersion() {
   // the top of this script; this dictionary covers only the "Aa" menu. Done
   // client-side from navigator.language, so it costs the speaker nothing.
   var A11Y_I18N = {
-    en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast"},
-    de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast"},
-    nl:{t:"Weergave en toegankelijkheid",sz:"Tekstgrootte",n:"Normaal",l:"Groot",x:"Extra groot",th:"Thema",d:"Donker",li:"Licht",c:"Hoog contrast"},
-    fr:{t:"Affichage et accessibilité",sz:"Taille du texte",n:"Normale",l:"Grande",x:"Très grande",th:"Thème",d:"Sombre",li:"Clair",c:"Contraste élevé"},
-    es:{t:"Pantalla y accesibilidad",sz:"Tamaño del texto",n:"Normal",l:"Grande",x:"Muy grande",th:"Tema",d:"Oscuro",li:"Claro",c:"Alto contraste"},
-    pl:{t:"Wyświetlanie i dostępność",sz:"Rozmiar tekstu",n:"Normalny",l:"Duży",x:"Bardzo duży",th:"Motyw",d:"Ciemny",li:"Jasny",c:"Wysoki kontrast"},
-    tr:{t:"Görüntü ve erişilebilirlik",sz:"Yazı boyutu",n:"Normal",l:"Büyük",x:"Çok büyük",th:"Tema",d:"Koyu",li:"Açık",c:"Yüksek kontrast"},
-    ar:{t:"العرض وإمكانية الوصول",sz:"حجم النص",n:"عادي",l:"كبير",x:"كبير جدًا",th:"السمة",d:"داكن",li:"فاتح",c:"تباين عالٍ"},
-    ja:{t:"表示とアクセシビリティ",sz:"文字サイズ",n:"標準",l:"大",x:"特大",th:"テーマ",d:"ダーク",li:"ライト",c:"ハイコントラスト"},
-    lt:{t:"Rodymas ir prieinamumas",sz:"Teksto dydis",n:"Normalus",l:"Didelis",x:"Labai didelis",th:"Tema",d:"Tamsi",li:"Šviesi",c:"Didelis kontrastas"},
-    lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts"},
-    uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст"}
+    en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast",ly:"Layout",lc:"Current",ln:"UI 2.0 preview"},
+    de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast",ly:"Layout",lc:"Aktuell",ln:"Vorschau UI 2.0"},
+    nl:{t:"Weergave en toegankelijkheid",sz:"Tekstgrootte",n:"Normaal",l:"Groot",x:"Extra groot",th:"Thema",d:"Donker",li:"Licht",c:"Hoog contrast",ly:"Indeling",lc:"Huidig",ln:"UI 2.0-voorvertoning"},
+    fr:{t:"Affichage et accessibilité",sz:"Taille du texte",n:"Normale",l:"Grande",x:"Très grande",th:"Thème",d:"Sombre",li:"Clair",c:"Contraste élevé",ly:"Disposition",lc:"Actuelle",ln:"Aperçu UI 2.0"},
+    es:{t:"Pantalla y accesibilidad",sz:"Tamaño del texto",n:"Normal",l:"Grande",x:"Muy grande",th:"Tema",d:"Oscuro",li:"Claro",c:"Alto contraste",ly:"Diseño",lc:"Actual",ln:"Vista previa de UI 2.0"},
+    pl:{t:"Wyświetlanie i dostępność",sz:"Rozmiar tekstu",n:"Normalny",l:"Duży",x:"Bardzo duży",th:"Motyw",d:"Ciemny",li:"Jasny",c:"Wysoki kontrast",ly:"Układ",lc:"Obecny",ln:"Podgląd UI 2.0"},
+    tr:{t:"Görüntü ve erişilebilirlik",sz:"Yazı boyutu",n:"Normal",l:"Büyük",x:"Çok büyük",th:"Tema",d:"Koyu",li:"Açık",c:"Yüksek kontrast",ly:"Düzen",lc:"Mevcut",ln:"UI 2.0 önizlemesi"},
+    ar:{t:"العرض وإمكانية الوصول",sz:"حجم النص",n:"عادي",l:"كبير",x:"كبير جدًا",th:"السمة",d:"داكن",li:"فاتح",c:"تباين عالٍ",ly:"التخطيط",lc:"الحالي",ln:"معاينة UI 2.0"},
+    ja:{t:"表示とアクセシビリティ",sz:"文字サイズ",n:"標準",l:"大",x:"特大",th:"テーマ",d:"ダーク",li:"ライト",c:"ハイコントラスト",ly:"レイアウト",lc:"現在",ln:"UI 2.0 プレビュー"},
+    lt:{t:"Rodymas ir prieinamumas",sz:"Teksto dydis",n:"Normalus",l:"Didelis",x:"Labai didelis",th:"Tema",d:"Tamsi",li:"Šviesi",c:"Didelis kontrastas",ly:"Išdėstymas",lc:"Dabartinis",ln:"UI 2.0 peržiūra"},
+    lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts",ly:"Izkārtojums",lc:"Pašreizējais",ln:"UI 2.0 priekšskatījums"},
+    uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст",ly:"Макет",lc:"Поточний",ln:"Попередній перегляд UI 2.0"}
   };
   // The SPEAKER's language comes first when it is known. The owner set it in
   // the app, it is the same for everybody in the household, and the phone is
@@ -3647,6 +3803,12 @@ async function loadVersion() {
   var setTxt = function(sel, v) { var el = menu.querySelector(sel); if (el) el.textContent = v; };
   setTxt('button[data-scale="1"]', L.n); setTxt('button[data-scale="2"]', L.l); setTxt('button[data-scale="3"]', L.x);
   setTxt('button[data-theme="dark"]', L.d); setTxt('button[data-theme="light"]', L.li); setTxt('button[data-theme="contrast"]', L.c);
+  // Layout: the UI 2.0 preview switch. Hidden on a phone that cannot keep the
+  // choice (no storage), since a tap there could never hold.
+  var lyGroup = document.getElementById('a11yLayoutGroup');
+  document.getElementById('a11yLayoutLabel').textContent = L.ly;
+  setTxt('button[data-layout="classic"]', L.lc); setTxt('button[data-layout="ui2"]', L.ln);
+  if (lyGroup && !(window.ui2CanKeep && window.ui2CanKeep())) lyGroup.hidden = true;
   function close() { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
   function open() { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); }
   trigger.onclick = function(e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
@@ -3661,8 +3823,20 @@ async function loadVersion() {
   menu.querySelectorAll('button[data-theme]').forEach(function(b) {
     b.onclick = function() { a11ySetTheme(b.dataset.theme); sync('data-theme', b.dataset.theme); };
   });
+  // The new layout is a reload, like the desktop's: only when the choice was
+  // really stored, so the page never claims a layout it cannot keep. A write
+  // refused after all takes the group away, as for a phone that never could.
+  menu.querySelectorAll('button[data-layout]').forEach(function(b) {
+    b.onclick = function() {
+      var on = b.dataset.layout === 'ui2';
+      if (on === !!(window.ui2Get && window.ui2Get())) { close(); return; }
+      if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }
+      if (lyGroup) lyGroup.hidden = true;
+    };
+  });
   sync('data-scale', a11yGetScale());
   sync('data-theme', a11yGetTheme());
+  sync('data-layout', (window.ui2Get && window.ui2Get()) ? 'ui2' : 'classic');
   document.addEventListener('click', function(e) { if (!e.target.closest('.a11y')) close(); });
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
@@ -3673,6 +3847,7 @@ async function loadVersion() {
   var btn = document.getElementById('dev');
   if (!btn) return;
   btn.addEventListener('click', function() {
+    if (ui2On) { ui2ToggleList(); return; }
     if (!btn.classList.contains('haspeers')) return;
     showTab('Speakers');
     // The switch list is the first card, but the tab may have been left
@@ -3732,6 +3907,288 @@ document.addEventListener('visibilitychange', function(){
 })();
 
 /* ===========================================================================
+   UI 2.0 preview (Aa > Layout, localStorage str.ui2Preview, off by default)
+
+   The phone remote in the structure of docs/UI-2.0.md: the speaker card on
+   top with the speaker list under it on every tab, then Listen, Find,
+   Speakers and More, which is Help and info. Nothing here runs unless ui2On:
+   every caller is a single `if (ui2On) ...` line, and the elements it fills
+   carry .ui2-only, which does not render without html.ui2. So with the
+   switch off the page is exactly the current remote.
+
+   Rules it keeps: the speaker is always named; a state is said in words, not
+   only dimmed; a problem shows where it happens; nothing disappears (no
+   answer keeps the speaker list, an offline speaker stays in it).
+   =========================================================================== */
+var ui2Mounted = false;
+var ui2PeersKnown = false; // a real /api/peers answer arrived
+var ui2PeersSig = null;
+var ui2State = { st: '', src: '', offline: false };
+
+// mountUi2 reparents the cards once, from the boot line. Only cards inside
+// panels that are hidden at boot move, so nothing visible jumps.
+function mountUi2() {
+  if (ui2Mounted) return;
+  ui2Mounted = true;
+  var g = function(id){ return document.getElementById(id); };
+  var list = g('u2List'), peers = g('peersCard');
+  if (list && peers) list.appendChild(peers); // one list, moved, never copied
+  var box = g('u2SpkSettings');
+  if (box) ['bassCard', 'identCard', 'dispCard'].forEach(function(id){ var c = g(id); if (c) box.appendChild(c); });
+  var tab = g('tabSpeakers'); if (tab) tab.hidden = false;
+  var dev = g('dev');
+  if (dev) { dev.setAttribute('aria-expanded', 'false'); dev.setAttribute('aria-controls', 'u2List'); }
+  var retry = g('u2Retry'); if (retry) retry.addEventListener('click', function(){ ui2Retry(retry); });
+  var show = g('u2ShowList'); if (show) show.addEventListener('click', function(){ ui2ToggleList(true, true); });
+  ui2PaintPeers();
+}
+
+// ui2Name is the name this page controls: the pair's own name for a stereo
+// pair, else the speaker's, else the page title the agent wrote it into.
+function ui2Name() {
+  if (zone.stereo && zone.pairName) return zone.pairName;
+  if (lastBoxName) return lastBoxName;
+  var t = String(document.title || '');
+  return t && t !== 'ST Reborn' ? t : '';
+}
+
+function ui2ApplyI18n() {
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('tlPlay', T.tListen); set('tlSpeakers', T.tSpk2);
+  var tp = document.getElementById('tabPlay'); if (tp) tp.setAttribute('aria-label', T.tListen);
+  var ts = document.getElementById('tabSpeakers'); if (ts) ts.setAttribute('aria-label', T.tSpk2);
+  set('u2lUpdates', T.updates); set('u2lHelp', T.helpInfo);
+  set('u2lIssues', T.issues); set('u2lSource', T.source); set('u2lWorldMap', T.worldMap);
+  set('u2lAbout', T.about); set('u2Privacy', T.privacy); set('u2Imprint', T.imprint);
+  set('u2Retry', T.tryAgain); set('u2ShowList', T.swSpk);
+  // The donate card states a fact instead of asking.
+  set('lblSupport', T.supportLead);
+  var lang = document.documentElement.lang || 'en';
+  var wm = document.getElementById('u2WorldMap');
+  if (wm) wm.href = 'https://st-reborn.de' + (lang === 'en' ? '' : '/' + lang) + '/?share&src=app#community';
+  var pv = document.getElementById('u2Privacy');
+  if (pv) pv.href = lang === 'de' ? 'https://st-reborn.de/de/datenschutz/' : 'https://st-reborn.de/privacy/';
+  var im = document.getElementById('u2Imprint');
+  if (im) im.href = lang === 'de' ? 'https://st-reborn.de/de/impressum/' : 'https://st-reborn.de/imprint/';
+  // The card reads out the name and its state; no generic label over it.
+  var dev = document.getElementById('dev'); if (dev) dev.removeAttribute('aria-label');
+  ui2NameChanged();
+  if (ui2State.offline) ui2ShowOffline(true); else ui2PaintCard();
+}
+
+// ui2NameChanged names the speaker wherever the preview talks about it.
+function ui2NameChanged() {
+  var nm = ui2Name();
+  if (!nm) return;
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('lblPresets', fmt(T.keysOn, { name: nm }));
+  set('lblFindSum', fmt(T.findSumOn, { name: nm }));
+  set('u2SpkHead', nm);
+  var grid = document.getElementById('presets');
+  var note = grid && grid.querySelector('.grid-note[data-u2]');
+  if (note) ui2GridNote(grid, note.getAttribute('data-u2'));
+  if (ui2Mounted) ui2PaintPeers();
+}
+
+// The speaker card's status line, from what the polls already know.
+function ui2StatusLine() {
+  if (ui2State.offline) return T.offlineWord;
+  if (!ui2State.st && !ui2State.src) return '';
+  var s = ui2State.st, w;
+  if (ui2State.src === 'STANDBY') w = T.standby;
+  else if (s === 'PLAY_STATE' || s === 'BUFFERING_STATE') w = T.playing;
+  else if (s === 'PAUSE_STATE') w = T.paused;
+  else w = T.stopped;
+  if (zone.grouped && zone.stereo) return w + ' ' + T.stereoTag;
+  if (zone.grouped) {
+    var names = (zone.members || []).filter(function(m){ return !m.isSelf; }).map(function(m){ return m.name || m.ip; });
+    if (names.length) w += ' · ' + fmt(T.withNames, { names: names.join(', ') });
+  }
+  return w;
+}
+function ui2PaintCard() {
+  var el = document.getElementById('u2Status');
+  if (el) el.textContent = ui2StatusLine();
+  var dev = document.getElementById('dev');
+  if (dev) dev.classList.toggle('u2-off', !!ui2State.offline);
+}
+function ui2NoteState(state, src) {
+  ui2State.st = state || '';
+  ui2State.src = String(src || '').toUpperCase();
+  if (ui2State.offline) ui2ShowOffline(false); else ui2PaintCard();
+}
+// The offline state names the speaker and offers the two ways out: try
+// again, or pick another speaker from the list on top.
+function ui2ShowOffline(on) {
+  ui2State.offline = !!on;
+  var box = document.getElementById('u2Offline');
+  if (box) box.hidden = !on;
+  var nm = ui2Name();
+  var t = document.getElementById('u2OfflineTxt');
+  if (t && on) t.textContent = nm ? fmt(T.offlineOn, { name: nm }) : T.offline;
+  ui2PaintCard();
+}
+// ui2Retry asks the speaker again. The button says it is checking while it
+// does; a speaker still not answering then says so again in the offline note
+// (rewritten, so a screen reader hears the answer to the tap).
+function ui2Retry(btn) {
+  if (btn && btn.disabled) return;
+  var label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = T.checkingNow || 'Checking…'; }
+  var done = function(){
+    if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = label || T.tryAgain; }
+    if (ui2State.offline) ui2StillOffline();
+  };
+  refreshAll().then(done, done);
+}
+function ui2StillOffline() {
+  var t = document.getElementById('u2OfflineTxt');
+  if (!t) return;
+  var nm = ui2Name();
+  var txt = nm ? fmt(T.stillOffOn || T.offlineOn, { name: nm }) : T.offline;
+  t.textContent = '';
+  setTimeout(function(){ if (ui2State.offline) t.textContent = txt; }, 30);
+}
+function ui2ZoneChanged() {
+  ui2PaintCard();
+  if (ui2Mounted) ui2PaintPeers();
+}
+
+// ui2GridNote turns the key grid's one-line note into a named state with a
+// way on: Try again when the speaker did not answer, the Find tab when it
+// has no keys yet.
+function ui2GridNote(grid, kind) {
+  var note = grid && grid.querySelector('.grid-note');
+  if (!note) return;
+  var nm = ui2Name();
+  note.textContent = '';
+  note.setAttribute('data-u2', kind);
+  var txt = document.createElement('span');
+  if (kind === 'offline') txt.textContent = nm ? fmt(T.offlineOn, { name: nm }) : T.offline;
+  else txt.textContent = nm ? fmt(T.noKeysOn, { name: nm }) : T.noPresets;
+  note.appendChild(txt);
+  if (kind === 'offline') {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn u2-retry'; b.textContent = T.tryAgain;
+    b.addEventListener('click', function(){ ui2Retry(b); });
+    note.appendChild(b);
+    return;
+  }
+  note.appendChild(document.createTextNode(' '));
+  var go = document.createElement('button');
+  go.type = 'button'; go.className = 'u2-link'; go.textContent = T.findSources;
+  go.addEventListener('click', function(){
+    showTab('Browse');
+    var q = document.getElementById('q');
+    if (q) { try { q.focus({ preventScroll: true }); } catch (e) { q.focus(); } }
+  });
+  note.appendChild(go);
+}
+
+// A refusal to play a Find result is said on the Find tab as well, where the
+// tap happened; the card under the keys is out of sight there.
+function ui2FindNotice(msg) {
+  var pb = document.getElementById('panelBrowse');
+  if (pb && !pb.hidden) searchMsg(msg, true);
+}
+// findFail is the line an unhandled play refusal shows on the Find tab. The
+// current layout keeps its plain "Could not start"; the preview says why.
+function findFail(res) {
+  if (!ui2On) return T.cantStart;
+  return playRefusal(res && res.data) || T.cantStart;
+}
+
+// ui2PeerLook: an online speaker's link carries #ui2, so its page opens in
+// the same layout; an offline one says so in a word and is greyed with the
+// muted colour instead of faded.
+function ui2PeerLook(a, p, online) {
+  if (online) {
+    if (p && p.url) a.href = String(p.url).split('#')[0] + '#ui2';
+    return;
+  }
+  a.style.opacity = '1';
+  a.style.color = 'var(--muted)';
+  var w = document.createElement('span');
+  w.className = 'u2-offword';
+  w.textContent = T.offlineWord;
+  a.appendChild(w);
+}
+
+function ui2MemberOf(p) {
+  if (!zone.grouped) return null;
+  var id = String((p && p.deviceID) || '').toUpperCase(), ip = String((p && p.ip) || '');
+  return (zone.members || []).filter(function(m){
+    return !m.isSelf && ((id && String(m.deviceID || '').toUpperCase() === id) || (ip && m.ip === ip));
+  })[0] || null;
+}
+// A speaker that plays along keeps its minus, the same one the group card
+// has; one that could join keeps its plus (peerRow).
+function ui2PeerRow(p) {
+  var el = peerRow(p);
+  var m = ui2MemberOf(p);
+  if (!m || !zone.master || zone.stereo) return el;
+  var row = document.createElement('div');
+  row.className = 'peerrow';
+  var rm = document.createElement('button');
+  rm.type = 'button'; rm.className = 'btn leavebtn'; rm.textContent = '−';
+  rm.setAttribute('aria-label', fmt(T.leaveAria || 'Remove {{name}} from the group', { name: m.name || m.ip }));
+  rm.addEventListener('click', function(){ leavePeer(m, rm); });
+  row.appendChild(el);
+  row.appendChild(rm);
+  return row;
+}
+function ui2SelfRow(nm) {
+  var row = document.createElement('div');
+  row.className = 'peer u2-self';
+  row.setAttribute('aria-current', 'true');
+  var dot = document.createElement('span'); dot.className = 'dot';
+  var n = document.createElement('span'); n.className = 'u2-pn'; n.textContent = nm || '';
+  var tag = document.createElement('span'); tag.className = 'u2-tag'; tag.textContent = T.scOne;
+  row.appendChild(dot); row.appendChild(n); row.appendChild(tag);
+  return row;
+}
+// ui2PaintPeers draws the list under the speaker card: this speaker first,
+// then every other one (the stereo partner is part of this speaker's row).
+// Rebuilt only when something in it changed.
+function ui2PaintPeers() {
+  var box = document.getElementById('peers'), card = document.getElementById('peersCard');
+  if (!box || !card) return;
+  var nm = ui2Name();
+  var shown = (Array.isArray(peersList) ? peersList : []).filter(function(p){ return !(zone.stereo && zoneHasMember(p)); });
+  var sig = JSON.stringify([nm, T.scOne, T.offlineWord, zone.grouped, zone.stereo, zone.master,
+    (zone.members || []).map(function(m){ return m.ip; }),
+    shown.map(function(p){ return [p.name, p.url, p.ip, p.reachable, p.deviceID]; })]);
+  if (sig !== ui2PeersSig) {
+    ui2PeersSig = sig;
+    box.innerHTML = '';
+    box.appendChild(ui2SelfRow(nm));
+    shown.forEach(function(p){ box.appendChild(ui2PeerRow(p)); });
+  }
+  card.style.display = 'block';
+  var only = ui2PeersKnown && !shown.length && !!nm;
+  var hint = document.getElementById('lblPeersHint');
+  if (hint) hint.textContent = only ? fmt(T.onlyOne, { name: nm }) : T.peersHint;
+  var note = document.getElementById('u2OnlyOne'), txt = document.getElementById('u2OnlyOneTxt');
+  if (note) note.hidden = !only;
+  if (txt) txt.textContent = only ? fmt(T.onlyOne, { name: nm }) : '';
+}
+// focus (the offline note's Switch to another speaker) moves the keyboard to
+// the list that just opened above: its first speaker that answers, else the
+// speaker card, which now reads as expanded.
+function ui2ToggleList(open, focus) {
+  var list = document.getElementById('u2List'), dev = document.getElementById('dev');
+  if (!list) return;
+  var on = typeof open === 'boolean' ? open : list.hidden;
+  list.hidden = !on;
+  if (dev) { dev.setAttribute('aria-expanded', String(on)); dev.classList.toggle('u2-open', on); }
+  if (on) window.scrollTo(0, 0);
+  if (on && focus) {
+    var to = list.querySelector('a.peer[href]:not([aria-disabled="true"])') || dev;
+    if (to) { try { to.focus({ preventScroll: true }); } catch (e) { to.focus(); } }
+  }
+}
+
+/* ===========================================================================
    Tab shell
    =========================================================================== */
 var TAB_IDS = ['Play', 'Browse', 'Speakers', 'More'];
@@ -3747,6 +4204,7 @@ function showTab(name) {
   // scroll offset over lands the user halfway down a list they never scrolled.
   window.scrollTo(0, 0);
   if (name === 'Speakers') loadZone();
+  if (ui2On && name === 'Speakers') loadDisplayCard();
   // The update card on More warns when this speaker is grouped, so it needs the
   // group as it is now, not as it was when the page opened (#1339).
   if (name === 'More') loadDisplayCard();
@@ -3811,6 +4269,7 @@ function updateTopName() {
   var dn = document.getElementById('devName');
   if (dn && dn.textContent !== nm) { dn.textContent = nm; renderDevMenu(); }
   var dev = document.getElementById('dev'); if (dev) dev.title = nm;
+  if (ui2On) ui2NameChanged();
 }
 // Which speakers the volume slider moves. Starts on the whole group whenever
 // one exists: somebody who has grouped speakers is listening to the group, so
@@ -3822,6 +4281,7 @@ var volScopeChosen = false; // the user picked a scope by hand
 var memberDragging = null; // ip whose slider the finger is on right now
 
 function applyScopeUI() {
+  if (ui2On) ui2ZoneChanged();
   var row = document.getElementById('volScope');
   var bG = document.getElementById('scopeGroup'), bP = document.getElementById('scopePair'), bO = document.getElementById('scopeOne');
   if (!row || !bG || !bP || !bO) return;
@@ -4332,7 +4792,7 @@ async function playLibTrack(idx, btn) {
     duration_sec: it.durationSec || 0
   });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
-  else if (!res.handled) { searchMsg(T.cantStart, true); }
+  else if (!res.handled) { searchMsg(findFail(res), true); }
 }
 
 // The starred stations, read from the SPEAKER.
@@ -4540,7 +5000,7 @@ async function startPandora(st, btn) {
     setTimeout(refreshStatus, 1500);
     setTimeout(refreshStatus, 3500);
   } else if (!res.handled) {
-    searchMsg(T.cantStart, true);
+    searchMsg(findFail(res), true);
   }
 }
 
@@ -4590,7 +5050,7 @@ async function playFavorite(idx, btn) {
       setTimeout(refreshStatus, 1500);
       setTimeout(refreshStatus, 3500);
     } else if (!lr.handled) {
-      searchMsg(T.cantStart, true);
+      searchMsg(findFail(lr), true);
     }
     return;
   }
@@ -4610,7 +5070,7 @@ async function playFavorite(idx, btn) {
     setTimeout(refreshStatus, 1500);
     setTimeout(refreshStatus, 3500);
   } else if (!res.handled) {
-    searchMsg(T.cantStart, true);
+    searchMsg(findFail(res), true);
   }
 }
 
@@ -4633,7 +5093,7 @@ async function playStation(idx, btn) {
     showTab('Play'); setNow(T.starting + ' ' + (st.name || ''), T.pleaseWait);
     setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500);
   }
-  else if (!res.handled) { searchMsg(T.cantStart, true); }
+  else if (!res.handled) { searchMsg(findFail(res), true); }
 }
 
 // The picker names what each key currently holds, so "save" can never silently
@@ -6650,6 +7110,8 @@ async function loadRemembered() {
   });
 })();
 
+// UI 2.0 preview: reparent the cards once, before anything paints into them.
+if (ui2On) mountUi2();
 applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone(); loadSleep(); loadAlarms(); loadMusicLib(); loadPlayMode().catch(function(){}); loadRecent().catch(function(){}); loadFavorites().catch(function(){}); loadPandora().catch(function(){}); loadBrowseServers().catch(function(){}); loadRemembered().catch(function(){});
 // None of these ticks run while the page is in the background. A phone that
 // went back to its home screen, or a tab behind another, kept asking the

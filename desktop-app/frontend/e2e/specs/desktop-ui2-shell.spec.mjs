@@ -21,11 +21,12 @@ const BR = ROSTER.bedroom;
 const OFFICE = ROSTER.office;
 const KITCHEN = ROSTER.kitchen;
 
-// Sidebar order (src/shell2/nav.js), Wishes last at the bottom. Speakers
-// stands for the list and the three classic tabs under it (phase 3).
-const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes'];
+// Sidebar order (src/shell2/nav.js), Wishes and Help and info small at the
+// bottom. Speakers stands for the list and the three classic tabs under it
+// (phase 3).
+const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes', 'help'];
 // Every view, the three reached through the Speakers area included.
-const ALL_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'settings', 'multiroom', 'setup', 'wishes'];
+const ALL_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'settings', 'multiroom', 'setup', 'wishes', 'help'];
 // The sidebar entry marked current on each view.
 const ENTRY = { settings: 'speakers', multiroom: 'speakers', setup: 'speakers' };
 
@@ -99,13 +100,15 @@ test.describe('UI 2.0 shell', () => {
   test.use({ ui2: true });
 
   test.describe('navigation', () => {
-    test('1. the sidebar has one entry per view, Wishes at the bottom', async ({ app }) => {
+    test('1. the sidebar has one entry per view, Wishes and Help and info at the bottom', async ({ app }) => {
       const { page } = app;
       const items = page.locator('#ui2Sidebar .ui2-nav-item[data-view]');
       await expect(items).toHaveCount(NAV_VIEWS.length);
       expect(await items.evaluateAll((els) => els.map((e) => e.dataset.view))).toEqual(NAV_VIEWS);
       await expect(page.locator('#ui2NavWishes')).toHaveAttribute('data-view', 'wishes');
       await expect(page.locator('#ui2Sidebar .ui2-side-small #ui2NavWishes')).toHaveCount(1);
+      await expect(page.locator('#ui2NavHelp')).toHaveAttribute('data-view', 'help');
+      await expect(page.locator('#ui2Sidebar .ui2-side-small #ui2NavHelp')).toHaveCount(1);
     });
 
     test('2. every entry opens its view at the top and is the only one marked current', async ({ app }) => {
@@ -129,11 +132,9 @@ test.describe('UI 2.0 shell', () => {
         const shown = await page.locator('#ui2MainInner > [id^="view-"]').evaluateAll((els) => els
           .filter((e) => !e.classList.contains('hidden')).map((e) => e.id));
         expect(shown).toEqual([`view-${view}`]);
-        // The classic footer (donate, world map, links) stays out of the
-        // music views; the other views still end with it.
-        const music = ['box', 'library', 'recent', 'spotify'].includes(view);
-        if (music) await expect(page.locator('#appFooter'), `footer on ${view}`).toBeHidden();
-        else await expect(page.locator('#appFooter'), `footer on ${view}`).toBeVisible();
+        // The classic footer (donate, world map, links) is hidden on every
+        // preview view: Help and info carries all of it.
+        await expect(page.locator('#appFooter'), `footer on ${view}`).toBeHidden();
       }
     });
 
@@ -156,9 +157,9 @@ test.describe('UI 2.0 shell', () => {
         await expect(nav(page, NAV_VIEWS[i])).toBeFocused();
       }
       await page.keyboard.press('ArrowDown');
-      await expect(nav(page, 'wishes')).toBeFocused();
+      await expect(nav(page, 'help')).toBeFocused();
       await page.keyboard.press('ArrowUp');
-      await expect(nav(page, 'speakers')).toBeFocused();
+      await expect(nav(page, 'wishes')).toBeFocused();
     });
   });
 
@@ -210,9 +211,12 @@ test.describe('UI 2.0 shell', () => {
         await settle(page, 9_000);
         await mock.resetCalls();
         await pick(page, OFFICE.host).click();
-        const toast = page.locator('#toast');
-        await expect(toast).toHaveClass(/\bshow\b/);
-        await expect(toast).toContainText('Offline');
+        // Phase 5: the explanation sits in Office's own row, not in a
+        // window-wide toast (desktop-ui2-states test 11 covers the wording).
+        const note = row(page, OFFICE.host).locator('.ui2-spk-rownote');
+        await expect(note).toBeVisible();
+        await expect(note).toContainText(/not reachable/i);
+        await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
         await mock.expectCalled('DiscoverBoxes', { times: 1 });
         await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
         await expect(pick(page, OFFICE.host)).not.toHaveAttribute('aria-current', /.*/);

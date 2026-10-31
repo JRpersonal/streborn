@@ -91,6 +91,27 @@ describe('UI 2.0 hooks in the app', () => {
     expect(sel).toContain('if (btn.dataset.offline) { pickBox({ ...(box || {}), offline: true }, btn.title); return; }');
   });
 
+  it('opens Help and info as a preview view after Wishes, and hides the footer in every preview view', () => {
+    // Small, outside the scroll area, under Wishes.
+    const small = markup.indexOf('<div class="ui2-side-small">');
+    expect(small).toBeGreaterThan(markup.indexOf('<div class="ui2-side-scroll">'));
+    expect(markup).toContain('<div id="view-help" class="view hidden"></div>');
+    // switchView toggles the node only when it exists (classic has none).
+    expect(srcOf('switchView')).toContain("const helpView = $('view-help'); if (helpView) helpView.classList.toggle('hidden', view !== 'help');");
+    // Mounted lazily from syncShellNav, never at import.
+    const nav = srcOf('syncShellNav');
+    expect(nav).toContain("if (view === 'help') mountHelp(byId('view-help'), deps);");
+    expect(nav).toContain('syncHelpView(view);');
+    // Choosing a speaker on Help and info opens Radio, as on Wishes.
+    expect(srcOf('wireSpeakerList')).toContain("(state.view === 'wishes' || state.view === 'help')");
+    // The credits and the update check come in as deps.
+    expect(main).toMatch(/mountShell2\(\{[\s\S]*?showCredits,[\s\S]*?checkAppUpdate: \(manual\) =>/);
+    // The classic footer stays in the page, hidden on every preview view.
+    expect(shellCss).toContain('html.ui2 #appFooter { display: none; }');
+    expect(shellCss).not.toMatch(/data-view="box"\][^{]*#appFooter/);
+    expect(mount).toContain('move(n.footer, n.fMainInner);');
+  });
+
   it('marks the Layout switch after a late mount', () => {
     expect(srcOf('safeMountShell2')).toContain('syncLayoutPressed();');
     expect(srcOf('syncLayoutPressed')).toContain('#a11yMenu button[data-ui2]');
@@ -198,5 +219,84 @@ describe('UI 2.0 shell hygiene', () => {
   it('scopes the new focus ring to the shell chrome', () => {
     expect(shellCss).toContain('html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover, .u-skip) :focus-visible');
     expect(shellCss).not.toMatch(/^html\.ui2 \*:focus-visible/m);
+  });
+});
+
+// Phase 5 (states): what the preview adds to the app's own paths, and that the
+// classic layout keeps every line it had.
+describe('UI 2.0 states (phase 5)', () => {
+  it('records where the search stands with assignments only, the classic picker untouched', () => {
+    const disc = srcOf('discoverBoxes');
+    expect(disc).toContain("state.discovery = { phase: 'searching'");
+    expect(disc).toContain("state.discovery = { phase: 'done'");
+    expect(disc).toContain("state.discovery = { phase: 'failed', error: String(e)");
+    // The classic first-search text, the spinner and the folded error stay.
+    expect(disc).toContain("$('boxSelect').textContent = t('speaker.searching');");
+    expect(disc).toContain("if (rb) rb.classList.add('spinning');");
+    expect(disc).toContain('<div>$' + '{escapeHtml(String(e))}</div></details>');
+    // state.discovery is written in discoverBoxes only, and the classic
+    // picker never reads it.
+    const writes = [...main.matchAll(/state\.discovery = /g)].length;
+    expect(writes).toBe(3);
+    expect(srcOf('renderBoxSelect')).not.toContain('state.discovery');
+    expect(srcOf('updateBoxUiVisibility')).not.toContain('state.discovery');
+  });
+
+  it('hands the discovery and Connect by address to the shell, through the classic AddBoxByIP', () => {
+    const mountCall = srcOf('safeMountShell2');
+    expect(mountCall).toContain('discovery: () => state.discovery,');
+    expect(mountCall).toMatch(/addBoxByIp: async \(ip\) => \{\s*await AddBoxByIP\(ip\);\s*await discoverBoxes\(\);\s*\}/);
+    // No new binding: AddBoxByIP was already imported for the classic field.
+    expect(srcOf('wireManualIp')).toContain('await AddBoxByIP(ip);');
+  });
+
+  it('keeps the toast for an offline pick outside the preview', () => {
+    const pick = srcOf('pickBox');
+    const branch = pick.indexOf('if (shell2Mounted() && shellOfflinePick(box, discoverBoxes())) return;');
+    const toast = pick.indexOf("showToast(title || t('speaker.offlineTooltip', { ago: '' }));");
+    expect(branch).toBeGreaterThan(0);
+    expect(toast).toBeGreaterThan(branch);
+    expect(srcOf('shellOfflinePick')).toContain('if (!state.ui2Shell || !box || !box.host) return false;');
+  });
+
+  it('announces toasts and colours them only in the preview', () => {
+    expect(srcOf('mountShell2')).toContain('announceToasts();');
+    const ann = srcOf('announceToasts');
+    expect(ann).toContain("toast.setAttribute('role', 'status')");
+    expect(ann).toContain("toast.setAttribute('aria-live', 'polite')");
+    const css = readFileSync(new URL('./state.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/html\.ui2 \.toast \{[^}]*var\(--u-surface\)[^}]*var\(--u-text\)[^}]*var\(--u-border\)/);
+    for (const rule of css.split('}').map((r) => r.trim()).filter((r) => r && !r.startsWith('/*'))) {
+      const sel = rule.replace(/\/\*[\s\S]*?\*\//g, '').trim().split('{')[0];
+      for (const s of sel.split(',')) expect(s.trim(), s).toMatch(/^html\.ui2 /);
+    }
+  });
+
+  it('brings the player back with the speaker, and hides an offline one\'s controls', () => {
+    expect(srcOf('renderShellSpeakers')).toContain('syncShellPlayer();');
+    const sync = srcOf('syncShellPlayer');
+    expect(sync).toContain("const offline = ps.kind === 'offline';");
+    expect(sync).toContain('const live = !!hasBox && !offline && playerOnScreen(');
+  });
+
+  it('sends transport errors to the player only through the hook, the dialog stays without it', () => {
+    const failed = srcOf('transportFailed');
+    expect(failed).toContain("const report = reportHook('transport');");
+    expect(failed).toContain('else showError(e);');
+    expect(srcOf('action', { file: 'views/music/nowplaying.js' })).toContain('transportFailed(');
+    expect(srcOf('queueAction')).toContain("transportFailed('queue', e, box)");
+    // The hook only exists while the shell is mounted.
+    expect(srcOf('reportHook')).toContain('state.ui2Shell && hooks.get(name)');
+  });
+
+  it('passes the sidebar report to the one group edit path', () => {
+    expect(mount).toMatch(/deps\.toggleGroupMember\(act\.dataset\.host, parseInt\(act\.dataset\.port, 10\), act\.dataset\.master \|\| '', groupReport\)/);
+    expect(group).toMatch(/export function toggleGroupMember\(host, port, masterHost, report\)/);
+  });
+
+  it('wires the states once, by delegation, and only from the mount', () => {
+    expect(srcOf('wireStatesEnv')).toContain('wireStates(document);');
+    expect(srcOf('wire', { file: 'shell2/mount.js' })).toContain('wireStatesEnv(frame);');
+    expect(fileSource('shell2/state.js')).not.toMatch(/^wireStates\(/m);
   });
 });

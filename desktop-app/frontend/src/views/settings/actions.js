@@ -4,7 +4,7 @@
 // restore of favorites and presets.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, encodeURIStrict } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showToast, encodeURIStrict } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { purgeSpeakerLocalState } from '../../speakerPurge.js';
 import { identifyOutcome } from '../../boxstate.js';
@@ -21,7 +21,7 @@ import {
   RemoveConflictingMod,
   IdentifyBox,
 } from '../../api.js';
-import { deps, helpBlock, renderSTRRemovedPanel, confirmFor } from './shared.js';
+import { deps, helpBlock, renderSTRRemovedPanel, confirmFor, reportError, reportDone } from './shared.js';
 
 export function renderActionSections(ctx) {
   const { box } = ctx;
@@ -134,8 +134,8 @@ export function wireActionSections(ctx) {
       try {
         const r = await SyncBoxPresets(box.host, box.port);
         const synced = r && r.synced != null ? r.synced : 0;
-        showToast(t('settingsView.syncDoneToast', { n: synced }));
-      } catch (e) { showError(e); }
+        reportDone(syncBtn, t('settingsView.syncDoneToast', { n: synced }));
+      } catch (e) { reportError(syncBtn, e); }
       syncBtn.disabled = false;
       syncBtn.textContent = t('settingsView.syncHardwareKeys');
     };
@@ -152,9 +152,9 @@ export function wireActionSections(ctx) {
         const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
         const res = await SaveDiagnosticBundle(hosts, true);
         if (res && res.savePath) {
-          showToast(t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
+          reportDone(saveLogsSettingsBtn, t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
         }
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(saveLogsSettingsBtn, e); }
       saveLogsSettingsBtn.disabled = false;
     };
   }
@@ -185,9 +185,9 @@ export function wireActionSections(ctx) {
             BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
               encodeURIStrict(subject) + '&body=' + encodeURIStrict(body));
           } catch {}
-          showToast(t('settingsView.emailSupportToast', { path: res.savePath }));
+          reportDone(emailSupportBtn, t('settingsView.emailSupportToast', { path: res.savePath }));
         }
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(emailSupportBtn, e); }
       emailSupportBtn.disabled = false;
     };
   }
@@ -205,9 +205,9 @@ export function wireActionSections(ctx) {
           'old-agent': 'settingsView.identifyOldAgentToast',
           'busy': 'settingsView.identifyBusyToast',
         }[outcome];
-        if (msg) showToast(t(msg));
-        else showError(t('settingsView.identifyFailed'));
-      } catch (e) { showError(e); }
+        if (msg) reportDone(identifyBtn, t(msg));
+        else reportError(identifyBtn, t('settingsView.identifyFailed'));
+      } catch (e) { reportError(identifyBtn, e); }
       // The notice holds for 5 s; a second press meanwhile would only queue.
       setTimeout(() => { identifyBtn.disabled = false; }, 3000);
     };
@@ -224,10 +224,10 @@ export function wireActionSections(ctx) {
       if (!ok) return;
       try {
         await RebootBox(box.host, box.port);
-        showToast(t('speaker.rebootingToast'));
+        reportDone(rebootBtn, t('speaker.rebootingToast'));
         // The speaker is gone for ~30 s, then trigger discovery again.
         setTimeout(deps.discoverBoxes, 35000);
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(rebootBtn, e); }
     };
   }
 
@@ -248,7 +248,11 @@ export function wireActionSections(ctx) {
       // The flow itself lives in conflictcleanup.js, shared with the banner's
       // button (#1083).
       await runConflictCleanup(box, {
-        t, confirmWarn: (title, body, o) => confirmFor(box, title, body, o), showToast, showError,
+        // The outcome reports in the Maintenance card in the preview, and
+        // exactly as before (toast, error dialog) in the classic layout.
+        t, confirmWarn: (title, body, o) => confirmFor(box, title, body, o),
+        showToast: (msg, ms) => reportDone(rmConflictBtn, msg, ms),
+        showError: (e) => reportError(rmConflictBtn, e),
         removeConflictingMod: RemoveConflictingMod,
         rebootBox: RebootBox,
         rediscover: (afterMs) => {
@@ -283,16 +287,16 @@ export function wireActionSections(ctx) {
       try {
         const r = await TrueFactoryReset(box.host);
         if (r && r.ok) {
-          showToast(t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
+          reportDone(tfrBtn, t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
           // Speaker reboots into OOB, will not be on the LAN for a
           // while. Trigger discovery in 60 s so the UI catches it
           // when the iOS app brings it back onto <home Wi-Fi>.
           setTimeout(deps.discoverBoxes, 60000);
         } else {
-          showError(t('settingsView.trueFactoryResetFailed', { msg: (r && r.message) || '?' }));
+          reportError(tfrBtn, t('settingsView.trueFactoryResetFailed', { msg: (r && r.message) || '?' }));
         }
       } catch (e) {
-        showError(e);
+        reportError(tfrBtn, e);
       } finally {
         tfrBtn.disabled = false;
         tfrBtn.textContent = t('settingsView.trueFactoryResetBtn');
@@ -338,12 +342,12 @@ export function wireActionSections(ctx) {
           setTimeout(deps.discoverBoxes, 60000);
           return;
         } else if (r && r.stickPresent) {
-          showError(t('settingsView.removeSTRStickPresent'));
+          reportError(rmBtn, t('settingsView.removeSTRStickPresent'));
         } else {
-          showError(t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));
+          reportError(rmBtn, t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));
         }
       } catch (e) {
-        showError(e);
+        reportError(rmBtn, e);
       } finally {
         rmBtn.disabled = false;
         rmBtn.textContent = t('settingsView.removeSTRBtn');

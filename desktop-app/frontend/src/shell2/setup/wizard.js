@@ -45,6 +45,7 @@ import { escapeHtml, escapeAttr, confirmWarn } from '../../utils.js';
 import { BoxAgentVersion } from '../../api.js';
 import { renderSetupTargetPicker, installRunActive } from '../../views/setup.js';
 import { FACTORY, findModel, paintFind, selectedCandidate } from './find.js';
+import { announceState, discoveryPhase } from '../state.js';
 import { installBusy, installIntroHTML, installNoteHTML, installOutcome, outcomeStepState } from './install.js';
 import { confirmHTML, confirmLiveText, confirmLoop, newStrHost, strSnapshot } from './confirm.js';
 import './setup.css';
@@ -217,6 +218,8 @@ const W = {
   strAtStart: { hosts: new Set(), ids: new Set() },
   sig: {},
   bypass: false,
+  // Search again on Find (phase 5): running, and what it came back with.
+  search: { busy: false, result: '' },
 };
 
 const byId = (id) => (W.root && W.root.querySelector(`#${id}`)) || document.getElementById(id);
@@ -278,6 +281,7 @@ function mount(view) {
     + '<div class="w2-panel" id="w2PanelFind" data-step="find">'
     + `<p class="w2-lead">${escapeHtml(t('ui2.setup.wizard.find.intro'))}</p>`
     + '<div id="w2FindList"></div>'
+    + '<p class="w2-search-result" id="w2SearchResult" role="status"></p>'
     + '<div class="w2-onboard" id="w2Onboard"></div>'
     + '</div>'
     + '<div class="w2-panel" id="w2PanelCheck" data-step="check" hidden><div id="w2CheckBody" class="w2-check"></div></div>'
@@ -340,7 +344,7 @@ function act(a) {
       else if (to === 'check') goCheck();
       break;
     }
-    case 'search': if (typeof W.ctx.discoverBoxes === 'function') W.ctx.discoverBoxes(); break;
+    case 'search': searchFind(); break;
     case 'stick':
       if (W.step === 'check') {
         if (W.check.busy) break;
@@ -796,14 +800,40 @@ function paintFindStep() {
   if (!W.target) syncFromSetupTarget();
   const selected = W.target ? (W.target.kind === 'factory' ? FACTORY : W.target.host) : '';
   const model = findModel(state.boxes || [], { label, selected });
-  paintFind(byId('w2FindList'), model);
+  // Before the first search of the session ends, "none found" is not known.
+  const searching = discoveryPhase(state.discovery).phase === 'searching';
+  paintFind(byId('w2FindList'), model, { searching });
+  const res = byId('w2SearchResult');
+  if (res && res.textContent !== W.search.result) res.textContent = W.search.result;
+}
+
+// searchFind is Find's Search again: "Searching..." on the button while it
+// runs (aria-busy), then a line that says what it found, never a silent
+// repaint.
+async function searchFind() {
+  if (W.search.busy || typeof W.ctx.discoverBoxes !== 'function') return;
+  const before = new Set(findModel(state.boxes || [], { label }).candidates.map((c) => c.host));
+  W.search = { busy: true, result: '' };
+  paint();
+  try {
+    await W.ctx.discoverBoxes();
+  } catch (_) { /* the search shows its own failure */ }
+  const after = findModel(state.boxes || [], { label }).candidates.filter((c) => !c.offline);
+  const fresh = after.filter((c) => !before.has(c.host)).length;
+  let result = t('ui2.state.wizardNone');
+  if (fresh) result = t('ui2.state.wizardFound', { n: fresh });
+  else if (after.length) result = t('ui2.state.wizardNoNew');
+  W.search = { busy: false, result };
+  if (W.root && state.ui2Shell) paint();
+  else announceState(result);
 }
 
 // footBtn: a footer button. A locked one keeps its focus (aria-disabled) and,
 // with describedBy, carries the hint that says why it is locked.
-function footBtn(act, text, { primary = false, disabled = false, aria = '', describedBy = '' } = {}) {
+function footBtn(act, text, { primary = false, disabled = false, aria = '', describedBy = '', busy = false } = {}) {
   return `<button type="button" class="u-btn ${primary ? 'u-btn--primary' : 'u-btn--secondary'} w2-act" data-act="${act}"`
-    + (disabled ? ' aria-disabled="true"' : '')
+    + (disabled || busy ? ' aria-disabled="true"' : '')
+    + (busy ? ' aria-busy="true"' : '')
     + (disabled && describedBy ? ` aria-describedby="${describedBy}"` : '')
     + (aria ? ` aria-label="${escapeAttr(aria)}"` : '')
     + `>${escapeHtml(text)}</button>`;
@@ -813,7 +843,9 @@ function paintFoot(name) {
   let left = '';
   let right = '';
   if (W.step === 'find') {
-    left = footBtn('search', t('ui2.setup.wizard.searchAgain'));
+    left = W.search.busy
+      ? footBtn('search', t('ui2.state.searching'), { busy: true })
+      : footBtn('search', t('ui2.setup.wizard.searchAgain'));
     const tg = W.target;
     if (tg && tg.kind === 'factory') {
       left += footBtn('stick', t('ui2.setup.wizard.find.useStick'));
