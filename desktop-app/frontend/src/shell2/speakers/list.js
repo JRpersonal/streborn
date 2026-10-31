@@ -37,6 +37,7 @@ import { getLocale, t } from '../../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../../utils.js';
 import { roomItems } from '../rooms.js';
 import { chipHTML, pillLabel, statusPillHTML, CHIP_LABEL_KEYS } from '../pill.js';
+import { attentionItems, attentionNoteHTML, attentionSig, runAttentionAction } from '../attention.js';
 import './list.css';
 
 // The pills of the list, in precedence order: a card shows the first that
@@ -296,6 +297,14 @@ function noteHTML(row) {
 }
 
 // halvesHTML: on a stereo pair's card, one button per half to its own page.
+// attnHTML: what this speaker (and on a pair's card, either half) needs from
+// you, the per-speaker side of the classic wedge and issue banners
+// (attention.js), as a note on its card.
+function attnHTML(row) {
+  const hosts = [row.host, ...((row.halves || []).map((h) => h.host))].filter((h, i, a) => h && a.indexOf(h) === i);
+  return attentionNoteHTML(hosts.flatMap((h) => attentionItems(h)));
+}
+
 function halvesHTML(row) {
   if (!row.halves || !row.halves.length) return '';
   return '<div class="spl-halves">'
@@ -337,6 +346,7 @@ function cardHTML(row) {
     + '</div>'
     + halvesHTML(row)
     + noteHTML(row)
+    + attnHTML(row)
     + '</li>';
 }
 
@@ -422,6 +432,7 @@ function announce(text) {
 }
 
 function onClick(root, e) {
+  if (runAttentionAction(e.target)) return;
   const ctx = lastCtx;
   const act = e.target.closest('.spl-act');
   if (act) {
@@ -473,7 +484,7 @@ export function renderSpeakerList(root, ctx = {}) {
     if (!b || !b.offline) search.delete(h);
   }
   const model = speakerListModel(ctx.boxes, { ...ctx, search });
-  const sig = JSON.stringify([model, getLocale()]);
+  const sig = JSON.stringify([model, getLocale(), attentionSig()]);
   if (sig === lastSig && root.firstChild) return;
   lastSig = sig;
   const active = document.activeElement;

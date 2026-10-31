@@ -29,6 +29,8 @@ import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
+// Phase 5: the banner region's cards in the shell's tokens (html.ui2 only).
+import './banners.css';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -154,6 +156,11 @@ export function mountShell2(d) {
     insert(skip, n.app);
     insert(frame, n.app);
     n.banners.forEach((b) => move(b, n.fBanners));
+    // The speaker update card is a landmark of its own in the banner region,
+    // named by its title (the attributes go with the undo log's node, and
+    // mean nothing to the classic layout's styles).
+    n.speakerUpdateCard.setAttribute('role', 'region');
+    n.speakerUpdateCard.setAttribute('aria-label', t('speakerUpdate.title'));
     n.views.forEach((v) => move(v, n.fMainInner));
     move(n.footer, n.fMainInner);
     move(n.statusBar, n.fNow);
@@ -170,6 +177,8 @@ export function mountShell2(d) {
     move(n.tagline, n.fBrand);
     move(n.supported, n.fBrand);
   } catch (e) {
+    n.speakerUpdateCard.removeAttribute('role');
+    n.speakerUpdateCard.removeAttribute('aria-label');
     for (let i = log.length - 1; i >= 0; i--) {
       const { node, parent, next } = log[i];
       try {

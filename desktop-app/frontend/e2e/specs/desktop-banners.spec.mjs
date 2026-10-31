@@ -174,6 +174,11 @@ for (const layout of LAYOUTS) {
             await expectOnly(page, [kind]);
             await expectPlacement(page, layout.ui2, [kind]);
             await expectUsableMain(page, layout, [kind]);
+            // The UI 2.0 card styling (shell2/banners.css) never reaches the
+            // classic layout: its card keeps the light blue of style.css.
+            if (!layout.ui2 && kind === 'speakerUpdate') {
+              expect(await page.locator('#speakerUpdateCard').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(234, 242, 254)');
+            }
           });
         });
       }
