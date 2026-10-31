@@ -325,6 +325,11 @@ type presetWsHandler struct {
 	// what played before a tap, for the tap+hold save (tapholdsave.go).
 	nowPlaying nowPlayingHistory
 	snapshotFn func(doc []byte) webui.PlayingSnapshot
+	// onNowPlaying hands every now-playing document the bus carries to the
+	// webui (webui.NoteBoxNowPlaying), so a quiet wake's woken-stop mark
+	// follows a group member onto the master's item without waiting for an
+	// app to poll (#1629). Must not block. nil-safe.
+	onNowPlaying func(raw []byte)
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's

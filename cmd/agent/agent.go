@@ -1230,6 +1230,10 @@ func (a *agent) buildBoxLink() error {
 		// The forming frame goes to the same place so a dissolve the firmware
 		// emits mid-change is not held against the group it then forms.
 		zoneChanged: webuiSrv.NoteBoxZoneState,
+		// Every now-playing frame reaches the woken-stop mark, so a group
+		// member's switch to the master's item is decided on the speaker,
+		// not by whichever app happens to poll it (#1629).
+		onNowPlaying: webuiSrv.NoteBoxNowPlaying,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
