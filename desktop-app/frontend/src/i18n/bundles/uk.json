@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Ця колонка не повідомляє про регульований рівень басів, тому ці елементи керування лишаються вимкненими.",
   "settingsView.langHeading": "Мова",
   "settingsView.langCurrent": "Зараз встановлено",
-  "settingsView.langHelp": "Мова на дисплеї колонки та в голосових підказках. Попередньо вибрана за вашою країною; можна змінити.",
+  "settingsView.langHelp": "Мова на дисплеї колонки та в її голосових підказках.",
   "settingsView.langSavedToast": "Мову встановлено на {{v}}.",
   "settingsView.langUnknown": "невідомо",
   "settingsView.langNoValue": "не встановлено",

@@ -894,7 +894,7 @@
   "settingsView.bassUnavailable": "This speaker does not report an adjustable bass level, so these controls stay off.",
   "settingsView.langHeading": "Language",
   "settingsView.langCurrent": "Currently set",
-  "settingsView.langHelp": "Experimental. Only English and Danish are confirmed. If you pick an unknown value and the speaker switches to a language you recognise, please report it on a GitHub issue so the list can grow.",
+  "settingsView.langHelp": "Shown on the speaker's display and in its voice prompts.",
   "settingsView.langSavedToast": "Language set to {{v}}.",
   "settingsView.langUnknown": "unknown",
   "settingsView.langNoValue": "not set",

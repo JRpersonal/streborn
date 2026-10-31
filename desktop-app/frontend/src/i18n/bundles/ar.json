@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "لا تُبلّغ هذه السمّاعة عن مستوى جهير قابل للضبط، لذلك تبقى عناصر التحكم هذه معطّلة.",
   "settingsView.langHeading": "اللغة",
   "settingsView.langCurrent": "المضبوطة حاليًا",
-  "settingsView.langHelp": "تجريبي. الإنجليزية والدنماركية فقط مؤكّدتان. إذا اخترت قيمة غير معروفة وتحوّلت السمّاعة إلى لغة تعرفها، فأبلغ عن ذلك في مسألة على GitHub لتنمو القائمة.",
+  "settingsView.langHelp": "تظهر على شاشة السمّاعة وفي إرشاداتها الصوتية.",
   "settingsView.langSavedToast": "ضُبطت اللغة على {{v}}.",
   "settingsView.langUnknown": "غير معروفة",
   "settingsView.langNoValue": "غير مضبوطة",

@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Deze speaker meldt geen instelbaar basniveau, daarom blijven deze regelaars uit.",
   "settingsView.langHeading": "Taal",
   "settingsView.langCurrent": "Nu ingesteld",
-  "settingsView.langHelp": "Experimenteel. Alleen Engels en Deens zijn bevestigd. Als je een onbekende waarde kiest en de speaker schakelt naar een taal die je herkent, meld dit dan in een GitHub-issue zodat de lijst kan groeien.",
+  "settingsView.langHelp": "Wordt getoond op het display van de speaker en gebruikt voor de gesproken meldingen.",
   "settingsView.langSavedToast": "Taal ingesteld op {{v}}.",
   "settingsView.langUnknown": "onbekend",
   "settingsView.langNoValue": "niet ingesteld",

@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Bu hoparlör ayarlanabilir bir bas seviyesi bildirmiyor, bu yüzden bu denetimler kapalı kalıyor.",
   "settingsView.langHeading": "Dil",
   "settingsView.langCurrent": "Şu anda ayarlı",
-  "settingsView.langHelp": "Deneysel. Yalnızca İngilizce ve Danca doğrulanmış. Bilinmeyen bir değer seçer ve hoparlör tanınan bir dile geçerse, listenin büyümesi için bunu bir GitHub sorununda bildirin.",
+  "settingsView.langHelp": "Hoparlörün ekranında ve sesli bildirimlerinde kullanılır.",
   "settingsView.langSavedToast": "Dil {{v}} olarak ayarlandı.",
   "settingsView.langUnknown": "bilinmiyor",
   "settingsView.langNoValue": "ayarlı değil",

@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Šis skaļrunis neziņo par regulējamu basu līmeni, tāpēc šīs vadīklas paliek izslēgtas.",
   "settingsView.langHeading": "Valoda",
   "settingsView.langCurrent": "Pašlaik iestatīts",
-  "settingsView.langHelp": "Eksperimentāli. Apstiprināts tikai angļu un dāņu. Ja izvēlaties nezināmu vērtību un skaļrunis pārslēdzas uz atpazīstamu valodu, ziņojiet par to GitHub problēmā, lai saraksts augtu.",
+  "settingsView.langHelp": "Tiek rādīta skaļruņa displejā un izmantota tā balss paziņojumos.",
   "settingsView.langSavedToast": "Valoda iestatīta uz {{v}}.",
   "settingsView.langUnknown": "nezināms",
   "settingsView.langNoValue": "nav iestatīts",
