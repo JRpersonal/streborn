@@ -449,11 +449,29 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 /* Radio search results. */
 .srch { display:flex; gap:8px; margin-bottom:10px; }
 .srch input[type=search] { flex:1; min-width:0; min-height:44px; padding:10px 12px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:15px; }
-.station { display:flex; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+/* A row is the name plus ONE flex item, .sbtns, that holds all its buttons.
+   The row wraps: once the name would get narrower than its 5em basis, the
+   whole button group moves to its own right-aligned line beneath it, so Play,
+   Save to key and the star never get split up and no button is left alone on
+   a line. Without the wrap the buttons kept their width and squeezed the name
+   toward zero, and with "anywhere" it stood one letter per line: in French
+   ("Enregistrer sur touche"), on a 360px phone in German, or at a larger text
+   size. Same failure as the header pill (#1336), so the name breaks between
+   words here too. 5em, not more: English beside its three buttons gets about
+   93px on a 360px phone and stays on one line; a wider basis wrapped every
+   English row on a 360 to 390px iPhone.
+   When the group alone is wider than the row (German or French on a 320px
+   phone, or the XL text size), Save to key (.fill, basis 0) takes what is
+   left and wraps its own label onto a second line, so the group still stays
+   on one line. Only when even its longest word does not fit (XL on a 320px
+   phone) does the group wrap inside itself rather than stick out sideways. */
+.station { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
 .station:first-child { border-top:0; }
-.station .sname { flex:1; min-width:0; overflow-wrap:anywhere; }
+.station .sname { flex:1 1 5em; min-width:0; overflow-wrap:break-word; }
+.station .sbtns { flex:0 1 auto; min-width:0; margin-left:auto; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:8px; }
 .station .sname small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
-.station .btn { flex:none; min-height:44px; padding:8px 12px; font-size:13px; }
+.station .btn { flex:none; min-height:44px; padding:8px 12px; font-size:13px; text-align:center; }
+.station .btn.fill { flex:1 1 0; }
 .station .btn.rec-del { min-width:44px; padding:8px; font-size:18px; line-height:1; color:var(--muted); }
 .row.fav-row { grid-template-columns:1fr auto; align-items:center; }
 /* The star of a favourite, on the Find tab and on a Recently played row. In
@@ -4628,6 +4646,15 @@ async function searchStations() {
   searchMsg(T.netFail, true);
 }
 
+// stationBtns appends the one item that holds every button of a .station row
+// and returns it. The buttons go into it, never straight into the row: the
+// row wraps them as one group, so they always stay together on one line.
+function stationBtns(row) {
+  var g = document.createElement('span'); g.className = 'sbtns';
+  row.appendChild(g);
+  return g;
+}
+
 function renderResults() {
   var box = document.getElementById('results');
   box.innerHTML = '';
@@ -4643,19 +4670,20 @@ function renderResults() {
     sub.textContent = [st.country, st.codec, st.bitrate ? st.bitrate + ' kbps' : ''].filter(Boolean).join(' · ');
     nm.appendChild(sub);
     row.appendChild(nm);
+    var btns = stationBtns(row);
     var bPlay = document.createElement('button');
     bPlay.className = 'btn'; bPlay.type = 'button';
     bPlay.setAttribute('aria-label', T.play + ': ' + (st.name || ''));
     bPlay.textContent = T.play;
     bPlay.addEventListener('click', function(){ playStation(idx, bPlay); });
-    row.appendChild(bPlay);
+    btns.appendChild(bPlay);
     var bSave = document.createElement('button');
-    bSave.className = 'btn'; bSave.type = 'button';
+    bSave.className = 'btn fill'; bSave.type = 'button';
     bSave.setAttribute('aria-label', T.saveKey + ': ' + (st.name || ''));
     bSave.textContent = T.saveKey;
     bSave.addEventListener('click', function(){ openSlotPicker(idx); });
-    row.appendChild(bSave);
-    row.appendChild(searchStar(st, row));
+    btns.appendChild(bSave);
+    btns.appendChild(searchStar(st, row));
     box.appendChild(row);
   });
 }
@@ -4769,7 +4797,7 @@ async function searchLibrary(q) {
     bPlay.setAttribute('aria-label', T.play + ': ' + (it.title || ''));
     bPlay.textContent = T.play;
     bPlay.addEventListener('click', function(){ playLibTrack(idx, bPlay); });
-    row.appendChild(bPlay);
+    stationBtns(row).appendChild(bPlay);
     box.appendChild(row);
   });
 }
@@ -4981,7 +5009,7 @@ async function loadPandora() {
     bPlay.setAttribute('aria-label', T.play + ': ' + (st.name || ''));
     bPlay.textContent = T.play;
     bPlay.addEventListener('click', function () { playPandora(idx, bPlay); });
-    row.appendChild(bPlay);
+    stationBtns(row).appendChild(bPlay);
     box.appendChild(row);
   });
 }
@@ -6689,6 +6717,7 @@ async function loadRecent() {
        behaviour). Spotify needs the engine recall, which only a key can do, so
        a Spotify row gets Play when its playlist sits on a key, exactly the
        rule the app's Recently played uses (#1077), and stays history otherwise. */
+    var btns = stationBtns(row);
     var spSlot = spotifyPresetSlot(e, presetList);
     if (spSlot) {
       var sb = document.createElement('button');
@@ -6700,7 +6729,7 @@ async function loadRecent() {
         playSlot(spSlot, null, e.cardName || '');
         setTimeout(loadRecent, 4000);
       });
-      row.appendChild(sb);
+      btns.appendChild(sb);
     } else if (e.source === 'pandora' && e.cardURL) {
       /* The speaker's own Pandora client plays it, the same call the
          Pandora list makes (#1101). */
@@ -6712,14 +6741,14 @@ async function loadRecent() {
         startPandora({ location: e.cardURL, name: e.cardName || '', type: e.itemType || '' }, pb);
         setTimeout(loadRecent, 4000);
       });
-      row.appendChild(pb);
+      btns.appendChild(pb);
     } else if ((e.source === 'radio' || e.source === 'upnp') && e.cardURL && e.cardURL.indexOf('http') === 0) {
       var b = document.createElement('button');
       b.className = 'btn'; b.type = 'button';
       b.setAttribute('aria-label', T.play + ': ' + (e.cardName || ''));
       b.textContent = T.play;
       b.addEventListener('click', function(){ playRecent(idx, b); });
-      row.appendChild(b);
+      btns.appendChild(b);
     }
     /* A filled star on a card that is one of the favourites, as the desktop
        app's Recently played shows one (#1339). Tapping it takes the star off
@@ -6727,7 +6756,7 @@ async function loadRecent() {
        desktop app owns the list), so a card that is no favourite shows none. */
     var slot = document.createElement('span'); slot.className = 'rec-star-slot';
     renderRecentStar(slot, row, e);
-    row.appendChild(slot);
+    btns.appendChild(slot);
     /* Remove this station from the list, the same call the desktop app's
        per-card x makes. This is the only control here that touches the list;
        the star above never does (#1339). */
@@ -6737,7 +6766,7 @@ async function loadRecent() {
     db.title = T.recDel || 'Remove from the list';
     db.innerHTML = '&times;';
     db.addEventListener('click', function(){ deleteRecent(e, db); });
-    row.appendChild(db);
+    btns.appendChild(db);
     box.appendChild(row);
   });
   renderRecentFoot(false, '');
@@ -6972,7 +7001,7 @@ async function browseOpen(start) {
     var open = function(){ brStack.push({ udn: top.udn, id: f.id, title: f.title || '' }); browseOpen(0); };
     b.addEventListener('click', open);
     nm.addEventListener('click', open);
-    row.appendChild(b);
+    stationBtns(row).appendChild(b);
     list.appendChild(row);
   });
   if ((r.tracks || []).length && !brStart) {
@@ -7000,7 +7029,7 @@ async function browseOpen(start) {
     b.setAttribute('aria-label', T.play + ': ' + (it.title || ''));
     b.textContent = T.play;
     b.addEventListener('click', function(){ playBrowseTrack(it, b); });
-    row.appendChild(b);
+    stationBtns(row).appendChild(b);
     list.appendChild(row);
   });
   if (!list.children.length) browseMsgSet(T.brEmpty);
