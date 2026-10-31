@@ -211,9 +211,12 @@ test.describe('UI 2.0 shell', () => {
         await settle(page, 9_000);
         await mock.resetCalls();
         await pick(page, OFFICE.host).click();
-        const toast = page.locator('#toast');
-        await expect(toast).toHaveClass(/\bshow\b/);
-        await expect(toast).toContainText('Offline');
+        // Phase 5: the explanation sits in Office's own row, not in a
+        // window-wide toast (desktop-ui2-states test 11 covers the wording).
+        const note = row(page, OFFICE.host).locator('.ui2-spk-rownote');
+        await expect(note).toBeVisible();
+        await expect(note).toContainText(/not reachable/i);
+        await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
         await mock.expectCalled('DiscoverBoxes', { times: 1 });
         await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
         await expect(pick(page, OFFICE.host)).not.toHaveAttribute('aria-current', /.*/);
