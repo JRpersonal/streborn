@@ -131,6 +131,12 @@ describe('noSpeakersState', () => {
     expect(noSpeakersState('none', { id: 'tst2', connectOpen: true })).toContain('aria-expanded="true"');
   });
 
+  it('leads Connect by address to a block elsewhere instead of drawing a second one', () => {
+    const html = noSpeakersState('none', { id: 'lst', connectTarget: 'footConnect' });
+    expect(html).toContain('data-state-act="connect" data-connect-focus="1" aria-controls="footConnect"');
+    expect(html).not.toContain('<form');
+  });
+
   it('takes other actions and words', () => {
     const html = noSpeakersState('noneChosen', { body: 'Pick one.', actions: ['allSpeakers', 'list'], level: 4 });
     expect(acts(html)).toEqual(['allSpeakers', 'list']);

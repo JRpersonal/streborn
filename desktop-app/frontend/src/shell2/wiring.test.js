@@ -212,7 +212,7 @@ describe('UI 2.0 states (phase 5)', () => {
     // The classic first-search text, the spinner and the folded error stay.
     expect(disc).toContain("$('boxSelect').textContent = t('speaker.searching');");
     expect(disc).toContain("if (rb) rb.classList.add('spinning');");
-    expect(disc).toContain("+ `<div>${escapeHtml(String(e))}</div></details>`;");
+    expect(disc).toContain('<div>$' + '{escapeHtml(String(e))}</div></details>');
     // state.discovery is written in discoverBoxes only, and the classic
     // picker never reads it.
     const writes = [...main.matchAll(/state\.discovery = /g)].length;
