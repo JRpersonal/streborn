@@ -7,6 +7,7 @@ import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
 import { listButtonClick, renderSearchResults, syncSearchModeButtons } from './search.js';
+import { ensureUi2Radio } from './ui2radio.js';
 
 // Radio favorites: a per-machine list of starred stations kept in
 // localStorage (no agent change, no preset-schema change). It stores only
@@ -213,10 +214,13 @@ export function updateFavModeBtn() {
   const b = $('favModeBtn');
   if (!b) return;
   b.classList.toggle('hidden', loadFavStore().length === 0);
+  // Called on every box-list refresh, right after a late mount of the UI 2.0
+  // shell, so the preview's Radio additions are built there too.
+  ensureUi2Radio();
 }
 // loadFavorites renders the saved stations through the normal search-result
 // path. No server fetch and no load-more: the list is exactly the store.
-function loadFavorites() {
+export function loadFavorites() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   state.searchLastMode = 'favorites';
   state.searchListOpen = true;

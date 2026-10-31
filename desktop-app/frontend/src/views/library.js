@@ -34,6 +34,11 @@ import {
   boxFetch,
 } from '../api.js';
 import { orderLongFolder } from '../trackorder.js';
+import {
+  SERVERS_DEPTH, libraryTrail, headerHTML, trailHTML, stateHTML, loadingHTML, levelHeadHTML,
+  serverRowsHTML, folderRowHTML, trackRowHTML, folderActionsHTML, filterRowHTML, manualAddHTML,
+  countLine, countText, repeatLabelKey, trailParent,
+} from '../shell2/library.js';
 import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 
@@ -76,13 +81,24 @@ const libState = {
   capped: false,      // true when a folder exceeds LIB_MAX and was truncated
   filter: '',         // folder search text (client-side filter over the loaded items)
   browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
+  restoredPath: false, // the stack about to be browsed is the remembered one (#642), not a step the user took
   nudged: new Set(),  // "box|udn|address" the speaker was told to look up (nudgeBoxLibrary)
   shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
   repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
   // The whole-library search across every media server (#1325). active means
   // its results stand in for the folder list until the user goes back.
   search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], partial: false, token: 0 },
+  // What only the UI 2.0 preview draws (#1286, shell2/library.js): the
+  // feedback line of each row and of the folder actions, keyed by statusKey;
+  // the error of the level that failed, shown in its place instead of the
+  // error window; and where the keyboard goes once a new level is drawn.
+  ui2: { status: new Map(), error: null, serversError: '', addError: '', focus: null },
 };
+
+// ui2 says whether the UI 2.0 preview shell is up. Every behaviour that
+// differs between the two layouts asks it, so the classic layout keeps its
+// toasts and its error window exactly as they were.
+const ui2 = () => !!state.ui2Shell;
 
 // The whole-library search categories: the same four, in the same order, as
 // the phone page's Find tab offers.
@@ -188,8 +204,13 @@ async function syncPlayModeFromBox() {
   } catch { /* box asleep or older agent: keep the local defaults */ }
 }
 
-async function loadMediaServers() {
+// opts.autoOpen (default true) opens the remembered server, or the only one,
+// straight away. The preview's "Search again" on the server list passes false:
+// it asks for a fresh list and stays on it.
+async function loadMediaServers(opts = {}) {
+  const autoOpen = opts.autoOpen !== false;
   libState.loading = true;
+  libState.ui2.serversError = '';
   renderLibrary();
   try {
     const list = await ListMediaServers(3);
@@ -212,20 +233,24 @@ async function loadMediaServers() {
     // disappears simply falls back to the list instead of leaving a stale
     // exclusion behind that nobody remembers making.
     const preferred = rememberedServerUDN();
-    const auto = libState.servers.length === 1
+    const auto = !autoOpen ? null : libState.servers.length === 1
       ? libState.servers[0]
       : libState.servers.find(s => s.udn === preferred);
     if (auto) {
       libState.currentUDN = auto.udn;
-      libState.stack = rememberedPathFor(auto.udn) ||
-        [{ id: '0', title: auto.friendlyName || '' }];
+      const restored = rememberedPathFor(auto.udn);
+      libState.restoredPath = !!restored;
+      libState.stack = restored || [{ id: '0', title: auto.friendlyName || '' }];
       await libraryBrowseCurrent();
       return;
     }
     libState.currentUDN = '';
     libState.page = null;
   } catch (e) {
-    showError(`ListMediaServers: ${e}`);
+    // In the preview the failed search is the server list's own state, with
+    // the way out next to it, not a window over everything.
+    if (ui2()) libState.ui2.serversError = String((e && e.message) || e || '');
+    else showError(`ListMediaServers: ${e}`);
   } finally {
     libState.loading = false;
     renderLibrary();
@@ -241,6 +266,7 @@ async function libraryAddManualServer(value, btn) {
   const v = (value || '').trim();
   if (!v) return;
   if (btn) btn.disabled = true;
+  libState.ui2.addError = '';
   try {
     const srv = await AddMediaServerByURL(v);
     const i = libState.servers.findIndex(s => s.udn === srv.udn);
@@ -250,7 +276,9 @@ async function libraryAddManualServer(value, btn) {
     libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
     await libraryBrowseCurrent();
   } catch (e) {
-    showError(`${t('library.addServerError')}: ${e}`);
+    // The preview keeps the error under the address field it is about.
+    if (ui2()) libState.ui2.addError = `${t('library.addServerError')}: ${e}`;
+    else showError(`${t('library.addServerError')}: ${e}`);
     renderLibrary();
   } finally {
     if (btn) btn.disabled = false;
@@ -361,7 +389,9 @@ async function libraryRemoveManualServer(udn) {
   try {
     await RemoveManualMediaServer(udn);
   } catch (e) {
-    showError(`RemoveManualMediaServer: ${e}`);
+    const msg = ui2() && $('libOnSpeakersMsg');
+    if (msg) msg.innerHTML = `<span class="setup-warn" role="alert">${escapeHtml(`${t('library.removeServerBtn')}: ${e}`)}</span>`;
+    else showError(`RemoveManualMediaServer: ${e}`);
     return;
   }
   libState.servers = libState.servers.filter(s => s.udn !== udn);
@@ -373,14 +403,32 @@ async function libraryRemoveManualServer(udn) {
   renderLibrary();
 }
 
-async function libraryPickServer(udn) {
+// atRoot opens the server at its root instead of the folder last open there:
+// the preview's server list is one step above the server, so choosing a server
+// there is a step down to its root, not a jump to somewhere deep inside.
+async function libraryPickServer(udn, atRoot = false) {
   const srv = libState.servers.find(s => s.udn === udn);
   if (!srv) return;
   libState.currentUDN = udn;
   rememberServerUDN(udn);
-  libState.stack = rememberedPathFor(udn) ||
-    [{ id: '0', title: srv.friendlyName || '' }];
+  const restored = !atRoot && rememberedPathFor(udn);
+  libState.restoredPath = !!restored;
+  libState.stack = restored || [{ id: '0', title: srv.friendlyName || '' }];
   await libraryBrowseCurrent();
+}
+
+// libraryShowServers is the preview's first crumb: back up to the list of
+// media servers. A browse still paging in the background is abandoned.
+function libraryShowServers() {
+  libState.browseToken++;
+  libState.currentUDN = '';
+  libState.page = null;
+  libState.loading = false;
+  libState.loadingMore = false;
+  libState.filter = '';
+  libState.stack = [{ id: '0', title: '' }];
+  libState.ui2.error = null;
+  renderLibrary();
 }
 
 // looksUnreachable reports whether an error means the server did not answer,
@@ -424,12 +472,16 @@ function nudgeBoxLibrary(udn) {
 async function libraryBrowseCurrent() {
   if (!libState.currentUDN) return;
   const top = libState.stack[libState.stack.length - 1];
+  const restoring = libState.restoredPath;
+  libState.restoredPath = false;
   const token = ++libState.browseToken; // any older background loop sees a mismatch and abandons
   libState.loading = true;
   libState.loadingMore = false;
   libState.capped = false;
   libState.filter = '';
   libState.page = null;
+  libState.ui2.error = null;
+  libState.ui2.status.clear();
   renderLibrary();
 
   const acc = { containers: [], items: [], totalMatches: 0, returned: 0 };
@@ -476,7 +528,10 @@ async function libraryBrowseCurrent() {
     // guaranteed stable across a server restart. Fall back to the server
     // root once instead of showing an error for a folder the user never
     // asked for this session (#642).
-    if (libState.stack.length > 1 && top !== libState.stack[0]) {
+    // The preview keeps that to the remembered folder: a folder the user just
+    // opened that fails says so in its own place, with Try again and the step
+    // back up, instead of the trail silently dropping to the root.
+    if (libState.stack.length > 1 && top !== libState.stack[0] && (restoring || !ui2())) {
       libState.stack = libState.stack.slice(0, 1);
       await libraryBrowseCurrent();
       return;
@@ -489,7 +544,15 @@ async function libraryBrowseCurrent() {
     // reachability failure still shows the underlying error, because inventing
     // a friendly sentence for an unknown fault would hide it.
     const srv = libState.servers.find(x => x.udn === libState.currentUDN);
-    if (looksUnreachable(e)) {
+    if (ui2()) {
+      // The preview shows the failure as the level itself, with Try again
+      // and Back next to it (shell2/library.js stateHTML).
+      libState.ui2.error = {
+        asleep: looksUnreachable(e),
+        name: (srv && srv.friendlyName) || t('library.serverFallbackName'),
+        detail: String((e && e.message) || e || ''),
+      };
+    } else if (looksUnreachable(e)) {
       showError(t('library.serverAsleep', {
         name: (srv && srv.friendlyName) || t('library.serverFallbackName'),
       }));
@@ -541,18 +604,58 @@ function guessAudioMime(url) {
   return (m && AUDIO_MIME_BY_EXT[m[1]]) || '';
 }
 
+// statusKey names the feedback line of one track row (the preview's rows,
+// shell2/library.js): the stream URL, the same in a folder and in the search.
+export function statusKey(item) {
+  return `u:${(item && item.streamURL) || (item && item.id) || ''}`;
+}
+
+// setLibStatus stores a row's feedback and writes it into the row if the row
+// is on screen, without redrawing the list (focus and scroll stay). null
+// clears it. Only the preview draws these lines.
+function setLibStatus(key, st) {
+  if (st) libState.ui2.status.set(key, st); else libState.ui2.status.delete(key);
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('#view-library .lib2-status').forEach((el) => {
+    if (el.dataset.skey !== key) return;
+    el.className = `lib2-status${st && st.tone ? ` lib2-status--${st.tone}` : ''}`;
+    el.textContent = (st && st.text) || '';
+  });
+}
+
+// openFolderId names the folder open in the Library: its server and its
+// container. A folder action's answer that arrives after the user moved on
+// belongs to the folder it was asked for, not to the action bar on screen.
+function openFolderId() {
+  const top = libState.stack[libState.stack.length - 1];
+  return `${libState.currentUDN || ''}|${(top && top.id) || ''}`;
+}
+
+// speakerName is the name of the speaker a play from here goes to, as the
+// preview's actions and feedback name it.
+function speakerName() {
+  return state.currentBox ? getBoxLabel(state.currentBox) : '';
+}
+
 async function libraryPlay(item) {
+  const key = statusKey(item);
   if (!state.currentBox) {
-    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
+    else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
   if (!item.streamURL) {
-    showError(t('library.errorNoURL'));
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('library.errorNoURL') });
+    else showError(t('library.errorNoURL'));
     return;
   }
   // A play aimed at a zone follower must go to its master (#70): the follower's
   // own UPnP endpoint rejects control with 501 "Can't control member of group".
   const target = deps.effectivePlayTarget() || state.currentBox;
+  const name = speakerName();
+  // Sent is not playing: the preview says "Starting" until the speaker
+  // reports that it plays (verifyLibraryPlayback).
+  if (ui2()) setLibStatus(key, { tone: 'busy', text: t('ui2.library.starting', { name }) });
   try {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
@@ -591,11 +694,20 @@ async function libraryPlay(item) {
     beginLibraryNowPlaying(state, state.lastLibraryPlay, Date.now());
     deps.renderNowPlayingBar();
     setTimeout(deps.refreshStatus, 1500);
+    if (ui2()) {
+      verifyLibraryPlayback(item, target, (r) => {
+        if (!r) setLibStatus(key, null);
+        else if (r.ok) setLibStatus(key, { tone: 'ok', text: t('ui2.library.playingOn', { name }) });
+        else setLibStatus(key, { tone: 'error', text: r.msg });
+      });
+      return;
+    }
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item, target);
   } catch (e) {
-    showError(`PlayURL: ${e}`);
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('ui2.library.playFailed', { name, detail: String(e) }) });
+    else showError(`PlayURL: ${e}`);
   }
 }
 
@@ -621,17 +733,50 @@ async function libraryPlay(item) {
 // the URL itself: if the server will not hand over the beginning of the file,
 // the delivery is the problem and the format is not worth mentioning. Run
 // fire-and-forget so the click stays responsive.
-async function verifyLibraryPlayback(item, target) {
+//
+// report, when given (the UI 2.0 preview), gets the verdict instead of the
+// toast: { ok: true } once the speaker plays, { ok: false, msg } when it did
+// not, null when the user moved on and there is nothing left to say.
+async function verifyLibraryPlayback(item, target, report) {
   // Watch the box the play was actually sent to (the group master when the
   // selected box is a follower, #70), not blindly the selected box.
   const box = target || state.currentBox;
   if (!box) return;
   // Past the box's own AUDIO_ERROR_TIMEOUT, which arrives ~20 s in.
   const deadline = Date.now() + 26000;
+  const verdict = await waitForPlayState(box, deadline);
+  if (verdict === 'gone') { if (report) report(null); return; }
+  if (verdict === 'playing') { if (report) report({ ok: true }); return; }
+  // A speaker refusing everything STR pushes never tried the file, so neither
+  // the format nor the server is the answer: the restart banner's text is
+  // (#1634, libraryplayfail.js).
+  if (speakerRefusingPushes(state.boxes, box)) {
+    const storm = t('speaker.stormBanner', { name: getBoxLabel(box) });
+    if (report) report({ ok: false, msg: storm });
+    else showToast(storm, 9000);
+    return;
+  }
+  const probe = await probeDelivery(item.streamURL);
+  // Only a probe that actually answered may change the wording. "Not known" is
+  // the state a blocked or unreachable probe lands in, and the app can be kept
+  // from a server the speaker reaches perfectly well, so it keeps the older
+  // format wording rather than inventing a verdict.
+  const msg = probe.known && !probe.delivered
+    ? t('library.serverNotDelivering', { title: item.title || '' })
+    : t('library.formatMaybeUnsupported', { title: item.title || '' });
+  if (report) report({ ok: false, msg });
+  else showToast(msg, 9000);
+}
+
+// waitForPlayState asks the speaker every two seconds, until deadline, whether
+// what was just sent plays: 'playing' once it does, 'rejected' when the speaker
+// turned it down, 'timeout' when it never got there, 'gone' when no speaker is
+// selected any more.
+async function waitForPlayState(box, deadline) {
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
     // Bail if the user moved to another box entirely.
-    if (!state.currentBox) return;
+    if (!state.currentBox) return 'gone';
     let xml = '';
     try {
       xml = await Status(box.host, box.port);
@@ -640,24 +785,10 @@ async function verifyLibraryPlayback(item, target) {
     }
     const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
-    if (ps === 'PLAY_STATE') return; // decoded and playing: all good
-    if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
+    if (ps === 'PLAY_STATE') return 'playing'; // decoded and playing: all good
+    if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) return 'rejected'; // box rejected it
   }
-  // A speaker refusing everything STR pushes never tried the file, so neither
-  // the format nor the server is the answer: the restart banner's text is
-  // (#1634, libraryplayfail.js).
-  if (speakerRefusingPushes(state.boxes, box)) {
-    showToast(t('speaker.stormBanner', { name: getBoxLabel(box) }), 9000);
-    return;
-  }
-  const probe = await probeDelivery(item.streamURL);
-  // Only a probe that actually answered may change the wording. "Not known" is
-  // the state a blocked or unreachable probe lands in, and the app can be kept
-  // from a server the speaker reaches perfectly well, so it keeps the older
-  // format wording rather than inventing a verdict.
-  showToast(probe.known && !probe.delivered
-    ? t('library.serverNotDelivering', { title: item.title || '' })
-    : t('library.formatMaybeUnsupported', { title: item.title || '' }), 9000);
+  return 'timeout';
 }
 
 // probeDelivery asks the Go side whether the media server hands over the first
@@ -691,7 +822,8 @@ async function probeDelivery(url) {
 // earlier chapters stay one Previous away.
 async function libraryPlayFolder(fromId) {
   if (!state.currentBox) {
-    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
+    else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
   const all = (libState.page && libState.page.items) || [];
@@ -710,7 +842,8 @@ async function libraryPlayFolder(fromId) {
       id: it.id,
     }));
   if (items.length === 0) {
-    showError(t('library.errorNoURL'));
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
+    else showError(t('library.errorNoURL'));
     return;
   }
   const start = fromId ? Math.max(0, items.findIndex((it) => it.id === fromId)) : 0;
@@ -744,6 +877,9 @@ async function libraryPlayFolder(fromId) {
   // follower's UPnP endpoint rejects control with 501 "Can't control member
   // of group" (that raw SOAP fault is exactly what users saw).
   const target = deps.effectivePlayTarget() || state.currentBox;
+  const spk = speakerName();
+  const folder = openFolderId();
+  if (ui2()) setLibStatus('folder', { tone: 'busy', text: t('ui2.library.folderStarting', { name: spk }) });
   try {
     await StartQueue(target.host, target.port, JSON.stringify(payload));
     // A folder play supersedes any ad-hoc radio station the app started (#252).
@@ -759,9 +895,22 @@ async function libraryPlayFolder(fromId) {
     }, Date.now());
     deps.renderNowPlayingBar();
     setTimeout(deps.refreshStatus, 1500);
+    if (ui2()) {
+      // Done only once the speaker plays; a folder whose first file the
+      // speaker cannot start says so next to the button that started it.
+      waitForPlayState(target, Date.now() + 26000).then((v) => {
+        if (openFolderId() !== folder) return; // another folder is open by now
+        if (v === 'gone') setLibStatus('folder', null);
+        else if (v === 'playing') setLibStatus('folder', { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
+        else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
+      });
+      return;
+    }
     showToast(t('library.folderQueued', { n: items.length - start }));
   } catch (e) {
-    showError(`StartQueue: ${e}`);
+    if (ui2()) {
+      if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
+    } else showError(`StartQueue: ${e}`);
   }
 }
 
@@ -773,7 +922,8 @@ async function libraryPlayFolder(fromId) {
 // the product scope ("save a DLNA folder as a preset including shuffle").
 function librarySaveFolderAsPreset() {
   if (!state.currentBox) {
-    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
+    else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
   const all = (libState.page && libState.page.items) || [];
@@ -794,7 +944,8 @@ function librarySaveFolderAsPreset() {
       ...(it.id ? { object_id: String(it.id) } : {}),
     }));
   if (items.length === 0) {
-    showError(t('library.errorNoURL'));
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
+    else showError(t('library.errorNoURL'));
     return;
   }
   // Cap how many tracks a queue preset stores: the whole list is serialized into
@@ -816,7 +967,8 @@ function librarySaveFolderAsPreset() {
     || t('controls.playFolder');
   const source = (srv && (srv.friendlyName || srv.address)) || '';
   deps.showSlotPicker({
-    title: t('library.assignFolderTitle'),
+    // The preview names the speaker whose keys these are (rule 1).
+    title: ui2() ? t('ui2.library.keyFolderTitle', { name: speakerName() }) : t('library.assignFolderTitle'),
     subtitle: name,
     onPick: async (i) => {
       const payload = {
@@ -829,6 +981,7 @@ function librarySaveFolderAsPreset() {
       // No track carries a cover: the key shows the folder's own (#1301).
       const art = folderFallbackArt(queueItems, last && last.art);
       if (art) payload.art = art;
+      const folder = openFolderId();
       // The folder's identity apart from its file paths: a server that
       // changes every path (a swapped USB stick) can then be browsed again by
       // id. An agent that does not know the field ignores it.
@@ -837,13 +990,25 @@ function librarySaveFolderAsPreset() {
       }
       try {
         await SaveFolderPreset(state.currentBox.host, state.currentBox.port, i, JSON.stringify(payload));
-        if (queueItems.length < totalItems) {
+        if (ui2()) {
+          if (openFolderId() !== folder) return; // another folder is open by now
+          // The speaker answered the save: say so next to the folder button.
+          const spk = speakerName();
+          setLibStatus('folder', {
+            tone: 'ok',
+            text: queueItems.length < totalItems
+              ? t('ui2.library.onKeyCapped', { n: keyNum(i, t), name: spk, kept: queueItems.length, total: totalItems })
+              : t('ui2.library.onKey', { n: keyNum(i, t), name: spk }),
+          });
+        } else if (queueItems.length < totalItems) {
           showToast(t('library.folderPresetSavedCapped', { n: keyNum(i, t), name, kept: queueItems.length, total: totalItems }));
         } else {
           showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }));
         }
       } catch (e) {
-        showError(`SaveFolderPreset: ${e}`);
+        if (ui2()) {
+          if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.keyFailed', { name: speakerName(), detail: String(e) }) });
+        } else showError(`SaveFolderPreset: ${e}`);
       }
     },
   });
@@ -869,12 +1034,15 @@ function libraryItemUDN(item) {
 }
 
 function librarySaveAsPreset(item) {
+  const key = statusKey(item);
   if (!state.currentBox) {
-    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
+    else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
   if (!item.streamURL) {
-    showError(t('library.errorNoURL'));
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('library.errorNoURL') });
+    else showError(t('library.errorNoURL'));
     return;
   }
   // The media server this track came from, stored on the preset so the tile can
@@ -890,7 +1058,10 @@ function librarySaveAsPreset(item) {
         // The track's object on its server (#919).
         ref: libraryTrackRef(item, libraryItemUDN(item)),
       });
-      showToast(t('preset.savedToKey', { n: keyNum(i, t), name: item.title || '(track)' }));
+      // A refusal (already on another key) stays with the key picker, which
+      // offers the move; a save the speaker took is said in the track's row.
+      if (ui2()) setLibStatus(key, { tone: 'ok', text: t('ui2.library.onKey', { n: keyNum(i, t), name: speakerName() }) });
+      else showToast(t('preset.savedToKey', { n: keyNum(i, t), name: item.title || '(track)' }));
     },
   });
 }
@@ -1010,6 +1181,13 @@ function wireLibraryRows(scope) {
 // input keeps focus (re-rendering the whole view would steal it) and large
 // folders do not rebuild the entire view per character.
 function libRefilter() {
+  if (ui2()) {
+    const l2 = document.querySelector('#view-library .lib2-list[data-list="folder"]');
+    if (l2) l2.innerHTML = ui2FolderRowsHTML();
+    const c2 = $('libCount');
+    if (c2) c2.textContent = countText(libraryCountText());
+    return;
+  }
   const list = document.querySelector('#view-library .library-list');
   if (list) { list.innerHTML = libraryListInnerHTML(); wireLibraryRows(list); }
   const cnt = $('libCount');
@@ -1132,9 +1310,353 @@ function wireWholeSearch(el) {
   });
 }
 
+// pushQueueMode sends a shuffle or repeat choice to the speaker right away
+// (best-effort), so it sticks for the hardware keys too, even when no folder
+// play follows.
+function pushQueueMode(path, body) {
+  const box = state.currentBox;
+  if (!box || box.kind === 'stock') return;
+  boxFetch(box, path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, 4000).catch(() => { /* box asleep or older agent */ });
+}
+
+// ---------- The UI 2.0 preview (#1286) ----------
+//
+// One level per step: the media servers, a server's root, each folder below
+// it, and the search results across every server as one more step. The markup
+// is shell2/library.js; the state, the browse, the plays and the keys are the
+// ones above, so the two layouts never drift apart in what they can do.
+
+// libraryFollowSpeaker redraws the preview's Library for a speaker chosen in
+// the sidebar, so every play and key action names the new one, and reads that
+// speaker's shuffle and repeat. A no-op in the classic layout and off the
+// Library view.
+export function libraryFollowSpeaker() {
+  if (!ui2() || state.view !== 'library') return;
+  renderLibrary();
+  syncPlayModeFromBox();
+}
+
+// ui2ServerName is the open server's name, for the trail and the headings.
+function ui2ServerName() {
+  const srv = libState.servers.find((s) => s.udn === libState.currentUDN);
+  return (srv && (srv.friendlyName || srv.address)) || '';
+}
+
+function ui2Crumbs() {
+  const s = libState.search;
+  return libraryTrail(libState.stack, {
+    serverName: ui2ServerName(),
+    inServer: !!libState.currentUDN,
+    searchQuery: s.active ? (s.query || '').trim() : null,
+  });
+}
+
+// ui2FolderRowsHTML is the open folder's rows, filtered by the folder filter:
+// sub-folders first, then the tracks, each track with its feedback line.
+function ui2FolderRowsHTML() {
+  const speaker = speakerName();
+  const rows = libraryFilteredContainers().map(folderRowHTML).join('')
+    + libraryFilteredItems().map((it) => trackRowHTML(it, {
+      key: statusKey(it),
+      attr: 'iid',
+      value: it.id,
+      speaker,
+      meta: [it.artist, it.album].filter(Boolean).join(' · '),
+      duration: it.durationSec > 0 ? deps.formatDuration(it.durationSec) : '',
+      status: libState.ui2.status.get(statusKey(it)),
+    })).join('');
+  if (!rows && libState.filter) {
+    return `<li class="lib2-none">${escapeHtml(t('ui2.library.filterNone', { q: libState.filter.trim() }))}</li>`;
+  }
+  return rows;
+}
+
+// ui2ServerToolsHTML is what belongs to the open server rather than to one of
+// its folders, shown at its root: putting it on every speaker, removing one
+// added by hand, and the notes about a server that stays dark or is Universal
+// Media Server.
+function ui2ServerToolsHTML() {
+  const cur = libState.servers.find((s) => s.udn === libState.currentUDN);
+  if (!cur) return '';
+  const remove = cur.manual
+    ? `<button type="button" class="u-btn u-btn--secondary" id="libManualRemoveBtn">${escapeHtml(t('library.removeServerBtn'))}</button>`
+    : '';
+  const dark = serverNotAnswering(cur)
+    ? `<p class="library-server-dark-note lib2-note">${escapeHtml(t('library.serverNotAnsweringNote'))}</p>`
+    : '';
+  return `
+      <div class="lib2-server-tools">
+        ${dark}
+        <div class="lib2-tool-row">
+          <button type="button" class="u-btn u-btn--secondary" id="libOnSpeakersBtn" aria-describedby="lib2OnSpeakersHint">${escapeHtml(t('library.onSpeakersBtn'))}</button>
+          ${remove}
+        </div>
+        <p class="lib2-hint" id="lib2OnSpeakersHint">${escapeHtml(t('library.onSpeakersHint'))}</p>
+        <div class="library-onspeakers-msg lib2-msg" id="libOnSpeakersMsg" role="status"></div>
+        ${libraryUMSNote(cur)}
+      </div>`;
+}
+
+function ui2FolderHTML() {
+  const page = libState.page || {};
+  const nC = (page.containers || []).length;
+  const nI = (page.items || []).length;
+  const top = libState.stack[libState.stack.length - 1] || {};
+  const atRoot = libState.stack.length === 1;
+  const title = top.title || (atRoot ? ui2ServerName() : '') || t('library.root');
+  let html = levelHeadHTML(title, countLine(nC, nI));
+  if (atRoot) html += ui2ServerToolsHTML();
+  if (nI > 0) {
+    html += folderActionsHTML({
+      speaker: speakerName(),
+      shuffle: !!libState.shuffle,
+      repeat: libState.repeat || 'off',
+      status: libState.ui2.status.get('folder'),
+    });
+  }
+  if (nI > 0 || nC > 0) html += filterRowHTML(libState.filter, libraryCountText());
+  html += `<ul class="lib2-list" data-list="folder">${ui2FolderRowsHTML()}</ul>`;
+  if (libState.loadingMore) html += loadingHTML(t('library.loadingMore'));
+  else if (libState.capped) html += `<p class="lib2-note">${escapeHtml(t(cappedKey(nC, nI), { n: LIB_MAX }))}</p>`;
+  if (nC === 0 && nI === 0) {
+    const up = trailParent(ui2Crumbs());
+    html += stateHTML({
+      tone: 'info',
+      title: t('library.emptyFolder'),
+      body: t('ui2.library.emptyFolderBody'),
+      actions: up ? [{ id: 'lib2Up', label: t('ui2.library.backTo', { name: up.label }) }] : [],
+    });
+  }
+  return html;
+}
+
+
+// ui2SearchHTML is the search across every server as a level of its own: the
+// hits with the server each one is on, and the one note the classic layout
+// shows under them (a server that did not answer, a partial list, nothing).
+function ui2SearchHTML() {
+  const s = libState.search;
+  let html = levelHeadHTML(t('ui2.library.results', { q: (s.query || '').trim() }));
+  if (s.loading) return html + loadingHTML(t('library.wholeSearching'));
+  const speaker = speakerName();
+  const rows = s.items.map((it, idx) => trackRowHTML(it, {
+    key: statusKey(it),
+    attr: 'idx',
+    value: idx,
+    speaker,
+    meta: [it.artist, it.album, it.server].filter(Boolean).join(' · '),
+    duration: it.durationSec > 0 ? deps.formatDuration(it.durationSec) : '',
+    status: libState.ui2.status.get(statusKey(it)),
+  })).join('');
+  if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
+  const note = libraryWholeSearchNote(s);
+  if (note) html += `<p class="lib2-note" role="status">${escapeHtml(note)}</p>`;
+  return html;
+}
+
+// ui2ServersHTML is the top level: the media servers on the network, or what
+// to do when there are none or the search for them failed.
+function ui2ServersHTML() {
+  const u = libState.ui2;
+  const manual = (open) => manualAddHTML({ open: open || !!u.addError, error: u.addError });
+  if (libState.loading) return loadingHTML(t('ui2.library.searchingServers'));
+  if (u.serversError) {
+    return stateHTML({
+      tone: 'error',
+      title: t('ui2.library.serversErrorTitle'),
+      body: t('ui2.library.serversErrorBody'),
+      detail: u.serversError,
+      actions: [{ id: 'libRefreshBtn', label: t('ui2.library.tryAgain'), primary: true }],
+    }) + manual(false);
+  }
+  if (!libState.servers.length) {
+    return stateHTML({
+      tone: 'info',
+      title: t('ui2.library.noServersTitle'),
+      body: t('ui2.library.noServersBody'),
+      actions: [{ id: 'libRefreshBtn', label: t('ui2.library.searchAgain'), primary: true }],
+    }) + libraryRefusedNote(libState.refused) + manual(true);
+  }
+  return levelHeadHTML(t('ui2.library.serversTitle'))
+    + libraryRefusedNote(libState.refused)
+    + `<ul class="lib2-list" data-list="servers">${serverRowsHTML(libState.servers)}</ul>`
+    + `<div class="lib2-tool-row"><button type="button" class="u-btn u-btn--secondary" id="libRefreshBtn">${escapeHtml(t('ui2.library.searchAgain'))}</button></div>`
+    + manual(false);
+}
+
+// ui2ErrorHTML is a folder (or a server's root) that could not be opened, in
+// its place: what happened, Try again and the step back up.
+function ui2ErrorHTML() {
+  const err = libState.ui2.error;
+  const up = trailParent(ui2Crumbs());
+  const actions = [{ id: 'lib2Retry', label: t('ui2.library.tryAgain'), primary: true }];
+  if (up) actions.push({ id: 'lib2Up', label: t('ui2.library.backTo', { name: up.label }) });
+  return err.asleep
+    ? stateHTML({ tone: 'error', title: t('ui2.library.asleepTitle', { name: err.name }), body: t('ui2.library.asleepBody'), actions })
+    : stateHTML({ tone: 'error', title: t('ui2.library.folderErrorTitle'), body: t('ui2.library.folderErrorBody'), detail: err.detail, actions });
+}
+
+// focusMark and findMark keep the keyboard on the same control across a
+// redraw: by id, or by its lib2-* class and data attributes.
+function focusMark(root) {
+  const a = typeof document !== 'undefined' ? document.activeElement : null;
+  if (!a || a === root || !root.contains(a)) return null;
+  const sel = typeof a.selectionStart === 'number' ? [a.selectionStart, a.selectionEnd] : null;
+  if (a.id) return { id: a.id, sel };
+  const cls = [...a.classList].find((c) => c.startsWith('lib2-'));
+  return cls ? { cls, data: { ...a.dataset }, sel } : null;
+}
+function findMark(root, m) {
+  if (!m) return null;
+  if (m.id) {
+    const n = document.getElementById(m.id);
+    return n && root.contains(n) ? n : null;
+  }
+  return [...root.querySelectorAll(`.${m.cls}`)]
+    .find((n) => Object.entries(m.data).every(([k, v]) => n.dataset[k] === v)) || null;
+}
+
+function renderLibraryUi2(el) {
+  const s = libState.search;
+  const u = libState.ui2;
+  const inServer = !!libState.currentUDN;
+  let body;
+  if (s.active) body = trailHTML(ui2Crumbs()) + ui2SearchHTML();
+  else if (!inServer) body = ui2ServersHTML();
+  else {
+    body = trailHTML(ui2Crumbs());
+    const top = libState.stack[libState.stack.length - 1] || {};
+    if (libState.loading) body += loadingHTML(t('ui2.library.opening', { name: top.title || ui2ServerName() || t('library.root') }));
+    else if (u.error) body += ui2ErrorHTML();
+    else if (libState.page) body += ui2FolderHTML();
+  }
+  const keep = focusMark(el);
+  el.innerHTML = headerHTML({
+    speaker: speakerName(),
+    search: libState.servers.length ? s : null,
+    fields: LIB_SEARCH_FIELDS,
+  }) + `<div class="lib2-level">${body}</div>`;
+  wireWholeSearch(el);
+  wireLibraryUi2(el);
+
+  // A step to a new level puts the keyboard on its heading, or, one step up,
+  // on the row it came from; any other redraw keeps it where it was.
+  const busy = libState.loading || s.loading;
+  const f = u.focus;
+  let target = null;
+  if (f && !busy) {
+    u.focus = null;
+    if (f.cid) target = [...el.querySelectorAll('.lib2-folder')].find((b) => b.dataset.cid === f.cid) || null;
+    if (f.udn) target = [...el.querySelectorAll('.lib2-server')].find((b) => b.dataset.udn === f.udn) || null;
+    if (!target) target = el.querySelector('.lib2-focus-target');
+  } else if (!f) {
+    target = findMark(el, keep);
+  }
+  if (target) {
+    try { target.focus({ preventScroll: !f }); } catch { target.focus(); }
+    if (keep && keep.sel && target === findMark(el, keep) && typeof target.setSelectionRange === 'function') {
+      try { target.setSelectionRange(keep.sel[0], keep.sel[1]); } catch { /* not a text field */ }
+    }
+  }
+}
+
+// ui2GoTo takes the preview one or more steps up: depth is a crumb's
+// (SERVERS_DEPTH for the server list). Leaving the search results back to the
+// folder they were searched from shows that folder again without asking the
+// server.
+function ui2GoTo(depth) {
+  const s = libState.search;
+  const fromSearch = s.active;
+  if (fromSearch) {
+    s.token++;
+    Object.assign(s, { active: false, loading: false, items: [] });
+  }
+  if (depth === SERVERS_DEPTH) {
+    libState.ui2.focus = libState.currentUDN ? { udn: libState.currentUDN } : 'heading';
+    libraryShowServers();
+    return;
+  }
+  const last = libState.stack.length - 1;
+  if (depth > last || depth < 0) return;
+  if (fromSearch && depth === last && (libState.page || libState.ui2.error)) {
+    libState.ui2.focus = 'heading';
+    renderLibrary();
+    return;
+  }
+  const leaving = libState.stack[depth + 1];
+  libState.ui2.focus = leaving ? { cid: leaving.id } : 'heading';
+  libraryGoTo(depth);
+}
+
+// ui2ItemFor finds the track a row's button stands for: by id in the folder,
+// by index in the search results.
+function ui2ItemFor(btn) {
+  if (btn.dataset.idx != null) return libState.search.items[+btn.dataset.idx] || null;
+  return ((libState.page && libState.page.items) || []).find((x) => x.id === btn.dataset.iid) || null;
+}
+
+// wireLibraryUi2 handles every control of the preview's Library, delegated on
+// the view, so a list the filter rebuilds needs no wiring of its own.
+function wireLibraryUi2(el) {
+  el.onclick = (e) => {
+    const hit = (sel) => e.target.closest(sel);
+    let b;
+    if ((b = hit('.lib2-crumb[data-depth], .lib2-back'))) { ui2GoTo(parseInt(b.dataset.depth, 10)); return; }
+    if ((b = hit('.lib2-server'))) {
+      libState.ui2.focus = 'heading';
+      libraryPickServer(b.dataset.udn, true);
+      return;
+    }
+    if ((b = hit('.lib2-folder'))) {
+      const c = ((libState.page && libState.page.containers) || []).find((x) => x.id === b.dataset.cid);
+      if (c) { libState.ui2.focus = 'heading'; libraryEnter(c); }
+      return;
+    }
+    if ((b = hit('.lib2-play'))) { const it = ui2ItemFor(b); if (it) libraryPlay(it); return; }
+    if ((b = hit('.lib2-key'))) { const it = ui2ItemFor(b); if (it) librarySaveAsPreset(it); return; }
+    if (hit('.lib2-play-folder')) { libraryPlayFolder(); return; }
+    if (hit('.lib2-key-folder')) { librarySaveFolderAsPreset(); return; }
+    if ((b = hit('.lib2-shuffle'))) {
+      libState.shuffle = !libState.shuffle;
+      b.setAttribute('aria-pressed', libState.shuffle ? 'true' : 'false');
+      pushQueueMode('/api/queue/shuffle', { on: libState.shuffle });
+      return;
+    }
+    if ((b = hit('.lib2-repeat'))) {
+      libState.repeat = libState.repeat === 'off' ? 'all' : libState.repeat === 'all' ? 'one' : 'off';
+      b.dataset.mode = libState.repeat;
+      b.textContent = t(repeatLabelKey(libState.repeat));
+      pushQueueMode('/api/queue/repeat', { mode: libState.repeat });
+      return;
+    }
+    if (hit('#lib2Retry')) { libState.ui2.focus = 'heading'; libraryBrowseCurrent(); return; }
+    if (hit('#lib2Up')) { const up = trailParent(ui2Crumbs()); if (up) ui2GoTo(up.depth); return; }
+    if (hit('#libRefreshBtn')) { libState.ui2.focus = 'heading'; loadMediaServers({ autoOpen: false }); return; }
+    if ((b = hit('#libOnSpeakersBtn'))) { libraryPutServerOnSpeakers(b); return; }
+    if ((b = hit('#libManualAddBtn'))) { const i = $('libManualUrl'); libraryAddManualServer(i ? i.value : '', b); return; }
+    if (hit('#libManualRemoveBtn')) { libraryRemoveManualServer(libState.currentUDN); }
+  };
+  el.onkeydown = (e) => {
+    if (e.key === 'Enter' && e.target && e.target.id === 'libManualUrl') {
+      libraryAddManualServer(e.target.value, $('libManualAddBtn'));
+    }
+  };
+  el.oninput = (e) => {
+    if (e.target && e.target.id === 'libSearch') {
+      libState.filter = e.target.value;
+      libRefilter();
+    }
+  };
+}
+
 function renderLibrary() {
   const el = $('view-library');
   if (!el) return;
+  if (ui2()) { renderLibraryUi2(el); return; }
   // Which speaker this tab acts on has to be visible here. Playing a track and
   // saving a preset both go to the speaker picked on the music tab, and presets
   // live on that speaker, so choosing a preset slot from the library meant
@@ -1339,17 +1861,8 @@ function renderLibrary() {
   if (playFolderBtn) playFolderBtn.onclick = () => libraryPlayFolder();
   const saveFolderBtn = el.querySelector('.lib-save-folder-btn');
   if (saveFolderBtn) saveFolderBtn.onclick = () => librarySaveFolderAsPreset();
-  // The toggles push their choice to the speaker right away (best-effort), so
-  // it sticks for the hardware keys too, even when no folder play follows.
-  const pushMode = (path, body) => {
-    const box = state.currentBox;
-    if (!box || box.kind === 'stock') return;
-    boxFetch(box, path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }, 4000).catch(() => { /* box asleep or older agent */ });
-  };
+  // The toggles push their choice to the speaker right away (pushQueueMode).
+  const pushMode = pushQueueMode;
   const qShuffleBtn = el.querySelector('.lib-queue-shuffle');
   if (qShuffleBtn) qShuffleBtn.onclick = () => {
     libState.shuffle = !libState.shuffle;

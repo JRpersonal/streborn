@@ -56,9 +56,12 @@ import {
   wirePresetTransferRow,
 } from './presets.js';
 import { saveCurrentToSlot } from './save.js';
+import { keyFocusMark, restoreKeyFocus, syncUi2Keys } from './ui2radio.js';
 
 export function renderPresets() {
   const grid = $('presets');
+  // The preview keeps the keyboard on the key it was on across the rebuild.
+  const keyFocus = keyFocusMark();
   grid.innerHTML = '';
   // The second row of six keys (#1110): only on a speaker whose agent keeps
   // it. Everything else renders exactly the one row it always had.
@@ -418,6 +421,8 @@ export function renderPresets() {
   // No marquee pass here: nothing in a tile scrolls any more (see the tile
   // template above). The saved name wraps and the badge lines clip, so a
   // rebuilt grid needs no measuring frame.
+  syncUi2Keys();
+  restoreKeyFocus(keyFocus);
 }
 
 // lastLitKey is the key the now-playing line was last told about.

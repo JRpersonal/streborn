@@ -110,7 +110,32 @@ html.ui2 .u-btn--icon {
   color: var(--u-text);
   font-size: 20px;
 }
-html.ui2 .u-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* Disabled: no opacity, which took a filled button's words below 4.5:1 (white
+   on a half-faded action blue). The words stay in the muted colour on the
+   surface (4.5:1 in every theme, tokens.test.js) and the dashed edge says
+   "not now" without colour. */
+html.ui2 .u-btn:disabled,
+html.ui2 .u-btn[aria-disabled="true"] {
+  border-style: dashed;
+  border-color: var(--u-border);
+  background: var(--u-surface);
+  color: var(--u-muted);
+  cursor: not-allowed;
+}
+
+/* "Put on key" (shell2/keybtn.js): one control in Radio, Library and
+   Recently played, the six keys icon and the words. Where the window leaves
+   less room (a larger text size), only the icon shows; the name stays. */
+html.ui2 .u-keybtn {
+  flex: 0 0 auto;
+  padding-inline: 12px 16px;
+  white-space: nowrap;
+}
+html.ui2 .u-keybtn svg { flex: 0 0 auto; }
+@container (width < 1100px) {
+  html.ui2 .u-keybtn { width: var(--u-target); min-width: var(--u-target); padding: 0; }
+  html.ui2 .u-keybtn-text { display: none; }
+}
 
 /* Keyboard focus in the new chrome: a real double ring (the page colour, then
    the focus colour) that stays visible on every surface. Scoped to the chrome:
@@ -489,6 +514,17 @@ html.ui2 .ui2-spk-scroll {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* The list ends below a whole row (mount.js endOnRow); a shadow on the edge
+   where more rows wait says that it scrolls. The two covers scroll with the
+   rows (local) and hide each shadow at its own end of the list. */
+html.ui2 :is(.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list) {
+  background:
+    linear-gradient(var(--u-sidebar) 40%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--u-sidebar) 60%) bottom / 100% 24px no-repeat local,
+    linear-gradient(color-mix(in srgb, var(--u-text) 22%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--u-text) 22%, transparent)) bottom / 100% 10px no-repeat scroll;
+  background-color: var(--u-sidebar);
+}
 /* Squeezed (mount.js holdSpeakerFloor): a sidebar too short for both capped
    lists and the navigation entries. The lists give up their own scroll and
    caps and scroll together in .ui2-spk-lists, so the section never paints
@@ -660,15 +696,54 @@ html.ui2 .ui2-main {
   scroll-padding-block: 16px;
 }
 html.ui2 .ui2-main:focus { outline: none; }
+/* The content column starts next to the sidebar, the same for every view,
+   and stops at a width a line of text and a row of actions still read well
+   at; a wider window leaves the room on the far side. */
 html.ui2 .ui2-main-inner {
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  max-width: 720px;
-  margin-inline: auto;
-  padding: 16px;
+  max-width: 960px;
+  margin-inline: 0;
+  padding: 16px 24px;
 }
 html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
+/* The music views end with their own content: the classic footer (version,
+   donate, world map, links) is support material, and docs/UI-2.0.md keeps
+   that out of the music views. The version line lives in the sidebar
+   (watchAppUpdateBanner); the footer still closes the other views until Help
+   and info (phase 5) takes it. mount.js marks the open view on #ui2Main. */
+html.ui2 .ui2-main:is([data-view="box"], [data-view="library"], [data-view="recent"], [data-view="spotify"]) #appFooter { display: none; }
+
+/* One view header for Radio, Library, Recently played and Spotify: the title
+   at the same place, size and height in all four (a 40px row, so a title
+   with a button beside it and one without line up), and the line under it in
+   the muted body size. */
+html.ui2 :is(.ui2-radio-title, #view-library .lib2-title, #view-recent .recent-title, #view-spotify .spotify-hero h2) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--u-target);
+  margin: 0;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+html.ui2 :is(#view-library .lib2-target, #view-recent .recent-sub, #view-spotify .spotify-lead) {
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--u-muted);
+  font-family: var(--u-font);
+  font-size: 14px;
+  line-height: 1.45;
+}
+html.ui2 #view-spotify .spotify-page {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
 
 /* ---------- Persistent player ---------- */
 
@@ -737,7 +812,25 @@ html.ui2 .ui2-player .volume-control button.vol-mute {
   justify-content: center;
   min-width: var(--u-target);
   min-height: var(--u-target);
+  color: var(--u-text);
+  font-size: 0;
+  opacity: 1;
 }
+/* The speaker glyph was a colour emoji at 70% opacity, pale grey in the light
+   theme. In the player it is drawn in the text colour instead (a mask over
+   currentcolor), so it reaches 3:1 in every theme; muted shows the struck
+   speaker. The button's name (aria-label) says it either way. */
+html.ui2 .ui2-player .volume-control button.vol-mute::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h4l5-4v14l-5-4H4z' fill='black'/%3E%3Cpath d='M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html.ui2 .ui2-player .volume-control button.vol-mute[aria-pressed="true"]::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h4l5-4v14l-5-4H4z' fill='black'/%3E%3Cpath d='M16 9l6 6M22 9l-6 6'/%3E%3C/svg%3E");
+}
+html.ui2 .ui2-player .volume-control button.vol-mute[aria-pressed="true"] { color: var(--u-accent); }
 html.ui2 .ui2-levels-btn {
   flex: 0 1 auto;
   flex-direction: column;
@@ -858,3 +951,142 @@ html.ui2 .ui2-side-version .app-update-quiet :is(.footer-link, button) {
   min-height: var(--u-target);
 }
 html.ui2 .ui2-side-version .app-update-quiet-note { color: var(--u-muted); }
+
+/* ---------- Spotify (phase 2) ----------
+
+   The cards on top of the Spotify view (views/spotifyui2.js): the playing
+   playlist onto a key, and the Spotify login of every speaker. Their markup
+   only exists while the shell is mounted. */
+
+html.ui2 #view-spotify .sp2 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0 0 16px;
+  font-family: var(--u-font);
+}
+html.ui2 #view-spotify .sp2-card { display: flex; flex-direction: column; gap: 8px; }
+html.ui2 #view-spotify .sp2-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+html.ui2 #view-spotify .sp2-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--u-text); }
+/* The card's body size for every line in it (the view's own p is larger),
+   wrapping however long a name or a translation gets. */
+html.ui2 #view-spotify .sp2-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-strong { font-weight: 600; }
+html.ui2 #view-spotify .sp2-muted { color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--u-muted); }
+
+html.ui2 #view-spotify .sp2-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--u-text);
+}
+html.ui2 #view-spotify .sp2-now-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* The six keys, as many per row as fit: three in the default window, fewer
+   with a larger text size. */
+html.ui2 #view-spotify .sp2-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 8px;
+}
+html.ui2 #view-spotify .sp2-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 #view-spotify .sp2-key:hover { background: var(--u-surface); }
+html.ui2 #view-spotify .sp2-key.is-chosen {
+  background: var(--u-selected);
+  border-color: var(--u-accent);
+  box-shadow: inset 0 0 0 1px var(--u-accent);
+}
+html.ui2 #view-spotify .sp2-key:disabled { cursor: progress; }
+html.ui2 #view-spotify .sp2-key-n {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--u-border);
+  border-radius: 6px;
+  font-weight: 700;
+}
+html.ui2 #view-spotify .sp2-key-text { display: flex; flex-direction: column; min-width: 0; }
+html.ui2 #view-spotify .sp2-key-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.ui2 #view-spotify .sp2-key-sub { font-size: 12px; color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-key.is-chosen .sp2-key-sub { color: var(--u-text); }
+
+html.ui2 #view-spotify .sp2-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+html.ui2 #view-spotify .sp2-hint { font-size: 13px; }
+
+/* The outcome of the last save, in the card. Words carry the meaning; the
+   colour and the edge only repeat it. */
+html.ui2 #view-spotify .sp2-result { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+html.ui2 #view-spotify .sp2-result:empty { display: none; }
+html.ui2 #view-spotify .sp2-result-line {
+  padding-inline-start: 8px;
+  border-inline-start: 4px solid currentcolor;
+  line-height: 1.5;
+}
+html.ui2 #view-spotify .sp2-result-line--ok { color: var(--u-ok); }
+html.ui2 #view-spotify .sp2-result-line--warn { color: var(--u-warn); }
+html.ui2 #view-spotify .sp2-result-line--error { color: var(--u-danger); }
+
+html.ui2 #view-spotify .sp2-acct-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-spotify .sp2-acct { padding: 8px 0; border-top: 1px solid var(--u-border); }
+html.ui2 #view-spotify .sp2-acct-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+html.ui2 #view-spotify .sp2-acct-name { font-weight: 700; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-acct.is-offline .sp2-acct-name { color: var(--u-muted); font-weight: 400; }
+html.ui2 #view-spotify .sp2-acct-line { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-acct-line.sp2-muted { color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-acct-plan.is-free { color: var(--u-warn); }
+
+html.ui2 #view-spotify .sp2 :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+html.ui2 #view-spotify .sp2-result:focus { outline: none; }
+html.ui2 #view-spotify .sp2-result:focus-visible { outline: 2px solid var(--u-focus); }

@@ -1,0 +1,348 @@
+/* UI 2.0 preview: the Library view, one level per step (#1286,
+   shell2/library.js). Every rule sits under html.ui2 #view-library, so the
+   classic layout's Library is untouched. Colours come only from the --u-*
+   tokens of shell2.css, so the three themes need nothing of their own here.
+
+   A file of its own so the phase 2 views do not all append to shell2.css at
+   once. Stylelint reads the token definitions from shell2.css
+   (.stylelintrc.json), so an unknown --u-* token still fails the lint. */
+
+html.ui2 #view-library {
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+
+/* Keyboard focus: the same double ring as the shell chrome. A heading that
+   takes focus after a step shows it only for the keyboard. */
+html.ui2 #view-library :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+html.ui2 #view-library .lib2-focus-target:focus:not(:focus-visible) { outline: none; }
+
+/* ---------- Head: title, the speaker that plays, the search ---------- */
+
+html.ui2 #view-library .lib2-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+/* The title and the speaker line are the shared view header (shell2.css). */
+html.ui2 #view-library .lib2-head .lib2-target { margin-top: 0; }
+html.ui2 #view-library .lib2-head .lib2-target--none { color: var(--u-warn); }
+html.ui2 #view-library .lib2-search,
+html.ui2 #view-library .lib2-filter,
+html.ui2 #view-library .lib2-manual-row,
+html.ui2 #view-library .lib2-tool-row,
+html.ui2 #view-library .lib2-folder-btns,
+html.ui2 #view-library .lib2-state-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+html.ui2 #view-library .lib2-input,
+html.ui2 #view-library .lib2-select {
+  min-height: var(--u-target);
+  padding: 0 12px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font: inherit;
+  font-size: 14px;
+}
+html.ui2 #view-library .lib2-input { flex: 1 1 220px; min-width: 0; }
+html.ui2 #view-library .lib2-input::placeholder { color: var(--u-muted); opacity: 1; }
+html.ui2 #view-library .lib2-search-in,
+html.ui2 #view-library .lib2-filter-label {
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #view-library .lib2-filter-label { color: var(--u-text); font-weight: 600; }
+
+/* ---------- Trail: Back and the crumbs ---------- */
+
+html.ui2 #view-library .lib2-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+html.ui2 #view-library .lib2-back { padding-inline: 12px 16px; }
+html.ui2 #view-library .lib2-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-library .lib2-crumbs > li {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+html.ui2 #view-library .lib2-crumbs > li + li::before {
+  content: "\203A";
+  padding-inline: 4px;
+  color: var(--u-muted);
+}
+html.ui2 #view-library .lib2-crumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--u-target);
+  min-height: var(--u-target);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--u-radius);
+  background: transparent;
+  color: var(--u-accent);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+html.ui2 #view-library .lib2-crumb--current {
+  color: var(--u-text);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ---------- A level ---------- */
+
+html.ui2 #view-library .lib2-level-head { margin: 8px 0; }
+html.ui2 #view-library .lib2-level-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-level-sub {
+  margin: 4px 0 0;
+  color: var(--u-muted);
+  font-size: 13px;
+}
+html.ui2 #view-library .lib2-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-library .lib2-item { border-bottom: 1px solid var(--u-surface); }
+html.ui2 #view-library .lib2-row,
+html.ui2 #view-library .lib2-track {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px;
+  border-radius: var(--u-radius);
+  color: var(--u-text);
+  font: inherit;
+  text-align: start;
+}
+html.ui2 #view-library .lib2-row {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+html.ui2 #view-library .lib2-row:hover { background: var(--u-surface); }
+html.ui2 #view-library .lib2-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--u-target);
+  height: var(--u-target);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-accent);
+}
+html.ui2 #view-library .lib2-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+html.ui2 #view-library .lib2-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-sub,
+html.ui2 #view-library .lib2-meta,
+html.ui2 #view-library .lib2-dur {
+  color: var(--u-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-dur { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+html.ui2 #view-library .lib2-chev {
+  flex: 0 0 auto;
+  color: var(--u-muted);
+  font-size: 22px;
+  line-height: 1;
+}
+html.ui2 #view-library .lib2-pill { flex: 0 0 auto; }
+html.ui2 #view-library .lib2-acts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+html.ui2 #view-library .lib2-acts .u-btn--icon {
+  border-color: var(--u-border);
+  background: var(--u-surface);
+}
+html.ui2 #view-library .lib2-none {
+  padding: 16px 8px;
+  color: var(--u-muted);
+}
+
+/* The feedback line of a row or of the folder actions: words first, the
+   colour only repeats them. Empty, it takes no room. */
+html.ui2 #view-library .lib2-status {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-status--busy { color: var(--u-muted); }
+html.ui2 #view-library .lib2-status--ok { color: var(--u-ok); }
+html.ui2 #view-library .lib2-status--warn { color: var(--u-warn); }
+html.ui2 #view-library .lib2-status--error { color: var(--u-danger); }
+
+/* ---------- Folder actions ---------- */
+
+html.ui2 #view-library .lib2-folder-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+html.ui2 #view-library .lib2-folder-acts .u-btn svg { flex: 0 0 auto; }
+/* Two groups that wrap as wholes: the two folder actions, then shuffle and
+   repeat joined into one compact control, so "Repeat: off" never ends up on
+   a line of its own. */
+html.ui2 #view-library .lib2-folder-btns { gap: 8px 16px; }
+html.ui2 #view-library .lib2-folder-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-library .lib2-folder-modes {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+html.ui2 #view-library .lib2-folder-modes .u-btn { border-radius: 0; white-space: nowrap; }
+html.ui2 #view-library .lib2-folder-modes .u-btn:first-child {
+  border-start-start-radius: var(--u-radius);
+  border-end-start-radius: var(--u-radius);
+}
+html.ui2 #view-library .lib2-folder-modes .u-btn:last-child {
+  border-inline-start: 0;
+  border-start-end-radius: var(--u-radius);
+  border-end-end-radius: var(--u-radius);
+}
+html.ui2 #view-library .lib2-shuffle[aria-pressed="true"] {
+  border-color: var(--u-accent);
+  background: var(--u-selected);
+}
+html.ui2 #view-library .lib2-filter { margin: 8px 0; }
+html.ui2 #view-library .lib2-count {
+  color: var(--u-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Server tools, notes, manual add ---------- */
+
+html.ui2 #view-library .lib2-server-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+html.ui2 #view-library .lib2-hint,
+html.ui2 #view-library .lib2-note {
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 13px;
+}
+html.ui2 #view-library .lib2-note { margin: 8px 0; }
+html.ui2 #view-library .library-server-dark-note { color: var(--u-warn); }
+html.ui2 #view-library .lib2-msg .setup-warn,
+html.ui2 #view-library .lib2-inline-error { color: var(--u-danger); }
+html.ui2 #view-library .lib2-msg .setup-ok { color: var(--u-ok); }
+html.ui2 #view-library .lib2-msg .muted { color: var(--u-muted); }
+html.ui2 #view-library .library-ums-note summary,
+html.ui2 #view-library .lib2-manual summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--u-target);
+  color: var(--u-accent);
+  cursor: pointer;
+}
+html.ui2 #view-library .lib2-manual { margin: 16px 0 8px; }
+html.ui2 #view-library .lib2-inline-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Empty, loading and error states ---------- */
+
+html.ui2 #view-library .lib2-state {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: 12px;
+  background: var(--u-surface);
+}
+html.ui2 #view-library .lib2-state--error { border-color: var(--u-danger); }
+html.ui2 #view-library .lib2-state-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-state--error .lib2-state-title { color: var(--u-danger); }
+html.ui2 #view-library .lib2-state-body { margin: 0 0 8px; font-size: 14px; line-height: 1.45; }
+html.ui2 #view-library .lib2-state-detail {
+  margin: 0 0 8px;
+  color: var(--u-muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-library .lib2-state-acts { margin-top: 12px; }
+html.ui2 #view-library .lib2-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #view-library .lib2-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--u-border);
+  border-top-color: var(--u-accent);
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.ui2 #view-library .lib2-spinner { animation: lib2-spin 900ms linear infinite; }
+}
+@keyframes lib2-spin { to { transform: rotate(360deg); } }
