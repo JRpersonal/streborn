@@ -195,7 +195,7 @@ function aboutHTML(m, t) {
     + `<ul class="hlp-links">${links.map((l) => `<li>${l}</li>`).join('')}</ul>`
     + `<p class="hlp-author">ST Reborn${m.author ? ` <span aria-hidden="true">&middot;</span> ${escapeHtml(m.author)}` : ''}</p>`
     + `<p class="hlp-fine">${escapeHtml(t('footer.fine'))}</p>`
-    + `<p class="hlp-trademark" id="hlpTrademark">${escapeHtml(t('ui2.help.trademark'))}</p>`);
+    + `<p class="hlp-trademark" id="hlpTrademark">${escapeHtml(t('about.trademark'))}</p>`);
 }
 
 const RENDER = { getHelp: getHelpHTML, wishes: wishesHTML, community: communityHTML, support: supportHTML, about: aboutHTML };

@@ -2267,7 +2267,7 @@
   "ui2.help.source": "ソースコード",
   "ui2.help.privacy": "プライバシーポリシー",
   "ui2.help.imprint": "運営者情報",
-  "ui2.help.trademark": "Bose および SoundTouch は、米国およびその他の国における Bose Corporation の登録商標です。ST Reborn は独立したコミュニティプロジェクトであり、Bose Corporation との提携関係はなく、Bose Corporation による承認や後援も受けていません。",
+  "about.trademark": "Bose および SoundTouch は、米国およびその他の国における Bose Corporation の登録商標です。ST Reborn は独立したコミュニティプロジェクトであり、Bose Corporation との提携関係はなく、Bose Corporation による承認や後援も受けていません。",
   "ui2.speakers.title": "スピーカー",
   "ui2.speakers.all": "すべてのスピーカー",
   "ui2.speakers.groups": "グループ",

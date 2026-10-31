@@ -125,7 +125,7 @@ test.describe('UI 2.0 Help and info', () => {
     const tm = page.locator('#hlpTrademark');
     await tm.scrollIntoViewIfNeeded();
     await expect(tm).toBeVisible();
-    await expect(tm).toHaveText(en('ui2.help.trademark'));
+    await expect(tm).toHaveText(en('about.trademark'));
     await expect(tm).toContainText('Bose Corporation');
   });
 
@@ -165,6 +165,7 @@ test.describe('UI 2.0 Help and info', () => {
     // The credits dialog, the share dialog.
     await section(page, 'about').getByRole('button', { name: en('footer.credits') }).click();
     await expect(page.locator('#creditsModal')).toBeVisible();
+    await expect(page.locator('#creditsTrademark')).toHaveText(en('about.trademark'));
     await page.locator('#creditsClose').click();
     await section(page, 'community').getByRole('button', { name: en('share.menu') }).click();
     await expect(page.locator('#shareModal')).toBeVisible();

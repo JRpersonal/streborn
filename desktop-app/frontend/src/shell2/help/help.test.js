@@ -99,7 +99,7 @@ describe('Help and info sections', () => {
   it('always shows the trademark notice in About, in plain text', () => {
     for (const info of [INFO, {}, undefined]) {
       const sec = sectionOf(helpHTML(helpModel({ appInfo: info }), t), 'about');
-      expect(sec).toContain(`<p class="hlp-trademark" id="hlpTrademark">${t('ui2.help.trademark')}</p>`);
+      expect(sec).toContain(`<p class="hlp-trademark" id="hlpTrademark">${t('about.trademark')}</p>`);
     }
     expect(page()).not.toMatch(/<details[^>]*>[\s\S]*hlpTrademark/);
   });
@@ -183,21 +183,21 @@ describe('Help and info strings', () => {
   const placeholders = (s) => [...String(s).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
 
   it('uses only keys the English bundle has', () => {
-    const used = new Set([...fileSource('shell2/help/help.js').matchAll(/'((?:ui2|footer|banner|wishes|share|worldMap|setup|nav)\.[a-zA-Z.]+)'/g)].map((m) => m[1]));
+    const used = new Set([...fileSource('shell2/help/help.js').matchAll(/'((?:ui2|about|footer|banner|wishes|share|worldMap|setup|nav)\.[a-zA-Z.]+)'/g)].map((m) => m[1]));
     used.add('ui2.nav.help');
     for (const k of used) expect(bundles.en[k], k).toBeTruthy();
-    expect(HELP_KEYS.length).toBe(18);
+    expect(HELP_KEYS.length).toBe(17);
   });
 
   for (const [code, b] of Object.entries(bundles)) {
     it(`${code} has every Help and info string, no dash as punctuation, the English placeholders`, () => {
-      for (const k of [...HELP_KEYS, 'ui2.nav.help']) {
+      for (const k of [...HELP_KEYS, 'ui2.nav.help', 'about.trademark']) {
         expect(typeof b[k] === 'string' && b[k].trim().length > 0, `${code}: ${k}`).toBe(true);
         expect(b[k], `${code}: ${k}`).not.toMatch(/[\u2013\u2014]/);
         expect(placeholders(b[k]), `${code}: ${k}`).toEqual(placeholders(bundles.en[k]));
       }
       // The legal notice keeps the names as they are.
-      const tm = b['ui2.help.trademark'];
+      const tm = b['about.trademark'];
       for (const name of ['Bose', 'SoundTouch', 'Bose Corporation']) expect(tm, `${code}: ${name}`).toContain(name);
     });
   }
@@ -212,7 +212,7 @@ describe('Help and info strings', () => {
 
   it('writes German with du and real umlauts', () => {
     const de = bundles.de;
-    for (const k of [...HELP_KEYS, 'ui2.nav.help']) {
+    for (const k of [...HELP_KEYS, 'ui2.nav.help', 'about.trademark']) {
       expect(de[k], k).not.toMatch(/\b(Sie|Ihnen|Ihre?[mnrs]?)\b/);
       expect(de[k], k).not.toMatch(/Wuensch|ueber|Naechst|Laend|unterstuetz|oeffn|erklaer/i);
     }
