@@ -611,6 +611,22 @@ export namespace main {
 	        this.engineOnly = source["engineOnly"];
 	    }
 	}
+	export class InstallHold {
+	    host: string;
+	    sinceSec: number;
+	    remainingSec: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new InstallHold(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.sinceSec = source["sinceSec"];
+	        this.remainingSec = source["remainingSec"];
+	    }
+	}
 	export class InstallResult {
 	    step: string;
 	    code: string;

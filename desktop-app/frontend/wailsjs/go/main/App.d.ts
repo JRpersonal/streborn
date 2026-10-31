@@ -160,6 +160,8 @@ export function IdentifyBox(arg1:string,arg2:number):Promise<Record<string, any>
 
 export function ImportBackup():Promise<Record<string, any>>;
 
+export function InstallHolds(arg1:Array<string>):Promise<Array<main.InstallHold>>;
+
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;

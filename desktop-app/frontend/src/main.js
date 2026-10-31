@@ -16,6 +16,7 @@ import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './noint
 import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
+import { holdsByHost, holdFor } from './installhold.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
@@ -101,6 +102,7 @@ import {
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
+  InstallHolds,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -3161,6 +3163,17 @@ async function pickBox(box, titleHint) {
     // a positive CTA instead of blocking soundbars / adapters. Setup notes the
     // hardware-preset-button caveat for 'limited' models.
     const label = getBoxLabel(box);
+    // An update from this app still finishing on the speaker makes it look
+    // stock (its agent is restarting into the new version), and the install
+    // this dialog invites would be refused by the install guard. Say what is
+    // going on instead (field case 2026-10-30). A failed call falls through to
+    // the usual invitation; the guard stays the backstop.
+    let hold = null;
+    try { hold = holdFor(holdsByHost(await InstallHolds([box.host])), box.host); } catch {}
+    if (hold) {
+      showToast(t('speaker.updateFinishingToast', { label }));
+      return;
+    }
     const ok = await confirmWarn(
       t('speaker.stockConfirmTitle'),
       t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),

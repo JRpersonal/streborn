@@ -44,6 +44,7 @@ export {
   GetFirmwareGuide,
   FlashBoseFirmware,
   BoxInstallReachable,
+  InstallHolds,
   Pause,
   Resume,
   Stop,

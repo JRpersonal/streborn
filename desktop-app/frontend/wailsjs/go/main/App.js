@@ -310,6 +310,10 @@ export function ImportBackup() {
   return window['go']['main']['App']['ImportBackup']();
 }
 
+export function InstallHolds(arg1) {
+  return window['go']['main']['App']['InstallHolds'](arg1);
+}
+
 export function InstallSTROnBox(arg1, arg2) {
   return window['go']['main']['App']['InstallSTROnBox'](arg1, arg2);
 }
