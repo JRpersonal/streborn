@@ -669,6 +669,7 @@ document.querySelector('#app').innerHTML = `
       <h3 id="creditsTitle">${escapeHtml(t('credits.title'))}</h3>
       <p class="modal-sub" id="creditsIntro">${escapeHtml(t('credits.intro'))}</p>
       <div id="creditsBody" class="credits-list"></div>
+      <p class="modal-sub credits-trademark" id="creditsTrademark">${escapeHtml(t('about.trademark'))}</p>
       <button class="btn" id="creditsClose">${escapeHtml(t('common.close'))}</button>
     </div>
   </div>
@@ -1100,6 +1101,9 @@ function showCredits() {
   if (!modal || !body) return;
   $('creditsTitle').textContent = t('credits.title');
   $('creditsIntro').textContent = t('credits.intro');
+  // CLAUDE.md asks for the trademark notice in the app's About dialog; the
+  // credits dialog is the classic layout's About.
+  $('creditsTrademark').textContent = t('about.trademark');
   const row = (c, extra) => `<div class="credit-row">`
     + `<div><a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.name)}</a>`
     + (c.by ? ` <span class="credit-by">${escapeHtml(t('credits.by'))} ${escapeHtml(c.by)}</span>` : '')
