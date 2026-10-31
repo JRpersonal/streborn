@@ -34,7 +34,7 @@ SoundTouch 10, 20, 30 and Portable, the SoundTouch 300 and 520, the Wave SoundTo
 
 ## Install
 
-Download the app for Windows, macOS or Linux from **[st-reborn.de](https://st-reborn.de)**, open it on a computer in the same Wi-Fi as your speaker, and follow the setup. On macOS `brew install --cask jrpersonal/tap/st-reborn` works too; more in [`packaging/README.md`](./packaging/README.md).
+Download the app for Windows, macOS or Linux from **[st-reborn.de](https://st-reborn.de)**, open it on a computer in the same Wi-Fi as your speaker, and follow the setup. On Windows `winget install JRpersonal.STReborn` works too, on macOS `brew install --cask jrpersonal/tap/st-reborn`; more in [`packaging/README.md`](./packaging/README.md).
 
 Speaker firmware too old? [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md) shows how to bring it to Bose's last version.
 
