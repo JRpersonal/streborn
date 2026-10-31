@@ -89,3 +89,33 @@ func (r *Reader) PresetRefusalsSince(since time.Time) []PresetRefusal {
 	}
 	return r.forensics.presetRefusalsSince(since)
 }
+
+// AudioPathOffset returns the speaker's own play clock for a UPnP play, the
+// newest "HandleAudioStatus: Audio path offset N" (seconds into the track),
+// and when the reader saw it; ok is false when no such line was ever read
+// (another chassis, the reader not running). The line comes once a second
+// while the file plays, so a caller judges freshness from at.
+//
+// It is what tells a resume the speaker did by itself from the frozen resume
+// of #830: on an ST10 (FW 27.0.6) GetPositionInfo RelTime and the now_playing
+// <time> both stayed on the paused second through a resume that played on
+// audibly, while this offset counted on with the music. Safe for concurrent
+// use; a nil reader reports ok=false.
+func (r *Reader) AudioPathOffset() (offset int, at time.Time, ok bool) {
+	if r == nil || r.forensics == nil {
+		return 0, time.Time{}, false
+	}
+	return r.forensics.audioPathOffset()
+}
+
+// StaleURLIDSince reports whether the firmware logged, at or after t, that it
+// threw a re-opened file away as belonging to a stale URL id ("urlId
+// mismatch", "PLAYING error #0 for stale UrlID"): the frozen resume's own
+// signature (docs/FIRMWARE-NOTES.md). Safe for concurrent use; false on a nil
+// reader.
+func (r *Reader) StaleURLIDSince(t time.Time) bool {
+	if r == nil || r.forensics == nil {
+		return false
+	}
+	return r.forensics.staleURLIDSince(t)
+}

@@ -659,6 +659,11 @@ type Server struct {
 	// position for.
 	pausePosMu sync.Mutex
 	pausePos   time.Duration
+	// pausePosFromLog says pausePos came from the speaker's syslog play
+	// clock (audioPathOffsetFn) rather than from GetPositionInfo, which on
+	// some ST10s stands still through a resume the speaker did by itself and
+	// so names an older pause (#830). A resume then trusts it over RelTime.
+	pausePosFromLog bool
 	// pauseReqAt is when the app last asked for a pause. The lone-file end
 	// watch reads it to tell a pause (keep watching, the track continues
 	// later) from a stop (end the watch). See resumefile.go.
@@ -778,6 +783,14 @@ type Server struct {
 	// RelTime) that confirms a frozen file resume before it is repaired
 	// (resumefile.go). nil reads the renderer.
 	relPositionFn func() (time.Duration, bool)
+	// audioPathOffsetFn is the speaker's own play clock from its syslog
+	// (boxlog.Reader.AudioPathOffset: seconds into the track and when the line
+	// was read), and staleURLIDSinceFn the frozen resume's syslog signature
+	// (boxlog.Reader.StaleURLIDSince). Both tell a resume the speaker did by
+	// itself from the real freeze (resumefile.go). nil, as in tests and on a
+	// host without the reader, falls back to the renderer's position alone.
+	audioPathOffsetFn func() (int, time.Time, bool)
+	staleURLIDSinceFn func(time.Time) bool
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).

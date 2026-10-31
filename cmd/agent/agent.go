@@ -1543,6 +1543,11 @@ func (a *agent) buildBoxLink() error {
 		_, failed := keyTrace.LastPlaybackFailure(d)
 		return failed, keyTrace.Healthy()
 	})
+	// The speaker's own play clock and the frozen resume's signature, both
+	// from the same ring: they tell a resume the speaker did by itself (on
+	// some ST10s RelTime stands still through it) from the real freeze, so a
+	// paused file is not restarted over a healthy play (#830).
+	webuiSrv.SetBoxLogPlayClockFns(keyTrace.AudioPathOffset, keyTrace.StaleURLIDSince)
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it
 	// arrives with the key stamp the standby classifier reads); the ring's

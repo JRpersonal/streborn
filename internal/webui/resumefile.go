@@ -23,17 +23,34 @@ import (
 //
 // What does work, measured on the same speaker: Stop, Play, and about two
 // seconds later Seek(REL_TIME, paused position). The track continues from where
-// it was paused and the position counts up normally. So STR does exactly that,
-// in two places:
+// it was paused and the position counts up normally.
 //
-//   - The app's resume (resumePausedFileLocked) knows it is resuming, so it
-//     does not wait for the freeze: a paused file goes straight to
-//     Stop/Play/Seek. Waiting for a symptom STR can predict would only add
-//     seconds of silence, and a plain Play on a paused file never worked.
+// The freeze is not every resume, though. A field ST10 (FW 27.0.6, 2026-10-31)
+// resumed a directly played file correctly by itself, after a reboot, while
+// GetPositionInfo RelTime and the now_playing <time> both stayed on the paused
+// second. STR read that as the freeze and restarted a healthy play: the start
+// of the file for two seconds, then a seek back to the stale second, so the
+// listener heard the last stretch twice on every pause. The speaker's syslog
+// tells the two apart. Its UPnP account logs "Audio path offset N" once a
+// second, and that counted on with the music while RelTime stood still; the
+// real freeze logs its own "urlId mismatch" / "for stale UrlID" lines
+// (internal/boxlog, AudioPathOffset and StaleURLIDSince). So STR acts in two
+// places, on evidence:
+//
+//   - The app's resume (resumePausedFileLocked) sends the plain Play first and
+//     watches for a few seconds: the offset or RelTime moving, with no
+//     stale-URL line, is a resume that worked and nothing else is sent. Only a
+//     stale-URL line or a position that does not move falls through to
+//     Stop/Play/Seek.
 //   - The speaker's own key goes past STR, so the lone-file end watch, which
 //     already polls the speaker while a file plays (singletrackend.go), looks
 //     for the shape: a pause, then PLAY_STATE with the position not moving.
-//     It repairs once per resume.
+//     Before it repairs (once per resume) it asks the same evidence
+//     (speakerResumedByItself).
+//
+// Without the syslog (a chassis that logs no offset, the reader not running)
+// both fall back to the renderer's own position, which is what they read
+// before.
 //
 // Neither touches radio, Spotify, a library folder (the queue has its own
 // watcher) or anything without a known length: the restart seeks, and a seek
@@ -68,16 +85,30 @@ type fileResumeTiming struct {
 	// confirmGap is the pause between the two position reads that confirm a
 	// freeze on the renderer's own clock before the watch acts on it.
 	confirmGap time.Duration
+	// plainPlayWait is how long the app's resume watches a plain Play for a
+	// moving clock before it restarts the file, and plainPlayStep how often it
+	// looks. The offset line comes once a second, so three seconds see at
+	// least two of them; a stale-URL line ends the wait at once.
+	plainPlayWait time.Duration
+	plainPlayStep time.Duration
 }
 
 // productionFileResumeTiming is the file restart's clock on a real speaker.
 var productionFileResumeTiming = fileResumeTiming{
-	seekDelay:    2 * time.Second,
-	seekRetry:    1500 * time.Millisecond,
-	restartQuiet: 4 * time.Second,
-	freezeAfter:  7 * time.Second,
-	confirmGap:   1500 * time.Millisecond,
+	seekDelay:     2 * time.Second,
+	seekRetry:     1500 * time.Millisecond,
+	restartQuiet:  4 * time.Second,
+	freezeAfter:   7 * time.Second,
+	confirmGap:    1500 * time.Millisecond,
+	plainPlayWait: 3 * time.Second,
+	plainPlayStep: 500 * time.Millisecond,
 }
+
+// audioOffsetFresh is how old the syslog's audio-path offset may be and still
+// be the speaker's current position: the line comes once a second while the
+// file plays, so an older one means it stopped coming (paused, stopped, or a
+// chassis that never logs it).
+const audioOffsetFresh = 3 * time.Second
 
 // pausedPointSlack is how far from the paused position a still position may
 // be and still be the freeze. The freeze holds the position on the paused
@@ -168,18 +199,76 @@ func (s *Server) pausedNotStopped() bool {
 // notePausedAt remembers a pause position the end watch read off the speaker,
 // which is how a pause on the speaker's own key gets one.
 func (s *Server) notePausedAt(pos time.Duration) {
+	s.notePausedAtFrom(pos, false)
+}
+
+// notePausedAtFrom is notePausedAt with the position's origin: fromLog is the
+// speaker's syslog play clock (see pausePosFromLog).
+func (s *Server) notePausedAtFrom(pos time.Duration, fromLog bool) {
 	if pos <= 0 {
 		return
 	}
 	s.pausePosMu.Lock()
 	s.pausePos = pos
+	s.pausePosFromLog = fromLog
 	s.pausePosMu.Unlock()
 }
 
-// resumePausedFileLocked is the app's resume for a paused file: Stop, Play,
-// Seek back to the paused position, instead of the plain Play the firmware
-// freezes on. It reports whether it handled the resume; false leaves the caller
-// to its usual Play. The caller holds boxCmdMu.
+// pausePositionFromLog returns the recorded pause position when it came from
+// the speaker's syslog play clock.
+func (s *Server) pausePositionFromLog() (time.Duration, bool) {
+	s.pausePosMu.Lock()
+	defer s.pausePosMu.Unlock()
+	if !s.pausePosFromLog || s.pausePos <= 0 {
+		return 0, false
+	}
+	return s.pausePos, true
+}
+
+// SetBoxLogPlayClockFns wires the speaker syslog's play clock and the frozen
+// resume's signature (boxlog.Reader.AudioPathOffset and StaleURLIDSince) for
+// the file resume above. Set before serving; nil keeps the RelTime-only
+// judgement.
+func (s *Server) SetBoxLogPlayClockFns(offset func() (int, time.Time, bool), staleSince func(time.Time) bool) {
+	s.audioPathOffsetFn = offset
+	s.staleURLIDSinceFn = staleSince
+}
+
+// audioPathOffset is the speaker's syslog play clock as a position, and when
+// the line was read; ok=false without the reader or before its first line.
+func (s *Server) audioPathOffset() (time.Duration, time.Time, bool) {
+	if s.audioPathOffsetFn == nil {
+		return 0, time.Time{}, false
+	}
+	sec, at, ok := s.audioPathOffsetFn()
+	if !ok || sec < 0 {
+		return 0, time.Time{}, false
+	}
+	return time.Duration(sec) * time.Second, at, true
+}
+
+// logPlayPosition is the syslog play clock when its newest line is at most
+// maxAge old, and so still the speaker's position.
+func (s *Server) logPlayPosition(maxAge time.Duration) (time.Duration, bool) {
+	pos, at, ok := s.audioPathOffset()
+	if !ok || time.Since(at) > maxAge || pos <= 0 {
+		return 0, false
+	}
+	return pos, true
+}
+
+// staleURLIDSince reports whether the speaker logged the frozen resume's
+// stale-URL-id discard at or after t. false without the reader.
+func (s *Server) staleURLIDSince(t time.Time) bool {
+	return s.staleURLIDSinceFn != nil && s.staleURLIDSinceFn(t)
+}
+
+// resumePausedFileLocked is the app's resume for a paused file. It sends the
+// plain Play first and watches whether the speaker continues; only when it
+// freezes (a stale-URL line, or no clock moving) does it restart the file:
+// Stop, Play, Seek back to the paused position. It reports whether it handled
+// the resume; false leaves the caller to its usual Play. The caller holds
+// boxCmdMu.
 func (s *Server) resumePausedFileLocked(ctx context.Context) bool {
 	if s.renderer == nil {
 		return false
@@ -202,15 +291,85 @@ func (s *Server) resumePausedFileLocked(ctx context.Context) bool {
 	// While paused the speaker still holds the exact position, so it is asked
 	// first. The one recorded at the pause is the fallback: it can be older than
 	// the pause if the pause came from the speaker's key between two polls.
+	// The syslog clock beats both: RelTime can stand on an older pause after
+	// a resume the speaker did by itself (#830), the offset never did. Its
+	// reading recorded at the pause counts only when it is not behind RelTime:
+	// a RelTime further on is the newer of the two.
 	at := s.pausePosition()
 	pctx, pcancel := context.WithTimeout(ctx, 3*time.Second)
-	if rel, _, ok := s.renderer.PositionInfo(pctx); ok && rel > 0 {
+	rel, _, relOK := s.renderer.PositionInfo(pctx)
+	pcancel()
+	if lp, fresh := s.logPlayPosition(audioOffsetFresh); fresh {
+		at = lp
+	} else if p, ok := s.pausePositionFromLog(); ok && (!relOK || p >= rel) {
+		at = p
+	} else if relOK && rel > 0 {
 		at = rel
 	}
-	pcancel()
-	s.logger.Info("resume of a paused file: restarting it at the paused position, a plain play freezes on the speaker",
-		"title", tr.title, "at", at.String())
+	if moved, why := s.plainPlayContinuedLocked(ctx); moved {
+		s.logger.Info("resume of a paused file: the plain play continued it, nothing restarted",
+			"title", tr.title, "pausedAt", at.String(), "evidence", why)
+		return true
+	} else if why != "" {
+		s.logger.Info("resume of a paused file: the plain play froze, restarting it at the paused position",
+			"title", tr.title, "at", at.String(), "evidence", why)
+	} else {
+		s.logger.Info("resume of a paused file: no clock moved after the plain play, restarting it at the paused position",
+			"title", tr.title, "at", at.String())
+	}
 	return s.restartFileAtLocked(ctx, tr, at, "app resume")
+}
+
+// plainPlayContinuedLocked sends the plain Play for a paused file and watches,
+// for up to plainPlayWait, whether the speaker continues: the syslog play
+// clock or the renderer's RelTime moving, with no stale-URL line since the
+// Play. It returns true with the evidence when it did; false with a reason
+// when the speaker said it froze (or refused the Play), false with "" when
+// nothing moved. The caller holds boxCmdMu, so the wait is bounded and runs on
+// a detached context: the app gives up on its request after a few seconds, and
+// the restart that may follow must still happen.
+func (s *Server) plainPlayContinuedLocked(ctx context.Context) (bool, string) {
+	times := s.fileResumeTimes()
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second+times.plainPlayWait)
+	defer cancel()
+	// RelTime while still paused, the renderer clock's starting point.
+	rel, relOK := s.readRelPosition()
+	playAt := time.Now()
+	if err := s.renderer.Play(pctx); err != nil {
+		return false, "the speaker refused the plain play: " + err.Error()
+	}
+	var (
+		firstOff time.Duration
+		haveOff  bool
+	)
+	step := times.plainPlayStep
+	if step <= 0 {
+		step = productionFileResumeTiming.plainPlayStep
+	}
+	for deadline := playAt.Add(times.plainPlayWait); ; {
+		time.Sleep(step)
+		if s.staleURLIDSince(playAt) {
+			return false, "the speaker logged a stale URL id after the play"
+		}
+		// The syslog clock: two lines read after the Play, the later one
+		// further on.
+		if off, at, ok := s.audioPathOffset(); ok && !at.Before(playAt) && time.Since(at) <= audioOffsetFresh {
+			if !haveOff {
+				firstOff, haveOff = off, true
+			} else if off > firstOff {
+				return true, "audio path offset moved " + firstOff.String() + "->" + off.String()
+			}
+		}
+		// The renderer's clock: further on than it was while paused.
+		if relOK {
+			if cur, ok := s.readRelPosition(); ok && cur > rel {
+				return true, "position moved from " + rel.String() + " to " + cur.String()
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return false, ""
+		}
+	}
 }
 
 // restartFileAtLocked stops the file, plays it again and seeks to at. It
@@ -264,13 +423,17 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 
 // repairFrozenFileResume is the end watch's repair for a resume that froze. It
 // re-checks under boxCmdMu that the file is still what plays and that nobody
-// stopped it meanwhile.
-func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Duration) {
+// stopped it meanwhile. at is the paused position (the watch prefers the
+// syslog clock's reading at the pause over RelTime), since is when the file
+// last played on before the pause: a stale-URL line after it belongs to this
+// resume.
+func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Duration, since time.Time) {
 	// now_playing is not the last word: it trails the speaker, and a resume
 	// the speaker did by itself must never be restarted over (#830: an ST10
 	// jumped back ten seconds after its own resume had already played on).
-	// The renderer's own clock decides. Read before boxCmdMu: it only reads.
-	if moved, why := s.speakerResumedByItself(at); moved {
+	// The speaker's own clocks decide. Read before boxCmdMu: it only reads.
+	moved, why := s.speakerResumedByItself(at, since)
+	if moved {
 		s.logger.Info("resume of a file: the speaker continued by itself, no restart",
 			"title", tr.title, "pausedAt", at.String(), "evidence", why)
 		return
@@ -284,27 +447,46 @@ func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Dura
 		return
 	}
 	s.logger.Warn("resume of a file froze on the speaker, restarting it at the paused position",
-		"title", tr.title, "at", at.String())
+		"title", tr.title, "at", at.String(), "evidence", why)
 	s.restartFileAtLocked(s.queueCtx(), tr, at, "frozen resume")
 }
 
-// speakerResumedByItself reads the renderer's position (UPnP GetPositionInfo,
-// the speaker's own clock, not the now_playing document) and reports whether
-// the file is moving: already past the paused position, or further on a
-// moment later. An unreadable position is no evidence either way and returns
-// false, which keeps the repair: the freeze it exists for is real and long.
-func (s *Server) speakerResumedByItself(at time.Duration) (bool, string) {
+// speakerResumedByItself reads the speaker's own clocks and reports whether
+// the file is moving. Two clocks, read twice confirmGap apart:
+//
+//   - the syslog's audio-path offset (audioPathOffsetFn), which on an ST10
+//     counted on through a healthy resume while RelTime stood still (#830).
+//     It is trusted only while no stale-URL line came since: whether it also
+//     counts during the real freeze is not measured, and that line is the
+//     freeze's own signature.
+//   - the renderer's position (UPnP GetPositionInfo RelTime, not the
+//     now_playing document): already past the paused position, or further on
+//     a moment later.
+//
+// Neither readable is no evidence either way and returns false, which keeps
+// the repair: the freeze it exists for is real and long. The reason string
+// names the stale-URL line when that is why it returns false.
+func (s *Server) speakerResumedByItself(at time.Duration, since time.Time) (bool, string) {
+	offFirst, offAtFirst, offOK := s.audioPathOffset()
+	offOK = offOK && time.Since(offAtFirst) <= audioOffsetFresh
 	first, ok := s.readRelPosition()
-	if !ok {
-		return false, ""
-	}
-	if at > 0 && first > at+pausedPointSlack {
+	if ok && at > 0 && first > at+pausedPointSlack {
 		return true, "position " + first.String() + " is past the paused " + at.String()
 	}
 	time.Sleep(s.fileResumeTimes().confirmGap)
-	second, ok := s.readRelPosition()
-	if ok && second > first {
-		return true, "position moved from " + first.String() + " to " + second.String()
+	stale := !since.IsZero() && s.staleURLIDSince(since)
+	if offOK && !stale {
+		if off, offAt, ok := s.audioPathOffset(); ok && time.Since(offAt) <= audioOffsetFresh && off > offFirst {
+			return true, "audio path offset moved " + offFirst.String() + "->" + off.String()
+		}
+	}
+	if ok {
+		if second, ok2 := s.readRelPosition(); ok2 && second > first {
+			return true, "position moved from " + first.String() + " to " + second.String()
+		}
+	}
+	if stale {
+		return false, "the speaker logged a stale URL id since the resume"
 	}
 	return false, ""
 }

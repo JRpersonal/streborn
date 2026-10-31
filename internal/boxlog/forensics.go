@@ -76,6 +76,12 @@ const (
 	ClassPlayServerError  Class = "play_server_error"   // AudioIF: server state has a terminal error
 	ClassPlayUnderrun     Class = "play_underrun"       // RBDecoded: buffer underrun
 	ClassPlaySelect       Class = "play_select"         // AudioIF: the URL the firmware tried to play
+	// ClassPlayStaleURL is the firmware throwing a re-opened file away as
+	// belonging to an old URL id ("urlId mismatch", "PLAYING error #0 for
+	// stale UrlID"): the signature of the frozen resume of a directly played
+	// file (#830, docs/FIRMWARE-NOTES.md). Not a Playback() failure: the
+	// speaker sits in PLAYING, and the single-track refusal must not count it.
+	ClassPlayStaleURL Class = "play_stale_url"
 	// Standby, wake and power management.
 	ClassStandby    Class = "standby"     // HSM: ChangeState(... >> Standby)
 	ClassWake       Class = "wake"        // HSM: ChangeState(Standby >> ...)
@@ -217,6 +223,8 @@ func Classify(l Line) (Class, bool) {
 		return ClassPlayUnderrun, true
 	case strings.Contains(m, "CAudioInterface::Select("):
 		return ClassPlaySelect, true
+	case isStaleURLLine(m):
+		return ClassPlayStaleURL, true
 	// Before the ChangeState family on purpose: this line carries a
 	// ChangeState clause of its own ("ChangeState(SrcActivate >> Standby)")
 	// and would otherwise be filed as an ordinary standby transition, which
@@ -367,7 +375,7 @@ func (c Class) Playback() bool {
 // means never (Wi-Fi, the Select line, sleep stages: ring only).
 func (c Class) logGap() time.Duration {
 	switch {
-	case c.Playback():
+	case c.Playback(), c == ClassPlayStaleURL:
 		return playbackLogGap
 	case c == ClassStandby, c == ClassWake, c == ClassPowerEvent, c == ClassDisplayClock:
 		return powerLogGap
@@ -579,8 +587,19 @@ type forensics struct {
 	// reconcile can count the refused writes of one sweep and tell why they
 	// were refused (see PresetRefusal). Bounded at presetRefusalKeep.
 	presetRefusals []PresetRefusal
-	dropped        uint64
-	classified     uint64
+	// audioOffset is the newest "HandleAudioStatus: Audio path offset N" the
+	// UPnP account logged, and audioOffsetAt when it was read: the speaker's
+	// play clock in seconds, one line a second while a UPnP play runs. On an
+	// ST10 it kept counting through a resume while GetPositionInfo and
+	// now_playing both stood on the paused second (#830). Never classified,
+	// it would flood the event ring; see Reader.AudioPathOffset.
+	audioOffset   int
+	audioOffsetAt time.Time
+	// lastStaleURL is when the firmware last discarded a re-opened file as
+	// belonging to a stale URL id (ClassPlayStaleURL).
+	lastStaleURL time.Time
+	dropped      uint64
+	classified   uint64
 	// lastPower is the first line of the newest standby/wake transition; the
 	// other daemon's line about the same transition is folded into it (see
 	// power.go).
@@ -641,12 +660,19 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	}
 	tailLine += " " + msg
 	class, classified := Classify(l)
+	offset, isOffset := parseAudioPathOffset(l.Message)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
 	f.feedSetupTailLocked(tailLine)
+	if isOffset {
+		f.audioOffset, f.audioOffsetAt = offset, now
+	}
 	if !classified {
 		return ev, false, false
+	}
+	if class == ClassPlayStaleURL {
+		f.lastStaleURL = now
 	}
 	if class == ClassSetupAP {
 		f.freezeSetupTailLocked(class, now)
@@ -684,6 +710,57 @@ func (f *forensics) lastPlaybackFailure(now time.Time, d time.Duration) (Event, 
 		return Event{}, false
 	}
 	return f.lastPlayErr, true
+}
+
+// audioPathOffsetMarker is the UPnP account's play clock line. Measured on an
+// ST10 (FW 27.0.6, 2026-10-31), once a second during a directly played file:
+//
+//	STSCertified[..]: [(..):UpnpAccount:INFO]HandleAudioStatus: Audio path offset 585
+const audioPathOffsetMarker = "Audio path offset "
+
+// parseAudioPathOffset reads N out of an "Audio path offset N" message. A
+// substring gate and a hand-rolled digit loop, no regexp and no allocation:
+// the line arrives every second for as long as a UPnP play runs.
+func parseAudioPathOffset(m string) (int, bool) {
+	i := strings.Index(m, audioPathOffsetMarker)
+	if i < 0 {
+		return 0, false
+	}
+	rest := m[i+len(audioPathOffsetMarker):]
+	n, digits := 0, 0
+	for digits < len(rest) && digits < 9 && rest[digits] >= '0' && rest[digits] <= '9' {
+		n = n*10 + int(rest[digits]-'0')
+		digits++
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// isStaleURLLine matches the two lines of the stale-URL-id discard measured
+// on 2026-10-22 (docs/FIRMWARE-NOTES.md, "Play after Pause freezes a directly
+// played file"): "IsCurrentUrlId(urlId:12) - urlId mismatch. m_urlId:14" and
+// "Audio Path state 'PLAYING error #0 for stale UrlID 12".
+func isStaleURLLine(m string) bool {
+	return strings.Contains(m, "urlId mismatch") || strings.Contains(m, "for stale UrlID")
+}
+
+// audioPathOffset returns the newest audio-path offset and when it was read.
+func (f *forensics) audioPathOffset() (int, time.Time, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.audioOffsetAt.IsZero() {
+		return 0, time.Time{}, false
+	}
+	return f.audioOffset, f.audioOffsetAt, true
+}
+
+// staleURLIDSince reports whether a stale-URL-id line was read at or after t.
+func (f *forensics) staleURLIDSince(t time.Time) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.lastStaleURL.IsZero() && !f.lastStaleURL.Before(t)
 }
 
 // presetRefusalsSince returns the recorded refusals stamped at or after since,

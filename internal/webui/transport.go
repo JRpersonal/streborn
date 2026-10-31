@@ -108,10 +108,12 @@ func (s *Server) resumePlayback(ctx context.Context) (string, error) {
 	if s.transportKeyFallback(ctx, "PLAY") {
 		return "playing", nil
 	}
-	// A paused music file does not survive a plain Play on the speaker: it
-	// re-opens the file, discards the answer as stale and sits in PLAYING with
-	// the position frozen. So a file is restarted at its paused position
-	// instead. See resumefile.go.
+	// A paused music file does not always survive a plain Play on the
+	// speaker: in a state the speaker gets into it re-opens the file, discards
+	// the answer as stale and sits in PLAYING with the position frozen. So a
+	// paused file gets the plain Play first and is restarted at its paused
+	// position only when the speaker's own evidence says it froze. See
+	// resumefile.go.
 	if s.resumePausedFileLocked(ctx) {
 		return "playing", nil
 	}
@@ -258,12 +260,23 @@ func (s *Server) notePausePosition(ctx context.Context) {
 	rctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	rel, _, ok := s.renderer.PositionInfo(rctx)
+	// The speaker's syslog clock wins over RelTime while it is current: on
+	// some ST10s RelTime stands on an older pause through a resume the speaker
+	// did by itself (#830). Only when the renderer has a position at all, so
+	// radio keeps whatever it reported before.
+	fromLog := false
+	if ok {
+		if lp, fresh := s.logPlayPosition(audioOffsetFresh); fresh {
+			rel, fromLog = lp, true
+		}
+	}
 	s.pausePosMu.Lock()
 	if ok {
 		s.pausePos = rel
 	} else {
 		s.pausePos = 0
 	}
+	s.pausePosFromLog = fromLog
 	s.pauseReqAt = time.Now()
 	s.pausePosMu.Unlock()
 }

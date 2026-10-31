@@ -182,6 +182,11 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		ranAhead bool
 		// resume: recognises a resume the firmware froze (resumefile.go).
 		resume = fileResumeWatch{endEpsilon: qt.endEpsilon, freezeAfter: s.fileResumeTimes().freezeAfter}
+		// logPausedAt is this pause's position from the speaker's syslog
+		// clock (zero when the pause had none): a later poll of the same
+		// pause must not overwrite it with RelTime, and the repair seeks to
+		// it. Only while the watch still holds this pause (resume.pausedSeen).
+		logPausedAt time.Duration
 	)
 	for {
 		select {
@@ -288,13 +293,38 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// position standing still. Only for a file STR can seek in.
 		if fileSeekable(tr) || obsTotal > 0 {
 			if ps == "PAUSE_STATE" {
-				s.notePausedAt(pos)
+				// The speaker's syslog clock is the paused position while its
+				// last line is recent enough to be this pause's (one poll plus
+				// the line's own second): RelTime can still stand on an older
+				// pause after a resume the speaker did by itself (#830). Once
+				// taken it holds for the rest of this pause, when the lines
+				// have stopped coming.
+				if lp, fresh := s.logPlayPosition(qt.pollInterval + audioOffsetFresh); fresh {
+					logPausedAt = lp
+					s.notePausedAtFrom(lp, true)
+				} else if logPausedAt == 0 {
+					s.notePausedAt(pos)
+				}
+			}
+			// A stale-URL line after the last time the file moved belongs to
+			// this resume.
+			since := resume.lastMoveAt
+			if since.IsZero() {
+				since = start
 			}
 			step := resume.observe(fileResumeObs{status: ps, pos: pos, end: end, now: time.Now(),
 				pauseHint: s.pauseHintSince(resume.lastMoveAt)})
+			if !resume.pausedSeen {
+				logPausedAt = 0
+			}
 			if step.repair {
-				s.repairFrozenFileResume(tr, gen, step.at)
+				at := step.at
+				if logPausedAt > 0 {
+					at = logPausedAt
+				}
+				s.repairFrozenFileResume(tr, gen, at, since)
 				resume.restarted()
+				logPausedAt = 0
 				continue
 			}
 			if step.hold {

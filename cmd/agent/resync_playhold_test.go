@@ -86,7 +86,7 @@ func TestForcedWriteHoldCoversAPairingSession(t *testing.T) {
 	if !hold || ceiling {
 		t.Fatalf("a box being paired must hold: hold=%v ceiling=%v", hold, ceiling)
 	}
-	if got := forcedHoldReason("BLUETOOTH", false, true); got != "user-chosen source" {
+	if got := forcedHoldReason("BLUETOOTH", false, false, true); got != "user-chosen source" {
 		t.Errorf("reason = %q, want the source, so a bundle says what was protected", got)
 	}
 
@@ -264,7 +264,7 @@ func TestAStoppedNativeStationIsNotSomebodyListening(t *testing.T) {
 	if forcedWriteBusy(src, false, true) {
 		t.Error("a stopped native station held the write, so a dead key waits five minutes")
 	}
-	if got := forcedHoldReason(src, false, true); got != "free" {
+	if got := forcedHoldReason(src, false, false, true); got != "free" {
 		t.Errorf("reason = %q, want %q", got, "free")
 	}
 	if !forcedWriteBusy(src, true, true) {

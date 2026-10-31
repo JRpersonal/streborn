@@ -913,7 +913,8 @@ frozen too.
 
 **What works:** Stop, Play, and about two seconds later
 `Seek(REL_TIME, paused position)`. STR does this for the app's resume of a
-paused lone file directly, and the lone-file end watch repairs a frozen resume
+paused lone file when the plain Play froze (see below), and the lone-file end
+watch repairs a frozen resume
 from the speaker's key the same way, once per resume
 (`internal/webui/resumefile.go`). A library folder (the queue) is not covered
 yet.
@@ -930,6 +931,34 @@ reads on the paused second (7 s), ignores a position standing still anywhere
 else, and before it restarts anything reads the renderer's own clock
 (`GetPositionInfo` RelTime) twice: a position past the paused one, or one that
 moves, means the speaker resumed by itself, and nothing is sent.
+
+**RelTime freezes on a healthy resume too (2026-10-31, ST10, FW 27.0.6).** A
+second field bundle showed the speaker resuming a directly played file
+correctly by itself while `GetPositionInfo` RelTime and the `now_playing`
+`<time>` both stayed on the paused second. Both of STR's clocks then agreed on
+a freeze that was not there, the end watch restarted a healthy play (the start
+of the file for about two seconds, then a seek back to the stale second), and
+the app's resume did the same on every pause. RelTime is therefore not a
+discriminator on its own.
+
+The speaker's syslog is. Once a second while a UPnP play runs, the UPnP
+account logs
+
+    STSCertified: [(..):UpnpAccount:INFO]HandleAudioStatus: Audio path offset 586
+
+and that offset counted on with the music, matching the true position, while
+RelTime stood still. The real freeze has its own lines (`urlId mismatch`,
+`PLAYING error #0 for stale UrlID`). So STR reads both from the ring
+(`internal/boxlog`: `AudioPathOffset`, `StaleURLIDSince`, class
+`play_stale_url` in `box_syslog_events`): an offset that moves with no
+stale-URL line since the resume means the speaker plays on, and nothing is
+restarted. The app's resume now sends the plain Play first and only falls back
+to Stop, Play, Seek on a stale-URL line or when no clock moves within about
+three seconds. The fresh offset is also the paused position a restart seeks
+to, in preference to a RelTime that may still name an older pause. Without
+the syslog (another chassis, the reader not running) both fall back to
+RelTime alone. Not yet measured: whether the offset keeps counting during the
+real freeze; until it is, a stale-URL line overrides a moving offset.
 
 ## NetManager owns wpa_supplicant, and the conf file holds no credential
 
