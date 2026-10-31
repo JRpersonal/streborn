@@ -31,6 +31,7 @@ func TestPhoneRemoteShowsWhyARecallWasRefused(t *testing.T) {
 	for _, want := range []string{
 		"function playRefusal(",
 		"spotify-not-logged-in",
+		"spotify-premium-required",
 		"T.spNeedPick",
 		"T.spNeedPremium",
 	} {

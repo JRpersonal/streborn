@@ -28,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/JRpersonal/streborn/internal/marge"
+	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
 
@@ -65,7 +66,7 @@ func newForeignPresetStore(path string, logger *slog.Logger) *foreignPresetStore
 		return s
 	}
 	for _, e := range list {
-		if e.Slot >= 1 && e.Slot <= 6 {
+		if presets.IsBoxSlot(e.Slot) {
 			s.entries[e.Slot] = e
 		}
 	}
@@ -105,7 +106,7 @@ func (s *foreignPresetStore) NoteBoxList(bps []webui.BoxPreset) {
 	fresh := map[int]foreignPreset{}
 	reported := map[int]bool{}
 	for _, p := range bps {
-		if p.Slot < 1 || p.Slot > 6 {
+		if !presets.IsBoxSlot(p.Slot) {
 			continue
 		}
 		reported[p.Slot] = true

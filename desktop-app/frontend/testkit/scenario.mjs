@@ -31,6 +31,8 @@ export function defaultScenario() {
     playing: { livingRoom: 'PLAY_STATE', bedroom: 'STANDBY' },
     // GetZoneState answer per roster key or host. Anything not listed is {}.
     zones: {},
+    // Starting preset store per roster key or host, replacing the demo's.
+    presets: {},
     appInfo: { version: 'v1.0.19', build: '2026-10-23' },
     bindings: {},
     routes: {},
@@ -159,6 +161,7 @@ export function resolveScenario(sc, roster = ROSTER) {
     current,
     playing: byHost(s.playing),
     zones: byHost(s.zones),
+    presets: byHost(s.presets),
     volume,
     appInfo: s.appInfo,
     bindings: s.bindings,

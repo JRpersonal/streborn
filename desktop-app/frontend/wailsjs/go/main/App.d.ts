@@ -160,6 +160,8 @@ export function IdentifyBox(arg1:string,arg2:number):Promise<Record<string, any>
 
 export function ImportBackup():Promise<Record<string, any>>;
 
+export function InstallHolds(arg1:Array<string>):Promise<Array<main.InstallHold>>;
+
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
@@ -268,6 +270,8 @@ export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Pr
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
+export function RepairSpeakerName(arg1:string,arg2:number,arg3:string):Promise<string>;
+
 export function ReplayFolderCard(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function RescuedSpeakerCount():Promise<number>;
@@ -305,6 +309,8 @@ export function SaveKeyActions(arg1:string,arg2:number,arg3:Record<string, any>)
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string,arg9:number):Promise<void>;
 
 export function SaveNativePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
+
+export function SavePandoraStationPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 
 export function SavePlayingPreset(arg1:string,arg2:number,arg3:number):Promise<main.SavedPlaying>;
 

@@ -18,6 +18,10 @@ import (
 
 // ---- Presets CRUD ----
 
+// invalidSlotMsg is the 400 answer for a preset slot outside 1..MaxSlot
+// (two rows of six, #1110).
+const invalidSlotMsg = "invalid slot, must be 1-12"
+
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	if s.presets == nil {
 		http.Error(w, "presets store not initialized", http.StatusServiceUnavailable)
@@ -41,13 +45,15 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// maxBulkPresetBody bounds PUT /api/presets. Six times the per-slot cap, for
+// maxBulkPresetBody bounds PUT /api/presets. One per-slot cap per slot, for
 // the same reason it is generous there: a queue preset carries the whole track
-// list of a DLNA folder, and a whole-set write may carry six of them.
-const maxBulkPresetBody = 6 << 20
+// list of a DLNA folder, and a whole-set write may carry one per slot (both
+// rows, #1110).
+const maxBulkPresetBody = presets.MaxSlot << 20
 
 // handlePresetsBulkPut writes a WHOLE preset set in one go: PUT /api/presets
-// with a JSON array of at most six presets, each on a slot 1-6. Slots the
+// with a JSON array of at most twelve presets, each on a slot 1-12 (7-12 is
+// the second row, #1110). Slots the
 // payload does not name are left untouched.
 //
 // It exists because the per-slot duplicate guard is the wrong rule for a
@@ -68,15 +74,15 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "empty preset set", http.StatusBadRequest)
 		return
 	}
-	if len(in) > 6 {
-		http.Error(w, "too many presets, at most 6", http.StatusBadRequest)
+	if len(in) > presets.MaxSlot {
+		http.Error(w, "too many presets, at most "+strconv.Itoa(presets.MaxSlot), http.StatusBadRequest)
 		return
 	}
 	inPayload := make(map[int]bool, len(in))
 	for i := range in {
 		p := &in[i]
-		if p.Slot < 1 || p.Slot > 6 {
-			http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+		if !presets.ValidSlot(p.Slot) {
+			http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 			return
 		}
 		if inPayload[p.Slot] {
@@ -246,8 +252,8 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 	}
 	slotStr := strings.TrimPrefix(r.URL.Path, "/api/presets/")
 	slot, err := strconv.Atoi(slotStr)
-	if err != nil || slot < 1 || slot > 6 {
-		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+	if err != nil || !presets.ValidSlot(slot) {
+		http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 		return
 	}
 
@@ -298,7 +304,8 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// a trailing gabbo presetsUpdated does not resurface it as a foreign (UPNP)
 		// entry the user then "cannot delete" (reported after an app restart).
 		s.forgetBoxPreset(slot)
-		if s.boxHost != "" {
+		// A row-2 slot (7..12) lives only in STR's store; the speaker never had it.
+		if s.boxHost != "" && presets.IsBoxSlot(slot) {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			// Log the box-side removal outcome instead of dropping it: a silent
 			// failure here is exactly how the preset comes back on the next boot.
@@ -345,8 +352,8 @@ func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1024, &req) {
 		return
 	}
-	if req.From < 1 || req.From > 6 || req.To < 1 || req.To > 6 {
-		http.Error(w, "invalid slot, must be 1-6", http.StatusBadRequest)
+	if !presets.ValidSlot(req.From) || !presets.ValidSlot(req.To) {
+		http.Error(w, invalidSlotMsg, http.StatusBadRequest)
 		return
 	}
 	if req.From == req.To {
@@ -389,8 +396,12 @@ func (s *Server) handlePresetMove(w http.ResponseWriter, r *http.Request) {
 		if err := s.writeStorePresetToBox(boxCtx, moved); err != nil {
 			s.logger.Warn("box preset sync failed", "slot", moved.Slot, "err", err)
 		}
-		if err := boxcli.RemovePreset(boxCtx, s.boxHost, req.From); err != nil {
-			s.logger.Warn("preset move: box-side RemovePreset failed", "slot", req.From, "err", err)
+		// A move across rows touches the speaker only on its row-1 side: the
+		// write above skips a row-2 target, and a row-2 source was never there.
+		if presets.IsBoxSlot(req.From) {
+			if err := boxcli.RemovePreset(boxCtx, s.boxHost, req.From); err != nil {
+				s.logger.Warn("preset move: box-side RemovePreset failed", "slot", req.From, "err", err)
+			}
 		}
 		cancel()
 	}
@@ -432,8 +443,11 @@ func playableSpotifyURI(uri string) bool {
 }
 
 // isHTTPURL reports whether s is a real http(s) URL the stream proxy can fetch.
+// The scheme is matched case-insensitively (RFC 3986), like isPlainHTTPURL, so
+// a station saved as "HTTP://..." is not refused as a non-stream URL.
 func isHTTPURL(s string) bool {
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+	l := strings.ToLower(s)
+	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")
 }
 
 // isPlainHTTPURL reports whether s is a plaintext http:// URL (not https). A LAN

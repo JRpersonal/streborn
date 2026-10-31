@@ -42,6 +42,11 @@
 // combination counts as the other key too (NoteCombination). A pair the
 // firmware does not count down for still reads as a hold there; that is no
 // firmware combination, and it only matters while STR's own stream plays.
+//
+// A hold that follows a tap of the same key is a different gesture: it saves
+// what played before the tap onto the key's second row (tapholdsave.go). The
+// confirmation (confirmAndSave, statsHold) hands it over before its own
+// veto, which would read the tap's frame as "not a hold".
 
 package main
 
@@ -49,6 +54,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,6 +117,9 @@ const (
 // display routes it into the running session.
 type heldKeyScreen interface {
 	Start(slot int, pressAt time.Time)
+	// StartRowTwo is Start for the hold of a tap+hold, which saves onto the
+	// key's second row (tapholdsave.go).
+	StartRowTwo(slot int, pressAt time.Time)
 	Released(slot int, at time.Time)
 	Cancel(slot int, reason string)
 }
@@ -119,8 +128,11 @@ type heldKeyScreen interface {
 type oledHeldScreen struct{}
 
 func (oledHeldScreen) Start(slot int, pressAt time.Time) { oled.KeyHoldStart(slot, pressAt) }
-func (oledHeldScreen) Released(slot int, at time.Time)   { oled.KeyHoldReleased(slot, at) }
-func (oledHeldScreen) Cancel(slot int, reason string)    { oled.KeyHoldCancel(slot, reason) }
+func (oledHeldScreen) StartRowTwo(slot int, pressAt time.Time) {
+	oled.KeyHoldStartRowTwo(slot, pressAt)
+}
+func (oledHeldScreen) Released(slot int, at time.Time) { oled.KeyHoldReleased(slot, at) }
+func (oledHeldScreen) Cancel(slot int, reason string)  { oled.KeyHoldCancel(slot, reason) }
 
 // holdSaveFunc stores what STR plays on a slot (webui.Server.HoldSaveLive).
 type holdSaveFunc func(ctx context.Context, slot int) (webui.HoldSaved, error)
@@ -169,8 +181,13 @@ type holdSaver struct {
 	// screen shows the held-key screen while a physical preset key is held
 	// (oledHeldScreen). nil: off.
 	screen heldKeyScreen
+	// tapHold wires the tap+hold save onto the second row
+	// (tapholdsave.go). Zero value: off.
+	tapHold tapHoldWiring
 
-	mu     sync.Mutex
+	mu sync.Mutex
+	// tap is the newest selection frame a person caused (tapholdsave.go).
+	tap    tapMark
 	press  holdPress
 	hold   time.Time // a hold verdict no press has been paired with yet
 	vetoAt time.Time // newest tap verdict or preset activation
@@ -241,6 +258,7 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 		h.mu.Unlock()
 		h.logger.Info("hold-to-save: a key combination, left to the speaker",
 			"slot", p.slot, "otherKey", other, "producer", p.producer.String())
+		h.noteTapHoldCombo(p)
 		return
 	}
 	hold := h.hold
@@ -325,6 +343,7 @@ func (h *holdSaver) noteOtherKey(ev boxlog.KeyEvent) {
 	h.logger.Info("hold-to-save: a key combination, left to the speaker",
 		"slot", p.slot, "otherKey", ev.Name, "producer", p.producer.String(),
 		"otherAfterPressMs", ev.At.Sub(p.at).Milliseconds(), "saveUnderWay", p.used)
+	h.noteTapHoldCombo(p)
 	if p.screen {
 		h.screen.Cancel(p.slot, "key combination")
 	}
@@ -362,8 +381,10 @@ func (h *holdSaver) otherDownLocked(t time.Time) bool {
 func (h *holdSaver) startHeldScreen(p holdPress) {
 	h.mu.Lock()
 	cur, sel := h.press, h.selectAt
+	// The hold of a tap+hold may go down before the tap's own frame arrives.
+	_, tapped := h.tapCandidateLocked(cur)
 	ok := cur.seq == p.seq && cur.released.IsZero() && !cur.combo &&
-		(sel.IsZero() || sel.Before(p.at)) &&
+		(sel.IsZero() || sel.Before(p.at) || (tapped && h.tapHoldEnabled())) &&
 		(h.verdictAt.Before(p.at) || h.verdictHold)
 	if ok {
 		h.press.screen = true
@@ -371,6 +392,12 @@ func (h *holdSaver) startHeldScreen(p holdPress) {
 	h.mu.Unlock()
 	if !ok {
 		return
+	}
+	if tapped {
+		if _, rowTwo, _ := h.tapHoldVerdict(cur); rowTwo {
+			h.screen.StartRowTwo(p.slot, p.at)
+			return
+		}
 	}
 	h.screen.Start(p.slot, p.at)
 }
@@ -503,9 +530,15 @@ func (h *holdSaver) statsHold(p holdPress) {
 	from := p.at.Add(-holdVetoLookback)
 	h.mu.Lock()
 	cur, veto, verdictAt := h.press, h.vetoAt, h.verdictAt
+	// The hold of a tap+hold: the tap's own frame and tap verdict lie just
+	// before this press and are expected; only a tap verdict after it, or a
+	// second frame of the key, says it was no hold (tapCandidateLocked,
+	// tapHoldVerdict at the confirmation).
+	_, tapped := h.tapCandidateLocked(cur)
+	tapped = tapped && h.tapHoldEnabled()
 	if cur.seq != p.seq || cur.used || cur.combo ||
-		(!veto.IsZero() && !veto.Before(from)) ||
-		(!verdictAt.IsZero() && !verdictAt.Before(from)) {
+		(!tapped && !veto.IsZero() && !veto.Before(from)) ||
+		(!tapped && !verdictAt.IsZero() && !verdictAt.Before(from)) {
 		h.mu.Unlock()
 		return
 	}
@@ -607,6 +640,15 @@ func (h *holdSaver) paired(p holdPress, holdAt time.Time) {
 func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	if wait := p.at.Add(holdConfirmAfter).Sub(h.now()); wait > 0 {
 		h.sleep(wait)
+	}
+	// A hold that follows a tap of the same key saves onto the key's second
+	// row, never onto the key itself (tapholdsave.go).
+	if t, ok, why := h.tapHoldVerdict(p); ok {
+		h.saveRowTwo(p, holdAt, t)
+		return
+	} else if why != "" {
+		h.logger.Info("tap+hold on key "+strconv.Itoa(p.slot)+" ignored: "+why,
+			"key", p.slot, "tapToPressMs", p.at.Sub(t.at).Milliseconds(), "frames", t.frames)
 	}
 	from := p.at
 	if holdAt.Before(from) {

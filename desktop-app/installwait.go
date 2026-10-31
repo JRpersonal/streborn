@@ -355,11 +355,30 @@ type InstallWaiting struct {
 // failure on the reporter's box.
 func (a *App) watchInstallLate(host, model string, inSetup bool) {
 	since := time.Now()
-	ceiling := installWaitCeiling
+	// The tunables and seams are read once, here, not from the goroutine: a
+	// watcher reads only what it was started with (#1547).
+	var (
+		recheckDelay = installLateRecheckDelay
+		pollEvery    = installWaitPoll
+		setupCeiling = setupWaitCeiling
+		waitFacts    = agentWaitFactsFn
+		runningLate  = agentRunningLateFn
+		inSetupNow   = boxInSetupFn
+		ceiling      = installWaitCeiling
+		probe        = probeSTR
+	)
+	if a.probeSTRFn != nil {
+		probe = a.probeSTRFn
+	}
 	if inSetup {
-		ceiling = setupWaitCeiling
+		ceiling = setupCeiling
+	}
+	ctx, done, ok := a.lateWatch.start(a.appCtx())
+	if !ok {
+		return
 	}
 	go func() {
+		defer done()
 		emitWaiting := func(inSetup bool, deadline time.Time) {
 			remaining := time.Until(deadline)
 			if remaining < 0 {
@@ -382,29 +401,25 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 		emitWaiting(inSetup, deadline)
 		// The first look keeps its old delay: a speaker that is merely slow is
 		// usually back inside it, and probing sooner only adds noise.
-		firstProbeAt := time.Now().Add(installLateRecheckDelay)
+		firstProbeAt := time.Now().Add(recheckDelay)
 		for time.Now().Before(firstProbeAt) {
 			wait := time.Until(firstProbeAt)
-			if wait > installWaitPoll {
-				wait = installWaitPoll
+			if wait > pollEvery {
+				wait = pollEvery
 			}
 			select {
 			case <-time.After(wait):
-			case <-a.appCtx().Done():
+			case <-ctx.Done():
 				return
 			}
 			emitWaiting(inSetup, deadline)
 		}
 		for {
-			ctx, cancel := context.WithTimeout(a.appCtx(), 20*time.Second)
-			probe := probeSTR
-			if a.probeSTRFn != nil {
-				probe = a.probeSTRFn
-			}
-			b, ok := probe(ctx, host)
+			pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			b, ok := probe(pctx, host)
 			cancel()
 			how := fmt.Sprintf("on :%d", b.Port)
-			if !ok && agentRunningLateFn(a, host) {
+			if !ok && runningLate(a, host) {
 				ok = true
 				how = "as a running process over SSH (its HTTP ports are not reachable from this PC)"
 			}
@@ -425,7 +440,7 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 				return
 			}
 			if !time.Now().Before(deadline) {
-				facts := agentWaitFactsFn(a.appCtx(), host)
+				facts := waitFacts(ctx, host)
 				a.recordOTA(host, fmt.Sprintf("install: still not answering %s after the wait budget ran out (%s)", late, facts))
 				a.logger.Warn("install_str: gave up waiting, agent still not answering", "host", host, "late", late, "facts", facts.String())
 				a.emitInstallLate(host, false, "")
@@ -434,15 +449,15 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 			// Re-read the setup state as we go: a speaker that only starts its
 			// setup phase after the budget ran out must still be described
 			// correctly on the screen the user is looking at.
-			if !inSetup && boxInSetupFn(a, host) {
+			if !inSetup && inSetupNow(a, host) {
 				inSetup = true
-				deadline = since.Add(setupWaitCeiling)
+				deadline = since.Add(setupCeiling)
 				a.recordOTA(host, "wait: the speaker is now running its OWN out-of-box setup; it leaves that state by itself")
 			}
 			emitWaiting(inSetup, deadline)
 			select {
-			case <-time.After(installWaitPoll):
-			case <-a.appCtx().Done():
+			case <-time.After(pollEvery):
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -467,3 +482,45 @@ func (a *App) emitInstallWaiting(w InstallWaiting) {
 		wailsrt.EventsEmit(a.ctx, "install:waiting", w)
 	}
 }
+
+// lateWatchers lets the install late-watchers be stopped and joined. Each
+// watcher runs on a context derived from the app context, so at runtime it
+// ends exactly when it did before (its own exit or app shutdown); stop exists
+// so tests can end and wait for a watcher before their cleanups restore the
+// package globals it was started with (#1547).
+type lateWatchers struct {
+	mu      sync.Mutex
+	ctx     context.Context
+	cancel  context.CancelFunc
+	stopped bool
+	wg      sync.WaitGroup
+}
+
+// start registers one watcher. ok is false once stop has run.
+func (w *lateWatchers) start(parent context.Context) (ctx context.Context, done func(), ok bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stopped {
+		return nil, nil, false
+	}
+	if w.ctx == nil {
+		w.ctx, w.cancel = context.WithCancel(parent)
+	}
+	w.wg.Add(1)
+	return w.ctx, w.wg.Done, true
+}
+
+// stop cancels every running watcher, refuses new ones, and waits for the
+// running ones to return.
+func (w *lateWatchers) stop() {
+	w.mu.Lock()
+	w.stopped = true
+	if w.cancel != nil {
+		w.cancel()
+	}
+	w.mu.Unlock()
+	w.wg.Wait()
+}
+
+// stopLateWatchers is lateWatchers.stop on the App, the form t.Cleanup takes.
+func (a *App) stopLateWatchers() { a.lateWatch.stop() }

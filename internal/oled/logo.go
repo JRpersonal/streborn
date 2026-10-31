@@ -15,51 +15,14 @@ const (
 	FrameSize = Width * Height
 )
 
-// font is a plain 5x7 dot-matrix alphabet drawn for this project: A-Z, the
-// digits (filled in from digits5x7 below), space and + - = / . , : for the
-// display notices (notice.go).
+// font is the 5x7 dot matrix the STR mark is built from: each dot of these
+// three letters is one of the logo's flying blocks. It is the mark, not a
+// text font: every word on the panel (the splash's subtitle, the notices,
+// the games) is drawn in the smooth faces (smoothfont.go).
 var font = map[rune][7]string{
 	'S': {"01111", "10000", "10000", "01110", "00001", "00001", "11110"},
 	'T': {"11111", "00100", "00100", "00100", "00100", "00100", "00100"},
 	'R': {"11110", "10001", "10001", "11110", "10100", "10010", "10001"},
-	'E': {"11111", "10000", "10000", "11110", "10000", "10000", "11111"},
-	'B': {"11110", "10001", "10001", "11110", "10001", "10001", "11110"},
-	'O': {"01110", "10001", "10001", "10001", "10001", "10001", "01110"},
-	'N': {"10001", "11001", "10101", "10011", "10001", "10001", "10001"},
-	'I': {"01110", "00100", "00100", "00100", "00100", "00100", "01110"},
-	'L': {"10000", "10000", "10000", "10000", "10000", "10000", "11111"},
-	'A': {"01110", "10001", "10001", "11111", "10001", "10001", "10001"},
-	'D': {"11110", "10001", "10001", "10001", "10001", "10001", "11110"},
-	'U': {"10001", "10001", "10001", "10001", "10001", "10001", "01110"},
-	'P': {"11110", "10001", "10001", "11110", "10000", "10000", "10000"},
-	'G': {"01111", "10000", "10000", "10011", "10001", "10001", "01111"},
-	'M': {"10001", "11011", "10101", "10101", "10001", "10001", "10001"},
-	'V': {"10001", "10001", "10001", "10001", "10001", "01010", "00100"},
-	'F': {"11111", "10000", "10000", "11110", "10000", "10000", "10000"},
-	'K': {"10001", "10010", "10100", "11000", "10100", "10010", "10001"},
-	'C': {"01110", "10001", "10000", "10000", "10000", "10001", "01110"},
-	'H': {"10001", "10001", "10001", "11111", "10001", "10001", "10001"},
-	'W': {"10001", "10001", "10001", "10101", "10101", "11011", "10001"},
-	'X': {"10001", "10001", "01010", "00100", "01010", "10001", "10001"},
-	'Y': {"10001", "10001", "01010", "00100", "00100", "00100", "00100"},
-	'J': {"00111", "00010", "00010", "00010", "00010", "10010", "01100"},
-	'Q': {"01110", "10001", "10001", "10001", "10101", "10010", "01101"},
-	'Z': {"11111", "00001", "00010", "00100", "01000", "10000", "11111"},
-	' ': {"00000", "00000", "00000", "00000", "00000", "00000", "00000"},
-	'+': {"00000", "00100", "00100", "11111", "00100", "00100", "00000"},
-	'-': {"00000", "00000", "00000", "11111", "00000", "00000", "00000"},
-	'=': {"00000", "00000", "11111", "00000", "11111", "00000", "00000"},
-	'/': {"00001", "00001", "00010", "00100", "01000", "10000", "10000"},
-	'.': {"00000", "00000", "00000", "00000", "00000", "01100", "01100"},
-	',': {"00000", "00000", "00000", "00000", "01100", "00100", "01000"},
-	':': {"00000", "01100", "01100", "00000", "01100", "01100", "00000"},
-}
-
-// The digits of the games' score font double as the text font's digits.
-func init() {
-	for i, rows := range digits5x7 {
-		font[rune('0'+i)] = rows
-	}
 }
 
 // Logo animates the STR mark: the dots of the big letters fly in from outside
@@ -85,10 +48,41 @@ const (
 	logoPitch = 5 // one font dot = 4x4 block on a 5 px grid
 	logoBlock = 4
 	logoY     = 14
-	subY      = 68
-	subScale  = 2
-	zoomLen   = 1.6
+	// subBase is the subtitle's baseline: its 12 px capitals on the rows
+	// 69..80, the middle of the 14 px dot-matrix letters it replaced.
+	subBase = 81
+	subLvl  = 9
+	zoomLen = 1.6
 )
+
+// zoomText draws s in the large face at pen x on subBase, enlarged z times
+// around cx, cy and dimmed by fade: the subtitle during the logo's zoom-out.
+// Each panel pixel takes the level of the text pixel it maps back to, so the
+// letters grow with the dots instead of standing still while the mark flies
+// past them.
+func zoomText(buf []byte, s string, x int, cx, cy, z, fade float64) {
+	if s == "" {
+		return
+	}
+	src := make([]byte, FrameSize)
+	smoothLarge.draw(src, Width, s, x, subBase, subLvl, 0, Width, 0, Height)
+	for py := 0; py < Height; py++ {
+		sy := int(math.Floor(cy + (float64(py)+0.5-cy)/z))
+		if sy < 0 || sy >= Height {
+			continue
+		}
+		for px := 0; px < Width; px++ {
+			sx := int(math.Floor(cx + (float64(px)+0.5-cx)/z))
+			if sx < 0 || sx >= Width {
+				continue
+			}
+			if v := src[sy*Width+sx]; v > 0 {
+				lvl := byte(float64(v)*fade + 0.5)
+				buf[py*Width+px] = max(buf[py*Width+px], lvl)
+			}
+		}
+	}
+}
 
 // NewLogo lays out the mark; seed only varies where the dots fly in from.
 func NewLogo(subtitle string, total float64, seed uint64) *Logo {
@@ -178,22 +172,21 @@ func (l *Logo) Frame(t float64, buf []byte) {
 		}
 		rect(x, y, logoBlock, logoBlock, lvl)
 	}
-	// subtitle types in behind a block cursor
+	// subtitle types in behind a block cursor, in the track screen's large
+	// face: the dots above are the mark, the words under it are text and
+	// read as the rest of STR's screens do
 	typeAt := 1.6
 	if t > typeAt {
 		n := min(int((t-typeAt)/0.12), len(l.Subtitle))
-		sx := float64((Width - (len(l.Subtitle)*6*subScale - subScale)) / 2)
-		for ci, ch := range l.Subtitle[:n] {
-			for gy, row := range font[ch] {
-				for gx, b := range row {
-					if b == '1' {
-						rect(sx+float64(ci*6*subScale+gx*subScale), float64(subY+gy*subScale), subScale, subScale, 9)
-					}
-				}
-			}
+		sx := (Width - smoothLarge.width(l.Subtitle)) / 2
+		typed := l.Subtitle[:n]
+		if z == 1 {
+			smoothLarge.draw(buf, Width, typed, sx, subBase, subLvl, 0, Width, 0, Height)
+		} else {
+			zoomText(buf, typed, sx, cx, cy, z, fade)
 		}
 		if t < zoomStart && n < len(l.Subtitle) {
-			fillRect(buf, int(sx)+n*12, subY, 10, 14, 5)
+			fillRect(buf, sx+smoothLarge.width(typed)+1, subBase-smoothLarge.capH, 8, smoothLarge.capH, 5)
 		}
 	}
 	// running bar for Hold mode: a short block gliding back and forth

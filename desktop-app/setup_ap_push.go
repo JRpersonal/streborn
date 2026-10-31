@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/speakername"
 	"github.com/JRpersonal/streborn/sticksetup"
 )
 
@@ -167,6 +169,9 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 			chosenName = "SoundTouch"
 			res.LogTail = append(res.LogTail, "name: no existing name readable, falling back to 'SoundTouch'")
 		}
+	}
+	if clean := speakername.Sanitise(chosenName); clean != "" {
+		chosenName = clean // what boseSetName stores, so the log says it
 	}
 	if msg, err := boseSetName(a.ctx, host, chosenName); err != nil {
 		res.LogTail = append(res.LogTail, "name FAIL: "+err.Error())
@@ -324,14 +329,26 @@ func boseGetName(ctx context.Context, host string) (string, error) {
 	if j < 0 {
 		return "", fmt.Errorf("no </name> close in body %q", shorten(s))
 	}
-	return strings.TrimSpace(s[i+len(open) : i+len(open)+j]), nil
+	// The text is still XML-escaped ("Test&amp;B"); re-posting it as it was
+	// escaped it a second time and the speaker came back named "Test&amp;B".
+	return strings.TrimSpace(html.UnescapeString(s[i+len(open) : i+len(open)+j])), nil
 }
 
 // boseSetName POSTs the device friendly name. Always called as a
 // gate step (not best-effort): the 2026-05-30 live test on taigan
 // confirmed this is the difference between LED-yellow and LED-white
 // after the WLAN switch.
+//
+// The name goes through speakername.Sanitise: "&", "<", ">" and invalid
+// UTF-8 take the speaker's UPnP renderer down on the next boot, and with it
+// Spotify and the music library (#1582). That includes the existing name
+// this step re-posts, so a speaker set up with a bad name leaves setup with
+// a good one.
 func boseSetName(ctx context.Context, host, name string) (string, error) {
+	name = speakername.Sanitise(name)
+	if name == "" {
+		name = "SoundTouch" // the same fallback the gate step uses
+	}
 	body := "<name>" + xmlEscape(name) + "</name>"
 	resp, err := bosePost(ctx, host, "/name", "text/xml", body, 5*time.Second)
 	if err != nil {

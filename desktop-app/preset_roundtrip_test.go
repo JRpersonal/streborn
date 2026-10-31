@@ -61,6 +61,28 @@ func TestPresetRoundTripKeepsQueueFields(t *testing.T) {
 	}
 }
 
+// A single library track carries its media server and object id (#919), and
+// a box-to-box copy must hand it on, or the copied key dies with the next
+// renumbering of the server's file URLs.
+func TestPresetRoundTripKeepsTheTrackRef(t *testing.T) {
+	src := `{"slot":6,"name":"Song","stream_url":"http://192.0.2.9:10243/WMPNSSv4/1/x.mp3","type":"radio",` +
+		`"source":"PC: Media","track":{"server_udn":"uuid:00000000-0000-0000-0000-000000000009","object_id":"obj-7","parent_id":"c-1","title":"Song"}}`
+	var p Preset
+	if err := json.Unmarshal([]byte(src), &p); err != nil {
+		t.Fatal(err)
+	}
+	out, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got map[string]any
+	_ = json.Unmarshal([]byte(src), &want)
+	_ = json.Unmarshal(out, &got)
+	if !reflect.DeepEqual(want["track"], got["track"]) {
+		t.Fatalf("track ref changed in the round trip: got %v, want %v", got["track"], want["track"])
+	}
+}
+
 // A non-queue preset must not grow spurious queue fields on the wire: the
 // agent's queue-empty validation gate keys off type=queue, and old agents
 // reject unknown null-ish payload shapes.

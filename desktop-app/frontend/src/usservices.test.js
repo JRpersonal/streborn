@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
-  usServiceCanDisconnect, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
+  usServiceCanDisconnect, usServiceNeedsLogin, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
   usDisconnectError, usConnectError,
 } from './usservices.js';
 
@@ -34,6 +34,25 @@ describe('usServiceState', () => {
     const st = usServiceState(status({ pandora: { registered: true, username: 'li***@example.com' },
       box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } }), 'PANDORA');
     expect(st).toEqual({ state: 'linked', account: 'li***@example.com' });
+  });
+  it('is stale for an older carried-over account the speaker does not log in (#1630)', () => {
+    const s = status({ pandora: { registered: false, hasCredential: false, carriedOver: 'ol***@example.com' },
+      box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } });
+    expect(usServiceState(s, 'PANDORA')).toEqual({ state: 'stale', account: 'ol***@example.com' });
+    expect(pandoraFindVisible(s)).toBe(false);
+    const ih = status({ iheart: { carriedOver: '(no account name)' },
+      box: { IHEART: { status: 'UNAVAILABLE', hasAccount: 'true' } } });
+    expect(usServiceState(ih, 'IHEART')).toEqual({ state: 'stale', account: '' });
+  });
+  it('stays linked once the account was signed in through STR', () => {
+    const s = status({ pandora: { registered: true, hasCredential: true, username: 'ne***@example.com', carriedOver: 'ol***@example.com' },
+      box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } });
+    expect(usServiceState(s, 'PANDORA').state).toBe('linked');
+  });
+  it('is ready for a carried-over account the speaker lists READY', () => {
+    const s = status({ pandora: { carriedOver: 'ol***@example.com' },
+      box: { PANDORA: { status: 'READY', hasAccount: 'true' } } });
+    expect(usServiceState(s, 'PANDORA').state).toBe('ready');
   });
   it('is linked when only the stand-in has the registration', () => {
     expect(usServiceState(status({ iheart: { registered: true } }), 'IHEART').state).toBe('linked');
@@ -73,6 +92,8 @@ describe('status line and actions', () => {
     expect(usServiceStatusKey({ state: 'ready', account: '' })).toBe('usServices.stateReadyNoName');
     expect(usServiceStatusKey({ state: 'linked', account: 'x' })).toBe('usServices.stateLinked');
     expect(usServiceStatusKey({ state: 'linked', account: '' })).toBe('usServices.stateLinkedNoName');
+    expect(usServiceStatusKey({ state: 'stale', account: 'x' })).toBe('usServices.stateStale');
+    expect(usServiceStatusKey({ state: 'stale', account: '' })).toBe('usServices.stateStaleNoName');
     expect(usServiceStatusKey({ state: 'unlinked' })).toBe('usServices.stateUnlinked');
     expect(usServiceStatusKey({ state: 'off' })).toBe('usServices.stateOff');
   });
@@ -81,6 +102,13 @@ describe('status line and actions', () => {
     expect(usServiceCanDisconnect({ state: 'linked' })).toBe(true);
     expect(usServiceCanDisconnect({ state: 'unlinked' })).toBe(false);
     expect(usServiceCanDisconnect(null)).toBe(false);
+    expect(usServiceCanDisconnect({ state: 'stale' })).toBe(true);
+  });
+  it('shows the login form unless an account is connected or being set up', () => {
+    expect(usServiceNeedsLogin({ state: 'stale' })).toBe(true);
+    expect(usServiceNeedsLogin({ state: 'unlinked' })).toBe(true);
+    expect(usServiceNeedsLogin({ state: 'linked' })).toBe(false);
+    expect(usServiceNeedsLogin({ state: 'ready' })).toBe(false);
   });
 });
 

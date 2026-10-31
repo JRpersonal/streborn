@@ -1,23 +1,28 @@
 package oled
 
-// The track screen's font: Inter, anti-aliased, proportional, with lower
-// case.
+// The panel's font: Inter, anti-aliased, proportional, with lower case.
 //
 // The 5x7 dot matrix (logo.go) was drawn for the notices: capitals only and
 // scaled by whole pixels, it made the track screen look pixelated next to the
 // speaker's own screens, and its 6, 12 and 24 px sizes made the text sizes
-// jump (discussion #1305). The track screen now draws Inter at two sizes
-// close together, Medium at 11 px and SemiBold at 16.5 px, plus the digits
-// at 30 px for the clock alone. The panel has 16 grey levels, so the glyphs
-// carry 4-bit coverage and their edges are drawn in between the text's level
-// and black, the way a desktop draws text.
+// jump (discussion #1305). The track screen draws Inter at two sizes close
+// together, Medium at 11 px and SemiBold at 16.5 px, plus the digits at 30 px
+// for the clock alone. The panel has 16 grey levels, so the glyphs carry
+// 4-bit coverage and their edges are drawn in between the text's level and
+// black, the way a desktop draws text.
+//
+// Every other text on the panel uses the same faces: the notices (line 1 in
+// the large face, lines 2 and 3 in the small one), the splash's subtitle and
+// the games' words and scores. The number inside a notice's preset key has a
+// face of its own, SemiBold digits at 19.25 px (14 px tall, the height the
+// doubled dot matrix had there). A doubled dot-matrix "4" in the key, right
+// after the speaker's own smooth key number, was the last pixelated text a
+// preset press showed (discussion #1305). The dot matrix is left only as the
+// STR mark's dots, which are a picture, not text.
 //
 // The glyphs are rasterised offline (fontgen, its own module) into
 // smoothfont_data.go: the agent carries a few tens of kilobytes of tables and
-// no font engine. The notices, the splash and the games keep the dot matrix,
-// except the station name of the preset notice, which shows right before
-// the track screen and would otherwise change its lettering mid-switch
-// (notice.go, PresetPlaying).
+// no font engine.
 
 import (
 	"slices"

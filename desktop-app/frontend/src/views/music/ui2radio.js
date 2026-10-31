@@ -21,6 +21,7 @@
 import { BrowserOpenURL, GetPresets } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { parsePresetConflict } from '../../presetmove.js';
+import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { isFav, loadFavorites, loadFavStore, toggleFav } from './favorites.js';
@@ -72,7 +73,12 @@ export function ensureUi2Radio() {
   keys.className = 'ui2-keys-head';
   keys.innerHTML = '<h2 class="ui2-keys-title" id="ui2KeysTitle"></h2>'
     + `<span class="ui2-keys-hint" id="ui2KeysHint">${escapeHtml(t('ui2.radio.keysHint'))}<span class="ui2-keys-sep"> · </span>${escapeHtml(t('ui2.radio.keysHoldHint'))}</span>`;
-  presets.parentNode.insertBefore(keys, presets);
+  // A speaker with the second row of keys (#1110) shows its Once | Twice tabs
+  // in this same line, after the heading, so the second row costs no height;
+  // the empty-row explainer stays between the line and the keys.
+  const rowTabs = $('presetRowTabs');
+  presets.parentNode.insertBefore(keys, rowTabs || presets);
+  if (rowTabs) keys.insertBefore(rowTabs, keys.querySelector('.ui2-keys-hint'));
   presets.setAttribute('role', 'group');
   presets.setAttribute('aria-labelledby', 'ui2KeysTitle');
   presets.setAttribute('aria-describedby', 'ui2KeysHint');
@@ -172,19 +178,27 @@ export function syncUi2Keys() {
   if (title) title.textContent = speaker ? t('ui2.radio.keysOn', { name: speaker }) : '';
   const grid = $('presets');
   if (!grid) return;
+  // The heading names the keys; on a two-row speaker the grid is the panel of
+  // the Once | Twice tabs instead (presettiles.js), which name the speaker too.
+  if (grid.getAttribute('role') !== 'tabpanel') {
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-labelledby', 'ui2KeysTitle');
+  }
   grid.querySelectorAll('.preset').forEach((tile) => {
     // renderPresets builds new tiles each time; a tile already named here
     // only gets its labels refreshed below, never a second handler.
     const fresh = !tile.dataset.ui2Key;
     tile.dataset.ui2Key = '1';
-    const n = parseInt(tile.dataset.slot, 10);
+    const slot = parseInt(tile.dataset.slot, 10);
+    // "3" on the first row, "3 · 2×" on the second (#1110).
+    const n = keyNum(slot, t);
     const body = tile.querySelector('.preset-body');
     tile.setAttribute('role', 'group');
     if (!body) {
       tile.setAttribute('aria-label', t('ui2.radio.keyEmpty', { n, speaker }));
       return;
     }
-    tile.setAttribute('aria-label', t('preset.key', { n }));
+    tile.setAttribute('aria-label', keyLabel(slot, t));
     // The logo only repeats the name.
     body.querySelectorAll('img').forEach((img) => { if (!img.hasAttribute('alt')) img.alt = ''; });
     // The button's name holds everything it shows (name, rate, state), so a

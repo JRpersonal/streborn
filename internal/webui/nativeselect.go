@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
 // Starting a station the way the speaker starts it itself.
@@ -46,6 +48,9 @@ func (s *Server) selectNativeStation(ctx context.Context, location, name string)
 // postSelect hands a ContentItem to the speaker's own /select and turns a
 // refusal into an error.
 func (s *Server) postSelect(ctx context.Context, body string) error {
+	// A selection the speaker announces right after this is STR's own, not a
+	// person at the keys (the double-press detector, #1110).
+	boxwrites.NoteSlot("select", 0)
 	if s.selectFn != nil {
 		return s.selectFn(ctx, body)
 	}

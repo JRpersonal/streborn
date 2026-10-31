@@ -80,3 +80,37 @@ func TestScrubPII_FriendlyNameChangeInsideJSON(t *testing.T) {
 		}
 	}
 }
+
+// The other agent lines that log the speaker name under name=, old=, new= or
+// suggested= shipped it in clear in a diagnostic bundle (#1582): the Spotify
+// engine's config refresh above all, which logs it on every boot.
+func TestScrubPII_OtherSpeakerNameLines(t *testing.T) {
+	cases := []string{
+		`time=2026-10-28T10:00:00Z level=INFO msg="spotify: refreshed config from box" name=Kitchen vol=30 restart=true`,
+		`time=2026-10-28T10:00:00Z level=INFO msg="spotify: refreshed config from box" name="Living Room" vol=30 restart=false`,
+		`time=2026-10-28T10:00:00Z level=INFO msg="spotify: device name changed, restarting go-librespot" name="Living Room"`,
+		`time=2026-10-28T10:00:00Z level=INFO msg="setup wizard box name applied" name=Kitchen`,
+		`time=2026-10-28T10:00:00Z level=WARN msg="speaker name contains a character the speaker's firmware cannot handle: Spotify and the music library cannot play on it until it is renamed and restarted" name=Kitchen&Den notUTF8=false suggested="Kitchen+Den"`,
+		`time=2026-10-28T10:00:00Z level=WARN msg="UPnP renderer is down because of the speaker name: its device description answers 404. Rename the speaker and restart it" name=Kitchen&Den notUTF8=false suggested=Kitchen+Den`,
+		`time=2026-10-28T10:00:00Z level=INFO msg="speaker name repaired on the user's request, restarting the speaker" old=Kitchen&Den new=Kitchen+Den`,
+	}
+	for _, in := range cases {
+		out := ScrubPII(in)
+		for _, leak := range []string{"Kitchen", "Living Room"} {
+			if strings.Contains(out, leak) {
+				t.Errorf("speaker name %q survived:\n in: %s\nout: %s", leak, in, out)
+			}
+		}
+		if !strings.Contains(out, "NAME#") {
+			t.Errorf("no pseudonym in %s", out)
+		}
+	}
+	// The values that are not names stay readable.
+	out := ScrubPII(cases[0])
+	if !strings.Contains(out, "vol=30") || !strings.Contains(out, "restart=true") {
+		t.Errorf("non-name attributes were altered: %s", out)
+	}
+	if want := "name=NAME#" + hashShort("Kitchen"); !strings.Contains(out, want) {
+		t.Errorf("want %s in %s", want, out)
+	}
+}

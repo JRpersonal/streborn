@@ -51,3 +51,120 @@ func TestPhoneUpdateCardWarnsAGroupedSpeaker(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneFleetUpdateWarnsGroupedSpeakers pins the same note for "Update all
+// speakers": a run that restarts this speaker or a member of its live group
+// breaks that group just as the single update does, so the fleet plan says it
+// before the tap, in every locale of the short-line dictionary.
+func TestPhoneFleetUpdateWarnsGroupedSpeakers(t *testing.T) {
+	start := strings.Index(indexHTML, "var I18N3 = {")
+	if start < 0 {
+		t.Fatal("I18N3 dictionary not found")
+	}
+	end := strings.Index(indexHTML[start:], "\n};")
+	if end < 0 {
+		t.Fatal("I18N3 dictionary not closed")
+	}
+	dict := indexHTML[start : start+end]
+	vals := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"\},$`).FindAllStringSubmatch(dict, -1)
+	if len(vals) != 12 {
+		t.Fatalf("suGrpAllNote in %d locales, want 12", len(vals))
+	}
+	seen := map[string]bool{}
+	for _, v := range vals {
+		if strings.TrimSpace(v[2]) == "" {
+			t.Errorf("%s: an empty suGrpAllNote", v[1])
+		}
+		if seen[v[2]] {
+			t.Errorf("%s: suGrpAllNote %q appears twice: an untranslated copy", v[1], v[2])
+		}
+		seen[v[2]] = true
+		if regexp.MustCompile(` [-\x{2013}\x{2014}] `).MatchString(v[2]) {
+			t.Errorf("%s: suGrpAllNote uses a dash as punctuation", v[1])
+		}
+		if v[1] == "de" && (!regexp.MustCompile(`\bdu\b`).MatchString(v[2]) || !strings.ContainsAny(v[2], "äöüÄÖÜß")) {
+			t.Errorf("German suGrpAllNote must use du and real umlauts: %q", v[2])
+		}
+	}
+	for _, want := range []string{
+		// The fleet plan, not a run and not "Only this speaker".
+		"else if (!onlyThis && planFresh && fleet() && st.fleet.mode === 'plan' && suGroupNoteDue(planRows())) show(T.suGrpAllNote);",
+		// One gate for both: the fleet variant asks the same live-group rule.
+		"function suGroupNoteDue(rows) {",
+		// The dictionary is merged into T like the other two.
+		"var base3 = I18N3.en, sel3 = I18N3[code] || base3;",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("index.html lacks %q", want)
+		}
+	}
+}
+
+// TestPhoneUpdateCardSeesAGroupFormedLater pins why the note went missing on a
+// reporter's leader speaker (#1339): the page read the group once on open, the
+// group was formed in the desktop app afterwards, and the slow group poll only
+// asked again while a group was already known or the Speakers tab was open.
+// A single failed read also turned a known group into "alone" for good. The
+// behaviour itself is exercised in
+// desktop-app/frontend/src/phoneupdategroupnote.test.js.
+func TestPhoneUpdateCardSeesAGroupFormedLater(t *testing.T) {
+	for _, want := range []string{
+		// A failed read keeps the last known group.
+		"if (z == null) return;",
+		// Only the newest of several overlapping reads counts.
+		"if (seq !== zoneSeq) return;",
+		// The More tab, where the update card lives, reads the group on open
+		// and keeps polling it.
+		"if (name === 'More') loadZone();",
+		"if (zonePollDue()) loadZone(); }, 15000);",
+		"(mo && !mo.hidden)",
+		// "Only this speaker" reads the group fresh.
+		"if (onlyThis) loadZone().catch(function(){});",
+		// One gate, testable on its own.
+		"function suGroupNoteDue(rows) { return groupNoteDue(zone, rows); }",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("index.html lacks %q", want)
+		}
+	}
+}
+
+// TestPhoneGroupNoteNamesTheJoinControl pins the wording asked for on #1339:
+// the note says where an ordinary group is formed again on this page, the +
+// next to the speakers under the "Speakers & groups" heading, by that
+// heading's own text in each locale.
+func TestPhoneGroupNoteNamesTheJoinControl(t *testing.T) {
+	peersRe := regexp.MustCompile(`peers:"([^"]*)"`)
+	noteRe := regexp.MustCompile(`suGrpNote:"([^"]*)"`)
+	langRe := regexp.MustCompile(`^  (\w+):\{`)
+	peersOf := map[string]string{}
+	singles := 0
+	for _, line := range strings.Split(indexHTML, "\n") {
+		m := langRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		if p := peersRe.FindStringSubmatch(line); p != nil {
+			peersOf[m[1]] = p[1]
+		}
+		if n := noteRe.FindStringSubmatch(line); n != nil {
+			singles++
+			p := peersOf[m[1]]
+			if p == "" || !strings.Contains(n[1], p) || !strings.Contains(n[1], "+") {
+				t.Errorf("%s: suGrpNote does not name the + under %q: %q", m[1], p, n[1])
+			}
+		}
+	}
+	if singles != 12 {
+		t.Fatalf("checked %d suGrpNote bundles, want 12", singles)
+	}
+	all := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"\},$`).FindAllStringSubmatch(indexHTML, -1)
+	if len(all) != 12 {
+		t.Fatalf("suGrpAllNote in %d locales, want 12", len(all))
+	}
+	for _, v := range all {
+		if p := peersOf[v[1]]; p == "" || !strings.Contains(v[2], p) || !strings.Contains(v[2], "+") {
+			t.Errorf("%s: suGrpAllNote does not name the + under %q: %q", v[1], p, v[2])
+		}
+	}
+}

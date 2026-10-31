@@ -29,7 +29,7 @@ func TestStationLocationOwnSlot(t *testing.T) {
 	}
 	foreign := map[string]string{
 		"external stream":   OrionStationLocation("https://stream.example.com/live.mp3", "Foreign", ""),
-		"slot out of range": OrionStationLocation("http://127.0.0.1:8888/stream/7", "Seven", ""),
+		"slot out of range": OrionStationLocation("http://127.0.0.1:8888/stream/13", "Thirteen", ""),
 		"ad-hoc raw proxy":  OrionStationLocation("http://127.0.0.1:8888/stream/raw?u=abc", "Ad hoc", ""),
 		"lan host":          OrionStationLocation("http://192.0.2.5:8888/stream/3", "Not loopback", ""),
 		"https loopback":    OrionStationLocation("https://127.0.0.1:8888/stream/3", "Wrong scheme", ""),

@@ -31,13 +31,13 @@ func TestPhoneRemoteLightsTheQueueKey(t *testing.T) {
 
 	rs := indexHTML[strings.Index(indexHTML, "async function refreshStatus("):]
 	rs = rs[:strings.Index(rs, "\n}\n")]
-	if strings.Count(rs, "markPlaying(") != 1 || !strings.Contains(rs, "markPlaying(nowLoc, queue, spKey)") {
+	if strings.Count(rs, "markPlaying(") != 1 || !strings.Contains(rs, "markPlaying(nowLoc, queue, spKey, state)") {
 		t.Error("refreshStatus must mark the key once, with the queue it read")
 	}
 	if strings.Count(rs, "currentQueue()") != 1 {
 		t.Error("the queue must be read once per status poll, not in a loop of its own")
 	}
-	if strings.Index(rs, "currentQueue()") > strings.Index(rs, "markPlaying(nowLoc, queue, spKey)") {
+	if strings.Index(rs, "currentQueue()") > strings.Index(rs, "markPlaying(nowLoc, queue, spKey, state)") {
 		t.Error("the key is marked before the queue was read")
 	}
 }

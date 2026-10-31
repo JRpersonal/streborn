@@ -159,13 +159,123 @@ export function describeTemplate(tpl, boxes, label) {
   return nameOf(tpl.master) + (members.length ? ' + ' + members.join(', ') : '');
 }
 
+// validWolMac reports whether mac is a 6-byte hardware address in a form the
+// agent's parser accepts (AA:BB:CC:DD:EE:FF, AA-BB-..., or AABB.CCDD.EEFF).
+// A shorter one never fires, so it must not pass as configured.
+export function validWolMac(mac) {
+  const s = String(mac || '').trim();
+  return /^[0-9a-f]{2}([:-])[0-9a-f]{2}(\1[0-9a-f]{2}){4}$/i.test(s)
+    || /^[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}$/i.test(s);
+}
+
+// webhookConfigured reports whether a webhook action is enabled and has what
+// its transport needs to fire, the same test the agent applies.
+export function webhookConfigured(a) {
+  return !!a && a.enabled === true && (
+    a.type === 'wol' ? validWolMac(a.mac) : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
+}
+
+// webhookPresent reports whether a webhook action is enabled and filled in,
+// whether or not it can fire. A broken entry (a Wake-on-LAN address that does
+// not parse) is still something on the key the user must be able to see, open
+// and switch off: hidden, it sat on the key unreachable (2026-10-27).
+export function webhookPresent(a) {
+  return !!a && a.enabled === true && (
+    a.type === 'wol' ? !!String(a.mac || '').trim() : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
+}
+
+// webhookSourceOnKey says where the webhook on key comes from: 'key' for the
+// key's own trigger, 'thumb' for the legacy shared thumbs action (it fires for
+// either thumbs key), '' for none. A present but broken entry counts, so the
+// key map lights it and a click opens it.
+export function webhookSourceOnKey(cfg, key) {
+  if (!cfg) return '';
+  if (webhookPresent(cfg.buttons && cfg.buttons[key])) return 'key';
+  return GROUP_KEY_IDS.includes(key) && webhookPresent(cfg.thumb) ? 'thumb' : '';
+}
+
 // webhookOnKey reports whether the speaker's webhook config carries an
-// enabled, configured trigger for key (the legacy shared thumbs action counts
-// for both thumbs keys). A bound group wins over it, so the view warns.
+// enabled trigger for key (the legacy shared thumbs action counts for both
+// thumbs keys). A bound group wins over it, so the view warns.
 export function webhookOnKey(cfg, key) {
-  const configured = (a) => !!a && a.enabled === true && (
-    a.type === 'wol' ? !!a.mac : a.type === 'udp' ? (!!a.host && a.port > 0) : !!a.url);
-  if (!cfg) return false;
-  if (configured(cfg.buttons && cfg.buttons[key])) return true;
-  return GROUP_KEY_IDS.includes(key) && configured(cfg.thumb);
+  return webhookSourceOnKey(cfg, key) !== '';
+}
+
+// keyMapTarget is the webhook entry a click on key in the remote key map
+// opens. A thumbs key lit only by the shared thumbs action opens that shared
+// entry: opening the key's own (empty) form left a lit key with nothing on it
+// to change or remove (2026-10-27).
+export function keyMapTarget(cfg, key) {
+  return webhookSourceOnKey(cfg, key) === 'thumb' ? 'thumb' : key;
+}
+
+// sharedThumbFiresOn reports whether the agent would fire the shared thumbs
+// action for a press of key: it has to be valid, and the key must carry no
+// group, no key action and no working webhook of its own (the agent's
+// FireKey order).
+export function sharedThumbFiresOn(cfg, key, opts) {
+  const o = opts || {};
+  if (!cfg || !webhookConfigured(cfg.thumb) || !GROUP_KEY_IDS.includes(key)) return false;
+  if (o.bindings && o.bindings[key]) return false;
+  if (typeof o.keyActionOn === 'function' && o.keyActionOn(key)) return false;
+  return !webhookConfigured(cfg.buttons && cfg.buttons[key]);
+}
+
+// groupKeyWebhookWarnKey picks the Multi-room warning for a webhook on a
+// group-bound key. The shared thumbs action needs its own sentence, and which
+// one depends on whether it still fires on the other thumbs key: claiming it
+// does when the other key carries a group or a key action (or the entry is
+// broken) confused the user it was meant to help. opts: { bindings,
+// keyActionOn(key) }.
+export function groupKeyWebhookWarnKey(cfg, key, opts) {
+  switch (webhookSourceOnKey(cfg, key)) {
+    case 'key': return 'multiroom.groupKeysWebhookWarn';
+    case 'thumb': {
+      const other = key === 'thumbsUp' ? 'thumbsDown' : 'thumbsUp';
+      return sharedThumbFiresOn(cfg, other, opts)
+        ? 'multiroom.groupKeysWebhookWarnShared' : 'multiroom.groupKeysWebhookWarnSharedUnused';
+    }
+    default: return '';
+  }
+}
+
+// groupKeyErrorBannerKey picks the banner sentence for a refused group-key
+// press by the agent's stable kind. The kinds the user can act on get their
+// own sentence; any other (or none, from an older agent) keeps the generic
+// one with the speaker's reason in it.
+export function groupKeyErrorBannerKey(kind) {
+  switch (kind) {
+    case 'master-unresponsive': return 'speaker.groupKeyErrorUnresponsive';
+    case 'member-unresolved': return 'speaker.groupKeyErrorMoved';
+    default: return 'speaker.groupKeyErrorBanner';
+  }
+}
+
+// groupKeyErrorBanners turns the speakers that report a refused group-key
+// press into banner lines: one per sentence kind the user can act on (with
+// every speaker of that kind named), and one per speaker for the generic
+// sentence, which quotes that speaker's own reason. Mixing kinds under the
+// first speaker's sentence told a speaker whose form was refused that it had
+// moved. Each line keeps its raw reasons for display under the sentence.
+export function groupKeyErrorBanners(boxes, label) {
+  const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
+  const out = [];
+  const byKey = new Map();
+  for (const b of boxes || []) {
+    const key = groupKeyErrorBannerKey(b.groupKeyErrorKind);
+    const reason = String(b.groupKeyError || '');
+    if (key === 'speaker.groupKeyErrorBanner') {
+      out.push({ key, names: lbl(b), reason, reasons: [reason] });
+      continue;
+    }
+    let line = byKey.get(key);
+    if (!line) {
+      line = { key, names: [], reason, reasons: [] };
+      byKey.set(key, line);
+      out.push(line);
+    }
+    line.names.push(lbl(b));
+    if (reason && !line.reasons.includes(reason)) line.reasons.push(reason);
+  }
+  return out.map(l => (Array.isArray(l.names) ? { ...l, names: l.names.join(', ') } : l));
 }

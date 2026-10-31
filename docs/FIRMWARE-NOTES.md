@@ -234,6 +234,28 @@ has an SSH fallback for the binary upload. The official Web API doc
 documents no request size limit anywhere; the measured cap is field
 knowledge and stands.
 
+## A speaker name with `&` takes the UPnP renderer down
+
+The UPnP renderer on `:8091` pastes the speaker's name into its device
+description (`/XD/BO5EBO5E-F00D-F00D-FEED-<deviceID>.xml`) without XML
+escaping it. Measured on a Portable, FW 27.0.6, 2026-10-28 (#1582): after a
+rename to `Test&B` (posted correctly escaped to `:8090/name`) the description
+served `<friendlyName>Test&B</friendlyName>`, and after the next boot the
+renderer did not come up at all. The description and every SOAP call answered
+404, and the syslog said `gupnp_root_device_get_ssdp_resource_group: assertion
+'GUPNP_IS_ROOT_DEVICE (root_device)' failed`. A name stored as invalid UTF-8
+(a lone Latin-1 byte) did the same. Renaming back and rebooting cured it.
+
+Spotify and the music library both play through that renderer, so neither
+works while native radio does. `:8090` itself escapes the name correctly, so
+nothing else looks wrong. STR writes names only through
+`speakername.Sanitise` (`&` becomes `+`, `<` and `>` are dropped, invalid
+UTF-8 is read as Latin-1), and the agent recognises a bad name the Bose app
+or the stock web UI set (`internal/webui/speakername.go`): it reports
+`speakerNameUnsafe` on `/api/agent/version`, probes the description once
+after a renderer 404, and offers a rename-and-restart on
+`POST /api/box/name/repair`.
+
 ## The `:8090` HTTP API vs the official doc
 
 ### The error envelope and the code table
@@ -549,18 +571,20 @@ received (`internal/oled`). It can be switched off per speaker
 
 **Display notices.** The same panel carries STR's short notices for things the
 firmware never shows because STR does them behind its back
-(`internal/oled/notice.go`): a 32x32 symbol and up to three lines in the 5x7
-font, 150 ms fade-in, then the panel goes back to BoseApp.
+(`internal/oled/notice.go`): a 32x32 symbol and up to three lines in the track
+screen's smooth faces (the first line in the large face, the others in the
+small one, the key's number in a 14 px face of its own), 150 ms fade-in, then
+the panel goes back to BoseApp.
 
 | Notice | When | Text | Shown for |
 | ------ | ---- | ---- | --------- |
-| Key + busy dots | a physical preset key is still down 1.8 s after the press (before the firmware's own hold reaction at 2.0 s on the Portable); replaced in place by the outcome below | `KEY N`, `SAVING...` | until the outcome, at most 6 s |
+| Key + busy dots | a physical preset key is still down 1.8 s after the press (before the firmware's own hold reaction at 2.0 s on the Portable); replaced in place by the outcome below | `KEY N`, `Saving…` | until the outcome, at most 6 s |
 | Key + check | a held key stored what plays (`cmd/agent/holdsave.go` for STR's own stream, `holdstore.go` for the speaker's own store gesture) | `SAVED N`, the item's name | 2.5 s |
-| Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `FROM STR APP` | 2 s |
-| Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `ALREADY SAVED` | 3 s |
-| Key + X | a held key could not be saved (STR has no preset form for what plays) | `NOT SAVED`, `SOURCE NOT SUPPORTED` | 3 s |
-| Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `EMPTY. SET IN STR APP` | 2.5 s |
-| Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `RESTORED AFTER REBOOT` | 2 s, once per boot |
+| Key + check | the app or the phone page put something new on a key (per-slot PUT, queue save, native save, preset move) | `SAVED N`, `From STR app` | 2 s |
+| Key + equals | a save was refused because the item is on another key (#836) | `ON KEY M`, `Already saved` | 3 s |
+| Key + X | a held key could not be saved (STR has no preset form for what plays) | `NOT SAVED`, `Source not supported` | 3 s |
+| Dotted key | a physical press on a key with nothing in STR's store or the box's own list, and no activation after it | `KEY N`, `Empty. Set in STR app` | 2.5 s |
+| Key grid + arrow | the first reconcile pass after a box boot wrote keys back the box had lost | `N KEYS`, `Restored after reboot` | 2 s, once per boot |
 | Rings + border | `POST /api/box/identify` ("find this speaker" in the app and on the phone page) | `HELLO`, the speaker's name | 5 s |
 
 **Held key.** Holding a preset key while STR plays a UPnP push (Spotify, a
@@ -795,6 +819,37 @@ writes, so STR can tell its own keys from a person's. Measured on an ST10
 (rhino, 27.0.6) on 2026-10-10 with keys sent over `/key`; a key sent that way
 produces no analytics line at all.
 
+### A key pressed twice: one selection frame per press, except in a group
+
+STR's second preset row (slots 7 to 12, #1110) is reached by pressing a key
+twice quickly (`cmd/agent/doublepress.go`). The firmware has no notion of a
+double press, so the detector works from what the gabbo bus already says.
+Measured with a `:8080` watcher on 2026-10-27 on a Portable (taigan), an ST30
+and an ST10 (sm2), all on 27.0.6:
+
+- On a speaker that is not grouped, every physical press of a preset key
+  emits exactly one `nowSelectionUpdated <preset id="N">`, about 0.13 s after
+  the release, also when the key pressed is the one already playing. A single
+  press never produced a second frame.
+- Double presses on the top keys arrived 151 to 322 ms apart. STR pairs two
+  frames of the same key within 700 ms; the hold-to-store gesture needs the key
+  down for about 1.5 s, so the two cannot be confused.
+- After each frame the speaker goes `BUFFERING` and reaches `PLAY` 2 to 3 s
+  later, so switching to the second row on the second frame happens before any
+  audio of the first row is heard.
+- On one ST30 the IR remote's second press of a double press produced no
+  second frame at all. Only the top keys were relied on.
+- Inside a group the frame is not one per press. On an ST10 that was a member
+  of a fixed group led by an ST30, every single press emitted
+  `nowSelectionUpdated preset=N` twice, about 350 ms apart, while the master
+  emitted `preset=0` frames. So inside a zone (master or member) two frames
+  prove nothing, and STR counts a second press only when the key trace
+  (`internal/boxlog`) shows two physical presses of that key. Without trace
+  evidence the double press is off while the speaker is grouped.
+
+Selections STR causes itself (its own `sys presetkey`, an item it hands to
+`/select`) are never counted as a press.
+
 ## Per-logical-stream retention in the Ogg/HTTP path
 
 **Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,
@@ -862,6 +917,19 @@ paused lone file directly, and the lone-file end watch repairs a frozen resume
 from the speaker's key the same way, once per resume
 (`internal/webui/resumefile.go`). A library folder (the queue) is not covered
 yet.
+
+**The freeze is not every resume.** A field report on an ST10 (FW 27.0.6,
+2026-10, a 192 kbit/s MP3 on nginx) had the speaker's own resume continue
+correctly after a reboot: the same `Range: bytes=<buffer end>-` re-open, but
+audio played on. The end watch still saw now_playing on the paused second for
+two polls and restarted the file over it, a jump back of about ten seconds.
+The reporter also found that pause and resume worked only after a reboot,
+which fits the stale-URL-id state above being something the speaker gets into
+rather than something every resume hits. So the watch now waits for three
+reads on the paused second (7 s), ignores a position standing still anywhere
+else, and before it restarts anything reads the renderer's own clock
+(`GetPositionInfo` RelTime) twice: a position past the paused one, or one that
+moves, means the speaker resumed by itself, and nothing is sent.
 
 ## NetManager owns wpa_supplicant, and the conf file holds no credential
 

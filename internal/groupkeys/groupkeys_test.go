@@ -3,6 +3,7 @@ package groupkeys
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -41,7 +42,12 @@ type fakeMaster struct {
 	// deferred makes Form answer like a permanent template that was stored
 	// for the next play instead of wired now.
 	deferred bool
+	// zoneErr makes LiveZone fail; self makes the main speaker this speaker.
+	zoneErr error
+	self    bool
 }
+
+func (f *fakeMaster) IsSelf(Member) bool { return f.self }
 
 func (f *fakeMaster) rec(s string) {
 	f.mu.Lock()
@@ -53,6 +59,9 @@ func (f *fakeMaster) LiveZone(_ context.Context, m Member) (LiveZone, error) {
 	f.rec("zone:" + m.DeviceID)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.zoneErr != nil {
+		return LiveZone{}, f.zoneErr
+	}
 	return f.zones[m.DeviceID], nil
 }
 
@@ -262,6 +271,58 @@ func TestToggleIncompleteGroupForms(t *testing.T) {
 	}
 }
 
+// A template with a speaker that was offline when the key formed it: the form
+// succeeds with the rest, and the next press must dissolve that group instead
+// of forming it again for as long as the speaker stays away (2026-10-27, an
+// "all speakers" group with one switched off).
+func TestToggleDissolvesAGroupFormedWithoutAnOfflineMember(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: false}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("first press: outcome %s", got)
+	}
+	// The form wired only the member that answered.
+	f.mu.Lock()
+	f.zones["AAAA"] = LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB", IP: "192.0.2.11"}}}
+	f.mu.Unlock()
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeDissolved {
+		t.Fatalf("second press: outcome %s, want the partial group dissolved", got)
+	}
+	// After the dissolve the memory is gone: a hand-made partial group is
+	// completed again, as before.
+	f.mu.Lock()
+	f.zones["AAAA"] = LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB", IP: "192.0.2.11"}}}
+	f.mu.Unlock()
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("third press: outcome %s, want a form", got)
+	}
+}
+
+// templatePartlyLive pinned on its own: a follower outside the template, or no
+// follower at all, is not what is left of the template's group.
+func TestTemplatePartlyLive(t *testing.T) {
+	tpl := evening()
+	if !templatePartlyLive(tpl, LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "CCCC"}}}) {
+		t.Fatal("a subset of the template must match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "AAAA"}) {
+		t.Fatal("a zone without followers must not match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "AAAA", Members: []Member{{DeviceID: "BBBB"}, {DeviceID: "EEEE"}}}) {
+		t.Fatal("a follower outside the template must not match")
+	}
+	if templatePartlyLive(tpl, LiveZone{Master: "ZZZZ", Members: []Member{{DeviceID: "BBBB"}}}) {
+		t.Fatal("a zone led by another speaker must not match")
+	}
+}
+
 // TestToggleSwitchesFromOtherTemplate: the other key's template is live on a
 // different main speaker -> dissolve it there, then form this one.
 func TestToggleSwitchesFromOtherTemplate(t *testing.T) {
@@ -378,5 +439,110 @@ func TestADeferredPermanentGroupIsNotReportedAsFormed(t *testing.T) {
 	la, _ := snap["last_action"].(Action)
 	if la.Outcome != OutcomeDeferred {
 		t.Errorf("debug section says %q, want %q", la.Outcome, OutcomeDeferred)
+	}
+}
+
+// The key sits on the main speaker itself and its own Bose web server stalls
+// (2026-10-27): the zone read over loopback fails. The press used to be
+// refused; it now goes by the key's last press, forming when it did not form
+// this template last and dissolving when it did.
+func TestToggleOnTheMainSpeakerSurvivesAnUnreadableZone(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: false, self: true,
+		zoneErr: errors.New(`http 502: Get "http://127.0.0.1:8090/getZone": context deadline exceeded`)}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("first press: outcome %s, want formed", got)
+	}
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeDissolved {
+		t.Fatalf("second press: outcome %s, want dissolved", got)
+	}
+}
+
+// A main speaker on the LAN whose zone cannot be read still refuses the press,
+// and the refusal carries the kind the app explains it by.
+func TestToggleRemoteUnreadableZoneFailsWithKind(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, zoneErr: errors.New("http 502: boom")}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFailed {
+		t.Fatalf("outcome %s", got)
+	}
+	le, ok := s.LastError()
+	if !ok || le.Kind != KindMasterUnresponsive {
+		t.Fatalf("last error %+v, want kind %s", le, KindMasterUnresponsive)
+	}
+	if le.Error != "read the main speaker's group: http 502: boom" {
+		t.Fatalf("reason text changed: %q", le.Error)
+	}
+}
+
+func TestErrorKind(t *testing.T) {
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{nil, ""},
+		{withKind(KindMemberUnresolved, errors.New("member Bad: moved")), KindMemberUnresolved},
+		{fmt.Errorf("form: %w", withKind(KindMemberUnresolved, errors.New("member Bad: moved"))), KindMemberUnresolved},
+		{errors.New("form: http 502: the speaker leading the group is not answering: x"), KindMasterUnresponsive},
+		{fmt.Errorf("%w: %w", errZoneRead, errors.New(`http 502: Get "http://127.0.0.1:8090/getZone": context deadline exceeded`)), KindMasterUnresponsive},
+		{fmt.Errorf("%w: %w", errZoneRead, errors.New("dial tcp 192.0.2.20:17008: connect: connection refused")), KindOther},
+		{fmt.Errorf("%w: %w", errZoneRead, withKind(KindMemberUnresolved, errors.New("192.0.2.20 is now another speaker"))), KindMemberUnresolved},
+		{errors.New("form: setZone: boom"), KindFormRefused},
+		{errors.New("dissolve: http 500"), KindDissolveFailed},
+		{errors.New("no master client wired"), KindOther},
+	}
+	for _, tc := range cases {
+		if got := errorKind(tc.err); got != tc.want {
+			t.Errorf("errorKind(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+}
+
+// The key formed its template, the group then ended some other way (the main
+// speaker went to standby), and the next press lands while the main speaker's
+// own zone cannot be read. An idle main speaker leads no group, so the press
+// forms again instead of taking the stale memory for a live group.
+func TestToggleUnreadableZoneOnAnIdleMainSpeakerForms(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: true, self: true}
+	s.SetClient(f)
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("first press: outcome %s, want formed", got)
+	}
+	f.mu.Lock()
+	f.zoneErr = errors.New(`http 502: Get "http://127.0.0.1:8090/getZone": context deadline exceeded`)
+	f.calls = nil
+	f.mu.Unlock()
+	s.togMu.Lock()
+	s.lastAt[KeyThumbsUp] = time.Now().Add(-toggleMinGap)
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFormed {
+		t.Fatalf("second press: outcome %s, want formed", got)
+	}
+	want := []string{"zone:AAAA", "idle:AAAA", "form:Evening", "play:AAAA"}
+	if got := f.list(); !equalCalls(got, want) {
+		t.Fatalf("calls %v, want %v", got, want)
+	}
+}
+
+// A zone that was read and shows the template's main speaker leading nothing
+// ends the key's memory of what it formed.
+func TestAReadZoneWithoutTheGroupForgetsWhatTheKeyFormed(t *testing.T) {
+	s := newStore(t, Document{Templates: []Template{evening()}, Bindings: map[string]string{KeyThumbsUp: "Evening"}})
+	f := &fakeMaster{zones: map[string]LiveZone{}, idle: false, formErr: errors.New("setZone: boom")}
+	s.SetClient(f)
+	s.togMu.Lock()
+	s.formedBy[KeyThumbsUp] = "Evening"
+	s.togMu.Unlock()
+	if got := s.Toggle(context.Background(), KeyThumbsUp); got != OutcomeFailed {
+		t.Fatalf("outcome %s", got)
+	}
+	if s.formedLast(KeyThumbsUp, "Evening") {
+		t.Fatal("the memory outlived a group the zone shows is gone")
 	}
 }

@@ -328,9 +328,15 @@ test.describe('classic layout key picker', () => {
     await expect(page.getByRole('dialog', { name: 'Assign station to a key' })).toBeVisible();
     const slots = page.locator('#pickGrid .pick-slot');
     await expect(slots.first()).toBeFocused();
-    // Tab stays inside: six keys and Cancel, then back to key 1.
+    // Tab stays inside: six keys, Cancel, the chosen Once | Twice tab of the
+    // demo speaker's second row of keys (#1110), then back to key 1. The other
+    // tab is reached with the arrow keys, never with Tab.
     for (let i = 0; i < 7; i++) await page.keyboard.press('Tab');
+    await expect(page.locator('#pickRowTab1')).toBeFocused();
+    await page.keyboard.press('Tab');
     await expect(slots.first()).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.locator('#pickRowTab1')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(page.locator('#pickCancel')).toBeFocused();
     await page.keyboard.press('Escape');

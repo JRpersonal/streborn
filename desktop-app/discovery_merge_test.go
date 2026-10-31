@@ -94,11 +94,11 @@ func TestBoxFieldPolicyCoversEveryField(t *testing.T) {
 // merging a record with itself is the identity for every rule.
 func TestMergeWithSelfIsIdentity(t *testing.T) {
 	full := BoxInfo{Name: "n", Host: "h", Port: 17008, DeviceID: "d", BoxDeviceID: "bd", FriendlyName: "Küche",
-		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2",
+		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2", PresetRows: "2",
 		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
-		GroupKeyError: "g", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
-		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, SerialNumber: "sn", Kind: "str", PortVerified: true}
+		GroupKeyError: "g", GroupKeyErrorKind: "other", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
+		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, LANAddrs: "a,b", WiredAddrs: "a", SerialNumber: "sn", Kind: "str", PortVerified: true}
 	if got := mergeBoxInfo(full, full); !reflect.DeepEqual(got, full) {
 		t.Errorf("mergeBoxInfo(x, x) != x:\n got %+v\nwant %+v", got, full)
 	}
@@ -146,6 +146,9 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"AgentBinarySha256", str(BoxInfo{AgentBinarySha256: "old"}), str(BoxInfo{}), "old", "an empty live hash is filled (older agent, or mDNS only)"},
 		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{AgentRunningSha256: "new"}), "new", "the live running hash wins"},
 		{"AgentRunningSha256", str(BoxInfo{AgentRunningSha256: "old"}), str(BoxInfo{}), "old", "an empty live running hash is filled"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), str(BoxInfo{Version: "v1.0.20"}), "", "an older agent's one row is not papered over by a cached second row (#1110)"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), str(BoxInfo{}), "2", "a cycle without a version keeps the cached answer with the cached version"},
+		{"PresetRows", str(BoxInfo{Version: "v1.0.20"}), str(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), "2", "an update to a supporting agent shows at once"},
 
 		{"Offline", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), false, "a cached offline marker never survives a sighting"},
 		{"OfflineSinceSec", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), 0, "nor does its age"},
@@ -184,6 +187,8 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"RecallRefusalSinceSec", str(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), str(BoxInfo{}), 0, "not carried"},
 		{"WLANCredsMissing", str(BoxInfo{WLANCredsMissing: true}), str(BoxInfo{}), false, "not carried (#270: a stale mid-boot snapshot must not stick)"},
 		{"WLANCredsMissing", str(BoxInfo{}), str(BoxInfo{WLANCredsMissing: true}), true, "a live warning stands"},
+		{"LANAddrs", str(BoxInfo{LANAddrs: "10.0.0.20,10.0.0.21"}), str(BoxInfo{}), "10.0.0.20,10.0.0.21", "a thin cycle keeps the speaker's address report, the fallback needs it (#165)"},
+		{"WiredAddrs", str(BoxInfo{WiredAddrs: "10.0.0.20"}), str(BoxInfo{WiredAddrs: "10.0.0.30"}), "10.0.0.30", "a live report wins"},
 
 		{"SerialNumber", str(BoxInfo{SerialNumber: "000000P00000000AA"}), str(BoxInfo{}), "000000P00000000AA", "an empty serial is filled"},
 		{"SerialNumber", str(BoxInfo{SerialNumber: "OLD"}), str(BoxInfo{SerialNumber: "NEW"}), "NEW", "a live serial wins"},
@@ -245,6 +250,8 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"AgentRunningSha256", m(BoxInfo{}), v(BoxInfo{AgentRunningSha256: "new"}), "new", "the running hash is what the update badge keys on"},
 		{"AgentRunningSha256", v(BoxInfo{AgentRunningSha256: "new"}), m(BoxInfo{}), "new", "in either order"},
 		{"AgentRunningSha256", m(BoxInfo{}), m(BoxInfo{AgentRunningSha256: "x"}), "x", "no probe: whichever has one"},
+		{"PresetRows", m(BoxInfo{Version: "v1.0.21"}), v(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), "2", "the probe's answer travels with its version (#1110)"},
+		{"PresetRows", v(BoxInfo{Version: "v1.0.21", PresetRows: "2"}), m(BoxInfo{Version: "v1.0.21"}), "2", "in either order"},
 
 		{"Offline", m(BoxInfo{Offline: true}), v(BoxInfo{}), true, "per-cycle annotation: the first"},
 		{"OfflineSinceSec", m(BoxInfo{OfflineSinceSec: 9}), v(BoxInfo{}), 9, "the first"},
@@ -289,6 +296,8 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"RecallRefusalSinceSec", m(BoxInfo{}), m(BoxInfo{RecallRefusal: true, RecallRefusalSinceSec: 30}), 30, "with that side's age"},
 		{"WLANCredsMissing", m(BoxInfo{WLANCredsMissing: true}), v(BoxInfo{}), false, "the live reading clears a stale warning"},
 		{"WLANCredsMissing", m(BoxInfo{}), m(BoxInfo{WLANCredsMissing: true}), true, "no probe: a warning on either side"},
+		{"LANAddrs", m(BoxInfo{}), v(BoxInfo{LANAddrs: "10.0.0.20,10.0.0.21"}), "10.0.0.20,10.0.0.21", "only the probe carries the address report (#165)"},
+		{"WiredAddrs", v(BoxInfo{WiredAddrs: "10.0.0.20"}), m(BoxInfo{WiredAddrs: "10.0.0.30"}), "10.0.0.20", "the probe's report wins in either order"},
 
 		{"SerialNumber", m(BoxInfo{SerialNumber: "A"}), v(BoxInfo{SerialNumber: "B"}), "A", "the first"},
 		{"SerialNumber", m(BoxInfo{}), v(BoxInfo{SerialNumber: "B"}), "B", "an empty first is filled"},

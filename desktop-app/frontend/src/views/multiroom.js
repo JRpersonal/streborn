@@ -12,7 +12,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, Dissol
 // Group keys (#863): a saved group on a thumbs key of one speaker's remote.
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
-import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, webhookOnKey } from '../groupkeys.js';
+import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, groupKeyWebhookWarnKey } from '../groupkeys.js';
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
@@ -350,7 +350,7 @@ export function renderMultiroom(fetchLive) {
           const isMaster = !pair && !!masterBox && b.host === masterBox.host;
           const mark = isMaster ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>` : '';
           return `<span class="zone-frame-chip">${mark}${escapeHtml(zoneLabel(b))}</span>`;
-        }).join('');
+        }).join('') + (permanent ? notJoinedChips(((state.zoneLive || {})[masterBox.deviceID] || {}).notJoined, strBoxes) : '');
         // A dismiss control per frame: the honest place to take THIS group apart,
         // where the user is looking at it, instead of the one shared Ungroup
         // button that could only reach whichever group liveZoneMaster happened to
@@ -1000,8 +1000,13 @@ function renderGroupKeysSection(strBoxes) {
       const key = keyOf(doc, tp.name);
       const perm = tp.permanent
         ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>` : '';
-      const warn = key && webhookOnKey(gk.webhooks, key)
-        ? `<small class="gk-warn setup-warn small">${escapeHtml(t('multiroom.groupKeysWebhookWarn', { name: remoteName }))}</small>` : '';
+      // The other thumbs key's group or key action decides whether the shared
+      // thumbs webhook still fires there, so the warning gets both.
+      const warnKey = key ? groupKeyWebhookWarnKey(gk.webhooks, key, {
+        bindings: doc.bindings, keyActionOn: (k) => sleepKey(k) || snoozeKey(k) || bassKey(k),
+      }) : '';
+      const warn = warnKey
+        ? `<small class="gk-warn setup-warn small">${escapeHtml(t(warnKey, { name: remoteName, entry: t('settingsView.webhookKeyThumb') }))}</small>` : '';
       return `<div class="gk-row">` +
         `<span class="gk-row-name">${escapeHtml(tp.name)}${perm}</span>` +
         `<span class="gk-row-members muted small">${escapeHtml(describeTemplate(tp, strBoxes, zoneLabel))}</span>` +
@@ -1027,6 +1032,7 @@ function renderGroupKeysSection(strBoxes) {
        <div class="muted small">${escapeHtml(t('multiroom.groupKeysSaveHelp'))}</div>
        <div id="gkResult">${gk.msg || ''}</div>
        <div class="muted small" style="margin-top:8px">${escapeHtml(t('multiroom.groupKeysHint'))}</div>
+       <div class="muted small">${escapeHtml(t('multiroom.groupKeysDisplayNote'))}</div>
        <div class="zone-actions"><button id="gkKeyMap" class="btn btn-mini"${remote ? '' : ' disabled'}>${escapeHtml(t('multiroom.groupKeysOpenKeyMap'))}</button></div>
      </div>`;
 }
@@ -1352,6 +1358,24 @@ async function doFormZone(strBoxes) {
 // So neither half can be assumed to be the one holding it. Asking both is
 // harmless (a speaker not in a pair answers "nothing to undo" and is left
 // alone) and it is the only way a one-sided leftover can be cleared at all.
+// notJoinedChips draws the stored members of a live permanent group that are
+// not in it right now, dimmed and labelled. Without them the frame showed only
+// the live zone, so a member that stayed out read as removed from the group
+// and then came back once the group ended (#1576). The agent reports them as
+// `notJoined` on the main speaker's zone answer.
+function notJoinedChips(list, boxes) {
+  const up = (s) => String(s || '').toUpperCase();
+  return (list || []).map((m) => {
+    const box = (boxes || []).find((x) => x && x.deviceID && m.deviceID && up(x.deviceID) === up(m.deviceID))
+      || (boxes || []).find((x) => x && x.host && m.ip && x.host === m.ip) || null;
+    const name = box ? zoneLabel(box) : (m.name || m.ip || '');
+    if (!name) return '';
+    const tip = t('multiroom.notJoinedTip', { name });
+    return `<span class="zone-frame-chip zone-chip-out" title="${escapeAttr(tip)}">${escapeHtml(name)}` +
+      ` <span class="zone-chip-out-note">${escapeHtml(t('multiroom.notJoined'))}</span></span>`;
+  }).join('');
+}
+
 async function doDissolveStereo(pairCands) {
   // Undo the pair the user has SELECTED in the dropdowns, not just the first
   // live one, so a household with two pairs dissolves the right one.
@@ -1430,6 +1454,10 @@ async function doDissolveStereo(pairCands) {
     }
   }
   if (dissolved) {
+    // The pair is gone, so its name goes too: a pair formed again from the same
+    // two speakers starts without the old one (#1579).
+    const undone = pair || { members: [{ deviceID: state.stereoLeft }, { deviceID: state.stereoRight }] };
+    try { await setPairName(undone, ''); } catch {}
     const okHtml = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
     if (offline.length) {
       // The skipped offline half keeps its side of the pair until it is back;
@@ -1581,6 +1609,8 @@ async function doDissolveStereoPair(pair, boxes) {
     }
   }
   if (dissolved) {
+    // Same as doDissolveStereo: the undone pair's name is forgotten (#1579).
+    try { await setPairName(pair, ''); } catch {}
     flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`);
   } else if (unconfirmed) {
     // Not an error and not a success. The agent sent the teardown and the

@@ -18,7 +18,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, PlayURL, BrowserOpenURL, ClearRecent, DeleteRecentCard, Status, ReplayFolderCard, PlayPandoraStation, isMissingBinding } from '../api.js';
-import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
+import { logoImgTag, spotifyCoverImgTag } from '../logos.js';
 import { stereoPairsOf } from '../groups.js';
 import { pairDisplayName } from '../stereoNames.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
@@ -28,6 +28,7 @@ import { keyButtonHTML } from '../shell2/keybtn.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
+import { libraryFavFields } from '../libraryfav.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -175,13 +176,19 @@ export function groupRecentCards(entries) {
     }
     const seen = new Set();
     if (e.track) seen.add(e.track);
+    // A spotify: card is a Spotify card whatever the row says. An older agent
+    // filed a Spotify URI pushed through the play-a-URL path as "radio" and
+    // kept that label for the key recalls of the same playlist (#1077); as a
+    // radio card it read "Radio" and its Play sent the URI to the speaker as
+    // a stream, which the speaker refused.
+    const source = /^spotify:/.test(e.cardKey) ? 'spotify' : e.source;
     // Spotify playable when its playlist URI matches a preset slot on its box.
-    const playSlot = e.source === 'spotify' && e._spotifySlots
+    const playSlot = source === 'spotify' && e._spotifySlots
       ? e._spotifySlots[e.cardKey]
       : undefined;
     const c = {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
-      source: e.source, cardKey: e.cardKey, name: e.cardName,
+      source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
       itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
@@ -258,11 +265,15 @@ function formatTrack(raw) {
 
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade
 // the preset/search tiles use (a global error-listener walks the chain). Spotify
-// shows its glyph; radio/NAS derive favicons from the URL, ending on a monogram
-// so a logo-less station still gets a clean letter tile instead of a blank box.
-function logoImg(c) {
+// shows the playlist or album cover the agent stored on the card, with its glyph
+// as the immediate image and the fallback, exactly like a Spotify preset key; it
+// used to show the bare glyph always, so the only Spotify entry that ever had a
+// cover was one mislabelled as radio (#1077). Radio/NAS derive favicons from the
+// URL, ending on a monogram so a logo-less station still gets a clean letter
+// tile instead of a blank box.
+export function logoImg(c) {
   if (c.source === 'spotify') {
-    return `<img class="rc-logo" src="${escapeAttr(SPOTIFY_LOGO)}" alt="">`;
+    return spotifyCoverImgTag(c.art, 'rc-logo');
   }
   // Radio/NAS reuse the exact search/preset tile path (logoImgTag), so they go
   // through the SAME global, async, non-blocking Go-resolved hydration that
@@ -526,6 +537,25 @@ async function replayLibraryTrack(c, box, art) {
   }
 }
 
+// replayLibraryCard replays a network-library (NAS) card, from Recently played
+// or from Favourites (#1605). It must go the DIRECT library way, not the radio
+// path: that runs the file through the stream proxy built for endless radio,
+// which loops forever on a finite file (#817) and files it under Radio.
+// PlayURL with the stored MIME makes the box play it straight instead.
+// A FOLDER card is not a track. Its key names the media server and the
+// container, so the speaker can rebuild the whole queue; the stored URL is only
+// its first track, and playing that clears the queue, which is why a replayed
+// folder used to play one song and then stop with the indicator sitting amber
+// (#978). Falls back to the single track when the speaker's agent is older
+// than the endpoint.
+export async function replayLibraryCard(c, box) {
+  if (!box) return;
+  const art = (c.art || '').split('|')[0].trim();
+  if (await replayFolderCard(c, box)) return;
+  await replayLibraryTrack(c, box, art);
+  showToast(t('recent.playing', { name: c.name || '' }));
+}
+
 // replayPandoraCard starts a Pandora card on the speaker's own Pandora client,
 // exactly like the Find tab's Pandora row. The stored item type lets the agent
 // rebuild the item when it no longer holds the station list (#1101).
@@ -568,21 +598,7 @@ function wireCard(c, i) {
           await replayPandoraCard(c, c.box || state.currentBox);
           showToast(t('recent.playing', { name: c.name || '' }));
         } else if (c.source === 'upnp') {
-          // A network-library (NAS) track must replay the DIRECT library way, not
-          // the radio path. The radio path runs the file through the stream proxy
-          // built for endless radio, which loops forever on a finite file (#817);
-          // PlayURL with the stored MIME makes the box play it straight instead.
-          const box = c.box || state.currentBox;
-          const art = (c.art || '').split('|')[0].trim();
-          // A FOLDER card is not a track. Its key names the media server and the
-          // container, so the speaker can rebuild the whole queue; the stored URL
-          // is only its first track, and playing that clears the queue, which is
-          // why a replayed folder used to play one song and then stop with the
-          // indicator sitting amber (#978). Falls back to the single track when
-          // the speaker's agent is older than the endpoint.
-          if (await replayFolderCard(c, box)) return;
-          await replayLibraryTrack(c, box, art);
-          showToast(t('recent.playing', { name: c.name || '' }));
+          await replayLibraryCard(c, c.box || state.currentBox);
         } else {
           await deps.playStation(cardStation(c));
         }
@@ -603,7 +619,9 @@ function wireCard(c, i) {
   }
   if (favBtn) {
     favBtn.onclick = () => {
-      const nowFav = deps.toggleFav(cardStation(c));
+      // A library card keeps its library identity on the favourite, so
+      // Favourites plays it the library way too (#1605).
+      const nowFav = deps.toggleFav({ ...cardStation(c), ...libraryFavFields(c) });
       favBtn.classList.toggle('is-fav', nowFav);
       favBtn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
       favBtn.title = favLabel(c.name || recentSourceLabel(c.source), nowFav);

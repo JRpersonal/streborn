@@ -51,11 +51,11 @@ test.describe('UI 2.0 Speakers list', () => {
     }
     // The dot only repeats the words.
     await expect(page.locator('#view-speakers .u-pill-dot:not([aria-hidden="true"])')).toHaveCount(0);
-    // The pair is one card, named as in the sidebar (its halves, as the app
-    // keeps no name of its own for it here), with what the halves are.
+    // The pair is one card, named as in the sidebar: the name the pair was
+    // given (#750, "Terrace" in the fixture), with the halves under it.
     await expect(card(page, R.terraceRight.host)).toHaveCount(0);
-    await expect(card(page, R.terraceLeft.host).locator('.spl-name')).toHaveText('Terrace left + Terrace right');
-    await expect(card(page, R.terraceLeft.host).locator('.spl-meta').first()).toHaveText('SoundTouch 10');
+    await expect(card(page, R.terraceLeft.host).locator('.spl-name')).toHaveText('Terrace');
+    await expect(card(page, R.terraceLeft.host).locator('.spl-meta').first()).toHaveText('Stereo pair of Terrace left + Terrace right');
     // What plays, the version, the fixed group and the update.
     await expect(card(page, R.livingRoom.host).locator('.spl-now')).toHaveText(/^Plays /);
     await expect(card(page, R.livingRoom.host).locator('.spl-meta').first()).toContainText('STR v1.0.19');

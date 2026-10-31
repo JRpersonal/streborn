@@ -122,7 +122,7 @@ func (s *Server) recallRefusal(slot int, pp *presets.Preset) *playRefusal {
 	if s.spotifyPremiumRequired != nil && s.spotifyPremiumRequired() {
 		s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium, not waking the speaker", "slot", slot)
 		return jsonRefusal(http.StatusUnprocessableEntity, map[string]any{
-			"error": "This speaker's Spotify account is free. Spotify preset recall needs Spotify Premium.",
+			"error": "The Spotify account on this speaker is a free account. Spotify presets only play with Spotify Premium.",
 			"code":  "spotify-premium-required",
 			"slot":  slot, "name": p.Name,
 		})

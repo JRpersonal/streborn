@@ -17,6 +17,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying } from '../utils.js';
 import { t } from '../i18n/index.js';
+import { keyNum } from '../presetrows.js';
 import {
   ProbeTrackDelivery,
   ListMediaServers,
@@ -27,7 +28,6 @@ import {
   RemoveManualMediaServer,
   PlayURL,
   StartQueue,
-  SaveLibraryPreset,
   SaveFolderPreset,
   Status,
   EnableBoxMediaServer,
@@ -39,6 +39,8 @@ import {
   serverRowsHTML, folderRowHTML, trackRowHTML, folderActionsHTML, filterRowHTML, manualAddHTML,
   countLine, countText, repeatLabelKey, trailParent,
 } from '../shell2/library.js';
+import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
+import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -491,7 +493,9 @@ async function libraryBrowseCurrent() {
       const page = await BrowseLibrary(libState.currentUDN, top.id, start, LIB_PAGE);
       if (token !== libState.browseToken) return; // navigated away mid-fetch: drop it
       acc.containers = acc.containers.concat(page.containers || []);
-      acc.items = acc.items.concat(page.items || []);
+      // A Mac's "._" companion files are no audio (libraryplayfail.js). Paging
+      // below still counts what the server returned, so offsets stay right.
+      acc.items = acc.items.concat(withoutMacMetadata(page.items));
       acc.totalMatches = page.totalMatches || acc.totalMatches;
       acc.returned = acc.containers.length + acc.items.length;
       const got = (page.containers || []).length + (page.items || []).length;
@@ -679,6 +683,9 @@ async function libraryPlay(item) {
       // line shows them; the speaker reports neither for a direct file (#1394).
       artist: item.artist || '',
       album: item.album || '',
+      // The track's object on its server, so a key saved from this play
+      // survives the server renumbering its file addresses (#919).
+      ref: libraryTrackRef(item, libraryItemUDN(item)),
       at: Date.now(),
     };
     // Put the track on the now-playing line now, as a station play does, and
@@ -740,6 +747,15 @@ async function verifyLibraryPlayback(item, target, report) {
   const verdict = await waitForPlayState(box, deadline);
   if (verdict === 'gone') { if (report) report(null); return; }
   if (verdict === 'playing') { if (report) report({ ok: true }); return; }
+  // A speaker refusing everything STR pushes never tried the file, so neither
+  // the format nor the server is the answer: the restart banner's text is
+  // (#1634, libraryplayfail.js).
+  if (speakerRefusingPushes(state.boxes, box)) {
+    const storm = t('speaker.stormBanner', { name: getBoxLabel(box) });
+    if (report) report({ ok: false, msg: storm });
+    else showToast(storm, 9000);
+    return;
+  }
   const probe = await probeDelivery(item.streamURL);
   // Only a probe that actually answered may change the wording. "Not known" is
   // the state a blocked or unreachable probe lands in, and the app can be kept
@@ -800,7 +816,11 @@ async function probeDelivery(url) {
 // drops anything without a stream URL, and calls StartQueue with the current
 // shuffle/repeat UI state. Single-track clicks stay a plain PlayURL (which clears
 // the queue server-side): auto-advance happens ONLY here, by product decision.
-async function libraryPlayFolder() {
+//
+// fromId starts the queue at that track instead of the first (#1623): an
+// audiobook picked up at chapter 7 plays on from there to the end, and the
+// earlier chapters stay one Previous away.
+async function libraryPlayFolder(fromId) {
   if (!state.currentBox) {
     if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
     else showToast(t('library.toastNoBox') || t('common.pickBox'));
@@ -819,12 +839,15 @@ async function libraryPlayFolder() {
       artist: it.artist || '',
       // Shown with the artist next to the running song, as on this row (#1033).
       album: it.album || '',
+      id: it.id,
     }));
   if (items.length === 0) {
     if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
     else showError(t('library.errorNoURL'));
     return;
   }
+  const start = fromId ? Math.max(0, items.findIndex((it) => it.id === fromId)) : 0;
+  for (const it of items) delete it.id;
   // Recently-played card (#220): name the card after the open folder (last
   // breadcrumb), key it on the server UDN + container id so repeated plays of the
   // same folder group together, and seed its cover from the first track's art.
@@ -845,7 +868,7 @@ async function libraryPlayFolder() {
   };
   const payload = {
     items,
-    start: 0,
+    start,
     shuffle: !!libState.shuffle,
     repeat: libState.repeat || 'off',
     card,
@@ -866,8 +889,8 @@ async function libraryPlayFolder() {
     // does not know its first track, so it names the folder without a URL and
     // leaves the location to the speaker's next answer.
     beginLibraryNowPlaying(state, {
-      url: payload.shuffle ? '' : items[0].url,
-      name: payload.shuffle ? card.name : (items[0].title || card.name),
+      url: payload.shuffle ? '' : items[start].url,
+      name: payload.shuffle ? card.name : (items[start].title || card.name),
       art: card.art,
     }, Date.now());
     deps.renderNowPlayingBar();
@@ -883,7 +906,7 @@ async function libraryPlayFolder() {
       });
       return;
     }
-    showToast(t('library.folderQueued', { n: items.length }));
+    showToast(t('library.folderQueued', { n: items.length - start }));
   } catch (e) {
     if (ui2()) {
       if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
@@ -916,6 +939,9 @@ function librarySaveFolderAsPreset() {
       artist: it.artist || '',
       // Shown with the artist next to the running song, as on this row (#1033).
       album: it.album || '',
+      // The track's object on the server, so the speaker can match it up again
+      // when the server renumbers its file addresses (#919).
+      ...(it.id ? { object_id: String(it.id) } : {}),
     }));
   if (items.length === 0) {
     if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
@@ -971,13 +997,13 @@ function librarySaveFolderAsPreset() {
           setLibStatus('folder', {
             tone: 'ok',
             text: queueItems.length < totalItems
-              ? t('ui2.library.onKeyCapped', { n: i, name: spk, kept: queueItems.length, total: totalItems })
-              : t('ui2.library.onKey', { n: i, name: spk }),
+              ? t('ui2.library.onKeyCapped', { n: keyNum(i, t), name: spk, kept: queueItems.length, total: totalItems })
+              : t('ui2.library.onKey', { n: keyNum(i, t), name: spk }),
           });
         } else if (queueItems.length < totalItems) {
-          showToast(t('library.folderPresetSavedCapped', { n: i, name, kept: queueItems.length, total: totalItems }));
+          showToast(t('library.folderPresetSavedCapped', { n: keyNum(i, t), name, kept: queueItems.length, total: totalItems }));
         } else {
-          showToast(t('library.folderPresetSaved', { n: i, name }));
+          showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }));
         }
       } catch (e) {
         if (ui2()) {
@@ -994,6 +1020,17 @@ function librarySaveFolderAsPreset() {
 function librarySourceName() {
   const srv = libState.servers.find(s => s.udn === libState.currentUDN);
   return (srv && (srv.friendlyName || srv.address)) || '';
+}
+
+// libraryItemUDN is the media server a track belongs to: the server a
+// whole-library search hit names, else the open one. '' when a search hit's
+// server is not in the list; the speaker then finds it by name.
+function libraryItemUDN(item) {
+  if (item && item.server) {
+    const srv = libState.servers.find(s => (s.friendlyName || s.address) === item.server);
+    return (srv && srv.udn) || '';
+  }
+  return libState.currentUDN || '';
 }
 
 function librarySaveAsPreset(item) {
@@ -1015,13 +1052,16 @@ function librarySaveAsPreset(item) {
     title: t('library.assignTitle', { name: getBoxLabel(state.currentBox) }),
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
     onPick: async (i) => {
-      await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
-        item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source,
-        item.durationSec || 0);
+      await saveLibraryTrackPreset(state.currentBox.host, state.currentBox.port, i, {
+        name: item.title || '(track)', url: item.streamURL, art: item.albumArtURL || '',
+        source, durationSec: item.durationSec || 0,
+        // The track's object on its server (#919).
+        ref: libraryTrackRef(item, libraryItemUDN(item)),
+      });
       // A refusal (already on another key) stays with the key picker, which
       // offers the move; a save the speaker took is said in the track's row.
-      if (ui2()) setLibStatus(key, { tone: 'ok', text: t('ui2.library.onKey', { n: i, name: speakerName() }) });
-      else showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
+      if (ui2()) setLibStatus(key, { tone: 'ok', text: t('ui2.library.onKey', { n: keyNum(i, t), name: speakerName() }) });
+      else showToast(t('preset.savedToKey', { n: keyNum(i, t), name: item.title || '(track)' }));
     },
   });
 }
@@ -1058,6 +1098,10 @@ function libraryListInnerHTML() {
         <span class="library-title">${escapeHtml(c.title)}</span>
         ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
       </li>`).join('');
+  // "From here" only where there is a "rest of the folder" to play: two or
+  // more playable tracks, and no search filter hiding part of the folder.
+  const playable = ((libState.page && libState.page.items) || []).filter((it) => it.streamURL).length;
+  const fromHere = playable > 1 && !libState.filter;
   const items = libraryFilteredItems().map((it) => {
     const meta = [it.artist, it.album].filter(Boolean).join(' — ');
     const dur = it.durationSec > 0 ? ` <span class="library-duration">${deps.formatDuration(it.durationSec)}</span>` : '';
@@ -1071,6 +1115,7 @@ function libraryListInnerHTML() {
           ${dur}
           <span class="library-actions">
             <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            ${fromHere ? `<button class="btn btn-mini btn-secondary lib-from-here-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.playFromHereHint'))}">${escapeHtml(t('library.playFromHere'))}</button>` : ''}
             <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
           </span>
         </li>`;
@@ -1115,6 +1160,12 @@ function wireLibraryRows(scope) {
       e.stopPropagation();
       const it = ((libState.page && libState.page.items) || []).find((x) => x.id === btn.dataset.iid);
       if (it) libraryPlay(it);
+    };
+  });
+  scope.querySelectorAll('.lib-from-here-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      libraryPlayFolder(btn.dataset.iid);
     };
   });
   scope.querySelectorAll('.lib-preset-btn').forEach((btn) => {

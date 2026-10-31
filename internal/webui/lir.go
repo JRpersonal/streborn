@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // lirDescriptor is the station document shape the firmware consumes.
@@ -53,7 +54,8 @@ func (s *Server) handleLIRStation(w http.ResponseWriter, r *http.Request) {
 	}
 	raw := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/lir/"), ".json")
 	slot, err := strconv.Atoi(raw)
-	if err != nil || slot < 1 || slot > 6 {
+	// The speaker only ever holds keys 1..6; a row-2 slot is never on it.
+	if err != nil || !presets.IsBoxSlot(slot) {
 		http.Error(w, "slot 1..6 required", http.StatusBadRequest)
 		return
 	}
@@ -316,8 +318,10 @@ func (s *Server) handleOrionToken(w http.ResponseWriter, _ *http.Request) {
 // descriptor for preset key N (boxurl.StreamSlot): this agent's loopback
 // proxy, one route per key. Strict on purpose, the reconcile prune keys
 // DELETION off it: the ad-hoc raw proxy of an app play, a station's own URL
-// and any other port or host shape must never match.
-var ownSlotStreamRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/stream/([1-6])$`)
+// and any other port or host shape must never match. Slots 7..12 (the second
+// row, #1110) are STR's own shape too: a row-2 station the speaker plays
+// natively carries one, and a hold on another key keeps it as is.
+var ownSlotStreamRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/stream/([1-9]|1[0-2])$`)
 
 // StationLocationOwnSlot reports whether loc is a native station location STR
 // wrote for one of its own preset keys, and which key the stream belongs to.

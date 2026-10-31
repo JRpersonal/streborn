@@ -289,6 +289,11 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			// to another device. Forward as deliberate intent (guarded against
 			// echoes of STR's own staged recalls inside).
 			m.handleEnginePlaybackEnd(ev.Type)
+		case "playback_error":
+			// Only the newer engine's session-level key refusal is acted on
+			// here (keydenied.go); every other kind is the engine's own
+			// business and shows up in its log as before.
+			m.handleEnginePlaybackError(ev.Data)
 		case "will_play":
 			// A track is about to play; if its context (playlist/album) differs
 			// from the last one, the app switched playlists. Re-point the box so
@@ -345,16 +350,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if err := json.Unmarshal(ev.Data, &md); err != nil {
 				continue
 			}
-			m.mu.Lock()
-			m.curName = md.Name
-			m.curArtist = strings.Join(md.ArtistNames, ", ")
-			m.curCover = md.AlbumCoverURL
-			if md.URI != "" {
-				m.curTrackURI = md.URI
-			}
-			m.noteRecallTrackLocked(md.URI, md.Name, true)
-			m.mu.Unlock()
-			m.notifyTrack()
+			m.applyTrackMetadata(md.URI, md.Name, md.ArtistNames, md.AlbumCoverURL)
 			// metadata arrives for the track that is actually playing, so it
 			// is the second place a held re-point becomes due. Whichever of
 			// the two events lands first wins; the other finds nothing left.

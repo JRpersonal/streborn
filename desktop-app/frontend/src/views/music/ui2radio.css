@@ -47,6 +47,26 @@ html.ui2 .ui2-keys-hint { flex: 1 1 16em; color: var(--u-muted); font-size: 13px
 /* Transfer, moved into this row (ui2radio.js), at its end. */
 html.ui2 .ui2-keys-head .preset-copy-row { margin: 0; margin-inline-start: auto; }
 html.ui2 .ui2-keys-head { align-items: center; }
+/* Once | Twice of a two-row speaker (#1110), moved into this line
+   (ui2radio.js): a segmented pair instead of the classic tab strip. The chosen
+   one keeps its weight and underline, so it is never told by fill alone. */
+html.ui2 .ui2-keys-head .preset-row-tabs { gap: 4px; margin: 0; border-bottom: 0; }
+html.ui2 .ui2-keys-head .preset-row-tab {
+  min-width: 0;
+  min-height: var(--u-target);
+  padding: 4px 12px;
+  margin: 0;
+  border: 1px solid var(--u-border);
+  border-bottom-width: 3px;
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-muted);
+  font-family: var(--u-font);
+}
+html.ui2 .ui2-keys-head .preset-row-tab[aria-selected="true"] {
+  border-bottom-color: var(--u-accent);
+  color: var(--u-text);
+}
 html.ui2 #view-box .preset-transfer-btn {
   min-height: var(--u-target);
   padding-inline: 12px;

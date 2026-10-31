@@ -214,13 +214,13 @@ func TestBulkPresetPutRejectsAMalformedSet(t *testing.T) {
 		want int
 	}{
 		{"empty set", nil, http.StatusBadRequest},
-		{"seven presets", []presets.Preset{
+		{"seven presets with key 6 twice", []presets.Preset{
 			radioPreset(1, "a", "http://example.com/1"), radioPreset(2, "b", "http://example.com/2"),
 			radioPreset(3, "c", "http://example.com/3"), radioPreset(4, "d", "http://example.com/4"),
 			radioPreset(5, "e", "http://example.com/5"), radioPreset(6, "f", "http://example.com/6"),
 			radioPreset(6, "g", "http://example.com/7"),
 		}, http.StatusBadRequest},
-		{"slot out of range", []presets.Preset{radioPreset(7, "a", "http://example.com/1")}, http.StatusBadRequest},
+		{"slot out of range", []presets.Preset{radioPreset(13, "a", "http://example.com/1")}, http.StatusBadRequest},
 		{"same slot twice", []presets.Preset{
 			radioPreset(1, "a", "http://example.com/1"), radioPreset(1, "b", "http://example.com/2"),
 		}, http.StatusBadRequest},

@@ -83,25 +83,20 @@ func TestSetBitrateWhileStreamingDefers(t *testing.T) {
 	}
 }
 
-// A corrupt or absent preference file must mean the default, never a refusal
-// to start.
-func TestLoadBitrateFallsBackToDefault(t *testing.T) {
-	dir := t.TempDir()
-	if got := loadBitrate(filepath.Join(dir, "absent.txt")); got != defaultBitrate {
-		t.Errorf("absent file: %d, want %d", got, defaultBitrate)
+// A corrupt or absent preference file must mean automatic, never a refusal to
+// start.
+func TestLoadBitrateChoiceFallsBackToAuto(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "cfg")
+	if got := loadBitrateChoice(cfg); got != bitrateAuto {
+		t.Errorf("absent file: %d, want automatic", got)
 	}
-	p := filepath.Join(dir, "bad.txt")
-	if err := os.WriteFile(p, []byte("kaputt\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadBitrate(p); got != defaultBitrate {
-		t.Errorf("corrupt file: %d, want %d", got, defaultBitrate)
-	}
-	if err := os.WriteFile(p, []byte("192\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadBitrate(p); got != defaultBitrate {
-		t.Errorf("invalid value: %d, want %d", got, defaultBitrate)
+	for _, bad := range []string{"kaputt\n", "192\n"} {
+		if err := os.WriteFile(bitratePath(cfg), []byte(bad), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := loadBitrateChoice(cfg); got != bitrateAuto {
+			t.Errorf("file %q: %d, want automatic", bad, got)
+		}
 	}
 }
 

@@ -75,7 +75,13 @@ func (s *Server) nativePresetLocation(name, streamURL, art string) string {
 // isSpotify slots are never native: the box activates a native item entirely by
 // itself, and a Spotify preset needs STR to tell the local engine which
 // playlist to load.
+//
+// A row-2 slot (7..12, #1110) is a no-op: it lives only in STR's store and is
+// reached by a double press, never through the firmware's own preset list.
 func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL, art string, isSpotify bool) error {
+	if !presets.IsBoxSlot(slot) {
+		return nil
+	}
 	if !isSpotify {
 		if loc := s.nativePresetLocation(name, streamURL, art); loc != "" {
 			if err := boxcli.AddPresetNative(ctx, s.boxHost, slot, name, loc); err == nil {
@@ -127,6 +133,9 @@ func WithBoxHost(host string) Option {
 	return func(s *Server) {
 		s.boxHost = host
 		s.renderer = upnp.NewBoseRenderer(host)
+		// A 404 from this speaker's renderer may be a name it cannot survive
+		// (#1582, speakername.go); one rate-limited probe tells.
+		s.renderer.OnNotFound = s.NoteRendererNotFound
 	}
 }
 

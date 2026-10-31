@@ -74,6 +74,11 @@ func (s *Server) nativeBox() nativeBoxAPI {
 
 // nativeBoxSources reads the firmware's own entries for the US services from
 // /sources, one request for all of them.
+//
+// A speaker can list a service more than once, one entry per account it ever
+// held (#1630: two older Bose-era Pandora accounts, both UNAVAILABLE). The
+// entry reported is the READY one with an account when there is one, so a
+// working account is never hidden behind a stale one listed before it.
 func (s *Server) nativeBoxSources(ctx context.Context) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	srcs, err := s.nativeBox().GetSources(ctx)
@@ -83,11 +88,22 @@ func (s *Server) nativeBoxSources(ctx context.Context) map[string]map[string]str
 	}
 	for _, typ := range marge.NativeServiceTypes() {
 		out[typ] = map[string]string{"status": "absent"}
-		for _, it := range srcs {
-			if strings.EqualFold(it.Source, typ) {
-				out[typ] = map[string]string{"status": it.Status, "displayName": it.DisplayName, "hasAccount": boolString(it.SourceAccount != "")}
+		var pick *boxapi.Source
+		for i := range srcs {
+			it := &srcs[i]
+			if !strings.EqualFold(it.Source, typ) {
+				continue
+			}
+			if pick == nil {
+				pick = it
+			}
+			if strings.EqualFold(it.Status, "READY") && strings.TrimSpace(it.SourceAccount) != "" {
+				pick = it
 				break
 			}
+		}
+		if pick != nil {
+			out[typ] = map[string]string{"status": pick.Status, "displayName": pick.DisplayName, "hasAccount": boolString(pick.SourceAccount != "")}
 		}
 	}
 	return out

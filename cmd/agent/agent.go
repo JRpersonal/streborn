@@ -117,7 +117,9 @@ type agent struct {
 	region         string
 	streamProxySrv *streamproxy.Server
 	spotifyMgr     *spotify.Manager
-	mdnsHostResp   *mdnshost.Responder
+	// mdnsHost is the name responder; nil until it runs, which on a wired
+	// speaker can be after boot (startMDNSHost). Read it at use time.
+	mdnsHost atomic.Pointer[mdnshost.Responder]
 
 	// buildWebui
 	webuiSrv *webui.Server
@@ -476,6 +478,12 @@ func (a *agent) buildMarge() error {
 			out := make([]marge.Preset, 0, len(all))
 			taken := make(map[int]bool, len(all))
 			for _, p := range all {
+				// The cloud view mirrors the speaker's own six keys. A
+				// row-2 preset (7..12, #1110) is STR's alone: served here,
+				// the firmware would take it for a key it does not have.
+				if !presets.IsBoxSlot(p.Slot) {
+					continue
+				}
 				taken[p.Slot] = true
 				if p.IsNative() {
 					// A Pandora or iHeartRadio station the speaker plays
@@ -844,49 +852,9 @@ func (a *agent) buildMedia() error {
 		return spotifyMgr.VolumeSnapshot()
 	})
 
-	// Answer for this speaker's own mDNS name BEFORE the engine is told to
-	// advertise it. The order is the safety property, not a detail: the engine
-	// names the box's Linux hostname today, which is the Bose chassis codename,
-	// and nothing on the network answers a query for it. Pointing the engine at
-	// a new name that is equally unanswered would be a step backwards, because
-	// the codename at least still sits in some routers' caches. So the name is
-	// only handed over once it means something, and a responder that cannot
-	// start leaves everything exactly as it is today.
-	// Captured for the post-switch network refresh (#697): after a live Wi-Fi
-	// move the responder must be repointed at the new address, or it keeps
-	// answering the box's own name with the boot address, cache-flush bit set.
-	var mdnsHostResp *mdnshost.Responder
-	if label := mdnshost.LabelFor(deviceID); label != "" {
-		if ip := routableIPv4(); ip != nil {
-			if resp, err := mdnshost.Start(ctx, logger.With("comp", "mdnshost"), label, ip); err != nil {
-				logger.Warn("mdns host: not answering for this speaker's own name, leaving the engine on the chassis name",
-					"err", err, "label", label)
-			} else {
-				spotifyMgr.SetZeroconfHost(resp.Label())
-				// The agent's own service gets the same treatment. Its entry
-				// names the chassis codename today just like the Spotify one
-				// did, so three SoundTouch 10s announce themselves under one
-				// name. It is less visible than the Spotify fault only because
-				// the desktop app takes the address out of the service answer
-				// instead of looking the name up.
-				mdnsHostLabel = resp.Label()
-				// Tell the HTTP surface too: the desktop app reads this back to put a
-				// name on the phone-remote QR code instead of an address.
-				webui.SetMDNSHostName(resp.Name())
-				mdnsHostResp = resp
-				// Put the counters in the diagnostic bundle. The open question
-				// they answer: a SoundTouch 30 here is missing from four
-				// browses in a row while its engine runs and is logged in. If
-				// queriesSeen climbs on that box, the questions arrive and the
-				// answers are getting lost; if it stays at zero, the box is
-				// never being asked. Those are different faults.
-				webui.RegisterDebugSection("mdns_host", func() any { return resp.Stats() })
-				// Closed in wait(), once the listeners are down.
-			}
-		} else {
-			logger.Warn("mdns host: no routable address yet, leaving the engine on the chassis name", "label", label)
-		}
-	}
+	// Answer for this speaker's own mDNS name before the engine advertises it;
+	// see startMDNSHost for why the order matters.
+	a.startMDNSHost(ctx, logger, deviceID, spotifyMgr)
 	// Mirror a Spotify Connect volume change onto the whole multiroom group:
 	// go-librespot runs only on the master, so feed it the current followers'
 	// IPs. LIVE-verified on every use: zones.json deliberately outlives the
@@ -970,7 +938,6 @@ func (a *agent) buildMedia() error {
 	a.region = region
 	a.streamProxySrv = streamProxySrv
 	a.spotifyMgr = spotifyMgr
-	a.mdnsHostResp = mdnsHostResp
 	return nil
 }
 
@@ -1181,6 +1148,11 @@ func (a *agent) buildBoxLink() error {
 	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
 	// button. We hook the event and trigger our UPnP player.
 	renderer := upnp.NewBoseRenderer(a.flags.boxHost)
+	// A renderer that answers 404 to everything did not come up at boot; a
+	// speaker name with "&" or invalid UTF-8 does that (#1582). The hook probes
+	// once (rate-limited) and names the cause in the log and to the apps.
+	renderer.OnNotFound = webuiSrv.NoteRendererNotFound
+	webui.RegisterDebugSection("speaker_name", webuiSrv.SpeakerNameForensics)
 	// The speaker's own playback clock, for the Spotify buffer-lag measurement
 	// (internal/spotify/boxlag.go): the app shows the position go-librespot has
 	// delivered, the room hears what the box has rendered, and this is the only
@@ -1351,6 +1323,9 @@ func (a *agent) buildBoxLink() error {
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlot,
+		// A key pressed twice plays its second-row preset (slots 7..12, #1110)
+		// through the app's own recall path; the speaker never holds those.
+		playSlotFn: webuiSrv.PlaySlotForKey,
 	}
 	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
 	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this
@@ -1522,6 +1497,19 @@ func (a *agent) buildBoxLink() error {
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}
+	// A tap followed by a hold of the same key saves what played before the
+	// tap onto the key's second row and plays it (tapholdsave.go). The
+	// snapshot reads memory only; the save and the play go through the app's
+	// paths.
+	wsHandler.snapshotFn = webuiSrv.SnapshotPlaying
+	holdSave.tapHold = tapHoldWiring{
+		save:    webuiSrv.SaveSnapshot,
+		play:    wsHandler.playTapHoldSlot,
+		grouped: wsHandler.group.grouped,
+		tracePresses: func(key int, since time.Time) int {
+			return keyTrace.PhysicalPressesSince(fmt.Sprintf("PRESET_%d", key), since)
+		},
+	}
 	heldGestureSaver.Store(holdSave)
 	keyTrace.SetPresetGestureHandler(holdSave.NoteGesture)
 	// A combination also tells the leave-setup watcher that the setup which
@@ -1549,6 +1537,12 @@ func (a *agent) buildBoxLink() error {
 		return fetched
 	}
 	keyTrace.SetPlayFailureHandler(wsHandler.OnPlayFailure)
+	// A library track the speaker dropped without a playback failure of its
+	// own was never tried: the speaker refused the push (#1634).
+	webuiSrv.SetBoxPlayFailureFn(func(d time.Duration) (bool, bool) {
+		_, failed := keyTrace.LastPlaybackFailure(d)
+		return failed, keyTrace.Healthy()
+	})
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it
 	// arrives with the key stamp the standby classifier reads); the ring's
@@ -1861,7 +1855,7 @@ func (a *agent) startBackground() error {
 func (a *agent) wireLate() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
-	webuiSrv, mdnsHostResp := a.webuiSrv, a.mdnsHostResp
+	webuiSrv := a.webuiSrv
 
 	// === Deferred heavy init (background) ===
 	// Everything below this point runs while the agent's listeners
@@ -1914,15 +1908,16 @@ func (a *agent) wireLate() error {
 	webuiSrv.SetNetworkChangedFn(func(reason string) {
 		refreshAfterNetworkChange(reason, netRefreshDeps{
 			setMDNSHostAddr: func(ip net.IP) {
-				if mdnsHostResp != nil {
-					mdnsHostResp.SetAddress(ip)
+				if r := a.mdnsHost.Load(); r != nil {
+					r.SetAddress(ip)
 				}
 			},
 			currentMDNSAddr: func() net.IP {
-				if mdnsHostResp == nil {
+				r := a.mdnsHost.Load()
+				if r == nil {
 					return nil
 				}
-				return mdnsHostResp.Addr()
+				return r.Addr()
 			},
 			reannounce: func(r string) error {
 				a.mdnsMu.Lock()
@@ -1974,7 +1969,7 @@ func (a *agent) startDeferred() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
 	region, regionRes, margeSrv := a.region, a.regionRes, a.margeSrv
-	mdnsHostResp, hostsMgr := a.mdnsHostResp, a.hostsMgr
+	hostsMgr := a.hostsMgr
 
 	// mDNS announce: detect model from box /info, then announce. The
 	// model lookup is a 5 s blocking call against the Bose firmware
@@ -2019,14 +2014,16 @@ func (a *agent) startDeferred() error {
 		// Background poll: refresh name AND model in mDNS TXT as
 		// soon as /info on :8090 responds, then continue watching
 		// for renames the user might do via the BoseApp HTTP API.
-		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, logger)
+		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, a.webuiSrv.NoteBoxName, logger)
 
 		// Register again whenever the LAN address moves, the first lease after
 		// a boot above all: the agent is often up before it, and until then
 		// there is nothing to announce on. Repoint the name responder with it.
 		go ann.WatchAddresses(ctx, 15*time.Second, func([]string) {
-			if ip := routableIPv4(); ip != nil && mdnsHostResp != nil {
-				mdnsHostResp.SetAddress(ip)
+			if r := a.mdnsHost.Load(); r != nil {
+				if ip := routableIPv4(); ip != nil {
+					r.SetAddress(ip)
+				}
 			}
 		})
 	}()
@@ -2192,7 +2189,7 @@ func (a *agent) startDeferred() error {
 func (a *agent) wait() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx := a.logger, a.ctx
-	recentStore, hostsMgr, mdnsHostResp := a.recentStore, a.hostsMgr, a.mdnsHostResp
+	recentStore, hostsMgr := a.recentStore, a.hostsMgr
 
 	var firstErr error
 	select {
@@ -2228,8 +2225,8 @@ func (a *agent) wait() error {
 		}
 	}
 
-	if mdnsHostResp != nil {
-		_ = mdnsHostResp.Close()
+	if r := a.mdnsHost.Load(); r != nil {
+		_ = r.Close()
 	}
 
 	logger.Info("streborn exited")

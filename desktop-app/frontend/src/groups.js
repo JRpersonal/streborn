@@ -515,6 +515,14 @@ export function inLiveGroup(box, zoneLive) {
       ((idUp && String(m.deviceID || '').toUpperCase() === idUp) || (box.host && m.ip === box.host))));
 }
 
+// anyInLiveGroup is inLiveGroup for a whole update run: true when any of the
+// speakers the run is about to restart sits in a live group that is not a
+// stereo pair. Updating all speakers breaks such a group just as the
+// single-speaker update does, so the update-all paths say the same beforehand.
+export function anyInLiveGroup(boxes, zoneLive) {
+  return (boxes || []).some((b) => inLiveGroup(b, zoneLive));
+}
+
 // groupCandidates lists the speakers a group led by masterBox can offer to
 // take in or out: every STR speaker other than the master that is not half of
 // a live stereo pair (#792, a pair cannot join a group as a unit). In the

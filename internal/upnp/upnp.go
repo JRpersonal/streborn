@@ -35,6 +35,13 @@ type Renderer struct {
 	// killed the very recall the command belonged to (#252 post-v0.9.16).
 	// Optional; must be safe for concurrent use.
 	OnTransportCommand func()
+
+	// OnNotFound, when set, is invoked whenever a SOAP call answers 404. The
+	// renderer answers every call that way when it did not come up at boot,
+	// which a speaker name with "&" or invalid UTF-8 causes (#1582); the hook
+	// lets the agent probe for that once and say so. Must not block and must
+	// be safe for concurrent use.
+	OnNotFound func()
 }
 
 // NewBoseRenderer returns a Renderer for the typical Bose SoundTouch
@@ -297,6 +304,9 @@ func (r *Renderer) soapCallBody(ctx context.Context, action, body string) ([]byt
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound && r.OnNotFound != nil {
+			r.OnNotFound()
+		}
 		return nil, fmt.Errorf("soap %s status %d: %s", action, resp.StatusCode, string(respBody))
 	}
 	return respBody, nil

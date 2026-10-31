@@ -25,6 +25,9 @@ const pending = new Set();
 // written meanwhile, so a slow initial GetStereoPairName cannot clobber a name
 // the user just saved.
 const generations = new Map();
+// key -> name written here this session that the speakers have not reported
+// back yet; see pairDisplayName.
+const awaitingBox = new Map();
 
 // pairDisplayName returns the stored name for a pair synchronously from cache,
 // or '' while the first lookup is in flight. onResolved (optional) is called
@@ -33,6 +36,19 @@ const generations = new Map();
 export function pairDisplayName(pair, onResolved) {
   const key = stereoPairKey(pair);
   if (!key) return '';
+  // The speakers hold the pair's name, and other clients (the phone page, STR
+  // Remote, the Bose app) set it there without ever touching this app's store
+  // (#1579). So the speakers' name wins, unless it is blank or the agent's
+  // default. The one exception is a rename made here a moment ago: the push
+  // to the speakers has gone out but the zone poll has not caught up, so the
+  // fresh name is shown until the speakers report it back.
+  const boxName = String((pair && pair.name) || '').trim();
+  if (awaitingBox.has(key)) {
+    const mine = awaitingBox.get(key);
+    if (boxName !== mine) return mine;
+    awaitingBox.delete(key);
+  }
+  if (boxName && boxName !== BOX_DEFAULT_PAIR_NAME) return boxName;
   if (cache.has(key)) return cache.get(key);
   if (!pending.has(key)) {
     pending.add(key);
@@ -66,6 +82,8 @@ export async function setPairName(pair, name) {
   pending.delete(key);
   await SetStereoPairName(key, trimmed);
   cache.set(key, trimmed);
+  if (trimmed) awaitingBox.set(key, trimmed);
+  else awaitingBox.delete(key);
 }
 
 // storedPairName is the async form of pairDisplayName: it waits for the store
@@ -83,18 +101,18 @@ export async function storedPairName(pair) {
 }
 
 // pairNameNeedsPush reports whether the name the speakers carry for a pair
-// should be replaced by the one STR stored. Only a box name that is blank or the
-// agent's own default is replaced: a pair dissolved and formed again with the
-// name field left empty comes back as "Stereo pair" on the speakers while the
-// app still shows its stored name (#1077, issue 5). A DIFFERENT box name is left
-// alone, because that is a rename made in the Bose app, which edits the same
-// record, and overwriting it from here would make the two apps fight.
+// should be replaced by the one STR stored. Only a truly blank box name is,
+// which is what an agent from before the pair name existed reports. The
+// agent's default "Stereo pair" is left alone: it is what a pair formed again
+// without a name carries, and pushing the stored name over it brought the name
+// of a pair that had been undone back onto the speakers (#1579). Undoing a
+// pair here clears the stored name, so a pair formed again in this app starts
+// from the default too. A DIFFERENT box name is a rename made elsewhere and is
+// never overwritten either.
 export function pairNameNeedsPush(boxName, stored) {
   const want = String(stored || '').trim();
   if (!want) return false;
-  const have = String(boxName || '').trim();
-  if (have === want) return false;
-  return have === '' || have === BOX_DEFAULT_PAIR_NAME;
+  return String(boxName || '').trim() === '';
 }
 
 // One push per pair and name per app session. A firmware that keeps refusing
@@ -124,6 +142,7 @@ export async function healPairNames(pairs, boxes, push = PushStereoPairNameToBox
 // resetHealedPairNames clears the once-per-session guard. Test-only.
 export function resetHealedPairNames() {
   healed.clear();
+  awaitingBox.clear();
   cache.clear();
   pending.clear();
   generations.clear();

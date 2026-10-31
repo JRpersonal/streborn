@@ -8,7 +8,7 @@ import { $, escapeHtml, escapeAttr, showError, showToast, compareVerBuild } from
 import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
 import { deps, confirmFor } from './shared.js';
-import { inLiveGroup } from '../../groups.js';
+import { inLiveGroup, anyInLiveGroup } from '../../groups.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
 export function renderStatusSection() {
@@ -303,8 +303,10 @@ export function wireStatusSections(ctx) {
     // update banner, so a user whose selected speaker was already current could
     // not find it at all (Michal, 6 speakers, 2026-07-16).
     let updateAllBtn = '';
+    let updateAllTargets = [];
     try {
-      const n = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b)).length;
+      updateAllTargets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b));
+      const n = updateAllTargets.length;
       if (n >= 2 && !state.otaInProgress && deps.updateAllBoxes) {
         updateAllBtn = `<button class="btn btn-mini btn-secondary" id="settingsUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: n }))}</button>`;
       }
@@ -319,9 +321,13 @@ export function wireStatusSections(ctx) {
       ? `<b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: box.friendlyName || box.name || box.host }))}</b>`
       : `<b>${escapeHtml(t('updateAll.title'))}</b>`;
     // A speaker in a live group leaves it while it restarts: said before the
-    // tap, on the single-speaker update only (#1339).
-    const groupNote = (softwareBtn && inLiveGroup(box, state.zoneLive))
-      ? `<br><small class="muted" id="updateGroupNote">${escapeHtml(t('update.groupNote'))}</small>` : '';
+    // tap (#1339). With "Update all" on offer the note speaks for the whole
+    // run, because any grouped speaker in it breaks its group the same way;
+    // otherwise for the single-speaker update.
+    const groupNote = (updateAllBtn && anyInLiveGroup(updateAllTargets, state.zoneLive))
+      ? `<br><small class="muted" id="updateAllGroupNote">${escapeHtml(t('updateAll.groupNote'))}</small>`
+      : (softwareBtn && inLiveGroup(box, state.zoneLive))
+        ? `<br><small class="muted" id="updateGroupNote">${escapeHtml(t('update.groupNote'))}</small>` : '';
     const updateBanner = (softwareBtn || updateAllBtn) ? `
       <div class="update-banner" style="margin-bottom:14px">
         <div class="update-msg">${bannerMsg}<br>

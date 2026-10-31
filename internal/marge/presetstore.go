@@ -28,6 +28,7 @@ package marge
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -382,15 +383,20 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 		// re-write the keeper rightly refuses is not a long press of the
 		// owner's. Recording it raised a "could not be kept" banner for an
 		// hour on a speaker whose every user save had succeeded (#1217).
+		//
+		// Nor is a store the keeper declines on purpose because the gesture
+		// saved somewhere else (ErrHeldStoreHandled): the owner's save worked,
+		// and the banner said the opposite (tap+hold onto row 2, 2026-10-30).
 		ownEcho := ownSlotWriteFn(slot)
-		if !ownEcho {
+		handled := errors.Is(err, ErrHeldStoreHandled)
+		if !ownEcho && !handled {
 			s.noteHeldRefusal(slot, item.Source, item.ItemName)
 		}
 		if s.presetRefusalLogAllowed(slot) {
 			s.logger.Warn("marge preset store: the box asked to keep an item STR cannot map onto a preset, keeping the old answer",
 				slog.String("comp", "marge"), slog.Int("slot", slot),
 				slog.String("source", item.Source), slog.String("name", item.ItemName),
-				slog.Bool("ownWriteEcho", ownEcho),
+				slog.Bool("ownWriteEcho", ownEcho), slog.Bool("handledElsewhere", handled),
 				slog.String("reason", err.Error()))
 		}
 		return false
@@ -405,6 +411,12 @@ func (s *Server) respondPresetStore(w http.ResponseWriter, r *http.Request) bool
 	_, _ = w.Write([]byte(s.presetElementXMLFor(item, fromLoopback(r), time.Now())))
 	return true
 }
+
+// ErrHeldStoreHandled is what a preset keeper wraps when it declines the
+// firmware's store on purpose because the same gesture was saved elsewhere
+// (a tap+hold saves onto the key's second row). The firmware keeps its key as
+// it was, which is the intent, so it is not recorded as a refused long press.
+var ErrHeldStoreHandled = errors.New("the gesture was saved elsewhere")
 
 // HeldRefusal is the last hold-to-store gesture STR could not keep.
 type HeldRefusal struct {
