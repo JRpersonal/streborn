@@ -608,7 +608,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// source somebody is using. A recall is over in seconds; a
 			// station plays for hours and a pairing session is mid-handshake,
 			// and the write ends both.
-			src, playing, playKnown := boxSourceAndPlaying(boxHost)
+			src, playing, paused, playKnown := boxSourcePlayState(boxHost)
 			// ... and not into a play the user just asked for that is still
 			// on its way (#1322). Bounded by the start window, so the pass
 			// runs at the latest once the play has had its chance.
@@ -633,7 +633,12 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				// straight into it.
 				forceHeldSince = time.Time{}
 			}
-			hold, ceilingHit := forcedWriteHold(src, playing, playKnown, everFullDone, forceHeldSince, time.Now())
+			// A paused play holds the pass like a running one: the listener
+			// will resume it, and the write would switch the speaker off it
+			// (see boxSourcePlayState). The same ceiling bounds a speaker
+			// left paused for hours, and runs the pass there only when keys
+			// are actually missing.
+			hold, ceilingHit := forcedWriteHold(src, playing || paused, playKnown, everFullDone, forceHeldSince, time.Now())
 			setupHold := false
 			if setupSrc {
 				// One /proc/net/route read per retry, and only while a forced
@@ -679,7 +684,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				if forceHeldSince.IsZero() {
 					forceHeldSince = time.Now()
 					logger.Info("preset reconcile: forced pass held, the write would take the box off what it is doing",
-						"reason", forcedHoldReason(src, playing, playKnown),
+						"reason", forcedHoldReason(src, playing, paused, playKnown),
 						"source", src, "ceiling", forcedPlayHoldCeiling.String())
 				}
 				forceHeld = true
@@ -719,7 +724,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 							why = "the speaker's key list is unreadable"
 						}
 						logger.Info("preset reconcile: hold ceiling passed, but "+why+"; the forced pass waits for the music to stop instead of interrupting it",
-							"reason", forcedHoldReason(src, playing, playKnown), "source", src,
+							"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
 							"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 					}
 					forceHeld = true
@@ -729,11 +734,11 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				}
 				if forceKeysDead {
 					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and a dead key or a re-login asked for it",
-						"reason", forcedHoldReason(src, playing, playKnown), "source", src,
+						"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
 						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 				} else {
 					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
-						"reason", forcedHoldReason(src, playing, playKnown),
+						"reason", forcedHoldReason(src, playing, paused, playKnown),
 						"source", src, "missing", missing,
 						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
 				}
@@ -1001,6 +1006,9 @@ func userChosenSource(src string) bool {
 
 // forcedWriteBusy reports whether the box is doing something the write would
 // take away from it: audio is flowing, or it sits on a source somebody chose.
+// Both write paths pass playing true for a PAUSED play too
+// (boxSourcePlayState): a paused file on UPNP is still somebody's play, and the
+// write switches the speaker off it (field bundle, ST10, 2026-10-31).
 //
 // STANDBY and an unreadable source are the two additions over resyncSafeSource.
 // A sleeping box is the ideal moment to register hardware keys and holding
@@ -1029,11 +1037,14 @@ func forcedWriteBusy(src string, playing, playKnown bool) bool {
 	return !resyncSafeSource(src)
 }
 
-// forcedHoldReason names which of the two conditions held the pass, so a
-// bundle says whether a stream or a pairing session was protected.
-func forcedHoldReason(src string, playing, playKnown bool) string {
+// forcedHoldReason names which of the conditions held the pass, so a bundle
+// says whether a stream, a paused play or a pairing session was protected.
+func forcedHoldReason(src string, playing, paused, playKnown bool) string {
 	if playKnown && playing {
 		return "playing"
+	}
+	if playKnown && paused {
+		return "paused"
 	}
 	if !forcedWriteBusy(src, playing, playKnown) {
 		return "free"
@@ -1281,9 +1292,9 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// was protected, so the key is still registered shortly after the source
 	// frees up, or at the ceiling at the latest.
 	if (len(missing) > 0 || len(nativeWrites) > 0) && !forceFull {
-		if src, playing, playKnown := boxSourceAndPlaying(boxHost); forcedWriteBusy(src, playing, playKnown) {
+		if src, playing, paused, playKnown := boxSourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown) {
 			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
-				"reason", forcedHoldReason(src, playing, playKnown), "source", src, "slots", len(missing)+len(nativeWrites))
+				"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src, "slots", len(missing)+len(nativeWrites))
 			requestPresetKeyResync(logger, "missing-slots-held")
 			missing = nil
 			nativeWrites = nil

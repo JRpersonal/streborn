@@ -505,11 +505,22 @@ func boxIsPlaying(boxHost string) bool {
 // whether it may write, and two separate probes would be two requests at a
 // moment when the box is already busy rendering.
 func boxSourceAndPlaying(boxHost string) (src string, playing, ok bool) {
+	src, playing, _, ok = boxSourcePlayState(boxHost)
+	return src, playing, ok
+}
+
+// boxSourcePlayState is boxSourceAndPlaying plus whether the speaker is
+// paused, from the same single read. The preset write holds need the pause
+// apart from the play: IsPlaying is PLAY/BUFFERING only, so a paused STR file
+// on UPNP read as a free box, and a held forced re-sync ran seven seconds after
+// the listener paused, switching the speaker to LOCAL_INTERNET_RADIO and off
+// the paused file (field bundle, ST10, 2026-10-31).
+func boxSourcePlayState(boxHost string) (src string, playing, paused, ok bool) {
 	np, got := fetchNowPlaying(boxHost)
 	if !got {
-		return "", false, false
+		return "", false, false, false
 	}
-	return np.Source, np.IsPlaying(), true
+	return np.Source, np.IsPlaying(), np.IsPaused(), true
 }
 
 // boxNowPlayingSummary returns compact now_playing evidence for the recall

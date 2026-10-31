@@ -207,6 +207,7 @@ func shrinkFileRestart(s *Server) {
 	times := productionFileResumeTiming
 	times.seekDelay, times.seekRetry, times.restartQuiet = 5*time.Millisecond, 5*time.Millisecond, 50*time.Millisecond
 	times.confirmGap = 5 * time.Millisecond
+	times.plainPlayWait, times.plainPlayStep = 60*time.Millisecond, 5*time.Millisecond
 	s.fileResumeTiming = &times
 }
 
@@ -232,6 +233,9 @@ func armTestFile(s *Server) {
 		meta: upnp.TrackMeta{Duration: 240 * time.Second, Seekable: true}, dur: 240 * time.Second}, gen)
 }
 
+// The plain Play goes first; a position that does not move after it (the fake
+// speaker's RelTime stands on 0:00:15, no syslog clock) is the freeze, and the
+// file is restarted at the paused position.
 func TestAppResumeOfAPausedFileRestartsItAtThePausedPosition(t *testing.T) {
 	t.Parallel()
 	s, box := newPausedFileServer(t, "PAUSED_PLAYBACK")
@@ -242,8 +246,8 @@ func TestAppResumeOfAPausedFileRestartsItAtThePausedPosition(t *testing.T) {
 		t.Fatalf("resumePlayback = %q, %v", status, err)
 	}
 	got := strings.Join(box.commands(), ",")
-	if got != "Stop,Play,Seek" {
-		t.Fatalf("commands = %s, want Stop,Play,Seek", got)
+	if got != "Play,Stop,Play,Seek" {
+		t.Fatalf("commands = %s, want the plain Play, then Stop,Play,Seek", got)
 	}
 	if len(box.seekTo) != 1 || box.seekTo[0] != "0:00:15.000" {
 		t.Fatalf("seek target = %v, want the paused 0:00:15", box.seekTo)
