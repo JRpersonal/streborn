@@ -390,7 +390,7 @@ function wireWlanStored(box) {
   if (allBtn) allBtn.onclick = () => withButtonPending(allBtn, async () => {
     if (!view || !view.canForgetAll) return;
     const speaker = box.friendlyName || box.name || box.host;
-    const ok = await confirmWarn(
+    const ok = await confirmFor(box,
       t('settingsView.wlanForgetAllConfirmTitle'),
       t('settingsView.wlanForgetAllConfirmBody', { speaker: '<b>' + escapeHtml(speaker) + '</b>' }),
     );
