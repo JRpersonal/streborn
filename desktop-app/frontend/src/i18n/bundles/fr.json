@@ -372,7 +372,7 @@
   "controls.next": "Suivant",
   "controls.shuffle": "Aléatoire",
   "controls.repeat": "Répéter",
-  "controls.standbyTitle": "Veille",
+  "controls.powerTitle": "Marche/Arrêt",
   "controls.inputTitle": "Basculer sur {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Moins fort",

@@ -372,7 +372,7 @@
   "controls.next": "Siguiente",
   "controls.shuffle": "Aleatorio",
   "controls.repeat": "Repetir",
-  "controls.standbyTitle": "Reposo",
+  "controls.powerTitle": "Encendido",
   "controls.inputTitle": "Cambiar a {{input}}",
   "controls.volume": "Volumen",
   "controls.volumeDown": "Más bajo",

@@ -1491,10 +1491,15 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .queue-controls { display: flex; gap: 4px; align-items: center; }
 .queue-controls.hidden { display: none; }
 .queue-pos { font-size: 12px; color: var(--c-muted); margin-left: 4px; white-space: nowrap; }
-.btn-source { padding: 6px 10px; font-size: 12px; background: var(--c-surface-3); color: var(--c-text); border: 1px solid var(--c-border-2); border-radius: 4px; cursor: pointer; }
-.btn-source:hover { background: var(--c-border); border-color: var(--brand); }
-.btn-source:active { background: var(--c-border-2); }
+.btn-source, .btn-power { padding: 6px 10px; font-size: 12px; background: var(--c-surface-3); color: var(--c-text); border: 1px solid var(--c-border-2); border-radius: 4px; cursor: pointer; }
+.btn-source:hover, .btn-power:hover { background: var(--c-border); border-color: var(--brand); }
+.btn-source:active, .btn-power:active { background: var(--c-border-2); }
 .btn-source.active { background: linear-gradient(135deg, #1f2f1f 0%, #2a3a2a 100%); border-color: var(--signal-green); color: #cfc; box-shadow: 0 0 8px rgba(102, 204, 102, 0.3); }
+/* The power toggle closes the input row but is not an input. It is lit while
+   the speaker is ON, the phone remote's .pwr.on convention: accent outline and
+   glyph only. The green fill above means "playing from this input", and on the
+   old standby button it lit up exactly when the speaker was asleep (#1644). */
+.btn-power.on { border-color: var(--brand); color: var(--brand); }
 .btn-source-icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
 .btn-source-icon svg { display: block; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }

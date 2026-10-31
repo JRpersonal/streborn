@@ -109,6 +109,44 @@ test.describe('a playing speaker on the same station', () => {
   });
 });
 
+// #1644: the power button at the end of the input row was a STANDBY input, lit
+// green while the speaker slept and unable to wake it. It is the phone remote's
+// power toggle now: lit while the speaker is on, a click switches it.
+test.describe('the power toggle on a sleeping speaker', () => {
+  test.use({ scenario: { playing: { livingRoom: 'STANDBY' } } });
+
+  test('is plain, reads Power, and a click wakes the speaker', async ({ app, mock }) => {
+    const { page } = app;
+    const power = page.locator('#powerBtn');
+    await expect(power).toBeVisible();
+    await expect(power).toHaveAttribute('title', en('controls.powerTitle'));
+    await expect(power).toHaveAttribute('aria-pressed', 'false');
+    await expect(power).not.toHaveClass(/\bon\b/);
+    await expect(power).not.toHaveClass(/\bactive\b/);
+    await mock.resetCalls();
+    await power.click();
+    await mock.expectCalled('SetBoxPower', { times: 1 });
+    const call = await mock.last('SetBoxPower');
+    expect(call.args).toEqual(['demobox.local', 8888, true]);
+    await expect(power).toHaveClass(/\bon\b/);
+    await expect(power).toHaveAttribute('aria-pressed', 'true');
+    await mock.expectCalled('SelectBoxSource', { times: 0 });
+  });
+});
+
+test.describe('the power toggle on a playing speaker', () => {
+  test('is lit, and a click sends the speaker to standby', async ({ app, mock }) => {
+    const { page } = app;
+    const power = page.locator('#powerBtn');
+    await expect(power).toHaveClass(/\bon\b/);
+    await mock.resetCalls();
+    await power.click();
+    await mock.expectCalled('SetBoxPower', { times: 1 });
+    expect((await mock.last('SetBoxPower')).args[2]).toBe(false);
+    await expect(power).not.toHaveClass(/\bon\b/);
+  });
+});
+
 test.describe('volume, fake clock', () => {
   test.use({ fakeClock: true, scenario: { bindings: { SetBoxVolume: { value: null, delayMs: 50 } } } });
 

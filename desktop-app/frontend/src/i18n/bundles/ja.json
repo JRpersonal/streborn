@@ -372,7 +372,7 @@
   "controls.next": "次へ",
   "controls.shuffle": "シャッフル",
   "controls.repeat": "リピート",
-  "controls.standbyTitle": "スタンバイ",
+  "controls.powerTitle": "電源",
   "controls.inputTitle": "{{input}} に切り替え",
   "controls.volume": "音量",
   "controls.volumeDown": "小さく",

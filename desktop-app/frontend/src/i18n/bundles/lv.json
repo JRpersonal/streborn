@@ -372,7 +372,7 @@
   "controls.next": "Nākamais",
   "controls.shuffle": "Jaukt",
   "controls.repeat": "Atkārtot",
-  "controls.standbyTitle": "Gaidstāve",
+  "controls.powerTitle": "Barošana",
   "controls.inputTitle": "Pārslēgties uz {{input}}",
   "controls.volume": "Skaļums",
   "controls.volumeDown": "Klusāk",

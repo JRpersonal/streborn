@@ -372,7 +372,7 @@
   "controls.next": "Далі",
   "controls.shuffle": "Випадково",
   "controls.repeat": "Повтор",
-  "controls.standbyTitle": "Очікування",
+  "controls.powerTitle": "Живлення",
   "controls.inputTitle": "Перейти на {{input}}",
   "controls.volume": "Гучність",
   "controls.volumeDown": "Тихіше",

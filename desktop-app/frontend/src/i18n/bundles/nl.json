@@ -372,7 +372,7 @@
   "controls.next": "Volgende",
   "controls.shuffle": "Shuffle",
   "controls.repeat": "Herhalen",
-  "controls.standbyTitle": "Stand-by",
+  "controls.powerTitle": "Aan/uit",
   "controls.inputTitle": "Overschakelen naar {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Zachter",

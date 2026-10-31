@@ -398,7 +398,7 @@
   "controls.next": "Next",
   "controls.shuffle": "Shuffle",
   "controls.repeat": "Repeat",
-  "controls.standbyTitle": "Standby",
+  "controls.powerTitle": "Power",
   "controls.inputTitle": "Switch to {{input}}",
   "controls.volume": "Volume",
   "controls.volumeDown": "Quieter",

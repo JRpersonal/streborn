@@ -666,6 +666,10 @@ export function SetBoxName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxName'](arg1, arg2, arg3);
 }
 
+export function SetBoxPower(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetBoxPower'](arg1, arg2, arg3);
+}
+
 export function SetBoxSSHPersistent(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxSSHPersistent'](arg1, arg2, arg3);
 }

@@ -139,6 +139,29 @@ func (a *App) SelectBoxSource(host string, port int, source, account string) err
 	})
 }
 
+// SetBoxPower is the music tab's power toggle, on the agent's /api/box/power
+// endpoint that also serves the phone remote's power button (#1644). Off sends
+// the speaker to Bose standby. On wakes it and resumes the last station, which
+// is why it gets the longer budget: the agent may spend most of its wake budget
+// before the push even starts, and giving up at the shared 6 s would report a
+// failure for a speaker that goes on to wake.
+func (a *App) SetBoxPower(host string, port int, on bool) error {
+	b, _ := json.Marshal(map[string]bool{"on": on})
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/box/power", "application/json", string(b), powerCallTimeout)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// powerCallTimeout covers handleBoxPower's wake (ensureBoxReady) plus the
+// resume push that follows it, the same budget as the quiet wake.
+const powerCallTimeout = wakeCallTimeout
+
 // readHTTPError turns a failed box response into an error carrying the status
 // code and a bounded slice of the body. One canonical place for the read limit
 // and message format, used at every status>=400 / non-200 site.
