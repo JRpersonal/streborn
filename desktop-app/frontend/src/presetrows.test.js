@@ -89,9 +89,9 @@ describe('labels', () => {
   it('is translated in every bundle, with the same placeholders and no dashes', () => {
     const en = bundle('en');
     const keys = Object.keys(en).filter((k) => k.startsWith('preset.row2.')
-      || /^settingsView\.copyPresets(BtnAll|HelpAll|ConfirmBodyAll|Row1Only|Row1OnlyList)$/.test(k)
+      || /^settingsView\.copyPresets(HelpAll|Row1Only|Row1OnlyList)$/.test(k)
       || k === 'presets.transferReplacesBoth');
-    expect(keys.length).toBe(19);
+    expect(keys.length).toBe(17);
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');
     for (const l of langs) {
       const b = bundle(l);

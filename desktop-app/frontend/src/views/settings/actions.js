@@ -1,7 +1,7 @@
 // views/settings/actions.js: the Actions group of Speaker settings. Find the
-// speaker, sync the hardware keys, save the logs, email support, reboot, the
-// rival-tool cleanup, the true factory reset, removing STR, and backup and
-// restore of favorites and presets.
+// speaker, save the logs, email support, reboot, the rival-tool cleanup, the
+// true factory reset, removing STR, and backup and restore of favorites and
+// presets. Repairing the hardware keys lives in the expert area (advanced.js).
 
 import { state } from '../../state.js';
 import { $, escapeHtml, escapeAttr, showToast, encodeURIStrict } from '../../utils.js';
@@ -11,7 +11,6 @@ import { identifyOutcome } from '../../boxstate.js';
 import { runConflictCleanup } from '../../conflictcleanup.js';
 import {
   RebootBox,
-  SyncBoxPresets,
   ExportBackup,
   ImportBackup,
   SaveDiagnosticBundle,
@@ -33,8 +32,6 @@ export function renderActionSections(ctx) {
       <div class="actions-grid">
         <button class="btn btn-mini" id="boxIdentifyBtn">${escapeHtml(t('settingsView.identifyBtn'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.identifyHelp'))}</p>
-        <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
-        <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
         <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('footer.saveLogs'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.saveLogsHelp'))}</p>
         <button class="btn btn-mini" id="boxEmailSupportBtn">${escapeHtml(t('settingsView.emailSupport'))}</button>
@@ -122,22 +119,6 @@ export function wireActionSections(ctx) {
         if (out) out.innerHTML = `<div class="setup-err">${escapeHtml(String(e))}</div>`;
       }
       bkImport.disabled = false;
-    };
-  }
-
-  // Hardware key sync handler.
-  const syncBtn = $('boxSyncPresetsBtn');
-  if (syncBtn) {
-    syncBtn.onclick = async () => {
-      syncBtn.disabled = true;
-      syncBtn.textContent = t('settingsView.syncing');
-      try {
-        const r = await SyncBoxPresets(box.host, box.port);
-        const synced = r && r.synced != null ? r.synced : 0;
-        reportDone(syncBtn, t('settingsView.syncDoneToast', { n: synced }));
-      } catch (e) { reportError(syncBtn, e); }
-      syncBtn.disabled = false;
-      syncBtn.textContent = t('settingsView.syncHardwareKeys');
     };
   }
 

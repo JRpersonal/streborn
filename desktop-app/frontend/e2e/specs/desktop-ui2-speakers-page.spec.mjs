@@ -54,7 +54,7 @@ const CONTROLS = {
     placed: ['#webhookKeyMap', '#webhookTarget', '#webhookMode', '#keyActionSelect', '#webhookType', '#webhookUrl',
       '#webhookMethod', '#webhookBody', '#webhookMac', '#webhookUdpHost', '#webhookUdpPort', '#webhookUdpEnc',
       '#webhookUdpPayload', '#webhookOn', '#webhookOff', '#webhookTestBtn', '#webhookSaveBtn', '#webhookHaGuideBtn',
-      '#copyPresetTarget', '#copyPresetBtn', '#urlPresetSlot', '#urlPresetName', '#urlPresetUrl', '#urlPresetSaveBtn',
+      '#urlPresetSlot', '#urlPresetName', '#urlPresetUrl', '#urlPresetSaveBtn',
       '#voiceGuideBtn'],
   },
   maintenance: {
@@ -63,9 +63,10 @@ const CONTROLS = {
     placed: ['#boxRemoveConflictBtn', '#sshOn', '#sshOff', '#foreignList', '#boxRestoreXml', '#boxRestoreBtn'],
   },
 };
-// Every section on the page: the 31 of the classic view (with a second STR
-// speaker, so "Copy keys" renders too) and the page's own two cards.
-const ALL_SECTIONS = 33;
+// Every section on the page: 30 of the 31 of the classic view (the syncKeys
+// expert section empties into the page's hwKeys card and goes) and the
+// page's own two cards.
+const ALL_SECTIONS = 32;
 
 const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
 const tab = (page, key) => page.locator(`#ui2SpkTab-${key}`);
@@ -233,8 +234,10 @@ test.describe('classic Speaker settings with the phase 3 network', () => {
     await expect(page.locator('#view-settings > #settingsBody > details.settings-group').first()).toBeVisible();
     for (const id of ['ui2SpkPanels', 'ui2SpkPage']) await expect(page.locator(`#${id}`)).toHaveCount(0);
     await expect(page.locator('#settingsBody .sps-sec, #settingsBody .sps-own')).toHaveCount(0);
-    // The repair button is still in the Actions grid.
-    await expect(page.locator('.actions-grid > #boxSyncPresetsBtn')).toHaveCount(1);
+    // The repair button sits in its own expert section of the Advanced group,
+    // no longer in the Actions grid.
+    await expect(page.locator('details.settings-group details[data-ui2-sec="syncKeys"] #boxSyncPresetsBtn')).toHaveCount(1);
+    await expect(page.locator('.actions-grid #boxSyncPresetsBtn')).toHaveCount(0);
     // Restart asks with its classic title.
     const group = page.locator('#settingsBody details.settings-group').filter({ has: page.locator('#boxRebootBtn') });
     await group.locator('summary').click();

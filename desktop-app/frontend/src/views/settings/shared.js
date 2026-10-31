@@ -422,7 +422,6 @@ const EXPERT_DISCUSS = {
   announce: 'https://github.com/JRpersonal/streborn/discussions/826',
   webhook: 'https://github.com/JRpersonal/streborn/discussions/827',
   voice: 'https://github.com/JRpersonal/streborn/discussions/828',
-  copyPresets: 'https://github.com/JRpersonal/streborn/discussions/829',
   urlPreset: 'https://github.com/JRpersonal/streborn/discussions/830',
 };
 
