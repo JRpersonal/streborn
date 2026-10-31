@@ -41,8 +41,11 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //        notes       Map or object host -> { tone, text, action, label,
 //                    master, port }: what happened to a row (an offline pick,
 //                    a group edit that failed), shown under its name
-//        attention   (host) => '' | true | 'words': a worded chip from the
-//                    speaker package (deps.speakerAttention); none without it
+//        attention   (host) => '' | true | 'words' | { items, chip }: a
+//                    worded chip from the speaker package
+//                    (deps.speakerAttention, shell2/attention.js returns
+//                    { items, chip }, chip null when nothing is wrong); none
+//                    without it
 //        connectOpen the empty state's Connect by address block is open
 //
 // The pinned group is the group that plays (#1284: "the playing group stays
@@ -109,7 +112,11 @@ export function sidebarModel(boxes, ctx = {}) {
     let a = '';
     try { a = ctx.attention(host); } catch (_) { a = ''; }
     if (!a) return '';
-    return typeof a === 'string' ? a : t('ui2.state.needsAttention');
+    if (typeof a === 'string') return a;
+    // shell2/attention.js speakerAttention: { items, chip }, chip null when
+    // the speaker has nothing to say. Only a chip makes a chip.
+    if (typeof a === 'object') return a.chip ? (a.chip.label || t('ui2.state.needsAttention')) : '';
+    return t('ui2.state.needsAttention');
   };
 
   const decorate = (r) => {

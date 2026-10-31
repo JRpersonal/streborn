@@ -341,6 +341,17 @@ describe('sidebar states (phase 5)', () => {
     expect(sidebarHTML(plain)).not.toContain('data-chip="attention"');
   });
 
+  it('reads the speaker package shape { items, chip }: a chip only when chip is set', () => {
+    // shell2/attention.js speakerAttention always returns an object; a speaker
+    // with nothing to say has chip null and must not get a chip.
+    const quiet = model({ attention: () => ({ items: [], chip: null }) });
+    expect(byHost(quiet, I1).attention).toBeUndefined();
+    expect(sidebarHTML(quiet)).not.toContain('data-chip="attention"');
+    const loud = model({ attention: (h) => (h === I1.host ? { items: [{ kind: 'storm' }], chip: { kind: 'danger', label: 'Needs attention' } } : { items: [], chip: null }) });
+    expect(byHost(loud, I1).attention).toBe('Needs attention');
+    expect((sidebarHTML(loud).match(/data-chip="attention"/g) || []).length).toBe(1);
+  });
+
   it('puts an offline pick note into the row model, the signature and the row', () => {
     const notes = new Map([[O.host, { tone: 'busy', text: 'Garage is not reachable. Searching again...', host: O.host }]]);
     const plain = model();
