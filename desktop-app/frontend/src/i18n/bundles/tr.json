@@ -372,7 +372,7 @@
   "controls.next": "Sonraki",
   "controls.shuffle": "Karıştır",
   "controls.repeat": "Tekrarla",
-  "controls.standbyTitle": "Bekleme",
+  "controls.powerTitle": "Güç",
   "controls.inputTitle": "{{input}} girişine geç",
   "controls.volume": "Ses",
   "controls.volumeDown": "Daha kısık",

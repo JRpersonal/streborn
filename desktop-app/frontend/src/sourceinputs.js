@@ -171,3 +171,14 @@ export function isActiveInput(button, nowSource, nowAccount) {
   if (!wantAccount || !playingAccount) return true;
   return wantAccount === playingAccount;
 }
+
+// speakerIsOn says whether the power toggle at the end of the input row is lit.
+// The speaker is on unless it is in standby: a stopped speaker that is awake
+// (a group master after a quiet wake, #1526) still counts as on, so the button
+// can switch it off. It is the phone remote's boxOn rule, kept identical so the
+// two buttons never disagree about the same speaker (#1644).
+export function speakerIsOn(playState, nowSource) {
+  if (playState === 'PLAY_STATE' || playState === 'PAUSE_STATE' || playState === 'BUFFERING_STATE') return true;
+  const src = up(nowSource);
+  return !!src && src !== 'STANDBY';
+}

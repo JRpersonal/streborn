@@ -338,6 +338,8 @@ export function SetBoxLanguage(arg1:string,arg2:number):Promise<void>;
 
 export function SetBoxName(arg1:string,arg2:number,arg3:string):Promise<void>;
 
+export function SetBoxPower(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+
 export function SetBoxSSHPersistent(arg1:string,arg2:number,arg3:boolean):Promise<main.BoxSSHState>;
 
 export function SetBoxSpeakerLevel(arg1:string,arg2:number,arg3:string,arg4:number):Promise<void>;

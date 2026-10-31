@@ -41,7 +41,7 @@ export const MODELLED_BINDINGS = [
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
-  'SetAppFlag', 'SetAppLocale', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
+  'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
   'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
@@ -272,6 +272,9 @@ export function installDesktopMock({ scenario, demo }) {
     Next: () => undefined,
     Prev: () => undefined,
     SetBoxVolume: ([h, , pct]) => { state.volume[h] = pct; return undefined; },
+    // The agent's /api/box/power: on wakes the speaker and resumes its last
+    // station, off sends it to standby.
+    SetBoxPower: ([h, , on]) => { state.playing[h] = on ? 'PLAY_STATE' : 'STANDBY'; return undefined; },
     GetQueue: () => ({}), // no queue active
     TrackPosition: () => ({ positionSec: 0, durationSec: 0 }),
     SpotifyNowPlaying: () => ({ bitrate: 0, track: '', artist: '', cover: '', context: '', account: '', premiumRequired: false, audioKeyRefused: false, product: '' }),

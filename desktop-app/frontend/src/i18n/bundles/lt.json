@@ -372,7 +372,7 @@
   "controls.next": "Kitas",
   "controls.shuffle": "Maišyti",
   "controls.repeat": "Kartoti",
-  "controls.standbyTitle": "Budėjimas",
+  "controls.powerTitle": "Maitinimas",
   "controls.inputTitle": "Perjungti į {{input}}",
   "controls.volume": "Garsumas",
   "controls.volumeDown": "Tyliau",

@@ -372,7 +372,7 @@
   "controls.next": "Następny",
   "controls.shuffle": "Losowo",
   "controls.repeat": "Powtarzaj",
-  "controls.standbyTitle": "Czuwanie",
+  "controls.powerTitle": "Zasilanie",
   "controls.inputTitle": "Przełącz na {{input}}",
   "controls.volume": "Głośność",
   "controls.volumeDown": "Ciszej",

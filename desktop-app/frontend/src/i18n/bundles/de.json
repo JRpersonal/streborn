@@ -398,7 +398,7 @@
   "controls.next": "Weiter",
   "controls.shuffle": "Zufall",
   "controls.repeat": "Wiederholen",
-  "controls.standbyTitle": "Standby",
+  "controls.powerTitle": "Ein/Aus",
   "controls.inputTitle": "Auf {{input}} umschalten",
   "controls.volume": "Lautstärke",
   "controls.volumeDown": "Leiser",

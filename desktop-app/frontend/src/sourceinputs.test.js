@@ -8,7 +8,7 @@
 // (#491), and discussion #577. The CineMate owner reached for the Bose infrared
 // remote to get his television sound back.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { inputButtons, isActiveInput, localIsAuxSocket, physicalInputs, sourceRowKey } from './sourceinputs.js';
+import { inputButtons, isActiveInput, localIsAuxSocket, physicalInputs, sourceRowKey, speakerIsOn } from './sourceinputs.js';
 import { setLocale } from './i18n/index.js';
 import en from './i18n/bundles/en.json';
 import { allSource } from './test/source.js';
@@ -154,8 +154,41 @@ describe('which input button lights up', () => {
     expect(isActiveInput({ source: 'STANDBY', sourceAccount: '' }, 'UPNP', '')).toBe(false);
   });
 
-  it('lights standby, which shares the row', () => {
+  it('matches STANDBY by name like any other source', () => {
     expect(isActiveInput({ source: 'STANDBY', sourceAccount: '' }, 'STANDBY', '')).toBe(true);
+  });
+});
+
+// #1644: the power button at the end of the row was a STANDBY input, so it lit
+// green while the speaker slept, the opposite of the phone remote, and a click
+// on a sleeping speaker sent standby again. It is the remote's toggle now.
+describe('the power toggle', () => {
+  it('is off for a speaker in standby or with nothing reported', () => {
+    expect(speakerIsOn('', 'STANDBY')).toBe(false);
+    expect(speakerIsOn('STANDBY_STATE', 'STANDBY')).toBe(false);
+    expect(speakerIsOn('', '')).toBe(false);
+    expect(speakerIsOn(undefined, undefined)).toBe(false);
+  });
+
+  it('is on for a speaker that is awake on a source but stopped', () => {
+    expect(speakerIsOn('STOP_STATE', 'LOCAL_INTERNET_RADIO')).toBe(true);
+    expect(speakerIsOn('STOP_STATE', 'AUX')).toBe(true);
+  });
+
+  it('is on for a group or stereo master stopped after a quiet wake (#1526)', () => {
+    // The state stoppedstate.js draws as "stopped": the master really is on.
+    expect(speakerIsOn('STOP_STATE', 'UPNP')).toBe(true);
+  });
+
+  it('is on whenever the speaker plays, pauses or buffers', () => {
+    expect(speakerIsOn('PLAY_STATE', '')).toBe(true);
+    expect(speakerIsOn('PAUSE_STATE', 'STANDBY')).toBe(true);
+    expect(speakerIsOn('BUFFERING_STATE', '')).toBe(true);
+  });
+
+  it('reads the source name regardless of case', () => {
+    expect(speakerIsOn('', 'standby')).toBe(false);
+    expect(speakerIsOn('', 'bluetooth')).toBe(true);
   });
 });
 
@@ -181,6 +214,20 @@ describe('the music tab wiring', () => {
 
   it('sends the account with the source, so a socket can be identified', () => {
     expect(mainJS).toContain('SelectBoxSource(box.host, box.port, src, account)');
+  });
+
+  it('draws power as its own toggle, not as a STANDBY input (#1644)', () => {
+    expect(mainJS).not.toContain('data-source="STANDBY"');
+    expect(mainJS).toContain('id="powerBtn"');
+    expect(mainJS).toContain("t('controls.powerTitle')");
+    expect(mainJS).toContain('SetBoxPower(box.host, box.port, target)');
+  });
+
+  it('keeps the power toggle out of the input highlight', () => {
+    // .btn-source is what highlightActiveSource lights green and what the row's
+    // click delegate sends to SelectBoxSource; the power button must carry
+    // neither.
+    expect(mainJS).toContain('class="btn btn-power btn-source-icon" id="powerBtn"');
   });
 });
 

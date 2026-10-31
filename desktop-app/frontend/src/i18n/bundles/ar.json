@@ -372,7 +372,7 @@
   "controls.next": "التالي",
   "controls.shuffle": "عشوائي",
   "controls.repeat": "تكرار",
-  "controls.standbyTitle": "وضع الاستعداد",
+  "controls.powerTitle": "الطاقة",
   "controls.inputTitle": "التبديل إلى {{input}}",
   "controls.volume": "مستوى الصوت",
   "controls.volumeDown": "أخفض",

@@ -45,7 +45,7 @@ export function musicViewMarkup() {
       </div>
       <div class="source-buttons" id="sourceButtons">
         <span class="source-inputs" id="sourceInputs"></span>
-        <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
+        <button class="btn btn-power btn-source-icon" id="powerBtn" aria-pressed="false" aria-label="${escapeAttr(t('controls.powerTitle'))}" title="${escapeAttr(t('controls.powerTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
         <span class="vol-scope hidden" id="musicVolumeScope"></span>

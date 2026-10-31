@@ -1,9 +1,9 @@
 // views/music/sources.js: the source/input row of the Music view (AUX, TV, Bluetooth,
-// standby) and the per-speaker source list cache behind it.
+// the power toggle) and the per-speaker source list cache behind it.
 
-import { BoxSettings, SelectBoxSource } from '../../api.js';
+import { BoxSettings, SelectBoxSource, SetBoxPower } from '../../api.js';
 import { t } from '../../i18n/index.js';
-import { inputButtons, isActiveInput, sourceRowKey } from '../../sourceinputs.js';
+import { inputButtons, isActiveInput, sourceRowKey, speakerIsOn } from '../../sourceinputs.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
 import { refreshStatus } from './status.js';
@@ -114,6 +114,59 @@ export function highlightActiveSource() {
     const button = { source: b.dataset.source, sourceAccount: b.dataset.sourceAccount };
     b.classList.toggle('active', isActiveInput(button, state.nowSource, state.nowSourceAccount));
   });
+  applyPowerButton();
+}
+
+// The power toggle at the end of the row (#1644). It used to be a STANDBY input
+// button, so the green "selected input" style lit it exactly while the speaker
+// slept, the opposite of the phone remote's power button, and a click on a
+// sleeping speaker sent standby again instead of waking it. It is now the
+// remote's toggle: lit while the speaker is on (speakerIsOn), off sends it to
+// standby, on wakes it and resumes the last station.
+//
+// powerHold keeps the clicked target on the button while the agent call runs
+// and for a few seconds after it. Waking a speaker takes several seconds, and a
+// status poll in that window still reads STANDBY and would flip the button back
+// before the wake lands; going to standby, the speaker reports its old source
+// for a moment. It is tied to the speaker it was clicked for.
+let powerHold = null;
+const POWER_HOLD_AFTER_MS = 3500;
+
+function powerShown() {
+  const box = state.currentBox;
+  if (powerHold && box && powerHold.host === box.host && Date.now() < powerHold.until) return powerHold.on;
+  return speakerIsOn(state.nowPlayState, state.nowSource);
+}
+
+export function applyPowerButton() {
+  const btn = $('powerBtn');
+  if (!btn) return;
+  const on = powerShown();
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', String(on));
+}
+
+async function togglePower(btn) {
+  const box = state.currentBox;
+  if (!box) { showToast(t('speaker.noneSelected')); return; }
+  const target = !powerShown();
+  powerHold = { host: box.host, on: target, until: Infinity };
+  applyPowerButton();
+  btn.disabled = true;
+  try {
+    await SetBoxPower(box.host, box.port, target);
+    powerHold.until = Date.now() + POWER_HOLD_AFTER_MS;
+  } catch (e) {
+    powerHold = null;
+    showError(e);
+  } finally {
+    btn.disabled = false;
+    applyPowerButton();
+  }
+  // The same follow-up reads as the phone remote; the last one lands after the
+  // hold has run out, so from there the button shows what the speaker reports.
+  setTimeout(refreshStatus, 1500);
+  setTimeout(refreshStatus, 4000);
 }
 
 // purgeSourceCacheForSpeaker forgets the cached source list of a speaker STR
@@ -125,8 +178,8 @@ export function purgeSourceCacheForSpeaker(host) {
 // mountSources attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountSources() {
-  // The input row and the standby button in the music tab, both routed through
-  // the agent's /api/box/source endpoint via the SelectBoxSource binding.
+  // The input row in the music tab, routed through the agent's /api/box/source
+  // endpoint via the SelectBoxSource binding.
   //
   // Delegated from the row because the input buttons are built per speaker now: a
   // soundbar's TV and HDMI sockets only exist once that speaker has reported them,
@@ -135,4 +188,8 @@ export function mountSources() {
     const btn = ev.target.closest('.btn-source');
     if (btn) selectSource(btn);
   });
+  // The power toggle goes to the agent's /api/box/power, the endpoint behind the
+  // phone remote's power button.
+  const power = $('powerBtn');
+  if (power) power.addEventListener('click', () => togglePower(power));
 }

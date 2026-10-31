@@ -418,6 +418,14 @@ export function SetBoxSpeakerLevel(host, port, level, value) {
   return callOptionalBinding('SetBoxSpeakerLevel', [host, port, level, value]);
 }
 
+// SetBoxPower drives the music tab's power toggle: off sends the speaker to
+// standby, on wakes it and resumes the last station (#1644). Optional binding,
+// per the note above: brand new, so a named re-export would break the frontend
+// build against an older generated App module.
+export function SetBoxPower(host, port, on) {
+  return callOptionalBinding('SetBoxPower', [host, port, on]);
+}
+
 // RadioSearchDetailed is RadioSearch plus a relaxed flag: same opts object,
 // returns {stations, relaxed} where relaxed=true means the backend had to
 // drop the quality filters to find anything.
