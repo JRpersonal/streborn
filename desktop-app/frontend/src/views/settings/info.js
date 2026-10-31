@@ -20,7 +20,6 @@ import {
   US_SERVICES, usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
   usServiceCanDisconnect, usServiceNeedsLogin, agentErrorText, usDisconnectError, usConnectError,
 } from '../../usservices.js';
-import { wireToggleSection } from '../../togglesection.js';
 import {
   RebootBox,
   BrowserOpenURL,
@@ -42,7 +41,7 @@ import {
   LinkMusicService,
   UnlinkMusicService,
 } from '../../api.js';
-import { toggleDeps, helpBlock, revealInSettings, formatRel, confirmFor } from './shared.js';
+import { helpBlock, revealInSettings, formatRel, confirmFor, wireSettingToggle } from './shared.js';
 
 export function renderInfoSections(ctx) {
   const { s, info, box } = ctx;
@@ -187,7 +186,9 @@ export function wireInfoSections(ctx) {
   const paintSSHNote = (r) => {
     if (sshBoseNote) sshBoseNote.classList.toggle('hidden', !r || r.boseMarker !== true);
   };
-  const ssh = wireToggleSection({
+  // wireSettingToggle: togglesection.js with the outcome reported in the SSH
+  // card in the preview (toggleDepsFor('sshSection')).
+  const ssh = wireSettingToggle({
     sectionId: 'sshSection', onId: 'sshOn', offId: 'sshOff',
     get: () => BoxSSHStatus(box.host, box.port),
     stateFn: (r) => ({ show: !!(r && r.supported), enabled: !!r && r.persistent === true, answer: r }),
@@ -203,7 +204,7 @@ export function wireInfoSections(ctx) {
     // The answer to the write is the state the speaker holds now.
     afterSet: (r) => { ssh.paint(!!r && r.persistent === true); paintSSHNote(r); },
     toastKey: (on) => (on ? 'settingsView.sshOnToast' : 'settingsView.sshOffToast'),
-  }, toggleDeps);
+  });
 }
 
 // fillMusicLib lists the media servers this speaker can see and lets the user

@@ -3,13 +3,13 @@
 // track, its clock, STR's messages, splash and notices), the hidden games and
 // the AirPlay optimisation.
 
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, arcadeState } from '../../boxstate.js';
 // The On/Off pair every switchable speaker setting is drawn with: one paint,
 // one read that hides the section, one write that repaints the old state when
-// the speaker refuses it (togglesection.js, vitest-covered).
-import { wireToggleSection } from '../../togglesection.js';
+// the speaker refuses it (togglesection.js, vitest-covered), wired through
+// shared.js wireSettingToggle so the preview reports in the section.
 import { copyScreenshot, scoreText } from '../../arcadeshare.js';
 import {
   GetClockFormat24,
@@ -34,7 +34,7 @@ import {
   GetAirplayOpt,
   SetAirplayOpt,
 } from '../../api.js';
-import { deps, toggleDeps, withButtonPending, confirmFor } from './shared.js';
+import { deps, withButtonPending, confirmFor, reportError, reportDone, wireSettingToggle } from './shared.js';
 import { displayPreviewName } from './displaypreview.js';
 import previewBoth from '../../assets/images/display/preview-both.png';
 import previewBothClock from '../../assets/images/display/preview-both-clock.png';
@@ -253,10 +253,10 @@ export function wireSoundSections(ctx) {
         const offsetMin = -new Date().getTimezoneOffset();
         const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
         await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
-        showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
+        reportDone(clockOn || clockFormat, t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
         await refreshClock();
         return true;
-      } catch (e) { showError(e); return false; }
+      } catch (e) { reportError(clockOn || clockFormat, e); return false; }
     };
     // The highlight moves before the speaker has answered, so the panel feels
     // immediate. It has to move BACK when the write fails, or the panel claims a
@@ -290,7 +290,7 @@ export function wireSoundSections(ctx) {
         await refreshClock();
         if (clockState === null) {
           clockFormat.value = lastFormat;
-          showError(t('settingsView.clockFormatUnknownState'));
+          reportError(clockFormat, t('settingsView.clockFormatUnknownState'));
           return;
         }
         lastFormat = clockFormat.value;
@@ -303,7 +303,7 @@ export function wireSoundSections(ctx) {
   // current state; toggling applies live on the box (no reboot). The next real
   // power press either brings the last station back, like Bose did, or stays
   // silent. A self-wake (zone/stereo pair) never resumes regardless.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'resumeOnPowerSection', onId: 'resumeOnPowerOn', offId: 'resumeOnPowerOff',
     get: () => GetResumeOnPowerOn(box.host, box.port),
     // Default on: treat anything other than an explicit false as enabled.
@@ -311,7 +311,7 @@ export function wireSoundSections(ctx) {
     onGetError: { show: true, enabled: true },
     set: (enabled) => SetResumeOnPowerOn(box.host, box.port, enabled),
     toastKey: 'settingsView.resumeOnPowerSavedToast',
-  }, toggleDeps);
+  });
 
   // Show the live radio track on the speaker display (opt-in, default off).
   // Where the speaker's panel is STR's to draw on (onPanel), STR draws the
@@ -354,7 +354,7 @@ export function wireSoundSections(ctx) {
   // enabled is true, false, or null for "could not be read". A failed read used
   // to paint Off, so a speaker that was restarting showed the setting off while
   // it was on and pushing titles (#1083). Unknown lights neither button.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'displayTrackSection', onId: 'displayTrackOn', offId: 'displayTrackOff',
     get: () => GetDisplayTrack(box.host, box.port),
     stateFn: (r) => ({ show: displayTrackOffered(r), enabled: displayTrackState(r), answer: r }),
@@ -382,7 +382,7 @@ export function wireSoundSections(ctx) {
     },
     set: (enabled) => SetDisplayTrack(box.host, box.port, enabled, dtMode),
     toastKey: 'settingsView.displayTrackSavedToast',
-  }, toggleDeps);
+  });
   // The mode buttons write the same setting with the track left on; a refused
   // write puts the previous mode back, the same rule as the On/Off pair.
   const saveDtMode = async (m) => {
@@ -391,11 +391,11 @@ export function wireSoundSections(ctx) {
     paintDtMode();
     try {
       await SetDisplayTrack(box.host, box.port, true, dtMode);
-      showToast(t('settingsView.displayTrackSavedToast'));
+      reportDone(dtModeBtns[m], t('settingsView.displayTrackSavedToast'));
     } catch (e) {
       dtMode = before;
       paintDtMode();
-      showError(e);
+      reportError(dtModeBtns[m], e);
     }
   };
   for (const [m, b] of Object.entries(dtModeBtns)) {
@@ -409,7 +409,7 @@ export function wireSoundSections(ctx) {
   // row stays hidden.
   // The "section" here is the one row inside the track section; an older
   // agent (no clock setting) leaves it hidden.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'displayClockRow', onId: 'displayClockOn', offId: 'displayClockOff',
     get: () => GetDisplayClock(box.host, box.port),
     stateFn: (r) => ({
@@ -426,12 +426,12 @@ export function wireSoundSections(ctx) {
     },
     set: (enabled) => SetDisplayClock(box.host, box.port, enabled),
     toastKey: 'settingsView.displayTrackSavedToast',
-  }, toggleDeps);
+  });
 
   // Short message on the speaker display when a key cannot play (default on).
   // Only shown for a speaker that has a display; elsewhere the setting does
   // nothing, so the section stays hidden.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'displayMsgSection', onId: 'displayMsgOn', offId: 'displayMsgOff',
     get: () => GetDisplayMessages(box.host, box.port),
     stateFn: displayMessagesState,
@@ -444,30 +444,30 @@ export function wireSoundSections(ctx) {
     },
     set: (enabled) => SetDisplayMessages(box.host, box.port, enabled),
     toastKey: 'settingsView.displayMsgSavedToast',
-  }, toggleDeps);
+  });
 
   // STR logo animation on the speaker display after an install or update, at
   // start-up and while an update lands (default on). Only shown where the agent
   // can draw on the panel (the Portable); elsewhere the section stays hidden.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'displaySplashSection', onId: 'displaySplashOn', offId: 'displaySplashOff',
     get: () => GetDisplaySplash(box.host, box.port),
     stateFn: displaySplashState,
     set: (enabled) => SetDisplaySplash(box.host, box.port, enabled),
     toastKey: 'settingsView.displaySplashSavedToast',
-  }, toggleDeps);
+  });
 
   // STR's short notices on the speaker display (a saved key, an empty key,
   // keys restored after a reboot; default on). Same rule as the splash: only
   // where the agent can draw on the panel, hidden elsewhere and on an agent
   // or app build that does not know the setting yet.
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'displayNoticesSection', onId: 'displayNoticesOn', offId: 'displayNoticesOff',
     get: () => GetDisplayNotices(box.host, box.port),
     stateFn: displayNoticesState,
     set: (enabled) => SetDisplayNotices(box.host, box.port, enabled),
     toastKey: 'settingsView.displayNoticesSavedToast',
-  }, toggleDeps);
+  });
 
   // The hidden games on the speaker display: per game the score, the last
   // screen, and buttons to copy or save them for the GitHub thread. Hidden
@@ -497,11 +497,11 @@ export function wireSoundSections(ctx) {
         }).join('');
       } catch { arcSection.classList.add('hidden'); }
     })();
-    const saveShot = async (id) => {
+    const saveShot = async (id, anchor = arcGames) => {
       try {
         const path = await SaveArcadeScreenshot(box.host, box.port, id);
-        if (path) showToast(t('settingsView.blockfallShotSavedToast', { path }));
-      } catch (e) { showError(e); }
+        if (path) reportDone(anchor, t('settingsView.blockfallShotSavedToast', { path }));
+      } catch (e) { reportError(anchor, e); }
     };
     // The clipboard write starts first thing in the click; where the webview
     // cannot hold an image, the save dialog opens instead.
@@ -512,16 +512,16 @@ export function wireSoundSections(ctx) {
       switch (btn.dataset.arcade) {
         case 'copyShot':
           if (await copyScreenshot(game.screenshot)) showToast(t('settingsView.blockfallShotCopiedToast'));
-          else await saveShot(game.id);
+          else await saveShot(game.id, btn);
           break;
         case 'saveShot':
-          await saveShot(game.id);
+          await saveShot(game.id, btn);
           break;
         case 'copyScore':
           try {
             await ClipboardSetText(scoreText(game, box.model || ''));
-            showToast(t('settingsView.blockfallScoreCopiedToast'));
-          } catch (e) { showError(e); }
+            reportDone(btn, t('settingsView.blockfallScoreCopiedToast'));
+          } catch (e) { reportError(btn, e); }
           break;
       }
     };
@@ -534,7 +534,7 @@ export function wireSoundSections(ctx) {
   // at boot, same as the Bose app), so confirm first.
   // Same active-highlight pattern as the clock toggle: the lit button
   // is the state, no separate status line. null = unknown (neither lit).
-  wireToggleSection({
+  wireSettingToggle({
     sectionId: 'airplayOptSection', onId: 'airplayOptOn', offId: 'airplayOptOff',
     get: () => GetAirplayOpt(box.host, box.port),
     stateFn: (r) => ({
@@ -548,5 +548,5 @@ export function wireSoundSections(ctx) {
     set: (enabled) => SetAirplayOpt(box.host, box.port, enabled),
     afterSet: () => { setTimeout(deps.discoverBoxes, 60000); },
     toastKey: 'settingsView.airplayOptSavedToast',
-  }, toggleDeps);
+  });
 }

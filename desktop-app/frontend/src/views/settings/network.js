@@ -3,7 +3,7 @@
 // the radio search region.
 
 import { state, saveSearchCountry } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { COUNTRIES, optFlag } from '../../localization.js';
 import { storedNetworksView, storedNetworksHtml, forgetRefusalKey, forgetAllRefusalKey } from '../../wlanforget.js';
@@ -14,7 +14,7 @@ import {
   CurrentWiFi,
   boxFetch,
 } from '../../api.js';
-import { deps, withButtonPending, revealInSettings, confirmFor } from './shared.js';
+import { deps, withButtonPending, revealInSettings, confirmFor, reportError, reportDone, reportFieldError, clearFieldErrors } from './shared.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
 // switch UI can skip the System-keychain admin prompt on macOS (#88) without
@@ -162,8 +162,8 @@ export function wireNetworkSections(ctx) {
         if (cs) cs.value = data.country;
         deps.updateFilterIndicators();
         updateCurrentDisplay(data.country);
-        showToast(t('settingsView.regionSavedToast', { name: (COUNTRIES.find(c => c.cc === cc) || {}).name || cc }));
-      } catch (e) { showError(e); }
+        reportDone('appRegionSave', t('settingsView.regionSavedToast', { name: (COUNTRIES.find(c => c.cc === cc) || {}).name || cc }));
+      } catch (e) { reportError('appRegionSave', e); }
     });
   }
 }
@@ -277,7 +277,8 @@ function wireWlanSwitch(box, currentSsid) {
     // Default ON: a speaker that keeps its old networks falls back to them,
     // public hotspots included (field case 2026-10-14).
     const forgetOthers = !$('boxWlanForgetOthers') || $('boxWlanForgetOthers').checked;
-    if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
+    clearFieldErrors('boxWlanSSID');
+    if (!ssid) { reportFieldError('boxWlanSSID', t('settingsView.wlanSsidEmpty')); return; }
     const ok = await confirmFor(box, 
       t('settingsView.wlanSwitchConfirmTitle'),
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
@@ -328,10 +329,10 @@ function wireWlanSwitch(box, currentSsid) {
       // (#1307). Nothing moves until the owner unplugs the cable and restarts
       // the speaker; the speaker stays reachable over the cable meanwhile.
       if (info.wiredUplink) {
-        showToast(t('settingsView.wlanWiredStoredToast', { ssid }), 20000);
+        reportDone('boxWlanSave', t('settingsView.wlanWiredStoredToast', { ssid }), 20000);
         return;
       }
-      showToast(
+      reportDone('boxWlanSave',
         info.mechanism === 'bco'
           ? t('settingsView.wlanRebootingToast')
           : t('settingsView.wlanSwitchedToast'),
@@ -342,7 +343,7 @@ function wireWlanSwitch(box, currentSsid) {
       // A forget that removed something restarts the speaker once, so it
       // needs the same long wait as the BCO reboot.
       setTimeout(deps.discoverBoxes, (info.mechanism === 'bco' || info.forgetOthers) ? 90000 : 12000);
-    } catch (e) { showError(e); }
+    } catch (e) { reportError('boxWlanSave', e); }
   });
 }
 
@@ -405,19 +406,19 @@ function wireWlanStored(box) {
       try { res = await r.json(); } catch {}
       if (!r.ok || res.status !== 'ok') {
         const key = forgetAllRefusalKey(res.code);
-        showError(key ? t(key) : t('settingsView.wlanForgetAllFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
+        reportError(allBtn, key ? t(key) : t('settingsView.wlanForgetAllFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
         await load();
         return;
       }
       if (allRow) allRow.hidden = true;
       if (res.rebooting) {
-        showToast(t('settingsView.wlanForgetAllDone'), 9000);
+        reportDone(allBtn, t('settingsView.wlanForgetAllDone'), 9000);
         setTimeout(deps.discoverBoxes, 90000);
       } else {
-        showToast(t('settingsView.wlanForgetAllDoneNoRestart'), 7000);
+        reportDone(allBtn, t('settingsView.wlanForgetAllDoneNoRestart'), 7000);
         await load();
       }
-    } catch (e) { showError(e); }
+    } catch (e) { reportError(allBtn, e); }
   });
   btn.onclick = () => withButtonPending(btn, async () => {
     if (!view || !view.canForget) return;
@@ -441,20 +442,20 @@ function wireWlanStored(box) {
       try { res = await r.json(); } catch {}
       if (!r.ok || res.status !== 'ok') {
         const key = forgetRefusalKey(res.code);
-        showError(key ? t(key) : t('settingsView.wlanForgetFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
+        reportError(btn, key ? t(key) : t('settingsView.wlanForgetFailed', { reason: res.reason || res.error || ('HTTP ' + r.status) }));
         await load();
         return;
       }
       if (!res.removed) {
-        showToast(t('settingsView.wlanForgetNothing', { network: view.keep }), 7000);
+        reportDone(btn, t('settingsView.wlanForgetNothing', { network: view.keep }), 7000);
         await load();
         return;
       }
-      showToast(t('settingsView.wlanForgetDone', { count: res.removed, network: view.keep }), 9000);
+      reportDone(btn, t('settingsView.wlanForgetDone', { count: res.removed, network: view.keep }), 9000);
       btn.hidden = true;
       if (res.rebooting) setTimeout(deps.discoverBoxes, 90000);
       else await load();
-    } catch (e) { showError(e); }
+    } catch (e) { reportError(btn, e); }
   });
   load();
 }
