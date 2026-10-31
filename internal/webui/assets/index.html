@@ -3747,7 +3747,10 @@ function showTab(name) {
   // scroll offset over lands the user halfway down a list they never scrolled.
   window.scrollTo(0, 0);
   if (name === 'Speakers') loadZone();
+  // The update card on More warns when this speaker is grouped, so it needs the
+  // group as it is now, not as it was when the page opened (#1339).
   if (name === 'More') loadDisplayCard();
+  if (name === 'More') loadZone();
   // Favourites change from the desktop app too (#1389).
   if (name === 'Browse') loadFavorites(true).catch(function(){});
 }
@@ -3970,9 +3973,42 @@ function memberVol(ip, v) {
 function suGroupChanged(was) {
   if ((zone.grouped && !zone.stereo) !== was && window.suRender) window.suRender();
 }
+/* groupNoteDue says whether an update restarts a speaker of the live group z
+   (the shape loadZone keeps), so the update card warns that the group ends.
+   A stereo pair survives a restart and is never warned about. Without rows:
+   this speaker's own update, due whenever it is grouped, as leader or as
+   follower. With rows (the fleet plan): due when the run restarts this
+   speaker or any member of its group. */
+function groupNoteDue(z, rows) {
+  if (!(z && typeof z === 'object' && z.grouped && !z.stereo)) return false;
+  if (!rows) return true;
+  var ips = {};
+  (z.members || []).forEach(function(m){ if (m && m.ip) ips[m.ip] = true; });
+  return rows.some(function(sp){ return sp && sp.state === 'waiting' && (sp.self || (sp.ip && ips[sp.ip])); });
+}
+/* loadZone runs from several places at once (start-up, the tab switch, the
+   slow poll, the foreground refresh, a group change). Only the newest answer
+   counts: an older read that comes back late would put back a group state that
+   is already gone, or take away one that has just formed. */
+var zoneSeq = 0;
+/* zonePollDue gates the slow group poll: while a group is known, and while a
+   tab that shows group state is open (Speakers, and More for the update card). */
+function zonePollDue() {
+  if (zone.grouped) return true;
+  var sp = document.getElementById('panelSpeakers'), mo = document.getElementById('panelMore');
+  return !!((sp && !sp.hidden) || (mo && !mo.hidden));
+}
 async function loadZone() {
+  var seq = ++zoneSeq;
   var wasGrp = !!(zone.grouped && !zone.stereo);
   var z = await api('/api/box/zone/volume');
+  if (seq !== zoneSeq) return;
+  /* No answer (the speaker or the phone's Wi-Fi hiccuped) is not "not grouped".
+     Treating it so dropped a live group on one failed read, and because the
+     slow poll only keeps asking while a group is known, the page then stayed
+     on "alone" for good: the update card left out the note that this speaker
+     leaves its group (#1339). The next answer decides. */
+  if (z == null) return;
   var card = document.getElementById('groupCard');
   var tab = document.getElementById('tabSpeakers'), dot = document.getElementById('tabDot');
   if (!z || !z.grouped) {
@@ -5589,13 +5625,7 @@ async function saveDisplay(kind, enabled) {
      when the run will restart this speaker or any member of its group. The
      phone knows only the group of the speaker serving this page; a group of
      other speakers alone is not visible here. */
-  function suGroupNoteDue(rows) {
-    if (!(typeof zone === 'object' && zone && zone.grouped && !zone.stereo)) return false;
-    if (!rows) return true;
-    var ips = {};
-    (zone.members || []).forEach(function(m){ if (m && m.ip) ips[m.ip] = true; });
-    return rows.some(function(sp){ return sp.state === 'waiting' && (sp.self || (sp.ip && ips[sp.ip])); });
-  }
+  function suGroupNoteDue(rows) { return groupNoteDue(zone, rows); }
   window.suRender = render;
   /* For the status poll: an update is in flight, this phone's run, one the
      serving speaker drives, or a single-speaker update the card is still
@@ -5990,7 +6020,9 @@ async function saveDisplay(kind, enabled) {
     saveRun(); planFresh = false;
     drive();
   });
-  if (bo) bo.addEventListener('click', function(){ onlyThis = !onlyThis; render(); });
+  /* "Only this speaker" is the moment the owner decides, so the group note
+     there reads the group fresh; loadZone repaints the card if it changed. */
+  if (bo) bo.addEventListener('click', function(){ onlyThis = !onlyThis; render(); if (onlyThis) loadZone().catch(function(){}); });
   b.addEventListener('click', async function(){
     press(b);
     if (!st || !st.available) { dropFinishedRun(); await check(); return; }
@@ -6628,8 +6660,11 @@ applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStat
 setInterval(function(){ if (document.visibilityState !== 'visible') return; refreshStatus(); refreshWedge(); }, 5000);
 // The group is polled far more slowly than the transport: it changes when
 // somebody forms or dissolves one, not second by second, and every poll costs
-// the speaker a round trip to each member.
-setInterval(function(){ if (document.visibilityState !== 'visible') return; if (!document.getElementById('panelSpeakers').hidden || zone.grouped) loadZone(); }, 15000);
+// the speaker a round trip to each member. It also runs while More is open:
+// a group formed in the desktop app after the page opened was otherwise never
+// seen there, and the update card left out that this speaker leaves its group
+// (#1339). Alone, a poll is one read of the speaker's own zone.
+setInterval(function(){ if (document.visibilityState !== 'visible') return; if (zonePollDue()) loadZone(); }, 15000);
 // Presets change from the desktop app too, and this page used to keep whatever
 // it loaded on open. Re-read on the same slow cadence as the group: it only has
 // to catch somebody pressing save elsewhere, and the grid is left alone unless
