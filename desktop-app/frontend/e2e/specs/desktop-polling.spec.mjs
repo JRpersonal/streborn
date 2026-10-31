@@ -37,6 +37,7 @@
 import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
+import { openUi2View } from '../helpers/ui2nav.mjs';
 
 const CUR = 'demobox.local';
 const BED = '192.0.2.52';
@@ -50,8 +51,9 @@ const SETTLE_MS = 30_000;
 const WINDOW_MS = 60_000;
 
 async function nav(page, ui2, view) {
-  const sel = ui2 ? `#ui2Sidebar .ui2-nav-item[data-view="${view}"]` : `.tab-btn[data-view="${view}"]`;
-  await page.locator(sel).click();
+  // The preview reaches settings and setup through Speakers (phase 3).
+  if (ui2) await openUi2View(page, view);
+  else await page.locator(`.tab-btn[data-view="${view}"]`).click();
   await expect(page.locator(`#view-${view}`)).toBeVisible();
 }
 

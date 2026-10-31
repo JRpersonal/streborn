@@ -1,0 +1,61 @@
+/* UI 2.0 preview: the head of the Speakers area (#1287, docs/UI-2.0.md
+   phase 3; index.js is the router, markup.js holds the markup).
+
+   The head sits above whichever view the route shows (the list, one
+   speaker's settings, Multi-room, Setup): the title, the row All speakers /
+   Groups / Add speaker, and on the speaker route the speaker's page head and
+   tabs (speaker.css). Everything sits under html.ui2 and reads only the --u-*
+   tokens, so the classic layout is untouched. */
+
+html.ui2 .spa {
+  margin-bottom: 16px;
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 .spa[hidden] { display: none; }
+html.ui2 .spa-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+html.ui2 .spa-title {
+  display: flex;
+  align-items: center;
+  min-height: var(--u-target);
+  margin: 0;
+  color: var(--u-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+/* The row of places: words that wrap at a larger text size, the current one
+   marked by its fill, its weight and aria-current, never by colour alone. */
+html.ui2 .spa-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 .spa-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.ui2 .spa-sub:hover { background: var(--u-bg); }
+html.ui2 .spa-sub.is-active { background: var(--u-selected); font-weight: 700; }
+html.ui2 .spa :focus-visible,
+html.ui2 #view-speakers :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}

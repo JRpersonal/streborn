@@ -33,6 +33,16 @@ export function initMultiroomView(d) {
   deps = { ...deps, ...d };
 }
 
+// Render hooks for a layout that arranges this view's markup differently (the
+// UI 2.0 preview's Speakers > Groups, shell2/speakers/groups.js). None is set
+// in the classic layout. before(root) runs right before the markup is rebuilt
+// and may return a value; after(root, thatValue) runs once the new markup is
+// wired, on every paint, so the arrangement survives the 5 s live repaints.
+let renderHooks = null;
+export function setMultiroomRenderHooks(h) {
+  renderHooks = h || null;
+}
+
 // zoneLabel is the speaker's display name, used in the group list and the stereo
 // pair dropdown. friendlyName first: the backend always fills name with a
 // "str-<ip>"/"STR-<hex>" fallback, so name-first never reached the real speaker
@@ -615,6 +625,7 @@ export function renderMultiroom(fetchLive) {
     `<div class="setup-warn stale-stereo">${escapeHtml(staleNoticeText(f, t))}
        <button class="btn btn-mini stale-stereo-fix" data-stale="${i}">${escapeHtml(t('stereoStale.fixBtn'))}</button></div>`).join('');
 
+  const hookCtx = renderHooks && renderHooks.before ? renderHooks.before(root) : null;
   root.innerHTML = intro + staleHtml + liveFramesHtml + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
@@ -861,6 +872,7 @@ export function renderMultiroom(fetchLive) {
   // form/dissolve handlers never stacks a second interval.
   if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(), 0);
   if (strBoxes.length && state.view === 'multiroom') startMultiroomLive();
+  if (renderHooks && renderHooks.after) renderHooks.after(root, hookCtx);
 }
 
 // refreshZoneLive queries every speaker's live zone through the shared

@@ -6,7 +6,7 @@
 // SSH port.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, confirmWarn, getBoxLabel } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel } from '../../utils.js';
 import { t, tLookup, getLocale } from '../../i18n/index.js';
 // Firmware facts live in their own module: both views need them, and a view
 // cannot be imported outside a browser (see firmware.js).
@@ -42,7 +42,7 @@ import {
   LinkMusicService,
   UnlinkMusicService,
 } from '../../api.js';
-import { toggleDeps, helpBlock, revealInSettings, formatRel } from './shared.js';
+import { toggleDeps, helpBlock, revealInSettings, formatRel, confirmFor } from './shared.js';
 
 export function renderInfoSections(ctx) {
   const { s, info, box } = ctx;
@@ -50,7 +50,7 @@ export function renderInfoSections(ctx) {
   return {
     group: 'info',
     html: `
-    <div class="settings-section" id="boxLevelsSection" hidden>
+    <div data-ui2-sec="levels" class="settings-section" id="boxLevelsSection" hidden>
       <h3>${escapeHtml(t('settingsView.levelsHeading'))}</h3>
       <div class="setting-row" id="boxLevelCentreRow" hidden>
         <label for="boxLevelCentre">${escapeHtml(t('settingsView.levelCentre'))}</label>
@@ -68,7 +68,7 @@ export function renderInfoSections(ctx) {
       </div>
     </div>
 
-    <div class="settings-section hidden" id="sshSection">
+    <div data-ui2-sec="ssh" class="settings-section hidden" id="sshSection">
       <h3>${escapeHtml(t('settingsView.sshHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="sshOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -78,7 +78,7 @@ export function renderInfoSections(ctx) {
       <small class="muted small hidden" id="sshBoseNote" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.sshBoseMarker'))}</small>
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="sources" class="settings-section">
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
       <div class="sources-grid">
         ${sources.map(src => {
@@ -110,28 +110,28 @@ export function renderInfoSections(ctx) {
       ${sources.some(x => x.source === 'AIRPLAY' && x.status !== 'READY') ? `<small class="muted small" style="display:block;margin-top:4px">${escapeHtml(t('settingsView.airplayHint'))}</small>` : ''}
     </div>
 
-    <div class="settings-section" id="musicLibSection">
+    <div data-ui2-sec="musicLib" class="settings-section" id="musicLibSection">
       <h3>${escapeHtml(t('settingsView.musicLibHeading'))}</h3>
       <div id="musicLibList" class="muted small">${escapeHtml(t('common.loading'))}</div>
       <div id="musicLibMsg"></div>
       <small class="muted small">${escapeHtml(t('settingsView.musicLibHelp'))}</small>
     </div>
 
-    <div class="settings-section" id="usServicesSection" style="display:none">
+    <div data-ui2-sec="usServices" class="settings-section" id="usServicesSection" style="display:none">
       <h3>Pandora &amp; iHeartRadio</h3>
       <div id="usServicesBody" class="muted small">${escapeHtml(t('common.loading'))}</div>
       <div id="usServicesMsg"></div>
       <small class="muted small">${escapeHtml(t('usServices.passwordNote'))}</small>
     </div>
 
-    <div class="settings-section" id="foreignSection" hidden>
+    <div data-ui2-sec="foreign" class="settings-section" id="foreignSection" hidden>
       <h3>${escapeHtml(t('settingsView.foreignHeading'))}</h3>
       ${helpBlock(t('settingsView.foreignHelp'), 'p', 'muted small')}
       <div id="foreignList"></div>
       <div id="foreignResult" class="muted small" style="margin-top:8px"></div>
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="speakerInfo" class="settings-section">
       <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.modelLabel'))}</span><span class="kv-val">${escapeHtml(info.type || '-')}</span></div>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.firmwareLabel'))}</span>
@@ -170,7 +170,7 @@ export function wireInfoSections(ctx) {
     copy: ClipboardSetText,
     flash: FlashBoseFirmware,
     onProgress: (cb) => EventsOn('firmware:progress', cb),
-    confirm: confirmWarn,
+    confirm: (title, body, o) => confirmFor(box, title, body, o),
     ladder: firmwareLadderDeps(),
   });
   const faq = $('fwFaqLink');
@@ -194,7 +194,7 @@ export function wireInfoSections(ctx) {
     onLoaded: (st) => { if (st.show) paintSSHNote(st.answer); },
     confirm: async (on) => {
       if (!on) return true;
-      return confirmWarn(
+      return confirmFor(box, 
         t('settingsView.sshConfirmTitle'),
         t('settingsView.sshConfirmBody'),
       );
@@ -448,7 +448,7 @@ async function fillUSServices(box) {
     btn.onclick = async () => {
       const key = btn.getAttribute('data-usdisconnect');
       const svc = US_SERVICES.find(s => s.key === key);
-      const ok = await confirmWarn(t('usServices.disconnectTitle', { service: svc ? svc.label : key }),
+      const ok = await confirmFor(box, t('usServices.disconnectTitle', { service: svc ? svc.label : key }),
         escapeHtml(t('usServices.disconnectBody')));
       if (!ok) return;
       btn.disabled = true;
@@ -644,7 +644,7 @@ async function undoForeign(box, f, btn) {
   // and say the thing that matters more: while the other app runs it sets its
   // address again the moment the speaker comes back.
   if (f.undo === 'reboot' || f.undo === 'rewrite') {
-    const ok = await confirmWarn(
+    const ok = await confirmFor(box, 
       t('speaker.cloudRestoreTitle'),
       `<p>${escapeHtml(t('speaker.cloudRestoreBody', { name: getBoxLabel(box), n: 1 }))}</p>`
       + `<p><b>${escapeHtml(t('speaker.cloudRestoreAppWarning'))}</b></p>`,

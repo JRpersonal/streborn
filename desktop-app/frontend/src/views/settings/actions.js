@@ -4,7 +4,7 @@
 // restore of favorites and presets.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, confirmWarn, showError, showToast, encodeURIStrict } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, encodeURIStrict } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { purgeSpeakerLocalState } from '../../speakerPurge.js';
 import { identifyOutcome } from '../../boxstate.js';
@@ -21,14 +21,14 @@ import {
   RemoveConflictingMod,
   IdentifyBox,
 } from '../../api.js';
-import { deps, helpBlock, renderSTRRemovedPanel } from './shared.js';
+import { deps, helpBlock, renderSTRRemovedPanel, confirmFor } from './shared.js';
 
 export function renderActionSections(ctx) {
   const { box } = ctx;
   return {
     group: 'actions',
     html: `
-    <div class="settings-section">
+    <div data-ui2-sec="actions" class="settings-section">
       <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
       <div class="actions-grid">
         <button class="btn btn-mini" id="boxIdentifyBtn">${escapeHtml(t('settingsView.identifyBtn'))}</button>
@@ -53,7 +53,7 @@ export function renderActionSections(ctx) {
       </div>
     </div>
 
-    <div class="settings-section" id="backupSection">
+    <div data-ui2-sec="backup" class="settings-section" id="backupSection">
       <h3>${escapeHtml(t('settingsView.backupHeading'))}<span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></h3>
       ${helpBlock(t('settingsView.backupHelp'), 'p', 'muted small')}
       <div class="setting-row">
@@ -217,7 +217,7 @@ export function wireActionSections(ctx) {
   const rebootBtn = $('boxRebootBtn');
   if (rebootBtn) {
     rebootBtn.onclick = async () => {
-      const ok = await confirmWarn(
+      const ok = await confirmFor(box, 
         t('speaker.reboot'),
         t('speaker.rebootGenericBody')
       );
@@ -248,7 +248,7 @@ export function wireActionSections(ctx) {
       // The flow itself lives in conflictcleanup.js, shared with the banner's
       // button (#1083).
       await runConflictCleanup(box, {
-        t, confirmWarn, showToast, showError,
+        t, confirmWarn: (title, body, o) => confirmFor(box, title, body, o), showToast, showError,
         removeConflictingMod: RemoveConflictingMod,
         rebootBox: RebootBox,
         rediscover: (afterMs) => {
@@ -273,7 +273,7 @@ export function wireActionSections(ctx) {
   const tfrBtn = $('boxTrueFactoryResetBtn');
   if (tfrBtn) {
     tfrBtn.onclick = async () => {
-      const ok = await confirmWarn(
+      const ok = await confirmFor(box, 
         t('settingsView.trueFactoryResetConfirmTitle'),
         t('settingsView.trueFactoryResetConfirmBody', { name: box.friendlyName || box.name || box.host })
       );
@@ -308,7 +308,7 @@ export function wireActionSections(ctx) {
   const rmBtn = $('boxRemoveSTRBtn');
   if (rmBtn) {
     rmBtn.onclick = async () => {
-      const ok = await confirmWarn(
+      const ok = await confirmFor(box, 
         t('settingsView.removeSTRConfirmTitle'),
         t('settingsView.removeSTRConfirmBody', { name: box.friendlyName || box.name || box.host })
       );

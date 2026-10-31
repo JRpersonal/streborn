@@ -26,6 +26,7 @@ import { settle } from '../helpers/clock.mjs';
 import { KILL_ANIM } from '../helpers/a11y.mjs';
 import { disjoint, inside, minSize, noHorizontalOverflow } from '../helpers/layout.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
+import { openUi2View } from '../helpers/ui2nav.mjs';
 
 const SCALES = ['1', '2', '3'];
 
@@ -54,7 +55,7 @@ const SCENARIOS = {
 
 const LOADED = {
   box: '#view-box:not(.hidden) #presets .preset-body',
-  settings: '#view-settings:not(.hidden) .settings-group',
+  settings: '#view-settings:not(.hidden) .settings-section',
 };
 
 async function prepare(page) {
@@ -64,8 +65,9 @@ async function prepare(page) {
 
 async function openView(page, ui2, view) {
   if (view !== 'box') {
-    const tab = ui2 ? `.ui2-nav-item[data-view="${view}"]` : `.tab-btn[data-view="${view}"]`;
-    await page.locator(tab).first().click();
+    // The preview reaches settings through Speakers (phase 3).
+    if (ui2) await openUi2View(page, view, { tick: () => page.clock.runFor(2_000) });
+    else await page.locator(`.tab-btn[data-view="${view}"]`).first().click();
     await page.clock.runFor(2_000);
   }
   await expect(page.locator(LOADED[view]).first()).toBeVisible();

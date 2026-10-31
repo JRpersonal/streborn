@@ -4,10 +4,10 @@
 // feature and sits below the groups rather than buried in one.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, confirmWarn, showError, showToast, compareVerBuild } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, compareVerBuild } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
-import { deps } from './shared.js';
+import { deps, confirmFor } from './shared.js';
 import { inLiveGroup, anyInLiveGroup } from '../../groups.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
@@ -15,7 +15,7 @@ export function renderStatusSection() {
   return {
     group: 'top',
     html: `
-    <div class="settings-section" id="stickInfoSection">
+    <div data-ui2-sec="status" class="settings-section" id="stickInfoSection">
       <h3>${escapeHtml(t('settingsView.statusHeading'))}</h3>
       <div id="stickInfoBody"><span class="muted small">${escapeHtml(t('common.loading'))}</span></div>
     </div>
@@ -28,7 +28,7 @@ export function renderPhoneSection() {
   return {
     group: 'bottom',
     html: `
-    <div class="settings-section phone-feature" id="phoneCardSection">
+    <div data-ui2-sec="phone" class="settings-section phone-feature" id="phoneCardSection">
       <h3><span class="phone-feature-icon">&#128241;</span> ${escapeHtml(t('settingsView.phoneHeading'))}</h3>
       <div class="phone-card">
         <img id="phoneQrImg" class="phone-qr" alt="${escapeAttr(t('settingsView.phoneHelp'))}" />
@@ -355,7 +355,7 @@ export function wireStatusSections(ctx) {
     if (uaAll && deps.updateAllBoxes) uaAll.onclick = () => deps.updateAllBoxes();
     const sb = $('securityRebootBtn');
     if (sb) sb.onclick = async () => {
-      const ok = await confirmWarn(
+      const ok = await confirmFor(box, 
         t('speaker.rebootConfirmTitle'),
         t('speaker.rebootConfirmDetailedBody')
       );

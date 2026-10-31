@@ -75,7 +75,7 @@ export function renderBasicsSections(ctx) {
   return {
     group: 'basics',
     html: `
-    <div class="settings-section">
+    <div data-ui2-sec="name" class="settings-section">
       <h3>${escapeHtml(t('settingsView.nameHeading'))}</h3>
       <div class="setting-row">
         <div class="combobox" id="boxNameCombo">
@@ -90,7 +90,7 @@ export function renderBasicsSections(ctx) {
       <small class="muted small">${escapeHtml(t('settingsView.nameHelp', { uid: uid || '----' }))}</small>
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="volume" class="settings-section">
       <h3>${escapeHtml(t('controls.volume'))}</h3>
       <div class="setting-row">
         <div class="vol-with-start" id="boxVolumeWrap">
@@ -124,7 +124,7 @@ export function renderBasicsSections(ctx) {
       ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="bass" class="settings-section">
       <h3>${escapeHtml(t('settingsView.bassHeading'))}</h3>
       <div class="setting-row">
         <input type="range" id="boxBass"
@@ -154,7 +154,7 @@ export function renderBasicsSections(ctx) {
         : `<small class="muted small">${escapeHtml(t('settingsView.bassHelp'))}</small>`}
     </div>
 
-    <div class="settings-section">
+    <div data-ui2-sec="language" class="settings-section">
       <h3>${escapeHtml(t('settingsView.langHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">

@@ -3,7 +3,7 @@
 // track, its clock, STR's messages, splash and notices), the hidden games and
 // the AirPlay optimisation.
 
-import { $, escapeHtml, escapeAttr, confirmWarn, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { displayTrackState, displayTrackOnPanel, displayTrackOffered, displayMessagesState, displaySplashState, displayNoticesState, arcadeState } from '../../boxstate.js';
 // The On/Off pair every switchable speaker setting is drawn with: one paint,
@@ -34,7 +34,7 @@ import {
   GetAirplayOpt,
   SetAirplayOpt,
 } from '../../api.js';
-import { deps, toggleDeps, withButtonPending } from './shared.js';
+import { deps, toggleDeps, withButtonPending, confirmFor } from './shared.js';
 import { displayPreviewName } from './displaypreview.js';
 import previewBoth from '../../assets/images/display/preview-both.png';
 import previewBothClock from '../../assets/images/display/preview-both-clock.png';
@@ -58,7 +58,7 @@ export function renderSoundSections() {
   return {
     group: 'sound',
     html: `
-    <div class="settings-section" id="clockSection">
+    <div data-ui2-sec="clock" class="settings-section" id="clockSection">
       <h3>${escapeHtml(t('settingsView.clockHeading'))}</h3>
       <div class="setting-row" id="clockControlsRow">
         <select id="boxClockFormat">
@@ -74,7 +74,7 @@ export function renderSoundSections() {
       <small class="muted small" id="clockHelp">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
-    <div class="settings-section" id="resumeOnPowerSection">
+    <div data-ui2-sec="resumeOnPower" class="settings-section" id="resumeOnPowerSection">
       <h3>${escapeHtml(t('settingsView.resumeOnPowerHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="resumeOnPowerOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -83,7 +83,7 @@ export function renderSoundSections() {
       <small class="muted small">${escapeHtml(t('settingsView.resumeOnPowerHelp'))}</small>
     </div>
 
-    <div class="settings-section" id="displayTrackSection">
+    <div data-ui2-sec="displayTrack" class="settings-section" id="displayTrackSection">
       <h3>${escapeHtml(t('settingsView.displayTrackHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="displayTrackOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -114,7 +114,7 @@ export function renderSoundSections() {
       <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
-    <div class="settings-section hidden" id="displayMsgSection">
+    <div data-ui2-sec="displayMsg" class="settings-section hidden" id="displayMsgSection">
       <h3>${escapeHtml(t('settingsView.displayMsgHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="displayMsgOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -124,7 +124,7 @@ export function renderSoundSections() {
       <small class="muted small hidden" id="displayMsgLast" style="display:block;margin-top:6px"></small>
     </div>
 
-    <div class="settings-section hidden" id="displaySplashSection">
+    <div data-ui2-sec="displaySplash" class="settings-section hidden" id="displaySplashSection">
       <h3>${escapeHtml(t('settingsView.displaySplashHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="displaySplashOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -133,7 +133,7 @@ export function renderSoundSections() {
       <small class="muted small">${escapeHtml(t('settingsView.displaySplashHelp'))}</small>
     </div>
 
-    <div class="settings-section hidden" id="displayNoticesSection">
+    <div data-ui2-sec="displayNotices" class="settings-section hidden" id="displayNoticesSection">
       <h3>${escapeHtml(t('settingsView.displayNoticesHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="displayNoticesOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -142,7 +142,7 @@ export function renderSoundSections() {
       <small class="muted small">${escapeHtml(t('settingsView.displayNoticesHelp'))}</small>
     </div>
 
-    <div class="settings-section hidden" id="arcadeSection">
+    <div data-ui2-sec="arcade" class="settings-section hidden" id="arcadeSection">
       <h3>${escapeHtml(t('settingsView.blockfallHeading'))}</h3>
       <div id="arcadeGames"></div>
       <div class="setting-row">
@@ -151,7 +151,7 @@ export function renderSoundSections() {
       <small class="muted small">${escapeHtml(t('settingsView.blockfallHelp'))}</small>
     </div>
 
-    <div class="settings-section hidden" id="airplayOptSection">
+    <div data-ui2-sec="airplay" class="settings-section hidden" id="airplayOptSection">
       <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -378,7 +378,7 @@ export function wireSoundSections(ctx) {
     // change; on a panel STR draws on there is nothing to warn about.
     confirm: async (enabled) => {
       if (!enabled || dtOnPanel) return true;
-      return confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
+      return confirmFor(box, t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
     },
     set: (enabled) => SetDisplayTrack(box.host, box.port, enabled, dtMode),
     toastKey: 'settingsView.displayTrackSavedToast',
@@ -541,7 +541,7 @@ export function wireSoundSections(ctx) {
       show: !!(r && r.supported),
       enabled: r && r.enabled === true ? true : (r && r.enabled === false ? false : null),
     }),
-    confirm: () => confirmWarn(
+    confirm: () => confirmFor(box, 
       t('settingsView.airplayOptConfirmTitle'),
       t('settingsView.airplayOptConfirmBody'),
     ),

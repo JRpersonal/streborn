@@ -45,6 +45,9 @@ import { renderNetworkSections, wireNetworkSections } from './settings/network.j
 import { renderInfoSections, wireInfoSections, refreshForeignInfluence, refreshBoxLevelRows } from './settings/info.js';
 import { renderActionSections, wireActionSections } from './settings/actions.js';
 import { renderAdvancedSections, wireAdvancedSections } from './settings/advanced.js';
+// The UI 2.0 preview's page for one speaker adopts this view's body into its
+// tabs (shell2/speakers/speaker.js); both hooks do nothing without the shell.
+import { arrangeSpeakerSections, placeSettingsBody } from '../shell2/speakers/speaker.js';
 
 // What the rest of the app imports from this view, kept here so main.js and
 // setup.js need no path into the group modules: the shared volume throttle
@@ -278,6 +281,7 @@ async function boseAnswersWithoutSTR(box) {
 
 export async function loadBoxSettings() {
   mountSettingsShell(); // build the shell on first open (see note above)
+  placeSettingsBody();
   renderSettingsBoxSelect();
   const body = $('settingsBody');
   if (!state.settingsBox) {
@@ -628,4 +632,6 @@ function renderBoxSettings(s, box) {
   wireInfoSections(ctx);
   wireActionSections(ctx);
   wireAdvancedSections(ctx);
+  // UI 2.0 preview: sort the sections into the speaker page's five tabs.
+  arrangeSpeakerSections(ctx);
 }

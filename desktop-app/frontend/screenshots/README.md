@@ -29,8 +29,9 @@ Narrow a run with `SHOOT_LANGS=en,de` and/or `SHOOT_VIEWS=app-listen,app-recent`
 The UI 2.0 preview shots (`app-ui2-dark`, `app-ui2-light`, `app-ui2-contrast`,
 `app-ui2-xl`) are not part of a full run; `SHOOT_VIEWS=ui2` takes all four.
 `SHOOT_VIEWS=ui2p2` shoots the phase 2 views (Radio, its station rows, Library,
-Recently played, Spotify) in the dark and the light theme, and
-`SHOOT_OUT=<dir>` writes a run outside `docs/screenshots`, for review shots.
+Recently played, Spotify) in the dark and the light theme,
+`SHOOT_VIEWS=ui2p3` the five tabs of one speaker's page (phase 3) in both
+themes, and `SHOOT_OUT=<dir>` writes a run outside `docs/screenshots`, for review shots.
 The UI 2.0 shots use the app's default window (1240 x 740) and a simulated
 network of eleven speakers (a group of two playing, a stereo pair, an offline
 speaker, a Bose original, idle speakers), so the sidebar speaker list has to

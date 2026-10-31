@@ -1,0 +1,163 @@
+/* UI 2.0 preview: Speakers > one speaker (#1287, speaker.js): the speaker's
+   head and the five tabs in the area head (#ui2SpkPage), and their panels,
+   which live in #view-settings (#ui2SpkPanels) and hold the classic settings
+   body sorted into one wrapper per tab. Under html.ui2 only. */
+
+html.ui2 #ui2SpkPage { margin-top: 16px; }
+html.ui2 #ui2SpkPage[hidden] { display: none; }
+html.ui2 #ui2SpkPage .sps-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px 16px;
+}
+html.ui2 #ui2SpkPage .sps-head-text { flex: 1 1 auto; min-width: 0; }
+html.ui2 #ui2SpkPage .sps-head-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+html.ui2 #ui2SpkPage .sps-name {
+  margin: 0;
+  color: var(--u-text);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2SpkPage .sps-meta,
+html.ui2 #ui2SpkPage .sps-none {
+  margin: 4px 0 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+/* Half of a stereo pair: the way to the other half's own page. */
+html.ui2 #ui2SpkPage .sps-half { margin: 8px 0 0; }
+html.ui2 #ui2SpkPage .sps-half[hidden] { display: none; }
+/* The state line: the pill in words, the chips, what the speaker plays. */
+html.ui2 #ui2SpkPage .sps-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  color: var(--u-text);
+  font-size: 14px;
+}
+html.ui2 #ui2SpkPage .sps-now { color: var(--u-muted); overflow-wrap: anywhere; }
+/* The classic list refresh, moved into the head: a 40px target with a
+   visible focus ring. Its name comes from its title (aria-label). */
+html.ui2 #ui2SpkPage #settingsRefreshBtn {
+  min-width: var(--u-target);
+  min-height: var(--u-target);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+/* The tabs: the selected one is underlined in the accent, bold and
+   aria-selected, so its state never rests on colour alone. They wrap rather
+   than scroll at a larger text size. */
+html.ui2 #ui2SpkPage .sps-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin-top: 16px;
+  border-bottom: 1px solid var(--u-border);
+}
+html.ui2 #ui2SpkPage .sps-tabs[hidden],
+html.ui2 #ui2SpkPage [hidden] { display: none; }
+html.ui2 #ui2SpkPage .sps-tab {
+  min-height: var(--u-target);
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: 14px;
+  cursor: pointer;
+}
+html.ui2 #ui2SpkPage .sps-tab[aria-selected="true"] {
+  border-bottom-color: var(--u-accent);
+  font-weight: 700;
+}
+html.ui2 #ui2SpkPage .sps-tab:focus-visible,
+html.ui2 #ui2SpkPanels .sps-panel:focus-visible,
+html.ui2 #ui2SpkPage #settingsRefreshBtn:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+
+/* The classic view's own title and speaker dropdown: the page head names the
+   speaker and the sidebar chooses it. */
+html.ui2 #view-settings > h2,
+html.ui2 #view-settings > .settings-box-switcher { display: none; }
+
+html.ui2 #ui2SpkPanels .sps-panel { padding-top: 16px; }
+html.ui2 #ui2SpkPanels .sps-panel[hidden] { display: none; }
+
+/* One wrapper per tab; only the open tab's shows. Anything else in the body
+   (the loading line, the reconnect banner, the "speaker unreachable" panel)
+   is not in a wrapper and shows on every tab. */
+html.ui2 #ui2SpkPanels .sps-sec { display: none; }
+html.ui2 #ui2SpkPanels[data-tab="overview"] .sps-sec[data-ui2-tab="overview"],
+html.ui2 #ui2SpkPanels[data-tab="sound"] .sps-sec[data-ui2-tab="sound"],
+html.ui2 #ui2SpkPanels[data-tab="network"] .sps-sec[data-ui2-tab="network"],
+html.ui2 #ui2SpkPanels[data-tab="keys"] .sps-sec[data-ui2-tab="keys"],
+html.ui2 #ui2SpkPanels[data-tab="maintenance"] .sps-sec[data-ui2-tab="maintenance"] {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* Overview: cards side by side where they fit (the mockup), one column at a
+   large text size or in a narrow window. */
+html.ui2 #ui2SpkPanels[data-tab="overview"] .sps-sec[data-ui2-tab="overview"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  align-items: start;
+}
+
+/* Every section is a card in the shell's tokens. */
+html.ui2 #ui2SpkPanels .settings-section {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  min-width: 0;
+}
+html.ui2 #ui2SpkPanels .settings-section h3,
+html.ui2 #ui2SpkPanels .settings-section > summary {
+  margin: 0 0 8px;
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+html.ui2 #ui2SpkPanels .settings-section .muted,
+html.ui2 #ui2SpkPanels .settings-section .kv-key { color: var(--u-muted); }
+/* Targets: every button, field and list in a card is at least 40px high. */
+html.ui2 #ui2SpkPanels .settings-section .btn,
+html.ui2 #ui2SpkPanels .settings-section select,
+html.ui2 #ui2SpkPanels .settings-section input[type="text"],
+html.ui2 #ui2SpkPanels .settings-section input[type="password"] {
+  min-height: var(--u-target);
+}
+html.ui2 #ui2SpkPanels .settings-section .btn:focus-visible,
+html.ui2 #ui2SpkPanels .settings-section select:focus-visible,
+html.ui2 #ui2SpkPanels .settings-section input:focus-visible,
+html.ui2 #ui2SpkPanels .settings-section summary:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+/* The Network summary's way to the Network tab. */
+html.ui2 #ui2SpkPanels .sps-to-tab { margin-top: 8px; align-self: flex-start; }
+/* The classic .muted carries a 10px padding: it indents every note against
+   the card's heading and fields, and pushes a muted value (the device id)
+   below its label. In a card the text lines up instead. */
+html.ui2 #ui2SpkPanels .settings-section .muted { padding: 0; }
+/* A note that sits loose in a card (an inline <small>) reads as a paragraph:
+   its own line height, not the card's taller one. */
+html.ui2 #ui2SpkPanels .settings-section > small.muted {
+  display: block;
+  margin-top: 8px;
+  line-height: 1.45;
+}
+/* A closed card is only its summary: no gap under it. */
+html.ui2 #ui2SpkPanels details.settings-section:not([open]) > summary { margin-bottom: 0; }

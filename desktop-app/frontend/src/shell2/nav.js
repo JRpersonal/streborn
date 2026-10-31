@@ -5,10 +5,14 @@
 // on. Each entry switches to the SAME view the tab does; only the frame
 // around it is new.
 //
-// Phase 1 keeps two entries flat that will later live one level down: Groups
-// and Add speaker belong under Speakers (phases 3 and 4). Until then they use
-// the tab's own words, so the preview adds no wording that is about to change
-// again. Help and info arrives with phase 5.
+// Phase 3 folds three tabs into one entry, Speakers: Speaker settings is
+// Speakers > one speaker, Multi-room is Speakers > Groups (who plays along
+// right now stays in the sidebar speaker list) and Set up speaker is
+// Speakers > Add speaker. The entry stands for all four views of the area
+// (area: speakers/routes.js) and is marked current on each of them. Help and
+// info arrives with phase 5.
+
+import { SPEAKERS_AREA_VIEWS } from './speakers/routes.js';
 
 export const NAV = Object.freeze({
   groups: Object.freeze([
@@ -26,11 +30,8 @@ export const NAV = Object.freeze({
       id: 'home',
       labelKey: 'ui2.nav.home',
       items: Object.freeze([
-        Object.freeze({ view: 'settings', labelKey: 'nav.speakerSettings', badgeId: 'ui2SpeakersBadge' }),
-        // Interim, flat until phase 3 (Speakers > Groups).
-        Object.freeze({ view: 'multiroom', labelKey: 'nav.multiroom', badgeId: 'ui2GroupsBadge', interim: true }),
-        // Interim, flat until phase 4 (Speakers > Add speaker).
-        Object.freeze({ view: 'setup', labelKey: 'nav.setupStick', interim: true }),
+        // The list first; the badge counts the speakers due an update.
+        Object.freeze({ view: 'speakers', labelKey: 'ui2.nav.speakers', badgeId: 'ui2SpeakersBadge', area: SPEAKERS_AREA_VIEWS }),
       ]),
     }),
   ]),
@@ -44,6 +45,12 @@ export const NAV = Object.freeze({
 // navItems lists every entry in sidebar order, top to bottom.
 export function navItems() {
   return [...NAV.groups.flatMap((g) => g.items), ...NAV.bottom];
+}
+
+// navEntryFor is the sidebar entry that stands for a view: its own, or the
+// entry whose area holds it (settings, multiroom and setup are Speakers).
+export function navEntryFor(view) {
+  return navItems().find((i) => i.view === view || (i.area || []).includes(view)) || null;
 }
 
 // navLabelKeys lists every i18n key the sidebar renders.
