@@ -4,10 +4,10 @@
 // feature and sits below the groups rather than buried in one.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, compareVerBuild } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, compareVerBuild } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
-import { deps, confirmFor } from './shared.js';
+import { deps, confirmFor, reportError, reportDone } from './shared.js';
 import { inLiveGroup, anyInLiveGroup } from '../../groups.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
@@ -362,9 +362,9 @@ export function wireStatusSections(ctx) {
       if (!ok) return;
       try {
         await RebootBox(box.host, box.port);
-        showToast(t('speaker.rebootingToast'));
+        reportDone(sb, t('speaker.rebootingToast'));
         setTimeout(deps.discoverBoxes, 35000);
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(sb, e); }
     };
   })();
 }

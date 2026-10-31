@@ -4,7 +4,7 @@
 // the experimental cloud-preset restore.
 
 import { state } from '../../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../../utils.js';
+import { $, escapeHtml, escapeAttr, showToast, hideToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 // The box-to-box preset copy continues past rejected slots and reports them
 // as one combined error; reconstructing "how many still copied" from that
@@ -32,7 +32,10 @@ import {
   CopyPresetsAcrossBoxes,
   GetPresets,
 } from '../../api.js';
-import { deps, helpBlock, discussLink, revealInSettings, confirmFor } from './shared.js';
+import {
+  deps, helpBlock, discussLink, revealInSettings, confirmFor,
+  reportError, reportDone, reportWarn, reportFieldError, clearFieldErrors, reportsInline,
+} from './shared.js';
 
 // Where the voice-control explanation lives. In the repo for now so the link
 // works the day the button ships; move it to the website page when that exists
@@ -377,14 +380,15 @@ export function wireAdvancedSections(ctx) {
         if (ok) {
           try {
             await RebootBox(box.host, box.port);
-            showToast(t('speaker.rebootingToast'));
+            reportDone(out || 'boxRestoreBtn', t('speaker.rebootingToast'));
             setTimeout(deps.discoverBoxes, 35000);
-          } catch (e) { showError(e); }
+          } catch (e) { reportError(out || 'boxRestoreBtn', e); }
         }
       }
     } catch (e) {
       if (out) out.textContent = '';
-      showError(e);
+      // In the preview the refusal stands right under the restore's result.
+      reportError(out || 'boxRestoreBtn', e);
     }
   }
   const restoreBtn = $('boxRestoreBtn');
@@ -427,8 +431,8 @@ export function wireAdvancedSections(ctx) {
       try {
         const vol = annVol ? (parseInt(annVol.value, 10) || 0) : 0;
         await SendAnnounce(box.host, box.port, text, (annLang && annLang.value) || '', vol);
-        showToast(t('settingsView.announceSentToast'));
-      } catch (e) { showError(e); }
+        reportDone(annSend, t('settingsView.announceSentToast'));
+      } catch (e) { reportError(annSend, e); }
       annSend.disabled = false;
     };
   }
@@ -443,7 +447,7 @@ export function wireAdvancedSections(ctx) {
       try {
         const translated = await Translate(text, (annLang && annLang.value) || 'en');
         if (translated && annText) annText.value = translated;
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(annTranslate, e); }
       annTranslate.disabled = false;
     };
   }
@@ -483,6 +487,9 @@ export function wireAdvancedSections(ctx) {
   const whUdpPort = $('webhookUdpPort');
   const whUdpEnc = $('webhookUdpEnc');
   const whUdpPayload = $('webhookUdpPayload');
+  // The UDP field a missing target points at: the host while it is empty,
+  // the port otherwise.
+  const udpField = () => (whUdpHost && !whUdpHost.value.trim() ? whUdpHost : whUdpPort);
   if (whUrl && whOn && whOff && whSave && whTarget) {
     let whEnabled = false;
     // Full config held locally; each target's edits are captured into it before
@@ -617,11 +624,11 @@ export function wireAdvancedSections(ctx) {
             : isBassAction(action) ? 'settingsView.bassKeyOnToast'
               : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast'
                 : (isBassAction(before) ? 'settingsView.bassKeyOffToast' : 'settingsView.sleepKeyOffToast'));
-        showToast(t(toast));
+        reportDone(actionSelect, t(toast));
       } catch (e) {
         // An agent from before the bass steps refuses them as an unknown
         // action; say what to do instead of showing the raw refusal.
-        showError(isBassAction(action) && /unknown key action/i.test(String((e && e.message) || e))
+        reportError(actionSelect, isBassAction(action) && /unknown key action/i.test(String((e && e.message) || e))
           ? t('settingsView.bassKeyNeedsUpdate') : e);
       }
       // repaint from what the speaker holds now (a refusal leaves it as it was)
@@ -728,35 +735,37 @@ export function wireAdvancedSections(ctx) {
     whSave.onclick = async () => {
       const tg = whTarget.value;
       const ty = (whType && whType.value) || 'http';
+      clearFieldErrors(whUrl, whMac, whUdpHost, whUdpPort);
       if (whEnabled) {
-        if (ty === 'http' && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
-        if (ty === 'wol' && !(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
-        if (ty === 'wol' && !validWolMac(whMac.value)) { showError(t('settingsView.webhookMacInvalid')); return; }
-        if (ty === 'udp' && (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0))) { showError(t('settingsView.webhookUdpRequired')); return; }
+        if (ty === 'http' && !whUrl.value.trim()) { reportFieldError(whUrl, t('settingsView.webhookUrlRequired')); return; }
+        if (ty === 'wol' && !(whMac && whMac.value.trim())) { reportFieldError(whMac, t('settingsView.webhookMacRequired')); return; }
+        if (ty === 'wol' && !validWolMac(whMac.value)) { reportFieldError(whMac, t('settingsView.webhookMacInvalid')); return; }
+        if (ty === 'udp' && (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0))) { reportFieldError(udpField(), t('settingsView.webhookUdpRequired')); return; }
       }
       captureInto(tg);
       try {
         await SaveWebhookConfig(box.host, box.port, cfg);
         paintRemote(tg);
-        showToast(t('settingsView.webhookSavedToast'));
-      } catch (e) { showError(e); }
+        reportDone(whSave, t('settingsView.webhookSavedToast'));
+      } catch (e) { reportError(whSave, e); }
     };
     whTest.onclick = async () => {
       // Build the action by type and fire it once, the same for http/udp/wol.
       const ty = (whType && whType.value) || 'http';
       const a = { enabled: true, type: ty };
+      clearFieldErrors(whUrl, whMac, whUdpHost, whUdpPort);
       if (ty === 'wol') {
-        if (!(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
-        if (!validWolMac(whMac.value)) { showError(t('settingsView.webhookMacInvalid')); return; }
+        if (!(whMac && whMac.value.trim())) { reportFieldError(whMac, t('settingsView.webhookMacRequired')); return; }
+        if (!validWolMac(whMac.value)) { reportFieldError(whMac, t('settingsView.webhookMacInvalid')); return; }
         a.mac = whMac.value.trim();
       } else if (ty === 'udp') {
-        if (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0)) { showError(t('settingsView.webhookUdpRequired')); return; }
+        if (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0)) { reportFieldError(udpField(), t('settingsView.webhookUdpRequired')); return; }
         a.host = whUdpHost.value.trim();
         a.port = parseInt(whUdpPort.value, 10);
         a.payload = (whUdpPayload && whUdpPayload.value) || '';
         a.payload_enc = (whUdpEnc && whUdpEnc.value) || 'text';
       } else {
-        if (!whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+        if (!whUrl.value.trim()) { reportFieldError(whUrl, t('settingsView.webhookUrlRequired')); return; }
         a.method = whMethod.value;
         a.url = whUrl.value.trim();
         a.body = whBody.value.trim();
@@ -765,9 +774,9 @@ export function wireAdvancedSections(ctx) {
       whTest.disabled = true;
       try {
         const r = await TestWebhookAction(box.host, box.port, JSON.stringify(a));
-        showToast(t('settingsView.webhookTestOk', { status: (r && r.status) || '' }));
+        reportDone(whTest, t('settingsView.webhookTestOk', { status: (r && r.status) || '' }));
       } catch (e) {
-        showError(t('settingsView.webhookTestFailed', { err: String(e) }));
+        reportError(whTest, t('settingsView.webhookTestFailed', { err: String(e) }));
       } finally {
         whTest.disabled = false;
       }
@@ -848,9 +857,15 @@ export function wireAdvancedSections(ctx) {
           ? t('settingsView.copyPresetsAllSlotIssues', { detail: slotIssues.join(' | ') })
           : '';
         const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
-        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : '') + rowMsg);
-        else if (slotMsg) showError(slotMsg + rowMsg);
-        else showToast(t('settingsView.copyPresetsAllDone', { n: all.length }) + rowMsg);
+        // The outcome moves into the card in the preview: the sticky progress
+        // toast goes, and a copy that reached some speakers is a warning.
+        if ((failed.length || slotMsg) && reportsInline(copyBtn)) hideToast();
+        if (failed.length) {
+          const msg = t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : '') + rowMsg;
+          if (done > 0) reportWarn(copyBtn, msg);
+          else reportError(copyBtn, msg);
+        } else if (slotMsg) reportWarn(copyBtn, slotMsg + rowMsg);
+        else reportDone(copyBtn, t('settingsView.copyPresetsAllDone', { n: all.length }) + rowMsg);
         return;
       }
       const [thost, tportRaw] = sel.value.split('|');
@@ -869,15 +884,16 @@ export function wireAdvancedSections(ctx) {
         const rowMsg = await row2Note(target) === 'row1Only'
           ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
           : '';
-        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
+        reportDone(copyBtn, t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
         if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
       } catch (e) {
         // The target already holds one of the stations on a key this transfer
         // does not rewrite, so it refused the whole set and wrote nothing. The
         // user used to get the agent's raw 409 JSON in an error dialog (#882).
         const conflict = presetCopyConflict(e);
+        if (reportsInline(copyBtn)) hideToast();
         if (conflict) {
-          showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
+          reportError(copyBtn, t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
           copyBtn.disabled = false;
           return;
         }
@@ -885,12 +901,12 @@ export function wireAdvancedSections(ctx) {
         // copied); saying only "error" hid that and read as all-or-nothing.
         const part = summarizePresetCopyError(e, await sourceSlotCount());
         if (part && part.copied !== 0) {
-          showToast(part.copied === null
+          reportWarn(copyBtn, part.copied === null
             ? t('settingsView.copyPresetsSomeFailed', { target: targetName, detail: part.detail })
-            : t('settingsView.copyPresetsPartial', { n: part.copied, target: targetName, detail: part.detail }));
+            : t('settingsView.copyPresetsPartial', { n: part.copied, target: targetName, detail: part.detail }), { classicToast: true });
           if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
         } else {
-          showError(e);
+          reportError(copyBtn, e);
         }
       }
       copyBtn.disabled = false;
@@ -907,13 +923,14 @@ export function wireAdvancedSections(ctx) {
       const slot = parseInt(($('urlPresetSlot') || {}).value, 10);
       const url = (($('urlPresetUrl') || {}).value || '').trim();
       const name = (($('urlPresetName') || {}).value || '').trim() || t('settingsView.urlPresetDefaultName');
-      if (!slot || !/^https?:\/\/\S+/i.test(url)) { showError(t('settingsView.urlPresetInvalid')); return; }
+      clearFieldErrors('urlPresetSlot', 'urlPresetUrl');
+      if (!slot || !/^https?:\/\/\S+/i.test(url)) { reportFieldError(slot ? 'urlPresetUrl' : 'urlPresetSlot', t('settingsView.urlPresetInvalid')); return; }
       urlPresetBtn.disabled = true;
       try {
         await SetPreset(box.host, box.port, slot, name, url, '', 0, '', '');
-        showToast(t('settingsView.urlPresetSaved', { n: keyNum(slot, t) }));
+        reportDone(urlPresetBtn, t('settingsView.urlPresetSaved', { n: keyNum(slot, t) }));
         if (state.currentBox && state.currentBox.host === box.host) await deps.loadPresets();
-      } catch (e) { showError(e); }
+      } catch (e) { reportError(urlPresetBtn, e); }
       urlPresetBtn.disabled = false;
     };
   }

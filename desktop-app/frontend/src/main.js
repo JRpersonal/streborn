@@ -352,6 +352,11 @@ import {
   installRunActive,
 } from './views/setup.js';
 import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
+// UI 2.0 phase 5: what one speaker needs is said on that speaker (the wedge
+// and box issue banners, the update failure report); preview only.
+import { speakerIssuesFrom, setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
+import { openSpeakers } from './shell2/speakers/index.js';
+import { speakerReportSlot } from './shell2/speakers/speaker.js';
 import { onSpeakerPurge } from './speakerPurge.js';
 // The Music view ("Listen": now playing, presets, volume, sources, search,
 // favourites, Pandora, the group panel and the status poll), extracted from
@@ -1755,6 +1760,9 @@ function safeMountShell2() {
         await AddBoxByIP(ip);
         await discoverBoxes();
       },
+      // Phase 5: the issues of one speaker (shell2/attention.js), for the
+      // sidebar chip; filled where the wedge and issue banners render.
+      speakerAttention,
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not
@@ -2159,9 +2167,15 @@ function maybeShowSpeakerUpdateCard() {
   const btnLabel = outdated.length > 1
     ? t('speakerUpdate.btnAll', { n: outdated.length })
     : t('speakerUpdate.btnOne');
+  // UI 2.0 preview: one speaker behind is named in the title (rule 1, the
+  // speaker is always named). The classic layout keeps its title.
+  const sucTitle = state.ui2Shell && outdated.length === 1
+    ? t('ui2.speakerUpdate.titleOne', { name: getBoxLabel(outdated[0]) })
+    : t('speakerUpdate.title');
+  if (state.ui2Shell) el.setAttribute('aria-label', sucTitle);
   el.innerHTML =
     `<div class="suc-body">` +
-      `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
+      `<div class="suc-title">${escapeHtml(sucTitle)}</div>` +
       `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
       `<ul class="suc-list">${list}</ul>` +
       // Several speakers at once restart one after the other; any of them in
@@ -2386,6 +2400,7 @@ function checkWedgeBanner() {
   const el = $('boxWedgeBanner');
   if (!el) return;
   const wedged = (state.boxes || []).filter(b => b && b.boxHealth === 'wedged');
+  noteSpeakerIssues({ wedged });
   if (!wedged.length) { el.classList.add('hidden'); return; }
   const names = wedged.map(b => getBoxLabel(b)).join(', ');
   el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(t('speaker.wedgedTitle'))}</b> ${escapeHtml(t('speaker.wedgedBanner', { name: names }))}</span></div>`;
@@ -2563,6 +2578,7 @@ function checkBoxIssueBanner() {
   // music library cannot play while radio still does, and nothing else on
   // screen says why. Not dismissible; the fix is one tap.
   const badName = unsafeNameBoxes(boxes);
+  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, badName });
   if (badName.length) {
     const names = badName.map(b => getBoxLabel(b)).join(', ');
     msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
@@ -2672,6 +2688,78 @@ function checkBoxIssueBanner() {
   };
   el.classList.remove('hidden');
 }
+
+// noteSpeakerIssues keeps the per-speaker side of the two banners above in
+// state.speakerIssues (shell2/attention.js), passively: the classic banners
+// render exactly as before, and the UI 2.0 preview shows the same words and
+// buttons on that speaker's card, page and sidebar row instead. part carries
+// the lists one of the two banner functions just worked out.
+// Kept on state, not in module variables: a banner check that runs while this
+// module is still being evaluated must not hit an uninitialised binding.
+function noteSpeakerIssues(part) {
+  state.speakerIssueParts = { ...(state.speakerIssueParts || {}), ...part };
+  state.speakerIssues = speakerIssuesFrom(state.speakerIssueParts, getBoxLabel);
+  const sig = JSON.stringify(state.speakerIssues);
+  if (sig === state.speakerIssuesSig) return;
+  state.speakerIssuesSig = sig;
+  if (state.ui2Shell) renderShellSpeakers(true);
+}
+
+// runSpeakerAttention is what a button of a speaker's attention note does in
+// the preview: the classic banner's own handler, for that one speaker.
+async function runSpeakerAttention(host, act, btn, dismissKind) {
+  const box = (state.boxes || []).find(b => b && b.host === host);
+  if (!box) return;
+  switch (act) {
+    case 'cloudRestore':
+      await runCloudRestore([box], btn);
+      break;
+    case 'removeConflict': {
+      const label = btn.textContent;
+      await runConflictCleanup(box, {
+        t, confirmWarn, showToast, showError,
+        removeConflictingMod: RemoveConflictingMod,
+        rebootBox: RebootBox,
+        rediscover: (afterMs) => {
+          if (afterMs > 0) setTimeout(discoverBoxes, afterMs);
+          else discoverBoxes();
+        },
+        setBusy: (busy) => {
+          btn.disabled = busy;
+          btn.textContent = busy ? t('settingsView.removeConflictRunning') : label;
+        },
+      });
+      break;
+    }
+    case 'saveWifi':
+      state.wlanStoreFor = box.host;
+      selectBox(box);
+      switchView('settings');
+      break;
+    case 'dismiss':
+      try { localStorage.setItem(warnDismissKey(box, dismissKind), String(Date.now())); } catch {}
+      checkBoxIssueBanner();
+      break;
+    case 'stormRestart':
+      btn.disabled = true;
+      showToast(t('speaker.stormRestarting', { name: getBoxLabel(box) }));
+      try { await RebootBox(box.host, box.port); } catch (e) { showError(String(e)); } finally { btn.disabled = false; }
+      break;
+    case 'badNameFix':
+      btn.disabled = true;
+      try {
+        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
+        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
+        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
+        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: name || box.friendlyName, speakerNameUnsafe: false };
+        checkBoxIssueBanner();
+        renderBoxSelect();
+      } catch (e) { showError(String(e)); } finally { btn.disabled = false; }
+      break;
+    default: break;
+  }
+}
+setSpeakerAttentionRunner(runSpeakerAttention);
 
 // runCloudRestore puts STR back on every speaker a rival app has taken over.
 //
@@ -3663,8 +3751,9 @@ function spotifyPhaseText(d) {
 // vanished before people read it and they thought the soundbar was dead
 // (Jens 2026-08-30), so this one step gets a modal, reusing the failure-report
 // overlay host.
-function showSt300PowerCycleNotice() {
-  const host = $('updateFailureReport');
+function showSt300PowerCycleNotice(box) {
+  // The preview says it on that speaker's page (ui2ReportHost).
+  const host = ui2ReportHost(box) || $('updateFailureReport');
   if (!host) { showToast(t('update.st300PowerCycle')); return; }
   host.innerHTML = `
     <div class="failreport-inner">
@@ -3675,8 +3764,46 @@ function showSt300PowerCycleNotice() {
       </div>
     </div>`;
   host.classList.remove('hidden');
+  focusUi2Report(host);
   const c = $('st300NoticeClose');
   if (c) c.onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
+}
+
+// ui2ReportHost is where the UI 2.0 preview shows an update outcome about one
+// speaker: the report slot in that speaker's Overview, with the page opened on
+// it (rule 3, errors where they happen). null in the classic layout, or when
+// the page could not be opened, and the caller falls back to the classic
+// overlay host #updateFailureReport.
+function ui2ReportHost(box) {
+  if (!state.ui2Shell || !box || !box.host) return null;
+  try {
+    if (!openSpeakers('speaker', { host: box.host, tab: 'overview' })) return null;
+    return speakerReportSlot(box.host);
+  } catch { return null; }
+}
+
+// focusUi2Report makes the report's title a heading in the preview and puts
+// the keyboard on it, so the report is announced where it appeared.
+function focusUi2Report(host) {
+  if (!host || host.id === 'updateFailureReport') return;
+  const title = host.querySelector('.failreport-title');
+  if (!title) return;
+  title.setAttribute('role', 'heading');
+  title.setAttribute('aria-level', '3');
+  title.tabIndex = -1;
+  // The update's own error dialog may still be open on top: the keyboard
+  // stays in it, and moves to the report once the dialog is closed.
+  const modal = $('errorModal');
+  if (modal && !modal.classList.contains('hidden') && typeof MutationObserver !== 'undefined') {
+    const mo = new MutationObserver(() => {
+      if (!modal.classList.contains('hidden')) return;
+      mo.disconnect();
+      try { title.focus(); } catch {}
+    });
+    mo.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    return;
+  }
+  try { title.focus(); } catch {}
 }
 
 // showUpdateFailureReport offers the user a copyable account of an update that
@@ -3695,7 +3822,8 @@ async function showUpdateFailureReport(box, phase, errMsg) {
       (state.appInfo && state.appInfo.version) || '');
   } catch { return; }
   if (!report) return;
-  const host = $('updateFailureReport');
+  // The preview shows the report on that speaker's page (ui2ReportHost).
+  const host = ui2ReportHost(box) || $('updateFailureReport');
   if (!host) return;
   host.innerHTML = `
     <div class="failreport-inner">
@@ -3711,6 +3839,7 @@ async function showUpdateFailureReport(box, phase, errMsg) {
       <p class="muted small">${escapeHtml(t('update.reportAttachHint'))}</p>
     </div>`;
   host.classList.remove('hidden');
+  focusUi2Report(host);
   const ta = $('failReportText');
   // Read the textarea rather than the closure: saving the diagnostic bundle
   // rewrites the closing block to name the file that was just written, and the
@@ -4082,7 +4211,7 @@ async function runSingleBoxUpdate(targetBox) {
     // OTA and needs a manual power-cycle to finish; the agent cannot clear it, so
     // tell the user (#ST300 blink, Michal + Jens 2026-07-16). As a modal, not a
     // toast: it stays up until read (Jens 2026-08-30).
-    if ((targetBox.model || '').includes('300')) showSt300PowerCycleNotice();
+    if ((targetBox.model || '').includes('300')) showSt300PowerCycleNotice(targetBox);
     // Refresh app state regardless of confirmation so the user sees current
     // truth (either updated or still in OTA). This is BEST-EFFORT and must never
     // surface as "Update failed": the box is typically still mid-reboot here, so
@@ -4612,7 +4741,7 @@ async function runUpdateAllBoxes(onStart) {
   // with the panel, so the instruction also gets the stays-until-dismissed
   // treatment (Jens 2026-08-30).
   if (targets.some(b => (b.model || '').includes('300') && ((rowState.get(b.host) || {}).outcome !== 'failed'))) {
-    showSt300PowerCycleNotice();
+    showSt300PowerCycleNotice(targets.find(b => (b.model || '').includes('300') && ((rowState.get(b.host) || {}).outcome !== 'failed')));
   }
   return true;
 }

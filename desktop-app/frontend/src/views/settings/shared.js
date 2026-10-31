@@ -10,6 +10,11 @@ import { state } from '../../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { revealSpeakerTabOf, speakerConfirmTitle } from '../../shell2/speakers/speaker.js';
+import { wireToggleSection } from '../../togglesection.js';
+import {
+  openSection, showSectionError, showSectionWarn, clearSectionMsg,
+  showFieldError, clearFieldError, paintReadState,
+} from '../../shell2/speakers/sectionmsg.js';
 
 // Injected main.js helpers (see initSettingsView). These stay in main.js because
 // they are shared across views; the settings code calls them as deps.<name>.
@@ -30,6 +35,148 @@ export function initSettingsDeps(d) {
 // What wireToggleSection needs from this view: the element lookup, the i18n
 // lookup and the two ways a write's outcome is reported.
 export const toggleDeps = { $, t, showToast, showError };
+
+// ---- Where a setting's outcome is reported (UI 2.0 phase 5) ----
+//
+// The classic layout reports every outcome window-wide: the error dialog for
+// a refusal, a toast for a success. In the preview a refusal on the speaker
+// page belongs into the card it happened in (docs/UI-2.0.md, rule 3), so the
+// settings modules report through these instead of calling showError and
+// showToast directly. anchor is the control that was used (an element or its
+// id); it decides the card and where in it the line goes.
+//
+// Classic, or an anchor outside an open card of the speaker page (another
+// tab, a dialog, the classic Settings view): exactly the old call, with the
+// old arguments, so the classic layout cannot tell the difference.
+
+// The card of the speaker page that holds anchor, while it is on screen.
+function sectionOf(anchor) {
+  if (!state.ui2Shell) return null;
+  return openSection(anchor);
+}
+
+// reportError: the refusal line in the card, naming the speaker, or the
+// error dialog.
+export function reportError(anchor, e) {
+  const hit = sectionOf(anchor);
+  if (!hit) { showError(e); return; }
+  showSectionError(hit.section, hit.anchor, e, { name: settingsBoxLabel(state.settingsBox) });
+}
+
+// reportDone: the success toast as always; in the preview it also takes the
+// card's refusal line away, since the setting did go through now.
+export function reportDone(anchor, msg, ms) {
+  const hit = sectionOf(anchor);
+  if (hit) clearSectionMsg(hit.section);
+  if (ms === undefined) showToast(msg);
+  else showToast(msg, ms);
+}
+
+// reportWarn: an outcome that only partly worked (a copy that reached some
+// keys only). A warning line in the card, or the error dialog as before.
+// classicToast keeps a call site that showed a toast in the classic layout on
+// that toast (the single-target copy's partial success).
+export function reportWarn(anchor, msg, { classicToast = false } = {}) {
+  const hit = sectionOf(anchor);
+  if (!hit) {
+    if (classicToast) showToast(msg);
+    else showError(msg);
+    return;
+  }
+  showSectionWarn(hit.section, hit.anchor, msg);
+}
+
+// reportsInline: the next report about anchor lands in its card. A call site
+// that put up a sticky progress toast takes it down when it does.
+export function reportsInline(anchor) {
+  return !!sectionOf(anchor);
+}
+
+// reportFieldError: a value the user typed is not usable. The field itself is
+// marked (aria-invalid, a line it names through aria-describedby), or the
+// error dialog as before.
+export function reportFieldError(field, msg) {
+  const el = typeof field === 'string' ? $(field) : field;
+  const hit = sectionOf(el);
+  if (!hit) { showError(msg); return; }
+  showFieldError(el, msg);
+}
+
+// clearFieldErrors drops the field marks of a form that is used again.
+export function clearFieldErrors(...fields) {
+  for (const f of fields) clearFieldError(typeof f === 'string' ? $(f) : f);
+}
+
+// toggleDepsFor is toggleDeps with the two reports bound to one section (and
+// its On button, which places the line after the toggle's row), so
+// wireToggleSection reports where its section is without knowing about the
+// preview.
+export function toggleDepsFor(sectionId, anchorId) {
+  const anchor = () => (anchorId && $(anchorId)) || $(sectionId);
+  return {
+    $,
+    t,
+    showToast: (msg, ms) => reportDone(anchor(), msg, ms),
+    showError: (e) => reportError(anchor(), e),
+  };
+}
+
+// endpointMissing: the agent answered that it has no such setting (an agent
+// older than it answers 404; the Go binding turns that into "status 404").
+// Such a section stays hidden as it always was: it is not unreadable, it is
+// not there.
+export function endpointMissing(e) {
+  return /(^|\D)status 404(\D|$)/.test(String((e && e.message) || e || ''));
+}
+
+const NOT_THERE = Object.freeze({ notThere: true });
+
+// wireSettingToggle wires one On/Off section of Speaker settings.
+//
+// Classic: wireToggleSection exactly as before, a read failure hides the
+// section (or paints the call site's onGetError). Preview: a setting that
+// could not be read stays visible (rule 4, nothing disappears): its buttons
+// are aria-disabled, a press is refused, and a status line says the speaker
+// did not answer, with Try again. A setting the agent does not know (404)
+// stays hidden in both layouts.
+export function wireSettingToggle(opts) {
+  const deps = toggleDepsFor(opts.sectionId, opts.onId);
+  if (!state.ui2Shell) return wireToggleSection(opts, deps);
+  let failed = false;
+  let handle = null;
+  const host = $(opts.sectionId);
+  const buttons = [$(opts.onId), $(opts.offId)];
+  const wrapped = {
+    ...opts,
+    get: async () => {
+      try {
+        const r = await opts.get();
+        failed = false;
+        return r;
+      } catch (e) {
+        if (endpointMissing(e)) { failed = false; return NOT_THERE; }
+        failed = true;
+        throw e;
+      }
+    },
+    stateFn: (r) => (r === NOT_THERE ? (opts.onGetError || { show: false, enabled: null }) : opts.stateFn(r)),
+    onGetError: { show: true, enabled: null, readFailed: true },
+    onLoaded: (st) => {
+      paintReadState(host, !!(st && st.readFailed), {
+        name: settingsBoxLabel(state.settingsBox),
+        buttons,
+        retry: () => { if (handle) handle.load(); },
+      });
+      if (opts.onLoaded) opts.onLoaded(st);
+    },
+    confirm: async (enabled) => {
+      if (failed) return false;
+      return opts.confirm ? opts.confirm(enabled) : true;
+    },
+  };
+  handle = wireToggleSection(wrapped, deps);
+  return handle;
+}
 
 // withButtonPending runs an async box write behind its button. The button
 // flips to a working state the instant it is pressed and comes back when the
@@ -96,7 +243,48 @@ export function renderSTRRemovedPanel(body, box) {
   const again = document.getElementById('settingsInstallAgain');
   if (again) again.onclick = () => openInstallFor(box);
   const back = document.getElementById('settingsBackToBoxes');
-  if (back) back.onclick = () => { state.strRemovedHost = null; deps.switchView('box'); };
+  wireBackToList(back, box, () => { state.strRemovedHost = null; });
+}
+
+// wireBackToList wires the "back to the speaker list" button of the panels a
+// settings load can end on (STR removed, STR not running, an update still
+// finishing, a speaker that answers nothing). Classic: the Listen to music
+// view, as always. Preview: the button reads "All speakers" and opens the
+// Speakers list with the keyboard on this speaker's card, so the way back
+// leads to the speaker the panel was about (no dead end, rule 4). before runs
+// first in both layouts (the call site's own reset).
+export function wireBackToList(el, box, before = () => {}) {
+  if (!el) return;
+  if (!state.ui2Shell) {
+    el.onclick = () => { before(); deps.switchView('box'); };
+    return;
+  }
+  el.textContent = t('ui2.speakers.speaker.allSpeakers');
+  el.onclick = () => { before(); openSpeakerListAt(box && box.host); };
+}
+
+// openSpeakerListAt opens Speakers > list and focuses the card of host (the
+// first card when the speaker has none of its own, a half of a pair). The
+// router is imported on use: views/setup.js imports views/settings.js, and the
+// router imports the setup wizard, so a static import here would be a cycle.
+export async function openSpeakerListAt(host) {
+  try {
+    const { openSpeakers } = await import('../../shell2/speakers/index.js');
+    if (!openSpeakers('list')) { deps.switchView('box'); return; }
+  } catch (_) {
+    deps.switchView('box');
+    return;
+  }
+  const focusCard = () => {
+    const root = document.getElementById('view-speakers');
+    if (!root) return false;
+    const cards = [...root.querySelectorAll('.spl-open')];
+    const card = cards.find((b) => b.dataset.host === host) || cards[0];
+    if (!card) return false;
+    card.focus();
+    return true;
+  };
+  if (!focusCard() && typeof requestAnimationFrame === 'function') requestAnimationFrame(focusCard);
 }
 
 // Long help text: the opening sentence stays, the rest folds away.

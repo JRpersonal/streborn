@@ -1,0 +1,163 @@
+/* UI 2.0 preview, phase 5: the window-wide banners in the shell's banner
+   region (#ui2Banners, mount.js moves them there). Under html.ui2 only, so the
+   classic layout keeps style.css exactly as it was.
+
+   Every colour here is a --u-* token of shell2.css, so the three themes
+   (dark, light, contrast) follow without a rule of their own; the contrast of
+   every pair is checked by shell2/tokens.test.js. The selectors carry the
+   region's id: one id outranks style.css's class rules, so the order the two
+   stylesheets load in does not matter.
+
+   What stays here: what concerns the computer or every speaker at once (the
+   speaker update card, the app update notice, the firewall banner, the SSH
+   recommendation). What concerns ONE speaker moves to that speaker's card,
+   page and row (attention.js): the wedge and box issue banners are hidden. */
+
+/* ---------- The speaker update card ---------- */
+
+html.ui2 #ui2Banners .speaker-update-card {
+  position: relative;
+  margin: 8px 16px 0;
+  padding: 16px 16px 16px 20px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-accent);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #ui2Banners .speaker-update-card.hidden { display: none; }
+/* The content column of the main area, not the classic 720px centre. */
+html.ui2 #ui2Banners .speaker-update-card .suc-body {
+  max-width: 960px;
+  margin: 0;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-title {
+  margin: 0 0 8px;
+  color: var(--u-text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-text {
+  color: var(--u-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-list {
+  margin: 8px 0 16px;
+  padding-inline-start: 20px;
+  color: var(--u-text);
+  font-size: 14px;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-ver {
+  color: var(--u-muted);
+  font-size: 12px;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The two buttons look like the shell's primary and secondary buttons. They
+   keep their ids and classic classes (main.js wires them by id). */
+html.ui2 #ui2Banners #sucUpdate,
+html.ui2 #ui2Banners #sucLater {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--u-radius);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.ui2 #ui2Banners #sucUpdate {
+  background: var(--u-action);
+  color: var(--u-on-action);
+}
+html.ui2 #ui2Banners #sucLater {
+  background: var(--u-surface);
+  color: var(--u-text);
+  border-color: var(--u-border);
+}
+html.ui2 #ui2Banners #sucUpdate:disabled {
+  border-style: dashed;
+  border-color: var(--u-border);
+  background: var(--u-surface);
+  color: var(--u-muted);
+  cursor: not-allowed;
+}
+html.ui2 #ui2Banners #sucUpdate:focus-visible,
+html.ui2 #ui2Banners #sucLater:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- The banners about the computer ---------- */
+
+/* The app update notice, the firewall banner and the SSH recommendation: the
+   surface with a warn bar at the start, words in the text colour. The quiet
+   app update line lives in the sidebar (shell2.css) and is left alone. */
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet),
+html.ui2 #ui2Banners .global-security-banner {
+  position: static;
+  margin: 8px 16px 0;
+  padding: 12px 16px 12px 20px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-warn);
+  border-radius: var(--u-radius);
+  box-shadow: none;
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  animation: none;
+}
+html.ui2 #ui2Banners .app-update-banner.hidden,
+html.ui2 #ui2Banners .global-security-banner.hidden { display: none; }
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) b,
+html.ui2 #ui2Banners .global-security-banner b,
+html.ui2 #ui2Banners .global-security-text {
+  color: var(--u-text);
+}
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .app-update-icon { color: var(--u-warn); }
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .footer-link { color: var(--u-accent); }
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .btn,
+html.ui2 #ui2Banners .global-security-banner .btn {
+  min-height: var(--u-target);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .btn-primary {
+  border-color: transparent;
+  background: var(--u-action);
+  color: var(--u-on-action);
+}
+html.ui2 #ui2Banners .app-update-banner :is(.btn, .banner-close, .footer-link):focus-visible,
+html.ui2 #ui2Banners .global-security-banner .btn:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+html.ui2 #ui2Banners .app-update-banner .banner-close {
+  min-width: var(--u-target);
+  min-height: var(--u-target);
+  color: var(--u-text);
+  opacity: 1;
+}
+
+/* ---------- Banners about one speaker ---------- */
+
+/* The wedge and box issue banners name speakers: in the preview the same
+   words and buttons stand on that speaker's card in the list, at the top of
+   its Overview and as a chip in the sidebar (attention.js). The update
+   failure report renders on the speaker's page (main.js). */
+html.ui2 #ui2Banners #boxWedgeBanner,
+html.ui2 #ui2Banners #boxIssueBanner,
+html.ui2 #ui2Banners #updateFailureReport {
+  display: none;
+}

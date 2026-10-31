@@ -37,7 +37,7 @@ import {
   InstallHolds,
 } from '../api.js';
 import { holdsByHost, holdFor, holdMinutes } from '../installhold.js';
-import { deps, initSettingsDeps, renderSTRRemovedPanel, openInstallFor, settingsBoxLabel } from './settings/shared.js';
+import { deps, initSettingsDeps, renderSTRRemovedPanel, openInstallFor, settingsBoxLabel, wireBackToList } from './settings/shared.js';
 import { renderStatusSection, renderPhoneSection, wireStatusSections } from './settings/status.js';
 import { renderBasicsSections, wireBasicsSections, refreshBoxBalanceRow, refreshStartVolume } from './settings/basics.js';
 import { renderSoundSections, wireSoundSections } from './settings/sound.js';
@@ -223,8 +223,7 @@ function renderSTRNotRunningPanel(body, box, withRetry) {
   if (again) again.onclick = () => openInstallFor(box);
   const r = document.getElementById('settingsRetry');
   if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
-  const back = document.getElementById('settingsBackToBoxes');
-  if (back) back.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+  wireBackToList(document.getElementById('settingsBackToBoxes'), box, () => { state.settingsReconnect = null; });
 }
 
 // updateHoldOf asks the backend whether an update from this app is still
@@ -261,8 +260,7 @@ function renderUpdateFinishingPanel(body, box, hold) {
     </div>`;
   const r = document.getElementById('settingsRetry');
   if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
-  const back = document.getElementById('settingsBackToBoxes');
-  if (back) back.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+  wireBackToList(document.getElementById('settingsBackToBoxes'), box, () => { state.settingsReconnect = null; });
 }
 
 // boseAnswersWithoutSTR asks the backend for a fresh direct probe of the
@@ -361,7 +359,8 @@ export async function loadBoxSettings() {
   // Otherwise show a hint.
   const hasContent = body.querySelector('.settings-section');
   if (!hasContent) {
-    body.innerHTML = `<div class="muted">${escapeHtml(t('settingsView.loadingData'))}</div>`;
+    // The preview announces the wait (role=status) on the speaker's page.
+    body.innerHTML = `<div class="muted"${state.ui2Shell ? ' role="status"' : ''}>${escapeHtml(t('settingsView.loadingData'))}</div>`;
   }
 
   let lastErr = null;
@@ -512,8 +511,7 @@ export async function loadBoxSettings() {
       </div>`;
     const r = document.getElementById('settingsRetry');
     if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
-    const b2 = document.getElementById('settingsBackToBoxes');
-    if (b2) b2.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+    wireBackToList(document.getElementById('settingsBackToBoxes'), state.settingsBox, () => { state.settingsReconnect = null; });
   }
 }
 

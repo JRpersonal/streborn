@@ -127,3 +127,64 @@ describe('UI 2.0 tokens', () => {
     for (const s of selectors) expect(s, s).toMatch(/^html\.ui2($|[\s.:])/);
   });
 });
+
+// Phase 5: the banner region's cards (banners.css) and the outcome lines on a
+// speaker's page (speakers/speaker.css) read only the tokens above, and every
+// pair they draw clears the line in all three themes.
+const bannersCss = readFileSync(new URL('./banners.css', import.meta.url), 'utf8');
+const speakerCss = readFileSync(new URL('./speakers/speaker.css', import.meta.url), 'utf8');
+const DEFINED = new Set(Object.keys(base));
+
+function declarationsOf(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+describe('UI 2.0 phase 5 banners and section messages', () => {
+  it('banners.css scopes every rule under html.ui2 and the banner region', () => {
+    const noComments = declarationsOf(bannersCss);
+    const selectors = [];
+    for (const m of noComments.matchAll(/([^{}]+)\{/g)) {
+      for (const s of m[1].trim().split(/,(?![^(]*\))/)) selectors.push(s.trim());
+    }
+    expect(selectors.length).toBeGreaterThan(10);
+    for (const s of selectors) expect(s, s).toMatch(/^html\.ui2 #ui2Banners /);
+  });
+
+  it('banners.css and speaker.css use no hex colours, only tokens shell2.css defines', () => {
+    for (const [name, text] of [['banners.css', bannersCss], ['speaker.css', speakerCss]]) {
+      const body = declarationsOf(text);
+      expect(body, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b(?![\w-]*\s*[{,])/);
+      expect(body, name).not.toMatch(/rgba?\(|hsla?\(/);
+      for (const m of body.matchAll(/var\(--(u-[a-z0-9-]+)\)/g)) expect(DEFINED.has(m[1]), `${name}: --${m[1]}`).toBe(true);
+    }
+  });
+
+  it('draws the update card on the surface with an accent bar, the others with a warn bar', () => {
+    expect(bannersCss).toMatch(/\.speaker-update-card \{[^}]*background: var\(--u-surface\)[^}]*\}/);
+    expect(bannersCss).toMatch(/\.speaker-update-card \{[^}]*border-inline-start: 4px solid var\(--u-accent\)/);
+    expect(bannersCss).toMatch(/\.global-security-banner \{[^}]*border-inline-start: 4px solid var\(--u-warn\)/);
+    expect(bannersCss).toMatch(/#boxWedgeBanner,[\s\S]*#boxIssueBanner,[\s\S]*\{\s*display: none;/);
+  });
+
+  for (const [name, tk] of Object.entries(THEMES)) {
+    it(`${name}: the banner and section message pairs reach their contrast`, () => {
+      const col = (k) => tk[k].toLowerCase();
+      // Words: the card's text, the muted version, the danger and warn lines
+      // and the accent link, on the surface they sit on.
+      for (const fg of ['u-text', 'u-muted', 'u-danger', 'u-warn', 'u-accent']) {
+        expect(ratio(col(fg), col('u-surface')), `${fg} on u-surface`).toBeGreaterThanOrEqual(4.5);
+      }
+      // The update button and its label.
+      expect(ratio(col('u-on-action'), col('u-action')), 'u-on-action on u-action').toBeGreaterThanOrEqual(4.5);
+      // The 4px bars (accent, warn, danger) and the focus ring: 3:1 against
+      // the card and the page around it.
+      for (const bar of ['u-accent', 'u-warn', 'u-danger', 'u-focus', 'u-border']) {
+        for (const bg of ['u-surface', 'u-bg']) {
+          expect(ratio(col(bar), col(bg)), `${bar} on ${bg}`).toBeGreaterThanOrEqual(3);
+        }
+      }
+      // The report's text field sits on the page colour inside the card.
+      expect(ratio(col('u-text'), col('u-bg')), 'u-text on u-bg').toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});
