@@ -9,8 +9,8 @@ func TestBassNoticeTexts(t *testing.T) {
 		bar           float64
 	}{
 		{-3, -9, 0, "BASS -3", "", 6.0 / 9},
-		{0, -9, 0, "BASS 0", "MAXIMUM", 1},
-		{-9, -9, 0, "BASS -9", "MINIMUM", 0.001},
+		{0, -9, 0, "BASS 0", "Maximum", 1},
+		{-9, -9, 0, "BASS -9", "Minimum", 0.001},
 		{2, -5, 5, "BASS +2", "", 0.7},
 		// a collapsed range claims no end and keeps the empty bar
 		{0, 0, 0, "BASS 0", "", 0.001},
@@ -22,11 +22,7 @@ func TestBassNoticeTexts(t *testing.T) {
 		if d := n.Bar - tc.bar; d > 1e-9 || d < -1e-9 {
 			t.Errorf("Bass(%d,%d,%d) bar %v, want %v", tc.level, tc.lo, tc.hi, n.Bar, tc.bar)
 		}
-		for _, s := range []string{n.Line1, n.Line2} {
-			if SanitizeText(s, 30) != s {
-				t.Errorf("%q is not drawable as is", s)
-			}
-		}
+		assertNoticeLinesFit(t, n)
 	}
 }
 
@@ -37,7 +33,7 @@ func TestBassNoticeDraws(t *testing.T) {
 	if litIn(buf, iconX, iconY, 34, 32) < 40 {
 		t.Error("no loudspeaker icon")
 	}
-	if litIn(buf, 0, line1Y, Width, 14) < 40 {
+	if litIn(buf, 0, line1Y-smoothLarge.capH, Width, smoothLarge.capH) < 40 {
 		t.Error("no level line")
 	}
 	if levelAt(buf, 20, barY+2) == 0 {

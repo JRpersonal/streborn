@@ -35,11 +35,9 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 )
 
 // NoticesFlagPath is the per-speaker switch for the notices. Absent means on.
@@ -88,10 +86,11 @@ type Notice struct {
 	// Key is the preset key the notice is about (the count of keys for
 	// NoticeRestored).
 	Key int
-	// Line1 is the big line, Line2 and Line3 the small ones; all already
-	// sanitised to what the font can draw. The preset notice is the one
-	// exception: its three lines are the station name in one of the track
-	// screen's smooth faces, face (PresetPlaying).
+	// Line1 is the big line (the track screen's large face), Line2 and Line3
+	// the small ones (its small face); all already sanitised to what the
+	// face can draw and cut to the panel's width. The preset notice is the
+	// one exception: its three lines are the station name in one face, face
+	// (PresetPlaying).
 	Line1, Line2, Line3 string
 	// Hold is how long the notice stays, fade-in included.
 	Hold time.Duration
@@ -103,7 +102,7 @@ type Notice struct {
 	prio int
 	icon noticeIcon
 	// face is the smooth face the preset notice's lines are drawn in, nil
-	// for a notice in the dot matrix.
+	// for every other notice (large line 1, small lines 2 and 3).
 	face *smoothFont
 	// swap, set by the queue for a notice a newer one of its kind may take
 	// over in place (sleep.go), is where playNotice picks that one up.
@@ -117,9 +116,20 @@ func (n Notice) same(o Notice) bool {
 func keyNotice(kind NoticeKind, icon noticeIcon, key int, l1, l2 string, hold time.Duration, prio int) Notice {
 	return Notice{
 		Kind: kind, Key: key, icon: icon, prio: prio, Hold: hold,
-		Line1: SanitizeText(l1, line1Max),
-		Line2: SanitizeText(l2, line2Max),
+		Line1: fitLine(l1, smoothLarge),
+		Line2: fitLine(l2, smoothSmall),
 	}
+}
+
+// fitLine makes s one line of face f: sanitised for the smooth font (case and
+// accents kept, as on the track screen) and, when it is wider than the
+// panel's text width, cut with an ellipsis.
+func fitLine(s string, f *smoothFont) string {
+	lines, _ := wrapWidth(sanitizeSmooth(s, trackTextMax), f, noticeTextW, 1)
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[0]
 }
 
 // SavedByKey: a held preset key stored name.
@@ -129,7 +139,7 @@ func SavedByKey(key int, name string) Notice {
 
 // SavedFromApp: the app or the phone page stored something on key.
 func SavedFromApp(key int) Notice {
-	return keyNotice(NoticeSavedFromApp, iconKeyCheck, key, "SAVED "+strconv.Itoa(key), "FROM STR APP", 2*time.Second, 2)
+	return keyNotice(NoticeSavedFromApp, iconKeyCheck, key, "SAVED "+strconv.Itoa(key), "From STR app", 2*time.Second, 2)
 }
 
 // SavedOnRowTwo: a tap followed by a hold of key stored name on the key's
@@ -146,29 +156,29 @@ func RowTwoLabel(key int) string { return "2X " + strconv.Itoa(key) }
 // A second-row slot (7..12) is named by its key pressed twice.
 func AlreadyOnKey(other int) Notice {
 	if other > 6 && other <= 12 {
-		return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other-6, "ON "+RowTwoLabel(other-6), "ALREADY SAVED", 3*time.Second, 2)
+		return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other-6, "ON "+RowTwoLabel(other-6), "Already saved", 3*time.Second, 2)
 	}
-	return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other, "ON KEY "+strconv.Itoa(other), "ALREADY SAVED", 3*time.Second, 2)
+	return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other, "ON KEY "+strconv.Itoa(other), "Already saved", 3*time.Second, 2)
 }
 
 // Swapped: a held key took over the item that sat on other, and other got
 // what the held key had (otherName), or became empty.
 func Swapped(key, other int, otherName string) Notice {
-	l2 := "OLD ONE NOW ON " + strconv.Itoa(other)
+	l2 := "Old one now on " + strconv.Itoa(other)
 	if otherName == "" {
-		l2 = "KEY " + strconv.Itoa(other) + " NOW EMPTY"
+		l2 = "Key " + strconv.Itoa(other) + " now empty"
 	}
 	return keyNotice(NoticeSwapped, iconKeyCheck, key, "SAVED "+strconv.Itoa(key), l2, 3*time.Second, 2)
 }
 
 // NotSaved: what plays cannot be kept on key.
 func NotSaved(key int) Notice {
-	return keyNotice(NoticeNotSaved, iconKeyX, key, "NOT SAVED", "SOURCE NOT SUPPORTED", 3*time.Second, 2)
+	return keyNotice(NoticeNotSaved, iconKeyX, key, "NOT SAVED", "Source not supported", 3*time.Second, 2)
 }
 
 // EmptyKey: a hardware press on a key that holds nothing.
 func EmptyKey(key int) Notice {
-	return keyNotice(NoticeEmptyKey, iconKeyEmpty, key, "KEY "+strconv.Itoa(key), "EMPTY. SET IN STR APP", 2500*time.Millisecond, 1)
+	return keyNotice(NoticeEmptyKey, iconKeyEmpty, key, "KEY "+strconv.Itoa(key), "Empty. Set in STR app", 2500*time.Millisecond, 1)
 }
 
 // KeysRestored: the reconcile wrote n keys back after a reboot.
@@ -177,7 +187,7 @@ func KeysRestored(n int) Notice {
 	if n == 1 {
 		l1 = "1 KEY"
 	}
-	return keyNotice(NoticeRestored, iconRestored, n, l1, "RESTORED AFTER REBOOT", 2*time.Second, 0)
+	return keyNotice(NoticeRestored, iconRestored, n, l1, "Restored after reboot", 2*time.Second, 0)
 }
 
 // PresetPlaying: a preset key switched the station while STR's track or clock
@@ -218,7 +228,7 @@ func PresetPlaying(key int, name string) Notice {
 // name over silence, which read as playing.
 func PresetFailed(key int, name string) Notice {
 	n := keyNotice(NoticePresetFailed, iconKeyX, key, "FAILED", name, 4*time.Second, 2)
-	n.Line3 = "DID NOT START PLAYING"
+	n.Line3 = fitLine("Did not start playing", smoothSmall)
 	return n
 }
 
@@ -227,8 +237,8 @@ func PresetFailed(key int, name string) Notice {
 // answers, every old path is gone). Saving the folder on the key again is the
 // only cure, so the notice says that instead of a bare "failed".
 func FolderMoved(key int) Notice {
-	n := keyNotice(NoticeFolderMoved, iconKeyX, key, "KEY "+strconv.Itoa(key), "MUSIC NOT FOUND", 5*time.Second, 2)
-	n.Line3 = "SAVE FOLDER AGAIN"
+	n := keyNotice(NoticeFolderMoved, iconKeyX, key, "KEY "+strconv.Itoa(key), "Music not found", 5*time.Second, 2)
+	n.Line3 = fitLine("Save folder again", smoothSmall)
 	return n
 }
 
@@ -239,20 +249,9 @@ func Identify(name string) Notice {
 	return n
 }
 
-// Text limits per line: the big line at font scale 2 (12 px a character),
-// the small ones at scale 1 (6 px).
-const (
-	line1Max = 10
-	line2Max = 21
-)
-
-// translit spells the letters the font lacks the way a German or French
-// reader would on a 5x7 display.
-var translit = map[rune]string{
-	'Ä': "AE", 'Ö': "OE", 'Ü': "UE", 'ẞ': "SS", 'ß': "SS",
-	'Æ': "AE", 'Œ': "OE", 'Ø': "O", 'Å': "A", 'Ð': "D", 'Þ': "TH", 'Ł': "L", 'Đ': "D", 'Ħ': "H", 'Ŧ': "T", 'Ŋ': "N", 'ı': "I",
-	'&': "+", '_': "-", '–': "-", '—': "-", '·': ".", '…': "...", '\'': "", '’': "", '‘': "",
-}
+// noticeTextW is the widest a notice line may be: the track screen's text
+// block, the panel less a pixel each side.
+const noticeTextW = blockBoxW
 
 // accentBase maps an accented Latin letter to its base letter, for the
 // letters NFD would split (stdlib has no normaliser).
@@ -286,42 +285,6 @@ var accentBase = func() map[rune]rune {
 	}
 	return m
 }()
-
-// SanitizeText makes s drawable: upper case, umlauts and ß spelled out,
-// other accents dropped to the base letter, whitespace runs folded to one
-// space, everything the font cannot draw removed, and the result cut to
-// limit characters.
-func SanitizeText(s string, limit int) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToUpper(s) {
-		if unicode.IsSpace(r) {
-			space = b.Len() > 0
-			continue
-		}
-		var out string
-		if t, ok := translit[r]; ok {
-			out = t
-		} else if base, ok := accentBase[r]; ok {
-			out = string(base)
-		} else if _, ok := font[r]; ok {
-			out = string(r)
-		}
-		if out == "" {
-			continue
-		}
-		if space {
-			b.WriteByte(' ')
-			space = false
-		}
-		b.WriteString(out)
-	}
-	res := b.String()
-	if len(res) > limit {
-		res = strings.TrimRight(res[:limit], " ")
-	}
-	return res
-}
 
 // ---- queue ----
 
@@ -669,10 +632,20 @@ func playNotice(n Notice, quit <-chan struct{}) error {
 // Layout on the 128x100 panel.
 const (
 	iconX, iconY = 48, 4
-	line1Y       = 44
-	line2Y       = 66
-	line3Y       = 76
-	barY         = 89
+	// line1Y, line2Y and line3Y are the baselines of a notice's lines: the
+	// first in the track screen's large face (capitals 45..56, where the
+	// dot matrix's 14 px capitals stood at 44..57), the other two in its
+	// small face (capitals 66..73 and 78..85), 12 px apart so the second
+	// line's descenders stay clear of the third line's capitals.
+	line1Y = 57
+	line2Y = 74
+	line3Y = 86
+	barY   = 89
+	// keyCX and keyNumY place the number inside the preset key: centred on
+	// the key's middle column, its 14 px digits on the rows the dot-matrix
+	// number used (13..26).
+	keyCX   = iconX + 3 + 13
+	keyNumY = iconY + 9 + 14
 	// presetLineY and presetTextW place the station name of a preset
 	// notice: up to three lines of the track screen's large face
 	// (smoothLarge, capitals 12 px) under the key. presetLineY is the first
@@ -772,9 +745,9 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 			c.outline(0, 0, Width, Height, 9)
 		}
 	}
-	c.text(n.Line1, line1Y, 2, lvlLine1)
-	c.text(n.Line2, line2Y, 1, lvlLine2)
-	c.text(n.Line3, line3Y, 1, lvlLine3)
+	c.smoothText(n.Line1, smoothLarge, line1Y, lvlLine1)
+	c.smoothText(n.Line2, smoothSmall, line2Y, lvlLine2)
+	c.smoothText(n.Line3, smoothSmall, line3Y, lvlLine3)
 	if n.Bar > 0 {
 		c.outline(14, barY, 100, 5, 6)
 		w := int(math.Min(n.Bar, 1) * 98)
@@ -899,30 +872,6 @@ func abs(v int) int {
 	return v
 }
 
-// glyph paints one font character with its top left at x, y.
-func (c canvas) glyph(ch rune, x, y, sc, lvl int) {
-	for gy, row := range font[ch] {
-		for gx, b := range row {
-			if b == '1' {
-				c.fill(x+gx*sc, y+gy*sc, sc, sc, lvl)
-			}
-		}
-	}
-}
-
-// text paints s centred horizontally with its top at y.
-func (c canvas) text(s string, y, sc, lvl int) {
-	if s == "" {
-		return
-	}
-	w := len(s)*6*sc - sc
-	x := (Width - w) / 2
-	for _, ch := range s {
-		c.glyph(ch, x, y, sc, lvl)
-		x += 6 * sc
-	}
-}
-
 // presetLineStep is baseline to baseline between the preset notice's lines
 // in face f: the track screen's step for a wrapped line of that face.
 func presetLineStep(f *smoothFont) int {
@@ -941,16 +890,37 @@ func (c canvas) smoothText(s string, f *smoothFont, y, lvl int) {
 	f.draw(c, Width, s, (Width-f.width(s))/2, y, lvl, 0, Width, 0, Height)
 }
 
-// presetKey is the 26x26 rounded key with its number at scale 2.
+// presetKey is the 26x26 rounded key with its number in the smooth key face.
+// The number used to be the 5x7 dot matrix doubled, the one pixelated thing
+// left on the preset notice once its station name was smooth: a hardware
+// press showed the speaker's own smooth key number first and STR's blocky
+// one right after it (discussion #1305).
 func (c canvas) presetKey(key int, dotted bool) {
 	lvl := 15
 	if dotted {
 		lvl = 11
 	}
 	c.roundRect(iconX+3, iconY+3, 26, 26, 4, lvl, dotted)
-	if key >= 0 && key <= 9 {
-		c.glyph(rune('0'+key), iconX+11, iconY+9, 2, lvl)
+	if key >= 0 && key <= 99 {
+		c.keyNumber(strconv.Itoa(key), lvl)
 	}
+}
+
+// keyNumber paints s in the key face with its ink centred on the key's
+// middle column (a "1" is narrower than its advance) and its baseline at
+// keyNumY.
+func (c canvas) keyNumber(s string, lvl int) {
+	lo, hi, pen := 0, 0, 0
+	for i, r := range s {
+		g, _ := smoothKey.glyph(r)
+		if i == 0 {
+			lo = int(g.x)
+		}
+		hi = pen + int(g.x) + int(g.w)
+		pen += int(g.adv)
+	}
+	x := (2*keyCX-(hi-lo)+1)/2 - lo
+	smoothKey.draw(c, Width, s, x, keyNumY, lvl, 0, Width, 0, Height)
 }
 
 // badge is the round mark at the key's bottom right corner: a filled disc

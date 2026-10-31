@@ -64,13 +64,13 @@ const NoticeKeyHeld NoticeKind = "key-held"
 // KeyHeld is the screen while a preset key is held: the key with a busy
 // badge, KEY N, SAVING...
 func KeyHeld(key int) Notice {
-	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+strconv.Itoa(key), "SAVING...", heldOutcomeWait, 2)
+	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+strconv.Itoa(key), "Saving…", heldOutcomeWait, 2)
 }
 
 // KeyHeldRowTwo is the screen while key is held after a tap, saving onto the
 // key's second row: the key with a busy badge, KEY 2X N, SAVING...
 func KeyHeldRowTwo(key int) Notice {
-	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+RowTwoLabel(key), "SAVING...", heldOutcomeWait, 2)
+	return keyNotice(NoticeKeyHeld, iconKeyHold, key, "KEY "+RowTwoLabel(key), "Saving…", heldOutcomeWait, 2)
 }
 
 // heldSession is one held-key panel session. All fields are guarded by the

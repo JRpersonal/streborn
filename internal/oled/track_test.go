@@ -12,36 +12,6 @@ import (
 	"time"
 )
 
-func TestWrapText(t *testing.T) {
-	cases := []struct {
-		in       string
-		cols, n  int
-		want     []string
-		wantsCut bool
-	}{
-		{"", 10, 2, nil, false},
-		{"HELLO", 10, 2, []string{"HELLO"}, false},
-		{"HELLO WORLD", 10, 2, []string{"HELLO", "WORLD"}, false},
-		{"A B C", 3, 2, []string{"A B", "C"}, false},
-		// a word longer than a line is split, not dropped
-		{"ABCDEFGHIJKL", 10, 2, []string{"ABCDEFGHIJ", "KL"}, false},
-		// too long: the last line ends in "..." within the width
-		{"ONE TWO THREE FOUR FIVE", 9, 2, []string{"ONE TWO", "THREE..."}, true},
-		{"ABCDEFGHIJ KLMNOPQRST UVW", 10, 2, []string{"ABCDEFGHIJ", "KLMNOPQ..."}, true},
-	}
-	for _, c := range cases {
-		got, cut := wrapText(c.in, c.cols, c.n)
-		if !reflect.DeepEqual(got, c.want) || cut != c.wantsCut {
-			t.Errorf("wrapText(%q, %d, %d) = %q cut=%v, want %q cut=%v", c.in, c.cols, c.n, got, cut, c.want, c.wantsCut)
-		}
-		for _, l := range got {
-			if len(l) > c.cols {
-				t.Errorf("wrapText(%q): line %q wider than %d", c.in, l, c.cols)
-			}
-		}
-	}
-}
-
 func TestLayoutTrack(t *testing.T) {
 	// a single word wider than a large line is not split and not shrunk: one
 	// large line that scrolls

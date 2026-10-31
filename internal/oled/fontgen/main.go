@@ -102,6 +102,10 @@ func specs() []faceSpec {
 		// The clock alone: digits and the colon only. 30.25 px puts the
 		// digits (capital height) on exactly 22 pixels.
 		{varName: "smoothClock", file: "Inter-Medium.ttf", size: 30.25, runes: []rune("0123456789:"), scroll: 2, gamma: 1},
+		// The number inside the preset key the notices draw: digits only.
+		// 19.25 px puts them on exactly 14 pixels, the height the dot-matrix
+		// number had in its 26 px key, in the large face's SemiBold.
+		{varName: "smoothKey", file: "Inter-SemiBold.ttf", size: 19.25, runes: []rune("0123456789"), scroll: 2, gamma: 0.9},
 	}
 }
 

@@ -63,6 +63,104 @@ func TestRenderDisplayPNG(t *testing.T) {
 	}
 }
 
+// Renders every other screen STR draws on the panel: each notice, the splash
+// and update screens, and the two games' screens with their text. For
+// looking at all of them side by side before a change reaches a speaker; the
+// files are not kept in the repository. Same switch as above:
+//
+//	STR_DISPLAY_PNG_DIR=/tmp/str-screens go test ./internal/oled -run AllScreensPNG
+func TestRenderAllScreensPNG(t *testing.T) {
+	dir := os.Getenv("STR_DISPLAY_PNG_DIR")
+	if dir == "" {
+		t.Skip("STR_DISPLAY_PNG_DIR not set")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	save := func(name string, buf []byte) {
+		writePNG(t, filepath.Join(dir, name+"@3x.png"), buf, 3)
+	}
+	for name, n := range map[string]Notice{
+		"notice-preset":          PresetPlaying(4, "104.6 RTL"),
+		"notice-saved-key":       SavedByKey(3, "Deutschlandfunk Kultur"),
+		"notice-saved-app":       SavedFromApp(6),
+		"notice-saved-row2":      SavedOnRowTwo(2, "Jens Chill"),
+		"notice-already-on-key":  AlreadyOnKey(2),
+		"notice-already-on-row2": AlreadyOnKey(9),
+		"notice-swapped":         Swapped(5, 6, "Best Of Rock.FM"),
+		"notice-moved":           Swapped(2, 3, ""),
+		"notice-not-saved":       NotSaved(5),
+		"notice-empty-key":       EmptyKey(1),
+		"notice-keys-restored":   KeysRestored(4),
+		"notice-identify":        Identify("Küche"),
+		"notice-key-held":        KeyHeld(6),
+		"notice-key-held-row2":   KeyHeldRowTwo(1),
+		"notice-preset-failed":   PresetFailed(4, "Radio Arabella Oberösterreich"),
+		"notice-folder-moved":    FolderMoved(1),
+		"notice-sleep-30":        SleepSet(30),
+		"notice-sleep-off":       SleepOff(),
+		"notice-snooze":          Snooze("06:39"),
+		"notice-bass":            Bass(-3, -9, 0),
+		"notice-bass-max":        Bass(0, -9, 0),
+	} {
+		buf := make([]byte, FrameSize)
+		newNoticeRenderer(n).frame(0.6, buf)
+		save(name, buf)
+	}
+	for name, l := range map[string]*Logo{
+		"splash-installed": NewLogo("INSTALLED", 6.5, 1),
+		"splash-updated":   NewLogo("UPDATED", 6.5, 1),
+		"splash-reborn":    NewLogo("REBORN", 6.5, 1),
+		"intro-blockfall":  NewLogo("BLOCKFALL", 6.5, 1),
+		"intro-starguard":  NewLogo("STARGUARD", 6.5, 1),
+	} {
+		buf := make([]byte, FrameSize)
+		l.Frame(3.9, buf)
+		save(name, buf)
+	}
+	up := NewLogo("UPDATING", 0, 1)
+	up.Hold = true
+	buf := make([]byte, FrameSize)
+	up.Frame(3.9, buf)
+	save("splash-updating", buf)
+
+	bf := NewBlockfall(4)
+	for range 400 {
+		bf.Step()
+	}
+	bf.Over, bf.Score, bf.best = false, 1234, 5678
+	buf = make([]byte, FrameSize)
+	bf.Frame(buf)
+	save("blockfall-play", buf)
+	bf.Over, bf.Score, bf.best = true, 9876, 5678
+	buf = make([]byte, FrameSize)
+	bf.Frame(buf)
+	save("blockfall-over-record", buf)
+	bf.Score = 12345
+	bf.best = 23456
+	buf = make([]byte, FrameSize)
+	bf.Frame(buf)
+	save("blockfall-over", buf)
+
+	sg := NewStarguard(5)
+	sg.Score = 1230
+	buf = make([]byte, FrameSize)
+	sg.Frame(buf)
+	save("starguard-play", buf)
+	sg.banner, sg.bannerText, sg.wave = sgBanner-40, "DOUBLE SHOT", 3
+	buf = make([]byte, FrameSize)
+	sg.Frame(buf)
+	save("starguard-wave", buf)
+	sg.banner, sg.over, sg.best = 0, true, 900
+	buf = make([]byte, FrameSize)
+	sg.Frame(buf)
+	save("starguard-over-record", buf)
+	sg.best = 5000
+	buf = make([]byte, FrameSize)
+	sg.Frame(buf)
+	save("starguard-over", buf)
+}
+
 // writePNG writes frame enlarged k times, each panel pixel a k x k block,
 // its level 0..15 spread over the grey range.
 func writePNG(t *testing.T, path string, frame []byte, k int) {

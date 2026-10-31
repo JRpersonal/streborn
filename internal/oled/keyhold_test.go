@@ -280,7 +280,7 @@ func TestKeyHoldOffOrUnsupported(t *testing.T) {
 // lines, and the dots move.
 func TestKeyHoldRenders(t *testing.T) {
 	n := KeyHeld(6)
-	if n.Line1 != "KEY 6" || n.Line2 != "SAVING..." {
+	if n.Line1 != "KEY 6" || n.Line2 != "Saving…" {
 		t.Fatalf("lines %q %q", n.Line1, n.Line2)
 	}
 	r := newNoticeRenderer(n)
@@ -293,7 +293,7 @@ func TestKeyHoldRenders(t *testing.T) {
 	if string(a) == string(b) {
 		t.Error("busy dots do not move")
 	}
-	if litIn(a, 0, line1Y, Width, 14) < 40 || litIn(a, 0, line2Y, Width, 7) < 15 {
+	if litIn(a, 0, line1Y-smoothLarge.capH, Width, smoothLarge.capH) < 40 || litIn(a, 0, line2Y-smoothSmall.capH, Width, smoothSmall.capH) < 15 {
 		t.Error("lines not drawn")
 	}
 }

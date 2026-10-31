@@ -386,8 +386,10 @@ func (g *Blockfall) Frame(buf []byte) {
 		}
 	}
 	// HUD column on the left: the next piece large on top, the score at the
-	// bottom right against the board.
-	drawSmall(buf, "NEXT", 2, 0, 6)
+	// bottom right against the board. The words and numbers are the track
+	// screen's faces, like every other text on the panel; the blocks stay
+	// blocks.
+	drawText(buf, "NEXT", smoothSmall, 2, 8, 6)
 	nc := bfRotations[g.next][0]
 	w := shapeWidth(nc)
 	cs := 8
@@ -396,15 +398,16 @@ func (g *Blockfall) Frame(buf []byte) {
 	}
 	px := 2 + (46-w*cs)/2
 	for _, c := range nc {
-		fillRect(buf, px+c.x*cs, 8+c.y*cs, cs-1, cs-1, 11)
+		fillRect(buf, px+c.x*cs, 11+c.y*cs, cs-1, cs-1, 11)
 	}
-	drawSmall(buf, "SCORE", bfX0-4-19, 78, 6)
-	sc := 2
-	if g.Score >= 10000 {
-		sc = 1
+	const hudRight = bfX0 - 4
+	drawTextRight(buf, "SCORE", smoothSmall, hudRight, 82, 6)
+	score := strconv.Itoa(g.Score)
+	sf := smoothLarge
+	if sf.width(score) > hudRight-2 {
+		sf = smoothSmall
 	}
-	n := len(strconv.Itoa(g.Score))
-	drawDigits(buf, g.Score, bfX0-4-(n*(5*sc+1)-1), Height-1-7*sc, sc, 15)
+	drawTextRight(buf, score, sf, hudRight, Height-1, 15)
 	if g.Over {
 		// GAME OVER plate across the board, NEW BEST under it on a record
 		record := g.Score > g.best && g.Score > 0
@@ -415,84 +418,33 @@ func (g *Blockfall) Frame(buf []byte) {
 		clearRect(buf, bfX0+2, 38, bfW*bfCell-4, h)
 		fillRect(buf, bfX0+2, 38, bfW*bfCell-4, 1, 8)
 		fillRect(buf, bfX0+2, 37+h, bfW*bfCell-4, 1, 8)
-		drawWord(buf, "GAME", bfX0+(bfW*bfCell-23)/2, 41, 1, 15)
-		drawWord(buf, "OVER", bfX0+(bfW*bfCell-23)/2, 51, 1, 15)
+		const mid = bfX0 + bfW*bfCell/2
+		drawTextCentred(buf, "GAME", smoothSmall, mid, 49, 15)
+		drawTextCentred(buf, "OVER", smoothSmall, mid, 59, 15)
 		if record {
-			drawWord(buf, "NEW", bfX0+(bfW*bfCell-17)/2, 63, 1, 15)
-			drawWord(buf, "BEST", bfX0+(bfW*bfCell-23)/2, 72, 1, 15)
+			drawTextCentred(buf, "NEW", smoothSmall, mid, 71, 15)
+			drawTextCentred(buf, "BEST", smoothSmall, mid, 80, 15)
 		}
 	}
 	if g.best > 0 && (!g.Over || g.Score <= g.best) {
 		// the record to beat, in the left column above the score
-		drawSmall(buf, "BEST", bfX0-4-15, 54, 6)
-		n := len(strconv.Itoa(g.best))
-		drawDigits(buf, g.best, bfX0-4-(n*6-1), 61, 1, 9)
+		drawTextRight(buf, "BEST", smoothSmall, hudRight, 58, 6)
+		drawTextRight(buf, strconv.Itoa(g.best), smoothSmall, hudRight, 70, 9)
 	}
 }
 
-var digits5x7 = [10][7]string{
-	{"01110", "10001", "10011", "10101", "11001", "10001", "01110"},
-	{"00100", "01100", "00100", "00100", "00100", "00100", "01110"},
-	{"01110", "10001", "00001", "00010", "00100", "01000", "11111"},
-	{"11110", "00001", "00001", "01110", "00001", "00001", "11110"},
-	{"00010", "00110", "01010", "10010", "11111", "00010", "00010"},
-	{"11111", "10000", "11110", "00001", "00001", "10001", "01110"},
-	{"00110", "01000", "10000", "11110", "10001", "10001", "01110"},
-	{"11111", "00001", "00010", "00100", "01000", "01000", "01000"},
-	{"01110", "10001", "10001", "01110", "10001", "10001", "01110"},
-	{"01110", "10001", "10001", "01111", "00001", "00010", "01100"},
+// drawText paints s in face f with the pen starting at x on the baseline y.
+func drawText(buf []byte, s string, f *smoothFont, x, y, lvl int) {
+	f.draw(buf, Width, s, x, y, lvl, 0, Width, 0, Height)
 }
 
-// drawDigits paints n with the 5x7 digits, each dot sc x sc, 1 px apart.
-func drawDigits(buf []byte, n, x, y, sc, lvl int) {
-	for _, ch := range strconv.Itoa(n) {
-		for gy, row := range digits5x7[ch-'0'] {
-			for gx, b := range row {
-				if b == '1' {
-					fillRect(buf, x+gx*sc, y+gy*sc, sc, sc, lvl)
-				}
-			}
-		}
-		x += 5*sc + 1
-	}
+// drawTextRight paints s in face f ending at x, on the baseline y.
+func drawTextRight(buf []byte, s string, f *smoothFont, x, y, lvl int) {
+	drawText(buf, s, f, x-f.width(s), y, lvl)
 }
 
-// drawWord paints text with the 5x7 letter font, each dot sc x sc.
-func drawWord(buf []byte, s string, x, y, sc, lvl int) {
-	for _, ch := range s {
-		for gy, row := range font[ch] {
-			for gx, b := range row {
-				if b == '1' {
-					fillRect(buf, x+gx*sc, y+gy*sc, sc, sc, lvl)
-				}
-			}
-		}
-		x += 6 * sc
-	}
-}
-
-var letters3x5 = map[rune][5]string{
-	'B': {"110", "101", "110", "101", "110"},
-	'S': {"111", "100", "111", "001", "111"},
-	'C': {"111", "100", "100", "100", "111"},
-	'O': {"111", "101", "101", "101", "111"},
-	'R': {"110", "101", "110", "101", "101"},
-	'E': {"111", "100", "110", "100", "111"},
-	'N': {"110", "101", "101", "101", "101"},
-	'T': {"111", "010", "010", "010", "010"},
-	'X': {"101", "101", "010", "101", "101"},
-}
-
-// drawSmall paints a label in the tiny 3x5 font.
-func drawSmall(buf []byte, s string, x, y, lvl int) {
-	for _, ch := range s {
-		for gy, row := range letters3x5[ch] {
-			for gx, b := range row {
-				if b == '1' {
-					fillRect(buf, x+gx, y+gy, 1, 1, lvl)
-				}
-			}
-		}
-		x += 4
-	}
+// drawTextCentred paints s in face f centred on the column x, on the
+// baseline y.
+func drawTextCentred(buf []byte, s string, f *smoothFont, x, y, lvl int) {
+	drawText(buf, s, f, x-f.width(s)/2, y, lvl)
 }
