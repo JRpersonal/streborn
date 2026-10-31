@@ -36,7 +36,7 @@ export const MODELLED_BINDINGS = [
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
-  'GetZoneState', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
+  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
@@ -287,6 +287,8 @@ export function installDesktopMock({ scenario, demo }) {
     BoxInstallReachable: () => true,
     CheckStereoBeforeInstall: () => ({ known: false, paired: false, status: '', partnerIP: '', partnerOnline: false, partnerHasSTR: false }),
     DissolvePairBeforeInstall: () => ({ allClear: true, results: {} }),
+    // No speaker is finishing an update in the demo; an empty list, never null.
+    InstallHolds: () => [],
     InstallSTROnBox: ([, model]) => ({ step: 'done', code: '', ok: true, message: '', log: '', firmware: '27.0.6', model: model || '', moduleType: '', variant: '' }),
     RunSpeakerUpdate: ([h, , , name]) => ({ host: h, name: name || '', engineOnly: false, outcome: 'done', version: {}, confirmed: true, verdict: '', engineDelivered: true, engineTooFull: false, quiet: false, unmet: '', attempts: 1, err: '' }),
     ListDrives: () => clone(demo.drives),
