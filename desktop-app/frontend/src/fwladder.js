@@ -141,6 +141,23 @@ export function usbUpdateUnconfirmed(model) {
   return isBatteryModel(model);
 }
 
+// notStartedStartKey is the first point of the "the update did not start"
+// checklist: the same button combination as screen C, stressed that the
+// buttons are held before the power comes on and until the hand appears.
+export function notStartedStartKey(model) {
+  return isBatteryModel(model) ? 'fwLadder.nsKeysBattery' : 'fwLadder.nsKeys';
+}
+
+// portMaybeOtg: a SoundTouch 20 or 30 of the older hardware (moduleType scm,
+// no Bluetooth button) may have a micro-USB port that needs an OTG adapter,
+// like the 10 and the Portable. Reported once, not confirmed
+// (docs/FIRMWARE-UPDATE.md, "The port"), so the hint says "may".
+export function portMaybeOtg(model, moduleType) {
+  const m = String(model || '').trim().toLowerCase();
+  const mt = String(moduleType || '').trim().toLowerCase();
+  return mt === 'scm' && (m === 'soundtouch 20' || m === 'soundtouch 30');
+}
+
 // fallbacksFor is the list of smaller steps the plan offers after stepId
 // stalled. A step at or below the speaker's version would be a downgrade, so
 // it never shows, whatever the plan was built from. A list left with nothing
@@ -447,18 +464,50 @@ function screenB(plan, st, step) {
     + '</div>';
 }
 
+// stalledHelp is what follows "the speaker still reports firmware X". An
+// unchanged version has two causes with opposite remedies: the update ran and
+// its bar stayed empty (a smaller in-between file is the documented way round),
+// or the speaker never entered the USB update and booted normally (no hand on
+// the display, back on the network within a minute or two). A smaller file
+// cannot fix a start that never happened, so the guide asks first, and only
+// the "it ran" answer offers smaller steps.
+function stalledHelp(plan, st, step, model) {
+  const started = st.recheck && st.recheck.started;
+  if (started === true) {
+    const fb = !st.fallbackFor && fallbacksFor(plan, step.id).length > 0;
+    return `<div class="fw-ladder-warn">${esc(t('fwLadder.w6'))}</div>`
+      + '<div class="fw-guide-dl">'
+      + `<button type="button" class="btn btn-mini" data-ladder="retry">${esc(t('fwLadder.retry'))}</button>`
+      + (fb ? ` <button type="button" class="btn btn-mini" data-ladder="smaller">${esc(t('fwLadder.smaller'))}</button>` : '')
+      + '</div>';
+  }
+  if (started === false) {
+    return `<div class="fw-ladder-warn" data-ladder-note="not-started">${esc(t('fwLadder.notStarted'))}`
+      + '<ul class="fw-guide-steps">'
+      + `<li>${esc(t(notStartedStartKey(model)))}</li>`
+      + `<li>${esc(t('fwLadder.nsPort'))}</li>`
+      + `<li>${esc(t('fwLadder.nsStick'))}</li>`
+      + `<li>${esc(t('fwLadder.nsReset'))}</li>`
+      + '</ul></div>'
+      + '<div class="fw-guide-dl">'
+      + `<button type="button" class="btn btn-mini" data-ladder="retry">${esc(t('fwLadder.retry'))}</button>`
+      + '</div>';
+  }
+  return `<div><b>${esc(t('fwLadder.startedQ'))}</b></div>`
+    + `<div class="muted small">${esc(t('fwLadder.startedWhy'))}</div>`
+    + '<div class="fw-guide-dl">'
+    + `<button type="button" class="btn btn-mini" data-ladder="started-yes">${esc(t('fwLadder.startedYes'))}</button> `
+    + `<button type="button" class="btn btn-mini" data-ladder="started-no">${esc(t('fwLadder.startedNo'))}</button>`
+    + '</div>';
+}
+
 function screenC(plan, st, step, ident) {
   const model = plan.model || (ident && ident.model) || '';
   let check = '';
   if (st.rechecking) check = `<div class="small">${esc(t('fwLadder.checking'))}</div>`;
   else if (st.recheck && st.recheck.state === 'same') {
-    const fb = !st.fallbackFor && fallbacksFor(plan, step.id).length > 0;
     check = `<div class="small setup-err">${esc(t('fwLadder.stalled', { version: st.recheck.version || '?' }))}</div>`
-      + `<div class="fw-ladder-warn">${esc(t('fwLadder.w6'))}</div>`
-      + '<div class="fw-guide-dl">'
-      + `<button type="button" class="btn btn-mini" data-ladder="retry">${esc(t('fwLadder.retry'))}</button>`
-      + (fb ? ` <button type="button" class="btn btn-mini" data-ladder="smaller">${esc(t('fwLadder.smaller'))}</button>` : '')
-      + '</div>';
+      + stalledHelp(plan, st, step, model);
   } else if (st.recheck && st.recheck.state === 'unknown') {
     check = `<div class="small">${esc(t('fwLadder.notFoundAfter'))}</div>` + versionPicker('recheck-version');
   }
@@ -467,7 +516,9 @@ function screenC(plan, st, step, ident) {
     + (st.ejectedByHand ? `<div class="small fw-ladder-note">${esc(t('fwLadder.ejectByHand'))}</div>` : '')
     + '<ol class="fw-guide-steps">'
     + `<li>${esc(t(powerOffKey(model)))}</li>`
-    + `<li>${esc(t('fwLadder.c2'))}<div class="muted small">${esc(t('fwLadder.w4'))}</div></li>`
+    + `<li>${esc(t('fwLadder.c2'))}<div class="muted small">${esc(t('fwLadder.w4'))}`
+    + (portMaybeOtg(model, plan.moduleType || (ident && ident.moduleType)) ? ` ${esc(t('fwLadder.w4Scm'))}` : '')
+    + '</div></li>'
     + `<li>${esc(t(usbUpdateKey(model)))}`
     + (usbUpdateUnconfirmed(model) ? `<div class="muted small">${esc(t('fwLadder.c3Unconfirmed'))}</div>` : '')
     + '</li>'
@@ -721,6 +772,11 @@ class LadderController {
       }
       case 'recheck': this.recheck(); break;
       case 'recheck-version': this.applyVersion(MANUAL_BY_ID[this.field('version')] || '', 'manual'); break;
+      case 'started-yes':
+      case 'started-no':
+        // The answer lives with the recheck, so a new check asks again.
+        if (this.st.recheck) this.set({ recheck: { ...this.st.recheck, started: a === 'started-yes' } });
+        break;
       case 'retry': this.set({ screen: 'B', recheck: null, result: null, check: null, drives: null }); break;
       case 'smaller': {
         const s = currentStep(plan, this.st);
@@ -831,7 +887,7 @@ class LadderController {
   }
 
   // applyVersion moves the ladder on when the speaker reached the step, and
-  // shows the "bar stayed empty" help when it did not.
+  // asks whether the USB update started when it did not (stalledHelp).
   async applyVersion(version, from) {
     const plan = this.sess.plan;
     const step = currentStep(plan, this.st);

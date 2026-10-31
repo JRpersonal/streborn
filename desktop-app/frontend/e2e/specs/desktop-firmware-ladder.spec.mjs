@@ -7,9 +7,11 @@
 //   2. Screen B checks the one stick, Prepare sends the right step and drive,
 //      screen C follows, and "Done, check again" with the new version moves on
 //      to the next step. 2b: a stick with other files gets a hint, no block.
-//   3. An unchanged version shows the "bar stayed empty" help and, on 7.x, the
+//   3. An unchanged version first asks whether the update started (hand or
+//      progress bar). "Yes" shows the "bar stayed empty" help and, on 7.x, the
 //      smaller in-between steps. 3b: on a plan from a picked version, the plan
 //      is built again from what the speaker reports, so no downgrade is offered.
+//      3c: "No" shows the start checklist and Retry, never smaller steps.
 //   4. A file that fails its fingerprint says so and stays on the stick screen.
 //   5. The guide resumes on the same step after a reload.
 //   6. "Can't find the speaker?" asks for the version and plans from it.
@@ -206,6 +208,7 @@ test.describe('a stall on a plan built from a picked version', () => {
     await lad.locator('[data-ladder="recheck"]').click();
     await mock.expectCalled('GetFirmwareLadderManual', { pred: (c) => c.args[2] === '12.0.9', times: 1 });
     await expect(lad).toContainText(en('fwLadder.stalled', { version: '12.0.9' }));
+    await lad.locator('[data-ladder="started-yes"]').click();
     await expect(lad.locator('[data-ladder="retry"]')).toBeVisible();
     await expect(lad.locator('[data-ladder="smaller"]')).toHaveCount(0);
   });
@@ -219,7 +222,7 @@ test.describe('a step that leaves the version unchanged', () => {
     }, PLAN_7X),
   });
 
-  test('3. shows the "bar stayed empty" help and offers smaller steps', async ({ app, mock }) => {
+  test('3. asks whether the update started, then shows the "bar stayed empty" help and offers smaller steps', async ({ app, mock }) => {
     const lad = await openLadder(app.page);
     await startLadder(lad);
     await expect(lad).toContainText(en('fwLadder.stickOk'));
@@ -227,12 +230,34 @@ test.describe('a step that leaves the version unchanged', () => {
     await expect(lad).toContainText(en('fwLadder.installTitle'));
     await lad.locator('[data-ladder="recheck"]').click();
     await expect(lad).toContainText(en('fwLadder.stalled', { version: '7.0.37' }));
+    await expect(lad).toContainText(en('fwLadder.startedQ'));
+    await expect(lad.locator('[data-ladder="smaller"]')).toHaveCount(0);
+    await lad.locator('[data-ladder="started-yes"]').click();
     await expect(lad).toContainText(en('fwLadder.w6'));
     await lad.locator('[data-ladder="smaller"]').click();
     await expect(lad).toContainText(en('fwLadder.stepTitle', { k: 1, n: 5, version: '09.00.41' }));
     await expect(lad).toContainText(en('fwLadder.stickOk'));
     await lad.locator('[data-ladder="prepare"]').click();
     await mock.expectCalled('PrepareFirmwareStick', { pred: (c) => c.args[0] === 'st-scm-09.00.41', times: 1 });
+  });
+
+  test('3c. an update that never started gets the start checklist, not smaller steps', async ({ app }) => {
+    const lad = await openLadder(app.page);
+    await startLadder(lad);
+    await expect(lad).toContainText(en('fwLadder.stickOk'));
+    await lad.locator('[data-ladder="prepare"]').click();
+    await expect(lad).toContainText(en('fwLadder.installTitle'));
+    await lad.locator('[data-ladder="recheck"]').click();
+    await lad.locator('[data-ladder="started-no"]').click();
+    await expect(lad.locator('[data-ladder-note="not-started"]')).toBeVisible();
+    await expect(lad).toContainText(en('fwLadder.notStarted'));
+    await expect(lad).toContainText(en('fwLadder.nsKeys'));
+    await expect(lad).toContainText(en('fwLadder.nsReset'));
+    await expect(lad).not.toContainText(en('fwLadder.w6'));
+    await expect(lad.locator('[data-ladder="smaller"]')).toHaveCount(0);
+    await lad.locator('[data-ladder="retry"]').click();
+    await expect(lad).toContainText(en('fwLadder.stepTitle', { k: 1, n: 3, version: '14.00.33' }));
+    await expect(lad).toContainText(en('fwLadder.prepTitle'));
   });
 });
 
@@ -283,9 +308,17 @@ for (const theme of ['light', 'dark']) {
       await lad.locator('[data-ladder="prepare"]').click();
       await expect(lad).toContainText(en('fwLadder.installTitle'));
       await shot(lad, `${theme}-C-install`);
+      await expect(lad).toContainText(en('fwLadder.w4Scm'));
       await lad.locator('[data-ladder="recheck"]').click();
+      await expect(lad).toContainText(en('fwLadder.startedQ'));
+      await shot(lad, `${theme}-C-started-question`);
+      await lad.locator('[data-ladder="started-yes"]').click();
       await expect(lad).toContainText(en('fwLadder.w6'));
       await shot(lad, `${theme}-C-stalled`);
+      await lad.locator('[data-ladder="recheck"]').click();
+      await lad.locator('[data-ladder="started-no"]').click();
+      await expect(lad.locator('[data-ladder-note="not-started"]')).toBeVisible();
+      await shot(lad, `${theme}-C-not-started`);
     });
 
     test(`C on the battery Portable (${theme})`, async ({ app, mock }) => {
