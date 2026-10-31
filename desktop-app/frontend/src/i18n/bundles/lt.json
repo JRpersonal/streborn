@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Šis garsiakalbis nepraneša apie reguliuojamą žemų dažnių lygį, todėl šie valdikliai lieka išjungti.",
   "settingsView.langHeading": "Kalba",
   "settingsView.langCurrent": "Dabar nustatyta",
-  "settingsView.langHelp": "Eksperimentinė. Patvirtinta tik anglų ir danų. Jei pasirinksite nežinomą reikšmę ir garsiakalbis persijungs į atpažįstamą kalbą, praneškite apie tai GitHub problemoje, kad sąrašas augtų.",
+  "settingsView.langHelp": "Rodoma garsiakalbio ekrane ir naudojama jo balso pranešimuose.",
   "settingsView.langSavedToast": "Kalba nustatyta į {{v}}.",
   "settingsView.langUnknown": "nežinoma",
   "settingsView.langNoValue": "nenustatyta",

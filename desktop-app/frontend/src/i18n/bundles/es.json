@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Este altavoz no informa de un nivel de graves ajustable, por eso estos controles permanecen desactivados.",
   "settingsView.langHeading": "Idioma",
   "settingsView.langCurrent": "Actualmente establecido",
-  "settingsView.langHelp": "Idioma mostrado en la pantalla del altavoz y en los avisos de voz. Preseleccionado según tu país; modificable.",
+  "settingsView.langHelp": "Se muestra en la pantalla del altavoz y en sus avisos de voz.",
   "settingsView.langSavedToast": "Idioma establecido en {{v}}.",
   "settingsView.langUnknown": "desconocido",
   "settingsView.langNoValue": "no establecido",

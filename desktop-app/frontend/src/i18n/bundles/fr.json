@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "Cette enceinte ne signale aucun niveau de basses réglable, ces réglages restent donc inactifs.",
   "settingsView.langHeading": "Langue",
   "settingsView.langCurrent": "Actuellement réglée",
-  "settingsView.langHelp": "Langue affichée sur l'écran de l'enceinte et dans les annonces vocales. Présélectionnée selon votre pays ; modifiable.",
+  "settingsView.langHelp": "Affichée sur l'écran de l'enceinte et dans ses annonces vocales.",
   "settingsView.langSavedToast": "Langue réglée sur {{v}}.",
   "settingsView.langUnknown": "inconnue",
   "settingsView.langNoValue": "non réglée",

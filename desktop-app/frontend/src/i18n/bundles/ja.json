@@ -849,7 +849,7 @@
   "settingsView.bassUnavailable": "このスピーカーは調整できる低音レベルを報告していないため、これらの操作はオフのままです。",
   "settingsView.langHeading": "言語",
   "settingsView.langCurrent": "現在の設定",
-  "settingsView.langHelp": "スピーカーの画面表示と音声案内の言語です。お住まいの国から事前選択され、変更できます。",
+  "settingsView.langHelp": "スピーカーの画面表示と音声案内に使われます。",
   "settingsView.langSavedToast": "言語を {{v}} に設定しました。",
   "settingsView.langUnknown": "不明",
   "settingsView.langNoValue": "未設定",

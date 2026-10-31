@@ -894,7 +894,7 @@
   "settingsView.bassUnavailable": "Dieser Lautsprecher meldet keinen einstellbaren Basspegel, deshalb bleiben diese Regler aus.",
   "settingsView.langHeading": "Sprache",
   "settingsView.langCurrent": "Aktuell",
-  "settingsView.langHelp": "Experimentell. Nur Englisch und Dänisch sind bestätigt. Bei einem unbekannten Wert bitte auf GitHub melden was der Lautsprecher sagt, damit die Liste wächst.",
+  "settingsView.langHelp": "Erscheint auf dem Display und in den Sprachansagen des Lautsprechers.",
   "settingsView.langSavedToast": "Sprache auf {{v}} gesetzt.",
   "settingsView.langUnknown": "unbekannt",
   "settingsView.langNoValue": "nicht gesetzt",
