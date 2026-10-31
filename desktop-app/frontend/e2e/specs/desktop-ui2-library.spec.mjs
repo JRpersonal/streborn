@@ -211,7 +211,12 @@ test.describe('UI 2.0 Library', () => {
     await expect(page.locator('#pickModal')).toBeVisible();
     await expect(page.locator('#pickTitle')).toContainText(LR.friendlyName);
     await page.locator('#pickGrid .pick-slot').nth(0).click();
-    await mock.expectCalled('SaveLibraryPreset', { times: 1, pred: (c) => c.args[0] === LR.host && c.args[2] === 1 && c.args[4] === OPENING.streamURL });
+    // The track goes on the key with its object on the server (#919), as one
+    // preset object.
+    await mock.expectCalled('SaveFolderPreset', {
+      times: 1,
+      pred: (c) => c.args[0] === LR.host && c.args[2] === 1 && JSON.parse(c.args[3]).stream_url === OPENING.streamURL && !!JSON.parse(c.args[3]).track,
+    });
     await expect(rowStatus(page, OPENING)).toHaveText(en('ui2.library.onKey', { n: 1, name: LR.friendlyName }));
 
     await lib(page).locator('.lib2-key-folder').click();
