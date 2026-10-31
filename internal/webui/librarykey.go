@@ -204,7 +204,13 @@ func currentFileLength(ctx context.Context, cl *http.Client, cache *fileLengths,
 	}
 	d, exact := readFileLengthKind(ctx, cl, url, mime, size)
 	fl = fileLength{size: size, length: d, exact: exact}
-	cache.put(url, fl)
+	// A read cut short by the budget (a NAS disk still spinning up) says
+	// nothing about the file; caching it would pin length 0 on this URL until
+	// the file's size changes. Only a read that ran to its end is kept, so an
+	// unreadable format is not re-read on every press either.
+	if d > 0 || ctx.Err() == nil {
+		cache.put(url, fl)
+	}
 	return fl, true, true
 }
 

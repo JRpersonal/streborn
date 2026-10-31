@@ -226,3 +226,46 @@ func TestAKeyWithAStaleStoredLengthIsNotStoppedWhileTheSpeakerStillPlays(t *test
 		t.Fatalf("the speaker was stopped after %v, while it still played past the stored %v", took, storedLen)
 	}
 }
+
+// A length read the budget cut short (a NAS disk still spinning up) must not be
+// cached: the size did not change, so a cached zero would pin "no length" on
+// that URL for every later press of the key.
+func TestAFileLengthReadCutShortByTheBudgetIsNotCached(t *testing.T) {
+	file := &swappableFile{body: m4aFile(25*time.Minute, true, 64*1024)}
+	var spinningUp atomic.Bool
+	spinningUp.Store(true)
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if spinningUp.Load() && r.Method == http.MethodGet && r.Header.Get("Range") != "" {
+			select {
+			case <-time.After(2 * time.Second):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		file.ServeHTTP(w, r)
+	})
+	media := httptest.NewServer(slow)
+	defer media.Close()
+	var cache fileLengths
+	url := media.URL + "/MediaItems/1.m4a"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	fl, _, ok := currentFileLength(ctx, http.DefaultClient, &cache, url, "audio/mp4")
+	if !ok {
+		t.Fatal("the HEAD answered with a size, want ok")
+	}
+	if fl.length != 0 {
+		t.Fatalf("length = %v from a read cut short, want 0", fl.length)
+	}
+	if _, hit := cache.get(url); hit {
+		t.Fatal("a read cut short by the budget was cached")
+	}
+
+	spinningUp.Store(false) // the disk is up now
+
+	fl, readNow, ok := currentFileLength(context.Background(), http.DefaultClient, &cache, url, "audio/mp4")
+	if !ok || !readNow || fl.length < 24*time.Minute {
+		t.Fatalf("second press: length=%v readNow=%v ok=%v, want the file's 25 min read again", fl.length, readNow, ok)
+	}
+}
