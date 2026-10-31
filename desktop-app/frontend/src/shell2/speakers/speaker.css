@@ -352,3 +352,47 @@ html.ui2 #ui2SpkPanels .sps-report .failreport-text {
   color: var(--u-text);
 }
 html.ui2 #ui2SpkPanels .sps-report .btn { min-height: var(--u-target); }
+
+/* An update outcome during Update all (main.js updateAllRowReport): under the
+   row of the speaker it is about, in the Update all window, the classic
+   report's content in a card. */
+html.ui2 #updateAllOverlay .ua-report {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--u-border);
+  border-inline-start: 4px solid var(--u-danger);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-inner {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--u-text);
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-title {
+  color: var(--u-text);
+  font-weight: 700;
+}
+html.ui2 #updateAllOverlay .ua-report .failreport-title:focus-visible,
+html.ui2 #updateAllOverlay .ua-report .btn:focus-visible,
+html.ui2 #updateAllOverlay .ua-report textarea:focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+html.ui2 #updateAllOverlay .ua-report .muted { color: var(--u-muted); padding: 0; }
+html.ui2 #updateAllOverlay .ua-report .failreport-text {
+  box-sizing: border-box;
+  width: 100%;
+  /* The window lists every speaker: the report keeps its buttons in sight
+     and the text scrolls (it can still be dragged taller). */
+  height: 9em;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+}

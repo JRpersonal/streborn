@@ -50,7 +50,9 @@ const SECTION_TITLE = Object.freeze({
 //   faqUrl    the website FAQ (strFaqURL(), the app's language, when left out)
 //   logs      the save-logs state: { state: 'idle' | 'working' | 'done' |
 //             'error', path, size, error }
-export function helpModel({ appInfo, locale, faqUrl, logs } = {}) {
+//   update    the last app update check from this page: { state: 'idle' |
+//             'working' | 'current' | 'available' | 'failed', version }
+export function helpModel({ appInfo, locale, faqUrl, logs, update } = {}) {
   const i = appInfo || {};
   const loc = locale || 'en';
   const repo = repoURL(i.githubUrl);
@@ -73,7 +75,20 @@ export function helpModel({ appInfo, locale, faqUrl, logs } = {}) {
       imprint: imprintURL(loc),
     },
     logs: logs || { state: 'idle' },
+    update: update || { state: 'idle' },
   };
+}
+
+// updateStatus is the line under Check for app update: the answer the check
+// gave, said next to the button that asked (the version line at the bottom of
+// the sidebar is not a live region and sits out of the way).
+export function updateStatus(update, t) {
+  const u = update || {};
+  if (u.state === 'working') return { kind: 'working', text: t('banner.checkingForAppUpdate') };
+  if (u.state === 'current') return { kind: 'done', text: t('banner.appIsCurrent') };
+  if (u.state === 'available' && u.version) return { kind: 'done', text: `${t('banner.appUpdateAvail')} ${u.version}` };
+  if (u.state === 'failed') return { kind: 'error', text: t('banner.appCheckFailed') };
+  return { kind: '', text: '' };
 }
 
 // logsStatus is the line under Save diagnostic logs: what is happening, where
@@ -161,6 +176,7 @@ function supportHTML(m, t) {
 }
 
 function aboutHTML(m, t) {
+  const up = updateStatus(m.update, t);
   const version = m.version ? escapeHtml(t('setup.versionLabel', { version: m.version })) : '';
   const build = m.build ? ` <span class="hlp-build">(Build ${escapeHtml(m.build)})</span>` : '';
   const whatsNew = linkBtn(`data-act="open" data-url="${escapeAttr(m.urls.releaseNotes)}"`, t('banner.whatsNew'));
@@ -175,6 +191,7 @@ function aboutHTML(m, t) {
     + `<button type="button" class="u-btn u-btn--secondary hlp-btn" data-act="checkUpdate" id="hlpCheckUpdate">${escapeHtml(t('banner.checkForAppUpdate'))}</button>`
     + `<button type="button" class="u-btn u-btn--secondary hlp-btn" data-act="credits">${escapeHtml(t('footer.credits'))}</button>`
     + '</div>'
+    + `<p class="hlp-status" id="hlpUpdateStatus" role="status" aria-live="polite" data-kind="${up.kind}">${escapeHtml(up.text)}</p>`
     + `<ul class="hlp-links">${links.map((l) => `<li>${l}</li>`).join('')}</ul>`
     + `<p class="hlp-author">ST Reborn${m.author ? ` <span aria-hidden="true">&middot;</span> ${escapeHtml(m.author)}` : ''}</p>`
     + `<p class="hlp-fine">${escapeHtml(t('footer.fine'))}</p>`
@@ -201,6 +218,7 @@ export function helpHTML(model, t) {
 let root = null;
 let deps = {};
 let logs = { state: 'idle' };
+let update = { state: 'idle' };
 let checking = false;
 
 const currentModel = () => helpModel({
@@ -208,6 +226,7 @@ const currentModel = () => helpModel({
   locale: getLocale(),
   faqUrl: strFaqURL(),
   logs,
+  update,
 });
 
 function open(url, site) {
@@ -257,24 +276,44 @@ async function saveLogs() {
   paintLogs();
 }
 
-// checkUpdate runs the app's own manual check; its answer appears where it
+// paintUpdate updates the line under Check for app update only.
+function paintUpdate() {
+  if (!root) return;
+  const st = updateStatus(update, tr);
+  const line = root.querySelector('#hlpUpdateStatus');
+  if (!line) return;
+  // The same words again are news too (a second check): clear first.
+  line.textContent = '';
+  line.dataset.kind = st.kind;
+  if (st.text) setTimeout(() => { if (line.isConnected) line.textContent = st.text; }, 30);
+}
+
+// checkUpdate runs the app's own manual check. Its answer appears where it
 // always does (the version line at the bottom of the sidebar, or the notice
-// on top). While it runs the button says so.
+// on top) and in the line under this button, which is a live region. While
+// it runs the button says so.
 function checkUpdate(btn) {
   if (checking || typeof deps.checkAppUpdate !== 'function') return;
   checking = true;
   const label = tr('banner.checkForAppUpdate');
   btn.setAttribute('aria-disabled', 'true');
   btn.textContent = tr('banner.checkingForAppUpdate');
-  const done = () => {
+  update = { state: 'working' };
+  paintUpdate();
+  const done = (res) => {
     checking = false;
+    const r = res && typeof res === 'object' ? res : null;
+    update = r && ['current', 'available', 'failed'].includes(r.outcome)
+      ? { state: r.outcome, version: r.version ? String(r.version) : '' }
+      : { state: 'idle' };
     const again = root && root.querySelector('#hlpCheckUpdate');
     if (again) {
       again.removeAttribute('aria-disabled');
       again.textContent = label;
     }
+    paintUpdate();
   };
-  Promise.resolve().then(() => deps.checkAppUpdate(true)).then(done, done);
+  Promise.resolve().then(() => deps.checkAppUpdate(true)).then(done, () => done({ outcome: 'failed' }));
 }
 
 function onClick(e) {

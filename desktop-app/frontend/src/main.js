@@ -357,6 +357,7 @@ import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
 import { speakerIssuesFrom, setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
 import { openSpeakers } from './shell2/speakers/index.js';
 import { speakerReportSlot } from './shell2/speakers/speaker.js';
+import { sectionReport } from './shell2/state.js';
 import { onSpeakerPurge } from './speakerPurge.js';
 // The Music view ("Listen": now playing, presets, volume, sources, search,
 // favourites, Pandora, the group panel and the status poll), extracted from
@@ -1377,6 +1378,9 @@ function renderAppUpdateCheckLink(banner, note) {
   };
 }
 
+// Resolves to what the check found ({ outcome: 'current' | 'available' |
+// 'failed', version }), so a button that asked can say it next to itself
+// (Help and info in the UI 2.0 preview); the classic callers ignore it.
 async function checkAppUpdate(manual) {
   // Entirely best-effort: an unreachable endpoint or a garbage payload
   // must never break the UI. Validate every field defensively and stay
@@ -1391,9 +1395,9 @@ async function checkAppUpdate(manual) {
       // Nothing newer. Say so when the user asked; otherwise just leave the
       // way back on screen.
       renderAppUpdateCheckLink(banner, manual ? t('banner.appIsCurrent') : '');
-      return;
+      return { outcome: 'current' };
     }
-    if (!banner) return;
+    if (!banner) return { outcome: 'available', version: m.version };
     // An app update outranks the speaker updates and hides their prompts (see
     // speakerUpdateCardMuted). Set before the dismissal check: the ORDER
     // holds either way, and a user who clicked the app notice away has not
@@ -1407,7 +1411,7 @@ async function checkAppUpdate(manual) {
     checkBoxUpdate();
     if (noticeDismissed('appUpdate', m.version)) {
       renderAppUpdateCheckLink(banner, '');
-      return;
+      return { outcome: 'available', version: m.version };
     }
     banner.classList.remove('app-update-quiet');
     // Keep the banner discreet: version, a single "What's new" LINK to
@@ -1503,6 +1507,7 @@ async function checkAppUpdate(manual) {
       // They return once the app is current.
       maybeShowSpeakerUpdateCard();
     };
+    return { outcome: 'available', version: m.version };
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
     // A check that could not run must not swallow the control that triggers
@@ -1523,6 +1528,7 @@ async function checkAppUpdate(manual) {
         }
       } catch { /* never let the notice break the startup */ }
     }
+    return { outcome: 'failed' };
   }
 }
 
@@ -2743,6 +2749,9 @@ async function runSpeakerAttention(host, act, btn, dismissKind) {
     }
     case 'saveWifi':
       state.wlanStoreFor = box.host;
+      // The preview's speaker page shows one tab at a time: open it on
+      // Network, where the Wi-Fi form is (wireWlanSwitch opens it there).
+      if (state.ui2Shell && openSpeakers('speaker', { host: box.host, tab: 'network' })) break;
       selectBox(box);
       switchView('settings');
       break;
@@ -2751,20 +2760,29 @@ async function runSpeakerAttention(host, act, btn, dismissKind) {
       checkBoxIssueBanner();
       break;
     case 'stormRestart':
+      // In the attention item the button sits in (sectionReport; the classic
+      // toast and dialog without the preview): "Restarting" only once the
+      // speaker took the restart, a refusal right there.
       btn.disabled = true;
-      showToast(t('speaker.stormRestarting', { name: getBoxLabel(box) }));
-      try { await RebootBox(box.host, box.port); } catch (e) { showError(String(e)); } finally { btn.disabled = false; }
+      try {
+        await RebootBox(box.host, box.port);
+        sectionReport(btn, { tone: 'busy', text: t('speaker.stormRestarting', { name: getBoxLabel(box) }) });
+      } catch (e) {
+        sectionReport(btn, { tone: 'error', text: String(e) });
+      } finally { btn.disabled = false; }
       break;
     case 'badNameFix':
       btn.disabled = true;
       try {
         const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
+        // A success takes the item away (the name is fixed): its word goes
+        // where the classic one went.
         showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
         const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
         if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: name || box.friendlyName, speakerNameUnsafe: false };
         checkBoxIssueBanner();
         renderBoxSelect();
-      } catch (e) { showError(String(e)); } finally { btn.disabled = false; }
+      } catch (e) { sectionReport(btn, { tone: 'error', text: String(e) }); } finally { btn.disabled = false; }
       break;
     default: break;
   }
@@ -3775,21 +3793,51 @@ function showSt300PowerCycleNotice(box) {
     </div>`;
   host.classList.remove('hidden');
   focusUi2Report(host);
-  const c = $('st300NoticeClose');
+  const c = host.querySelector('#st300NoticeClose');
   if (c) c.onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
 }
 
+// updateAllShowing: an Update all run is going, or its window is still open
+// (it stays open after the run until the user closes it).
+function updateAllShowing() {
+  if (updateAllBusy) return true;
+  const o = $('updateAllOverlay');
+  return !!(o && !o.classList.contains('hidden'));
+}
+
 // ui2ReportHost is where the UI 2.0 preview shows an update outcome about one
-// speaker: the report slot in that speaker's Overview, with the page opened on
-// it (rule 3, errors where they happen). null in the classic layout, or when
-// the page could not be opened, and the caller falls back to the classic
+// speaker (rule 3, errors where they happen). null in the classic layout, or
+// when there is no such place, and the caller falls back to the classic
 // overlay host #updateFailureReport.
+//
+// A single update: the report slot in that speaker's Overview, with the page
+// opened on it. During Update all: that speaker's row in the Update all
+// window, where the run is shown. Opening the page there would pick the
+// speaker you control (the page always shows that one) and change the view
+// behind the open window while the other speakers are still updating.
 function ui2ReportHost(box) {
   if (!state.ui2Shell || !box || !box.host) return null;
+  if (updateAllShowing()) return updateAllRowReport(box.host);
   try {
     if (!openSpeakers('speaker', { host: box.host, tab: 'overview' })) return null;
     return speakerReportSlot(box.host);
   } catch { return null; }
+}
+
+// updateAllRowReport is the report slot under one speaker's row in the Update
+// all window, made on first use; null when the window has no row for it.
+function updateAllRowReport(host) {
+  const list = $('uaList');
+  if (!list) return null;
+  const row = [...list.querySelectorAll('.ua-row')].find((r) => r.dataset.host === host);
+  if (!row) return null;
+  let slot = row.querySelector(':scope > .ua-report');
+  if (!slot) {
+    slot = document.createElement('div');
+    slot.className = 'ua-report';
+    row.appendChild(slot);
+  }
+  return slot;
 }
 
 // focusUi2Report makes the report's title a heading in the preview and puts
@@ -3801,6 +3849,11 @@ function focusUi2Report(host) {
   title.setAttribute('role', 'heading');
   title.setAttribute('aria-level', '3');
   title.tabIndex = -1;
+  // In the Update all window the keyboard moves only while that window is on
+  // screen: one the user closed keeps running out of sight, and the report
+  // waits in its row for the window to be opened again.
+  const ua = host.closest('#updateAllOverlay');
+  if (ua && ua.classList.contains('hidden')) return;
   // The update's own error dialog may still be open on top: the keyboard
   // stays in it, and moves to the report once the dialog is closed.
   const modal = $('errorModal');
@@ -3850,12 +3903,12 @@ async function showUpdateFailureReport(box, phase, errMsg) {
     </div>`;
   host.classList.remove('hidden');
   focusUi2Report(host);
-  const ta = $('failReportText');
+  const ta = host.querySelector('#failReportText');
   // Read the textarea rather than the closure: saving the diagnostic bundle
   // rewrites the closing block to name the file that was just written, and the
   // copied text has to carry that path, not the version from before the save.
   const currentText = () => (ta && ta.value) || report;
-  const copy = $('failReportCopy');
+  const copy = host.querySelector('#failReportCopy');
   if (copy) copy.onclick = async () => {
     try { await navigator.clipboard.writeText(currentText()); }
     catch { if (ta) { ta.select(); document.execCommand('copy'); } }
@@ -3864,7 +3917,7 @@ async function showUpdateFailureReport(box, phase, errMsg) {
   // The update modal gets the same one-click bundle as the install screens.
   // A failed OTA is the other moment a user has no idea where the diagnostic
   // file would be, and the report itself now points at this button.
-  const saveLogs = $('failReportSaveLogs');
+  const saveLogs = host.querySelector('#failReportSaveLogs');
   if (saveLogs) saveLogs.onclick = async () => {
     saveLogs.classList.add('working');
     try {
@@ -3876,14 +3929,14 @@ async function showUpdateFailureReport(box, phase, errMsg) {
     } catch (e) { showError(String(e)); }
     finally { saveLogs.classList.remove('working'); }
   };
-  const mail = $('failReportMail');
+  const mail = host.querySelector('#failReportMail');
   if (mail) mail.onclick = () => {
     try {
       BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
         encodeURIComponent('ST Reborn update failed') + '&body=' + encodeURIComponent(currentText()));
     } catch {}
   };
-  const close = $('failReportClose');
+  const close = host.querySelector('#failReportClose');
   if (close) close.onclick = () => host.classList.add('hidden');
 }
 
@@ -4498,6 +4551,7 @@ async function runUpdateAllBoxes(onStart) {
   for (const b of targets) {
     const row = document.createElement('div');
     row.className = 'ua-row';
+    row.dataset.host = b.host;
     row.innerHTML = `
       <div class="ua-row-head">
         <span class="ua-name">${escapeHtml(getBoxLabel(b))}</span>

@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileSource, sourceFiles } from '../../test/source.js';
 import { setLocale, t } from '../../i18n/index.js';
-import { HELP_SECTIONS, helpHTML, helpModel, logsStatus } from './help.js';
+import { HELP_SECTIONS, helpHTML, helpModel, logsStatus, updateStatus } from './help.js';
 import { imprintURL, privacyURL, releaseNotesURL, repoURL, websiteURL } from './about.js';
 import { shellMarkup } from '../markup.js';
 import { VOTE_URL, SUGGEST_URL } from '../../views/wishes.js';
@@ -263,3 +263,33 @@ describe('Help and info at import', () => {
 function markupHasHelpNode() {
   return shellMarkup().includes('<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div>');
 }
+
+// Check for app update answers next to itself, in a live region: the version
+// line at the bottom of the sidebar, where the classic answer goes, is out of
+// the way and not announced.
+describe('the app update check in Help and info', () => {
+  it('says what the check found, in the line under the button', () => {
+    expect(updateStatus({ state: 'idle' }, t)).toEqual({ kind: '', text: '' });
+    expect(updateStatus({ state: 'working' }, t)).toEqual({ kind: 'working', text: t('banner.checkingForAppUpdate') });
+    expect(updateStatus({ state: 'current' }, t)).toEqual({ kind: 'done', text: t('banner.appIsCurrent') });
+    expect(updateStatus({ state: 'available', version: 'v9.9.9' }, t)).toEqual({ kind: 'done', text: `${t('banner.appUpdateAvail')} v9.9.9` });
+    expect(updateStatus({ state: 'failed' }, t)).toEqual({ kind: 'error', text: t('banner.appCheckFailed') });
+  });
+
+  it('has a role=status line right after the About buttons', () => {
+    const about = sectionOf(page({ update: { state: 'current' } }), 'about');
+    const btn = about.indexOf('id="hlpCheckUpdate"');
+    const line = about.indexOf('id="hlpUpdateStatus"');
+    expect(btn).toBeGreaterThan(-1);
+    expect(line).toBeGreaterThan(btn);
+    expect(about).toContain(`<p class="hlp-status" id="hlpUpdateStatus" role="status" aria-live="polite" data-kind="done">${t('banner.appIsCurrent')}</p>`);
+  });
+
+  it('main.js checkAppUpdate resolves to what it found', () => {
+    const main = fileSource('main.js');
+    const body = main.slice(main.indexOf('async function checkAppUpdate(manual) {'), main.indexOf('// runAppUpdate downloads'));
+    expect(body).toContain("return { outcome: 'current' };");
+    expect(body).toContain("return { outcome: 'available', version: m.version };");
+    expect(body).toContain("return { outcome: 'failed' };");
+  });
+});

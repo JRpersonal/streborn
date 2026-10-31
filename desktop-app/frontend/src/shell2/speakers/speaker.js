@@ -420,7 +420,8 @@ export function speakerReportSlot(host) {
   const slot = panelsEl.querySelector('#ui2SpkReport');
   if (!slot) return null;
   slot.dataset.host = host;
-  slot.hidden = false;
+  // In sight only on this speaker's own page (paintSlots keeps it so).
+  slot.hidden = !(state.settingsBox && state.settingsBox.host === host);
   return slot;
 }
 
