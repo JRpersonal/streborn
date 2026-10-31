@@ -165,6 +165,60 @@ html.ui2 #view-recent .rc-empty2 {
 html.ui2 #view-recent .rc-empty2 p { margin: 0; }
 html.ui2 #view-recent .rc-empty-title { margin-bottom: 8px; font-size: 16px; font-weight: 600; }
 html.ui2 #view-recent .rc-empty-body { color: var(--u-muted); font-size: 14px; line-height: 1.5; }
+/* The empty history's way forward: Radio, Library, Spotify. */
+html.ui2 #view-recent .rc-empty-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* A card's line also carries the verdict of its play or key action (phase
+   5): starting, playing, sent but not started. The words say it, the colour
+   only repeats it. */
+html.ui2 #view-recent .rc-err.rc-err--busy { color: var(--u-muted); }
+html.ui2 #view-recent .rc-err.rc-err--ok { color: var(--u-ok); }
+html.ui2 #view-recent .rc-err.rc-err--warn { color: var(--u-warn); }
+
+/* Speakers whose history did not answer: a note above the list, with Try
+   again. */
+html.ui2 #view-recent .rc-unanswered {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--u-warn);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+}
+html.ui2 #view-recent .rc-unanswered-text {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--u-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* The list on its way: the same spinner line as the Library's. */
+html.ui2 #view-recent .lib2-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--u-muted);
+  font-size: 14px;
+}
+html.ui2 #view-recent .lib2-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--u-border);
+  border-top-color: var(--u-accent);
+  border-radius: 50%;
+}
+/* Its turning, with motion allowed, sits with the Radio list's in
+   views/music/ui2radio.css (this file holds no media blocks). */
 
 /* Keyboard focus: the shell's double ring, on every control of the view. */
 html.ui2 #view-recent :is(button, select, a):focus-visible {

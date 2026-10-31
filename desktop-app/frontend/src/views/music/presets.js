@@ -26,6 +26,7 @@ import {
   isLibraryPreset,
   escapeAttr,
   escapeHtml,
+  friendlyErrorText,
   getBoxLabel,
   isLostStrKey,
   presetSignature,
@@ -34,6 +35,7 @@ import {
 } from '../../utils.js';
 import { renderPresets } from './presettiles.js';
 import { mstate } from './state.js';
+import { transferReport } from './ui2radio.js';
 
 let loadedPresetsBoxKey = null;
 
@@ -344,12 +346,25 @@ export function boxSourceLabel(source) {
 
 // recallBoxPreset plays one of the box's own presets by pressing its hardware
 // preset key (the box plays it through its own cached account, e.g. Deezer).
-export async function recallBoxPreset(slot) {
-  if (!state.currentBox) return;
+//
+// report(text, kind), when given (the UI 2.0 preview's key tile, ui2radio.js
+// keyReport), takes the outcome instead of the error dialog, named with the
+// key and the speaker. Whether the key then plays is the tile's own play
+// state, which the status poll reads from the speaker, so a recall the
+// speaker took only clears the "starting" line.
+export async function recallBoxPreset(slot, report = null) {
+  const box = state.currentBox;
+  if (!box) return;
+  const n = keyNum(slot, t);
+  const speaker = getBoxLabel(box);
+  if (report) report(t('ui2.feedback.keyStarting', { n, speaker }), 'busy');
   try {
-    await RecallBoxPreset(state.currentBox.host, state.currentBox.port, slot);
+    await RecallBoxPreset(box.host, box.port, slot);
+    if (report) report(null);
   } catch (err) {
-    showError(t('preset.boxRecallFailed', { err: String((err && err.message) || err) }));
+    const raw = String((err && err.message) || err);
+    if (report) report(t('ui2.feedback.keyNotStarted', { n, speaker, reason: friendlyErrorText(raw) }), 'error');
+    else showError(t('preset.boxRecallFailed', { err: raw }));
   }
 }
 
@@ -537,49 +552,78 @@ export function wirePresetTransferRow() {
     btn.disabled = true;
     const origLabel = btn.textContent;
     btn.textContent = t('settingsView.copyPresetsBusyBtn');
-    // Persistent progress toast: the copy also carries the Spotify login and
-    // restarts the target's engine, which takes a few seconds over the LAN.
-    // Without a visible "running" state the row looks idle and invites a
-    // second press (same trap as the STR install button).
-    showToast(t('settingsView.copyPresetsProgress'), 0);
     try {
-      if (val === '__ALL__') {
-        let done = 0;
-        const failed = [];
-        const row1Only = [];
-        for (const tb of targets) {
-          try {
-            await CopyPresetsAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0);
-            done++;
-            if (twoRows && copyRowsNote(sourcePresets, tb) === 'row1Only') row1Only.push(getBoxLabel(tb));
-          } catch { failed.push(getBoxLabel(tb)); }
-        }
-        const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
-        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: targets.length, failed: failed.join(', ') }) + rowMsg);
-        else showToast(t('settingsView.copyPresetsAllDone', { n: targets.length }) + rowMsg);
-      } else {
-        const [thost, tportRaw] = val.split('|');
-        const tport = parseInt(tportRaw, 10) || 0;
-        const target = targets.find(b => b.host === thost);
-        const n = await CopyPresetsAcrossBoxes(box.host, box.port || 0, thost, tport);
-        const targetName = target ? getBoxLabel(target) : thost;
-        const rowMsg = twoRows && copyRowsNote(sourcePresets, target) === 'row1Only'
-          ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
-          : '';
-        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
-      }
-    } catch (e) {
-      // The target already holds one of the stations on a key this transfer
-      // does not rewrite, so it refused the whole set and wrote nothing. That
-      // used to surface as the agent's raw 409 JSON in an error dialog (#882).
-      const conflict = presetCopyConflict(e);
-      if (conflict) showError(t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }));
-      else showError(e);
+      await runPresetTransfer({ box, targets, val, twoRows, sourcePresets, report: transferReport() });
     } finally {
       btn.textContent = origLabel;
       updatePresetTransferRow();
     }
   };
+}
+
+// runPresetTransfer copies the keys of box onto the chosen target (val is
+// "host|port" or "__ALL__" for every target) and says how it went.
+//
+// report(text, kind), when given (the UI 2.0 preview: the line under the
+// Transfer button, ui2radio.js transferReport), takes every message instead of
+// the toasts and the error dialog, with the source and target speakers named.
+// What it calls done is the target agents' own answer to the copy.
+export async function runPresetTransfer({ box, targets, val, twoRows, sourcePresets, report = null }) {
+  const source = getBoxLabel(box);
+  const all = val === '__ALL__';
+  const one = all ? null : targets.find(b => b.host === val.split('|')[0]);
+  if (report) {
+    report(t('ui2.feedback.transferBusy', { source, target: all ? t('ui2.feedback.allSpeakers') : (one ? getBoxLabel(one) : val.split('|')[0]) }), 'busy');
+  } else {
+    // Persistent progress toast: the copy also carries the Spotify login and
+    // restarts the target's engine, which takes a few seconds over the LAN.
+    // Without a visible "running" state the row looks idle and invites a
+    // second press (same trap as the STR install button).
+    showToast(t('settingsView.copyPresetsProgress'), 0);
+  }
+  let targetName = all ? t('ui2.feedback.allSpeakers') : '';
+  try {
+    if (all) {
+      let done = 0;
+      const failed = [];
+      const row1Only = [];
+      for (const tb of targets) {
+        try {
+          await CopyPresetsAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0);
+          done++;
+          if (twoRows && copyRowsNote(sourcePresets, tb) === 'row1Only') row1Only.push(getBoxLabel(tb));
+        } catch { failed.push(getBoxLabel(tb)); }
+      }
+      const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
+      if (report) {
+        if (failed.length) report(t('ui2.feedback.transferPartial', { done, total: targets.length, failed: failed.join(', '), source }) + rowMsg, done ? 'warn' : 'error');
+        else report(t('ui2.feedback.transferAllDone', { n: targets.length, source }) + rowMsg, 'ok');
+      } else if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: targets.length, failed: failed.join(', ') }) + rowMsg);
+      else showToast(t('settingsView.copyPresetsAllDone', { n: targets.length }) + rowMsg);
+    } else {
+      const [thost, tportRaw] = val.split('|');
+      const tport = parseInt(tportRaw, 10) || 0;
+      const target = targets.find(b => b.host === thost);
+      targetName = target ? getBoxLabel(target) : thost;
+      const n = await CopyPresetsAcrossBoxes(box.host, box.port || 0, thost, tport);
+      const rowMsg = twoRows && copyRowsNote(sourcePresets, target) === 'row1Only'
+        ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
+        : '';
+      if (report) report(t('ui2.feedback.transferDone', { n, target: targetName, source }) + rowMsg, 'ok');
+      else showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
+    }
+  } catch (e) {
+    // The target already holds one of the stations on a key this transfer
+    // does not rewrite, so it refused the whole set and wrote nothing. That
+    // used to surface as the agent's raw 409 JSON in an error dialog (#882).
+    const conflict = presetCopyConflict(e);
+    const conflictText = conflict ? t('settingsView.copyPresetsConflict', { name: conflict.name, n: keyNum(conflict.slot, t) }) : '';
+    if (report) {
+      const reason = conflictText || friendlyErrorText(String((e && e.message) || e));
+      report(t('ui2.feedback.transferFailed', { source, target: targetName, reason }), 'error');
+    } else if (conflict) showError(conflictText);
+    else showError(e);
+  }
 }
 
 // purgePresetStateForSpeaker forgets which speaker's presets and snapshot are

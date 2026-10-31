@@ -27,6 +27,7 @@ import { loadPresets } from './music/presets.js';
 import { refreshStatus } from './music/status.js';
 import { accountRow, keySlots, spotifyPlaying } from './spotifyui2model.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
+import { openSpeakers } from '../shell2/speakers/index.js';
 
 let deps = { strBoxes: () => [] };
 
@@ -320,8 +321,17 @@ function accountText(r) {
     case 'saved': return t('ui2.spotify.acct.saved');
     case 'none': return t('ui2.spotify.acct.none', { name: r.name });
     case 'offline': return t('ui2.spotify.acct.offline', { name: r.name });
-    default: return t('ui2.spotify.acct.unknown', { name: r.name });
+    // No answer: said plainly, with the speaker's own page as the way on
+    // (acctOpenHTML), never a pointer to settings somewhere else.
+    default: return t('ui2.feedback.acctUnknown', { name: r.name });
   }
+}
+
+// acctOpenHTML is the way on from a speaker that did not answer: its own page
+// in Speakers, where its state and its update are.
+function acctOpenHTML(r) {
+  if (r.state !== 'unknown') return '';
+  return `<button type="button" class="u-btn u-btn--secondary sp2-acct-open" data-host="${escapeAttr(r.host)}">${escapeHtml(t('ui2.feedback.openSpeaker', { name: r.name }))}</button>`;
 }
 
 function paintAccounts() {
@@ -332,7 +342,7 @@ function paintAccounts() {
   const hadFocus = !!active && active.id === 'sp2AcctRefresh';
   let list;
   if (!rows) {
-    list = `<p class="sp2-text sp2-muted">${escapeHtml(t('ui2.spotify.acct.checking'))}</p>`;
+    list = `<p class="sp2-text sp2-muted" role="status">${escapeHtml(t('ui2.spotify.acct.checking'))}</p>`;
   } else if (!rows.length) {
     // Phase 5: without a speaker with STR there is no login to show.
     const any = (state.boxes || []).some((b) => b && b.host);
@@ -353,6 +363,7 @@ function paintAccounts() {
           </div>
           <p class="sp2-acct-line">${escapeHtml(accountText(r))}${plan ? `<span class="sp2-acct-plan${r.plan === 'free' ? ' is-free' : ''}"> · ${escapeHtml(plan)}</span>` : ''}</p>
           ${others}
+          ${acctOpenHTML(r)}
         </li>`;
     }).join('')}</ul>`;
   }
@@ -370,4 +381,7 @@ function paintAccounts() {
     btn.addEventListener('click', () => { if (!accounts.busy) refreshAccounts(); });
     if (hadFocus) btn.focus();
   }
+  root.querySelectorAll('.sp2-acct-open').forEach((b) => {
+    b.addEventListener('click', () => openSpeakers('speaker', { host: b.dataset.host, tab: 'overview' }));
+  });
 }
