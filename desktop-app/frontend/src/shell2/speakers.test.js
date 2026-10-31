@@ -276,3 +276,89 @@ describe('rovingIndex', () => {
     expect(rovingIndex('ArrowDown', 0, 0)).toBe(-1);
   });
 });
+
+// Phase 5: the states of the list. The empty list says why from the
+// discovery itself, every speaker unreachable is said above the rows, and a
+// row carries a note (an offline pick, a failed group edit) and the speaker
+// package's attention chip, all part of the model and so of the signature.
+describe('sidebar states (phase 5)', () => {
+  const sig = (m) => JSON.stringify({ pinned: m.pinned, others: m.others, empty: m.emptyPhase, allOffline: m.allOffline });
+
+  it('stays on searching until discovery is done, never a guess from an empty list', () => {
+    for (const discovery of [null, { phase: 'searching', last: null }]) {
+      const m = sidebarModel([], { discovery });
+      expect(m.emptyPhase).toBe('searching');
+      expect(m.searching).toBe(true);
+      expect(sidebarHTML(m)).toContain(en['ui2.state.searchingTitle']);
+    }
+    const done = sidebarModel([], { discovery: { phase: 'done', found: 0 } });
+    expect(done.emptyPhase).toBe('none');
+    const html = sidebarHTML(done);
+    expect(html).toContain(en['ui2.side.empty']);
+    // Search again, Add speaker, Connect by address, in that order.
+    expect([...html.matchAll(/data-state-act="(\w+)"/g)].map((x) => x[1])).toEqual(['search', 'add', 'connect']);
+  });
+
+  it('shows a failed search with its detail folded and Search again', () => {
+    const m = sidebarModel([], { discovery: { phase: 'failed', error: 'mdns: no interface' } });
+    expect(m.emptyPhase).toBe('failed');
+    const html = sidebarHTML(m);
+    expect(html).toContain(en['ui2.state.failedTitle']);
+    expect(html).toContain('<details class="u-state-detail">');
+    expect(html).toContain('mdns: no interface');
+    expect(html).toContain('data-state-act="search"');
+    expect(html).toContain('role="alert"');
+  });
+
+  it('keeps the old one-line text for a model without the phase', () => {
+    expect(sidebarHTML({ pinned: [], others: [] })).toContain('class="ui2-spk-empty"');
+  });
+
+  it('says all offline above the rows, never instead of them', () => {
+    const off = [box(40, 'O1', 'Attic', { offline: true }), box(41, 'O2', 'Cellar', { offline: true })];
+    const m = sidebarModel(off, { discovery: { phase: 'done' } });
+    expect(m.allOffline).toBe(true);
+    const html = sidebarHTML(m);
+    const summary = html.indexOf('data-phase="allOffline"');
+    expect(summary).toBeGreaterThan(-1);
+    expect(summary).toBeLessThan(html.indexOf('class="ui2-spk-row'));
+    expect((html.match(/class="ui2-spk-row/g) || []).length).toBe(2);
+    expect(model().allOffline).toBe(false);
+  });
+
+  it('puts the attention chip into the row, its name and the signature', () => {
+    const plain = model();
+    const marked = model({ attention: (h) => h === I1.host });
+    expect(byHost(plain, I1).attention).toBeUndefined();
+    expect(byHost(marked, I1).attention).toBe(en['ui2.state.needsAttention']);
+    expect(sig(marked)).not.toBe(sig(plain));
+    const html = sidebarHTML(marked);
+    expect(html).toContain(`data-chip="attention">${en['ui2.state.needsAttention']}</span>`);
+    expect(speakerRowLabel(byHost(marked, I1))).toContain(en['ui2.state.needsAttention']);
+    // Worded by the speaker package itself.
+    expect(byHost(model({ attention: () => 'Update failed' }), I1).attention).toBe('Update failed');
+    // Without the dep: nothing.
+    expect(sidebarHTML(plain)).not.toContain('data-chip="attention"');
+  });
+
+  it('puts an offline pick note into the row model, the signature and the row', () => {
+    const notes = new Map([[O.host, { tone: 'busy', text: 'Garage is not reachable. Searching again...', host: O.host }]]);
+    const plain = model();
+    const noted = model({ notes });
+    expect(byHost(noted, O).note).toMatchObject({ tone: 'busy', text: 'Garage is not reachable. Searching again...' });
+    expect(sig(noted)).not.toBe(sig(plain));
+    const html = sidebarHTML(noted);
+    expect(html).toMatch(/<li class="ui2-spk-row[^"]*has-note[^"]*">[\s\S]*?<p class="ui2-spk-note ui2-spk-rownote" data-tone="busy">Garage is not reachable\. Searching again\.\.\.<\/p><\/li>/);
+    // Not a failure: no alert, said by the live region instead.
+    expect(html).not.toContain('role="alert"');
+    const still = model({ notes: new Map([[O.host, { tone: 'warn', text: 'Still not reachable.', action: 'whatToTry', host: O.host }]]) });
+    expect(sidebarHTML(still)).toContain(`data-note-act="whatToTry" data-host="${O.host}" aria-label="What to try for Garage">What to try</button>`);
+  });
+
+  it('gives a failed group edit an alert and Try again with the same master', () => {
+    const notes = { [I1.host]: { tone: 'error', text: 'The group did not change.', action: 'retry', master: M.host, port: 8888, host: I1.host } };
+    const html = sidebarHTML(model({ notes }));
+    expect(html).toContain('data-tone="error" role="alert">The group did not change.</p>');
+    expect(html).toContain(`data-note-act="retry" data-host="${I1.host}" data-port="8888" data-master="${M.host}" aria-label="Try again for Office">Try again</button>`);
+  });
+});

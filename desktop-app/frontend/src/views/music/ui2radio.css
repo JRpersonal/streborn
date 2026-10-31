@@ -357,3 +357,7 @@ html.ui2 #view-box .preset :is(.ren, .del):focus-visible {
   outline: 2px solid var(--u-focus) !important;
   outline-offset: -2px !important;
 }
+
+/* Phase 5: the speakers' state under the title (#ui2RadioState, ui2radio.js)
+   says what the classic hint said, with the next step. */
+html.ui2 #view-box #boxHint { display: none; }

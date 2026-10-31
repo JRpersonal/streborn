@@ -351,9 +351,38 @@ function arrange(root) {
 
   placeResults(grp, root);
   paintStatus(grp);
+  needsTwoSpeakers(grp);
 
   // What is left of the classic markup is its intro and empty wrappers.
   for (const n of [intro, frames, topbar]) if (n && n.parentNode === root) n.remove();
+}
+
+// needsTwoSpeakers (phase 5): with fewer than two STR speakers there is
+// nothing to pair or group, so the two editors make way for a note that says
+// so, with Add speaker. The editors stay in the page, hidden, so the classic
+// handlers keep every node; the next paint with two speakers shows them again.
+function needsTwoSpeakers(grp) {
+  const few = strBoxes().length < 2;
+  for (const id of ['ui2GrpPairEditor', 'ui2GrpFixedEditor']) {
+    const ed = grp.querySelector(`#${id}`);
+    if (ed) ed.hidden = few;
+  }
+  if (!few) return;
+  ['pairs', 'fixed'].forEach((sec, i) => {
+    const s = grp.querySelector(`.ui2-grp-sec[data-sec="${sec}"]`);
+    if (!s || s.querySelector('.ui2-grp-two')) return;
+    const note = document.createElement('div');
+    note.className = 'u-card u-card--empty ui2-grp-two';
+    note.dataset.sec = sec;
+    // One Add speaker on the page: the second note only says it.
+    note.innerHTML = `<p class="ui2-grp-two-text">${escapeHtml(t('ui2.state.groupsNeedTwo'))}</p>`
+      + (i === 0
+        ? `<div class="u-state-acts"><button type="button" class="u-btn u-btn--primary u-state-act" data-state-act="add">${escapeHtml(t('ui2.speakers.add'))}</button></div>`
+        : '');
+    const editor = s.querySelector('.ui2-grp-editor');
+    if (editor) s.insertBefore(note, editor);
+    else s.appendChild(note);
+  });
 }
 
 // The zone cards: a real toggle button per selectable card, so the card is

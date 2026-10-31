@@ -105,7 +105,8 @@ export function shellMarkup() {
       </div>
     </div>
     </div>
-    <p class="ui2-player-empty" hidden>${escapeHtml(t('ui2.player.empty'))}</p>
+    <div class="ui2-player-empty" hidden><p class="ui2-player-state-text">${escapeHtml(t('ui2.player.empty'))}</p></div>
+    <p class="ui2-player-status" id="ui2PlayerStatus" role="alert"></p>
   </section>
 </div>`;
 }

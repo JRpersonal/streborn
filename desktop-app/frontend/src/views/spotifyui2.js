@@ -26,6 +26,7 @@ import { saveSpotifyToSlot, presetMoveOffer } from './music/save.js';
 import { loadPresets } from './music/presets.js';
 import { refreshStatus } from './music/status.js';
 import { accountRow, keySlots, spotifyPlaying } from './spotifyui2model.js';
+import { listStateNow, noSpeakersState } from '../shell2/state.js';
 
 let deps = { strBoxes: () => [] };
 
@@ -126,7 +127,17 @@ function kindLabel(kind) {
 
 function keysHTML(m) {
   const title = `<h3 class="sp2-title" id="sp2KeysTitle">${escapeHtml(m.box ? t('ui2.spotify.keysTitle', { name: m.name }) : t('ui2.spotify.keysTitleNoSpeaker'))}</h3>`;
-  if (!m.box) return `${title}<p class="sp2-text">${escapeHtml(t('ui2.spotify.noSpeaker'))}</p>`;
+  if (!m.box) {
+    // Phase 5: no speaker yet (Add speaker), or speakers but none chosen.
+    const has = (state.boxes || []).some((b) => b && b.kind !== 'stock' && b.host);
+    const st = listStateNow();
+    const stock = (state.boxes || []).some((b) => b && b.kind === 'stock');
+    let card;
+    if (has) card = noSpeakersState('noneChosen', { id: 'sp2KeysState', body: t('ui2.spotify.noSpeaker'), level: 4 });
+    else if (stock) card = noSpeakersState('none', { id: 'sp2KeysState', title: t('ui2.state.noStrTitle'), body: t('speaker.stockTooltip'), actions: ['setup'], level: 4 });
+    else card = noSpeakersState(st.phase, { id: 'sp2KeysState', error: st.error, actions: ['add'], level: 4 });
+    return `${title}${card}`;
+  }
   if (!m.now.playing) {
     return `${title}
       <p class="sp2-text sp2-strong">${escapeHtml(t('ui2.spotify.notPlaying', { name: m.name }))}</p>
@@ -323,7 +334,11 @@ function paintAccounts() {
   if (!rows) {
     list = `<p class="sp2-text sp2-muted">${escapeHtml(t('ui2.spotify.acct.checking'))}</p>`;
   } else if (!rows.length) {
-    list = `<p class="sp2-text sp2-muted">${escapeHtml(t('ui2.spotify.acct.noSpeakers'))}</p>`;
+    // Phase 5: without a speaker with STR there is no login to show.
+    const any = (state.boxes || []).some((b) => b && b.host);
+    list = noSpeakersState(any ? 'none' : listStateNow().phase, {
+      id: 'sp2AcctState', title: any ? t('ui2.state.noStrTitle') : '', body: t('ui2.spotify.acct.noSpeakers'), actions: ['add'], level: 4,
+    });
   } else {
     list = `<ul class="sp2-acct-list">${rows.map((r) => {
       const [tone, pill] = PILL[r.state] || PILL.unknown;

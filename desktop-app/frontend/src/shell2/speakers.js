@@ -25,6 +25,7 @@ import { escapeAttr, escapeHtml } from '../utils.js';
 import { groupCandidates, groupMemberBoxes, groupMembersOf, inAnyStereoPair, masterOf, resolvePlayTarget } from '../groups.js';
 import { roomItems } from './rooms.js';
 import { CHIP_LABEL_KEYS, chipHTML, pillLabel, statusPillHTML } from './pill.js';
+import { discoveryPhase, noSpeakersState } from './state.js';
 
 const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 
@@ -33,7 +34,16 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //   ctx  everything roomItems reads, plus
 //        zoneLive    the shared zone poll (state.zoneLive)
 //        pending     Set of hosts whose group edit waits or runs
-//        searching   discovery has not answered yet
+//        discovery   main.js state.discovery ({ phase, error, at, last }):
+//                    the empty list says searching, none found or failed
+//                    from it (state.js discoveryPhase). Without it, the old
+//                    flag: searching (discovery has not answered yet)
+//        notes       Map or object host -> { tone, text, action, label,
+//                    master, port }: what happened to a row (an offline pick,
+//                    a group edit that failed), shown under its name
+//        attention   (host) => '' | true | 'words': a worded chip from the
+//                    speaker package (deps.speakerAttention); none without it
+//        connectOpen the empty state's Connect by address block is open
 //
 // The pinned group is the group that plays (#1284: "the playing group stays
 // pinned on top", "`+` on the idle ones ... adding it to what's playing"):
@@ -88,6 +98,19 @@ export function sidebarModel(boxes, ctx = {}) {
   const candidates = new Set(groupable ? groupCandidates(master, zl, list).map((b) => b.host) : []);
   const playing = ctx.boxPlaying || {};
   const pending = ctx.pending || new Set();
+  const notes = ctx.notes || null;
+  const noteOf = (host) => {
+    if (!notes || !host) return null;
+    const n = typeof notes.get === 'function' ? notes.get(host) : notes[host];
+    return n && n.text ? n : null;
+  };
+  const attentionOf = (host) => {
+    if (typeof ctx.attention !== 'function' || !host) return '';
+    let a = '';
+    try { a = ctx.attention(host); } catch (_) { a = ''; }
+    if (!a) return '';
+    return typeof a === 'string' ? a : t('ui2.state.needsAttention');
+  };
 
   const decorate = (r) => {
     const pinned = r.hosts.some((h) => groupHosts.has(h));
@@ -114,6 +137,19 @@ export function sidebarModel(boxes, ctx = {}) {
       pending: r.hosts.some((h) => pending.has(h)),
       master: action && master ? master.host : '',
     };
+    const note = r.hosts.map(noteOf).find(Boolean) || null;
+    if (note) {
+      row.note = {
+        tone: note.tone || 'busy',
+        text: note.text,
+        action: note.action || '',
+        master: note.master || '',
+        port: note.port != null ? String(note.port) : '',
+        host: note.host || r.host,
+      };
+    }
+    const attention = r.hosts.map(attentionOf).find(Boolean) || '';
+    if (attention) row.attention = attention;
     if (r.kind === 'pair') {
       // The name already says it is a pair, so the pill does not repeat it.
       row.name = t('ui2.side.pairName', { name: r.name });
@@ -134,6 +170,14 @@ export function sidebarModel(boxes, ctx = {}) {
   let headingKey = 'ui2.side.controlling';
   if (grouped) headingKey = nowPlays ? 'ui2.side.together' : 'ui2.side.group';
   else if (!isControlled && nowPlays) headingKey = 'ui2.pill.playing';
+  // The list without a row says why: still searching, none found, or the
+  // search failed (discovery, never a guess from an empty array). With rows
+  // that are all unreachable, a summary above them (never instead of them).
+  const disc = ctx.discovery !== undefined
+    ? discoveryPhase(ctx.discovery)
+    : { phase: ctx.searching ? 'searching' : 'none', busy: !!ctx.searching, error: '' };
+  const emptyPhase = all.length ? '' : disc.phase;
+  const allOffline = all.length > 0 && all.every((r) => r.offline);
   return {
     pinned,
     // In the list's own order, never re-sorted: rows do not jump under the
@@ -142,7 +186,11 @@ export function sidebarModel(boxes, ctx = {}) {
     headingKey,
     groupable,
     pairAlone,
-    searching: !!ctx.searching,
+    searching: emptyPhase === 'searching',
+    emptyPhase,
+    emptyError: emptyPhase === 'failed' ? (disc.error || '') : '',
+    allOffline,
+    connectOpen: !!ctx.connectOpen,
     master,
     memberCount,
   };
@@ -150,7 +198,7 @@ export function sidebarModel(boxes, ctx = {}) {
 
 // rowState is everything a row shows as words: the pill and every chip.
 function rowState(row) {
-  return [pillLabel(row.pill), ...(row.chips || []).map((c) => (CHIP_LABEL_KEYS[c] ? t(CHIP_LABEL_KEYS[c]) : ''))]
+  return [pillLabel(row.pill), ...(row.chips || []).map((c) => (CHIP_LABEL_KEYS[c] ? t(CHIP_LABEL_KEYS[c]) : '')), row.attention || '']
     .filter(Boolean).join(', ');
 }
 
@@ -187,9 +235,11 @@ function rowHTML(row, tabHost) {
     row.offline ? 'is-offline' : '',
     row.kind === 'stock' ? 'is-stock' : '',
     row.kind === 'pair' ? 'is-pair' : '',
-    row.pinned ? 'is-member' : ''].filter(Boolean).join(' ');
+    row.pinned ? 'is-member' : '',
+    row.note ? 'has-note' : ''].filter(Boolean).join(' ');
   const pill = statusPillHTML(row.pill);
-  const chips = (row.chips || []).map(chipHTML).join('');
+  const chips = (row.chips || []).map(chipHTML).join('')
+    + (row.attention ? `<span class="u-chip ui2-spk-attn" data-chip="attention">${escapeHtml(row.attention)}</span>` : '');
   const pick = `<button type="button" class="ui2-spk-pick" data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" tabindex="${tab}"`
     + (row.isCurrent ? ' aria-current="true"' : '')
     + ` aria-label="${escapeAttr(speakerRowLabel(row))}"`
@@ -206,7 +256,30 @@ function rowHTML(row, tabHost) {
       + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.pending ? ' aria-busy="true"' : ''}>`
       + `<span aria-hidden="true">${row.action === 'add' ? '+' : '&minus;'}</span></button>`;
   }
-  return `<li class="${cls}">${pick}${act}</li>`;
+  return `<li class="${cls}">${pick}${act}${noteHTML(row)}</li>`;
+}
+
+// noteHTML is what happened to a row, under its name: an offline pick that
+// searches again, a group edit that failed. A failure is an alert in the row
+// itself; the rest is said once through the sidebar's live region (mount.js).
+// Its button repeats or explains: Try again (the same toggle, the same
+// master) or What to try (the speaker's card in the Speakers list).
+function noteHTML(row) {
+  const n = row.note;
+  if (!n) return '';
+  const role = n.tone === 'error' ? ' role="alert"' : '';
+  let btn = '';
+  if (n.action === 'retry') {
+    const label = t('ui2.state.tryAgainLabel', { name: row.name });
+    btn = '<button type="button" class="u-btn u-btn--secondary ui2-spk-note-act" data-note-act="retry"'
+      + ` data-host="${escapeAttr(n.host)}" data-port="${escapeAttr(n.port || row.port)}" data-master="${escapeAttr(n.master)}"`
+      + ` aria-label="${escapeAttr(label)}">${escapeHtml(t('ui2.state.tryAgain'))}</button>`;
+  } else if (n.action === 'whatToTry') {
+    const label = t('ui2.state.whatToTryLabel', { name: row.name });
+    btn = '<button type="button" class="u-btn u-btn--secondary ui2-spk-note-act" data-note-act="whatToTry"'
+      + ` data-host="${escapeAttr(n.host)}" aria-label="${escapeAttr(label)}">${escapeHtml(t('ui2.state.whatToTry'))}</button>`;
+  }
+  return `<p class="ui2-spk-note ui2-spk-rownote" data-tone="${escapeAttr(n.tone)}"${role}>${escapeHtml(n.text)}</p>${btn}`;
 }
 
 // sidebarHTML renders both lists: the pinned group with its heading, and the
@@ -225,9 +298,19 @@ export function sidebarHTML(model, opts = {}) {
       + '</div>';
   }
   const others = (m.others || []).map((r) => rowHTML(r, tabHost)).join('');
-  const empty = rows.length ? ''
-    : `<p class="ui2-spk-empty">${escapeHtml(t(m.searching ? 'speaker.searching' : 'ui2.side.empty'))}</p>`;
+  // A model without the phase (an older caller) keeps the one-line text.
+  let empty = '';
+  if (!rows.length) {
+    empty = m.emptyPhase
+      ? noSpeakersState(m.emptyPhase, { id: 'ui2SpkState', error: m.emptyError, connectOpen: m.connectOpen, level: 3 })
+      : `<p class="ui2-spk-empty">${escapeHtml(t(m.searching ? 'speaker.searching' : 'ui2.side.empty'))}</p>`;
+  }
+  // Every speaker unreachable: said once above the rows, which stay.
+  const summary = rows.length && m.allOffline
+    ? `<div class="ui2-spk-summary">${noSpeakersState('allOffline', { id: 'ui2SpkOffline', level: 3 })}</div>`
+    : '';
   const scroll = '<div class="ui2-spk-scroll">'
+    + summary
     + (others ? `<ul class="ui2-spk-list" aria-label="${escapeAttr(t('ui2.side.others'))}">${others}</ul>` : '')
     + empty
     + '</div>';
