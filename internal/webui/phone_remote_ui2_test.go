@@ -91,7 +91,7 @@ func TestPhoneRemoteUI2LocalesCarryTheNewKeys(t *testing.T) {
 	for _, key := range []string{
 		"tListen", "tSpk2", "keysOn", "findSumOn", "offlineOn", "tryAgain", "noKeysOn", "onlyOne",
 		"helpInfo", "updates", "issues", "source", "worldMap", "supportLead", "about", "privacy",
-		"imprint", "offlineWord", "withNames", "stereoTag",
+		"imprint", "offlineWord", "withNames", "stereoTag", "checkingNow", "stillOffOn",
 	} {
 		got := len(regexp.MustCompile(`[,{]`+key+`:"[^"]+"`).FindAllString(dict, -1))
 		if got != bundles {
