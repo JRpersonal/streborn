@@ -13,9 +13,13 @@ import { $, escapeHtml, escapeAttr, showError } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { BrowserOpenURL, FeatureWishes } from '../api.js';
 
-// Used only when the Go call itself fails; the Go side always fills them in.
-const VOTE_URL = 'https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop';
-const SUGGEST_URL = 'https://github.com/JRpersonal/streborn/discussions/new?category=ideas';
+// Used here only when the Go call itself fails; the Go side always fills them
+// in. The one copy of both addresses: the classic footer's "Vote on what comes
+// next" (main.js) and the UI 2.0 Help and info page import them from here.
+// VOTE_URL is the Ideas category sorted by votes, one discussion per open
+// backlog item.
+export const VOTE_URL = 'https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop';
+export const SUGGEST_URL ='https://github.com/JRpersonal/streborn/discussions/new?category=ideas';
 
 let cached = null;
 // The search text survives a repaint (the list refreshes in the background

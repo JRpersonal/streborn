@@ -3,7 +3,7 @@ import './style.css';
 // only set once the preview shell is mounted, so with the preview off it
 // changes nothing.
 import './shell2/shell2.css';
-import { pinPromptKey } from './worldmapinvite.js';
+import { pinPromptKey, worldMapURL } from './worldmapinvite.js';
 import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
 import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
@@ -256,9 +256,6 @@ import {
   AVAILABLE_LOCALES,
 } from './i18n/index.js';
 
-// The Ideas category sorted by votes: one discussion per open backlog item.
-const IDEAS_VOTE_URL = 'https://github.com/JRpersonal/streborn/discussions/categories/ideas?discussions_q=category%3AIdeas+sort%3Atop';
-
 // LOCALE_FLAG_CC maps i18n locale codes to ISO-3166 alpha-2 country
 // codes for flag emoji rendering. The "language flag" mapping is a UX
 // convention: English uses the Union Jack rather than US for global
@@ -295,7 +292,10 @@ import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './do
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { initStreamSourceView } from './views/streamsource.js';
-import { renderWishes, initWishesView } from './views/wishes.js';
+// VOTE_URL: the Ideas category sorted by votes, one discussion per open
+// backlog item (the footer's "Vote on what comes next").
+import { renderWishes, initWishesView, VOTE_URL } from './views/wishes.js';
+import { releaseNotesURL, repoURL } from './shell2/help/about.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
@@ -938,6 +938,8 @@ function switchView(view) {
   // (shell2/speakers); without the shell the node does not exist.
   const speakersView = $('view-speakers');
   if (speakersView) speakersView.classList.toggle('hidden', view !== 'speakers');
+  // Help and info is a preview view too (shell2/help); classic has no node.
+  const helpView = $('view-help'); if (helpView) helpView.classList.toggle('hidden', view !== 'help');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
   // decide.
@@ -1163,10 +1165,9 @@ async function renderFooter() {
   // build that is the matching GitHub release page (which carries the
   // generated "What's changed" notes); for a dev build (version like
   // v0.6.21-3-gabc-dirty) there is no tag page, so fall back to the
-  // releases list.
-  const repo = (i.githubUrl || 'https://github.com/JRpersonal/streborn').replace(/\/+$/, '');
-  const isTag = /^v\d+\.\d+\.\d+$/.test(i.version || '');
-  const releaseNotesUrl = isTag ? `${repo}/releases/tag/${i.version}` : `${repo}/releases`;
+  // releases list (shell2/help/about.js, shared with Help and info).
+  const repo = repoURL(i.githubUrl);
+  const releaseNotesUrl = releaseNotesURL(i);
   $('appFooter').innerHTML = `
     <div class="footer-left">
       ST Reborn &middot; Version <a href="#" id="appVersionLink" class="footer-link" title="${escapeAttr(t('banner.whatsNew'))}"><b>${escapeHtml(i.version)}</b></a>${buildStr}${i.author ? ' &middot; ' + escapeHtml(i.author) : ''}
@@ -1189,7 +1190,7 @@ async function renderFooter() {
   const reportLink = $('footerReport');
   if (reportLink) reportLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(`${repo}/issues`); };
   const voteLink = $('footerVoteIdeas');
-  if (voteLink) voteLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(IDEAS_VOTE_URL); };
+  if (voteLink) voteLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(VOTE_URL); };
   const shareLink = $('footerShare');
   if (shareLink) shareLink.onclick = (e) => { e.preventDefault(); openShareModal(); };
   const worldMapLink = $('footerWorldMap');
@@ -1746,6 +1747,15 @@ function safeMountShell2() {
       // Speakers > list: the classic single-speaker and update-all paths.
       doBoxUpdate,
       updateAllBoxes,
+      // Help and info (shell2/help): the credits dialog, and a manual app
+      // update check like the version line's own link (which also forgets a
+      // dismissed notice); the result shows where it always does.
+      showCredits,
+      checkAppUpdate: (manual) => {
+        try { clearNoticeDismissal('appUpdate'); } catch {}
+        return checkAppUpdate(manual);
+      },
+      withAppReferrer,
     });
     if (!ok) return;
     // The Aa menu's Layout switch was drawn before a late mount (storage not
@@ -4674,16 +4684,7 @@ const WORLD_MAP_PROVISIONED_PREFIX = 'str.worldMapProvisioned.'; // per box, rig
 let worldMapInviteHandled = false;
 let worldMapAllHandled = false;
 
-// worldMapURL builds the localized community-map deep link. English is the site
-// root; the other locales live under /<locale>/. ?share opens the "set pin" form
-// and scrolls to the map; src=app lets the site optionally attribute app pins
-// (harmless if unused). Unknown params are ignored by the site.
-function worldMapURL() {
-  let loc = 'en';
-  try { loc = getLocale() || 'en'; } catch { /* default en */ }
-  const prefix = loc === 'en' ? '' : '/' + loc;
-  return 'https://st-reborn.de' + prefix + '/?share&src=app#community';
-}
+// worldMapURL (worldmapinvite.js) builds the localized community-map deep link.
 
 // inviteWorldMapOnce shows the world-map invite at most once ever for the given
 // flag. The durable Go-side flag survives app updates and reinstalls (unlike

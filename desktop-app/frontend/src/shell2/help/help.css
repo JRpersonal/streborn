@@ -1,0 +1,166 @@
+/* UI 2.0 preview: Help and info (shell2/help/help.js). One column of
+   sections, each a heading, a line saying what it is for and its actions.
+   Under html.ui2 #view-help only; reads only the --u-* tokens, apart from the
+   donate buttons, which keep each provider's own brand colours. */
+
+html.ui2 #view-help {
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-help .hlp {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+html.ui2 #view-help .hlp-head { display: flex; flex-direction: column; gap: 4px; }
+html.ui2 #view-help .hlp-title {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+html.ui2 #view-help .hlp-lead,
+html.ui2 #view-help .hlp-hint,
+html.ui2 #view-help .hlp-fine,
+html.ui2 #view-help .hlp-pointer {
+  margin: 0;
+  color: var(--u-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-help .hlp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+}
+html.ui2 #view-help .hlp-sec-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+html.ui2 #view-help .hlp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-help .hlp-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+html.ui2 #view-help .hlp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-help .hlp-btn { text-align: start; }
+
+/* The line under Save diagnostic logs: empty until something happens, then
+   what is running, where the file went, or what went wrong. */
+html.ui2 #view-help .hlp-status {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-help .hlp-status:empty { display: none; }
+html.ui2 #view-help .hlp-status[data-kind="working"] { color: var(--u-muted); }
+html.ui2 #view-help .hlp-status[data-kind="done"] { color: var(--u-ok); }
+html.ui2 #view-help .hlp-status[data-kind="error"] { color: var(--u-danger); }
+
+/* Quiet text links: the pointer to Speakers, What's new, the About links. */
+html.ui2 #view-help .hlp-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--u-accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+html.ui2 #view-help .hlp-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+html.ui2 #view-help .hlp-links .hlp-link { min-height: 24px; }
+html.ui2 #view-help .hlp-version,
+html.ui2 #view-help .hlp-author {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-help .hlp-build { color: var(--u-muted); }
+/* The trademark notice: always on screen, in plain text, never folded away. */
+html.ui2 #view-help .hlp-trademark {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--u-border);
+  color: var(--u-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Keyboard focus: the shell's double ring, inside this view too. */
+html.ui2 #view-help :focus-visible {
+  outline: 2px solid var(--u-focus);
+  outline-offset: 2px;
+}
+
+/* The donate buttons: the same branded buttons as the classic rail and
+   dialog (donate.js), laid out in a row that wraps. */
+html.ui2 #view-help .hlp-donate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html.ui2 #view-help .hlp-donate .donate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 140px;
+  min-height: var(--u-target);
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--u-radius);
+  font-family: var(--u-font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.ui2 #view-help .hlp-donate .donate-btn-icon { display: inline-flex; align-items: center; }
+html.ui2 #view-help .hlp-donate .donate-btn-label { line-height: 1; }
+html.ui2 #view-help .hlp-donate .donate-paypal-mark { display: none; }
+html.ui2 #view-help .hlp-donate .donate-gh { background: #fff; color: #24292f; border-color: #bf3989; }
+html.ui2 #view-help .hlp-donate .donate-gh .donate-btn-icon { color: #bf3989; }
+html.ui2 #view-help .hlp-donate .donate-paypal { background: #ffc439; border-color: #e0a800; }
+html.ui2 #view-help .hlp-donate .donate-paypal-wordmark {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 800;
+}
+html.ui2 #view-help .hlp-donate .donate-paypal-wordmark .pay { color: #003087; }
+html.ui2 #view-help .hlp-donate .donate-paypal-wordmark .pal { color: #009cde; }
+/* Ko-fi's coral with dark words: white on #FF5E5B is below 4.5:1. */
+html.ui2 #view-help .hlp-donate .donate-kofi { background: #ff5e5b; color: #1a1a1a; }

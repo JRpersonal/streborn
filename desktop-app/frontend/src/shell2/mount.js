@@ -29,6 +29,7 @@ import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
+import { mountHelp, syncHelpView } from './help/help.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -265,10 +266,10 @@ function wireSpeakerList(root) {
     const box = boxFor(pick);
     if (!box || typeof deps.pickBox !== 'function') return;
     Promise.resolve(deps.pickBox(box)).then(() => {
-      // Wishes has nothing about a speaker to show: choosing one there opens
-      // Radio, so the main area shows the speaker you just chose. Every other
-      // view stays open and follows the speaker.
-      if (state.view === 'wishes' && state.currentBox && state.currentBox.host === box.host
+      // Wishes and Help and info have nothing about a speaker to show:
+      // choosing one there opens Radio, so the main area shows the speaker you
+      // just chose. Every other view stays open and follows the speaker.
+      if ((state.view === 'wishes' || state.view === 'help') && state.currentBox && state.currentBox.host === box.host
         && typeof deps.switchView === 'function') deps.switchView('box');
     }).catch(() => {});
   });
@@ -362,11 +363,15 @@ export function syncShellNav(view) {
   });
   const main = byId('ui2Main');
   if (main) {
-    // shell2.css reads it: the music views leave the classic footer out.
+    // The open view, for styles and tests that key on it.
     main.dataset.view = view || '';
     main.scrollTop = 0;
   }
   syncSpeakersArea(view);
+  // Help and info (shell2/help): wired the first time it opens, painted on
+  // every visit.
+  if (view === 'help') mountHelp(byId('view-help'), deps);
+  syncHelpView(view);
 }
 
 // syncShellPlayer shows the player only with a speaker to control. Without
