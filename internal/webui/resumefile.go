@@ -98,6 +98,13 @@ type fileResumeTiming struct {
 	// re-buffers before its first line. A stale-URL line ends the wait at once.
 	plainPlayWait time.Duration
 	plainPlayStep time.Duration
+	// unmuteDelay is how long after the speaker took the Seek its level
+	// comes back. The restart's Play starts the file from its beginning and
+	// the Seek lands about two seconds later, so the speaker is silent from
+	// the Stop to just after the Seek (#830: a listener heard the first
+	// seconds of the episode on every resume). The pause lets the jump settle
+	// before the sound returns.
+	unmuteDelay time.Duration
 }
 
 // productionFileResumeTiming is the file restart's clock on a real speaker.
@@ -109,6 +116,7 @@ var productionFileResumeTiming = fileResumeTiming{
 	confirmGap:    1500 * time.Millisecond,
 	plainPlayWait: 4 * time.Second,
 	plainPlayStep: 500 * time.Millisecond,
+	unmuteDelay:   400 * time.Millisecond,
 }
 
 // audioOffsetFresh is how old the syslog's audio-path offset may be and still
@@ -498,6 +506,15 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 	// Where the track continues, for the end watch's clock and for a later
 	// repair that has to put the file back.
 	s.notePausedAt(at)
+	// Silent from the Stop until the Seek has landed: the Play in between
+	// starts the file from its beginning. Only when there is a position to
+	// seek to; a restart from the start has nothing to hide.
+	unmute := func(bool) {}
+	if at > 0 {
+		unmute = s.muteForFileRestart(rctx, tr.title)
+	}
+	seeked := false
+	defer func() { unmute(seeked) }()
 
 	if err := s.renderer.Stop(rctx); err != nil && !isWrongTransportState(err) {
 		s.logger.Warn("file restart: the speaker did not take the Stop, trying the Play anyway",
@@ -529,8 +546,58 @@ func (s *Server) restartFileAtLocked(ctx context.Context, tr singleTrack, at tim
 			"title", tr.title, "why", why, "at", at.String(), "err", err)
 		return true
 	}
+	seeked = true
 	s.logger.Info("file restart: continued where it was paused", "title", tr.title, "why", why, "at", at.String())
 	return true
+}
+
+// muteForFileRestart turns the speaker down to 0 for a file restart and
+// returns what puts the level back. The returned func waits unmuteDelay first
+// when the Seek landed (seeked), and puts the level back at once otherwise:
+// a track that plays from its start after a refused seek must be heard. It
+// leaves the level alone when somebody changed it in the meantime (the
+// speaker no longer reads 0), and when the level could not be read or was 0
+// already nothing is muted at all.
+func (s *Server) muteForFileRestart(ctx context.Context, title string) func(seeked bool) {
+	noop := func(bool) {}
+	if s.boxHost == "" && (s.ownVolumeFn == nil || s.ownLevelSetFn == nil) {
+		return noop
+	}
+	vctx, vcancel := context.WithTimeout(ctx, 2*time.Second)
+	v, err := s.ownVolume(vctx)
+	vcancel()
+	if err != nil || v.Target <= 0 {
+		return noop
+	}
+	level := s.capVolume(v.Target)
+	mctx, mcancel := context.WithTimeout(ctx, 2*time.Second)
+	err = s.setOwnLevel(mctx, 0)
+	mcancel()
+	if err != nil {
+		s.logger.Warn("file restart: could not silence the speaker, the restart may be heard",
+			"title", title, "err", err)
+		return noop
+	}
+	s.logger.Info("file restart: speaker silenced until the seek lands", "title", title, "restoreTo", level)
+	return func(seeked bool) {
+		if seeked {
+			if d := s.fileResumeTimes().unmuteDelay; d > 0 {
+				time.Sleep(d)
+			}
+		}
+		// Detached and bounded: the restart's own context may be about to end,
+		// and a speaker left at 0 is the one outcome that must not happen.
+		rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer rcancel()
+		if cur, err := s.ownVolume(rctx); err == nil && cur.Target != 0 {
+			s.logger.Info("file restart: the level was changed during the restart, leaving it",
+				"title", title, "level", cur.Target)
+			return
+		}
+		if err := s.setOwnLevel(rctx, level); err != nil {
+			s.logger.Warn("file restart: could not put the level back", "title", title, "level", level, "err", err)
+		}
+	}
 }
 
 // repairFrozenFileResume is the end watch's repair for a resume that froze. It

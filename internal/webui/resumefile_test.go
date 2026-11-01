@@ -159,6 +159,8 @@ type pausedFileBox struct {
 	rel     string
 	actions []string
 	seekTo  []string
+	// refuseSeek answers every Seek with a UPnP fault.
+	refuseSeek bool
 }
 
 func (b *pausedFileBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +178,11 @@ func (b *pausedFileBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GetPositionInfo":
 		_, _ = w.Write([]byte("<RelTime>" + b.rel + "</RelTime><TrackDuration>0:04:00</TrackDuration>"))
 	case "Seek":
+		if b.refuseSeek {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("<errorCode>710</errorCode>"))
+			return
+		}
 		s := string(body)
 		if i := strings.Index(s, "<Target>"); i >= 0 {
 			s = s[i+len("<Target>"):]
@@ -208,6 +215,7 @@ func shrinkFileRestart(s *Server) {
 	times.seekDelay, times.seekRetry, times.restartQuiet = 5*time.Millisecond, 5*time.Millisecond, 50*time.Millisecond
 	times.confirmGap = 5 * time.Millisecond
 	times.plainPlayWait, times.plainPlayStep = 60*time.Millisecond, 5*time.Millisecond
+	times.unmuteDelay = time.Millisecond
 	s.fileResumeTiming = &times
 }
 
