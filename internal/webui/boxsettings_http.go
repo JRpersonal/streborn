@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -356,7 +357,7 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	// Special case STANDBY: no ContentItem source at Bose, boxStandby is the
 	// real power-off.
 	if src == "STANDBY" {
-		if msg := s.boxStandby(); msg != "" {
+		if msg := s.boxStandby(r, "source"); msg != "" {
 			http.Error(w, msg, http.StatusBadGateway)
 			return
 		}
@@ -428,7 +429,7 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !req.On {
-		if msg := s.boxStandby(); msg != "" {
+		if msg := s.boxStandby(r, "power"); msg != "" {
 			http.Error(w, msg, http.StatusBadGateway)
 			return
 		}
@@ -760,12 +761,28 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 // the call so the UPNP->STANDBY flip it causes is not classified as a
 // spontaneous firmware drop and auto-resumed (#419).
 //
+// route names the endpoint that asked ("power" for /api/box/power, "source"
+// for /api/box/source STANDBY), and the line carries who sent it: a group that
+// came apart because its main speaker was switched off left no trace of which
+// app or remote did it (#1659), and the desktop app, the phone remote and a
+// third-party remote or home automation all reach this same handler.
+//
 // Returns "" on success, else the message for the handler's 502.
-func (s *Server) boxStandby() string {
+func (s *Server) boxStandby(r *http.Request, route string) string {
 	// Always logged: a standby the app or the phone asked for must be told apart
 	// from one the firmware took on its own (#1190), and nothing else on this
 	// path logs when the Spotify engine is idle.
-	s.logger.Info("standby requested by the app or phone")
+	from, ua := "", ""
+	if r != nil {
+		from, ua = r.RemoteAddr, r.UserAgent()
+		if host, _, err := net.SplitHostPort(from); err == nil {
+			from = host
+		}
+		if len(ua) > 120 {
+			ua = ua[:120]
+		}
+	}
+	s.logger.Info("standby requested by the app or phone", "route", route, "remote", from, "userAgent", ua)
 	s.NoteUserStop()
 	s.tellSpotifyUserStopped("standby")
 	client := &http.Client{Timeout: 6 * time.Second}

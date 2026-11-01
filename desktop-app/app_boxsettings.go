@@ -146,6 +146,11 @@ func (a *App) SelectBoxSource(host string, port int, source, account string) err
 // before the push even starts, and giving up at the shared 6 s would report a
 // failure for a speaker that goes on to wake.
 func (a *App) SetBoxPower(host string, port int, on bool) error {
+	// Logged so a bundle can tell the app's own power press apart from a phone
+	// or another remote switching the speaker off (#1659).
+	if a.logger != nil {
+		a.logger.Info("power: the app's power button", "host", host, "on", on)
+	}
 	b, _ := json.Marshal(map[string]bool{"on": on})
 	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/box/power", "application/json", string(b), powerCallTimeout)
 	if err != nil {
