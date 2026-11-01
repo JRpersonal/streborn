@@ -13,19 +13,20 @@ import (
 // still there verbatim. The behaviour is covered in the browser by
 // e2e/specs/phone-ui2-*.spec.mjs and src/phoneui2switch.test.js.
 
-// TestPhoneRemoteUI2SwitchIsOffByDefault: on only for exactly '1', every
-// storage access guarded, applied with the theme before the body paints.
-func TestPhoneRemoteUI2SwitchIsOffByDefault(t *testing.T) {
+// TestPhoneRemoteUI2IsTheDefault: UI 2.0 unless the phone stored exactly '0'
+// (somebody picked classic), every storage access guarded, applied with the
+// theme before the body paints. Phase 6 (#1290) made it the default.
+func TestPhoneRemoteUI2IsTheDefault(t *testing.T) {
 	head := indexHTML[:strings.Index(indexHTML, "</head>")]
 	for _, want := range []string{
 		"var UI2_KEY='str.ui2Preview';",
-		"try { return localStorage.getItem(UI2_KEY)==='1'; } catch (e) {}",
+		"try { return localStorage.getItem(UI2_KEY)!=='0'; } catch (e) {}",
 		"window.ui2Set=function(on){",
 		"window.ui2CanKeep=function(){",
 		// Keeping the choice needs a write, not only a read.
 		"localStorage.setItem(probe,'1');",
 		"if (window.ui2Get()) el.classList.add('ui2'); else el.classList.remove('ui2');",
-		"if (location.hash==='#ui2') {",
+		"if (location.hash==='#ui2' || location.hash==='#classic') {",
 		"history.replaceState(null,'',location.pathname+location.search);",
 	} {
 		if !strings.Contains(head, want) {
@@ -36,11 +37,11 @@ func TestPhoneRemoteUI2SwitchIsOffByDefault(t *testing.T) {
 	if !strings.Contains(indexHTML, "html:not(.ui2) .ui2-only { display:none !important; }") {
 		t.Error("the .ui2-only elements are no longer hidden in the current layout")
 	}
-	// The Layout row offers both, Current pressed until the preview is on.
+	// The Layout row offers both, New pressed unless classic was picked.
 	for _, want := range []string{
 		`<div class="a11y-group" id="a11yLayoutGroup">`,
-		`<button type="button" data-layout="classic" aria-pressed="true">Current</button>`,
-		`<button type="button" data-layout="ui2" aria-pressed="false">UI 2.0 preview</button>`,
+		`<button type="button" data-layout="classic" aria-pressed="false">Classic</button>`,
+		`<button type="button" data-layout="ui2" aria-pressed="true">New</button>`,
 		"if (lyGroup && !(window.ui2CanKeep && window.ui2CanKeep())) lyGroup.hidden = true;",
 		"if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }",
 		// A write refused after the menu was shown takes the row away.

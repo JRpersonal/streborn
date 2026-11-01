@@ -158,7 +158,7 @@ try {
       try {
         localStorage.setItem('str.remote.lang', l);
         if (th) localStorage.setItem('a11yTheme', th);
-        if (ui2) localStorage.setItem('str.ui2Preview', '1');
+        localStorage.setItem('str.ui2Preview', ui2 ? '1' : '0');
       } catch (e) {}
     }, [lang, theme, UI2]);
     await ctx.route('**/*', phone.handle);

@@ -1,10 +1,13 @@
-// uipreview.js: the switch for the UI 2.0 preview (#1285, docs/UI-2.0.md).
+// uipreview.js: the switch between the UI 2.0 layout and the classic one
+// (#1285, docs/UI-2.0.md).
 //
-// The new layout ships next to the current one, OFF by default, and is turned
-// on from the "Aa" menu. Like the text size and the theme it is a per-viewer
-// chrome preference, so it lives in localStorage. Only the exact value '1'
-// reads as on: a missing key, a cleared store or anything unexpected keeps the
-// layout everybody knows.
+// UI 2.0 is the default since phase 6 (#1290). The classic layout stays
+// selectable from the "Aa" menu for one or two releases and is then removed.
+// Like the text size and the theme it is a per-viewer chrome preference, so it
+// lives in localStorage. Only the exact value '0' reads as classic: that is
+// what a person who picked it (in the preview days or since) has stored, and
+// their choice stands. A missing key, a cleared store or anything unexpected
+// gets the default.
 //
 // No top-level access to localStorage, document or navigator: vitest imports
 // this module in a plain Node environment, and a WebView that refuses storage
@@ -24,15 +27,15 @@ function store() {
   }
 }
 
-// getUi2Preview reports whether the UI 2.0 preview is switched on.
+// getUi2Preview reports whether the UI 2.0 layout is on (the default).
 export function getUi2Preview() {
   const s = store();
   if (s) {
     try {
-      return s.getItem(KEY) === '1';
+      return s.getItem(KEY) !== '0';
     } catch (_) { /* fall through to the in-memory value */ }
   }
-  return memory === '1';
+  return memory !== '0';
 }
 
 // canKeepUi2Preview reports whether a choice survives the reload the switch

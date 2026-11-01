@@ -670,23 +670,25 @@ test.describe('Layout switch', () => {
         get() { throw new DOMException('The operation is insecure.', 'SecurityError'); },
       });`,
       // No storage, no remembered speaker: with several on the network none is
-      // chosen, so there are no presets to wait for. The header is enough.
-      ready: '#a11yTrigger',
+      // chosen, so there are no presets to wait for. The shell is enough:
+      // without storage the app boots the default layout, UI 2.0.
+      ready: 'html.ui2 #ui2Shell',
     });
 
-    test('30. boots the current layout and offers no switch it cannot keep', async ({ app }) => {
+    test('30. boots the default (new) layout and offers no switch it cannot keep', async ({ app }) => {
       const { page } = app;
-      await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
+      await expect(page.locator('html')).toHaveClass(/\bui2\b/);
       await expect(page.locator('#a11yMenu [data-ui2]')).toHaveCount(2);
       // Fix 5.1 of the e2e design: a switch whose reload would come back
-      // without the choice is drawn disabled, and the hint says why.
-      await page.locator('#a11yTrigger').click();
+      // without the choice is drawn disabled, and the hint says why. In the
+      // shell the Aa menu lives in the sidebar's app settings.
+      await page.locator('#ui2AppSettings #a11yTrigger').click();
       await expect(page.locator('#a11yMenu')).toBeVisible();
       await expect(page.locator('#a11yMenu [data-ui2="0"]')).toBeDisabled();
       await expect(page.locator('#a11yMenu [data-ui2="1"]')).toBeDisabled();
       await expect(page.locator('#a11yLayoutHint')).not.toBeEmpty();
-      await page.locator('#a11yMenu [data-ui2="1"]').click({ force: true });
-      await expect(page.locator('html')).not.toHaveClass(/\bui2\b/);
+      await page.locator('#a11yMenu [data-ui2="0"]').click({ force: true });
+      await expect(page.locator('html')).toHaveClass(/\bui2\b/);
     });
   });
 });
