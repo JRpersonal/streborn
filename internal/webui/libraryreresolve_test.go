@@ -221,7 +221,7 @@ func TestLibraryKeyAmbiguousTitleIsLeftAlone(t *testing.T) {
 	var resolves []string
 	s := reresolveServer(t, f, &resolves)
 	key := renumberedTrackKey(f, &presets.TrackRef{ServerUDN: "uuid:PC-MEDIA", ObjectID: "obj-7", ParentID: "c-1", Title: "Intro"})
-	if s.reresolveLibraryKey(context.Background(), 6, &key) {
+	if changed, _ := s.reresolveLibraryKey(context.Background(), 6, &key); changed {
 		t.Fatal("an ambiguous title must not move the key")
 	}
 	if key.StreamURL != f.oldURL("obj-7") {
@@ -299,7 +299,7 @@ func TestFolderKeyWithoutRefIsNotProbed(t *testing.T) {
 	}
 	key := presets.Preset{Slot: 2, Type: "queue", Source: "PC: Media",
 		Items: []presets.PresetItem{{URL: f.oldURL("x1"), Title: "Intro"}}}
-	if s.reresolveQueuePreset(context.Background(), 2, &key) {
+	if changed, _ := s.reresolveQueuePreset(context.Background(), 2, &key); changed {
 		t.Fatal("changed a folder key without a ref")
 	}
 }

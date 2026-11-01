@@ -111,7 +111,10 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 				"slot", slot, "err", err)
 		}
 	}
-	s.healQueuePresetIfMoved(ctx, slot, &p)
+	// A hardware press has no screen to name a music server that is off
+	// (#1339), so that verdict is not acted on here: the press goes ahead as
+	// it always did.
+	_ = s.healQueuePresetIfMoved(ctx, slot, &p)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
 		return false

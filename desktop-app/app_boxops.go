@@ -199,6 +199,12 @@ func friendlyError(resp *http.Response) string {
 		if e, _ := m["error"].(string); e == "stereo-incomplete" {
 			return string(b)
 		}
+		// And for a library key whose music server is off (#1339,
+		// {"code":"library-server-offline","server":...}): the frontend names
+		// the server in the user's language from the server field.
+		if c, _ := m["code"].(string); c == "library-server-offline" {
+			return string(b)
+		}
 		msg := ""
 		if d, ok := m["detail"].(string); ok && d != "" {
 			msg = d

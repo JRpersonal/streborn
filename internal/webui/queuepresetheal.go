@@ -541,9 +541,13 @@ func rewriteURLAddr(raw, oldHost, oldPort, newHost, newPort string) (string, boo
 //
 // After the address, the files themselves: a server that renumbered its file
 // URLs (#919) has the key's folder read again (libraryreresolve.go).
-func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *presets.Preset) {
+//
+// It returns the verdict that the key's music server is off (#1339), the same
+// way healLibraryKeyIfMoved does for a single track.
+func (s *Server) healQueuePresetIfMoved(ctx context.Context, slot int, p *presets.Preset) *libraryServerOffline {
 	s.healQueuePreset(ctx, slot, p, nil)
-	s.reresolveQueuePreset(ctx, slot, p)
+	_, off := s.reresolveQueuePreset(ctx, slot, p)
+	return off
 }
 
 // healQueuePreset is healQueuePresetIfMoved with the store guard of the

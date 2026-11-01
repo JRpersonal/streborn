@@ -5,6 +5,7 @@
 import { PlaySlot } from '../../api.js';
 import { parsePlayRejection, resolveBoxByRef } from '../../groups.js';
 import { t } from '../../i18n/index.js';
+import { libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
 import { isNativeServicePreset } from '../../nativeservice.js';
 import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
@@ -183,6 +184,10 @@ export async function play(slot) {
     if (errStr.toLowerCase().includes('spotify-premium-required')) {
       showToast(t('play.errSpotifyPremiumHelp'));
     }
+    // A library key whose music server is off: the tile says so, the toast
+    // names the server and what to do (#1339).
+    const offServer = libraryServerOffName(errStr);
+    if (offServer !== null) showToast(libraryServerOffNotice(offServer, t));
     // Half of an old stereo pair: the whole sentence, with where to fix it.
     // "Not ready" on every key, for an hour, is what this replaces (2026-10-04).
     const stale = deps.stereoStaleForError(errStr, (state.currentBox && state.currentBox.host) || '');
@@ -200,6 +205,9 @@ export async function play(slot) {
 // (2026-09-29) and had nowhere to go from it.
 function friendlyPlayError(s, host) {
   const l = String(s).toLowerCase();
+  // First: this refusal is the agent's raw JSON body, and the preset's name in
+  // it could hold any of the words the checks below look for (#1339).
+  if (libraryServerOffName(s) !== null) return t('play.errMusicServerOff');
   // Before box_not_ready: a speaker stuck as half of an old stereo pair is
   // "not ready" forever, and the escalation ladder below would send its owner to
   // pull the plug and mail logs, neither of which helps.

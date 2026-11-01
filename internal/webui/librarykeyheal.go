@@ -163,9 +163,15 @@ func (s *Server) healLibraryKeyHost(ctx context.Context, p *presets.Preset) (cha
 // After the address, the file itself: a server that renumbered its file URLs
 // (#919) is asked for the track's current one when the key knows the track's
 // object id (libraryreresolve.go).
-func (s *Server) healLibraryKeyIfMoved(ctx context.Context, slot int, p *presets.Preset) {
+//
+// It returns the verdict that the key's music server is off (#1339) when the
+// file did not serve and the server could not be found; nil otherwise, always
+// for a key that serves or that stores no server identity. The app's recall
+// refuses the press on it; a hardware press has no screen and goes ahead.
+func (s *Server) healLibraryKeyIfMoved(ctx context.Context, slot int, p *presets.Preset) *libraryServerOffline {
 	s.healLibraryKey(ctx, slot, p, nil)
-	s.reresolveLibraryKey(ctx, slot, p)
+	_, off := s.reresolveLibraryKey(ctx, slot, p)
+	return off
 }
 
 // healLibraryKey is healLibraryKeyIfMoved with the background sweep's store
