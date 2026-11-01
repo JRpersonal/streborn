@@ -492,7 +492,7 @@ func TestFormatFailureReportTellsAnAbsentSpeakerFromAnIsolatedOne(t *testing.T) 
 	if strings.Contains(out, "client isolation") || strings.Contains(out, "guest network") {
 		t.Errorf("absent speaker was still blamed on isolation:\n%s", out)
 	}
-	if !strings.Contains(out, "last saw the speaker answer for 25 min ago") {
+	if !strings.Contains(out, "has had no answer from the speaker for 25 min.") {
 		t.Errorf("last-seen age missing:\n%s", out)
 	}
 	if !strings.Contains(out, "3 failed attempts in a row") {
