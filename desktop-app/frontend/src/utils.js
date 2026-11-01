@@ -1107,6 +1107,27 @@ export function bassSliderProps(bass) {
   };
 }
 
+// bassLabelKeys picks the heading and the usage help of the bass row from the
+// range the speaker itself reports. Every SoundTouch measured so far (ST10,
+// Portable, ST30) answers /bassCapabilities with -9..0 and a default of 0, so
+// the slider can only take bass away and "Bass" read like a boost control
+// (discussion #1339). Such a speaker gets "Bass reduction". The plain "Bass"
+// heading stays for a speaker whose range reaches above its default (the
+// tone-controls route of the home-theater systems, or a classic box that
+// reports a positive bassMax) and for a row that is switched off: there the
+// reason line already says the speaker reports no adjustable bass, so the
+// heading must not claim to know which way it would go.
+//
+// The decision reads the RELATIVE range from bassSliderProps, so it matches
+// what the slider shows: a default below the maximum leaves room to add bass
+// even when the absolute maximum is 0 or below.
+export function bassLabelKeys(bass) {
+  if (!bassControlsDisabled(bass) && bassSliderProps(bass).max <= 0) {
+    return { heading: 'settingsView.bassReductionHeading', help: 'settingsView.bassReductionHelp' };
+  }
+  return { heading: 'settingsView.bassHeading', help: 'settingsView.bassHelp' };
+}
+
 // shouldAdoptPresetArt answers one question the preset grid and the status poll
 // have to agree on: may the logo of the station playing right now be written
 // onto the key it was recalled from? Yes only while that key has no logo of its
