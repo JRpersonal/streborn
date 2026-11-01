@@ -37,6 +37,7 @@
   --c-surface-2: #2a2a2a;   /* slightly higher surface / soft fills */
   --c-spotify-text: #1ED760; /* Spotify green, 7.5:1 on this surface */
   --c-startvol: #f0b429;    /* the start-volume mark, 8.5:1 here and never blue */
+  --c-maxvol: #ff7b72;      /* the volume-ceiling mark: red, never amber or blue */
   --c-surface-3: #333;      /* highest surface / hover */
   --c-border: #444;         /* default borders / dividers */
   --c-border-2: #555;       /* stronger borders */
@@ -98,6 +99,7 @@ html.a11y-light {
   --c-surface-2: #ececee;
   --c-spotify-text: #0F6B3B; /* 5.6:1 here; the brand green measures 1.63:1 */
   --c-startvol: #b06a00;    /* 3.9:1 here; the dark amber washes out on white */
+  --c-maxvol: #c62828;
   --c-surface-3: #e2e2e5;
   --c-border: #cccccf;
   --c-border-2: #b5b5ba;
@@ -148,6 +150,7 @@ html.a11y-contrast {
   --c-surface-2: #111111;
   --c-spotify-text: #1ED760; /* 9.4:1 on this one */
   --c-startvol: #ffc145;    /* loud on black, like everything else in here */
+  --c-maxvol: #ff8a80;
   --c-surface-3: #1a1a1a;
   --c-border: #ffffff;
   --c-border-2: #ffffff;
@@ -3186,6 +3189,19 @@ html.a11y-light .expert-badge { color: #7a5a10; border-color: #d5bc7d; backgroun
 .startvol-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; }
 .startvol-toggle input { accent-color: var(--c-startvol); }
 .startvol-toggle span { color: var(--c-text); }
+/* The volume ceiling: the same grip and needle, in red, with a bar inside
+   instead of the start arrow. A ceiling and a start level side by side on one
+   bar must be told apart at a glance, so colour and glyph both differ. */
+.maxvol-mark, .maxvol-mark::before, .maxvol-chip { background: var(--c-maxvol); }
+.maxvol-toggle input { accent-color: var(--c-maxvol); }
+.maxvol-mark::after,
+.maxvol-chip::after {
+  border: 0;
+  width: 8px; height: 3px;
+  background: var(--c-surface);
+  transform: translate(-50%, -50%);
+}
+.maxvol-chip::after { transform: translate(-50%, -50%) scale(0.8); }
 .phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
 .phone-path {

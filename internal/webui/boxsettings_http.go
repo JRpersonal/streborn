@@ -324,6 +324,9 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
+	// A slider pushed past the ceiling stops at it, and the reply says where,
+	// so the app and the phone page can show the level the speaker really has.
+	req.Value = s.capVolume(req.Value)
 	if err := c.SetVolume(ctx, req.Value); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

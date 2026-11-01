@@ -234,3 +234,35 @@ func TestSessionResetForgetsTheEngineLevel(t *testing.T) {
 		t.Fatalf("after a session reset the seed must go out, got %v", e)
 	}
 }
+
+// The Spotify app cannot turn the speaker past the ceiling set in STR: the
+// speaker gets the ceiling, and the app's slider is moved back to it so it
+// shows the level the speaker really plays at. Below the ceiling nothing
+// changes.
+func TestSpotifyVolumeStopsAtTheSpeakerCeiling(t *testing.T) {
+	m, r := newSyncTestManager(20)
+	m.SetVolumeCapFn(func() (int, bool) { return 40, true })
+
+	m.handleEngineVolumeEvent(30, 100)
+	if got := r.boxVals(); len(got) != 1 || got[0] != 30 {
+		t.Fatalf("below the ceiling the level must pass untouched, box got %v", got)
+	}
+	if got := r.engineVals(); len(got) != 0 {
+		t.Fatalf("below the ceiling the slider must not be moved, engine got %v", got)
+	}
+
+	m.handleEngineVolumeEvent(70, 100)
+	if got := r.boxVals(); len(got) != 2 || got[1] != 40 {
+		t.Errorf("above the ceiling the speaker must get the ceiling, box got %v", got)
+	}
+	if got := r.engineVals(); len(got) != 1 || got[0] != 40 {
+		t.Errorf("the Spotify slider must be moved back to the ceiling, engine got %v", got)
+	}
+
+	// The engine echoes that push as a volume event; it must not be written
+	// to the speaker again.
+	m.handleEngineVolumeEvent(40, 100)
+	if got := r.boxVals(); len(got) != 2 {
+		t.Errorf("the echo of the slider push must not reach the speaker, box got %v", got)
+	}
+}

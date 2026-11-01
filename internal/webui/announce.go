@@ -268,7 +268,7 @@ func (s *Server) startAnnouncementClip(ctx context.Context, prev nowPlayingSnaps
 			return fmt.Errorf("announce clip seturi: %w", err)
 		}
 		if changedVol {
-			if err := s.announceSetVolume(ctx, clampVolume(volume)); err != nil {
+			if err := s.announceSetVolume(ctx, s.capVolume(clampVolume(volume))); err != nil {
 				s.logger.Warn("announce: setting the announcement volume failed", "err", err)
 			}
 		}

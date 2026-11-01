@@ -142,6 +142,8 @@ export function GetKeyActions(arg1:string,arg2:number):Promise<Record<string, an
 
 export function GetLogFilePath():Promise<string>;
 
+export function GetMaxVolume(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 
 export function GetQueue(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -357,6 +359,8 @@ export function SetDisplayNotices(arg1:string,arg2:number,arg3:boolean):Promise<
 export function SetDisplaySplash(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetDisplayTrack(arg1:string,arg2:number,arg3:boolean,arg4:string):Promise<void>;
+
+export function SetMaxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function SetOTARunning(arg1:boolean):Promise<void>;
 

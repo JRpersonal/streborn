@@ -778,6 +778,15 @@ type Server struct {
 	// scheduled, so one power-on sets it once however many paths notice it.
 	startVolumeMu sync.Mutex
 	startVolumeAt time.Time
+	// maxVolumePath overrides the NAND file holding the per-box ceiling, so a
+	// test can point it at a temp tree (maxvolume.go).
+	maxVolumePath string
+	// maxVolumeMu guards the turn-down loop: maxVolumeBusy while a write is in
+	// flight, maxVolumeLast the newest level the speaker reported.
+	maxVolumeMu      sync.Mutex
+	maxVolumeBusy    bool
+	maxVolumeLast    int
+	maxVolumeRecheck time.Duration // 0 = maxVolumeRecheck; tests shrink it
 
 	// nowPlayingFn overrides pollNowPlaying for tests. The end detection is a
 	// state machine over what the box reports, so it is only testable if the
@@ -1667,6 +1676,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
 	mux.HandleFunc("/api/box/restore-cloud-url", s.handleRestoreCloudURL)
 	mux.HandleFunc("/api/box/start-volume", s.handleStartVolume)
+	mux.HandleFunc("/api/box/max-volume", s.handleMaxVolume)
 	mux.HandleFunc("/api/favorites", s.handleFavorites)
 	mux.HandleFunc("/api/stream/title-swap", s.handleTitleSwap)
 	mux.HandleFunc("/api/box/foreign-influence", s.handleForeignInfluence)

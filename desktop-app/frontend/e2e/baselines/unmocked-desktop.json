@@ -12,6 +12,7 @@
   "GetDisplayMessages",
   "GetDisplayNotices",
   "GetDisplaySplash",
+  "GetMaxVolume",
   "GetResumeOnPowerOn",
   "GetStartVolume",
   "LibraryRefusedServers",

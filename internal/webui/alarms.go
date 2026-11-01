@@ -508,6 +508,8 @@ func (s *Server) wakeForAlarm(ctx context.Context, vol int) {
 	if s.boxHost == "" {
 		return
 	}
+	// An alarm level above the volume ceiling wakes at the ceiling.
+	vol = s.capVolume(vol)
 	c := boxapi.New(s.boxHost)
 	if !quietWakeNeeded(s.quietWakeNowPlaying(ctx, s.boxHost)) {
 		// Already up, so the write lands and stays.

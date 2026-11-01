@@ -69,6 +69,8 @@ func (s *Server) applyStartVolume(reason string) {
 	if !ok || (s.boxHost == "" && s.setVolumeFn == nil) {
 		return
 	}
+	// A start level above the ceiling starts at the ceiling instead.
+	vol = s.capVolume(vol)
 	// once per power-on: STR's resume and the power-on watch below can both
 	// notice the same start
 	s.startVolumeMu.Lock()
