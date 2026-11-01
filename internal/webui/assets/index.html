@@ -604,13 +604,14 @@ html.ui2 .tabbar button .ti { display:none; }
     try { var v=localStorage.getItem(THEME_KEY); if (v==='dark'||v==='light'||v==='contrast') return v; } catch (e) {}
     return osTheme();
   };
-  // UI 2.0 preview (Aa > Layout). Off unless this phone stored exactly '1';
-  // a phone without storage keeps the current layout and never sees the
-  // choice. Applied here with the theme, so the preview has no flash either.
+  // UI 2.0 layout (Aa > Layout), the default since phase 6 (#1290). Classic
+  // only when this phone stored exactly '0', which is what somebody who picked
+  // it has; a phone without storage gets the default and never sees the
+  // choice. Applied here with the theme, so neither layout flashes.
   var UI2_KEY='str.ui2Preview';
   window.ui2Get=function(){
-    try { return localStorage.getItem(UI2_KEY)==='1'; } catch (e) {}
-    return false;
+    try { return localStorage.getItem(UI2_KEY)!=='0'; } catch (e) {}
+    return true;
   };
   window.ui2Set=function(on){
     var want=on ? '1' : '0';
@@ -631,12 +632,12 @@ html.ui2 .tabbar button .ti { display:none; }
     } catch (e) {}
     return false;
   };
-  // A tap on another speaker in the preview's list opens its page with #ui2,
-  // so the layout follows the user from speaker to speaker (each speaker is
-  // its own origin with its own storage). The hash is taken off at once.
+  // A tap on another speaker opens its page with #ui2 or #classic, so the
+  // layout follows the user from speaker to speaker (each speaker is its own
+  // origin with its own storage). The hash is taken off at once.
   try {
-    if (location.hash==='#ui2') {
-      window.ui2Set(true);
+    if (location.hash==='#ui2' || location.hash==='#classic') {
+      window.ui2Set(location.hash==='#ui2');
       history.replaceState(null,'',location.pathname+location.search);
     }
   } catch (e) {}
@@ -689,8 +690,8 @@ html.ui2 .tabbar button .ti { display:none; }
 <div class="a11y-group" id="a11yLayoutGroup">
 <div class="a11y-glabel" id="a11yLayoutLabel">Layout</div>
 <div class="a11y-seg" role="group" aria-labelledby="a11yLayoutLabel">
-<button type="button" data-layout="classic" aria-pressed="true">Current</button>
-<button type="button" data-layout="ui2" aria-pressed="false">UI 2.0 preview</button>
+<button type="button" data-layout="classic" aria-pressed="false">Classic</button>
+<button type="button" data-layout="ui2" aria-pressed="true">New</button>
 </div>
 </div>
 </div>
@@ -3719,7 +3720,9 @@ function peerBtn(p) {
   // (seen recently over mDNS but not answering now) is still shown, dimmed and
   // non-clickable, so a speaker briefly missed by a sweep does not vanish.
   const online = p.reachable !== false;
-  if (online) { a.href = p.url; }
+  // #classic: somebody who picked the classic layout keeps it on the next
+  // speaker too, whose page would otherwise open in the default.
+  if (online) { if (p.url) a.href = String(p.url).split('#')[0] + '#classic'; }
   else { a.setAttribute('aria-disabled', 'true'); a.style.opacity = '0.5'; a.style.pointerEvents = 'none'; a.title = (p.name || p.url); }
   a.innerHTML = '<span class="dot"' + (online ? '' : ' style="background:#9ca3af"') + '></span>' + escapeHtml(p.name || p.url);
   if (ui2On) ui2PeerLook(a, p, online);
@@ -3798,18 +3801,18 @@ async function loadVersion() {
   // the top of this script; this dictionary covers only the "Aa" menu. Done
   // client-side from navigator.language, so it costs the speaker nothing.
   var A11Y_I18N = {
-    en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast",ly:"Layout",lc:"Current",ln:"UI 2.0 preview"},
-    de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast",ly:"Layout",lc:"Aktuell",ln:"Vorschau UI 2.0"},
-    nl:{t:"Weergave en toegankelijkheid",sz:"Tekstgrootte",n:"Normaal",l:"Groot",x:"Extra groot",th:"Thema",d:"Donker",li:"Licht",c:"Hoog contrast",ly:"Indeling",lc:"Huidig",ln:"UI 2.0-voorvertoning"},
-    fr:{t:"Affichage et accessibilité",sz:"Taille du texte",n:"Normale",l:"Grande",x:"Très grande",th:"Thème",d:"Sombre",li:"Clair",c:"Contraste élevé",ly:"Disposition",lc:"Actuelle",ln:"Aperçu UI 2.0"},
-    es:{t:"Pantalla y accesibilidad",sz:"Tamaño del texto",n:"Normal",l:"Grande",x:"Muy grande",th:"Tema",d:"Oscuro",li:"Claro",c:"Alto contraste",ly:"Diseño",lc:"Actual",ln:"Vista previa de UI 2.0"},
-    pl:{t:"Wyświetlanie i dostępność",sz:"Rozmiar tekstu",n:"Normalny",l:"Duży",x:"Bardzo duży",th:"Motyw",d:"Ciemny",li:"Jasny",c:"Wysoki kontrast",ly:"Układ",lc:"Obecny",ln:"Podgląd UI 2.0"},
-    tr:{t:"Görüntü ve erişilebilirlik",sz:"Yazı boyutu",n:"Normal",l:"Büyük",x:"Çok büyük",th:"Tema",d:"Koyu",li:"Açık",c:"Yüksek kontrast",ly:"Düzen",lc:"Mevcut",ln:"UI 2.0 önizlemesi"},
-    ar:{t:"العرض وإمكانية الوصول",sz:"حجم النص",n:"عادي",l:"كبير",x:"كبير جدًا",th:"السمة",d:"داكن",li:"فاتح",c:"تباين عالٍ",ly:"التخطيط",lc:"الحالي",ln:"معاينة UI 2.0"},
-    ja:{t:"表示とアクセシビリティ",sz:"文字サイズ",n:"標準",l:"大",x:"特大",th:"テーマ",d:"ダーク",li:"ライト",c:"ハイコントラスト",ly:"レイアウト",lc:"現在",ln:"UI 2.0 プレビュー"},
-    lt:{t:"Rodymas ir prieinamumas",sz:"Teksto dydis",n:"Normalus",l:"Didelis",x:"Labai didelis",th:"Tema",d:"Tamsi",li:"Šviesi",c:"Didelis kontrastas",ly:"Išdėstymas",lc:"Dabartinis",ln:"UI 2.0 peržiūra"},
-    lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts",ly:"Izkārtojums",lc:"Pašreizējais",ln:"UI 2.0 priekšskatījums"},
-    uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст",ly:"Макет",lc:"Поточний",ln:"Попередній перегляд UI 2.0"}
+    en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast",ly:"Layout",lc:"Classic",ln:"New"},
+    de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast",ly:"Layout",lc:"Klassisch",ln:"Neu"},
+    nl:{t:"Weergave en toegankelijkheid",sz:"Tekstgrootte",n:"Normaal",l:"Groot",x:"Extra groot",th:"Thema",d:"Donker",li:"Licht",c:"Hoog contrast",ly:"Indeling",lc:"Klassiek",ln:"Nieuw"},
+    fr:{t:"Affichage et accessibilité",sz:"Taille du texte",n:"Normale",l:"Grande",x:"Très grande",th:"Thème",d:"Sombre",li:"Clair",c:"Contraste élevé",ly:"Disposition",lc:"Classique",ln:"Nouvelle"},
+    es:{t:"Pantalla y accesibilidad",sz:"Tamaño del texto",n:"Normal",l:"Grande",x:"Muy grande",th:"Tema",d:"Oscuro",li:"Claro",c:"Alto contraste",ly:"Diseño",lc:"Clásico",ln:"Nuevo"},
+    pl:{t:"Wyświetlanie i dostępność",sz:"Rozmiar tekstu",n:"Normalny",l:"Duży",x:"Bardzo duży",th:"Motyw",d:"Ciemny",li:"Jasny",c:"Wysoki kontrast",ly:"Układ",lc:"Klasyczny",ln:"Nowy"},
+    tr:{t:"Görüntü ve erişilebilirlik",sz:"Yazı boyutu",n:"Normal",l:"Büyük",x:"Çok büyük",th:"Tema",d:"Koyu",li:"Açık",c:"Yüksek kontrast",ly:"Düzen",lc:"Klasik",ln:"Yeni"},
+    ar:{t:"العرض وإمكانية الوصول",sz:"حجم النص",n:"عادي",l:"كبير",x:"كبير جدًا",th:"السمة",d:"داكن",li:"فاتح",c:"تباين عالٍ",ly:"التخطيط",lc:"الكلاسيكي",ln:"الجديد"},
+    ja:{t:"表示とアクセシビリティ",sz:"文字サイズ",n:"標準",l:"大",x:"特大",th:"テーマ",d:"ダーク",li:"ライト",c:"ハイコントラスト",ly:"レイアウト",lc:"クラシック",ln:"新しい"},
+    lt:{t:"Rodymas ir prieinamumas",sz:"Teksto dydis",n:"Normalus",l:"Didelis",x:"Labai didelis",th:"Tema",d:"Tamsi",li:"Šviesi",c:"Didelis kontrastas",ly:"Išdėstymas",lc:"Klasikinis",ln:"Naujas"},
+    lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts",ly:"Izkārtojums",lc:"Klasiskais",ln:"Jaunais"},
+    uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст",ly:"Макет",lc:"Класичний",ln:"Новий"}
   };
   // The SPEAKER's language comes first when it is known. The owner set it in
   // the app, it is the same for everybody in the household, and the phone is
@@ -3937,7 +3940,7 @@ document.addEventListener('visibilitychange', function(){
 })();
 
 /* ===========================================================================
-   UI 2.0 preview (Aa > Layout, localStorage str.ui2Preview, off by default)
+   UI 2.0 layout (Aa > Layout, localStorage str.ui2Preview, the default)
 
    The phone remote in the structure of docs/UI-2.0.md: the speaker card on
    top with the speaker list under it on every tab, then Listen, Find,

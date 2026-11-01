@@ -20,9 +20,9 @@ function useStorage(s) { vi.stubGlobal('localStorage', s); }
 describe('UI 2.0 preview switch', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('is OFF by default', () => {
+  it('is ON by default since phase 6 (#1290)', () => {
     useStorage(fakeStorage());
-    expect(getUi2Preview()).toBe(false);
+    expect(getUi2Preview()).toBe(true);
   });
 
   it('round-trips on and off', () => {
@@ -35,10 +35,12 @@ describe('UI 2.0 preview switch', () => {
     expect(getUi2Preview()).toBe(false);
   });
 
-  it('reads anything but the exact value 1 as OFF', () => {
-    for (const v of ['true', 'on', 'yes', '01', ' 1', '0', '', 'null']) {
+  it('reads only the exact value 0 as classic: somebody who picked it keeps it', () => {
+    useStorage(fakeStorage({ 'str.ui2Preview': '0' }));
+    expect(getUi2Preview()).toBe(false);
+    for (const v of ['1', 'true', 'off', 'no', '00', ' 0', '', 'null']) {
       useStorage(fakeStorage({ 'str.ui2Preview': v }));
-      expect(getUi2Preview(), JSON.stringify(v)).toBe(false);
+      expect(getUi2Preview(), JSON.stringify(v)).toBe(true);
     }
   });
 
