@@ -1,7 +1,7 @@
 // Tests for the pure decision helpers in utils.js.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { savePresetCase, spotifySaveContextURI, spotifyURIFromContainer, libraryPlayMatches, queueSaveFallsThrough, savePlayingFallsThrough, bassControlsDisabled, bassSliderProps } from './utils.js';
+import { savePresetCase, spotifySaveContextURI, spotifyURIFromContainer, libraryPlayMatches, queueSaveFallsThrough, savePlayingFallsThrough, bassControlsDisabled, bassSliderProps, bassLabelKeys } from './utils.js';
 import { allSource, srcOf } from './test/source.js';
 
 const FRESH_MS = 2 * 60 * 1000;
@@ -187,7 +187,9 @@ describe('bassControlsDisabled', () => {
     expect(section).toContain('settingsView.bassUnavailable');
     // The reason replaces the help; both showing at once would tell a user
     // with no bass control how to use one.
-    const help = section.indexOf('settingsView.bassHelp');
+    // The help key is chosen by bassLabelKeys (reduction or full range), so
+    // the view carries the chosen key, not a literal one.
+    const help = section.indexOf('bassKeys.help');
     const reason = section.indexOf('settingsView.bassUnavailable');
     expect(help, 'the usage help must still exist for speakers that DO have bass').toBeGreaterThan(-1);
     expect(section.slice(Math.min(help, reason), Math.max(help, reason)))
@@ -228,6 +230,57 @@ describe('bassSliderProps', () => {
     expect(slider[0]).not.toContain('step="1"');
     for (const key of ['min', 'max', 'step', 'value']) {
       expect(slider[0]).toContain('${bassProps.' + key + '}');
+    }
+  });
+});
+
+// The bass row is called "Bass reduction" on a speaker that can only take bass
+// away (#1339). ST10, Portable and ST30 all answer /bassCapabilities with
+// -9..0, default 0; a slider labelled "Bass" there read like a boost control.
+describe('bassLabelKeys', () => {
+  const reduction = { heading: 'settingsView.bassReductionHeading', help: 'settingsView.bassReductionHelp' };
+  const full = { heading: 'settingsView.bassHeading', help: 'settingsView.bassHelp' };
+  it('calls the row Bass reduction when the range ends at the default', () => {
+    expect(bassLabelKeys({ available: true, min: -9, max: 0, default: 0, actual: -3 })).toEqual(reduction);
+    // max missing from the reading: the usual range, so still a reduction
+    expect(bassLabelKeys({ available: true, min: -9 })).toEqual(reduction);
+  });
+  it('keeps Bass when the speaker reports room above the default', () => {
+    expect(bassLabelKeys({ available: true, min: -9, max: 3, default: 0 })).toEqual(full);
+    // the relative range is what counts: max 0 above a default of -3 is a boost
+    expect(bassLabelKeys({ available: true, min: -9, max: 0, default: -3 })).toEqual(full);
+    expect(bassLabelKeys({ available: true, min: -100, max: 100, default: 0, step: 50 })).toEqual(full);
+  });
+  it('keeps Bass on a row that is switched off', () => {
+    expect(bassLabelKeys({ available: false, min: 0, max: 0, default: 0 })).toEqual(full);
+    expect(bassLabelKeys(undefined)).toEqual(full);
+  });
+  it('drives the heading and the help in the settings view', () => {
+    const src = srcOf('renderBasicsSections');
+    expect(src).toContain('bassLabelKeys(bass)');
+    expect(src).toContain('t(bassKeys.heading)');
+    expect(src).toContain('t(bassKeys.help)');
+    expect(src).not.toContain("t('settingsView.bassHeading')");
+  });
+  const bundles = ['en', 'de', 'fr', 'es', 'nl', 'pl', 'tr', 'uk', 'lt', 'lv', 'ar', 'ja', 'zh-Hant'];
+  const read = (loc) => JSON.parse(
+    readFileSync(new URL(`./i18n/bundles/${loc}.json`, import.meta.url), 'utf8'));
+  it('has every label in every bundle, translated', () => {
+    const en = read('en');
+    for (const key of [...Object.values(reduction), 'settingsView.bassHelp']) {
+      for (const loc of bundles) {
+        expect(read(loc)[key], `${loc}: ${key}`).toBeTruthy();
+        if (loc !== 'en') expect(read(loc)[key], `${loc}: ${key}`).not.toBe(en[key]);
+      }
+    }
+  });
+  it('says it plainly in English and German', () => {
+    const en = read('en');
+    const de = read('de');
+    expect(en['settingsView.bassReductionHeading']).toBe('Bass reduction');
+    expect(de['settingsView.bassReductionHeading']).toBe('Bassabsenkung');
+    for (const s of [en, de].flatMap((b) => [b['settingsView.bassReductionHelp'], b['settingsView.bassHelp']])) {
+      expect(s).not.toMatch(/ [-–—] /);
     }
   });
 });

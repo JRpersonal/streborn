@@ -13,6 +13,7 @@ import {
   balanceStateLabel,
   bassControlsDisabled,
   bassSliderProps,
+  bassLabelKeys,
 } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { markLeft, pctFromOffset } from '../../startvolmark.js';
@@ -70,6 +71,8 @@ export function renderBasicsSections(ctx) {
   // mapping: tone-controls speakers report a step above 1 that the slider
   // must honor (see bassSliderProps in utils.js).
   const bassProps = bassSliderProps(bass);
+  // "Bass reduction" on a speaker that can only take bass away (#1339).
+  const bassKeys = bassLabelKeys(bass);
   const uid = uidSuffixFor(box);
   return {
     group: 'basics',
@@ -124,7 +127,7 @@ export function renderBasicsSections(ctx) {
     </div>
 
     <div data-ui2-sec="bass" class="settings-section">
-      <h3>${escapeHtml(t('settingsView.bassHeading'))}</h3>
+      <h3>${escapeHtml(t(bassKeys.heading))}</h3>
       <div class="setting-row">
         <input type="range" id="boxBass"
                min="${bassProps.min}"
@@ -150,7 +153,7 @@ export function renderBasicsSections(ctx) {
         // his system the bass genuinely lives in a separate module, so the
         // line must not claim to know which of those it is.
         ? `<small class="muted small">${escapeHtml(t('settingsView.bassUnavailable'))}</small>`
-        : `<small class="muted small">${escapeHtml(t('settingsView.bassHelp'))}</small>`}
+        : `<small class="muted small">${escapeHtml(t(bassKeys.help))}</small>`}
     </div>
 
     <div data-ui2-sec="language" class="settings-section">
