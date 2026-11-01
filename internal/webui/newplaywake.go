@@ -226,6 +226,8 @@ func (s *Server) NoteBoxVolumeLevel(level int) {
 	if level < 0 {
 		return
 	}
+	// The volume ceiling sees every change, whoever made it (maxvolume.go).
+	s.enforceMaxVolume(level)
 	l := &s.newPlayLevel
 	l.mu.Lock()
 	switch {

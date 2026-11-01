@@ -26,6 +26,8 @@ import {
   SetBoxLanguage,
   GetStartVolume,
   SetStartVolume,
+  GetMaxVolume,
+  SetMaxVolume,
   readBoxBalanceInfo,
   writeBoxBalance,
 } from '../../api.js';
@@ -100,6 +102,9 @@ export function renderBasicsSections(ctx) {
           <div class="startvol-mark hidden" id="boxStartVolMark" role="slider" tabindex="0"
                aria-label="${escapeAttr(t('settingsView.startVolLabel'))}"
                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          <div class="startvol-mark maxvol-mark hidden" id="boxMaxVolMark" role="slider" tabindex="0"
+               aria-label="${escapeAttr(t('settingsView.maxVolLabel'))}"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
         </div>
         <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
       </div>
@@ -119,6 +124,17 @@ export function renderBasicsSections(ctx) {
       </div>
       <div class="setting-row" id="boxStartVolHelpRow" hidden>
         <small class="muted small">${escapeHtml(t('settingsView.startVolHelp'))}</small>
+      </div>
+      <div class="setting-row" id="boxMaxVolRow" hidden>
+        <label class="startvol-toggle maxvol-toggle">
+          <input type="checkbox" id="boxMaxVolOn" />
+          <span class="startvol-chip maxvol-chip" aria-hidden="true"></span>
+          <span>${escapeHtml(t('settingsView.maxVolLabel'))}</span>
+        </label>
+        <span class="setting-value" id="boxMaxVolVal"></span>
+      </div>
+      <div class="setting-row" id="boxMaxVolHelpRow" hidden>
+        <small class="muted small">${escapeHtml(t('settingsView.maxVolHelp'))}</small>
       </div>
       <div class="setting-row" id="boxBalanceNoteRow" hidden>
         <small class="muted small" id="boxBalanceNote"></small>
@@ -242,10 +258,12 @@ export function wireBasicsSections(ctx) {
     } catch (e) { reportError('boxNameSave', e); }
   });
   $('boxVolume').oninput = () => {
+    holdUnderCeiling($('boxVolume'));
     $('boxVolumeVal').textContent = $('boxVolume').value;
     throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
   };
   $('boxVolume').onchange = () => {
+    holdUnderCeiling($('boxVolume'));
     throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
   };
   $('boxBass').oninput = () => {
@@ -415,12 +433,61 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
 // So: a checkbox for whether it applies at all, and when it does, a marker on
 // the real volume bar that can be dragged. One bar, two things on it, and the
 // difference between them is visible instead of described.
-export async function refreshStartVolume(box) {
-  const row = document.getElementById('boxStartVolRow');
-  const helpRow = document.getElementById('boxStartVolHelpRow');
-  const check = document.getElementById('boxStartVolOn');
-  const label = document.getElementById('boxStartVolVal');
-  const mark = document.getElementById('boxStartVolMark');
+export function refreshStartVolume(box) {
+  return wireLevelMark(box, {
+    prefix: 'boxStartVol',
+    get: GetStartVolume,
+    set: SetStartVolume,
+    offKey: 'settingsView.startVolOff',
+    firstLevel: 20,
+  });
+}
+
+// The volume ceiling, built the same way as the start volume: a checkbox, and a
+// marker of its own on the same bar. Asked for by a parent who wanted the
+// speaker in a child's room to stop short of party level (mail 2026-11-01).
+//
+// The agent does the real work: it caps every level STR writes and turns the
+// speaker back down when its own keys go higher. Up here the main slider simply
+// stops at the marker, so nobody drags it to a level the speaker will refuse.
+let ceiling = 0;
+
+export function refreshMaxVolume(box) {
+  ceiling = 0;
+  return wireLevelMark(box, {
+    prefix: 'boxMaxVol',
+    get: GetMaxVolume,
+    set: SetMaxVolume,
+    offKey: 'settingsView.maxVolOff',
+    // Half way: loud enough for music, clearly short of the top, and somewhere
+    // the person can see it rather than under the native handle.
+    firstLevel: 50,
+    onLevel: (v) => {
+      ceiling = v;
+      holdUnderCeiling(document.getElementById('boxVolume'));
+    },
+  });
+}
+
+// holdUnderCeiling pulls the main slider back to the ceiling when it was
+// dragged past it, or when the speaker reported a level above it.
+export function holdUnderCeiling(slider) {
+  if (!slider || ceiling <= 0) return;
+  if (parseInt(slider.value, 10) > ceiling) {
+    slider.value = String(ceiling);
+    const val = document.getElementById('boxVolumeVal');
+    if (val) val.textContent = String(ceiling);
+  }
+}
+
+// wireLevelMark is the checkbox and marker pair both settings above share. The
+// element ids are the prefix plus Row, HelpRow, On, Val and Mark.
+async function wireLevelMark(box, cfg) {
+  const row = document.getElementById(cfg.prefix + 'Row');
+  const helpRow = document.getElementById(cfg.prefix + 'HelpRow');
+  const check = document.getElementById(cfg.prefix + 'On');
+  const label = document.getElementById(cfg.prefix + 'Val');
+  const mark = document.getElementById(cfg.prefix + 'Mark');
   const slider = document.getElementById('boxVolume');
   if (!row || !check || !label || !mark || !slider) return;
   row.hidden = true;
@@ -429,7 +496,7 @@ export async function refreshStartVolume(box) {
   if (!box || box.kind === 'stock') return;
   let data;
   try {
-    data = await GetStartVolume(box.host, box.port);
+    data = await cfg.get(box.host, box.port);
   } catch (e) {
     // An older agent has no such route; the row simply is not there.
     return;
@@ -449,15 +516,16 @@ export async function refreshStartVolume(box) {
   const paint = () => {
     const on = vol > 0;
     check.checked = on;
-    label.textContent = on ? String(vol) : t('settingsView.startVolOff');
+    label.textContent = on ? String(vol) : t(cfg.offKey);
     mark.classList.toggle('hidden', !on);
     place();
   };
 
   const save = async (next) => {
     try {
-      await SetStartVolume(box.host, box.port, next);
+      await cfg.set(box.host, box.port, next);
       saved = next;
+      if (cfg.onLevel) cfg.onLevel(next);
     } catch (e) {
       reportError(check, e);
       vol = saved;
@@ -474,7 +542,7 @@ export async function refreshStartVolume(box) {
       // one spot on the bar where a new marker is both hard to notice and
       // hard to grab. Zero is not an option either: it is invisible at the
       // far left and it is the value that means off.
-      vol = saved > 0 ? saved : 20;
+      vol = saved > 0 ? saved : cfg.firstLevel;
     } else {
       vol = 0;
     }
@@ -538,6 +606,7 @@ export async function refreshStartVolume(box) {
   }
 
   paint();
+  if (cfg.onLevel) cfg.onLevel(saved);
   row.hidden = false;
   if (helpRow) helpRow.hidden = false;
 }

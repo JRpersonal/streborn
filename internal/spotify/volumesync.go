@@ -102,6 +102,10 @@ type volSync struct {
 	lastSeedPct    int
 	lastSeedAt     time.Time
 
+	// capFn is the speaker's volume ceiling (ok=false: none). A Spotify app
+	// slider pushed past it stops at it. nil = no ceiling.
+	capFn func() (int, bool)
+
 	// Test seams; nil in production.
 	engineSet func(ctx context.Context, pct int) error
 	boxSet    func(ctx context.Context, pct int) error
@@ -452,8 +456,26 @@ func (m *Manager) handleEngineVolumeEvent(value, maxSteps int) {
 	m.applySpotifyVolumeToBox(pct)
 }
 
+// SetVolumeCapFn installs the speaker's volume ceiling (the agent's
+// max-volume setting). The Spotify app can then not turn the speaker past it,
+// and its slider is moved back to the ceiling so it shows the real level.
+func (m *Manager) SetVolumeCapFn(fn func() (int, bool)) {
+	m.vs.mu.Lock()
+	m.vs.capFn = fn
+	m.vs.mu.Unlock()
+}
+
 func (m *Manager) applySpotifyVolumeToBox(pct int) {
+	asked := pct
 	now := time.Now()
+	m.vs.mu.Lock()
+	capFn := m.vs.capFn
+	m.vs.mu.Unlock()
+	if capFn != nil {
+		if limit, ok := capFn(); ok && pct > limit {
+			pct = limit
+		}
+	}
 	m.vs.mu.Lock()
 	m.vs.toBox = append(pruneMarks(m.vs.toBox, now), volMark{pct, now})
 	m.vs.boxPct, m.vs.boxKnown = pct, true
@@ -462,12 +484,24 @@ func (m *Manager) applySpotifyVolumeToBox(pct int) {
 	if err := m.writeBoxVolume(ctx, pct); err != nil {
 		m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
 	}
+	if pct != asked {
+		// The slider in the Spotify app still shows what was asked for. Move
+		// it to the ceiling, or it would sit above a level the speaker will
+		// never play at. The engine echoes this push, and the echo filter
+		// keeps it from coming back here.
+		if err := m.engineSetVolume(ctx, pct); err != nil {
+			m.logger.Debug("spotify: could not move the Spotify slider to the volume ceiling", "err", err, "pct", pct)
+		}
+		m.logger.Info("spotify: volume held at the speaker's ceiling", "asked", asked, "pct", pct)
+	} else {
+		m.logger.Info("spotify: volume mirrored to box", "pct", pct)
+	}
 	cancel()
-	m.logger.Info("spotify: volume mirrored to box", "pct", pct)
 	// A group's volume must reach every follower, not just the master
 	// this go-librespot runs on. Handed to a worker so a slow/offline
-	// follower can never stall the event loop.
-	m.requestGroupVolume(pct)
+	// follower can never stall the event loop. The level asked for goes out,
+	// not this speaker's ceiling: each follower applies its own.
+	m.requestGroupVolume(asked)
 }
 
 // VolumeSnapshot is the spotify_volume debug section: what the bridge last

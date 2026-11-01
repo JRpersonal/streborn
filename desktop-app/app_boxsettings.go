@@ -454,6 +454,46 @@ func (a *App) SetStartVolume(host string, port int, volume int) error {
 	return nil
 }
 
+// --- Max volume: a ceiling the speaker's volume never stays above ---------
+//
+// Asked for on 2026-11-01 for a speaker in a child's room. Off by default.
+// The agent caps every level STR writes and turns the speaker back down when
+// its own keys or another app take it higher (internal/webui/maxvolume.go).
+
+// GetMaxVolume reads the per-box ceiling -> {supported, volume}.
+// volume 0 means off, which is the default.
+func (a *App) GetMaxVolume(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/max-volume", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetMaxVolume stores the per-box ceiling. 0 turns it off.
+func (a *App) SetMaxVolume(host string, port int, volume int) error {
+	body, _ := json.Marshal(map[string]int{"volume": volume})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/max-volume",
+		"application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	a.logger.Info("max volume set", "host", host, "volume", volume)
+	return nil
+}
+
 // PushFavorites stores the starred stations on ONE speaker, so every phone
 // that opens that speaker's page sees the same list.
 //

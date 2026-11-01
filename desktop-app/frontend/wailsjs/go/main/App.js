@@ -274,6 +274,10 @@ export function GetLogFilePath() {
   return window['go']['main']['App']['GetLogFilePath']();
 }
 
+export function GetMaxVolume(arg1, arg2) {
+  return window['go']['main']['App']['GetMaxVolume'](arg1, arg2);
+}
+
 export function GetPresets(arg1, arg2) {
   return window['go']['main']['App']['GetPresets'](arg1, arg2);
 }
@@ -704,6 +708,10 @@ export function SetDisplaySplash(arg1, arg2, arg3) {
 
 export function SetDisplayTrack(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetDisplayTrack'](arg1, arg2, arg3, arg4);
+}
+
+export function SetMaxVolume(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetMaxVolume'](arg1, arg2, arg3);
 }
 
 export function SetOTARunning(arg1) {

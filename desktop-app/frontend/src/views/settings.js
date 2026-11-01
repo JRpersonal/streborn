@@ -39,7 +39,7 @@ import {
 import { holdsByHost, holdFor, holdMinutes } from '../installhold.js';
 import { deps, initSettingsDeps, renderSTRRemovedPanel, openInstallFor, settingsBoxLabel, wireBackToList } from './settings/shared.js';
 import { renderStatusSection, renderPhoneSection, wireStatusSections } from './settings/status.js';
-import { renderBasicsSections, wireBasicsSections, refreshBoxBalanceRow, refreshStartVolume } from './settings/basics.js';
+import { renderBasicsSections, wireBasicsSections, refreshBoxBalanceRow, refreshStartVolume, refreshMaxVolume } from './settings/basics.js';
 import { renderSoundSections, wireSoundSections } from './settings/sound.js';
 import { renderNetworkSections, wireNetworkSections } from './settings/network.js';
 import { renderInfoSections, wireInfoSections, refreshForeignInfluence, refreshBoxLevelRows } from './settings/info.js';
@@ -403,6 +403,7 @@ export async function loadBoxSettings() {
       // "nothing", which hides the whole section.
       refreshForeignInfluence(state.settingsBox).catch(() => {});
       refreshStartVolume(state.settingsBox).catch(() => {});
+      refreshMaxVolume(state.settingsBox).catch(() => {});
       return;
     } catch (e) {
       lastErr = e;

@@ -383,6 +383,16 @@ export function SetStartVolume(host, port, volume) {
   return callOptionalBinding('SetStartVolume', [host, port, volume]);
 }
 
+// GetMaxVolume / SetMaxVolume drive the per-box ceiling the speaker's volume
+// never stays above. 0 means off.
+export function GetMaxVolume(host, port) {
+  return callOptionalBinding('GetMaxVolume', [host, port]);
+}
+
+export function SetMaxVolume(host, port, volume) {
+  return callOptionalBinding('SetMaxVolume', [host, port, volume]);
+}
+
 // BoxForeignInfluence / UndoForeignFinding are the safe-haven view: what other
 // tools have done to this speaker, and taking one of those things back.
 // Optional bindings, per the note above.

@@ -1165,6 +1165,8 @@ func (a *agent) buildBoxLink() error {
 	// the box having played none of the audio it was given, i.e. the largest lag
 	// the measurement can express, and nothing in the bundle would say so.
 	spotifyMgr.SetBoxPositionFn(renderer.RelPosition)
+	// The Spotify app stops at the volume ceiling set in STR (maxvolume.go).
+	spotifyMgr.SetVolumeCapFn(webuiSrv.MaxVolume)
 	// publishBoxPresets is the ONE place a box preset list read from the
 	// speaker (a gabbo presetsUpdated frame, the boot seed read, the
 	// reconcile's own /presets read) reaches the webui cache and the
