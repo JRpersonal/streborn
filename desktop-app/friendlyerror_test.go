@@ -45,6 +45,15 @@ func TestFriendlyErrorPassesStereoIncompleteThroughRaw(t *testing.T) {
 	}
 }
 
+// A library key whose music server is off (#1339): the frontend names the
+// server from the server field, so the body must survive the reduction.
+func TestFriendlyErrorPassesLibraryServerOfflineThroughRaw(t *testing.T) {
+	const body = `{"code":"library-server-offline","error":"The music server MinimServer is not answering. Switch it on and try again.","name":"Song","offline":true,"server":"MinimServer","slot":3}`
+	if got := friendlyError(respWithBody(body)); got != body {
+		t.Errorf("library-server-offline body reduced to %q, want the raw JSON passed through", got)
+	}
+}
+
 // Every other error keeps the existing friendly reduction so UI toasts stay
 // readable and the frontend can still branch on "code: message".
 func TestFriendlyErrorKeepsReductionForOtherCodes(t *testing.T) {

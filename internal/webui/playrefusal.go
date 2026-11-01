@@ -73,3 +73,27 @@ func (r playResult) body() map[string]any {
 	}
 	return out
 }
+
+// libraryServerOfflineCode is the code of a library key refused because its
+// music server is off (#1339). The desktop app passes this body through raw
+// (friendlyError) and the phone page reads it, both for the server's name.
+const libraryServerOfflineCode = "library-server-offline"
+
+// libraryServerOfflineRefusal is the answer to an app or phone press on a
+// library key whose music server is off: the speaker was not handed the file.
+// The body carries the browse offline reply's "offline" and "server" fields,
+// so a server that is off reads the same in every answer, plus the code and an
+// English sentence for a client that knows neither.
+func (s *Server) libraryServerOfflineRefusal(slot int, name string, off *libraryServerOffline) *playRefusal {
+	msg := "The music server is not answering. Switch it on and try again."
+	if off.Server != "" {
+		msg = "The music server " + off.Server + " is not answering. Switch it on and try again."
+	}
+	s.logger.Warn("preset slot recall (app): the key's music server is off, the speaker is not handed its file",
+		"slot", slot, "name", name, "server", off.Server)
+	return jsonRefusal(http.StatusBadGateway, map[string]any{
+		"error": msg, "code": libraryServerOfflineCode,
+		"offline": true, "server": off.Server,
+		"slot": slot, "name": name,
+	})
+}

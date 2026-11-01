@@ -480,7 +480,9 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// The tracks carry the music server's address, so a server that moved
 		// takes every folder key with it (#977). Put the key on the address the
 		// server answers at now before the queue is built from it.
-		s.healQueuePresetIfMoved(playCtx, slot, &p)
+		if off := s.healQueuePresetIfMoved(playCtx, slot, &p); off != nil {
+			return playResult{}, s.libraryServerOfflineRefusal(slot, p.Name, off)
+		}
 		items := presetItemsToQueue(p.Items)
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		// Bind the slot before the queue starts so a box-native /stream/<slot>
@@ -493,6 +495,19 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		}
 		recallDelivered = true
 		return playResult{Slot: slot, Name: p.Name, Type: "queue"}, nil
+	}
+	// A single library track carries the music server's address, so a server
+	// that moved takes the key with it, the way it took the folder keys (#1366,
+	// #919). Put the key on the address the server answers at now before the
+	// file is handed over; a radio station, a Spotify or a native key is left
+	// alone (the heal does nothing for them).
+	//
+	// A key whose music server is off is refused with the server's name
+	// instead of handing the speaker a file nobody serves (#1339). That is
+	// decided here, before the queue below is stopped and Spotify is told the
+	// speaker switched away, so a refused press leaves what plays untouched.
+	if off := s.healLibraryKeyIfMoved(playCtx, slot, &p); off != nil {
+		return playResult{}, s.libraryServerOfflineRefusal(slot, p.Name, off)
 	}
 	// Every non-queue recall replaces an active library queue. Without this the
 	// queue watcher kept evaluating the OLD track's timing and, when its
@@ -645,12 +660,7 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// an unknown extension falls through to the proxy path unchanged.
 	// A custom URL preset joins this path only when a probe shows its URL is a
 	// finite, seekable file (#830, customfile.go); a station ending in .mp3
-	// stays on the proxy.
-	// The file carries the music server's address, so a server that moved
-	// takes the key with it, the way it took the folder keys (#1366, #919).
-	// Put the key on the address the server answers at now before the file is
-	// handed over; a radio station is left alone.
-	s.healLibraryKeyIfMoved(playCtx, slot, &p)
+	// stays on the proxy. The key was healed above, before the queue stopped.
 	if mime := s.directFileMime(playCtx, p); mime != "" {
 		s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime, "custom", p.Source == "")
 		// The app path already holds boxCmdMu here (playSlot), as the MIME

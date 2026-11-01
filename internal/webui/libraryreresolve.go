@@ -159,41 +159,71 @@ func sameHost(a, b string) bool {
 	return h != "" && h == urlHost(b)
 }
 
+// libraryServerOffline is the verdict on a library key press whose file did
+// not serve and whose music server was not found either, while nothing
+// answers at the file's address (#1339). Handing that file to the speaker only
+// ends in a silent timeout, which is all the reporter got where the old Bose
+// app used to say "server unavailable". Server is the name to show; empty when
+// the key names none.
+type libraryServerOffline struct {
+	Server string
+}
+
+// libraryKeyOffline decides, once the file did not serve and the server was
+// not found, whether that is a server that is off: nothing accepts a
+// connection at the file's address. A host that does answer (a server that
+// 404s a file it renumbered, but that discovery cannot place) is not off, and
+// the key keeps its old behaviour there. Only this failure path pays for the
+// connect.
+func (s *Server) libraryKeyOffline(ctx context.Context, fileURL, source, udn string) *libraryServerOffline {
+	if s.queueTrackHostAnswers(ctx, fileURL) {
+		return nil
+	}
+	name := strings.TrimSpace(source)
+	if name == "" {
+		name = s.registeredName(udnKey(udn))
+	}
+	return &libraryServerOffline{Server: name}
+}
+
 // reresolveLibraryKey points a single library track on a key at the URL its
 // server hands out for the track now, when the stored URL stopped serving and
 // the key knows the track's object (presets.TrackRef). It reports whether the
-// key changed; a changed key is persisted (storeHealedKey).
-func (s *Server) reresolveLibraryKey(ctx context.Context, slot int, p *presets.Preset) bool {
+// key changed; a changed key is persisted (storeHealedKey). offline is set when
+// the file does not serve because its music server is off (libraryKeyOffline).
+func (s *Server) reresolveLibraryKey(ctx context.Context, slot int, p *presets.Preset) (changed bool, offline *libraryServerOffline) {
 	if p == nil || p.Track == nil || p.Source == "" || !isPlainHTTPURL(p.StreamURL) {
-		return false
+		return false, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(p.Type)) {
 	case "spotify", "queue", presets.TypeNative:
-		return false
+		return false, nil
 	}
 	ref := *p.Track
 	if ref.ObjectID == "" && (ref.ParentID == "" || ref.Title == "") {
-		return false
+		return false, nil
 	}
 	if s.libraryFileServes(ctx, p.StreamURL) {
-		return false
+		return false, nil
 	}
 	rctx, cancel := context.WithTimeout(ctx, libraryReresolveTimeout)
 	defer cancel()
 	srv, ok := s.libraryResolveServer(rctx, ref.ServerUDN, p.Source)
 	if !ok {
+		// ctx, not rctx: the resolve may have spent all of rctx.
+		off := s.libraryKeyOffline(ctx, p.StreamURL, p.Source, ref.ServerUDN)
 		s.logger.Info("library key: the file no longer serves and its music server was not found",
-			"slot", slot, "server", p.Source)
-		return false
+			"slot", slot, "server", p.Source, "serverOff", off != nil)
+		return false, off
 	}
 	it, how, ok := s.findLibraryItem(rctx, srv, ref)
 	if !ok {
 		s.logger.Info("library key: the file no longer serves and the server could not find the track again",
 			"slot", slot, "server", p.Source, "title", ref.Title)
-		return false
+		return false, nil
 	}
 	if it.StreamURL == p.StreamURL {
-		return false
+		return false, nil
 	}
 	old := p.StreamURL
 	if it.AlbumArtURL != "" && (p.Art == "" || sameHost(p.Art, old)) {
@@ -211,46 +241,49 @@ func (s *Server) reresolveLibraryKey(ctx context.Context, slot int, p *presets.P
 	s.logger.Info("library key: the music server renumbered the file, pointing the key at its new address",
 		"slot", slot, "server", p.Source, "found", how, "was", old, "now", p.StreamURL)
 	s.storeHealedKey("library key", slot, *p, nil)
-	return true
+	return true, nil
 }
 
 // reresolveQueuePreset is reresolveLibraryKey for a folder key: when its first
 // track no longer serves, the folder (presets.FolderRef) is read again once and
 // every stored track is matched up with its current URL, by object id where the
 // key stored one, else by title (the n-th track of a title to the n-th). Tracks
-// that find no match keep their URL. It reports whether the key changed.
-func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.Preset) bool {
+// that find no match keep their URL. It reports whether the key changed, and
+// offline when its music server is off (libraryKeyOffline).
+func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.Preset) (changed bool, offline *libraryServerOffline) {
 	if p == nil || p.Type != "queue" || len(p.Items) == 0 || p.Folder == nil ||
 		p.Folder.ContainerID == "" || !isPlainHTTPURL(p.Items[0].URL) {
-		return false
+		return false, nil
 	}
 	if s.libraryFileServes(ctx, p.Items[0].URL) {
-		return false
+		return false, nil
 	}
 	rctx, cancel := context.WithTimeout(ctx, libraryFolderReresolveTimeout)
 	defer cancel()
 	srv, ok := s.libraryResolveServer(rctx, p.Folder.ServerUDN, p.Source)
 	if !ok {
+		// ctx, not rctx: the resolve may have spent all of rctx.
+		off := s.libraryKeyOffline(ctx, p.Items[0].URL, p.Source, p.Folder.ServerUDN)
 		s.logger.Info("queue preset: the tracks no longer serve and the music server was not found",
-			"slot", slot, "server", p.Source)
-		return false
+			"slot", slot, "server", p.Source, "serverOff", off != nil)
+		return false, off
 	}
 	fresh, _, err := s.browseContainerItems(rctx, srv, p.Folder.ContainerID)
 	if err != nil || len(fresh) == 0 {
 		s.logger.Info("queue preset: the tracks no longer serve and the folder could not be read again",
 			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID, "err", err)
-		return false
+		return false, nil
 	}
 	n := remapQueueItems(p, fresh)
 	if n == 0 {
 		s.logger.Info("queue preset: the tracks no longer serve and none was found in the folder again",
 			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID)
-		return false
+		return false, nil
 	}
 	s.logger.Info("queue preset: the music server renumbered the files, pointing the key at their new addresses",
 		"slot", slot, "server", p.Source, "tracks", n, "of", len(p.Items))
 	s.storeHealedKey("queue preset", slot, *p, nil)
-	return true
+	return true, nil
 }
 
 // remapQueueItems gives each track of a folder key the URL the freshly read

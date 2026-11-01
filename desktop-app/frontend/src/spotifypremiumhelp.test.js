@@ -14,12 +14,13 @@ const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr',
 const bundle = (l) => JSON.parse(readFileSync(join(here, 'i18n', 'bundles', `${l}.json`), 'utf8'));
 
 function friendlyPlayError() {
-  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady',
+  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName',
     `${srcOf('friendlyPlayError')}; return friendlyPlayError;`)(
     (k) => k,
     { stereoStaleForError: () => null },
     () => 'play.errNotReady',
     () => 1,
+    () => null,
   );
 }
 
