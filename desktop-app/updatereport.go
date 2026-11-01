@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -308,6 +309,7 @@ func formatFailureReport(r failureReport) string {
 	advice = applyReachedThisSession(advice, r)
 	advice = applyIsolationDiagnosis(advice, r)
 	advice = applyOffNetworkDiagnosis(advice, r)
+	advice = applyOtherNetworkDiagnosis(advice, r)
 	advice = applyRepeatedAttempts(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
@@ -571,6 +573,11 @@ func writeNetworkFacts(b *strings.Builder, f installFacts) {
 		// firewall or of Wi-Fi client isolation: something IS at that address
 		// and answering at the Ethernet layer.
 		fmt.Fprintf(b, "%-*s yes, hardware address starts %s\n", factCol, "ARP entry for the speaker", f.MACPrefix)
+	} else if f.SubnetKnown && !f.SameSubnet {
+		// The PC only keeps ARP entries for its own networks, so for an
+		// address outside them "none" is the expected answer and says
+		// nothing about whether the speaker is there.
+		fmt.Fprintf(b, "%-*s none (expected: this PC only has entries for its own network)\n", factCol, "ARP entry for the speaker")
 	} else {
 		fmt.Fprintf(b, "%-*s none (nothing answered at that address)\n", factCol, "ARP entry for the speaker")
 	}
@@ -677,6 +684,15 @@ func speakerOffTheNetwork(f installFacts) bool {
 	if !f.PingRan || f.PingAlive || f.MACPrefix != "" {
 		return false
 	}
+	// A missing ARP entry is evidence only for an address on one of this
+	// PC's own networks: ARP never covers anything outside them. For a
+	// speaker in a different network it is the expected answer, and calling
+	// that speaker switched off sent a user after a power cable when the
+	// problem was a second network (report 2026-11-01).
+	// applyOtherNetworkDiagnosis owns that case.
+	if f.SubnetKnown && !f.SameSubnet {
+		return false
+	}
 	// Positive evidence only: a listed speaker that is currently missing its
 	// probes. A speaker never seen at all (an address typed in by hand) keeps
 	// the older verdicts, there is nothing to say it was ever here.
@@ -702,9 +718,15 @@ func applyOffNetworkDiagnosis(advice []string, r failureReport) []string {
 }
 
 // lastSeenText words the sticky entry's age for the advice.
+//
+// TargetMissingSec is the length of the miss streak, counted from the FIRST
+// probe the speaker missed, not from its last answer (which came one probe
+// interval earlier). So the sentence states the streak itself: "no answer for
+// 91 s" is exactly what was measured, where "last answered 91 s ago" would be
+// slightly too recent.
 func lastSeenText(f installFacts) string {
 	if f.TargetMissingSec > 0 {
-		return "This PC last saw the speaker answer" + offlineForText(f.TargetMissingSec) + " ago."
+		return "This PC has had no answer from the speaker" + offlineForText(f.TargetMissingSec) + "."
 	}
 	return "This PC saw the speaker earlier, but it has not answered since."
 }
@@ -744,6 +766,90 @@ func applyRepeatedAttempts(advice []string, r failureReport) []string {
 // offNetworkAdvice is the closing paragraph for a speaker that is not on the
 // network. %s carries the last-seen sentence.
 const offNetworkAdvice = "Right now nothing at the speaker's address answers, not even at the network layer: no ping reply, and no entry for it in this PC's address table. %s That is a speaker that is off the network, not a firewall. Check in this order: 1. Is it powered and awake? Press its power button; the Wi-Fi light should be solid white. 2. Does the Bose SoundTouch app on your phone see it? If not, the speaker has lost your Wi-Fi: add it again with the Bose app (Add speaker), that still works without the Bose cloud. 3. Its address may have changed: press Refresh in the speaker list and install from the entry that appears. 4. Still nothing: unplug the speaker for ten seconds, plug it back in, wait two minutes, then refresh the list."
+
+// speakerInOtherNetwork is the fingerprint of a speaker whose address lies
+// outside every network this PC is on, with nothing to show the two networks
+// are routed to each other: no ping reply (or no ping at all) and no answer
+// from the speaker's agent.
+func speakerInOtherNetwork(r failureReport) bool {
+	f := r.Facts
+	if !f.SubnetKnown || f.SameSubnet {
+		return false
+	}
+	if f.PingRan && f.PingAlive {
+		// Routed: the PC reaches that network, so the mismatch alone does
+		// not explain the failure and the other verdicts keep the say.
+		return false
+	}
+	return len(r.BoxNow) == 0
+}
+
+// applyOtherNetworkDiagnosis leads with the network mismatch when the
+// speaker's address is in a different network than this PC. That is the cause
+// to fix first: as long as it holds, no firewall setting, ping or address
+// table entry can tell anything about the speaker, and the off-the-network
+// steps that used to lead here told the user their speaker was switched off
+// (report 2026-11-01: speaker 192.168.10.x, PC 192.168.178.x/24).
+//
+// Drops the firewall, not-reachable and isolation paragraphs, which all start
+// from a speaker on the PC's own network, and leaves the speaker's own setup
+// phase alone, since that one is reported by a speaker that answered.
+func applyOtherNetworkDiagnosis(advice []string, r failureReport) []string {
+	if !strings.Contains(r.Phase, "not-reachable") || reachedThisSession(r) || !speakerInOtherNetwork(r) {
+		return advice
+	}
+	if hasAdvice(advice, boxInSetupAdvice) {
+		return advice
+	}
+	lead := fmt.Sprintf(otherNetworkAdvice, r.Facts.Host, pcNetworksText(r.Facts.Ifaces))
+	out := []string{lead}
+	for _, p := range advice {
+		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) ||
+			strings.HasPrefix(p, isolationAdvice) || strings.HasPrefix(p, offNetworkLead) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// pcNetworksText names the networks this PC is on, as network address and
+// interface ("192.168.178.0/24 on WLAN"), so the user can compare the two
+// numbers side by side. Interfaces that are up come first; a PC with none up
+// falls back to every interface with an address.
+func pcNetworksText(ifaces []localIface) string {
+	collect := func(upOnly bool) []string {
+		var out []string
+		for _, in := range ifaces {
+			if upOnly && !in.Up {
+				continue
+			}
+			_, ipnet, err := net.ParseCIDR(strings.TrimSpace(in.CIDR))
+			if err != nil || ipnet.IP.To4() == nil {
+				continue
+			}
+			out = append(out, ipnet.String()+" on "+in.Name)
+		}
+		return out
+	}
+	nets := collect(true)
+	if len(nets) == 0 {
+		nets = collect(false)
+	}
+	if len(nets) == 0 {
+		return "the networks this PC is on"
+	}
+	return strings.Join(nets, ", ")
+}
+
+// offNetworkLead is the opening of offNetworkAdvice, the part before its
+// format verb, so the paragraph can be recognised in the collected advice.
+var offNetworkLead = offNetworkAdvice[:strings.Index(offNetworkAdvice, "%s")]
+
+// otherNetworkAdvice is the closing paragraph for a speaker whose address is
+// in a different network than this PC. %s are the speaker's address and this
+// PC's network(s).
+const otherNetworkAdvice = "The speaker has the address %s, which is in a different network than this PC (%s). This PC cannot reach a speaker in another network, so a missing ping reply or an empty address table entry is expected here and does not mean the speaker is switched off. A second network like this usually comes from a second router, a repeater or mesh unit that runs its own network, or a guest Wi-Fi. Check in this order: 1. Connect the speaker and this PC to the same Wi-Fi. For the speaker, use the Bose SoundTouch app on your phone (Add speaker, or the speaker's Wi-Fi settings); that still works without the Bose cloud. 2. Press Refresh in the speaker list and install from the entry that appears with an address in this PC's network. 3. If the Bose app does not see the speaker at all, check it is powered and awake: press its power button; the Wi-Fi light should be solid white. 4. Still nothing: unplug the speaker for ten seconds, plug it back in, wait two minutes, then refresh the list."
 
 // repeatedAttemptsAdvice closes a report whose journal shows the same failure
 // again and again. %d is the count.
