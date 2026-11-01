@@ -537,6 +537,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	if !ok {
 		return errors.New("empty queue")
 	}
+	loaded := s.queue.save()
 	// A sleeping speaker is kept silent through its own resume until the
 	// first track has taken over (#1557, newplaywake.go). A preset recall that
 	// woke the speaker and continues into this folder has its gate still
@@ -544,6 +545,25 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	delivered := false
 	playSent := s.ensureBoxReadyForNewPlayRead(ctx, streamproxy.NewPlayTarget{URLs: []string{it.URL}})
 	defer func() { playSent(delivered) }()
+	// The queue is loaded before the wake on purpose (a box-native fetch of a
+	// folder key reads it through QueueLiveURL while the speaker wakes), so
+	// anything that ends a queue during those seconds ends THIS one. A speaker
+	// that slept on a station of its own resumes it on power-on, and the
+	// firmware reports that resume as a preset selected on the speaker, which
+	// ends any queue as a hardware key press would. The first track was still
+	// handed over below, so the folder's first song played and the queue it
+	// belonged to was gone: nothing ever advanced, and the watcher of that
+	// start found no queue and left (field: SA-5, three folders in a row
+	// stopped after their first song). This start is the newest play the
+	// user asked for and it goes ahead either way, so its queue goes back.
+	if !s.queue.isActive() {
+		s.queueMu.Lock()
+		why := s.queueStopWhy
+		s.queueMu.Unlock()
+		s.logger.Info("queue start: the folder was ended while the speaker woke up, starting it as asked",
+			"endedBy", why, "tracks", len(items))
+		s.queue.restore(loaded)
+	}
 	if g := s.newPlayGate(); g != nil {
 		g.AddNewPlayTarget(it.URL)
 	}
@@ -596,6 +616,13 @@ func (s *Server) setQueueTiming(dur time.Duration) {
 }
 
 // ensureWatcher starts the auto-advance watcher if it is not already running.
+//
+// One watcher serves every queue until the queue ends: a new queue started
+// while one plays is picked up by the running watcher through queueGen. That
+// makes the slot (queueCancel) load-bearing. A watcher that left without
+// freeing it would make every later queue a queue without a watcher, playing
+// its first track and never the next one, until the agent restarted. So the
+// watcher frees its own slot on every way out (releaseWatcher).
 func (s *Server) ensureWatcher() {
 	s.queueMu.Lock()
 	defer s.queueMu.Unlock()
@@ -604,7 +631,45 @@ func (s *Server) ensureWatcher() {
 	}
 	ctx, cancel := context.WithCancel(s.queueCtx())
 	s.queueCancel = cancel
-	go s.runQueueWatcher(ctx)
+	s.queueWatcherID++
+	id := s.queueWatcherID
+	s.logger.Info("queue watcher: started", "watcher", id)
+	go func() {
+		defer s.releaseWatcher(id)
+		s.runQueueWatcher(ctx, id)
+	}()
+}
+
+// releaseWatcher frees the watcher slot when a watcher ends, if the slot is
+// still this watcher's. A cancel (cancelWatcher) already freed it, and a
+// newer watcher may hold it by now; both are left alone.
+func (s *Server) releaseWatcher(id uint64) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.queueWatcherID == id && s.queueCancel != nil {
+		s.queueCancel()
+		s.queueCancel = nil
+	}
+}
+
+// retireIdleWatcher ends watcher id because its queue is no longer active,
+// and reports whether it may stop. The check and the release happen under
+// queueMu, the lock ensureWatcher takes: a queue started in between is either
+// seen active here (the watcher stays and plays it) or finds the slot free
+// and starts a watcher of its own. Without that, a start landing between the
+// watcher's check and its exit found the slot still taken and was left
+// without one.
+func (s *Server) retireIdleWatcher(id uint64) bool {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.queue.isActive() {
+		return false
+	}
+	if s.queueWatcherID == id && s.queueCancel != nil {
+		s.queueCancel()
+		s.queueCancel = nil
+	}
+	return true
 }
 
 func (s *Server) cancelWatcher() {
@@ -624,6 +689,9 @@ func (s *Server) cancelWatcher() {
 // was started instead and because a hardware key was pressed all left exactly
 // the same trace before #960, which was nothing at all.
 func (s *Server) stopQueue(why string) {
+	s.queueMu.Lock()
+	s.queueStopWhy = why
+	s.queueMu.Unlock()
 	s.noteQueueEnd(why)
 	s.queue.clear()
 	s.cancelWatcher()
@@ -830,8 +898,8 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 
 // runQueueWatcher polls now_playing while a queue is active and advances when
 // the current track ends. It exits when the queue is no longer active or ctx is
-// cancelled.
-func (s *Server) runQueueWatcher(ctx context.Context) {
+// cancelled. id is the watcher's slot (ensureWatcher).
+func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 	qt := s.queueTimes()
 	ticker := time.NewTicker(qt.pollInterval)
 	defer ticker.Stop()
@@ -889,7 +957,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		woke = false
 		select {
 		case <-ctx.Done():
-			s.logger.Debug("queue watcher: stopped")
+			s.logger.Info("queue watcher: stopped", "watcher", id)
 			return
 		case <-ticker.C:
 		case <-wake:
@@ -900,8 +968,8 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			interval = qt.pollInterval
 			ticker.Reset(interval)
 		}
-		if !s.queue.isActive() {
-			s.logger.Debug("queue watcher: the queue is no longer active, stopping")
+		if !s.queue.isActive() && s.retireIdleWatcher(id) {
+			s.logger.Info("queue watcher: the queue is no longer active, stopping", "watcher", id)
 			return
 		}
 		s.queueMu.Lock()
