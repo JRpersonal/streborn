@@ -303,6 +303,42 @@ func (q *playQueue) clear() {
 	q.items, q.order, q.pos, q.active = nil, nil, 0, false
 }
 
+// playQueueState is a copy of everything load sets, so a queue start can put
+// its freshly loaded queue back exactly as it was (the same shuffled order and
+// first track) when something cleared it before the first track was handed
+// over. See startQueueLocked.
+type playQueueState struct {
+	items   []queueItem
+	order   []int
+	pos     int
+	repeat  repeatMode
+	shuffle bool
+	active  bool
+}
+
+// save returns a copy of the queue's current state.
+func (q *playQueue) save() playQueueState {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return playQueueState{
+		items:   append([]queueItem(nil), q.items...),
+		order:   append([]int(nil), q.order...),
+		pos:     q.pos,
+		repeat:  q.repeat,
+		shuffle: q.shuffle,
+		active:  q.active,
+	}
+}
+
+// restore puts a state taken by save back.
+func (q *playQueue) restore(st playQueueState) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.items = append([]queueItem(nil), st.items...)
+	q.order = append([]int(nil), st.order...)
+	q.pos, q.repeat, q.shuffle, q.active = st.pos, st.repeat, st.shuffle, st.active
+}
+
 // queueSnapshot is the JSON-friendly view of the queue for GET /api/queue and
 // the desktop UI.
 type queueSnapshot struct {

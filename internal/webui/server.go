@@ -949,9 +949,16 @@ type Server struct {
 	// watcher goroutine polls now_playing while a queue is active; queueGen
 	// invalidates the per-track timing when a new track is pushed. queueMu guards
 	// the watcher lifecycle and timing fields; the playQueue has its own lock.
-	queue           *playQueue
-	queueMu         sync.Mutex
-	queueCancel     context.CancelFunc
+	queue       *playQueue
+	queueMu     sync.Mutex
+	queueCancel context.CancelFunc
+	// queueWatcherID names the watcher queueCancel belongs to, so a watcher
+	// that ends by itself frees the slot only when it is still its own (a
+	// newer watcher may have taken it after a cancel). queueStopWhy is the
+	// reason the last stopQueue gave, for the start that finds its queue
+	// cleared under it.
+	queueWatcherID  uint64
+	queueStopWhy    string
 	queueGen        int
 	queueTrackStart time.Time
 	queueTrackDur   time.Duration
