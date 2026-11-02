@@ -478,7 +478,11 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .station .btn.rec-del { min-width:44px; padding:8px; font-size:18px; line-height:1; color:var(--muted); }
 /* The name button takes the room; the star and, with more than one
    favourite, the up and down buttons (#1519) follow it on the same line. */
-.row.fav-row { grid-template-columns:1fr; grid-auto-flow:column; grid-auto-columns:auto; align-items:center; }
+/* A flex row that wraps: the star and the two move buttons sit beside the
+   name while there is room, and go to the next line on a narrow phone at a
+   large text size instead of pushing the page sideways (#1519). */
+.row.fav-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; }
+.row.fav-row > .btn:first-child { flex:1 1 9em; min-width:0; overflow-wrap:anywhere; }
 .row .btn.fav-move { min-width:44px; min-height:44px; padding:8px; font-size:14px; line-height:1; color:var(--muted); }
 .row .btn.fav-move:disabled { opacity:.35; }
 /* A Pandora station's cover (#1409), the size of a key's cover. */
