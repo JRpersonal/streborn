@@ -148,7 +148,13 @@ type Server struct {
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
 	sleep sleepState
 	// bassKey runs the presses of a key bound to a bass step. See basskey.go.
-	bassKey     bassKeyState
+	bassKey bassKeyState
+	// playModeKey runs the presses of a key bound to shuffle or repeat. See
+	// playmodekey.go.
+	playModeKey playModeKeyState
+	// radioStep runs the remote's Next/Prev while a radio key plays. See
+	// radiostep.go.
+	radioStep   radioStepState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -314,8 +320,17 @@ type Server struct {
 	// acknowledged immediately and drained back-to-back by one worker, so a
 	// slow go-librespot ack can never stack button presses into a minute-long
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
-	spotifySkipCh   chan bool
+	spotifySkipCh   chan spotifySkipReq
 	spotifySkipOnce sync.Once
+	// spotifyRemotePrev is the remote's Back key on a Spotify playlist: the
+	// song before inside the first seconds heard, a restart later (#1678,
+	// spotify RemotePrev). nil falls back to spotifySkip.
+	spotifyRemotePrev func(ctx context.Context) (back bool, err error)
+	// spotifyToggleShuffle and spotifyCycleRepeat are the shuffle and repeat
+	// key actions (#1679, playmodekey.go). nil when the engine has no such
+	// switches; the keys then do nothing.
+	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
+	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
 	// skipRepushMu guards the skip re-attach bookkeeping: hwSkipAt marks a
 	// recent hardware skip (whose flow re-attaches the box itself), and
 	// lastSkipRepushAt debounces the soft-skip re-push so a burst of presses
@@ -840,6 +855,11 @@ type Server struct {
 	bassReadFn       func(ctx context.Context) (boxapi.Bass, error)
 	bassWriteFn      func(ctx context.Context, v int) error
 	showBassNoticeFn func(level, lo, hi int)
+	// radioStepPlayFn replaces the recall a radio step makes (radiostep.go),
+	// and playModeShowFn the panel notice of the shuffle and repeat keys
+	// (playmodekey.go). nil means production.
+	radioStepPlayFn func(ctx context.Context, slot int) error
+	playModeShowFn  func(n oled.Notice)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
@@ -1708,6 +1728,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/library/browse", s.handleLibraryBrowse)
 	mux.HandleFunc("/api/library/locate", s.handleLibraryLocate)
 	mux.HandleFunc("/api/queue/replay-card", s.handleQueueReplayCard)
+	mux.HandleFunc("/api/library/play-folder", s.handleLibraryPlayFolder)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)

@@ -13,7 +13,7 @@ import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, Dissol
 // The pure document helpers live in groupkeys.js; this view only paints and
 // writes the document of the speaker whose remote is used.
 import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, validateTemplate, withTemplate, withoutTemplate, keyOf, bindKey, describeTemplate, groupKeyWebhookWarnKey } from '../groupkeys.js';
-import { normalizeKeyActions, sleepOn, snoozeOn, bassOn } from '../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, playModeOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers } from '../groups.js';
@@ -969,11 +969,13 @@ function renderGroupKeysSection(strBoxes) {
   const sleepKey = (v) => !!v && sleepOn(gk.sleep, v);
   const snoozeKey = (v) => !!v && snoozeOn(gk.sleep, v);
   const bassKey = (v) => !!v && bassOn(gk.sleep, v);
+  const playModeKey = (v) => !!v && playModeOn(gk.sleep, v);
   const keyOpts = (sel) => [['', t('multiroom.groupKeysKeyNone')], ['thumbsUp', t('multiroom.groupKeysKeyUp')], ['thumbsDown', t('multiroom.groupKeysKeyDown')]]
     .map(([v, l]) => {
-      const blocked = (sleepKey(v) || snoozeKey(v) || bassKey(v)) && v !== sel;
+      const blocked = (sleepKey(v) || snoozeKey(v) || bassKey(v) || playModeKey(v)) && v !== sel;
       const mark = snoozeKey(v) ? t('multiroom.groupKeysKeySnooze')
-        : (bassKey(v) ? t('multiroom.groupKeysKeyBass') : t('multiroom.groupKeysKeySleep'));
+        : (bassKey(v) ? t('multiroom.groupKeysKeyBass')
+          : (playModeKey(v) ? t('multiroom.groupKeysKeyPlayMode') : t('multiroom.groupKeysKeySleep')));
       const label = blocked ? `${l} ${mark}` : l;
       return `<option value="${v}"${v === sel ? ' selected' : ''}${blocked ? ' disabled' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
@@ -983,7 +985,9 @@ function renderGroupKeysSection(strBoxes) {
       : ((snoozeKey('thumbsUp') || snoozeKey('thumbsDown'))
         ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysSnoozeHint'))}</div>`
         : ((bassKey('thumbsUp') || bassKey('thumbsDown'))
-          ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysBassHint'))}</div>` : ''));
+          ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysBassHint'))}</div>`
+          : ((playModeKey('thumbsUp') || playModeKey('thumbsDown'))
+            ? `<div class="muted small">${escapeHtml(t('multiroom.groupKeysPlayModeHint'))}</div>` : '')));
   let list = '';
   if (!remote) {
     list = `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
@@ -1003,7 +1007,7 @@ function renderGroupKeysSection(strBoxes) {
       // The other thumbs key's group or key action decides whether the shared
       // thumbs webhook still fires there, so the warning gets both.
       const warnKey = key ? groupKeyWebhookWarnKey(gk.webhooks, key, {
-        bindings: doc.bindings, keyActionOn: (k) => sleepKey(k) || snoozeKey(k) || bassKey(k),
+        bindings: doc.bindings, keyActionOn: (k) => sleepKey(k) || snoozeKey(k) || bassKey(k) || playModeKey(k),
       }) : '';
       const warn = warnKey
         ? `<small class="gk-warn setup-warn small">${escapeHtml(t(warnKey, { name: remoteName, entry: t('settingsView.webhookKeyThumb') }))}</small>` : '';

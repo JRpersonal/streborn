@@ -91,6 +91,14 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		return
 	}
 	oled.FeedKey(ev.Name)
+	if (ev.Name == "NEXT_TRACK" || ev.Name == "PREV_TRACK") && h.onRadioStepKey != nil {
+		// While a radio key plays, Next and Previous step through the radio
+		// keys (#1619); the webui pairs this report with the gabbo skip frame
+		// of the same press and does nothing on any other source. Off the
+		// reader's goroutine: a step recalls a station. The key's webhook
+		// below still fires, as it always did.
+		go h.onRadioStepKey(ev.Name == "NEXT_TRACK")
+	}
 	if ev.Name == "AUX_INPUT" && h.keyActions.Action(keyactions.KeyAux) == keyactions.ActionSnooze && h.onAuxSnoozeKey != nil {
 		// AUX has no webhook trigger here (its webhook follows the source
 		// change), but a trace that names the key is the surest sign of an
@@ -120,6 +128,18 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		// reset, and keeping it on the reader's goroutine keeps quick presses
 		// in order. The group push runs on its own goroutine.
 		h.onSleepKey()
+		return
+	}
+	if m := keyactions.SleepMinutes(h.keyActions.Action(id)); m > 0 && h.onSleepFixedKey != nil {
+		// A fixed sleep length (#1242): synchronous like the stepping key.
+		h.onSleepFixedKey(m)
+		return
+	}
+	if a := h.keyActions.Action(id); keyactions.IsPlayMode(a) && h.onPlayModeKey != nil {
+		// Shuffle or repeat (#1679). Off the reader's goroutine: a press
+		// reads the engine and writes the new state.
+		h.logger.Info("play mode key pressed", "key", ev.Name, "action", a, "producer", ev.Producer.String())
+		go h.onPlayModeKey(a)
 		return
 	}
 	if a := h.keyActions.Action(id); keyactions.IsBass(a) && h.onBassKey != nil {

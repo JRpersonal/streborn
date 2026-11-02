@@ -10,7 +10,7 @@ import { boxPresetRows, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc, webhookPresent, keyMapTarget, validWolMac } from '../../groupkeys.js';
-import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS } from '../../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS, playModeOn, isPlayModeAction, sleepMinutesOf, isSleepAction, SLEEP_FIXED, ACTION_SHUFFLE } from '../../keyactions.js';
 import {
   SetPreset,
   RestoreBoxSnapshot,
@@ -81,10 +81,15 @@ function remoteSvg() {
   // A "B" in the same corner for a thumbs key that moves the bass (#1494).
   const bmark = (id, x, y) =>
     `<text class="rc-bmark" data-bmark="${id}" x="${x}" y="${y}" style="display:none">B</text>`;
+  // An "S" (shuffle) or "R" (repeat) in the same corner for a thumbs key that
+  // switches a Spotify playlist's play mode (#1679); paintRemote sets which.
+  const pmark = (id, x, y) =>
+    `<text class="rc-pmark" data-pmark="${id}" x="${x}" y="${y}" style="display:none">S</text>`;
   const marks = gmark('thumbsDown', 84, 372) + gmark('thumbsUp', 172, 372)
     + smark('thumbsDown', 85, 369) + smark('thumbsUp', 173, 369)
     + zmark('thumbsDown', 84, 372) + zmark('thumbsUp', 172, 372) + zmark('aux', 172, 36)
-    + bmark('thumbsDown', 84, 372) + bmark('thumbsUp', 172, 372);
+    + bmark('thumbsDown', 84, 372) + bmark('thumbsUp', 172, 372)
+    + pmark('thumbsDown', 84, 372) + pmark('thumbsUp', 172, 372);
   return `<svg class="rc-svg" viewBox="0 0 200 428" role="img" aria-label="remote">`
     + `<rect class="rc-body" x="4" y="4" width="192" height="420" rx="30"/>${keys}${marks}</svg>`;
 }
@@ -153,7 +158,7 @@ export function renderAdvancedSections() {
         ${remoteSvg()}
         <div class="rc-side">
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteHint'))}</small>
-          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}<br><span class="rc-legend-snooze"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSnooze'))}<br><span class="rc-legend-bass"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendBass'))}</small>
+          <small class="muted small rc-legend"><span class="rc-legend-on"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendOn'))}<br><span class="rc-legend-sel"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSel'))}<br><span class="rc-legend-group"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendGroup'))}<br><span class="rc-legend-sleep"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSleep'))}<br><span class="rc-legend-snooze"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendSnooze'))}<br><span class="rc-legend-bass"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendBass'))}<br><span class="rc-legend-playmode"></span> ${escapeHtml(t('settingsView.webhookRemoteLegendPlayMode'))}</small>
           <small class="muted small">${escapeHtml(t('settingsView.webhookRemoteNoVol'))}</small>
         </div>
       </div>
@@ -184,9 +189,12 @@ export function renderAdvancedSections() {
         <select id="keyActionSelect">
           <option value="">${escapeHtml(t('settingsView.keyActionNone'))}</option>
           <option value="sleep" id="keyActionSleepOpt">${escapeHtml(t('settingsView.sleepKeyLabel'))}</option>
+          ${Object.entries(SLEEP_FIXED).map(([v, n]) => `<option value="${v}" class="key-action-thumbs">${escapeHtml(t('settingsView.sleepKeyFixedLabel', { n }))}</option>`).join('')}
           <option value="snooze">${escapeHtml(t('settingsView.snoozeKeyLabel'))}</option>
           <option value="bassUp" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyUpLabel'))}</option>
           <option value="bassDown" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyDownLabel'))}</option>
+          <option value="shuffle" class="key-action-thumbs">${escapeHtml(t('settingsView.shuffleKeyLabel'))}</option>
+          <option value="repeat" class="key-action-thumbs">${escapeHtml(t('settingsView.repeatKeyLabel'))}</option>
         </select>
       </div>
       <small class="muted small hidden" id="sleepKeyNote"></small>
@@ -484,6 +492,8 @@ export function wireAdvancedSections(ctx) {
     // steps; one already bound keeps its choice visible so it can be removed.
     const bassAvail = !(ctx.bass && ctx.bass.available === false);
     const bassOpts = Array.from(document.querySelectorAll('#keyActionSelect option.key-action-bass'));
+    // The fixed sleep lengths, shuffle and repeat: thumbs keys only.
+    const thumbsOpts = Array.from(document.querySelectorAll('#keyActionSelect option.key-action-thumbs'));
     const sleepRow = $('sleepKeyRow');
     const actionSelect = $('keyActionSelect');
     const sleepOpt = $('keyActionSleepOpt');
@@ -532,12 +542,16 @@ export function wireAdvancedSections(ctx) {
       const modeNote = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
         : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
+          // Back and Forward step through the radio keys and go back a song
+          // on Spotify (#1619, #1678): said where the user looks at those keys.
+          + (tg === 'prev' || tg === 'next' ? ' ' + t('settingsView.webhookRemoteSkipNote') : '')
           : (tg === 'thumb' ? t('settingsView.webhookThumbSharedNote') : t('settingsView.webhookModeAuxPowerNote')));
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote
         : (sleepOn(kaDoc, tg) ? t('settingsView.webhookSleepKeyNote') + ' ' + modeNote
           : (snoozeOn(kaDoc, tg) ? t('settingsView.webhookSnoozeKeyNote') + ' ' + modeNote
-            : (bassOn(kaDoc, tg) ? t('settingsView.webhookBassKeyNote') + ' ' + modeNote : modeNote)));
+            : (bassOn(kaDoc, tg) ? t('settingsView.webhookBassKeyNote') + ' ' + modeNote
+              : (playModeOn(kaDoc, tg) ? t('settingsView.webhookPlayModeKeyNote') + ' ' + modeNote : modeNote))));
       syncSleepRow(tg);
       syncType();
       paintRemote(tg);
@@ -551,6 +565,8 @@ export function wireAdvancedSections(ctx) {
         return t('settingsView.bassKeyHelp') + (bassAvail ? '' : ' ' + t('settingsView.bassKeyUnavailable'));
       }
       if (action === 'sleep') return t('settingsView.sleepKeyHelp');
+      if (sleepMinutesOf(action)) return t('settingsView.sleepKeyFixedHelp', { n: sleepMinutesOf(action) });
+      if (isPlayModeAction(action)) return t('settingsView.playModeKeyHelp');
       if (tg === 'aux') return t('settingsView.snoozeKeyAuxHelp');
       if (action === 'snooze') return t('settingsView.snoozeKeyHelp');
       return t('settingsView.sleepKeyHelp') + ' ' + t('settingsView.snoozeKeyHelp')
@@ -566,6 +582,11 @@ export function wireAdvancedSections(ctx) {
         const sleepFits = SLEEP_KEY_IDS.includes(tg);
         sleepOpt.hidden = !sleepFits;
         sleepOpt.disabled = !sleepFits;
+      }
+      for (const o of thumbsOpts) {
+        const fits = SLEEP_KEY_IDS.includes(tg);
+        o.hidden = !fits;
+        o.disabled = !fits;
       }
       const group = sleepBlockedBy(gkBindings, tg);
       const cur = actionOn(kaDoc, tg);
@@ -592,17 +613,21 @@ export function wireAdvancedSections(ctx) {
       try {
         await SaveKeyActions(box.host, box.port, next);
         kaDoc = normalizeKeyActions(next);
-        const toast = action === 'sleep' ? 'settingsView.sleepKeyOnToast'
+        const toast = isSleepAction(action) ? 'settingsView.sleepKeyOnToast'
           : action === 'snooze' ? 'settingsView.snoozeKeyOnToast'
             : isBassAction(action) ? 'settingsView.bassKeyOnToast'
-              : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast'
-                : (isBassAction(before) ? 'settingsView.bassKeyOffToast' : 'settingsView.sleepKeyOffToast'));
+              : action === ACTION_SHUFFLE ? 'settingsView.shuffleKeyOnToast'
+                : isPlayModeAction(action) ? 'settingsView.repeatKeyOnToast'
+                  : (before === 'snooze' ? 'settingsView.snoozeKeyOffToast'
+                    : (isBassAction(before) ? 'settingsView.bassKeyOffToast'
+                      : (isPlayModeAction(before) ? 'settingsView.playModeKeyOffToast' : 'settingsView.sleepKeyOffToast')));
         reportDone(actionSelect, t(toast));
       } catch (e) {
         // An agent from before the bass steps refuses them as an unknown
         // action; say what to do instead of showing the raw refusal.
-        reportError(actionSelect, isBassAction(action) && /unknown key action/i.test(String((e && e.message) || e))
-          ? t('settingsView.bassKeyNeedsUpdate') : e);
+        const tooOld = /unknown key action/i.test(String((e && e.message) || e));
+        reportError(actionSelect, tooOld && isBassAction(action) ? t('settingsView.bassKeyNeedsUpdate')
+          : (tooOld && action ? t('settingsView.keyActionNeedsUpdate') : e));
       }
       // repaint from what the speaker holds now (a refusal leaves it as it was)
       loadInto(tg);
@@ -625,6 +650,13 @@ export function wireAdvancedSections(ctx) {
         el.classList.toggle('rc-sleep', !gkBindings[k] && sleepOn(kaDoc, k));
         el.classList.toggle('rc-snooze', !gkBindings[k] && snoozeOn(kaDoc, k));
         el.classList.toggle('rc-bass', !gkBindings[k] && bassOn(kaDoc, k));
+        el.classList.toggle('rc-playmode', !gkBindings[k] && playModeOn(kaDoc, k));
+      });
+      document.querySelectorAll('.rc-pmark[data-pmark]').forEach((m) => {
+        const k = m.getAttribute('data-pmark');
+        const on = !gkBindings[k] && playModeOn(kaDoc, k);
+        m.style.display = on ? '' : 'none';
+        if (on) m.textContent = actionOn(kaDoc, k) === ACTION_SHUFFLE ? 'S' : 'R';
       });
       document.querySelectorAll('.rc-bmark[data-bmark]').forEach((m) => {
         const k = m.getAttribute('data-bmark');

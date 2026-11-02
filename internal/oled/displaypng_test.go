@@ -102,6 +102,9 @@ func TestRenderAllScreensPNG(t *testing.T) {
 		"notice-snooze":          Snooze("06:39"),
 		"notice-bass":            Bass(-3, -9, 0),
 		"notice-bass-max":        Bass(0, -9, 0),
+		"notice-shuffle-on":      Shuffle(true),
+		"notice-repeat-all":      Repeat("context"),
+		"notice-repeat-one":      Repeat("track"),
 	} {
 		buf := make([]byte, FrameSize)
 		newNoticeRenderer(n).frame(0.6, buf)
