@@ -2301,6 +2301,20 @@ html.a11y-light .preset.error .name { color: #991b1b; }
   color: var(--c-text-2);
   font-weight: 500;
 }
+/* A note that sits loose in a section is a paragraph of its own, lined up with
+   the heading and the buttons. As an inline element it took .muted's padding on
+   its first line only and ran into the next note on the same line (#1677).
+   UI 2.0 has its own rule for its cards (shell2/speakers/speaker.css). */
+html:not(.ui2) .settings-section > small.muted {
+  display: block;
+  padding: 0;
+  margin: 4px 0 8px;
+  line-height: 1.45;
+}
+/* The label in front of a row's buttons and a picture's caption line up with
+   them too. */
+html:not(.ui2) .settings-section .setting-row > .muted:first-child,
+html:not(.ui2) .settings-section figcaption.muted { padding-left: 0; }
 /* Expert / advanced settings: collapsed by default, visually toned down so
    normal users are not distracted by them. */
 .settings-expert {
