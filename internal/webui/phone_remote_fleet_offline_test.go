@@ -18,7 +18,7 @@ import (
 func TestPhoneRemoteOfflineStateStandsDownDuringFleetUpdate(t *testing.T) {
 	// The self-update card tells the status poll whether a run is in flight,
 	// this phone's own run or one the serving speaker drives.
-	if !strings.Contains(indexHTML, "window.suUpdateInFlight = function() { return runActive() || fleetRunning() || (polling && suBusyState()); };") {
+	if !strings.Contains(indexHTML, "window.suUpdateInFlight = function() { return runActive() || fleetRunning() || (suBusyState() && (polling || Date.now() - lastHeard < SU_QUIET_CAP_MS)); };") {
 		t.Error("the self-update card no longer tells the status poll that a fleet update is in flight")
 	}
 	// The poll's failure path asks before it paints "not reachable".
@@ -63,13 +63,17 @@ func TestPhoneRemoteOfflineStateStandsDownDuringFleetUpdate(t *testing.T) {
 func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 	for _, want := range []string{
 		// Every status read keeps lostSince.
-		"async function load() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; } else heardNothing(); return r; }",
-		"async function ownStatus() { var r = await suGet(); if (r && typeof r === 'object') { st = r; lostSince = 0; return r; } heardNothing(); return null; }",
+		"async function load() { var r = await suGet(); if (r && typeof r === 'object') heardFrom(r); else heardNothing(); return r; }",
+		"async function ownStatus() { var r = await suGet(); if (r && typeof r === 'object') { heardFrom(r); return r; } heardNothing(); return null; }",
+		"function heardFrom(r) { st = r; lostSince = 0; lastHeard = Date.now(); }",
 		// render paints an old busy status as silence, not as progress.
 		"if (stBusy && lostSince) {",
-		"else if (polling || fleetPolling) show(T.sfNoAnswer, false, true);",
-		// The poll's window runs from the last answer.
-		"while (Date.now() - heard < 15 * 60 * 1000) {",
+		"else if (midway || polling || fleetPolling) show(T.sfNoAnswer, false, true);",
+		// The poll's window runs from the last answer, and outlasts an
+		// outage of hours at the slower pace.
+		"while (Date.now() - heard < SU_QUIET_CAP_MS) {",
+		"await sleep(Date.now() - heard < 15 * 60 * 1000 ? 2000 : NET_POLL_MS);",
+		"var SU_STOP_MS = PEER_MS, SU_QUIET_CAP_MS = 3 * 60 * 60 * 1000;",
 		// The engine-only button stands down while an update is waiting.
 		"if (be) be.style.display = (!busy && st.engine === 'missing' && !upd) ? '' : 'none';",
 		"var engNote = st.engine === 'missing' ? (upd ? fill(T.suEngineByUpd, st.latest) : T.suEngineMissing) : '';",
@@ -82,8 +86,8 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 		"function suResume() { if (!polling && lostSince && suBusyState()) poll(); }",
 		"    suResume();\n  });",
 		// A plan or check that got an answer clears the silence too.
-		"planning = false; planFresh = true;\n    if (r && typeof r === 'object') { st = r; lostSince = 0; }\n    render();",
-		"if (r && typeof r === 'object') { st = r; lostSince = 0; } else show(T.suCheckFail, true);",
+		"planning = false; planFresh = true;\n    if (r && typeof r === 'object') heardFrom(r);\n    render();",
+		"if (r && typeof r === 'object') heardFrom(r); else show(T.suCheckFail, true);",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("update card lost: %s", want)
@@ -119,6 +123,51 @@ func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 	for _, m := range regexp.MustCompile(`suEngineByUpd:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
 		if !strings.Contains(m[1], "{v}") {
 			t.Errorf("suEngineByUpd must name the version: %q", m[1])
+		}
+	}
+}
+
+// The router goes off during a single-speaker update and the phone loses the
+// network together with the speaker (discussion #1339, issue 4). The speaker
+// gives up after about eleven minutes and keeps its version; the card used to
+// stop asking fifteen minutes after the last answer, painted the red "not
+// reachable", flipped back to "waiting" every time the phone came back to the
+// page, and the Play screen said "not reachable" on top. Pinned here: silence
+// mid-download is never red, the card measures the silence from the last
+// answer and says the speaker has stopped once it is past the speaker's own
+// retries, it keeps asking for hours, and the Play screen leaves the word to
+// the card while the update's last word was busy.
+func TestPhoneRemoteUpdateCardLongSilence(t *testing.T) {
+	js := indexHTML[strings.Index(indexHTML, "(function wireSelfUpdate(){"):strings.Index(indexHTML, "(function wireDiag(){")]
+	rd := js[strings.Index(js, "if (stBusy && lostSince) {"):]
+	rd = rd[:strings.Index(rd, "else if (st.state === 'checking')")]
+	stop := strings.Index(rd, "show(fill(T.suNetStopped, st.current))")
+	if stop < 0 {
+		t.Fatal("a long silence mid-download does not say the speaker has stopped the update")
+	}
+	if !strings.Contains(rd, "if (midway && lastHeard && Date.now() - lastHeard >= SU_STOP_MS && !runActive() && !fleetRunning())") {
+		t.Error("the stopped line is not measured from the last answer, or speaks over a run")
+	}
+	// The red line is only reached by a busy state that is not a download.
+	quiet := strings.Index(rd, "else if (midway || polling || fleetPolling) show(T.sfNoAnswer, false, true);")
+	red := strings.Index(rd, "else show(T.offline, true);")
+	if quiet < 0 || red < 0 || quiet > red || stop > quiet {
+		t.Error("a silent download can reach the red offline line")
+	}
+	if !strings.Contains(js, "var SU_STOP_MS = PEER_MS,") {
+		t.Error("the stopped line no longer mirrors the twelve minutes of a run")
+	}
+	bundles := strings.Count(indexHTML, "suHead:\"")
+	got := regexp.MustCompile(`suNetStopped:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1)
+	if len(got) != bundles {
+		t.Errorf("suNetStopped: in %d of %d locales", len(got), bundles)
+	}
+	for _, m := range got {
+		if !strings.Contains(m[1], "{v}") {
+			t.Errorf("suNetStopped must name the version the speaker keeps: %q", m[1])
+		}
+		if strings.ContainsAny(m[1], "–—") || strings.Contains(m[1], " - ") {
+			t.Errorf("suNetStopped uses a dash: %q", m[1])
 		}
 	}
 }

@@ -1,8 +1,8 @@
 // phone-selfupdate-outage: a single-speaker update started from the phone
 // remote (internal/webui/assets/index.html) while the network drops out
 // (discussion #1339). The update card keeps the word while it waits, the
-// page's general "not reachable" state stands down meanwhile, the card asks
-// again on its own once the speaker answers after the card gave up, and the
+// page's general "not reachable" state stands down meanwhile, the card keeps
+// asking and reads the speaker again once it answers, and the
 // speaker's own "no internet" phase does not promise a resume the speaker
 // alone does not make, also when a speaker-driven run updates it last.
 
@@ -23,6 +23,7 @@ function strings(page) {
   return page.evaluate(() => ({
     noAnswer: window.T.sfNoAnswer, offline: window.T.offline, dl: window.T.suDl,
     netWait: window.T.sfNetWait, netWaitOne: window.T.sfNetWaitOne, running: window.T.sfRunning,
+    stopped: window.T.suNetStopped,
   }));
 }
 
@@ -95,16 +96,19 @@ test.describe('single-speaker update through a router outage', () => {
     expect(await page.evaluate(() => window.suUpdateInFlight())).toBe(true);
     await expect(page.locator('#statusCard')).not.toHaveClass(/\boffline\b/);
 
-    // Fifteen silent minutes: the card stops asking and says so, and the
-    // general state may say it too.
+    // Sixteen silent minutes: past the speaker's own retries the card says it
+    // has stopped the update, not in red, and keeps asking; the general
+    // state stays down meanwhile.
     await page.clock.fastForward(16 * 60 * 1000);
-    await expect(page.locator('#suMsg')).toHaveText(T.offline);
+    await expect(page.locator('#suMsg')).toHaveText(T.stopped.replace('{v}', '1.0.21'));
+    await expect(page.locator('#suMsg')).not.toHaveClass(/\bbad\b/);
     await statusTick(page, handler);
-    await expect(page.locator('#statusCard')).toHaveClass(/\boffline\b/);
+    await expect(page.locator('#statusCard')).not.toHaveClass(/\boffline\b/);
 
-    // The router is back, the phone stayed on the page: the card asks again.
+    // The router is back, the phone stayed on the page: the card's next
+    // read, every fifteen seconds by now, has the speaker again.
     handler.options.overrides = { [SU]: suStatus({ done: 50 }) };
-    await statusTick(page, handler);
+    await page.clock.fastForward(15_000);
     await expect(page.locator('#suMsg')).toHaveText(pct(T.dl, '50'), { timeout: 10_000 });
     await expect(page.locator('#statusCard')).not.toHaveClass(/\boffline\b/);
   });
