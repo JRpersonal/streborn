@@ -53,8 +53,8 @@ func Snooze(until string) Notice {
 }
 
 // supersedes reports whether n may take over from a notice of kind last
-// without the start gap: only a sleep notice following a sleep notice, or a
-// bass notice following a bass notice (swapsInPlace).
+// without the start gap: only a notice following one of its own kind, for
+// the kinds a key steps through (swapsInPlace: sleep, bass, shuffle/repeat).
 func (n Notice) supersedes(last NoticeKind) bool {
 	return n.Kind == last && swapsInPlace(n.Kind)
 }

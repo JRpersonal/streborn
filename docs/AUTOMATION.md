@@ -217,6 +217,13 @@ timer the phone set to 45 minutes goes to 60, one set to 90 (or an alarm's
 auto-off) goes off, and tapping through never repeats a step because a minute
 passed.
 
+**Fixed lengths (#1242).** For whoever always wants the same length, the
+"Built-in action" also offers "Sleep timer 15 / 30 / 60 min" (`sleep15`,
+`sleep30`, `sleep60`). A press starts the timer for exactly that length; a
+press while a timer started with that same length runs switches it off. A
+timer of another length (the phone's, the stepping key's) is replaced. Same
+group behaviour, notice and moon as the stepping key.
+
 **What is stored, and where.** `/mnt/nv/streborn/key-actions.json` on the
 speaker whose remote is pressed, `{"keys":{"thumbsUp":"sleep"}}`, written only
 when the app saves it (`PUT /api/keyactions`, LAN only; `GET` reads it back).
@@ -309,6 +316,44 @@ agent logs every step (`snooze key pressed`, `alarm snoozed ... until`,
 `alarm: snooze over, ringing again`, `alarm: snooze cancelled ... why`), and
 `GET /api/alarms` reports a ringing or snoozed alarm in its status block
 (`ring`).
+
+## Shuffle and repeat keys (a thumbs key switches a Spotify playlist's mode)
+
+A thumbs key can carry `shuffle` or `repeat` (#1679), set in the same place
+("Spotify: shuffle on or off", "Spotify: repeat (off, playlist, song)") and
+marked with a small "S" or "R". While a Spotify playlist plays (also paused),
+`shuffle` flips go-librespot's shuffle and `repeat` steps it the Spotify app's
+way: off -> the whole playlist (`repeat_context`) -> the one song
+(`repeat_track`) -> off. Each press reads the state fresh from the engine, so
+a change made in the Spotify app meanwhile is what the press moves on from. A
+speaker with a panel shows SHUFFLE ON / OFF or REPEAT ALL / ONE / OFF. On any
+other source the key does nothing (`shuffle key pressed, but no Spotify
+playlist plays`). Nothing is stored: a Spotify preset's own shuffle and repeat
+flags still apply on its next recall. Thumbs keys only, same one-thing-per-key
+rules as the sleep timer.
+
+## Back and Forward on the remote
+
+The firmware cannot skip STR's stream itself; it reports the press
+(`QPLAY_SKIP_*_FAILED` on gabbo, and `PREV_TRACK` / `NEXT_TRACK` in the key
+trace) and STR answers it, depending on what plays:
+
+- **A radio key (#1619):** Forward plays the next preset key that holds a
+  radio station, Back the one before, over all twelve keys in slot order
+  (1..6, then the second row 2x1..2x6), stepping over empty keys and keys
+  with anything else, wrapping at the ends. The step is the app's own recall
+  of that key. A press reported on both signals steps once (the two reports
+  of one press are paired within 0.7 s). Only when the speaker is still on
+  that key: on AUX, Bluetooth or another app's stream nothing happens.
+- **A Spotify playlist (#1678):** Forward is the next song. Back goes to the
+  song before while the room has heard less than ten seconds of the current
+  one, and restarts it later. go-librespot's own rule (back only within 3 s)
+  reads its own position, which runs about ten seconds of buffer ahead of
+  the speaker, so on the remote it could only ever restart. STR subtracts
+  the measured buffer lag (the newest `buffer lag measured` reading, else the
+  10 s lead cap) and, to go back, seeks the engine to 0 before its prev. The
+  app's own Back keeps Spotify's rule.
+- **The music library:** the next or previous song of the folder, as before.
 
 ## Alarm clock (a preset, but timed)
 

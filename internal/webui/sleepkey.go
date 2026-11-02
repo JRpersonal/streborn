@@ -92,6 +92,47 @@ func (s *Server) SleepKeyPress() {
 	showSleepNotice(int(next / time.Minute))
 }
 
+// nextFixedSleep is what a press of a key bound to a fixed sleep length
+// arms, 0 for off: the length itself, unless a timer armed with exactly that
+// length already runs, in which case the press switches it off. A timer of
+// another length (the phone's, the stepping key's) is replaced, so the key
+// always does what it says on it (#1242).
+func nextFixedSleep(active bool, armed, fixed time.Duration) time.Duration {
+	if active && armed == fixed {
+		return 0
+	}
+	return fixed
+}
+
+// SleepFixedKeyPress is the press handler of a key bound to a fixed sleep
+// length (keyactions.ActionSleep15/30/60, #1242). Same debounce, group timer
+// and notice as the stepping key; returns at once.
+func (s *Server) SleepFixedKeyPress(minutes int) {
+	if minutes <= 0 || minutes > sleepMaxMinutes {
+		return
+	}
+	now := time.Now()
+	s.sleep.mu.Lock()
+	if !s.sleep.lastKey.IsZero() && now.Sub(s.sleep.lastKey) < sleepKeyMinGap {
+		s.sleep.mu.Unlock()
+		s.logger.Debug("sleep key: press ignored, same press reported twice")
+		return
+	}
+	s.sleep.lastKey = now
+	next := nextFixedSleep(s.sleep.timer != nil, s.sleep.armed, time.Duration(minutes)*time.Minute)
+	s.sleep.mu.Unlock()
+
+	if next == 0 {
+		s.logger.Info("sleep key pressed", "fixed", minutes, "step", "off")
+		s.cancelSleepNotify("key", true)
+		showSleepNotice(0)
+		return
+	}
+	s.logger.Info("sleep key pressed", "fixed", minutes, "step", minutes)
+	s.armSleepNotify(next, true, true)
+	showSleepNotice(minutes)
+}
+
 // showSleepNotice puts the step on this speaker's panel (0 = off). It shows
 // even with the notices switched off, like identify: it is the only answer
 // to a key the user just pressed.

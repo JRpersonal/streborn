@@ -1224,6 +1224,11 @@ func (a *agent) buildBoxLink() error {
 		onSleepKey: webuiSrv.SleepKeyPress,
 		// A thumbs key that carries a bass step moves the bass up or down.
 		onBassKey: webuiSrv.BassKeyPress,
+		// A fixed sleep length (#1242), shuffle and repeat (#1679) on a
+		// thumbs key, and the radio-key step on Next/Previous (#1619).
+		onSleepFixedKey: webuiSrv.SleepFixedKeyPress,
+		onPlayModeKey:   webuiSrv.PlayModeKeyPress,
+		onRadioStepKey:  webuiSrv.RadioStepKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).

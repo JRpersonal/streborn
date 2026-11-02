@@ -5,7 +5,33 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withSleep, withAction, actionAllowed, sleepBlockedBy,
+  playModeOn, isPlayModeAction, sleepMinutesOf, isSleepAction,
 } from './keyactions.js';
+
+describe('fixed sleep lengths, shuffle and repeat', () => {
+  it('go on the thumbs keys only, like the agent allows', () => {
+    for (const a of ['sleep15', 'sleep30', 'sleep60', 'shuffle', 'repeat']) {
+      expect(actionAllowed(a, 'thumbsUp'), a).toBe(true);
+      expect(actionAllowed(a, 'aux'), a).toBe(false);
+      expect(actionAllowed(a, 'next'), a).toBe(false);
+    }
+  });
+  it('normalise to their canonical spelling', () => {
+    expect(normalizeKeyActions({ keys: { thumbsUp: ' SLEEP30 ', thumbsDown: 'Shuffle', aux: 'repeat' } }))
+      .toEqual({ keys: { thumbsUp: 'sleep30', thumbsDown: 'shuffle' } });
+  });
+  it('a fixed length counts as the sleep timer, shuffle and repeat as a play mode', () => {
+    const d = { keys: { thumbsUp: 'sleep60', thumbsDown: 'repeat' } };
+    expect(sleepOn(d, 'thumbsUp')).toBe(true);
+    expect(sleepMinutesOf('sleep60')).toBe(60);
+    expect(sleepMinutesOf('sleep')).toBe(0);
+    expect(isSleepAction('sleep15') && isSleepAction('sleep')).toBe(true);
+    expect(playModeOn(d, 'thumbsDown')).toBe(true);
+    expect(playModeOn(d, 'thumbsUp')).toBe(false);
+    expect(isPlayModeAction('shuffle') && !isPlayModeAction('bassUp')).toBe(true);
+    expect(actionOn(d, 'thumbsDown')).toBe('repeat');
+  });
+});
 
 describe('bass steps', () => {
   it('go on the thumbs keys only, like the agent allows', () => {
@@ -37,9 +63,11 @@ describe('key action select', () => {
   // agent knows; the options are the view's own markup.
   const src = readFileSync(new URL('./views/settings/advanced.js', import.meta.url), 'utf8');
   it('offers the bass steps next to the sleep timer and snooze', () => {
-    for (const v of ['sleep', 'snooze', 'bassUp', 'bassDown']) {
+    for (const v of ['sleep', 'snooze', 'bassUp', 'bassDown', 'shuffle', 'repeat']) {
       expect(src, `option ${v}`).toContain(`<option value="${v}"`);
     }
+    // the fixed lengths come from SLEEP_FIXED
+    expect(src).toContain("t('settingsView.sleepKeyFixedLabel', { n })");
     expect(src).toContain("t('settingsView.bassKeyUpLabel')");
     expect(src).toContain("t('settingsView.bassKeyDownLabel')");
   });
@@ -125,9 +153,13 @@ describe('key action i18n', () => {
     || k === 'multiroom.groupKeysKeySnooze' || k === 'multiroom.groupKeysSnoozeHint'
     || k.startsWith('settingsView.bassKey')
     || k === 'settingsView.webhookBassKeyNote' || k === 'settingsView.webhookRemoteLegendBass'
-    || k === 'multiroom.groupKeysKeyBass' || k === 'multiroom.groupKeysBassHint');
+    || k === 'multiroom.groupKeysKeyBass' || k === 'multiroom.groupKeysBassHint'
+    || k.startsWith('settingsView.shuffleKey') || k.startsWith('settingsView.repeatKey')
+    || k.startsWith('settingsView.playModeKey') || k === 'settingsView.webhookPlayModeKeyNote'
+    || k === 'settingsView.webhookRemoteLegendPlayMode' || k === 'settingsView.webhookRemoteSkipNote'
+    || k === 'multiroom.groupKeysKeyPlayMode' || k === 'multiroom.groupKeysPlayModeHint');
   it('has the strings in English at all', () => {
-    expect(keys.length).toBe(32);
+    expect(keys.length).toBe(46);
   });
   it('is present and translated in every bundle, placeholders intact', () => {
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');
