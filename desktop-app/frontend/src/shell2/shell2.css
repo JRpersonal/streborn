@@ -402,6 +402,35 @@ html.ui2 .ui2-side-top {
    taking every pixel left, and a foot with the text size and the language in
    one row. The navigation is the tab row above the page (.ui2-tabs). The foot
    stays outside every scroll box, so its menus are never clipped. */
+/* Support STR: always on screen, above the text size and the language. The
+   three branded buttons share their colours with Help and info (help.css);
+   here they are narrower so all three fit side by side. */
+html.ui2 .ui2-support {
+  flex: 0 0 auto;
+  padding: 8px 8px 6px;
+  border-top: 1px solid var(--u-border);
+}
+html.ui2 .ui2-support-head {
+  margin: 0 4px 6px;
+  color: var(--u-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+html.ui2 #ui2Sidebar .ui2-donate {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+/* #ui2Support in the selector: help.css's shared rule (min-width 140px) has
+   the same specificity otherwise and loads later. */
+html.ui2 #ui2Sidebar #ui2Support .donate-btn {
+  gap: 4px;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: 14px; }
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex: 0 0 auto;

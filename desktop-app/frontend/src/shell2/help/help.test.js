@@ -222,11 +222,14 @@ describe('Help and info strings', () => {
   });
 });
 
-describe('Donate buttons live in Help and info alone', () => {
-  it('appear in the help markup and nowhere else the shell renders', () => {
+// Jens, 2026-11-02: support always on screen. The shell renders the three
+// buttons once, at the foot of the sidebar; Help and info has its own section.
+describe('Donate buttons: the sidebar foot and Help and info', () => {
+  it('appear once in the shell (the sidebar foot), once in help, nowhere else', () => {
     expect(page()).toContain('data-donate="');
-    expect(shellMarkup()).not.toContain('data-donate');
-    for (const f of sourceFiles().filter((x) => x.startsWith('shell2/') && !x.endsWith('.test.js') && x !== 'shell2/help/help.js')) {
+    expect(shellMarkup().match(/data-donate="/g)).toHaveLength(3);
+    expect(shellMarkup()).toContain('id="ui2Support"');
+    for (const f of sourceFiles().filter((x) => x.startsWith('shell2/') && !x.endsWith('.test.js') && !['shell2/help/help.js', 'shell2/markup.js'].includes(x))) {
       const src = fileSource(f);
       expect(src, f).not.toContain('data-donate');
       expect(src, f).not.toContain('donateButtonsHTML');

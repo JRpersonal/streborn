@@ -55,8 +55,11 @@ releases later.
   opened from it (Levels).
 - Restart, remove and reset sit in a separate maintenance context, confirmed,
   and the confirmation names the speaker.
-- Help and info is one fixed place. Support links appear only there, never as
-  a banner in the music views.
+- Help and info is one fixed place for help. Support is always on screen:
+  the three donate buttons sit at the foot of the sidebar under "Support
+  STR" on every view (Jens, 2026-11-02: the preview had hidden them in Help
+  and info, while the classic layout keeps its rail). Never a banner, never a
+  prompt in a success moment.
 - Every empty, loading, offline and error state explains what happened and
   what can be done next. Status is never shown by color alone.
 
@@ -84,8 +87,9 @@ releases later.
   two scrollbars were always on screen, in the default 1240 x 740 window the
   menu was already cut off (Spotify half visible, Speakers hidden), and at
   the smallest 1000 x 600 only two entries showed. Now the sidebar holds the
-  logo, the speaker section and a foot with the text size (Aa) and the
-  language in one row. The speaker section takes all the height left: the
+  logo, the speaker section, "Support STR" with the three donate buttons
+  side by side, and a foot with the text size (Aa) and the language in one
+  row. The speaker section takes all the height left: the
   pinned group keeps its cap and scrolls on its own beyond it, the other
   speakers fill the rest and are the one scroll box (thin scrollbars, as in
   the main pane). The navigation is a tab row in its own grid row above the

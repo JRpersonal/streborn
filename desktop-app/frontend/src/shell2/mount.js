@@ -38,6 +38,7 @@ import {
 // Phase 5: the banner region's cards in the shell's tokens (html.ui2 only).
 import './banners.css';
 import { mountHelp, syncHelpView } from './help/help.js';
+import { wireDonateButtons } from '../donate.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -283,6 +284,9 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  // Support STR, always on screen at the foot of the sidebar (Jens,
+  // 2026-11-02: the classic layout's rail had no equivalent in the preview).
+  wireDonateButtons(frame.querySelector('#ui2Support'));
   // A group edit waiting for the speakers is decided when a zone round lands.
   onZoneLive(() => { if (state.ui2Shell && awaiting.size) paintSpeakers(false); });
   // The Speakers area (phase 3): its row of places and its routes.

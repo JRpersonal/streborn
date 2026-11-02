@@ -226,11 +226,12 @@ async function run(page) {
 
   // Help and info (phase 5): the small tab after Wishes opens the one place
   // for help, wishes, community, support and about. The classic footer is
-  // hidden on every preview view, so the donate buttons show only here.
+  // hidden on every preview view; the donate buttons sit at the foot of the
+  // sidebar on every view, and Help and info has its own three.
   const helpEntry = await page.$eval('#ui2Tabs .ui2-tabs-small', (el) => [...el.querySelectorAll('.ui2-nav-item')].map((b) => b.dataset.view));
   check(helpEntry.join() === 'wishes,help', `Wishes and Help and info are the small tabs, Help last (${helpEntry.join()})`);
-  const donateBefore = await page.$$eval('[data-donate]', (els) => els.filter((e) => e.offsetParent !== null).length);
-  check(donateBefore === 0, `no donate button on screen outside Help and info (${donateBefore})`);
+  const donateBefore = await page.$$eval('[data-donate]', (els) => els.filter((e) => e.offsetParent !== null).map((e) => !!e.closest('#ui2Support')));
+  check(donateBefore.length === 3 && donateBefore.every(Boolean), `the three donate buttons are on screen at the foot of the sidebar, and only there (${donateBefore.length})`);
   await page.click('#ui2NavHelp');
   await page.waitForSelector('#view-help:not(.hidden) #hlpTitle', { timeout: 5000 });
   const helpPage = await page.evaluate(() => {
@@ -246,7 +247,7 @@ async function run(page) {
       }),
       current: document.getElementById('ui2NavHelp').getAttribute('aria-current'),
       footerHidden: !footer || footer.offsetParent === null,
-      donateInHelp: donate.length === 3 && donate.every((e) => v.contains(e)),
+      donateInHelp: donate.filter((e) => v.contains(e)).length === 3 && donate.filter((e) => !v.contains(e)).every((e) => !!e.closest('#ui2Support')),
       trademark: !!tm && tm.offsetParent !== null && /Bose Corporation/.test(tm.textContent),
     };
   });
@@ -254,7 +255,7 @@ async function run(page) {
   check(helpPage.labelled, 'every Help and info section is labelled by its own heading');
   check(helpPage.current === 'page', 'the Help entry is marked current');
   check(helpPage.footerHidden, 'the classic footer is hidden on Help and info');
-  check(helpPage.donateInHelp, 'the three donate buttons show on Help and info, inside it');
+  check(helpPage.donateInHelp, 'Help and info shows its own three donate buttons, besides the sidebar foot');
   check(helpPage.trademark, 'the trademark notice is on screen');
 }
 

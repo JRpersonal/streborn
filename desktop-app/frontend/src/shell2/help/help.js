@@ -168,8 +168,8 @@ function communityHTML(m, t) {
 }
 
 // Support STR: a plain statement of how the project is funded, then the three
-// buttons. No slogan, no plea; this section is the only place in the preview
-// that shows them.
+// buttons. No slogan, no plea. The same three buttons stay on screen at the
+// foot of the sidebar (markup.js, #ui2Support).
 function supportHTML(m, t) {
   return section('support', t, `<p class="hlp-lead">${escapeHtml(t('ui2.help.supportLead'))}</p>`
     + `<div class="hlp-donate">${donateButtonsHTML()}</div>`);

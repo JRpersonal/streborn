@@ -6,13 +6,15 @@
 // duplicates a control the views already own, so both layouts share one DOM
 // and one state.
 //
-// The sidebar holds the speakers and, at its foot, the text size and the
-// language; the navigation is the row of tabs above the page (nav.js).
+// The sidebar holds the speakers and, at its foot, the way to support STR, the
+// text size and the language; the navigation is the row of tabs above the page
+// (nav.js).
 //
 // Pure: a string, so vitest can read it without a DOM.
 
 import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../utils.js';
+import { donateButtonsHTML } from '../donate.js';
 import { NAV } from './nav.js';
 import { SUBNAV } from './speakers/routes.js';
 
@@ -65,6 +67,10 @@ export function shellMarkup() {
     <section class="ui2-spk" id="ui2Speakers" aria-labelledby="ui2SpkHead">
       <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
       <div class="ui2-spk-lists" id="ui2SpkLists"></div>
+    </section>
+    <section class="ui2-support" id="ui2Support" aria-labelledby="ui2SupportHead">
+      <h2 class="ui2-support-head" id="ui2SupportHead">${escapeHtml(t('ui2.help.support'))}</h2>
+      <div class="ui2-donate">${donateButtonsHTML()}</div>
     </section>
     <div class="ui2-side-bottom">
       <div class="ui2-side-update" id="ui2Version" hidden><button type="button" class="ui2-update-line" id="ui2UpdateLine"></button></div>

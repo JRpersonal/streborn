@@ -104,17 +104,25 @@ test.describe('UI 2.0 Help and info', () => {
     await expect(page.locator('#errorModal')).toBeHidden();
   });
 
-  test('4. the donate buttons show on Help and info and nowhere else', async ({ app }) => {
+  // Jens, 2026-11-02: support should be prominent and always visible. The
+  // three buttons sit at the foot of the sidebar on every view, under a
+  // "Support STR" heading, and Help and info keeps its own section.
+  test('4. the donate buttons are always in the sidebar, and in Help and info', async ({ app }) => {
     const { page } = app;
+    const side = page.locator('#ui2Sidebar #ui2Support');
+    await expect(side.getByRole('heading', { name: en('ui2.help.support') })).toBeVisible();
     for (const view of ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes']) {
       await page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`).click();
       await expect(page.locator(`#ui2MainInner > #view-${view}`)).toBeVisible();
-      await expect(page.locator('[data-donate]:visible'), view).toHaveCount(0);
+      await expect(side.locator('[data-donate]:visible'), view).toHaveCount(3);
+      await expect(page.locator('[data-donate]:visible'), view).toHaveCount(3);
+      for (const b of await side.locator('[data-donate]').all()) await expect(b, view).toBeInViewport();
       await expect(page.locator('#appFooter'), view).toBeHidden();
       await expect(page.locator('.donate-side'), view).toBeHidden();
     }
     await openHelp(page);
-    await expect(page.locator('[data-donate]:visible')).toHaveCount(3);
+    await expect(page.locator('[data-donate]:visible')).toHaveCount(6);
+    await expect(side.locator('[data-donate]:visible')).toHaveCount(3);
     await expect(section(page, 'support').locator('[data-donate]:visible')).toHaveCount(3);
     await expect(section(page, 'support')).toContainText(en('ui2.help.supportLead'));
     await expect(page.locator('#appFooter')).toBeHidden();
