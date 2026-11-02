@@ -24,7 +24,7 @@ func TestNextDueToday(t *testing.T) {
 	loc := berlin(t)
 	// Monday 2026-09-07, before the alarm.
 	now := time.Date(2026, 9, 7, 5, 0, 0, 0, loc)
-	got, ok := weekdayAlarm().NextDue(now, loc)
+	got, ok := weekdayAlarm().NextDue(now, loc, nil)
 	if !ok {
 		t.Fatal("a weekday alarm has a next fire on a Monday morning")
 	}
@@ -38,7 +38,7 @@ func TestNextDueSkipsTheWeekend(t *testing.T) {
 	loc := berlin(t)
 	// Friday 2026-09-11, after the alarm has already gone off.
 	now := time.Date(2026, 9, 11, 7, 0, 0, 0, loc)
-	got, ok := weekdayAlarm().NextDue(now, loc)
+	got, ok := weekdayAlarm().NextDue(now, loc, nil)
 	if !ok {
 		t.Fatal("expected a next fire")
 	}
@@ -53,14 +53,14 @@ func TestWeekdayWraps(t *testing.T) {
 	loc := berlin(t)
 	sunday := Alarm{ID: "s", Enabled: true, Hour: 9, Minute: 0, Days: []int{0}, Slot: 1}
 	now := time.Date(2026, 9, 7, 12, 0, 0, 0, loc) // a Monday
-	next, ok := sunday.NextDue(now, loc)
+	next, ok := sunday.NextDue(now, loc, nil)
 	if !ok || next.Weekday() != time.Sunday {
 		t.Fatalf("next due = %v (%v), want a Sunday", next, next.Weekday())
 	}
 	if want := time.Date(2026, 9, 13, 9, 0, 0, 0, loc); !next.Equal(want) {
 		t.Errorf("next due = %v, want %v", next, want)
 	}
-	prev, ok := sunday.MostRecentDue(now, loc)
+	prev, ok := sunday.MostRecentDue(now, loc, nil)
 	if !ok || prev.Weekday() != time.Sunday {
 		t.Fatalf("most recent due = %v (%v), want a Sunday", prev, prev.Weekday())
 	}
@@ -72,7 +72,7 @@ func TestWeekdayWraps(t *testing.T) {
 func TestMostRecentDueIsNeverInTheFuture(t *testing.T) {
 	loc := berlin(t)
 	now := time.Date(2026, 9, 7, 5, 0, 0, 0, loc) // Monday, before 06:30
-	got, ok := weekdayAlarm().MostRecentDue(now, loc)
+	got, ok := weekdayAlarm().MostRecentDue(now, loc, nil)
 	if !ok {
 		t.Fatal("expected a previous due instant")
 	}
@@ -87,7 +87,7 @@ func TestMostRecentDueIsNeverInTheFuture(t *testing.T) {
 func TestMostRecentDueIncludesThisMinute(t *testing.T) {
 	loc := berlin(t)
 	now := time.Date(2026, 9, 7, 6, 30, 0, 0, loc)
-	got, ok := weekdayAlarm().MostRecentDue(now, loc)
+	got, ok := weekdayAlarm().MostRecentDue(now, loc, nil)
 	if !ok || !got.Equal(now) {
 		t.Fatalf("an alarm due exactly now has to count: got %v, ok %v", got, ok)
 	}
@@ -102,8 +102,8 @@ func TestZoneDecidesTheInstant(t *testing.T) {
 	}
 	now := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
 	a := daily(6, 30)
-	inBerlin, _ := a.NextDue(now, berlinLoc)
-	inNY, _ := a.NextDue(now, ny)
+	inBerlin, _ := a.NextDue(now, berlinLoc, nil)
+	inNY, _ := a.NextDue(now, ny, nil)
 	if inBerlin.Equal(inNY) {
 		t.Fatal("06:30 in Berlin and 06:30 in New York are not the same instant")
 	}
@@ -118,7 +118,7 @@ func TestZoneDecidesTheInstant(t *testing.T) {
 func TestDSTSpringForwardStillFires(t *testing.T) {
 	loc := berlin(t)
 	now := time.Date(2026, 3, 29, 0, 0, 0, 0, loc)
-	got, ok := daily(2, 30).NextDue(now, loc)
+	got, ok := daily(2, 30).NextDue(now, loc, nil)
 	if !ok {
 		t.Fatal("a 02:30 alarm must not disappear on the spring-forward day")
 	}
@@ -138,7 +138,7 @@ func TestDSTSpringForwardStillFires(t *testing.T) {
 func TestDSTFallBackResolvesOnce(t *testing.T) {
 	loc := berlin(t)
 	now := time.Date(2026, 10, 25, 0, 0, 0, 0, loc)
-	got, ok := daily(2, 30).NextDue(now, loc)
+	got, ok := daily(2, 30).NextDue(now, loc, nil)
 	if !ok {
 		t.Fatal("a 02:30 alarm has to resolve on the fall-back day")
 	}
@@ -153,7 +153,7 @@ func TestDSTFallBackResolvesOnce(t *testing.T) {
 	}
 	// And asking again from just after it does not hand back the same wall
 	// time an hour later.
-	next, ok := daily(2, 30).NextDue(got.Add(time.Minute), loc)
+	next, ok := daily(2, 30).NextDue(got.Add(time.Minute), loc, nil)
 	if !ok {
 		t.Fatal("expected a following day")
 	}

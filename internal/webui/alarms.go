@@ -233,11 +233,14 @@ func (s *Server) evaluateAlarms(now time.Time) {
 	s.alarmState.Prune(keep)
 	s.acknowledgeAlarmEdits(doc, now, loc)
 
+	// A skipped day (a holiday on the user's list) has no due instant at all,
+	// so nothing below fires on it; the next ring is the next unskipped day.
+	skip := doc.Skips()
 	for _, a := range doc.Alarms {
 		if !a.Enabled {
 			continue
 		}
-		due, ok := a.MostRecentDue(now, loc)
+		due, ok := a.MostRecentDue(now, loc, skip)
 		if !ok || now.Sub(due) > alarmGrace {
 			continue
 		}
@@ -265,17 +268,24 @@ func (s *Server) acknowledgeAlarmEdits(doc alarm.Document, now time.Time, loc *t
 		prev[a.ID] = a
 	}
 	zoneChanged := doc.Zone != s.alarmSeen.Zone
+	oldSkip, skip := s.alarmSeen.Skips(), doc.Skips()
 	s.alarmSeen = doc
 
 	for _, a := range doc.Alarms {
 		if !a.Enabled {
 			continue
 		}
+		due, ok := a.MostRecentDue(now, loc, skip)
 		old, had := prev[a.ID]
 		if had && old.Enabled && !zoneChanged && old.SameSchedule(a) {
-			continue
+			// Same time and days, but the skip dates can still have moved
+			// the due instant: taking today off the list at 06:31 is an
+			// edit like any other and must not ring the 06:30 alarm at once.
+			before, wasDue := a.MostRecentDue(now, loc, oldSkip)
+			if wasDue == ok && before.Equal(due) {
+				continue
+			}
 		}
-		due, ok := a.MostRecentDue(now, loc)
 		if !ok || now.Sub(due) > alarmGrace {
 			continue
 		}

@@ -48,11 +48,20 @@ const (
 	// DefaultSnoozeMinutes is the snooze length of an alarm that names none,
 	// which is every alarm saved before snooze existed (discussion #1415).
 	DefaultSnoozeMinutes = 9
+	// MaxSkipDates bounds the list of days on which no alarm rings
+	// (discussion #1491). Sixty covers a year of public holidays, school
+	// breaks and a few days off at under a kilobyte; past days drop off on
+	// every save, so the list does not fill up over the years.
+	MaxSkipDates = 60
 )
 
-// clockLayout is the "HH:MM" form of a switch-off time of day, a wall-clock
-// value in the document's zone, never UTC.
-const clockLayout = "15:04"
+// clockLayout is the "HH:MM" form of a switch-off time of day, and dateLayout
+// the "YYYY-MM-DD" form of a skip date. Both are wall-clock values in the
+// document's zone, never UTC.
+const (
+	clockLayout = "15:04"
+	dateLayout  = "2006-01-02"
+)
 
 // SnoozeChoices are the snooze lengths an alarm may carry, in minutes. The
 // editor offers exactly these; zero on the alarm means DefaultSnoozeMinutes.
@@ -141,6 +150,13 @@ type Document struct {
 	// produces "it went off at 07:30".
 	Zone   string  `json:"zone"`
 	Alarms []Alarm `json:"alarms"`
+	// SkipDates are the calendar days, "YYYY-MM-DD" in Zone, on which no
+	// alarm of this speaker rings: public holidays and days off (discussion
+	// #1491). One list for the whole speaker rather than one per alarm,
+	// because a holiday is a holiday for every alarm in the bedroom, and one
+	// list is one editor and one cap. Sorted and de-duplicated by Validate,
+	// at most MaxSkipDates long.
+	SkipDates []string `json:"skipDates,omitempty"`
 }
 
 // Location resolves the document's zone. An empty zone is UTC, not an error,
@@ -244,7 +260,72 @@ func (d *Document) Validate() error {
 	if d.Alarms == nil {
 		d.Alarms = []Alarm{}
 	}
+	return d.validateSkipDates()
+}
+
+// validateSkipDates checks, sorts and de-duplicates the skip dates in place.
+// A duplicate is dropped rather than rejected: adding a day that is already
+// on the list is a harmless double tap, not a mistake worth an error.
+func (d *Document) validateSkipDates() error {
+	if len(d.SkipDates) == 0 {
+		d.SkipDates = nil
+		return nil
+	}
+	seen := make(map[string]bool, len(d.SkipDates))
+	out := make([]string, 0, len(d.SkipDates))
+	for _, raw := range d.SkipDates {
+		day := strings.TrimSpace(raw)
+		if !validDate(day) {
+			return fmt.Errorf("%q is not a date like 2026-12-24", raw)
+		}
+		if seen[day] {
+			continue
+		}
+		seen[day] = true
+		out = append(out, day)
+	}
+	if len(out) > MaxSkipDates {
+		return fmt.Errorf("at most %d days without an alarm", MaxSkipDates)
+	}
+	// The layout sorts lexically in calendar order.
+	sort.Strings(out)
+	d.SkipDates = out
 	return nil
+}
+
+func validDate(day string) bool {
+	_, err := time.Parse(dateLayout, day)
+	return err == nil && len(day) == len(dateLayout)
+}
+
+// DropPastSkipDates removes the skip dates before today, today being the
+// calendar day of now in the document's zone. Today itself stays, because an
+// alarm later today is still skipped. Called on every save and on every read
+// for an editor, so a past holiday never takes up one of the MaxSkipDates
+// places and the list the user sees only holds days still to come. A zone that
+// does not resolve leaves the list alone; Validate reports that zone anyway.
+func (d *Document) DropPastSkipDates(now time.Time) {
+	if len(d.SkipDates) == 0 {
+		return
+	}
+	loc, err := d.Location()
+	if err != nil {
+		return
+	}
+	today := now.In(loc).Format(dateLayout)
+	kept := make([]string, 0, len(d.SkipDates))
+	for _, day := range d.SkipDates {
+		// A malformed entry is kept for Validate to report rather than
+		// silently thrown away here.
+		if t := strings.TrimSpace(day); validDate(t) && t < today {
+			continue
+		}
+		kept = append(kept, day)
+	}
+	if len(kept) == 0 {
+		kept = nil
+	}
+	d.SkipDates = kept
 }
 
 // freeID returns a readable id no other alarm in the document holds.
@@ -379,6 +460,9 @@ func (s *Store) Set(d Document) error {
 
 func cloneDoc(d Document) Document {
 	out := Document{Zone: d.Zone, Alarms: make([]Alarm, 0, len(d.Alarms))}
+	if len(d.SkipDates) > 0 {
+		out.SkipDates = append([]string(nil), d.SkipDates...)
+	}
 	for _, a := range d.Alarms {
 		a.Days = append([]int(nil), a.Days...)
 		out.Alarms = append(out.Alarms, a)
@@ -402,6 +486,7 @@ func (s *Store) Snapshot() any {
 		"zone":    d.Zone,
 		"count":   len(d.Alarms),
 		"enabled": enabled,
+		"skip":    d.SkipDates,
 		"alarms":  d.Alarms,
 	}
 }

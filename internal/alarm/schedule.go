@@ -33,17 +33,54 @@ func (a Alarm) at(day time.Time, loc *time.Location) time.Time {
 	return time.Date(day.Year(), day.Month(), day.Day(), a.Hour, a.Minute, 0, 0, loc)
 }
 
+// SkipSet is a document's skip dates as a lookup, keyed "YYYY-MM-DD". A nil
+// set skips nothing.
+type SkipSet map[string]bool
+
+// Skips reports whether the calendar day of day, read in day's own location,
+// is a skip date.
+func (s SkipSet) Skips(day time.Time) bool {
+	return s[day.Format(dateLayout)]
+}
+
+// Skips returns the document's skip dates as a lookup.
+func (d Document) Skips() SkipSet {
+	if len(d.SkipDates) == 0 {
+		return nil
+	}
+	s := make(SkipSet, len(d.SkipDates))
+	for _, day := range d.SkipDates {
+		s[day] = true
+	}
+	return s
+}
+
+// scanFor widens the scan by one week per skip date: an alarm on a single
+// weekday whose next n occurrences are all skipped is due n weeks later, and
+// the scan must still reach it. Without skip dates it is scanDays.
+func scanFor(skip SkipSet) int {
+	return scanDays + 7*len(skip)
+}
+
+// firesOn reports whether the alarm rings on the calendar day of day: its
+// weekday is in the set and the date is not skipped.
+func (a Alarm) firesOn(day time.Time, skip SkipSet) bool {
+	return a.Fires(day.Weekday()) && !skip.Skips(day)
+}
+
 // MostRecentDue returns the latest instant at or before now that this alarm was
-// due, and whether one exists inside the scan window.
+// due, and whether one exists inside the scan window. A skipped day is not due
+// at all, so the answer on a skipped morning is the alarm's previous ring,
+// which is long out of any grace window.
 //
 // The weekday tested is the CALENDAR day being scanned, not the weekday of the
 // normalised instant, so each day yields exactly one candidate and a DST shift
 // can neither skip a day nor produce two.
-func (a Alarm) MostRecentDue(now time.Time, loc *time.Location) (time.Time, bool) {
+func (a Alarm) MostRecentDue(now time.Time, loc *time.Location, skip SkipSet) (time.Time, bool) {
 	local := now.In(loc)
-	for back := 0; back < scanDays; back++ {
+	for back, n := 0, scanFor(skip); back < n; back++ {
 		day := local.AddDate(0, 0, -back)
-		if !a.Fires(day.Weekday()) {
+		if !a.firesOn(day, skip) {
 			continue
 		}
 		if cand := a.at(day, loc); !cand.After(now) {
@@ -54,12 +91,13 @@ func (a Alarm) MostRecentDue(now time.Time, loc *time.Location) (time.Time, bool
 }
 
 // NextDue returns the earliest instant strictly after now that this alarm is
-// due, and whether one exists inside the scan window.
-func (a Alarm) NextDue(now time.Time, loc *time.Location) (time.Time, bool) {
+// due, and whether one exists inside the scan window. Skipped days are passed
+// over, so this is also the "next alarm" the editor shows.
+func (a Alarm) NextDue(now time.Time, loc *time.Location, skip SkipSet) (time.Time, bool) {
 	local := now.In(loc)
-	for fwd := 0; fwd < scanDays; fwd++ {
+	for fwd, n := 0, scanFor(skip); fwd < n; fwd++ {
 		day := local.AddDate(0, 0, fwd)
-		if !a.Fires(day.Weekday()) {
+		if !a.firesOn(day, skip) {
 			continue
 		}
 		if cand := a.at(day, loc); cand.After(now) {
@@ -106,7 +144,8 @@ func (a Alarm) SwitchOff(due, rang time.Time, loc *time.Location) (time.Time, bo
 
 // NextFire returns the earliest instant after now that any ENABLED alarm in the
 // document is due, along with that alarm. A document whose zone no longer
-// resolves schedules nothing rather than guessing at UTC.
+// resolves schedules nothing rather than guessing at UTC. Skip dates are
+// honoured, so this is the next morning the speaker really rings.
 func (d Document) NextFire(now time.Time) (time.Time, Alarm, bool) {
 	loc, err := d.Location()
 	if err != nil {
@@ -117,11 +156,12 @@ func (d Document) NextFire(now time.Time) (time.Time, Alarm, bool) {
 		which Alarm
 		found bool
 	)
+	skip := d.Skips()
 	for _, a := range d.Alarms {
 		if !a.Enabled {
 			continue
 		}
-		t, ok := a.NextDue(now, loc)
+		t, ok := a.NextDue(now, loc, skip)
 		if !ok {
 			continue
 		}
