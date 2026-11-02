@@ -1085,6 +1085,10 @@ func (a *agent) buildWebui() error {
 		langFile = filepath.Join(filepath.Dir(a.flags.regionFile), "lang.txt")
 	}
 	go newBoxLanguageGate(a.flags.boxHost, langFile, regionRes.Country, logger.With("comp", "boxlang")).run(ctx)
+	// The speaker's standby clock as its owner set it: re-applied once per
+	// start and put back on a standby or wake when the firmware dropped it
+	// (#979), brightness included (#1226). standbyclock.go.
+	startStandbyClock(ctx, a.flags.boxHost, logger.With("comp", "standbyclock"), webuiSrv.SetStandbyClockKeeper)
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the

@@ -14,7 +14,7 @@ import { copyScreenshot, scoreText } from '../../arcadeshare.js';
 import {
   GetClockFormat24,
   GetClockDisplay,
-  SetClockDisplay,
+  SetStandbyClock,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
   GetDisplayTrack,
@@ -254,7 +254,10 @@ export function wireSoundSections(ctx) {
         try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
         const offsetMin = -new Date().getTimezoneOffset();
         const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
-        await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
+        // Through the agent, which keeps the choice on the speaker and puts
+        // it back after a restart or when the firmware drops it (#979); an
+        // older agent gets the direct write. -1 keeps the brightness.
+        await SetStandbyClock(box.host, box.port, enable, tz, offsetMin, fmt24, -1);
         reportDone(clockOn || clockFormat, t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
         await refreshClock();
         return true;

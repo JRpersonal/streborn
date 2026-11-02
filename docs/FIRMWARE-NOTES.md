@@ -417,6 +417,54 @@ firmware-boot) and exposes `clock_status` in `/api/debug/state` so bundles
 show exactly this sequence. Practical rule: after a wall power-cycle that
 misbehaves, prefer a software reboot over another plug pull.
 
+## The standby clock: STR keeps the owner's setting (#979, #1226)
+
+The clock a speaker shows in standby is the firmware's own (`/clockDisplay`
+on `:8090`), separate from the Linux clock above. Its configuration is one
+element with six attributes on FW 27.0.6:
+
+    <clockDisplay><clockConfig timezoneInfo="Europe/Berlin" userEnable="true"
+      timeFormat="TIME_FORMAT_24HOUR_ID" userOffsetMinute="0"
+      brightnessLevel="70" userUtcTime="0" /></clockDisplay>
+
+A POST needs the `<clockDisplay>` wrapper (a bare `<clockConfig/>` is 400
+`CLIENT_XML_ERROR`), and with a real zone `userOffsetMinute` must be 0 or the
+clock is shifted twice. The firmware drops this setting now and then, and
+until now STR only ever wrote it from the app switch or at install.
+
+So the owner's choice lives on NAND (`/mnt/nv/streborn/standby-clock.json`,
+`internal/standbyclock`) and the agent puts it back:
+
+- once per agent start, as soon as `:8090` answers and the system clock is
+  plausible (a forced write; six attempts over about 20 minutes, no loop);
+- on a standby or a wake (syslog ring or gabbo bus), one read of
+  `/clockDisplay` and a write only when it differs from the stored choice, at
+  most one check every 3 minutes.
+
+With nothing stored, a clock the speaker has switched on is adopted as the
+choice (so speakers set before this version are kept); an off clock is left
+alone. The app and the phone page write through `POST /api/box/standby-clock`
+(`{enabled, timezone, offsetMinutes, format24, brightness?}`; brightness alone
+changes only the brightness); an agent older than that gets the app's direct
+firmware write. Logged at INFO as `standby clock: ...` (`comp=standbyclock`).
+
+What re-applying cannot fix: a display clock that is frozen (the Portable on
+2026-07-14 ignored every POST until a reboot). That stays a reboot.
+
+**Brightness (#1226).** `brightnessLevel` is 0 to 100, 70 out of the box. STR
+sends it with every clock write: the stored level, else the speaker's own (so
+a switch never resets a dimmed clock in case an omitted attribute means "back
+to 70", which is untested). A speaker that refuses the attribute with a 4xx is
+written again without it. After each write the clock is read back once, and
+`brightnessHonoured` says whether the speaker reports the written level; only
+a level the speaker took counts when the keeper compares later, so a model
+that ignores it is not written again and again. Which models really dim the
+panel is untested (see the PR for the list to try). Where STR draws its own
+playback screen (`internal/oled`), a level below 70 scales STR's grey levels
+by level/70 (lit pixels stay at least grey 1); 70 and above draw unchanged.
+If the firmware's level turns out to set the panel contrast for everything,
+STR's screen would be dimmed twice on that model.
+
 ## Deep standby: what resets the countdown
 
 SoundTouch speakers drop into a deep standby (network fully off, woken
