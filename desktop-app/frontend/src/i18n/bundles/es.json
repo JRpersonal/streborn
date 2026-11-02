@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Actualiza este altavoz para asignar esta acción a una tecla.",
   "settingsView.webhookPlayModeKeyNote": "Esta tecla cambia el modo aleatorio o la repetición. Eso tiene prioridad: el webhook no se dispara.",
   "settingsView.webhookRemoteLegendPlayMode": "aleatorio o repetir",
+  "settingsView.webhookRemoteSkipNote": "Mientras suena una tecla de radio, Atrás y Adelante pasan por tus teclas de radio. En una lista de Spotify, Atrás en los primeros 10 segundos de una canción vuelve a la canción anterior.",
   "multiroom.groupKeysKeyPlayMode": "(aleatorio o repetir)",
   "multiroom.groupKeysPlayModeHint": "Una tecla de pulgar que cambia el modo aleatorio o la repetición no puede formar también un grupo. Cámbiala en el mapa de teclas del mando en Ajustes.",
   "ui2.speakers.list.pill.updateReady": "Actualización lista",

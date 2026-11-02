@@ -152,6 +152,9 @@ type Server struct {
 	// playModeKey runs the presses of a key bound to shuffle or repeat. See
 	// playmodekey.go.
 	playModeKey playModeKeyState
+	// radioStep runs the remote's Next/Prev while a radio key plays. See
+	// radiostep.go.
+	radioStep   radioStepState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -852,9 +855,11 @@ type Server struct {
 	bassReadFn       func(ctx context.Context) (boxapi.Bass, error)
 	bassWriteFn      func(ctx context.Context, v int) error
 	showBassNoticeFn func(level, lo, hi int)
-	// playModeShowFn replaces the panel notice of the shuffle and repeat
-	// keys (playmodekey.go). nil means production.
-	playModeShowFn func(n oled.Notice)
+	// radioStepPlayFn replaces the recall a radio step makes (radiostep.go),
+	// and playModeShowFn the panel notice of the shuffle and repeat keys
+	// (playmodekey.go). nil means production.
+	radioStepPlayFn func(ctx context.Context, slot int) error
+	playModeShowFn  func(n oled.Notice)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

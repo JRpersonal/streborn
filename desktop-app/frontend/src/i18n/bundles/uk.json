@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Онови цей динамік, щоб призначити цю дію на кнопку.",
   "settingsView.webhookPlayModeKeyNote": "Ця кнопка перемикає випадковий порядок або повтор. Це має пріоритет: вебхук не спрацьовує.",
   "settingsView.webhookRemoteLegendPlayMode": "випадковий порядок або повтор",
+  "settingsView.webhookRemoteSkipNote": "Поки грає кнопка з радіо, Назад і Вперед перемикають твої кнопки з радіо. У плейлисті Spotify Назад у перші 10 секунд пісні переходить до попередньої пісні.",
   "multiroom.groupKeysKeyPlayMode": "(випадковий порядок або повтор)",
   "multiroom.groupKeysPlayModeHint": "Кнопка з пальцем, яка перемикає випадковий порядок або повтор, не може також формувати групу. Зміни це на карті кнопок пульта в Налаштуваннях.",
   "ui2.speakers.list.pill.updateReady": "Оновлення готове",

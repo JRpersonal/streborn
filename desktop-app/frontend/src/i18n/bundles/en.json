@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Update this speaker to put this action on a key.",
   "settingsView.webhookPlayModeKeyNote": "This key switches shuffle or repeat. That wins: the webhook does not fire.",
   "settingsView.webhookRemoteLegendPlayMode": "shuffle or repeat",
+  "settingsView.webhookRemoteSkipNote": "While a radio key plays, Back and Forward step through your radio keys. On a Spotify playlist, Back in the first 10 seconds of a song goes to the song before.",
   "multiroom.groupKeysKeyPlayMode": "(shuffle or repeat)",
   "multiroom.groupKeysPlayModeHint": "A thumbs key that switches shuffle or repeat cannot form a group as well. Change it on the remote key map in Settings.",
   "ui2.speakers.list.pill.updateReady": "Update ready",

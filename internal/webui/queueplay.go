@@ -2011,13 +2011,18 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 // falls back to the proven clean recall when the box does not come back
 // playing.
 //
-// One thing sets the remote apart from the app's skip: its Back on a Spotify
+// Two things set the remote apart from the app's skip. Its Back on a Spotify
 // playlist goes to the song before while the room has heard less than ten
 // seconds of the current one (#1678, spotify RemotePrev), where the engine's
-// own rule only ever restarted it.
+// own rule only ever restarted it. And while a radio key plays, Next and
+// Previous step to the next or previous radio key (#1619, radiostep.go).
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
 	slot := s.currentSpotifySlot()
 	if !presets.ValidSlot(slot) {
+		// A radio key steps to the next or previous radio key (#1619).
+		if src, handled := s.stepRadioPreset(ctx, forward); handled {
+			return src, nil
+		}
 		return s.transportSkipFrom(ctx, spotifySkipReq{forward: forward, remote: true})
 	}
 	// Hold the competing auto-repoint off for the whole handover: the box is

@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać tę akcję do przycisku.",
   "settingsView.webhookPlayModeKeyNote": "Ten przycisk przełącza odtwarzanie losowe lub powtarzanie. To ma pierwszeństwo: webhook nie zostaje wywołany.",
   "settingsView.webhookRemoteLegendPlayMode": "losowo lub powtarzanie",
+  "settingsView.webhookRemoteSkipNote": "Gdy gra przycisk z radiem, Wstecz i Dalej przechodzą przez twoje przyciski z radiem. Na playliście Spotify Wstecz w pierwszych 10 sekundach utworu wraca do poprzedniego utworu.",
   "multiroom.groupKeysKeyPlayMode": "(losowo lub powtarzanie)",
   "multiroom.groupKeysPlayModeHint": "Przycisk kciuka, który przełącza odtwarzanie losowe lub powtarzanie, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
   "ui2.speakers.list.pill.updateReady": "Aktualizacja gotowa",

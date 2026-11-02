@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "حدّث مكبر الصوت هذا لتعيين هذا الإجراء على زر.",
   "settingsView.webhookPlayModeKeyNote": "هذا الزر يبدّل التشغيل العشوائي أو التكرار. له الأولوية: لا يُطلق الـ webhook.",
   "settingsView.webhookRemoteLegendPlayMode": "عشوائي أو تكرار",
+  "settingsView.webhookRemoteSkipNote": "أثناء تشغيل زر راديو، ينتقل زرا السابق والتالي بين أزرار الراديو لديك. في قائمة Spotify، يعود زر السابق خلال أول 10 ثوانٍ من الأغنية إلى الأغنية السابقة.",
   "multiroom.groupKeysKeyPlayMode": "(عشوائي أو تكرار)",
   "multiroom.groupKeysPlayModeHint": "زر الإبهام الذي يبدّل التشغيل العشوائي أو التكرار لا يمكنه تكوين مجموعة أيضًا. غيّر ذلك في خريطة أزرار جهاز التحكم في الإعدادات.",
   "ui2.speakers.list.pill.updateReady": "التحديث جاهز",

@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti šį veiksmą mygtukui.",
   "settingsView.webhookPlayModeKeyNote": "Šis mygtukas perjungia atsitiktinę tvarką arba kartojimą. Tai turi pirmenybę: webhook nesuveikia.",
   "settingsView.webhookRemoteLegendPlayMode": "atsitiktinė tvarka arba kartojimas",
+  "settingsView.webhookRemoteSkipNote": "Kol groja radijo mygtukas, Atgal ir Pirmyn perjungia tavo radijo mygtukus. Spotify grojaraštyje Atgal per pirmąsias 10 dainos sekundžių grįžta į ankstesnę dainą.",
   "multiroom.groupKeysKeyPlayMode": "(atsitiktinė tvarka arba kartojimas)",
   "multiroom.groupKeysPlayModeHint": "Nykščio mygtukas, kuris perjungia atsitiktinę tvarką arba kartojimą, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
   "ui2.speakers.list.pill.updateReady": "Atnaujinimas paruoštas",

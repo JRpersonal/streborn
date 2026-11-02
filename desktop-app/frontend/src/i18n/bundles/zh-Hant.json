@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "請更新這台喇叭，才能將這個動作指派給按鍵。",
   "settingsView.webhookPlayModeKeyNote": "這個按鍵會切換隨機播放或重複播放。此動作優先：不會觸發 Webhook。",
   "settingsView.webhookRemoteLegendPlayMode": "隨機或重複",
+  "settingsView.webhookRemoteSkipNote": "播放電台按鍵時，上一首和下一首會在你的電台按鍵之間切換。在 Spotify 播放清單中，於歌曲前 10 秒內按上一首會回到前一首歌。",
   "multiroom.groupKeysKeyPlayMode": "（隨機或重複）",
   "multiroom.groupKeysPlayModeHint": "設定為切換隨機播放或重複播放的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。",
   "ui2.speakers.list.pill.updateReady": "更新已就緒",

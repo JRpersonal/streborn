@@ -542,6 +542,9 @@ export function wireAdvancedSections(ctx) {
       const modeNote = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
         : (traceKeyIds.has(tg) ? t('settingsView.webhookModeKeyNote')
+          // Back and Forward step through the radio keys and go back a song
+          // on Spotify (#1619, #1678): said where the user looks at those keys.
+          + (tg === 'prev' || tg === 'next' ? ' ' + t('settingsView.webhookRemoteSkipNote') : '')
           : (tg === 'thumb' ? t('settingsView.webhookThumbSharedNote') : t('settingsView.webhookModeAuxPowerNote')));
       whModeNote.textContent = gkBindings[tg]
         ? t('settingsView.webhookGroupKeyNote', { name: gkBindings[tg] }) + ' ' + modeNote

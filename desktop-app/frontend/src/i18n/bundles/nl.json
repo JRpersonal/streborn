@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Werk deze speaker bij om deze actie op een toets te zetten.",
   "settingsView.webhookPlayModeKeyNote": "Deze toets schakelt shuffle of herhalen. Dat gaat voor: de webhook wordt niet uitgevoerd.",
   "settingsView.webhookRemoteLegendPlayMode": "shuffle of herhalen",
+  "settingsView.webhookRemoteSkipNote": "Terwijl een radiotoets speelt, gaan Terug en Vooruit door je radiotoetsen. Bij een Spotify-playlist gaat Terug in de eerste 10 seconden van een nummer naar het nummer ervoor.",
   "multiroom.groupKeysKeyPlayMode": "(shuffle of herhalen)",
   "multiroom.groupKeysPlayModeHint": "Een duimtoets die shuffle of herhalen schakelt, kan niet ook een groep vormen. Wijzig dit op de toetsenkaart van de afstandsbediening in Instellingen.",
   "ui2.speakers.list.pill.updateReady": "Update klaar",

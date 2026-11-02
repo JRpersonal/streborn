@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Atjaunini šo skaļruni, lai piešķirtu šo darbību taustiņam.",
   "settingsView.webhookPlayModeKeyNote": "Šis taustiņš pārslēdz jaukšanu vai atkārtošanu. Tam ir prioritāte: webhook netiek palaists.",
   "settingsView.webhookRemoteLegendPlayMode": "jaukšana vai atkārtošana",
+  "settingsView.webhookRemoteSkipNote": "Kamēr skan radio taustiņš, Atpakaļ un Uz priekšu pārslēdz tavus radio taustiņus. Spotify sarakstā Atpakaļ dziesmas pirmajās 10 sekundēs pāriet uz iepriekšējo dziesmu.",
   "multiroom.groupKeysKeyPlayMode": "(jaukšana vai atkārtošana)",
   "multiroom.groupKeysPlayModeHint": "Īkšķa taustiņš, kas pārslēdz jaukšanu vai atkārtošanu, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos.",
   "ui2.speakers.list.pill.updateReady": "Atjauninājums gatavs",

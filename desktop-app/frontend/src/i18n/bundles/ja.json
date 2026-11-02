@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "この操作をキーに割り当てるには、このスピーカーを更新してください。",
   "settingsView.webhookPlayModeKeyNote": "このキーはシャッフルまたはリピートを切り替えます。こちらが優先されるため、Webhookは実行されません。",
   "settingsView.webhookRemoteLegendPlayMode": "シャッフルまたはリピート",
+  "settingsView.webhookRemoteSkipNote": "ラジオのキーを再生中は、戻ると進むでラジオのキーを順に切り替えます。Spotify のプレイリストでは、曲の最初の10秒以内に戻るを押すと前の曲に戻ります。",
   "multiroom.groupKeysKeyPlayMode": "（シャッフルまたはリピート）",
   "multiroom.groupKeysPlayModeHint": "シャッフルまたはリピートを切り替えるサムキーでグループを作成することはできません。設定のリモコンキー配置で変更してください。",
   "ui2.speakers.list.pill.updateReady": "アップデート準備完了",

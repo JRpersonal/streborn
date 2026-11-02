@@ -156,10 +156,10 @@ describe('key action i18n', () => {
     || k === 'multiroom.groupKeysKeyBass' || k === 'multiroom.groupKeysBassHint'
     || k.startsWith('settingsView.shuffleKey') || k.startsWith('settingsView.repeatKey')
     || k.startsWith('settingsView.playModeKey') || k === 'settingsView.webhookPlayModeKeyNote'
-    || k === 'settingsView.webhookRemoteLegendPlayMode'
+    || k === 'settingsView.webhookRemoteLegendPlayMode' || k === 'settingsView.webhookRemoteSkipNote'
     || k === 'multiroom.groupKeysKeyPlayMode' || k === 'multiroom.groupKeysPlayModeHint');
   it('has the strings in English at all', () => {
-    expect(keys.length).toBe(45);
+    expect(keys.length).toBe(46);
   });
   it('is present and translated in every bundle, placeholders intact', () => {
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');

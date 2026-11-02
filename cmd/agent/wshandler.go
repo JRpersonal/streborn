@@ -108,6 +108,9 @@ type presetWsHandler struct {
 	// onPlayModeKey switches shuffle or steps repeat on a Spotify playlist
 	// (webui.PlayModeKeyPress, #1679). nil-safe.
 	onPlayModeKey func(action string)
+	// onRadioStepKey steps to the next or previous radio key when the key
+	// trace reports Next or Previous (webui.RadioStepKey, #1619). nil-safe.
+	onRadioStepKey func(forward bool)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.

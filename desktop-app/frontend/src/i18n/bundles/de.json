@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Aktualisiere diesen Lautsprecher, um diese Aktion auf eine Taste zu legen.",
   "settingsView.webhookPlayModeKeyNote": "Diese Taste schaltet Zufallswiedergabe oder Wiederholen. Das hat Vorrang: Der Webhook wird nicht ausgelöst.",
   "settingsView.webhookRemoteLegendPlayMode": "Zufall oder Wiederholen",
+  "settingsView.webhookRemoteSkipNote": "Während eine Radio-Taste läuft, schalten Zurück und Vor durch deine Radio-Tasten. Bei einer Spotify-Playlist springt Zurück in den ersten 10 Sekunden eines Songs zum Song davor.",
   "multiroom.groupKeysKeyPlayMode": "(Zufall oder Wiederholen)",
   "multiroom.groupKeysPlayModeHint": "Eine Daumentaste, die Zufallswiedergabe oder Wiederholen schaltet, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung.",
   "ui2.speakers.list.pill.updateReady": "Update bereit",

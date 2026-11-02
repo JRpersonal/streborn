@@ -2331,6 +2331,7 @@
   "settingsView.keyActionNeedsUpdate": "Bu eylemi bir tuşa atamak için bu hoparlörü güncelle.",
   "settingsView.webhookPlayModeKeyNote": "Bu tuş karışık çalmayı veya tekrarı değiştirir. Bu önceliklidir: webhook tetiklenmez.",
   "settingsView.webhookRemoteLegendPlayMode": "karışık veya tekrar",
+  "settingsView.webhookRemoteSkipNote": "Bir radyo tuşu çalarken Geri ve İleri radyo tuşların arasında geçiş yapar. Bir Spotify çalma listesinde, şarkının ilk 10 saniyesinde Geri bir önceki şarkıya gider.",
   "multiroom.groupKeysKeyPlayMode": "(karışık veya tekrar)",
   "multiroom.groupKeysPlayModeHint": "Karışık çalmayı veya tekrarı değiştiren bir başparmak tuşu aynı zamanda grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştir.",
   "ui2.speakers.list.pill.updateReady": "Güncelleme hazır",
