@@ -149,16 +149,27 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		resumeURI = m.resume.trackFor(uri)
 	}
 	m.resume.noteRecall(uri, resumeURI, opts.Shuffle)
+	// An engine that takes shuffle_context on /player/play applies it before
+	// the context loads: a shuffle preset then starts straight on a random
+	// track, and a non-shuffle one in order whatever an earlier recall left
+	// on, each with a single load. Older engines get the toggle-and-skip
+	// staging below, which loaded the playlist's first song before the pick,
+	// visible in the Spotify app as a skip.
+	shuffleAtLoad := m.engineSupports(ctx, engineFeaturePlayShuffleContext)
 	// Load the context PAUSED so the speaker never hears the wrong (non-resumed /
 	// non-shuffled) track. skip_to_uri positions the queue on the resume track
 	// before any audio flows; an empty skip_to_uri starts at the context's first
-	// track. We then wait for the context to load, set the desired shuffle state,
+	// track (or, with shuffle at load, a random one). We then wait for the
+	// context to load, set the desired shuffle state where the load did not,
 	// and resume, so audio starts cleanly on the intended track from its start.
 	// The box buffers on the cached Ogg headers during the short paused window,
 	// the same way it already buffers during a cold load.
 	playReq := map[string]any{"uri": uri, "paused": true}
 	if resumeURI != "" {
 		playReq["skip_to_uri"] = resumeURI
+	}
+	if shuffleAtLoad {
+		playReq["shuffle_context"] = opts.Shuffle
 	}
 	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
@@ -235,7 +246,11 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		// or every later press pays for the failed seek and the second load
 		// again (#1077: about 2 s on every press).
 		m.resume.forget(uri, resumeURI)
-		fromTop, _ := json.Marshal(map[string]any{"uri": uri, "paused": true})
+		topReq := map[string]any{"uri": uri, "paused": true}
+		if shuffleAtLoad {
+			topReq["shuffle_context"] = opts.Shuffle
+		}
+		fromTop, _ := json.Marshal(topReq)
 		topAt := time.Now()
 		if err := m.apiPostC(ctx, m.playClient, "/player/play", string(fromTop)); err != nil {
 			m.logger.Debug("spotify: replay-from-top after seek fail failed", "err", err)
@@ -253,7 +268,10 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// plays the same sequence", live Portable 2026-08-19). The off-then-on
 	// round trip forces a re-shuffle with a fresh seed; on a freshly loaded
 	// context the off half is a no-op and costs one cheap API call.
-	if opts.Shuffle {
+	//
+	// None of this applies with shuffle at load: that play built a fresh list
+	// in the asked-for order, a shuffled one with a fresh seed every time.
+	if opts.Shuffle && !shuffleAtLoad {
 		if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`); err != nil {
 			m.logger.Debug("spotify: shuffle_context pre-clear failed", "err", err)
 		}
@@ -262,12 +280,14 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// false is what clears a stale shuffle left on by a previous shuffled recall
 	// (the cross-recall stickiness that made an unshuffled preset still shuffle
 	// and the remote next jump to a random song).
-	if err := m.apiPost(ctx, "/player/shuffle_context",
-		fmt.Sprintf(`{"shuffle_context":%t}`, opts.Shuffle)); err != nil {
-		m.logger.Debug("spotify: shuffle_context failed", "err", err, "shuffle", opts.Shuffle)
+	if !shuffleAtLoad {
+		if err := m.apiPost(ctx, "/player/shuffle_context",
+			fmt.Sprintf(`{"shuffle_context":%t}`, opts.Shuffle)); err != nil {
+			m.logger.Debug("spotify: shuffle_context failed", "err", err, "shuffle", opts.Shuffle)
+		}
 	}
 	m.setRepeat(ctx, opts.Repeat)
-	if opts.Shuffle {
+	if opts.Shuffle && !shuffleAtLoad {
 		// shuffle_context only randomises the UPCOMING queue (the current track
 		// stays the context's first), so one skip lands on a random track. Still
 		// paused, so nothing reaches the speaker yet.
@@ -297,7 +317,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	}
 	// Resume: audio now flows, starting on the chosen track from its beginning.
 	m.resumeRecall(ctx, uri, opts, seq, playAt, true, stagingGen)
-	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "")
+	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "", "shuffleAtLoad", shuffleAtLoad)
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
 	m.mu.Lock()
