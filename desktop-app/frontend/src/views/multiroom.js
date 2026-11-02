@@ -19,6 +19,7 @@ import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, playModeOn } from '../k
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers } from '../groups.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
+import { rememberPairName, rememberedPairName } from '../pairnamememory.js';
 // A speaker stuck as half of an old stereo pair (see stalestereo.js).
 import { staleNoticeText } from '../stalestereo.js';
 import { stereoFormMessage } from '../stereoformmsg.js';
@@ -558,7 +559,15 @@ export function renderMultiroom(fetchLive) {
   // the two members, so a pair that is undone and formed again starts with its
   // old name in the field instead of an empty one (#1077, issue 5).
   const pickedPair = { members: [{ deviceID: pairPick[0] }, { deviceID: pairPick[1] }] };
-  const pairName = pairDisplayName(formingPair || pickedPair, () => renderMultiroom(false)) || '';
+  //
+  // Two speakers that are not a pair yet and have no stored name start with
+  // the name typed last, for these two or else at all (#1683). Undoing a pair
+  // forgets its stored name (#1579), so without this the field was empty every
+  // time a pair was formed again. A pair that exists keeps showing its own
+  // name, or the empty field when it carries only the default.
+  const knownName = pairDisplayName(formingPair || pickedPair, () => renderMultiroom(false)) || '';
+  const pickedTwo = !!(pairPick[0] && pairPick[1] && pairPick[0] !== pairPick[1]);
+  const pairName = knownName || (!formingPair && pickedTwo ? rememberedPairName(pickedPair) : '');
 
   // Two channel cards that show the picked speakers by name and fill in with the
   // --brand highlight the moment the selected pair is actually live (Jens
@@ -846,6 +855,7 @@ export function renderMultiroom(fetchLive) {
     if (ns) ns.onclick = async () => {
       const newName = $('stereoName').value;
       try { await setPairName(formingPair, newName); } catch {}
+      rememberPairName(formingPair, newName);
       // Push the name into BOTH members' firmware pair records too: that is
       // the record the Bose app reads and edits, so the rename shows up there
       // as well (field report, 2026-08-30). Best effort per member; the
@@ -1216,6 +1226,8 @@ async function doFormStereo(pairCands, allBoxes) {
         try {
           await setPairName({ members: [{ deviceID: left.deviceID }, { deviceID: right.deviceID }] }, wantName);
         } catch {}
+        // And as the suggestion for the next pair formed here (#1683).
+        rememberPairName({ members: [{ deviceID: left.deviceID }, { deviceID: right.deviceID }] }, wantName);
       }
       // Drop the in-progress name so the field re-seeds from the stored value.
       delete state.stereoName;

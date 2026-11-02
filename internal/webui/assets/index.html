@@ -1802,6 +1802,26 @@ function skip(btn, path) { press(btn); api(path, 'POST'); setTimeout(refreshStat
 // Radio and Spotify ignore the queue mode; the buttons still show the stored
 // choice so the next folder press is predictable.
 var playMode = { shuffle: false, repeat: 'off' };
+// The buttons follow the speaker, not only this page (#1233): a shuffle or
+// repeat set in the desktop app or another remote showed here only after a
+// reload. The running queue reports its mode in the /api/queue answer the
+// status tick already reads (refreshStatus), so that answer is adopted. A tap
+// here wins until its POST has answered: playModeSeq counts the taps, and a
+// queue read that started before the latest tap is not adopted, so the button
+// never jumps back to the old state for a tick.
+var playModeSeq = 0, playModeBusy = 0;
+// playModeLive is true while the last status tick found a running queue: its
+// mode is then the one in force, and the stored one (loadPlayMode) is not.
+var playModeLive = false;
+function followPlayMode(m, seq) {
+  if (!m || typeof m.shuffle === 'undefined') return;
+  if (seq !== playModeSeq || playModeBusy > 0) return;
+  var sh = !!m.shuffle, rep = m.repeat === 'all' || m.repeat === 'one' ? m.repeat : 'off';
+  if (sh === playMode.shuffle && rep === playMode.repeat) return;
+  playMode.shuffle = sh;
+  playMode.repeat = rep;
+  renderPlayMode();
+}
 function renderPlayMode() {
   var shb = document.getElementById('btnShuffle');
   if (shb) shb.setAttribute('aria-pressed', playMode.shuffle ? 'true' : 'false');
@@ -1810,23 +1830,27 @@ function renderPlayMode() {
   var one = document.getElementById('btnRepeatOne');
   if (one) one.hidden = playMode.repeat !== 'one';
 }
+// loadPlayMode reads the stored mode: on open, and again whenever the page
+// comes back to the front (refreshAll), so a mode changed elsewhere while no
+// queue ran is not left stale either.
 async function loadPlayMode() {
+  var seq = playModeSeq;
   var m = await api('/api/queue/mode');
-  if (m && typeof m.shuffle !== 'undefined') {
-    playMode.shuffle = !!m.shuffle;
-    playMode.repeat = m.repeat || 'off';
-    renderPlayMode();
-  }
+  if (!playModeLive) followPlayMode(m, seq);
+}
+async function sendPlayMode(path, body) {
+  playModeSeq++;
+  playModeBusy++;
+  renderPlayMode();
+  try { await api(path, 'POST', body); } catch (e) {} finally { playModeBusy--; }
 }
 async function toggleShuffle() {
   playMode.shuffle = !playMode.shuffle;
-  renderPlayMode();
-  try { await api('/api/queue/shuffle', 'POST', { on: playMode.shuffle }); } catch (e) {}
+  await sendPlayMode('/api/queue/shuffle', { on: playMode.shuffle });
 }
 async function cycleRepeat() {
   playMode.repeat = playMode.repeat === 'off' ? 'all' : (playMode.repeat === 'all' ? 'one' : 'off');
-  renderPlayMode();
-  try { await api('/api/queue/repeat', 'POST', { mode: playMode.repeat }); } catch (e) {}
+  await sendPlayMode('/api/queue/repeat', { mode: playMode.repeat });
 }
 // The Pause button doubles as Play/Pause: when the box is paused it offers
 // Play (resume from the paused position via /api/resume, like the Bose remote),
@@ -3550,7 +3574,11 @@ async function refreshStatus() {
   // A folder played as a queue: the title is the big line already, the artist
   // and album go here (#1033). The stream proxy is not asked then, because it
   // still holds the title of whatever radio stream it carried last (#274).
+  const pmSeq = playModeSeq;
   const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
+  // The running queue's shuffle and repeat, set here or anywhere else (#1233).
+  playModeLive = !!queue;
+  if (queue) followPlayMode(queue, pmSeq);
   // The same read lights the key a folder was started from (#1029).
   markPlaying(nowLoc, queue, spKey, state);
   if (!song && playing && queue) song = queueSongMeta(queue);
@@ -3930,7 +3958,7 @@ async function loadVersion() {
 // refreshAll re-fetches every panel at once (used by pull-to-refresh and on
 // regaining foreground), with a short minimum so the spinner does not flash.
 function refreshAll(){
-  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone(), loadSleep(), loadAlarms(), loadMusicLib(), loadFavorites(true)]).catch(function(){});
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone(), loadSleep(), loadAlarms(), loadMusicLib(), loadFavorites(true), loadPlayMode()]).catch(function(){});
   var minSpin = new Promise(function(r){ setTimeout(r, 500); });
   return Promise.all([work, minSpin]);
 }

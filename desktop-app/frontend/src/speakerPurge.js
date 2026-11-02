@@ -22,6 +22,7 @@
 
 import { loadCachedBoxes, saveCachedBoxes } from './state.js';
 import { forgetPairNamesFor } from './stereoNames.js';
+import { forgetRememberedPairNamesFor } from './pairnamememory.js';
 
 // Keys main.js writes per speaker (see warnDismissKey, otaStuckKey,
 // WORLD_MAP_PROVISIONED_PREFIX and inviteWorldMapAfterProvision there).
@@ -159,6 +160,7 @@ export function purgeSpeakerLocalState(box, state) {
   try { purgeLocalStorage(host, deviceID, ids); } catch {}
   try { purgeState(state, host, deviceID, ids); } catch {}
   try { forgetPairNamesFor(deviceID); } catch {}
+  try { forgetRememberedPairNamesFor(deviceID); } catch {}
   for (const fn of purgeHooks) {
     try { fn({ host, deviceID, ids }); } catch {}
   }
