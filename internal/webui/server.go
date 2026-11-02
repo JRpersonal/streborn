@@ -1679,6 +1679,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/start-volume", s.handleStartVolume)
 	mux.HandleFunc("/api/box/max-volume", s.handleMaxVolume)
 	mux.HandleFunc("/api/favorites", s.handleFavorites)
+	mux.HandleFunc("/api/favorites/order", s.handleFavoriteOrder)
 	mux.HandleFunc("/api/stream/title-swap", s.handleTitleSwap)
 	mux.HandleFunc("/api/box/foreign-influence", s.handleForeignInfluence)
 	mux.HandleFunc("/api/box/wake", s.handleBoxWake)

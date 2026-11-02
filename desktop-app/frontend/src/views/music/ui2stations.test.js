@@ -216,3 +216,15 @@ describe('strings', () => {
     expect(bundles.de['ui2.radio.favAdd']).toContain('hinzufügen');
   });
 });
+
+describe('favourite rows (#1519)', () => {
+  it('moves a favourite up and down, named with the station', () => {
+    const html = stationRowHTML(ROCK, 2, { speaker: 'X', fav: true, move: { up: true, down: false } });
+    expect(html).toMatch(/data-act="move" data-dir="-1" data-i="2" aria-label="Move Best Of Rock.FM up"/);
+    expect(html).toMatch(/data-act="move" data-dir="1" data-i="2" aria-disabled="true" aria-label="Move Best Of Rock.FM down"/);
+  });
+
+  it('has no move buttons outside the Favorites tab', () => {
+    expect(stationRowHTML(ROCK, 0, { speaker: 'X' })).not.toContain('data-act="move"');
+  });
+});

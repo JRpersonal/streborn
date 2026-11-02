@@ -79,7 +79,9 @@ export function rowStatusHTML(status) {
 }
 
 // stationRowHTML is one row. ctx: speaker (the name every action carries),
-// fav (starred), open (details shown), status ({ kind, text } or null).
+// fav (starred), open (details shown), status ({ kind, text } or null), move
+// ({ up, down }: the Favorites tab's buttons that move the row, #1519; each
+// true when the row can go that way).
 export function stationRowHTML(s, i, ctx = {}) {
   const name = (s && s.name) || t('search.unnamed');
   const speaker = ctx.speaker || '';
@@ -114,12 +116,25 @@ export function stationRowHTML(s, i, ctx = {}) {
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-fav${fav ? ' is-fav' : ''}" data-act="fav" data-i="${i}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${escapeAttr(favLabel)}" title="${escapeAttr(favLabel)}"><span aria-hidden="true">${fav ? '&#9733;' : '&#9734;'}</span></button>`
     + keyButtonHTML({ cls: 'ui2-st-key', attrs: `data-act="key" data-i="${i}"`, name, speaker })
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-more" data-act="details" data-i="${i}" aria-expanded="${ctx.open ? 'true' : 'false'}" aria-controls="${did}" aria-label="${escapeAttr(t('ui2.radio.detailsLabel', { name }))}" title="${escapeAttr(t('ui2.radio.details'))}"><span aria-hidden="true">&#9432;</span></button>`
+    + (ctx.move ? moveButtonsHTML(i, name, ctx.move) : '')
     + '</div>'
     + '</div>'
     + `<div class="ui2-st-details" id="${did}" role="region" aria-labelledby="${nid}"${ctx.open ? '' : ' hidden'}>`
     + `<dl>${rows}${stream}${site}</dl>`
     + '</div>'
     + '</li>';
+}
+
+// moveButtonsHTML is a favourite's up and down buttons (#1519). A button that
+// cannot move the row is aria-disabled rather than disabled, so the keyboard
+// does not drop to the page when the row reaches the top or the bottom.
+function moveButtonsHTML(i, name, move) {
+  const btn = (dir, key, glyph, can) => {
+    const label = t(key, { name });
+    return `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-move" data-act="move" data-dir="${dir}" data-i="${i}"`
+      + `${can ? '' : ' aria-disabled="true"'} aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"><span aria-hidden="true">${glyph}</span></button>`;
+  };
+  return btn(-1, 'ui2.radio.moveUp', '&#9650;', !!move.up) + btn(1, 'ui2.radio.moveDown', '&#9660;', !!move.down);
 }
 
 // tabFor maps the search box's mode to the preview's tab: Favorites shows the

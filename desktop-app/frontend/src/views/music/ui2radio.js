@@ -25,7 +25,7 @@ import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
-import { isFav, loadFavorites, loadFavStore, toggleFav } from './favorites.js';
+import { isFav, loadFavorites, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
 import { putStationOnKey, showSlotPicker } from './picker.js';
 import { doRefilter, openBoxWifiSetup, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
 import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
@@ -429,9 +429,12 @@ export function renderUi2Stations(res, list, hintHtml) {
   rows = list;
   const speaker = speakerName();
   rowsSpeaker = speaker;
+  // The Favorites tab moves its rows up and down (#1519).
+  const favTab = state.searchLastMode === 'favorites';
   res.innerHTML = `${hintHtml}<ul class="ui2-st-list">${list.map((s, i) => {
     const key = stationKey(s);
-    return stationRowHTML(s, i, { speaker, fav: isFav(s), open: open.has(key), status: status.get(key) || null });
+    const move = favTab ? { up: i > 0, down: i < list.length - 1 } : null;
+    return stationRowHTML(s, i, { speaker, fav: isFav(s), open: open.has(key), status: status.get(key) || null, move });
   }).join('')}</ul>`;
   res.querySelectorAll('.ui2-st').forEach((li) => rowFix(li, status.get(li.dataset.key) || null));
 }
@@ -501,6 +504,7 @@ function wireRows(res) {
     else if (act === 'fav') favRow(s, btn);
     else if (act === 'key') putOnKey(s);
     else if (act === 'details') toggleDetails(s, btn);
+    else if (act === 'move') moveRow(btn);
     else if (act === 'site' && /^https?:\/\//i.test(s.homepage || '')) BrowserOpenURL(s.homepage);
     else if (act === 'wifi') openBoxWifiSetup((state.boxes || []).find((b) => b && b.host === btn.dataset.host));
   });
@@ -537,6 +541,23 @@ async function playRow(s) {
   const verdict = playVerdict(speaker, playing);
   if (!playing && box) verdict.pending = { host: box.host, url, name: s.name, speaker };
   setStatus(key, verdict);
+}
+
+// moveRow moves a favourite one place up or down (#1519) and keeps the
+// keyboard on the same button of the moved row, so the next press moves it
+// on. A button at the end of the list does nothing.
+function moveRow(btn) {
+  if (btn.getAttribute('aria-disabled') === 'true') return;
+  const i = parseInt(btn.dataset.i, 10);
+  const dir = parseInt(btn.dataset.dir, 10);
+  const next = moveFavorite(rows, i, dir);
+  if (!next) return;
+  state.searchResults = next;
+  renderSearchResults();
+  const sel = (n, d) => `#searchResults .ui2-st-move[data-i="${n}"][data-dir="${d}"]`;
+  let target = document.querySelector(sel(i + dir, dir));
+  if (target && target.getAttribute('aria-disabled') === 'true') target = document.querySelector(sel(i + dir, -dir)) || target;
+  if (target) target.focus();
 }
 
 function favRow(s, btn) {

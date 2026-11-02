@@ -51,7 +51,7 @@ import {
 import { deps } from './deps.js';
 import { isLibraryFav, libraryFavCard } from '../../libraryfav.js';
 import { replayLibraryCard } from '../recent.js';
-import { isFav, loadFavStore, toggleFav } from './favorites.js';
+import { isFav, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
 import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 import { renderNowPlayingBar } from './nowplaying.js';
@@ -852,6 +852,9 @@ export function renderSearchResults() {
     wireRelaxedDismiss();
     return;
   }
+  // Favourites can be moved up and down (#1519); the list on screen is the
+  // order they play in on every speaker and on the phone.
+  const favMode = state.searchLastMode === 'favorites';
   res.innerHTML = hintHtml + list.map((s, i) => {
     const flag = flagFromCC(s.countrycode);
     const dot = stationCheckDot(s);
@@ -908,6 +911,7 @@ export function renderSearchResults() {
           <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
           <button class="btn btn-mini fav-toggle${isFav(s) ? ' is-fav' : ''}" data-i="${i}" title="${escapeAttr(isFav(s) ? t('search.removeFav') : t('search.addFav'))}">${isFav(s) ? '&#9733;' : '&#9734;'}</button>
+          ${favMode ? favMoveButtonsHTML(i, list.length) : ''}
         </div>
       </div>
     `;
@@ -935,6 +939,22 @@ export function renderSearchResults() {
   res.querySelectorAll('.pick').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); openPick(list[parseInt(btn.dataset.i, 10)]); };
   });
+  res.querySelectorAll('.fav-move').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const i = parseInt(btn.dataset.i, 10);
+      const dir = parseInt(btn.dataset.dir, 10);
+      const next = moveFavorite(list, i, dir);
+      if (!next) return;
+      state.searchResults = next;
+      renderSearchResults();
+      // The keyboard stays on the same button of the moved row, so it can be
+      // moved again with the next press.
+      const again = res.querySelector(`.fav-move[data-i="${i + dir}"][data-dir="${dir}"]:not([disabled])`)
+        || res.querySelector(`.fav-move[data-i="${i + dir}"]:not([disabled])`);
+      if (again) again.focus();
+    };
+  });
   res.querySelectorAll('.fav-toggle').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -959,6 +979,18 @@ export function renderSearchResults() {
       if (s && typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) BrowserOpenURL(s.homepage);
     };
   });
+}
+
+// favMoveButtonsHTML is the up and down buttons of a favourite's row (#1519).
+// The first row cannot go up and the last cannot go down.
+function favMoveButtonsHTML(i, n) {
+  const up = t('search.favMoveUp');
+  const down = t('search.favMoveDown');
+  // Side by side, so the row grows by one button height, not two.
+  return '<span class="fav-move-pair">'
+    + `<button class="btn btn-mini fav-move" data-i="${i}" data-dir="-1" title="${escapeAttr(up)}" aria-label="${escapeAttr(up)}"${i === 0 ? ' disabled' : ''}>&#9650;</button>`
+    + `<button class="btn btn-mini fav-move" data-i="${i}" data-dir="1" title="${escapeAttr(down)}" aria-label="${escapeAttr(down)}"${i >= n - 1 ? ' disabled' : ''}>&#9660;</button>`
+    + '</span>';
 }
 
 // mountSearch attaches the handlers that used to be wired at module scope in

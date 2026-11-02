@@ -304,6 +304,7 @@ html.ui2 .ui2-st-actions {
 html.ui2 .ui2-st-btn { border: 1px solid var(--u-border); font-size: 16px; }
 html.ui2 .ui2-st-btn:hover { background: var(--u-surface); }
 html.ui2 .ui2-st-fav.is-fav { color: var(--u-warn); }
+html.ui2 .ui2-st-move[aria-disabled="true"] { opacity: .35; cursor: default; }
 html.ui2 .ui2-st.is-open .ui2-st-more { background: var(--u-selected); }
 html.ui2 .ui2-st-details {
   margin: 0 4px 12px;

@@ -265,9 +265,10 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 // handleFavorites serves and stores the starred stations.
 //
 //	GET            -> [] (never null: the phone page renders a list, not a maybe)
-//	GET ?removed=1 -> {"removed":[{id,at}],"added":[{id,at,fav}]}, for the
-//	               desktop app to catch up
-//	PUT [ ... ]    replaces the list, from the desktop app
+//	GET ?removed=1 -> {"removed":[{id,at}],"added":[{id,at,fav}],
+//	               "order":{at,ids}|null}, for the desktop app to catch up
+//	PUT [ ... ]    replaces the list, from the desktop app; orderAt=<ms> says
+//	               how new the app's own order is (#1519)
 //	POST { ... }   stars one favourite, from the phone page or a remote app
 //	               (#1621), and hands it on to the other STR speakers unless
 //	               local=1
@@ -284,7 +285,13 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if r.URL.Query().Get("removed") == "1" {
-			writeJSON(w, http.StatusOK, map[string]any{"removed": loadFavoriteRemovals(), "added": loadFavoriteAdditions()})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"removed": loadFavoriteRemovals(),
+				"added":   loadFavoriteAdditions(),
+				// The order set on a phone page (#1519), null when there is
+				// none the desktop app has still to take over.
+				"order": loadFavoriteOrder(),
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, loadFavorites())
@@ -331,6 +338,7 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		if restored > 0 {
 			s.logger.Info("favorites: kept favourites starred elsewhere in a pushed list", "count", restored)
 		}
+		kept = s.settleFavoriteOrder(kept, pushedOrderAt(r))
 		clean := sanitiseFavorites(kept)
 		b, err := json.Marshal(clean)
 		if err != nil {

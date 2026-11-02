@@ -1984,6 +1984,10 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .result-actions .btn { padding: 4px 8px; }
 /* Favorite toggle: a filled gold star when saved, a quiet outline otherwise. */
 .fav-toggle.is-fav { color: #f5c518; }
+/* A favourite's up and down buttons (#1519), side by side under the star. */
+.fav-move-pair { display: flex; gap: 4px; }
+.fav-move-pair .btn { flex: 1 1 0; }
+.fav-move-pair .btn:disabled { opacity: .35; cursor: default; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }

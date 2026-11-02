@@ -367,6 +367,12 @@ export function PushFavorites(host, port, favoritesJSON) {
   return callOptionalBinding('PushFavorites', [host, port, favoritesJSON]);
 }
 
+// PushFavoritesAt is PushFavorites with the time this app's own order of the
+// favourites was last set (#1519). Optional binding, per the note above.
+export function PushFavoritesAt(host, port, favoritesJSON, orderAt) {
+  return callOptionalBinding('PushFavoritesAt', [host, port, favoritesJSON, orderAt]);
+}
+
 // FavoriteRemovals reads which favourites were removed on one speaker's phone
 // page (#1389), as raw JSON. Optional binding, per the note above.
 export function FavoriteRemovals(host, port) {

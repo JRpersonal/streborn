@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/JRpersonal/streborn/speakername"
@@ -504,11 +505,23 @@ func (a *App) SetMaxVolume(host string, port int, volume int) error {
 // The agent ignores an unchanged list rather than writing it again, so calling
 // this on every discovery cycle costs nothing on the speaker's flash.
 func (a *App) PushFavorites(host string, port int, favoritesJSON string) error {
+	return a.PushFavoritesAt(host, port, favoritesJSON, 0)
+}
+
+// PushFavoritesAt is PushFavorites with the time this app's own order of the
+// favourites was last set (Unix ms, 0 for never) (#1519). A speaker holding an
+// order set on a phone page that is newer keeps that order over the pushed
+// one, until this app has read it and pushes it back with its time.
+func (a *App) PushFavoritesAt(host string, port int, favoritesJSON string, orderAt int64) error {
 	body := strings.TrimSpace(favoritesJSON)
 	if body == "" {
 		body = "[]"
 	}
-	resp, err := a.boxDo(host, port, http.MethodPut, "/api/favorites", "application/json", body)
+	path := "/api/favorites"
+	if orderAt > 0 {
+		path += "?orderAt=" + strconv.FormatInt(orderAt, 10)
+	}
+	resp, err := a.boxDo(host, port, http.MethodPut, path, "application/json", body)
 	if err != nil {
 		return err
 	}
