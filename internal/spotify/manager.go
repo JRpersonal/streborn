@@ -113,9 +113,9 @@ type Manager struct {
 	// confirmed for it, so an engine restart does not forget a plan the
 	// speaker already knew; see accountplans.go. nil until first use.
 	accountPlans map[string]rememberedPlan
-	// storeWriteMu serialises the names.json / plans.json writers, which share
-	// a fixed temp-file name per file and run from concurrent background plan
-	// reads. Held across snapshot and write, so the last file renamed into
+	// storeWriteMu serialises the names.json / plans.json / refused.json
+	// writers, which share a fixed temp-file name per file and run from
+	// concurrent background goroutines. Held across snapshot and write, so the last file renamed into
 	// place is always the newest snapshot. Never taken while holding mu.
 	storeWriteMu sync.Mutex
 	// credReject tracks Spotify refusing the saved login (BadCredentials) and
@@ -292,6 +292,15 @@ type Manager struct {
 	engineKeyDeniedAt      time.Time
 	engineKeyDeniedMsg     string
 	engineStopsOnKeyDenial bool
+	// refusedAccounts maps each Spotify account id this engine has been refused
+	// for (a whole run of audio keys, not one track) to when that was first
+	// recorded. Kept on the NAND until the account plays; see accountrefused.go.
+	// nil until first use. refusedClearBusy keeps it to one clearing lookup at
+	// a time. refusalEpisodeAt is when the last episode was noted, so the two
+	// places that detect one cannot make it two.
+	refusedAccounts  map[string]time.Time
+	refusedClearBusy bool
+	refusalEpisodeAt time.Time
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on

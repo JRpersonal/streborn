@@ -99,13 +99,23 @@ func TestARunOfRefusalsPausesTheEngine(t *testing.T) {
 	for i := 0; i < keyRefusalRunTrips; i++ {
 		m.noteLibrespotLine(refusalLine)
 	}
-	select {
-	case path := <-paused:
-		if path != "/player/pause" {
-			t.Fatalf("engine was asked for %q, want /player/pause", path)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case path := <-paused:
+			// The episode also asks the engine once who is logged in, to
+			// remember the refused account (accountrefused.go). That read is
+			// not playback control.
+			if path == "/status" {
+				continue
+			}
+			if path != "/player/pause" {
+				t.Fatalf("engine was asked for %q, want /player/pause", path)
+			}
+			return
+		case <-deadline:
+			t.Fatal("a run of refused tracks left the engine running through the rest of the playlist")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("a run of refused tracks left the engine running through the rest of the playlist")
 	}
 }
 

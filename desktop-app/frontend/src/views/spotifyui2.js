@@ -355,6 +355,9 @@ function paintAccounts() {
       const plan = r.state === 'in' || r.state === 'saved'
         ? (r.plan === 'premium' ? t('ui2.spotify.acct.premium') : (r.plan === 'free' ? t('ui2.spotify.acct.free') : ''))
         : '';
+      const refused = r.refused && (r.state === 'in' || r.state === 'saved')
+        ? `<p class="sp2-acct-line sp2-acct-refused">${escapeHtml(t('spotify.accountRefused'))}</p>`
+        : '';
       const others = r.others.length ? `<p class="sp2-acct-line sp2-muted">${escapeHtml(t('ui2.spotify.acct.others', { accounts: r.others.join(', ') }))}</p>` : '';
       return `<li class="sp2-acct${r.state === 'offline' ? ' is-offline' : ''}" data-host="${escapeAttr(r.host)}" data-state="${escapeAttr(r.state)}">
           <div class="sp2-acct-head">
@@ -362,6 +365,7 @@ function paintAccounts() {
             <span class="u-pill u-pill--${tone}"><span class="u-pill-dot" aria-hidden="true"></span>${escapeHtml(t(pill))}</span>
           </div>
           <p class="sp2-acct-line">${escapeHtml(accountText(r))}${plan ? `<span class="sp2-acct-plan${r.plan === 'free' ? ' is-free' : ''}"> · ${escapeHtml(plan)}</span>` : ''}</p>
+          ${refused}
           ${others}
           ${acctOpenHTML(r)}
         </li>`;

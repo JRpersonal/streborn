@@ -267,6 +267,9 @@ func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 		hdrKbps := m.bitrStarted
 		m.mu.Unlock()
 		d.capturing = false
+		// Real audio from the engine: the account it is logged in as plays,
+		// so a refusal recorded for it no longer stands (accountrefused.go).
+		m.noteAccountStreamed()
 		if persist {
 			// Persist one valid header set to NAND for the next cold boot.
 			// Once only (guarded above), so no per-track flash wear.

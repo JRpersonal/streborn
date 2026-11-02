@@ -1196,6 +1196,8 @@ export namespace main {
 	    accountNames?: Record<string, string>;
 	    premiumRequired: boolean;
 	    audioKeyRefused: boolean;
+	    accountRefused: boolean;
+	    accountRefusedName?: string;
 	    canRecall?: boolean;
 	    product: string;
 	
@@ -1214,6 +1216,8 @@ export namespace main {
 	        this.accountNames = source["accountNames"];
 	        this.premiumRequired = source["premiumRequired"];
 	        this.audioKeyRefused = source["audioKeyRefused"];
+	        this.accountRefused = source["accountRefused"];
+	        this.accountRefusedName = source["accountRefusedName"];
 	        this.canRecall = source["canRecall"];
 	        this.product = source["product"];
 	    }

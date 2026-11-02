@@ -138,6 +138,7 @@ function collect(frame) {
     banners: [...banners, required.globalBanner],
     // Optional: skipped when absent.
     queueControls: byId('queueControls'),
+    spotifyRefusedRow: byId('spotifyRefusedRow'),
     sourceButtons: byId('sourceButtons'),
     tagline: byId('appTagline'),
     supported: byId('appSupported'),
@@ -183,6 +184,7 @@ export function mountShell2(d) {
     move(n.footer, n.fMainInner);
     move(n.statusBar, n.fNow);
     move(n.titleSwapRow, n.fNow);
+    move(n.spotifyRefusedRow, n.fNow);
     move(n.controls, n.fTransport);
     move(n.volume, n.fVolume);
     move(n.queueControls, n.fMoreBody);

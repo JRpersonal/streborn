@@ -52,6 +52,9 @@ func (m *Manager) noteEngineKeyDenied(detail string) {
 	if fresh {
 		m.logger.Warn("spotify: the engine stopped because Spotify refused the audio key for track after track; the speaker's own Spotify entry is unaffected",
 			"detail", detail)
+		// Once per episode: remember which account it was, so the apps can
+		// keep saying so after the short AudioKeyRefused window has passed.
+		m.noteKeyRefusalEpisode()
 	}
 }
 

@@ -6,6 +6,7 @@ import { SpotifyNowPlaying, Status } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { sourceAccountFrom } from '../../nowsourceaccount.js';
 import { acceptSpotifyReply, recallSettled, snapshotFromReply } from '../../spotifynowplaying.js';
+import { refusalFromReply } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
 import { statusTickScope } from '../../statusrefreshscope.js';
 import { keepsLiveTitle } from '../../stoppedstate.js';
@@ -18,7 +19,6 @@ import {
   proxiedRadioPlaying,
   queueRecallConfirmed,
   shouldAdoptPresetArt,
-  showError,
   showToast,
 } from '../../utils.js';
 import { deps } from './deps.js';
@@ -299,20 +299,16 @@ export async function refreshStatus() {
           // A free account cannot start a playlist from a preset key, so any
           // message that tells the user to press one is wrong for them (#973).
           state.spotifyPremiumRequired = !!np.premiumRequired;
-          // Spotify refused the audio key for track after track. Without this
-          // the playlist just races past in silence and the speaker looks
-          // broken, when in fact Spotify is refusing this engine for this
-          // account. Said once per episode: the condition clears itself on the
-          // speaker after ten quiet minutes, and repeating it every three
-          // seconds would be worse than the silence.
-          if (np.audioKeyRefused) {
-            if (!state.spotifyKeyRefusalShown) {
-              state.spotifyKeyRefusalShown = true;
-              showError(t('spotify.audioKeyRefused'));
-            }
-          } else {
-            state.spotifyKeyRefusalShown = false;
-          }
+          // Spotify refuses this engine for this account. Without a word the
+          // playlist races past in silence and the speaker looks broken. It
+          // used to be a one-shot toast that only someone with the app open at
+          // that moment ever saw; now the speaker remembers the refused
+          // account until it plays, and the now-playing area carries a short
+          // notice for as long as that holds (spotifyrefused.js, #1671).
+          const refusal = refusalFromReply(np);
+          const hadRefusal = !!state.spotifyRefusal;
+          state.spotifyRefusal = refusal ? { host: npBox.host, port: npBox.port, ...refusal } : null;
+          if (hadRefusal || refusal) renderNowPlayingBar();
           // The now-playing line redraws every status poll, but the tile cover
           // only redraws on renderPresets. Re-render when the cover changes so
           // the preset logo tracks the song in step with the title instead of
