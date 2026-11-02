@@ -13,7 +13,6 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/clocksync"
-	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/standbyclock"
 )
 
@@ -27,8 +26,7 @@ func startStandbyClock(ctx context.Context, boxHost string, logger *slog.Logger,
 		boxHost = "127.0.0.1"
 	}
 	k := standbyclock.New(boxapi.New(boxHost), logger, standbyclock.Options{
-		OnBrightness: oled.SetTrackBrightness,
-		Plausible:    func(t time.Time) bool { return !clocksync.Implausible(t) },
+		Plausible: func(t time.Time) bool { return !clocksync.Implausible(t) },
 	})
 	if set != nil {
 		set(k)

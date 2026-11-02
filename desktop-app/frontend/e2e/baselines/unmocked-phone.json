@@ -6,7 +6,6 @@
   "GET /api/box/display-splash",
   "GET /api/box/display-track",
   "GET /api/box/language",
-  "GET /api/box/standby-clock",
   "GET /api/library/search",
   "GET /api/pandora/stations",
   "GET /api/queue/mode",
