@@ -400,6 +400,8 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// reflects the current login (resetProductStateLocked, accountplans.go).
 	m.mu.Lock()
 	m.resetProductStateLocked()
+	// The new process can be another build (the OTA swaps the sidecar).
+	m.resetEngineFeaturesLocked()
 	m.mu.Unlock()
 	m.resetCredRejectRun()
 	// Settle the streaming quality for this process (explicit choice, else the

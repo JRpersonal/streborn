@@ -229,6 +229,12 @@ type Manager struct {
 	// has already asked /v1/me for, on an engine that reports the plan itself,
 	// so a name Spotify does not send is not asked for every five minutes.
 	productNameAsked string
+	// engineFeatures is the optional API behaviour the running engine build
+	// reports on GET / (enginefeatures.go); nil until read for this process.
+	// engineFeaturesGen counts engine starts, so a read that began under an
+	// older process does not land in the new one.
+	engineFeatures    map[string]bool
+	engineFeaturesGen uint64
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).

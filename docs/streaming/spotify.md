@@ -377,6 +377,33 @@ capped at 45 s, instead of a fixed 8 s from the press: a 10.8 s play POST
 outlived the fixed window and the recall's own track start read as a
 Spotify-app skip.
 
+### Shuffle is decided at load, when the engine can
+
+A shuffle preset used to load the playlist paused on its first song, turn
+shuffle off and on (`/player/shuffle_context`, for a fresh seed), send
+`/player/next` and wait for the pick before resuming. Nothing was audible
+before the pick, but the engine logged `loaded track A (paused: true)` and
+then `loaded track B`, and the Spotify app showed song A first: users saw a
+skip. Setting shuffle before the play does not help on the engine API as
+upstream has it: `/player/shuffle_context` only acts on a LOADED context,
+where it starts a reorder walk of the old list that the play then queues
+behind, and a superseding load turns that walk's commit into a revert.
+
+The fork's `/player/play` takes `shuffle_context` (JRpersonal/go-librespot#10).
+It sets the option before the context loads; the engine then shuffles the new
+list first and starts on its first, random, track with a single load. The
+recall sends it on every cold recall, `false` included: a non-shuffle preset
+then starts in order (or on its resume point via `skip_to_uri`) even when an
+earlier preset left shuffle on, and skips the separate toggle.
+
+An older engine silently drops a field it does not know, so the recall asks
+first: the fork lists `features` on `GET /` (`play_shuffle_context`), which
+`internal/spotify/enginefeatures.go` reads once per engine process, reset at
+every engine start (an OTA can swap the build). No list, an unreadable answer
+or an unreachable engine means the old toggle-and-skip staging, unchanged.
+The warm same-context fast path (pressing the playing preset again) still
+toggles and skips, because there the skip is the point.
+
 ### Volume: the speaker owns it, the app's slider follows (`volumesync.go`)
 
 The engine runs with `external_volume`, so a Connect volume command only
