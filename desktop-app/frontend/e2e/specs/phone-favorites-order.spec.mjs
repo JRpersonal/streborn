@@ -1,6 +1,7 @@
 // phone-favorites-order: the phone remote's favourites move up and down
-// (#1519), and its Pandora list has a star that keeps the station in
-// Favourites (#1663), where it plays through the Pandora call.
+// (#1519), and its Pandora list shows each station's cover (#1409) and a star
+// that keeps the station in Favourites (#1663), where it plays through the
+// Pandora call.
 //
 //   E2E_PORT=4194 npx playwright test specs/phone-favorites-order.spec.mjs
 
@@ -50,11 +51,14 @@ test('a favourite moves up and down, sent to the speaker as the new order', asyn
   expect(JSON.parse(req.postData())).toEqual({ ids: ['s8', 's7', 'pandora:111'] });
 });
 
-test('the Pandora list has stars, and a Pandora favourite plays through Pandora', async ({ phone }) => {
+test('the Pandora list shows covers and stars, and a Pandora favourite plays through Pandora', async ({ phone }) => {
   const { page } = phone;
   await openBrowse(page);
   const pandora = page.locator('#pandoraResults .station');
   await expect(pandora).toHaveCount(2);
+  // The cover the speaker listed, drawn like a key's cover; none listed, none drawn.
+  await expect(pandora.nth(0).locator('img.art')).toHaveAttribute('src', `${PHONE.ART_HOST}/jazz.svg`);
+  await expect(pandora.nth(1).locator('img.art')).toHaveCount(0);
   // Jazz Radio is a favourite already, Rock Radio is not.
   await expect(pandora.nth(0).locator('.fav-star')).toHaveAttribute('title', 'Remove from favourites');
   await expect(pandora.nth(1).locator('.fav-star')).toHaveAttribute('title', 'Add to favourites');

@@ -481,6 +481,8 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .row.fav-row { grid-template-columns:1fr; grid-auto-flow:column; grid-auto-columns:auto; align-items:center; }
 .row .btn.fav-move { min-width:44px; min-height:44px; padding:8px; font-size:14px; line-height:1; color:var(--muted); }
 .row .btn.fav-move:disabled { opacity:.35; }
+/* A Pandora station's cover (#1409), the size of a key's cover. */
+.station .art { width:40px; height:40px; flex:none; border-radius:6px; object-fit:cover; background:var(--card); }
 /* The star of a favourite, on the Find tab and on a Recently played row. In
    the accent colour, not muted: it is a state (starred), not a delete (#1339). */
 .row .btn.fav-star, .station .btn.fav-star { min-width:44px; min-height:44px; padding:8px; font-size:18px; line-height:1; color:var(--accent); }
@@ -5043,14 +5045,17 @@ function renderUnstarConfirm(host, st, err, onKeep, onFail, onDone) {
 // 409, an older agent 404, and the section then simply stays away.
 var pandoraStations = [];
 
-// renderPandora paints the Pandora list: each station with its play button and
-// its star (#1663).
+// renderPandora paints the Pandora list: each station with its cover (#1409,
+// the speaker lists one; drawn like a key's cover, and a cover that does not
+// load simply goes), its play button and its star (#1663).
 function renderPandora() {
   var box = document.getElementById('pandoraResults');
   if (!box) return;
   box.innerHTML = '';
   pandoraStations.forEach(function (st, idx) {
     var row = document.createElement('div'); row.className = 'station';
+    var art = presetArtImg(presetArtCands({ art: st.art || '' }));
+    if (art) row.appendChild(art);
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = st.name || st.itemName || st.location;
     var sub = document.createElement('small');
