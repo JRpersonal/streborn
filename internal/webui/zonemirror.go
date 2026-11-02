@@ -227,7 +227,7 @@ func (s *Server) handleZonePurge(w http.ResponseWriter, r *http.Request) {
 				s.logger.Info("zone purge: keeping the permanent group; a peer's dissolve must not drop the user's durable choice",
 					"peerDeviceID", req.DeviceID, "peerIP", req.IP)
 			default:
-				if err := s.zones.Clear(); err != nil {
+				if err := s.clearZoneDoc(); err != nil {
 					s.logger.Warn("zone purge: clear store failed", "err", err)
 				} else {
 					cleared = true

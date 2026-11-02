@@ -85,9 +85,12 @@ func TestARefusalRunRemembersTheAccount(t *testing.T) {
 		m.noteLibrespotLine(refusalLine)
 	}
 	waitUntil(t, "the refused account to be recorded", func() bool { return isRefused(m, refusedUser) })
-	if _, err := os.Stat(filepath.Join(m.credStore, accountRefusedFile)); err != nil {
-		t.Fatalf("the refusal is not on the NAND, so a reboot forgets it: %v", err)
-	}
+	// The memory entry is set before the file is written (markAccountRefused),
+	// so the file gets the same wait; a bare stat here raced the write on CI.
+	waitUntil(t, "the refusal to reach the NAND, so a reboot keeps it", func() bool {
+		_, err := os.Stat(filepath.Join(m.credStore, accountRefusedFile))
+		return err == nil
+	})
 }
 
 // The newer engine stops after three refusals and says so itself; that report

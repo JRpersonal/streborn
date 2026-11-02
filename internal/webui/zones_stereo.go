@@ -962,20 +962,24 @@ func (s *Server) zoneFormPersist(run *zoneFormRun) {
 		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
 	}
 	if s.zones != nil {
-		// The store holds ONE record per master, so this Set replaces whatever
-		// standing group the user had: members and the permanent flag together.
-		// A reporter lost a permanent pair that way on 2026-09-30, to a group
-		// key press that formed a different group with the same master, and had
-		// no way to tell what had happened because nothing said so.
-		//
-		// Say it, loudly, with both member sets. Whether the right answer is to
-		// refuse, to keep two records, or to ask, needs a bundle from somebody it
-		// happened to, and until now a bundle could not show it either.
+		// A group that is not permanent no longer replaces a permanent one: the
+		// store sets the permanent group aside and brings it back when this one
+		// ends (zones.Store.Set / Clear). Two reports of a lost permanent group
+		// (2026-09-30, 2026-11-02) were both a group key or speakers added by
+		// hand on the permanent group's main speaker. Only a NEW permanent group
+		// still replaces the old one, because that is the user changing it.
 		if prev, ok := s.zones.Get(); ok && prev.Permanent && sameMasterZone(prev, z) && !sameMembers(prev, z) {
-			s.logger.Warn("zone: REPLACING the standing permanent group of this speaker with a different one",
-				"master", z.Master,
-				"previousMembers", len(prev.Slaves), "previousPermanent", prev.Permanent, "previousName", prev.Name,
-				"newMembers", len(z.Slaves), "newPermanent", z.Permanent, "newName", z.Name)
+			if z.Permanent {
+				s.logger.Warn("zone: REPLACING the standing permanent group of this speaker with a different permanent one",
+					"master", z.Master,
+					"previousMembers", len(prev.Slaves), "previousName", prev.Name,
+					"newMembers", len(z.Slaves), "newName", z.Name)
+			} else {
+				s.logger.Info("zone: a group formed on top of the permanent group, which stays saved and comes back when this one ends",
+					"master", z.Master,
+					"permanentMembers", len(prev.Slaves), "permanentName", prev.Name,
+					"newMembers", len(z.Slaves), "newName", z.Name)
+			}
 		}
 		if err := s.zones.Set(z); err != nil {
 			s.logger.Warn("zone: persist failed", "err", err)
@@ -1857,7 +1861,7 @@ func (s *Server) dropStereoDocAfterFailure(why string) {
 	if !ok || !z.Stereo {
 		return // nothing of ours to take back
 	}
-	if err := s.zones.Clear(); err != nil {
+	if err := s.clearZoneDoc(); err != nil {
 		s.logger.Warn("stereo: could not remove the pair document after a failed pairing", "err", err, "why", why)
 		return
 	}
@@ -3065,7 +3069,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		}
 		partnerCleared := s.pushGroupDocToPartner(ctx, partnerIP, "")
 		if s.zones != nil {
-			if err := s.zones.Clear(); err != nil {
+			if err := s.clearZoneDoc(); err != nil {
 				s.logger.Warn("stereo: clear store failed", "err", err)
 			}
 		}
@@ -3098,7 +3102,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("zone: nothing to dissolve (no persisted zone, firmware reports no zone and no group)")
 		}
 		if s.zones != nil {
-			_ = s.zones.Clear()
+			_ = s.clearZoneDoc()
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nothing": true, "firmwarePair": firmwarePair})
 		return
@@ -3185,10 +3189,14 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		if doc, ok := s.zones.Get(); ok && doc.Permanent && !forget {
 			s.logger.Info("zone: live group taken apart, the saved group stays saved and forms again when its main speaker plays",
 				"master", doc.Master, "members", len(doc.Slaves))
-		} else if err := s.zones.Clear(); err != nil {
-			s.logger.Warn("zone: clear store failed", "err", err)
 		} else if forget {
-			s.logger.Info("zone: the saved group was deleted as well, it will not form again on its own")
+			if err := s.zones.Forget(); err != nil {
+				s.logger.Warn("zone: clear store failed", "err", err)
+			} else {
+				s.logger.Info("zone: the saved group was deleted as well, it will not form again on its own")
+			}
+		} else if err := s.clearZoneDoc(); err != nil {
+			s.logger.Warn("zone: clear store failed", "err", err)
 		}
 	}
 	// Also clear the group from every member's own persisted store
