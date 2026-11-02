@@ -10,6 +10,9 @@
 //     each press (discussion #1494, internal/webui basskey.go), within the
 //     range the speaker reports. On a speaker without adjustable bass they do
 //     nothing.
+//   - "sleep15", "sleep30" and "sleep60" arm the sleep timer for that fixed
+//     length, and switch it off when the same length already runs (#1242),
+//     for whoever always wants the same length from one press.
 //   - "shuffle" switches the Spotify playlist's shuffle on and off, "repeat"
 //     steps its repeat: off -> the whole playlist -> the one song -> off
 //     (#1679, internal/webui playmodekey.go). Outside a Spotify playlist they
@@ -23,7 +26,7 @@
 // the press as that source change. That is exactly what silences a ringing
 // alarm, so snooze may go on AUX; the sleep timer and the bass steps may not,
 // because each press would also switch the input away from whatever plays.
-// The same goes for shuffle and repeat.
+// The same goes for the fixed sleep lengths, shuffle and repeat.
 //
 // A key carries ONE thing: a saved group (internal/groupkeys, thumbs keys
 // only), a key action from here, or a webhook. Group and key action exclude
@@ -65,6 +68,11 @@ const (
 	ActionBassUp = "bassUp"
 	// ActionBassDown lowers the speaker's bass one step on every press.
 	ActionBassDown = "bassDown"
+	// ActionSleep15, ActionSleep30 and ActionSleep60 arm the sleep timer for
+	// that fixed length, or switch it off when that length already runs.
+	ActionSleep15 = "sleep15"
+	ActionSleep30 = "sleep30"
+	ActionSleep60 = "sleep60"
 	// ActionShuffle switches the Spotify playlist's shuffle on or off.
 	ActionShuffle = "shuffle"
 	// ActionRepeat steps the Spotify playlist's repeat.
@@ -78,6 +86,9 @@ var actions = map[string]string{
 	"snooze":   ActionSnooze,
 	"bassup":   ActionBassUp,
 	"bassdown": ActionBassDown,
+	"sleep15":  ActionSleep15,
+	"sleep30":  ActionSleep30,
+	"sleep60":  ActionSleep60,
 	"shuffle":  ActionShuffle,
 	"repeat":   ActionRepeat,
 }
@@ -96,10 +107,24 @@ func IsBass(a string) bool { return a == ActionBassUp || a == ActionBassDown }
 // IsPlayMode reports whether a is shuffle or repeat.
 func IsPlayMode(a string) bool { return a == ActionShuffle || a == ActionRepeat }
 
+// SleepMinutes is the fixed length a fixed sleep action arms, 0 for every
+// other action (the stepping "sleep" included).
+func SleepMinutes(a string) int {
+	switch a {
+	case ActionSleep15:
+		return 15
+	case ActionSleep30:
+		return 30
+	case ActionSleep60:
+		return 60
+	}
+	return 0
+}
+
 // describe names an action in an error the user reads.
 func describe(a string) string {
 	switch a {
-	case ActionSleep:
+	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60:
 		return "the sleep timer"
 	case ActionBassUp, ActionBassDown:
 		return "the bass step"
@@ -116,7 +141,8 @@ func describe(a string) string {
 // steps.
 func AllowedOn(action, key string) bool {
 	switch action {
-	case ActionSleep, ActionBassUp, ActionBassDown, ActionShuffle, ActionRepeat:
+	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60,
+		ActionBassUp, ActionBassDown, ActionShuffle, ActionRepeat:
 		return thumbs(key)
 	case ActionSnooze:
 		return thumbs(key) || key == KeyAux

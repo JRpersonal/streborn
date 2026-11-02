@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(žemi dažniai)",
   "multiroom.groupKeysBassHint": "Nykščio mygtukas, kuris keičia žemus dažnius, negali kartu sudaryti grupės. Pakeisk tai pulto mygtukų žemėlapyje Nustatymuose.",
   "settingsView.bassKeyNeedsUpdate": "Atnaujink šį garsiakalbį, kad galėtum priskirti boso žingsnį mygtukui.",
+  "settingsView.sleepKeyFixedLabel": "Miego laikmatis {{n}} min. (paspausk dar kartą: išjungta)",
+  "settingsView.sleepKeyFixedHelp": "Kiekvienas paspaudimas paleidžia garsiakalbio miego laikmatį {{n}} minučių. Paspaudimas, kol tos {{n}} minutės eina, jį išjungia. Garsiakalbiai su ekranu tai rodo. Grupėje laikmatis išjungia visą grupę.",
   "settingsView.shuffleKeyLabel": "Spotify: atsitiktinė tvarka įjungta arba išjungta",
   "settingsView.repeatKeyLabel": "Spotify: kartojimas (išjungta, grojaraštis, daina)",
   "settingsView.playModeKeyHelp": "Veikia, kol groja Spotify grojaraštis. Atsitiktinė tvarka įjungia ir išjungia atsitiktinę eilę. Kartojimas perjungia tarp išjungta, viso grojaraščio ir vienos dainos. Garsiakalbiai su ekranu rodo naują nustatymą. Klausantis radijo ir kitų šaltinių mygtukas nieko nedaro.",

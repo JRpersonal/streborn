@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(basses)",
   "multiroom.groupKeysBassHint": "Une touche pouce qui règle les basses ne peut pas aussi former un groupe. Modifie-la sur le plan des touches de la télécommande dans les Réglages.",
   "settingsView.bassKeyNeedsUpdate": "Mets à jour cette enceinte pour placer un réglage des basses sur une touche.",
+  "settingsView.sleepKeyFixedLabel": "Minuterie de veille {{n}} min (appuyer à nouveau : arrêt)",
+  "settingsView.sleepKeyFixedHelp": "Chaque appui lance la minuterie de veille de l'enceinte pour {{n}} minutes. Un appui pendant ces {{n}} minutes l'arrête. Les enceintes avec écran l'affichent. Dans un groupe, la minuterie éteint tout le groupe.",
   "settingsView.shuffleKeyLabel": "Spotify : lecture aléatoire activée ou désactivée",
   "settingsView.repeatKeyLabel": "Spotify : répétition (désactivée, playlist, titre)",
   "settingsView.playModeKeyHelp": "Fonctionne pendant la lecture d'une playlist Spotify. La lecture aléatoire active ou désactive l'ordre aléatoire. La répétition passe de désactivée à toute la playlist, puis au titre seul. Les enceintes avec écran affichent le nouveau réglage. Sur la radio et les autres sources, la touche ne fait rien.",

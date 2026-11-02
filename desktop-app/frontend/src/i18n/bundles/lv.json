@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(basa solis)",
   "multiroom.groupKeysBassHint": "Īkšķa taustiņš, kas maina basu, nevar vienlaikus veidot grupu. Maini to pults taustiņu kartē Iestatījumos.",
   "settingsView.bassKeyNeedsUpdate": "Atjaunini šo skaļruni, lai piešķirtu basa soli taustiņam.",
+  "settingsView.sleepKeyFixedLabel": "Miega taimeris {{n}} min (nospied vēlreiz: izslēgts)",
+  "settingsView.sleepKeyFixedHelp": "Katrs nospiediens palaiž skaļruņa miega taimeri uz {{n}} minūtēm. Nospiediens, kamēr šīs {{n}} minūtes rit, to izslēdz. Skaļruņi ar displeju to rāda. Grupā taimeris izslēdz visu grupu.",
   "settingsView.shuffleKeyLabel": "Spotify: jaukšana ieslēgta vai izslēgta",
   "settingsView.repeatKeyLabel": "Spotify: atkārtošana (izslēgta, atskaņošanas saraksts, dziesma)",
   "settingsView.playModeKeyHelp": "Darbojas, kamēr skan Spotify atskaņošanas saraksts. Jaukšana ieslēdz un izslēdz nejaušu secību. Atkārtošana pārslēdz starp izslēgtu, visu sarakstu un vienu dziesmu. Skaļruņi ar displeju rāda jauno iestatījumu. Radio un citiem avotiem taustiņš neko nedara.",

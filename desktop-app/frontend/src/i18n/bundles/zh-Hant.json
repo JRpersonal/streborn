@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(低音)",
   "multiroom.groupKeysBassHint": "設定為調整低音的拇指鍵無法同時組成群組。請在設定中的遙控器按鍵配置變更。",
   "settingsView.bassKeyNeedsUpdate": "請更新這台喇叭，才能將低音調整指派給按鍵。",
+  "settingsView.sleepKeyFixedLabel": "睡眠定時器 {{n}} 分鐘（再按一下：關閉）",
+  "settingsView.sleepKeyFixedHelp": "每按一下，喇叭的睡眠定時器就會開始計時 {{n}} 分鐘。在這 {{n}} 分鐘內再按一下就會關閉。有顯示器的喇叭會顯示出來。在群組中，定時器會關閉整個群組。",
   "settingsView.shuffleKeyLabel": "Spotify：隨機播放開啟或關閉",
   "settingsView.repeatKeyLabel": "Spotify：重複播放（關閉、播放清單、歌曲）",
   "settingsView.playModeKeyHelp": "在播放 Spotify 播放清單時有效。隨機播放可開啟或關閉隨機順序。重複播放會在關閉、整個播放清單和單首歌曲之間切換。有顯示器的喇叭會顯示新的設定。播放電台和其他來源時，這個按鍵不會有作用。",

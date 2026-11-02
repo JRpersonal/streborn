@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(bas)",
   "multiroom.groupKeysBassHint": "Przycisk kciuka, który zmienia bas, nie może też tworzyć grupy. Zmień to na mapie przycisków pilota w Ustawieniach.",
   "settingsView.bassKeyNeedsUpdate": "Zaktualizuj ten głośnik, aby przypisać zmianę basu do przycisku.",
+  "settingsView.sleepKeyFixedLabel": "Wyłącznik czasowy {{n}} min (ponowne naciśnięcie: wył.)",
+  "settingsView.sleepKeyFixedHelp": "Każde naciśnięcie uruchamia wyłącznik czasowy głośnika na {{n}} minut. Naciśnięcie w trakcie tych {{n}} minut go wyłącza. Głośniki z wyświetlaczem to pokazują. W grupie wyłącznik wyłącza całą grupę.",
   "settingsView.shuffleKeyLabel": "Spotify: losowo wł. lub wył.",
   "settingsView.repeatKeyLabel": "Spotify: powtarzanie (wył., playlista, utwór)",
   "settingsView.playModeKeyHelp": "Działa, gdy gra playlista Spotify. Losowo włącza i wyłącza losową kolejność. Powtarzanie przechodzi przez wył., całą playlistę i jeden utwór. Głośniki z wyświetlaczem pokazują nowe ustawienie. Przy radiu i innych źródłach przycisk nic nie robi.",

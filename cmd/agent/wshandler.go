@@ -102,6 +102,9 @@ type presetWsHandler struct {
 	// onBassKey moves the bass one step (webui.BassKeyPress), for a thumbs
 	// key bound to bassUp or bassDown. nil-safe.
 	onBassKey func(action string)
+	// onSleepFixedKey arms the sleep timer for a fixed length or switches it
+	// off (webui.SleepFixedKeyPress, #1242). nil-safe.
+	onSleepFixedKey func(minutes int)
 	// onPlayModeKey switches shuffle or steps repeat on a Spotify playlist
 	// (webui.PlayModeKeyPress, #1679). nil-safe.
 	onPlayModeKey func(action string)

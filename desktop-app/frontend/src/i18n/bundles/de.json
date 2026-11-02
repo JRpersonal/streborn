@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(Bass)",
   "multiroom.groupKeysBassHint": "Eine Daumentaste, die den Bass ändert, kann nicht zusätzlich eine Gruppe bilden. Ändere das in den Einstellungen auf der Tastenbelegung der Fernbedienung.",
   "settingsView.bassKeyNeedsUpdate": "Aktualisiere diesen Lautsprecher, um eine Bass-Stufe auf eine Taste zu legen.",
+  "settingsView.sleepKeyFixedLabel": "Sleep-Timer {{n}} Min. (nochmal drücken: aus)",
+  "settingsView.sleepKeyFixedHelp": "Jeder Druck startet den Sleep-Timer des Lautsprechers für {{n}} Minuten. Ein Druck, während diese {{n}} Minuten laufen, schaltet ihn aus. Lautsprecher mit Display zeigen das an. In einer Gruppe schaltet der Timer die ganze Gruppe aus.",
   "settingsView.shuffleKeyLabel": "Spotify: Zufallswiedergabe an oder aus",
   "settingsView.repeatKeyLabel": "Spotify: Wiederholen (aus, Playlist, Song)",
   "settingsView.playModeKeyHelp": "Wirkt, solange eine Spotify-Playlist läuft. Zufallswiedergabe schaltet die zufällige Reihenfolge an und aus. Wiederholen schaltet weiter zwischen aus, der ganzen Playlist und dem einen Song. Lautsprecher mit Display zeigen die neue Einstellung. Bei Radio und anderen Quellen bewirkt die Taste nichts.",

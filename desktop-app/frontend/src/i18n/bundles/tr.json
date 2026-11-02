@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(bas ayarı)",
   "multiroom.groupKeysBassHint": "Bası değiştiren bir başparmak tuşu aynı zamanda grup oluşturamaz. Bunu Ayarlar'daki kumanda tuş haritasında değiştir.",
   "settingsView.bassKeyNeedsUpdate": "Bir tuşa bas ayarı atamak için bu hoparlörü güncelle.",
+  "settingsView.sleepKeyFixedLabel": "Uyku zamanlayıcısı {{n}} dk (tekrar bas: kapalı)",
+  "settingsView.sleepKeyFixedHelp": "Her basış hoparlörün uyku zamanlayıcısını {{n}} dakika için başlatır. Bu {{n}} dakika sürerken basmak onu kapatır. Ekranlı hoparlörler bunu gösterir. Bir grupta zamanlayıcı tüm grubu kapatır.",
   "settingsView.shuffleKeyLabel": "Spotify: karışık çalma açık veya kapalı",
   "settingsView.repeatKeyLabel": "Spotify: tekrar (kapalı, çalma listesi, şarkı)",
   "settingsView.playModeKeyHelp": "Bir Spotify çalma listesi çalarken çalışır. Karışık çalma rastgele sırayı açar ve kapatır. Tekrar; kapalı, tüm çalma listesi ve tek şarkı arasında geçiş yapar. Ekranlı hoparlörler yeni ayarı gösterir. Radyoda ve diğer kaynaklarda tuş hiçbir şey yapmaz.",

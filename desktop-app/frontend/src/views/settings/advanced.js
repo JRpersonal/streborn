@@ -10,7 +10,7 @@ import { boxPresetRows, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
 import { normalizeDoc, webhookPresent, keyMapTarget, validWolMac } from '../../groupkeys.js';
-import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS, playModeOn, isPlayModeAction, isSleepAction, ACTION_SHUFFLE } from '../../keyactions.js';
+import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn, withAction, sleepBlockedBy, SLEEP_KEY_IDS, KEY_ACTION_KEY_IDS, playModeOn, isPlayModeAction, sleepMinutesOf, isSleepAction, SLEEP_FIXED, ACTION_SHUFFLE } from '../../keyactions.js';
 import {
   SetPreset,
   RestoreBoxSnapshot,
@@ -189,6 +189,7 @@ export function renderAdvancedSections() {
         <select id="keyActionSelect">
           <option value="">${escapeHtml(t('settingsView.keyActionNone'))}</option>
           <option value="sleep" id="keyActionSleepOpt">${escapeHtml(t('settingsView.sleepKeyLabel'))}</option>
+          ${Object.entries(SLEEP_FIXED).map(([v, n]) => `<option value="${v}" class="key-action-thumbs">${escapeHtml(t('settingsView.sleepKeyFixedLabel', { n }))}</option>`).join('')}
           <option value="snooze">${escapeHtml(t('settingsView.snoozeKeyLabel'))}</option>
           <option value="bassUp" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyUpLabel'))}</option>
           <option value="bassDown" class="key-action-bass">${escapeHtml(t('settingsView.bassKeyDownLabel'))}</option>
@@ -491,7 +492,7 @@ export function wireAdvancedSections(ctx) {
     // steps; one already bound keeps its choice visible so it can be removed.
     const bassAvail = !(ctx.bass && ctx.bass.available === false);
     const bassOpts = Array.from(document.querySelectorAll('#keyActionSelect option.key-action-bass'));
-    // Shuffle and repeat: thumbs keys only.
+    // The fixed sleep lengths, shuffle and repeat: thumbs keys only.
     const thumbsOpts = Array.from(document.querySelectorAll('#keyActionSelect option.key-action-thumbs'));
     const sleepRow = $('sleepKeyRow');
     const actionSelect = $('keyActionSelect');
@@ -561,6 +562,7 @@ export function wireAdvancedSections(ctx) {
         return t('settingsView.bassKeyHelp') + (bassAvail ? '' : ' ' + t('settingsView.bassKeyUnavailable'));
       }
       if (action === 'sleep') return t('settingsView.sleepKeyHelp');
+      if (sleepMinutesOf(action)) return t('settingsView.sleepKeyFixedHelp', { n: sleepMinutesOf(action) });
       if (isPlayModeAction(action)) return t('settingsView.playModeKeyHelp');
       if (tg === 'aux') return t('settingsView.snoozeKeyAuxHelp');
       if (action === 'snooze') return t('settingsView.snoozeKeyHelp');

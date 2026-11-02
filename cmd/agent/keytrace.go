@@ -122,6 +122,11 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		h.onSleepKey()
 		return
 	}
+	if m := keyactions.SleepMinutes(h.keyActions.Action(id)); m > 0 && h.onSleepFixedKey != nil {
+		// A fixed sleep length (#1242): synchronous like the stepping key.
+		h.onSleepFixedKey(m)
+		return
+	}
 	if a := h.keyActions.Action(id); keyactions.IsPlayMode(a) && h.onPlayModeKey != nil {
 		// Shuffle or repeat (#1679). Off the reader's goroutine: a press
 		// reads the engine and writes the new state.

@@ -84,3 +84,16 @@ func TestPlayModeKeyDebouncesARepeatedEvent(t *testing.T) {
 		t.Fatalf("one press reported twice flipped shuffle %d times", f.shuffled)
 	}
 }
+
+func TestNextFixedSleep(t *testing.T) {
+	const m30 = 30 * time.Minute
+	if got := nextFixedSleep(false, 0, m30); got != m30 {
+		t.Errorf("nothing running: %v, want 30m", got)
+	}
+	if got := nextFixedSleep(true, m30, m30); got != 0 {
+		t.Errorf("the same length running: %v, want off", got)
+	}
+	if got := nextFixedSleep(true, 15*time.Minute, m30); got != m30 {
+		t.Errorf("another length running: %v, want 30m", got)
+	}
+}

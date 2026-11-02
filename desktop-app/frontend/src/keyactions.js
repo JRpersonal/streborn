@@ -6,6 +6,9 @@
 //     a ringing alarm needs, so the sleep timer cannot go there);
 //   - 'bassUp' / 'bassDown' move the speaker's bass one step per press
 //     (discussion #1494; thumbs keys only, for the same reason as the timer).
+//   - 'sleep15' / 'sleep30' / 'sleep60' start the sleep timer for that fixed
+//     length and switch it off when that length already runs (#1242; thumbs
+//     keys only, like the stepping timer).
 //   - 'shuffle' switches a Spotify playlist's shuffle, 'repeat' steps its
 //     repeat off -> playlist -> song -> off (#1679; thumbs keys only).
 //
@@ -26,11 +29,13 @@ export const ACTION_BASS_UP = 'bassUp';
 export const ACTION_BASS_DOWN = 'bassDown';
 export const ACTION_SHUFFLE = 'shuffle';
 export const ACTION_REPEAT = 'repeat';
+// The fixed sleep lengths, action -> minutes.
+export const SLEEP_FIXED = { sleep15: 15, sleep30: 30, sleep60: 60 };
 // Every known action by its lower-cased name, to its canonical spelling (the
 // agent's keyactions normalises the same way).
 const CANONICAL = {
   sleep: ACTION_SLEEP, snooze: ACTION_SNOOZE, bassup: ACTION_BASS_UP, bassdown: ACTION_BASS_DOWN,
-  shuffle: ACTION_SHUFFLE, repeat: ACTION_REPEAT,
+  sleep15: 'sleep15', sleep30: 'sleep30', sleep60: 'sleep60', shuffle: ACTION_SHUFFLE, repeat: ACTION_REPEAT,
 };
 
 // isBassAction reports whether a is one of the two bass steps.
@@ -38,9 +43,16 @@ export function isBassAction(a) {
   return a === ACTION_BASS_UP || a === ACTION_BASS_DOWN;
 }
 
-// isSleepAction reports whether a runs the sleep timer.
+// sleepMinutesOf is the fixed length a fixed sleep action starts, 0 for every
+// other action (the stepping 'sleep' included).
+export function sleepMinutesOf(a) {
+  return Object.prototype.hasOwnProperty.call(SLEEP_FIXED, a) ? SLEEP_FIXED[a] : 0;
+}
+
+// isSleepAction reports whether a runs the sleep timer: the stepping key or a
+// fixed length.
 export function isSleepAction(a) {
-  return a === ACTION_SLEEP;
+  return a === ACTION_SLEEP || sleepMinutesOf(a) > 0;
 }
 
 // isPlayModeAction reports whether a is shuffle or repeat.
@@ -84,7 +96,8 @@ export function bassOn(doc, key) {
   return isBassAction(actionOn(doc, key));
 }
 
-// sleepOn reports whether key carries the sleep timer.
+// sleepOn reports whether key carries the sleep timer, stepping or a fixed
+// length.
 export function sleepOn(doc, key) {
   return isSleepAction(actionOn(doc, key));
 }

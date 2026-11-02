@@ -2320,6 +2320,8 @@
   "multiroom.groupKeysKeyBass": "(bass)",
   "multiroom.groupKeysBassHint": "A thumbs key that changes the bass cannot form a group as well. Change it on the remote key map in Settings.",
   "settingsView.bassKeyNeedsUpdate": "Update this speaker to put a bass step on a key.",
+  "settingsView.sleepKeyFixedLabel": "Sleep timer {{n}} min (press again: off)",
+  "settingsView.sleepKeyFixedHelp": "Every press starts the speaker's sleep timer for {{n}} minutes. A press while those {{n}} minutes run switches it off. Speakers with a display show it. In a group the timer switches the whole group off.",
   "settingsView.shuffleKeyLabel": "Spotify: shuffle on or off",
   "settingsView.repeatKeyLabel": "Spotify: repeat (off, playlist, song)",
   "settingsView.playModeKeyHelp": "Works while a Spotify playlist plays. Shuffle switches the random order on and off. Repeat steps through off, the whole playlist and the one song. Speakers with a display show the new setting. On radio and other sources the key does nothing.",
