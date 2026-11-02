@@ -35,6 +35,7 @@ import {
 } from '../api.js';
 import { orderLongFolder } from '../trackorder.js';
 import { loadLibrarySort, saveLibrarySort, sortFolders, sortTracks, SORT_AZ, SORT_SERVER } from '../librarysort.js';
+import { collectFolderTree, treeNote, LIB_TREE_MAX_DEPTH } from '../librarytree.js';
 import {
   SERVERS_DEPTH, libraryTrail, headerHTML, trailHTML, stateHTML, loadingHTML, levelHeadHTML,
   serverRowsHTML, folderRowHTML, trackRowHTML, folderActionsHTML, filterRowHTML, manualAddHTML,
@@ -656,6 +657,44 @@ function librarySortSelectHTML({ label, select }) {
     + `<select class="${select}" id="libSort">${opt(SORT_SERVER, 'library.sortServer')}${opt(SORT_AZ, 'library.sortAZ')}</select>`;
 }
 
+// libraryOnlySubfolders says whether the open folder holds sub-folders and no
+// tracks of its own, below a server's root: an artist folder with one folder
+// per album (#1682). Its folder actions play the tracks of its sub-folders
+// (librarytree.js). The server root is left out: its first level is "Music",
+// "Videos", "Pictures", where "play everything" means nothing useful.
+function libraryOnlySubfolders() {
+  const page = libState.page || {};
+  return libState.stack.length > 1 && !(page.items || []).length && (page.containers || []).length > 0;
+}
+
+// libraryFolderTracks is what the open folder plays as a whole: its own tracks
+// in the order on screen, or, for a folder of folders, the tracks collected
+// below it. tree is the walk's report, null for a folder's own tracks. null
+// overall when the user opened another folder while the walk ran.
+async function libraryFolderTracks() {
+  if (!libraryOnlySubfolders()) return { list: libraryItems(), tree: null };
+  const token = libState.browseToken;
+  const udn = libState.currentUDN;
+  if (ui2()) setLibStatus('folder', { tone: 'busy', text: t('library.collecting') });
+  else showToast(t('library.collecting'));
+  const tree = await collectFolderTree({
+    browse: (id, start, count) => BrowseLibrary(udn, id, start, count),
+    subfolders: libraryContainers(),
+    sort: libState.sort,
+    isCancelled: () => token !== libState.browseToken,
+  });
+  if (token !== libState.browseToken) return null;
+  if (ui2()) setLibStatus('folderCut', treeNote(tree, t) ? { tone: 'warn', text: treeNote(tree, t) } : null);
+  return { list: tree.items, tree };
+}
+
+// libraryTreeNoteSuffix is the walk's note after a toast of the classic
+// layout, '' for a folder's own tracks or a walk that took everything.
+function libraryTreeNoteSuffix(tree) {
+  const note = treeNote(tree, t);
+  return note ? ` ${note}` : '';
+}
+
 // openFolderId names the folder open in the Library: its server and its
 // container. A folder action's answer that arrives after the user moved on
 // belongs to the folder it was asked for, not to the action bar on screen.
@@ -902,7 +941,11 @@ async function libraryPlayFolder(fromId) {
     else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
-  const all = libraryItems();
+  const asked = openFolderId();
+  const folderTracks = await libraryFolderTracks();
+  if (!folderTracks || openFolderId() !== asked) return; // another folder is open by now
+  const { tree } = folderTracks;
+  const all = folderTracks.list;
   const items = all
     .filter((it) => it.streamURL)
     .map((it) => ({
@@ -918,8 +961,11 @@ async function libraryPlayFolder(fromId) {
       id: it.id,
     }));
   if (items.length === 0) {
-    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
-    else showError(t('library.errorNoURL'));
+    // A folder of folders whose albums hold nothing playable says that, not
+    // "no stream URL".
+    const msg = tree ? t('library.treeEmpty') : t('library.errorNoURL');
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: msg });
+    else showError(msg);
     return;
   }
   const start = fromId ? Math.max(0, items.findIndex((it) => it.id === fromId)) : 0;
@@ -982,7 +1028,7 @@ async function libraryPlayFolder(fromId) {
       });
       return;
     }
-    showToast(t('library.folderQueued', { n: items.length - start }));
+    showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree));
   } catch (e) {
     if (ui2()) {
       if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
@@ -996,13 +1042,23 @@ async function libraryPlayFolder(fromId) {
 // restarts the whole folder as an auto-advancing queue. Repeat is intentionally
 // not persisted: the preset stores the folder + its shuffle setting, matching
 // the product scope ("save a DLNA folder as a preset including shuffle").
-function librarySaveFolderAsPreset() {
+//
+// A folder of folders (#1682) collects the tracks below it first; the key
+// then names the folder it was saved from, and the speaker reads that folder's
+// sub-folders again if the files move (libraryreresolve.go).
+async function librarySaveFolderAsPreset() {
   if (!state.currentBox) {
     if (ui2()) setLibStatus('folder', { tone: 'error', text: t('ui2.library.pickSpeakerFirst') });
     else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
-  const all = libraryItems();
+  const asked = openFolderId();
+  const folderTracks = await libraryFolderTracks();
+  if (!folderTracks || openFolderId() !== asked) return; // another folder is open by now
+  const { tree } = folderTracks;
+  // The collecting line gives way to the key picker.
+  if (tree && ui2()) setLibStatus('folder', null);
+  const all = folderTracks.list;
   const items = all
     .filter((it) => it.streamURL)
     .map((it) => ({
@@ -1020,8 +1076,9 @@ function librarySaveFolderAsPreset() {
       ...(it.id ? { object_id: String(it.id) } : {}),
     }));
   if (items.length === 0) {
-    if (ui2()) setLibStatus('folder', { tone: 'error', text: t('library.errorNoURL') });
-    else showError(t('library.errorNoURL'));
+    const msg = tree ? t('library.treeEmpty') : t('library.errorNoURL');
+    if (ui2()) setLibStatus('folder', { tone: 'error', text: msg });
+    else showError(msg);
     return;
   }
   // Cap how many tracks a queue preset stores: the whole list is serialized into
@@ -1079,7 +1136,7 @@ function librarySaveFolderAsPreset() {
         } else if (queueItems.length < totalItems) {
           showToast(t('library.folderPresetSavedCapped', { n: keyNum(i, t), name, kept: queueItems.length, total: totalItems }));
         } else {
-          showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }));
+          showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }) + libraryTreeNoteSuffix(tree));
         }
       } catch (e) {
         if (ui2()) {
@@ -1489,12 +1546,15 @@ function ui2FolderHTML() {
   const title = top.title || (atRoot ? ui2ServerName() : '') || t('library.root');
   let html = levelHeadHTML(title, countLine(nC, nI));
   if (atRoot) html += ui2ServerToolsHTML();
-  if (nI > 0) {
+  const subs = libraryOnlySubfolders();
+  if (nI > 0 || subs) {
     html += folderActionsHTML({
       speaker: speakerName(),
       shuffle: !!libState.shuffle,
       repeat: libState.repeat || 'off',
       status: libState.ui2.status.get('folder'),
+      hint: subs ? t('library.subfoldersHint', { depth: LIB_TREE_MAX_DEPTH }) : '',
+      note: libState.ui2.status.get('folderCut'),
     });
   }
   if (nI > 0 || nC > 0) html += filterRowHTML(libState.filter, libraryCountText(), librarySortSelectHTML({ label: 'lib2-search-in', select: 'lib2-select lib2-sort' }));
@@ -1893,13 +1953,16 @@ function renderLibrary() {
     // Folder actions: "Play folder" starts an auto-advancing queue from every
     // playable track in this container, with shuffle/repeat toggles that feed the
     // initial queue state. Shown only when the folder has playable items.
-    const folderActions = nItems > 0 ? `
+    // A folder of folders gets them too (#1682), with a line on what they do.
+    const subs = libraryOnlySubfolders();
+    const folderActions = (nItems > 0 || subs) ? `
       <div class="library-folder-actions">
         <button class="btn lib-play-folder-btn">&#9205; ${escapeHtml(t('controls.playFolder'))}</button>
         <button class="btn lib-save-folder-btn" title="${escapeAttr(t('controls.saveFolderPreset'))}">&#11088; ${escapeHtml(t('controls.saveFolderPreset'))}</button>
         <button class="btn btn-mini toggle-btn lib-queue-shuffle${libState.shuffle ? ' active' : ''}" title="${escapeAttr(t('controls.shuffle'))}">&#128256; ${escapeHtml(t('controls.shuffle'))}</button>
         <button class="btn btn-mini toggle-btn lib-queue-repeat${libState.repeat !== 'off' ? ' active' : ''}" title="${escapeAttr(t('controls.repeat'))}">&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}</button>
-      </div>` : '';
+      </div>${subs ? `
+      <p class="library-subfolders-hint">${escapeHtml(t('library.subfoldersHint', { depth: LIB_TREE_MAX_DEPTH }))}</p>` : ''}` : '';
     // The search row used to be tied to nItems, so a folder holding only
     // sub-folders (every "by Album" / "by Artist" list there is) had no search
     // box at all, while the capped note below still told the user to use it. That

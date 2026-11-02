@@ -242,9 +242,10 @@ func (s *Server) mediaServerRegistered(udn string) bool {
 
 // browseQueueItems pages one container and returns its playable tracks in server
 // order, or in track order when the folder is an album the server lists
-// alphabetically (#1487, dlna.OrderContainerItems). Non-recursive, exactly like
-// the desktop app's "play folder": the queue is what the open folder holds, not
-// everything below it.
+// alphabetically (#1487, dlna.OrderContainerItems). A folder that holds tracks
+// plays exactly those, like the desktop app's "play folder"; a folder that
+// holds none plays the tracks of its sub-folders (#1682, collectFolderTracks),
+// so a replayed artist folder plays its albums again instead of nothing.
 //
 // The paging follows the same rule the #666 search walk had to learn, and for the
 // same reason: a SHORT PAGE is not the end of the container. Plenty of
@@ -253,15 +254,15 @@ func (s *Server) mediaServerRegistered(udn string) bool {
 // only the first hundred tracks of a long album list on exactly those servers.
 // Advance by what actually arrived and let TotalMatches say when it is done.
 func (s *Server) browseQueueItems(ctx context.Context, srv dlna.Server, container string) ([]queueItem, error) {
-	items, whole, err := s.browseContainerItems(ctx, srv, container)
+	tree, err := s.collectFolderTracks(ctx, srv, container, false)
 	if err != nil {
 		return nil, err
 	}
-	// Only the whole folder is put in track order: a cut-short list ordered on
-	// its own would not be the album's order either.
-	if whole {
-		items = dlna.OrderContainerItems(ctx, srv, container, items)
-	}
+	return queueItemsFromLibrary(tree.items), nil
+}
+
+// queueItemsFromLibrary turns media-server tracks into queue items.
+func queueItemsFromLibrary(items []dlna.Item) []queueItem {
 	out := make([]queueItem, 0, len(items))
 	for _, it := range items {
 		out = append(out, queueItem{
@@ -274,28 +275,46 @@ func (s *Server) browseQueueItems(ctx context.Context, srv dlna.Server, containe
 			Album:    it.Album,
 		})
 	}
-	return out, nil
+	return out
 }
 
 // browseContainerItems pages one container and returns its tracks that carry a
 // stream URL, deduplicated, in server order. whole is false when the walk had to
 // stop early (a page failed, or the queue cap was reached).
 func (s *Server) browseContainerItems(ctx context.Context, srv dlna.Server, container string) (out []dlna.Item, whole bool, err error) {
+	_, out, whole, err = s.browseContainerChildren(ctx, srv, container)
+	return out, whole, err
+}
+
+// browseContainerChildren is browseContainerItems that also hands back the
+// container's sub-folders, deduplicated by id, in server order. A folder that
+// holds no tracks of its own but one folder per album needs them to be played
+// as a whole (#1682, libraryfoldertree.go).
+func (s *Server) browseContainerChildren(ctx context.Context, srv dlna.Server, container string) (folders []dlna.Container, out []dlna.Item, whole bool, err error) {
 	out = make([]dlna.Item, 0, 64)
 	seen := make(map[string]bool)
+	seenFolder := make(map[string]bool)
 	for start := 0; start < queueReplayMaxItems; {
 		res, err := dlna.Browse(ctx, srv, container, start, libraryBrowsePage)
 		if err != nil {
-			if len(out) > 0 {
+			if len(out) > 0 || len(folders) > 0 {
 				// Part of the folder is in hand. Playing that beats refusing the
 				// replay because page four timed out.
 				s.logger.Info("folder card replay: stopping the browse early",
-					"container", container, "have", len(out), "err", err)
-				return out, false, nil
+					"container", container, "have", len(out), "folders", len(folders), "err", err)
+				return folders, out, false, nil
 			}
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		fresh := 0
+		for _, c := range res.Containers {
+			if c.ID == "" || seenFolder[c.ID] {
+				continue
+			}
+			seenFolder[c.ID] = true
+			fresh++
+			folders = append(folders, c)
+		}
 		for _, it := range res.Items {
 			if it.StreamURL == "" || seen[it.StreamURL] {
 				continue
@@ -304,24 +323,24 @@ func (s *Server) browseContainerItems(ctx context.Context, srv dlna.Server, cont
 			fresh++
 			out = append(out, it)
 			if len(out) >= queueReplayMaxItems {
-				return out, false, nil
+				return folders, out, false, nil
 			}
 		}
 		returned := len(res.Containers) + len(res.Items)
 		start += returned
 		// A server that answers nothing, or one that ignores StartingIndex and
 		// hands back the same children forever, both end here.
-		if returned == 0 || (fresh == 0 && len(res.Containers) == 0) {
-			return out, true, nil
+		if returned == 0 || fresh == 0 {
+			return folders, out, true, nil
 		}
 		if res.TotalMatches > 0 {
 			if start >= res.TotalMatches {
-				return out, true, nil
+				return folders, out, true, nil
 			}
 		} else if returned < libraryBrowsePage {
 			// No count from the server: the short page is all there is to go on.
-			return out, true, nil
+			return folders, out, true, nil
 		}
 	}
-	return out, false, nil
+	return folders, out, false, nil
 }

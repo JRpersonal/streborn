@@ -166,6 +166,11 @@ const LIB_TRACK = (n, title, artist, sec) => ({
   id: `t${n}`, title, artist, album: 'Evening Sessions', durationSec: sec, mimeType: 'audio/flac',
   albumArtURL: '', streamURL: `http://192.0.2.60:8200/MediaItems/${n}.flac`,
 });
+// A numbered track of one of Ada Demo Trio's albums.
+const ALBUM_TRACK = (n, title, album, no) => ({
+  id: `t${n}`, title, artist: 'Ada Demo Trio', album, durationSec: 200 + n, mimeType: 'audio/flac', trackNumber: no,
+  albumArtURL: '', streamURL: `http://192.0.2.60:8200/MediaItems/${n}.flac`,
+});
 export const LIBRARY_TREE = {
   c1: { containers: [{ id: 'c1a', title: 'Evening Sessions', childCount: 3 }, { id: 'c1b', title: 'Empty Shelf', childCount: 0 }], items: [], totalMatches: 2, returned: 2 },
   c1a: {
@@ -179,6 +184,21 @@ export const LIBRARY_TREE = {
     returned: 3,
   },
   c1b: { containers: [], items: [], totalMatches: 0, returned: 0 },
+  // File Index > Ada Demo Trio: an artist folder with one folder per album
+  // and no tracks of its own (#1682). The server lists "Night Lines" before
+  // "_Live in Demo City", so A to Z (#1257) turns the two around.
+  c6: { containers: [{ id: 'c6a', title: 'Ada Demo Trio', childCount: 2 }], items: [], totalMatches: 1, returned: 1 },
+  c6a: {
+    containers: [
+      { id: 'c6a2', title: 'Night Lines', childCount: 2, class: 'object.container.album.musicAlbum' },
+      { id: 'c6a1', title: '_Live in Demo City', childCount: 2, class: 'object.container.album.musicAlbum' },
+    ],
+    items: [],
+    totalMatches: 2,
+    returned: 2,
+  },
+  c6a1: { containers: [], items: [ALBUM_TRACK(21, 'Opening Night', '_Live in Demo City', 1), ALBUM_TRACK(22, 'Encore', '_Live in Demo City', 2)], totalMatches: 2, returned: 2 },
+  c6a2: { containers: [], items: [ALBUM_TRACK(31, 'Late Train', 'Night Lines', 1), ALBUM_TRACK(32, 'Blue Hour', 'Night Lines', 2)], totalMatches: 2, returned: 2 },
 };
 // SearchLibrary's answer: every hit names the server it is on.
 export const LIBRARY_SEARCH = {
