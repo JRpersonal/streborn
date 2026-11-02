@@ -751,10 +751,16 @@ func (s *Server) recordLastPlay(lp *lastPlayInfo) uint64 {
 	gen, newStream := s.play.record(lp)
 	// The track on the panel belonged to the previous stream: the new one's
 	// name replaces it until its first song is known. The same stream pushed
-	// again keeps it (its title is not reported again). Synchronous, so it
-	// cannot land after the new stream's first title.
+	// again keeps it (its title is not reported again), unless the panel has
+	// nothing for it: after an agent restart (the record came back from NAND)
+	// or once the stream ended (the speaker was switched off), the same
+	// station played again showed nothing until the song changed (live
+	// ST20 and Portable, 2026-11-02). Synchronous, so it cannot land after the
+	// new stream's first title.
 	if newStream {
 		s.panelNewStream(lp.boxURL, lp.title)
+	} else if s.panelStale() {
+		s.panelSameStreamAgain(lp.boxURL, lp.title, s.play.icyTitle())
 	}
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.

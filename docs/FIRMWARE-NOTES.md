@@ -641,7 +641,8 @@ it fits on two lines of ten), not a band over BoseApp's picture, because what
 BoseApp shows there is the stale title from the start of the stream.
 
 A second setting, "Show clock during playback" (`/api/box/display-clock`, flag file
-`display-clock-on-playback`, default off), adds the time: with the track it
+`display-clock-on-playback`, on by default where STR draws on the panel, as is
+the track setting; a stored "0" keeps a user's off), adds the time: with the track it
 sits at the right of the top line next to the station, without the track
 (track setting off) it is drawn large under the station. Both off leaves the
 panel to BoseApp. 12 or 24 hours follow the speaker's own clock setting

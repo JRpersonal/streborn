@@ -315,7 +315,9 @@ export function wireSoundSections(ctx) {
     toastKey: 'settingsView.resumeOnPowerSavedToast',
   });
 
-  // Show the live radio track on the speaker display (opt-in, default off).
+  // Show the live radio track on the speaker display (on by default where
+  // STR draws on the panel, off elsewhere; the agent decides, see
+  // internal/webui displayTrackEnabled).
   // Where the speaker's panel is STR's to draw on (onPanel), STR draws the
   // track itself and the music never stops, so there is no warning. Elsewhere
   // enabling it makes the box re-buffer (a brief audio dropout) on each text

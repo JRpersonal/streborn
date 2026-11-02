@@ -137,6 +137,37 @@ func (s *Server) panelNewStream(boxURL, title string) {
 	s.refreshTrackPanel()
 }
 
+// panelStale reports whether the panel model has nothing to show for the
+// stream on record: empty since the agent started, or that stream ended.
+func (s *Server) panelStale() bool {
+	s.panelMu.Lock()
+	defer s.panelMu.Unlock()
+	return s.panel.kind == "" || s.panel.ended
+}
+
+// panelSameStreamAgain is the stream on record started again while the panel
+// had nothing for it. The station's last known song comes along: the stream
+// proxy reports a title only when it changes, so the song still playing
+// would otherwise wait for the next one. A song that changed in between
+// arrives with the stream's first metadata block and replaces it.
+func (s *Server) panelSameStreamAgain(boxURL, title, lastSong string) {
+	m := panelModel{kind: panelRadio}
+	if strings.Contains(boxURL, "/spotify/") {
+		// the engine's song is kept even while nothing of STR's plays
+		s.panelMu.Lock()
+		track, artist := s.spotifyNow[0], s.spotifyNow[1]
+		s.panelMu.Unlock()
+		m = panelModel{kind: panelSpotify, station: title, artist: artist, title: track, raw: joinArtistTitle(artist, track)}
+	} else if lastSong != "" {
+		m.artist, m.title = splitStreamTitle(lastSong)
+		m.raw = strings.TrimSpace(lastSong)
+	}
+	s.panelMu.Lock()
+	s.panel = m
+	s.panelMu.Unlock()
+	s.refreshTrackPanel()
+}
+
 // panelRadioTitle is a new ICY StreamTitle. A title arriving while Spotify or
 // the library plays is a late one from the stream before and is dropped.
 func (s *Server) panelRadioTitle(raw string) {
@@ -382,7 +413,9 @@ func clockPathFor(enabledPath string) string {
 // displayClockEnabled reports whether the time is shown during playback. Only
 // meaningful where STR draws on the panel.
 func (s *Server) displayClockEnabled() bool {
-	return readBoolFlag(clockPathFor(s.displayTrackPath), false)
+	// On by default where STR draws on the panel, like the track itself
+	// (displayTrackEnabled); "0" keeps a user's "off".
+	return readBoolFlag(clockPathFor(s.displayTrackPath), s.trackOnPanel())
 }
 
 // hour12Retry spaces out reads of the speaker's time format after one failed.
