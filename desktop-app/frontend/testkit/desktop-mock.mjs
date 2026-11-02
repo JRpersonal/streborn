@@ -34,14 +34,14 @@ export const MODELLED_BINDINGS = [
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CopyPresetKeysAcrossBoxes', 'CopyPresetsAcrossBoxes', 'DeletePreset',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
-  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
+  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
-  'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
+  'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockBrightness', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset', 'SetStandbyClock',
   'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
@@ -305,6 +305,11 @@ export function installDesktopMock({ scenario, demo }) {
     GetKeyActions: () => ({ keys: { aux: 'snooze', thumbsUp: 'bassUp', thumbsDown: 'bassDown' } }),
     GetClockDisplay: () => 'true',
     SetClockDisplay: () => undefined,
+    // The clock goes through the agent, which keeps it on the speaker (#979);
+    // the brightness row shows where the speaker reports a level (#1226).
+    SetStandbyClock: () => ({ ok: true, result: { brightnessHonoured: true } }),
+    GetClockBrightness: () => 40,
+    SetClockBrightness: () => ({ ok: true, result: { brightnessHonoured: true } }),
     SetDisplayClock: () => undefined,
     GetClockFormat24: () => true,
     BoxInstallReachable: () => true,

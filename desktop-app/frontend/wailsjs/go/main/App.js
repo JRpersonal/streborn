@@ -226,6 +226,10 @@ export function GetBoxLanguage(arg1) {
   return window['go']['main']['App']['GetBoxLanguage'](arg1);
 }
 
+export function GetClockBrightness(arg1) {
+  return window['go']['main']['App']['GetClockBrightness'](arg1);
+}
+
 export function GetClockDisplay(arg1) {
   return window['go']['main']['App']['GetClockDisplay'](arg1);
 }
@@ -690,6 +694,10 @@ export function SetBoxVolume(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxVolume'](arg1, arg2, arg3);
 }
 
+export function SetClockBrightness(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetClockBrightness'](arg1, arg2, arg3);
+}
+
 export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['SetClockDisplay'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -732,6 +740,10 @@ export function SetResumeOnPowerOn(arg1, arg2, arg3) {
 
 export function SetSpotifyQuality(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetSpotifyQuality'](arg1, arg2, arg3);
+}
+
+export function SetStandbyClock(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SetStandbyClock'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 export function SetStartVolume(arg1, arg2, arg3) {

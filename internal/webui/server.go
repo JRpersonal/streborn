@@ -28,6 +28,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/region"
+	"github.com/JRpersonal/streborn/internal/standbyclock"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -38,6 +39,10 @@ import (
 type Server struct {
 	addr    string
 	boxHost string
+	// standbyClockKeeper keeps the firmware's standby clock as the owner set
+	// it (standbyclock_http.go); handed over by the agent.
+	standbyClockMu     sync.Mutex
+	standbyClockKeeper *standbyclock.Keeper
 	// selfUpd runs the speaker's own update from GitHub (selfupdate.go).
 	selfUpd selfUpdater
 	// fleet is the phone's "update all speakers" plan or run (selfupdate_fleet.go).
@@ -1686,6 +1691,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/display-clock", s.handleDisplayClock)
+	mux.HandleFunc("/api/box/standby-clock", s.handleStandbyClock)
 	mux.HandleFunc("/api/box/display-messages", s.handleDisplayMessages)
 	mux.HandleFunc("/api/box/display-splash", s.handleDisplaySplash)
 	mux.HandleFunc("/api/box/display-notices", s.handleDisplayNotices)

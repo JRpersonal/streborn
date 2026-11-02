@@ -118,6 +118,8 @@ export function GetBoxFirmware(arg1:string):Promise<main.FirmwareInfo>;
 
 export function GetBoxLanguage(arg1:string):Promise<string>;
 
+export function GetClockBrightness(arg1:string):Promise<number>;
+
 export function GetClockDisplay(arg1:string):Promise<string>;
 
 export function GetClockFormat24(arg1:string):Promise<boolean>;
@@ -350,6 +352,8 @@ export function SetBoxSpeakerLevel(arg1:string,arg2:number,arg3:string,arg4:numb
 
 export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 
+export function SetClockBrightness(arg1:string,arg2:number,arg3:number):Promise<Record<string, any>>;
+
 export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number,arg5:boolean):Promise<void>;
 
 export function SetDisplayClock(arg1:string,arg2:number,arg3:boolean):Promise<void>;
@@ -371,6 +375,8 @@ export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:s
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetSpotifyQuality(arg1:string,arg2:number,arg3:number):Promise<main.SpotifyQualityState>;
+
+export function SetStandbyClock(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:number,arg6:boolean,arg7:number):Promise<Record<string, any>>;
 
 export function SetStartVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 

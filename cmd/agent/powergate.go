@@ -228,6 +228,9 @@ func (h *presetWsHandler) admitPower(sig powerSignal, origin powerOrigin) bool {
 func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 	switch ev.Kind {
 	case boxlog.PowerWake:
+		// The standby clock is checked on every logged transition, whatever
+		// source was on (standbyclock.go, rate-limited).
+		standbyClockOnPower("wake")
 		// The track screen hears of every wake the speaker logs: when the
 		// speaker's own word took it down, the bus may not report the wake
 		// as a source change (displaytrack.go).
@@ -245,6 +248,8 @@ func (h *presetWsHandler) OnBoxPowerEvent(ev boxlog.PowerEvent) {
 			"source", "syslog", "via", string(ev.Source), "class", string(ev.Class))
 		h.standbyExit()
 	case boxlog.PowerStandby:
+		// Standby is where the firmware shows its clock: check it now.
+		standbyClockOnPower("standby")
 		// A speaker in standby shows no track, whichever source it left and
 		// whatever the bus last said: this also takes down a screen a
 		// phantom wake frame put up (phantomwake.go).
