@@ -11,6 +11,7 @@ vi.mock('./api.js', async (importOriginal) => ({
   ...(await importOriginal()),
   FavoriteRemovals: vi.fn(),
   PushFavorites: vi.fn(() => Promise.resolve()),
+  PushFavoritesAt: vi.fn(() => Promise.resolve()),
 }));
 
 const api = await import('./api.js');
@@ -43,6 +44,8 @@ beforeEach(() => {
   state.searchLastMode = '';
   api.FavoriteRemovals.mockReset();
   api.PushFavorites.mockClear();
+  api.PushFavoritesAt.mockReset();
+  api.PushFavoritesAt.mockImplementation(() => Promise.resolve());
 });
 
 describe('pollFavRemovalsOnCurrentBox (#1339)', () => {
@@ -58,12 +61,13 @@ describe('pollFavRemovalsOnCurrentBox (#1339)', () => {
     expect(fav.isFav({ stationuuid: 'u-2' })).toBe(true);
     expect(seen).toHaveBeenCalled();
     // The shorter list goes back out to every speaker, as on any change.
-    expect(api.PushFavorites).toHaveBeenCalledTimes(2);
+    expect(api.PushFavoritesAt).toHaveBeenCalledTimes(2);
   });
 
   it('changes nothing and pushes nothing when no star was removed', async () => {
     api.FavoriteRemovals.mockResolvedValue('{"removed":[]}');
     expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
+    expect(api.PushFavoritesAt).not.toHaveBeenCalled();
     expect(api.PushFavorites).not.toHaveBeenCalled();
   });
 
@@ -85,8 +89,60 @@ describe('pollFavRemovalsOnCurrentBox (#1339)', () => {
     expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(true);
     expect(fav.isFav({ stationuuid: 'u-9' })).toBe(true);
     // Pushed to every speaker: that push settles the note.
+    expect(api.PushFavoritesAt).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(api.PushFavoritesAt.mock.calls[0][2])[0]).toMatchObject({ stationuuid: 'u-9', starredAt: 700 });
+  });
+
+  // #1663: a Pandora station starred on the phone keeps what plays it.
+  it('takes over a Pandora station starred on the phone with its station reference', async () => {
+    api.FavoriteRemovals.mockResolvedValue(JSON.stringify({
+      removed: [],
+      added: [{ id: 'pandora:111', at: 800, fav: { stationuuid: 'pandora:111', name: 'Jazz Radio', source: 'pandora', location: '111', itemType: 'stationurl' } }],
+    }));
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(true);
+    const pushed = JSON.parse(api.PushFavoritesAt.mock.calls[0][2]);
+    expect(pushed[2]).toMatchObject({ stationuuid: 'pandora:111', source: 'pandora', location: '111', itemType: 'stationurl' });
+  });
+
+  // #1519: an order set on the phone after the app's own is taken over, and
+  // the push names its time, which settles the note on the speakers.
+  it('takes over an order set on the phone and pushes it with its time', async () => {
+    api.FavoriteRemovals.mockResolvedValue('{"removed":[],"added":[],"order":{"at":900,"ids":["u-2","u-1"]}}');
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(true);
+    expect(fav.loadFavStore().map((s) => s.stationuuid)).toEqual(['u-2', 'u-1']);
+    expect(api.PushFavoritesAt).toHaveBeenCalledTimes(2);
+    expect(api.PushFavoritesAt.mock.calls[0][3]).toBe(900);
+    // The same note again is old news.
+    api.PushFavoritesAt.mockClear();
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
+    expect(api.PushFavoritesAt).not.toHaveBeenCalled();
+  });
+
+  it('keeps its own newer order over an older one from a phone', async () => {
+    localStorage.setItem('str.favOrderAt', '5000');
+    api.FavoriteRemovals.mockResolvedValue('{"order":{"at":900,"ids":["u-2","u-1"]}}');
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(false);
+    expect(fav.loadFavStore().map((s) => s.stationuuid)).toEqual(['u-1', 'u-2']);
+  });
+
+  it('moves a favourite and pushes the new order with the time of the move', () => {
+    const store = fav.loadFavStore();
+    const before = Date.now();
+    const next = fav.moveFavorite(store, 1, -1);
+    expect(next.map((s) => s.stationuuid)).toEqual(['u-2', 'u-1']);
+    expect(fav.loadFavStore().map((s) => s.stationuuid)).toEqual(['u-2', 'u-1']);
+    expect(api.PushFavoritesAt).toHaveBeenCalledTimes(2);
+    expect(api.PushFavoritesAt.mock.calls[0][3]).toBeGreaterThanOrEqual(before);
+    expect(fav.moveFavorite(fav.loadFavStore(), 0, -1)).toBe(null);
+  });
+
+  it('falls back to the plain push on an app build without the newer binding', async () => {
+    const missing = new Error('STR_MISSING_BINDING: PushFavoritesAt is not available in this build');
+    missing.code = 'STR_MISSING_BINDING';
+    api.PushFavoritesAt.mockImplementation(() => Promise.reject(missing));
+    fav.moveFavorite(fav.loadFavStore(), 0, 1);
+    await new Promise((r) => setTimeout(r, 0));
     expect(api.PushFavorites).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(api.PushFavorites.mock.calls[0][2])[0]).toMatchObject({ stationuuid: 'u-9', starredAt: 700 });
   });
 });
 

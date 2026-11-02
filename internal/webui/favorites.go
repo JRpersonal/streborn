@@ -74,6 +74,21 @@ type Favorite struct {
 	Source      string `json:"source,omitempty"`
 	Mime        string `json:"mime,omitempty"`
 	DurationSec int    `json:"durationSec,omitempty"`
+	// Location and ItemType mark a Pandora station (#1663): Source is
+	// "pandora", Location the station reference the speaker listed, ItemType
+	// its item type. It has no stream address: the speaker's own Pandora
+	// client plays it (POST /api/pandora/play), and its key is
+	// "pandora:<location>", the same as its Recently-played card.
+	Location string `json:"location,omitempty"`
+	ItemType string `json:"itemType,omitempty"`
+}
+
+// favoriteSourcePandora marks a Pandora station among the favourites.
+const favoriteSourcePandora = "pandora"
+
+// isPandora reports whether the favourite is a Pandora station.
+func (f Favorite) isPandora() bool {
+	return f.Source == favoriteSourcePandora
 }
 
 // key names a favourite the way the desktop app does (favId in main.js): the
@@ -243,8 +258,20 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 	seen := map[string]bool{}
 	for _, f := range in {
 		f.Name = strings.TrimSpace(f.Name)
-		if f.Name == "" || f.playableURL() == "" {
-			continue // a row with no name or no stream is not a station
+		if f.Name == "" {
+			continue
+		}
+		if f.isPandora() {
+			// A Pandora station plays from its reference, not an address.
+			f.Location = strings.TrimSpace(f.Location)
+			if f.Location == "" {
+				continue
+			}
+			if f.UUID == "" {
+				f.UUID = "pandora:" + f.Location
+			}
+		} else if f.playableURL() == "" {
+			continue // a row with no stream is not a station
 		}
 		key := f.UUID
 		if key == "" {
@@ -265,9 +292,10 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 // handleFavorites serves and stores the starred stations.
 //
 //	GET            -> [] (never null: the phone page renders a list, not a maybe)
-//	GET ?removed=1 -> {"removed":[{id,at}],"added":[{id,at,fav}]}, for the
-//	               desktop app to catch up
-//	PUT [ ... ]    replaces the list, from the desktop app
+//	GET ?removed=1 -> {"removed":[{id,at}],"added":[{id,at,fav}],
+//	               "order":{at,ids}|null}, for the desktop app to catch up
+//	PUT [ ... ]    replaces the list, from the desktop app; orderAt=<ms> says
+//	               how new the app's own order is (#1519)
 //	POST { ... }   stars one favourite, from the phone page or a remote app
 //	               (#1621), and hands it on to the other STR speakers unless
 //	               local=1
@@ -284,7 +312,13 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if r.URL.Query().Get("removed") == "1" {
-			writeJSON(w, http.StatusOK, map[string]any{"removed": loadFavoriteRemovals(), "added": loadFavoriteAdditions()})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"removed": loadFavoriteRemovals(),
+				"added":   loadFavoriteAdditions(),
+				// The order set on a phone page (#1519), null when there is
+				// none the desktop app has still to take over.
+				"order": loadFavoriteOrder(),
+			})
 			return
 		}
 		writeJSON(w, http.StatusOK, loadFavorites())
@@ -331,6 +365,7 @@ func (s *Server) handleFavorites(w http.ResponseWriter, r *http.Request) {
 		if restored > 0 {
 			s.logger.Info("favorites: kept favourites starred elsewhere in a pushed list", "count", restored)
 		}
+		kept = s.settleFavoriteOrder(kept, pushedOrderAt(r))
 		clean := sanitiseFavorites(kept)
 		b, err := json.Marshal(clean)
 		if err != nil {

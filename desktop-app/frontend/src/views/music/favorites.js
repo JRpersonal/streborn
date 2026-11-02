@@ -1,8 +1,9 @@
 // views/music/favorites.js: the favourite stations store, its sync to the speakers
 // and the Favourites mode of the search box.
 
-import { FavoriteRemovals, PushFavorites } from '../../api.js';
+import { FavoriteRemovals, PushFavorites, PushFavoritesAt, isMissingBinding } from '../../api.js';
 import { applyFavAdditions, applyFavRemovals, parseFavAdditions, parseFavRemovals } from '../../favremovals.js';
+import { applyFavOrder, moveFav, newestFavOrder, parseFavOrder } from '../../favorder.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { $, showError } from '../../utils.js';
@@ -15,6 +16,17 @@ import { ensureUi2Radio } from './ui2radio.js';
 // through the exact same row path as a search result and inherits play, the
 // pick -> assign-to-key modal, and the long-press-to-tile fast path for free.
 const FAV_KEY = 'str.favStations';
+// FAV_ORDER_AT_KEY is when the order of the list was last set (Unix ms, #1519):
+// moved here, or taken over from a phone page. Each push names it, so a
+// speaker can tell an order set on a phone after it from an older list.
+const FAV_ORDER_AT_KEY = 'str.favOrderAt';
+
+function loadFavOrderAt() {
+  try { return Number(localStorage.getItem(FAV_ORDER_AT_KEY)) || 0; } catch { return 0; }
+}
+function saveFavOrderAt(at) {
+  try { localStorage.setItem(FAV_ORDER_AT_KEY, String(at || 0)); } catch {}
+}
 
 export function loadFavStore() {
   let arr;
@@ -57,9 +69,14 @@ function saveFavStore(arr) {
 // here must never make starring a station look broken.
 function pushFavoritesToBoxes(arr) {
   const json = JSON.stringify(arr || []);
+  const orderAt = loadFavOrderAt();
   (state.boxes || []).forEach((b) => {
     if (!b || b.offline || b.kind === 'stock') return;
-    PushFavorites(b.host, b.port, json).catch(() => {});
+    // An app build without the newer binding pushes the list without its
+    // order time, as before #1519.
+    PushFavoritesAt(b.host, b.port, json, orderAt)
+      .catch((err) => (isMissingBinding(err) ? PushFavorites(b.host, b.port, json) : undefined))
+      .catch(() => {});
   });
 }
 function favMinimal(s) {
@@ -77,9 +94,14 @@ function favMinimal(s) {
     // A music-library item starred from Recently played (#1605): the mark
     // plus MIME and length, so Favourites plays it the library way. Undefined
     // on a radio station, and dropped with it.
-    source: s.source === 'upnp' ? 'upnp' : undefined,
+    source: s.source === 'upnp' || s.source === 'pandora' ? s.source : undefined,
     mime: s.mime || undefined,
     durationSec: s.durationSec > 0 ? s.durationSec : undefined,
+    // A Pandora station (#1663): the station reference and item type the
+    // speaker listed, which its own Pandora client plays. Undefined, and so
+    // dropped, on everything else.
+    location: s.source === 'pandora' && s.location ? s.location : undefined,
+    itemType: s.source === 'pandora' && s.itemType ? s.itemType : undefined,
   };
 }
 
@@ -100,7 +122,8 @@ export async function syncFavRemovals() {
     const boxes = (state.boxes || []).filter((b) => b && !b.offline && b.kind !== 'stock');
     const answers = await Promise.all(boxes.map((b) =>
       FavoriteRemovals(b.host, b.port).then(parseFavNotes).catch(() => parseFavNotes(''))));
-    takeFavRemovals(answers.flatMap((a) => a.removed), answers.flatMap((a) => a.added));
+    takeFavRemovals(answers.flatMap((a) => a.removed), answers.flatMap((a) => a.added),
+      newestFavOrder(answers.map((a) => a.order)));
   } finally {
     favRemovalsRunning = false;
   }
@@ -127,7 +150,7 @@ export async function pollFavRemovalsOnCurrentBox() {
     } catch {
       return false; // busy or asleep: the next tick, or the minute sync, catches up
     }
-    return takeFavRemovals(notes.removed, notes.added);
+    return takeFavRemovals(notes.removed, notes.added, notes.order);
   } finally {
     favQuickRunning = false;
   }
@@ -142,17 +165,24 @@ export function onFavRemovalsApplied(fn) {
 
 // parseFavNotes reads both kinds of note from one speaker's answer.
 function parseFavNotes(json) {
-  return { removed: parseFavRemovals(json), added: parseFavAdditions(json) };
+  return { removed: parseFavRemovals(json), added: parseFavAdditions(json), order: parseFavOrder(json) };
 }
 
 // takeFavRemovals applies the removal and addition notes to the stored list
 // and, when that changed it, saves, pushes and repaints everything that shows
-// stars. The push is what settles an addition note on the speakers.
-function takeFavRemovals(removals, additions) {
+// stars. The push is what settles an addition note on the speakers. An order
+// set on a phone after this app's own (#1519) is taken over the same way; the
+// push then carries its time, which settles the order note too.
+function takeFavRemovals(removals, additions, order) {
   const r = applyFavRemovals(loadFavStore(), removals, favId);
   const a = applyFavAdditions(r.kept, additions, removals, favId);
-  if (!r.changed && !a.changed) return false;
-  const kept = a.changed ? a.kept.map(favMinimal) : a.kept;
+  let kept = a.changed ? a.kept.map(favMinimal) : a.kept;
+  const takeOrder = !!order && order.at > loadFavOrderAt();
+  if (takeOrder) {
+    kept = applyFavOrder(kept, order.ids, favId).kept;
+    saveFavOrderAt(order.at);
+  }
+  if (!r.changed && !a.changed && !takeOrder) return false;
   saveFavStore(kept);
   updateFavModeBtn();
   if (state.searchLastMode === 'favorites') {
@@ -191,6 +221,18 @@ export function mergeFavStations(json) {
   updateFavModeBtn();
   return { added, total: arr.length };
 }
+// moveFavorite moves the favourite shown at index i of the list on screen one
+// place up (dir -1) or down (dir +1) and pushes the new order to every speaker
+// (#1519). Returns the new list, or null when nothing moved (already first or
+// last).
+export function moveFavorite(shown, i, dir) {
+  const m = moveFav(loadFavStore(), shown, i, dir, favId);
+  if (!m.changed) return null;
+  saveFavOrderAt(Date.now());
+  saveFavStore(m.kept);
+  return m.kept;
+}
+
 export function isFav(s) {
   const id = favId(s);
   return !!id && loadFavStore().some(x => favId(x) === id);

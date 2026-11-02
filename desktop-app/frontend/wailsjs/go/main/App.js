@@ -442,6 +442,10 @@ export function PushFavorites(arg1, arg2, arg3) {
   return window['go']['main']['App']['PushFavorites'](arg1, arg2, arg3);
 }
 
+export function PushFavoritesAt(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['PushFavoritesAt'](arg1, arg2, arg3, arg4);
+}
+
 export function PushStereoPairNameToBox(arg1, arg2, arg3) {
   return window['go']['main']['App']['PushStereoPairNameToBox'](arg1, arg2, arg3);
 }
