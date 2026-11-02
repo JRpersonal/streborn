@@ -845,11 +845,12 @@ type Server struct {
 	// playmode.go. Empty falls back to defaultPlayModePath.
 	playModePath string
 
-	// displayTrackPath persists the per-box opt-IN for "show the live radio track
-	// on the speaker's display" (default OFF; file absent or "0"). Pushing the ICY
-	// title to the box re-issues SetAVTransportURI, which makes the box re-buffer
-	// (a brief audio gap on each track change, verified on a Portable), so it is
-	// off unless the user turns it on. Empty falls back to defaultDisplayTrackPath.
+	// displayTrackPath persists the per-box "show the live radio track on the
+	// speaker's display" setting. Absent means on where STR draws on the panel
+	// itself and off elsewhere: there, pushing the ICY title re-issues
+	// SetAVTransportURI, which makes the box re-buffer (a brief audio gap on
+	// each track change, verified on a Portable), so it stays off unless the
+	// user turns it on. Empty falls back to defaultDisplayTrackPath.
 	displayTrackPath string
 	// trackPanel draws the track on the speaker's own panel where STR can
 	// (displaytrack_panel.go); nil means the real one (internal/oled). Tests

@@ -553,8 +553,10 @@ func (s *Server) resumeSuppressedPostOTA() bool {
 }
 
 // defaultDisplayTrackPath is the NAND flag file for the per-box "show the live
-// radio track on the speaker display" opt-in. Absent or "0" means off (the
-// default); "1" means on.
+// radio track on the speaker display" setting. "1" means on, "0" off. Absent
+// means the default: on where STR draws on the speaker's panel itself (no
+// re-buffering, so nothing to lose), off everywhere else, where each new title
+// costs a short audio gap.
 const defaultDisplayTrackPath = "/mnt/nv/streborn/display-track-on-box"
 
 // minDisplayPushInterval is the shortest gap between two ICY display pushes. Each
@@ -575,7 +577,10 @@ func (s *Server) displayTrackEnabled() bool {
 	if path == "" {
 		path = defaultDisplayTrackPath
 	}
-	return readBoolFlag(path, false)
+	// Jens, 2026-11-02: the panel screen (song, station or playlist, clock)
+	// is the default wherever STR draws it. A speaker never set keeps no file,
+	// and switching off writes "0", so a user's "off" stays off.
+	return readBoolFlag(path, s.trackOnPanel())
 }
 
 // defaultDisplayTrackModePath is the NAND file for WHAT the display push shows:
