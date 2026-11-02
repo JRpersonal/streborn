@@ -579,10 +579,21 @@ export function holdRefusedBannerKey(source) {
     : 'speaker.holdRefusedBannerGeneric';
 }
 
-export function showError(msg) {
+// opts.title replaces the dialog's "Error" heading for this one message (a
+// copy that partly worked is not an error); every other call gets the default
+// heading back, since the modal is shared.
+let errorTitleDefault = null;
+export function showError(msg, opts) {
   wireError();
   const m = $('errorModal');
   if (!m) return;
+  const h = m.querySelector('.warn-title');
+  if (h) {
+    if (errorTitleDefault === null) errorTitleDefault = h.innerHTML;
+    h.innerHTML = opts && opts.title
+      ? '<span class="warn-icon">&#9888;</span> ' + escapeHtml(opts.title)
+      : errorTitleDefault;
+  }
   $('errorText').value = friendlyErrorText(String(msg || t('modal.unknownError')));
   m.classList.remove('hidden');
 }

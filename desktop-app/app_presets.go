@@ -508,6 +508,34 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 // shape (copyreport.js) into a translated sentence, so it must stay stable.
 const presetConflictPrefix = "already-on-slot: "
 
+// presetConflictError is the agent's already-on-slot refusal: Name is already
+// on the target's key Slot. PayloadSlot is the key of the written set that
+// collided, when the agent says so (agents from the single-key copy on, #1551);
+// zero otherwise. Error() is the stable shape copyreport.js parses.
+type presetConflictError struct {
+	Name        string
+	Slot        int
+	PayloadSlot int
+}
+
+func (e *presetConflictError) Error() string {
+	return fmt.Sprintf("%s%q is already on key %d", presetConflictPrefix, e.Name, e.Slot)
+}
+
+// parsePresetConflict reads a 409 body; nil unless it is already-on-slot.
+func parsePresetConflict(body []byte) *presetConflictError {
+	var c struct {
+		Code        string `json:"code"`
+		Name        string `json:"name"`
+		Slot        int    `json:"slot"`
+		PayloadSlot int    `json:"payloadSlot"`
+	}
+	if json.Unmarshal(body, &c) != nil || c.Code != "already-on-slot" {
+		return nil
+	}
+	return &presetConflictError{Name: c.Name, Slot: c.Slot, PayloadSlot: c.PayloadSlot}
+}
+
 // putPresetsBulk PUTs the whole preset set to the target's collection endpoint.
 // supported is false when the target answers 404 or 405, i.e. it runs an agent
 // older than the bulk endpoint and the caller must fall back to the per-slot
@@ -528,14 +556,9 @@ func (a *App) putPresetsBulk(host string, port int, ps []Preset) (bool, error) {
 		return false, nil
 	}
 	if resp.StatusCode == http.StatusConflict {
-		var c struct {
-			Code string `json:"code"`
-			Name string `json:"name"`
-			Slot int    `json:"slot"`
-		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		if json.Unmarshal(body, &c) == nil && c.Code == "already-on-slot" {
-			return true, fmt.Errorf("%s%q is already on key %d", presetConflictPrefix, c.Name, c.Slot)
+		if c := parsePresetConflict(body); c != nil {
+			return true, c
 		}
 		return true, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}

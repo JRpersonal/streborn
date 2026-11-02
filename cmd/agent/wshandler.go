@@ -1310,6 +1310,9 @@ func (h *presetWsHandler) actOnStandbyExit() {
 // standbyExit is what a standby exit does, whichever origin reported it.
 func (h *presetWsHandler) standbyExit() {
 	requestPresetKeyResync(h.logger, "standby-exit")
+	// A chassis whose syslog ring is not read still gets the clock check
+	// here; the keeper's rate limit drops the twin of a ring wake.
+	standbyClockOnPower("wake")
 	// The user just switched the box on. If the firmware had dropped a stream
 	// while the box was off, STR replays it NOW - on the user's own action -
 	// instead of powering the speaker on by itself (#487).
@@ -1391,6 +1394,8 @@ func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
 
 // enterStandby is what a standby entry does, whichever origin reported it.
 func (h *presetWsHandler) enterStandby() {
+	// Same as standbyExit: the bus-only path still gets its clock check.
+	standbyClockOnPower("standby")
 	if h.onEnterStandby != nil {
 		h.onEnterStandby()
 	}

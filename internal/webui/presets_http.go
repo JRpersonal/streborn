@@ -140,6 +140,7 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"code": "already-on-slot", "slot": in[j].Slot, "name": in[j].Name,
+				"payloadSlot": in[j].Slot,
 			})
 			return
 		}
@@ -155,8 +156,11 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("bulk preset write refused: a station in the set is already on a key the set does not rewrite",
 				"slot", p.Slot, "existingSlot", other.Slot, "name", other.Name,
 				"from", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+			// payloadSlot names the key of the set that collided, so a copy of
+			// chosen keys (#1551) can leave just that one out and say why.
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"code": "already-on-slot", "slot": other.Slot, "name": other.Name,
+				"payloadSlot": p.Slot,
 			})
 			return
 		}

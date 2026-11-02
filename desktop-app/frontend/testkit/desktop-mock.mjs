@@ -32,16 +32,16 @@
 export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
-  'CopyPresetsAcrossBoxes', 'DeletePreset',
+  'CopyPresetKeysAcrossBoxes', 'CopyPresetsAcrossBoxes', 'DeletePreset',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
-  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
+  'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
-  'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset',
+  'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockBrightness', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset', 'SetStandbyClock',
   'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
@@ -207,6 +207,26 @@ export function installDesktopMock({ scenario, demo }) {
       for (const p of set) putPreset(dst, p.slot, clone(p));
       return set.length;
     },
+    // The chosen keys only (#1551), with the agent's duplicate guard: a
+    // station already on ANOTHER key of the target (one the copy does not
+    // rewrite) is left out and named; nothing there is deleted.
+    CopyPresetKeysAcrossBoxes: ([src, , dst, , slots]) => {
+      const max = rowsOf(dst) * 6;
+      const want = new Set(slots || []);
+      const res = { copied: [], skipped: [], notKept: [] };
+      const picked = presetsFor(src).filter((p) => want.has(p.slot) && p.name);
+      const rewritten = new Set(picked.filter((p) => p.slot <= max).map((p) => p.slot));
+      for (const p of picked) {
+        if (p.slot > max) { res.notKept.push(p.slot); continue; }
+        const same = (o) => o.slot !== p.slot && !rewritten.has(o.slot)
+          && ((p.stream_url && o.stream_url === p.stream_url) || (p.uri && o.uri === p.uri));
+        const other = presetsFor(dst).find(same);
+        if (other) { res.skipped.push({ slot: p.slot, name: p.name, onSlot: other.slot }); continue; }
+        putPreset(dst, p.slot, clone(p));
+        res.copied.push(p.slot);
+      }
+      return res;
+    },
     MovePreset: ([h, , from, to]) => {
       const list = presetsFor(h);
       const a = list.find((x) => x.slot === from);
@@ -285,6 +305,11 @@ export function installDesktopMock({ scenario, demo }) {
     GetKeyActions: () => ({ keys: { aux: 'snooze', thumbsUp: 'bassUp', thumbsDown: 'bassDown' } }),
     GetClockDisplay: () => 'true',
     SetClockDisplay: () => undefined,
+    // The clock goes through the agent, which keeps it on the speaker (#979);
+    // the brightness row shows where the speaker reports a level (#1226).
+    SetStandbyClock: () => ({ ok: true, result: { brightnessHonoured: true } }),
+    GetClockBrightness: () => 40,
+    SetClockBrightness: () => ({ ok: true, result: { brightnessHonoured: true } }),
     SetDisplayClock: () => undefined,
     GetClockFormat24: () => true,
     BoxInstallReachable: () => true,

@@ -441,8 +441,13 @@ func (a *agent) buildMarge() error {
 	store, foreignPresets, regionRes := a.store, a.foreignPresets, a.regionRes
 
 	// Initialize subsystems
+	// Every account read the firmware makes during boot drops its key
+	// registrations; check the keys once more after the last one.
+	bootAccountResync := newAccountResync(accountResyncBootWindow, accountResyncDelay,
+		askPresetRecheckAfterAccountRead(logger))
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
+		marge.WithAccountFetchHook(bootAccountResync.noteAccountRead),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		// Persist the stereo-pair record so the firmware's group poll keeps
 		// getting the same answer across agent restarts (a "not grouped"
@@ -1085,6 +1090,10 @@ func (a *agent) buildWebui() error {
 		langFile = filepath.Join(filepath.Dir(a.flags.regionFile), "lang.txt")
 	}
 	go newBoxLanguageGate(a.flags.boxHost, langFile, regionRes.Country, logger.With("comp", "boxlang")).run(ctx)
+	// The speaker's standby clock as its owner set it: re-applied once per
+	// start and put back on a standby or wake when the firmware dropped it
+	// (#979), brightness included (#1226). standbyclock.go.
+	startStandbyClock(ctx, a.flags.boxHost, logger.With("comp", "standbyclock"), webuiSrv.SetStandbyClockKeeper)
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -1823,11 +1832,23 @@ func (a *agent) startBackground() error {
 		defer a.wg.Done()
 		runHeartbeat(ctx.Done(), spotifyMgr, logger)
 	}()
+	// Wi-Fi lease recovery rides the same tick as the network forensics: a
+	// speaker that stays associated but gets no address for 10 minutes asks
+	// wpa_supplicant to reassociate (wifilease.go). In memory only, no timer of
+	// its own; the wifi_lease_recovery debug section shows every attempt.
+	var leaseInSetup, leaseWLANBusy func() bool
+	if ws := a.webuiSrv; ws != nil {
+		leaseInSetup = func() bool { st, _, _ := ws.BoxSetup(); return st == "active" }
+		leaseWLANBusy = ws.WLANChangeInProgress
+	}
+	leaseRec := newLeaseRecovery(logger.With("comp", "wifilease"), leaseInSetup, leaseWLANBusy)
+	webui.RegisterDebugSection("wifi_lease_recovery", leaseRec.debugSection)
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		logResourceHealth(logger, spotifyMgr)
 		checkNetworkReachability(logger)
+		leaseRec.check()
 		health := time.NewTicker(5 * time.Minute)
 		defer health.Stop()
 		// The guard polls far more often than the heartbeat log: a runaway can
@@ -1841,6 +1862,7 @@ func (a *agent) startBackground() error {
 			case <-health.C:
 				logResourceHealth(logger, spotifyMgr)
 				checkNetworkReachability(logger)
+				leaseRec.check()
 			case <-guard.C:
 				memoryGuardCheck(logger, spotifyMgr, a.flags.boxHost)
 			}

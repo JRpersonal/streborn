@@ -67,7 +67,7 @@ func (s *Server) handleZoneMember(w http.ResponseWriter, r *http.Request) {
 
 	emptied := len(kept) == 0
 	if emptied {
-		if err := s.zones.Clear(); err != nil {
+		if err := s.clearZoneDoc(); err != nil {
 			s.logger.Warn("zone: clearing the group after its last member left failed", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -132,4 +132,23 @@ func (s *Server) zoneMemberCount(_ context.Context) int {
 		return 0
 	}
 	return len(doc.Slaves)
+}
+
+// clearZoneDoc ends the stored group. When a permanent group was set aside for
+// it (zones.Store.Set), that group is the stored one again and forms on its main
+// speaker's next play; the log says so, because a group coming back by itself
+// is otherwise a mystery in a bundle.
+func (s *Server) clearZoneDoc() error {
+	_, hadStanding := s.zones.Standing()
+	if err := s.zones.Clear(); err != nil {
+		return err
+	}
+	if !hadStanding {
+		return nil
+	}
+	if z, ok := s.zones.Get(); ok {
+		s.logger.Info("zone: the temporary group ended, the permanent group is back and forms when its main speaker plays next",
+			"master", z.Master, "members", len(z.Slaves), "name", z.Name)
+	}
+	return nil
 }

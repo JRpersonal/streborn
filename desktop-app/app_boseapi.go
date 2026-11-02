@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -121,6 +122,137 @@ func (a *App) GetClockDisplay(host string) (string, error) {
 // ignored by the box when userEnable is false but we always send a
 // consistent config.
 func (a *App) SetClockDisplay(host string, enable bool, timezone string, offsetMinutes int, format24 bool) error {
+	// The speaker's own brightness goes along: whether the firmware resets an
+	// omitted brightnessLevel to its default is untested, and switching the
+	// clock on must not undo a dimmed clock (#1226). -1 when it has none.
+	bright := -1
+	if b, err := a.GetClockBrightness(host); err == nil {
+		bright = b
+	}
+	return a.writeClockDisplay(host, enable, timezone, offsetMinutes, format24, bright)
+}
+
+// writeClockDisplay is the direct /clockDisplay write. brightness -1 leaves
+// the attribute out; a speaker that refuses the attribute (a 4xx) is written
+// again without it, so the on/off and the format still land.
+func (a *App) writeClockDisplay(host string, enable bool, timezone string, offsetMinutes int, format24 bool, brightness int) error {
+	body := clockDisplayXML(enable, timezone, offsetMinutes, format24, brightness)
+	err := a.bosePostXML(host, "/clockDisplay", body)
+	if err != nil && brightness >= 0 && clientRefused(err) {
+		a.logger.Warn("clock display: the speaker refused the write with a brightness, writing it again without", "host", host, "err", err)
+		err = a.bosePostXML(host, "/clockDisplay", clockDisplayXML(enable, timezone, offsetMinutes, format24, -1))
+	}
+	return err
+}
+
+// clientRefused reports whether a bosePostXML error is the speaker's 4xx
+// (readHTTPError's "status 4xx: ...").
+func clientRefused(err error) bool { return strings.HasPrefix(err.Error(), "status 4") }
+
+// GetClockBrightness reads the speaker's standby clock brightness
+// (brightnessLevel 0 to 100, 70 out of the box). -1 when the speaker does not
+// report one.
+func (a *App) GetClockBrightness(host string) (int, error) {
+	body, err := a.boseGet(host, "/clockDisplay")
+	if err != nil {
+		return -1, err
+	}
+	v := strings.TrimSpace(xmlTagOrAttr(body, "clockConfig", "brightnessLevel"))
+	n, err := strconv.Atoi(v)
+	if v == "" || err != nil {
+		return -1, nil
+	}
+	return min(max(n, 0), 100), nil
+}
+
+// SetStandbyClock writes the speaker's standby clock through the STR agent,
+// which stores the choice on the speaker and puts it back after every start
+// and when the firmware drops it (#979). brightness is 0 to 100, -1 leaves
+// it. The answer is the agent's ({ok, result{brightnessHonoured, ...}}). An
+// agent older than the endpoint, or one that cannot be reached, gets the
+// direct firmware write instead ({ok, fallback:true}).
+func (a *App) SetStandbyClock(host string, port int, enable bool, timezone string, offsetMinutes int, format24 bool, brightness int) (map[string]any, error) {
+	if timezone != "" {
+		offsetMinutes = 0
+	}
+	req := map[string]any{"enabled": enable, "timezone": timezone, "offsetMinutes": offsetMinutes, "format24": format24}
+	if brightness >= 0 {
+		req["brightness"] = min(brightness, 100)
+	}
+	body, _ := json.Marshal(req)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/standby-clock", "application/json", string(body))
+	if err == nil {
+		defer resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			var out map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+				return map[string]any{"ok": true}, nil
+			}
+			return out, nil
+		case resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed:
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		}
+	}
+	a.logger.Info("clock display: the agent does not keep the clock (older agent or not reachable), writing the speaker directly", "host", host, "agentErr", err)
+	if brightness < 0 {
+		if b, berr := a.GetClockBrightness(host); berr == nil {
+			brightness = b
+		}
+	}
+	if err := a.writeClockDisplay(host, enable, timezone, offsetMinutes, format24, brightness); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true, "fallback": true}, nil
+}
+
+// SetClockBrightness changes only the standby clock's brightness (0 to 100),
+// leaving on/off, zone and format as they are. Through the agent, which keeps
+// it with the rest of the clock setting; an older agent gets a direct write
+// built from what the speaker reports now.
+func (a *App) SetClockBrightness(host string, port int, brightness int) (map[string]any, error) {
+	brightness = min(max(brightness, 0), 100)
+	body, _ := json.Marshal(map[string]any{"brightness": brightness})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/standby-clock", "application/json", string(body))
+	if err == nil {
+		defer resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			var out map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+				return map[string]any{"ok": true}, nil
+			}
+			return out, nil
+		case resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed:
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+			return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		}
+	}
+	cur, gerr := a.boseGet(host, "/clockDisplay")
+	if gerr != nil {
+		return nil, gerr
+	}
+	enable := strings.TrimSpace(xmlTagOrAttr(cur, "clockConfig", "userEnable")) == "true"
+	tz := xmlTagOrAttr(cur, "clockConfig", "timezoneInfo")
+	if tz == "NOT_SET" {
+		tz = ""
+	}
+	off, _ := strconv.Atoi(strings.TrimSpace(xmlTagOrAttr(cur, "clockConfig", "userOffsetMinute")))
+	format24 := !strings.Contains(xmlTagOrAttr(cur, "clockConfig", "timeFormat"), "12HOUR")
+	if err := a.bosePostXML(host, "/clockDisplay", clockDisplayXML(enable, tz, off, format24, brightness)); err != nil {
+		return nil, err
+	}
+	out := map[string]any{"ok": true, "fallback": true}
+	if b, berr := a.GetClockBrightness(host); berr == nil && b >= 0 {
+		out["result"] = map[string]any{"brightnessHonoured": b == brightness}
+	}
+	return out, nil
+}
+
+// clockDisplayXML builds the /clockDisplay POST body. brightness -1 leaves
+// brightnessLevel out.
+func clockDisplayXML(enable bool, timezone string, offsetMinutes int, format24 bool, brightness int) string {
 	tf := "TIME_FORMAT_12HOUR_ID"
 	if format24 {
 		tf = "TIME_FORMAT_24HOUR_ID"
@@ -142,10 +274,13 @@ func (a *App) SetClockDisplay(host string, enable bool, timezone string, offsetM
 		// whenever a zone is set, the offset must be 0.
 		off = 0
 	}
-	body := fmt.Sprintf(
-		`<clockDisplay><clockConfig userEnable="%t" timezoneInfo="%s" userOffsetMinute="%d" timeFormat="%s" /></clockDisplay>`,
-		enable, tz, off, tf)
-	return a.bosePostXML(host, "/clockDisplay", body)
+	bright := ""
+	if brightness >= 0 {
+		bright = fmt.Sprintf(` brightnessLevel="%d"`, min(brightness, 100))
+	}
+	return fmt.Sprintf(
+		`<clockDisplay><clockConfig userEnable="%t" timezoneInfo="%s" userOffsetMinute="%d" timeFormat="%s"%s /></clockDisplay>`,
+		enable, tz, off, tf, bright)
 }
 
 // GetClockFormat24 reports whether the box clock is currently in 24h

@@ -3,7 +3,11 @@
 // re-grouping every day (the historical Bose SoundTouch pain point, #70).
 //
 // A box is in at most one zone at a time, so the store holds a single optional
-// Zone. Members are keyed by deviceID, which is stable; the LAN IP is stored as
+// Zone as the current group. Beside it the store can keep ONE standing
+// permanent group: when a group that is not permanent takes the place of a
+// permanent one (a group key, speakers added by hand), the permanent group is
+// set aside instead of lost, and it becomes the current group again once the
+// temporary one ends (Clear). Members are keyed by deviceID, which is stable; the LAN IP is stored as
 // a hint but is re-resolved via discovery at reform time because DHCP leases
 // change. When Master equals this box's own deviceID, this box leads the zone
 // and Slaves lists the followers; otherwise this box is a slave of Master.
@@ -66,6 +70,17 @@ type Store struct {
 	path string
 	mu   sync.RWMutex
 	zone *Zone // nil = standalone
+	// standing is the permanent group a temporary group was formed on top of.
+	// It is only ever set while zone is set, and Clear brings it back.
+	standing *Zone
+}
+
+// fileDoc is the on-disk shape: the current group's fields at the top level,
+// exactly as before, plus the standing permanent group under its own key. An
+// older agent reads the same file and simply does not see the standing one.
+type fileDoc struct {
+	Zone
+	Standing *Zone `json:"standing,omitempty"`
 }
 
 // New returns an empty in-memory store with no persistence path.
@@ -86,15 +101,23 @@ func Load(path string) (*Store, error) {
 	if len(b) == 0 {
 		return s, nil
 	}
-	var z Zone
-	if err := json.Unmarshal(b, &z); err != nil {
+	var d fileDoc
+	if err := json.Unmarshal(b, &d); err != nil {
 		return s, fmt.Errorf("parse zones: %w", err)
 	}
-	// An object with no master is standalone.
-	if z.Master == "" {
+	if d.Standing != nil && d.Standing.Master == "" {
+		d.Standing = nil
+	}
+	// An object with no master is standalone. A standing group without a
+	// current one cannot be written by this store, but if a file says so the
+	// standing group is what the user has.
+	if d.Master == "" {
+		s.zone = d.Standing
 		return s, nil
 	}
+	z := d.Zone
 	s.zone = &z
+	s.standing = d.Standing
 	return s, nil
 }
 
@@ -108,24 +131,65 @@ func (s *Store) Get() (Zone, bool) {
 	return *s.zone, true
 }
 
-// Set persists the zone membership, replacing any existing one.
+// Standing returns the permanent group that is set aside while a temporary
+// group is the current one, and true if there is one.
+func (s *Store) Standing() (Zone, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.standing == nil {
+		return Zone{}, false
+	}
+	return *s.standing, true
+}
+
+// Set persists the zone membership as the current group.
+//
+// A permanent group is never lost to one that is not. The store used to hold
+// exactly one record, so a group key or a speaker added by hand replaced the
+// user's permanent group for good, and the permanent group had to be set up
+// again by hand every time (reported 2026-11-02, two groups on one main
+// speaker). Now a non-permanent group on top of a permanent one sets the
+// permanent group aside, and Clear brings it back. A new PERMANENT group is the
+// user's new standing choice, so it drops whatever was set aside.
 func (s *Store) Set(z Zone) error {
 	s.mu.Lock()
 	zc := z
+	switch {
+	case zc.Permanent:
+		s.standing = nil
+	case s.zone != nil && s.zone.Permanent && s.standing == nil:
+		prev := *s.zone
+		s.standing = &prev
+	}
 	s.zone = &zc
 	s.mu.Unlock()
 	return s.Save()
 }
 
-// Clear drops the membership (back to standalone) and persists. An
-// already-empty store returns without writing: repeated dissolve calls on a
-// standalone box (field: dissolve retry storms) must not cost a NAND write
-// each, and an in-memory-nil store already mirrors the standalone on-disk
-// state.
+// Clear ends the current group and persists. When a permanent group was set
+// aside for it, that permanent group becomes the current one again, so it forms
+// on its main speaker's next play exactly as before the temporary group;
+// otherwise the box is back to standalone. An already-empty store returns
+// without writing: repeated dissolve calls on a standalone box (field: dissolve
+// retry storms) must not cost a NAND write each, and an in-memory-nil store
+// already mirrors the standalone on-disk state.
 func (s *Store) Clear() error {
 	s.mu.Lock()
 	wasSet := s.zone != nil
-	s.zone = nil
+	s.zone, s.standing = s.standing, nil
+	s.mu.Unlock()
+	if !wasSet {
+		return nil
+	}
+	return s.Save()
+}
+
+// Forget drops the current group AND any permanent group set aside for it.
+// It is the user deleting the saved group, not a group ending.
+func (s *Store) Forget() error {
+	s.mu.Lock()
+	wasSet := s.zone != nil || s.standing != nil
+	s.zone, s.standing = nil, nil
 	s.mu.Unlock()
 	if !wasSet {
 		return nil
@@ -145,7 +209,7 @@ func (s *Store) Save() error {
 	var err error
 	if s.zone == nil {
 		b = []byte("{}\n")
-	} else if b, err = json.MarshalIndent(s.zone, "", "  "); err != nil {
+	} else if b, err = json.MarshalIndent(fileDoc{Zone: *s.zone, Standing: s.standing}, "", "  "); err != nil {
 		return fmt.Errorf("marshal zones: %w", err)
 	}
 	// Durable write (fsync + rename): a plain write+rename can leave the file at

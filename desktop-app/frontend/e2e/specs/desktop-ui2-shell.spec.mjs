@@ -280,10 +280,11 @@ test.describe('UI 2.0 shell', () => {
         await expect(on).toBeVisible();
         await mock.resetCalls();
         await on.click();
-        await mock.expectCalled('SetClockDisplay', { times: 1 });
-        const set = await mock.last('SetClockDisplay');
+        // The agent keeps the clock on the speaker (#979): the write goes there.
+        await mock.expectCalled('SetStandbyClock', { times: 1 });
+        const set = await mock.last('SetStandbyClock');
         expect(set.args[0]).toBe(BR.host);
-        expect(await mock.count('SetClockDisplay', onHost(LR.host))).toBe(0);
+        expect(await mock.count('SetStandbyClock', onHost(LR.host))).toBe(0);
       });
     });
 

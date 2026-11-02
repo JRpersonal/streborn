@@ -400,9 +400,24 @@ func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request)
 <providerSettings/>`))
 }
 
+// isAccountFullRead reports whether r is the firmware reading its account
+// document, GET /streaming/account/<id>/full.
+func isAccountFullRead(r *http.Request) bool {
+	if r == nil || r.URL == nil || r.Method != http.MethodGet {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/full")
+}
+
 // respondMargeAccountFull returns a "configured" Marge account.
 // When the box requests account info, we say "yes, you are logged in".
 func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request) {
+	// The same document also answers other account paths (the generic
+	// /streaming/account fallback); only the firmware's own read of the
+	// account counts as an account fetch.
+	if s.accountFetched != nil && isAccountFullRead(r) {
+		s.accountFetched()
+	}
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	// Reflect the box's pre-existing account-linked cloud sources (Deezer

@@ -2647,6 +2647,16 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .preset-transfer-btn { display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
 .preset-transfer-btn svg { flex: 0 0 auto; }
 .preset-xfer-select { margin-top: 8px; padding: 6px 8px; }
+/* The key choice of the transfer dialog (#1551): one ticked box per key. */
+.preset-xfer-keys { border: 1px solid var(--c-border); border-radius: 6px; margin: 8px 0 4px; padding: 6px 10px 8px; min-width: 0; }
+.preset-xfer-keys legend { padding: 0 4px; font-weight: 600; color: var(--c-text); }
+.preset-xfer-keys-bulk { display: flex; gap: 6px; margin-bottom: 6px; }
+.preset-xfer-keys-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; max-height: 260px; overflow-y: auto; }
+.preset-xfer-key { display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; min-width: 0; }
+.preset-xfer-key input { flex: 0 0 auto; margin: 0; }
+.preset-xfer-key .pxk-num { flex: 0 0 auto; color: var(--c-text-2); font-variant-numeric: tabular-nums; }
+.preset-xfer-key .pxk-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text); }
+.preset-xfer-keys-note { margin: 6px 0 0; font-size: 0.9em; color: var(--c-muted); }
 .chk-eta { margin-left: auto; font-weight: 400; white-space: nowrap; }
 .chk-row.chk-run { color: var(--c-text); font-weight: 500; }
 .chk-row.chk-done { color: var(--c-text-2); }

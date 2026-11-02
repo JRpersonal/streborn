@@ -89,3 +89,81 @@ test.describe('STR badge in Lithuanian', () => {
     }
   });
 });
+
+// Records every PUT /api/alarms the page sends and answers it with the body,
+// the way the agent answers with the saved document.
+async function recordAlarmSaves(page) {
+  const saves = [];
+  await page.route('**/api/alarms', async (route) => {
+    const req = route.request();
+    if (req.method() !== 'PUT') return route.fallback();
+    const body = JSON.parse(req.postData() || '{}');
+    saves.push(body);
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ...body, status: { clockTrusted: true, zoneResolved: true, maxSkipDates: 60 } }),
+    });
+  });
+  return saves;
+}
+
+// Switch-off at a time of day (discussion #1364): picking it shows the time
+// picker, the save carries offAt, and picking minutes again drops it.
+test('switch-off at a set time is saved as offAt, and dropped again', async ({ phone }) => {
+  const { page } = phone;
+  const saves = await recordAlarmSaves(page);
+  await openEditor(page);
+  await expect(page.locator('#alarmOffAtRow')).toBeHidden();
+  await page.locator('#alarmAutoOff').selectOption('at');
+  await expect(page.locator('#alarmOffAtRow')).toBeVisible();
+  await page.locator('#alarmOffAt').fill('20:00');
+  await page.locator('#btnAlarmSave').click();
+  await expect.poll(() => saves.length).toBe(1);
+  expect(saves[0].alarms[0].offAt).toBe('20:00');
+  expect(saves[0].alarms[0].autoOff).toBe(0);
+
+  // The saved answer re-opens on the time of day.
+  await openEditor(page);
+  await expect(page.locator('#alarmAutoOff')).toHaveValue('at');
+  await expect(page.locator('#alarmOffAt')).toHaveValue('20:00');
+  await page.locator('#alarmAutoOff').selectOption('60');
+  await expect(page.locator('#alarmOffAtRow')).toBeHidden();
+  await page.locator('#btnAlarmSave').click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[1].alarms[0].offAt).toBeUndefined();
+  expect(saves[1].alarms[0].autoOff).toBe(60);
+});
+
+// Days without an alarm (discussion #1491): each day is a chip with its
+// remove cross on the same line, adding and removing save at once, and the
+// list goes along sorted.
+for (const w of [390, 320]) {
+  test(`skip dates: add and remove at ${w}px`, async ({ phone }) => {
+    const { page } = phone;
+    await page.setViewportSize({ width: w, height: 844 });
+    const saves = await recordAlarmSaves(page);
+    await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+    const chips = page.locator('#alarmSkipList > span');
+    await expect(chips).toHaveCount(3);
+    for (const box of await chips.evaluateAll((els) => els.map((e) => {
+      const r = e.getBoundingClientRect();
+      const x = e.querySelector('button').getBoundingClientRect();
+      return { right: r.right, sameLine: Math.abs((x.top + x.bottom) / 2 - (r.top + r.bottom) / 2) < 4 };
+    }))) {
+      expect(box.sameLine).toBe(true);
+      expect(box.right).toBeLessThanOrEqual(w);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.locator('#alarmSkipDate').fill('2026-12-31');
+    await page.locator('#btnAlarmSkipAdd').click();
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].skipDates).toEqual(['2026-12-24', '2026-12-25', '2026-12-31', '2027-01-01']);
+    await expect(chips).toHaveCount(4);
+
+    await page.locator('#alarmSkipList [data-skip-del="0"]').click();
+    await expect.poll(() => saves.length).toBe(2);
+    expect(saves[1].skipDates).toEqual(['2026-12-25', '2026-12-31', '2027-01-01']);
+    await expect(chips).toHaveCount(3);
+  });
+}

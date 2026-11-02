@@ -233,11 +233,14 @@ func (s *Server) evaluateAlarms(now time.Time) {
 	s.alarmState.Prune(keep)
 	s.acknowledgeAlarmEdits(doc, now, loc)
 
+	// A skipped day (a holiday on the user's list) has no due instant at all,
+	// so nothing below fires on it; the next ring is the next unskipped day.
+	skip := doc.Skips()
 	for _, a := range doc.Alarms {
 		if !a.Enabled {
 			continue
 		}
-		due, ok := a.MostRecentDue(now, loc)
+		due, ok := a.MostRecentDue(now, loc, skip)
 		if !ok || now.Sub(due) > alarmGrace {
 			continue
 		}
@@ -265,17 +268,24 @@ func (s *Server) acknowledgeAlarmEdits(doc alarm.Document, now time.Time, loc *t
 		prev[a.ID] = a
 	}
 	zoneChanged := doc.Zone != s.alarmSeen.Zone
+	oldSkip, skip := s.alarmSeen.Skips(), doc.Skips()
 	s.alarmSeen = doc
 
 	for _, a := range doc.Alarms {
 		if !a.Enabled {
 			continue
 		}
+		due, ok := a.MostRecentDue(now, loc, skip)
 		old, had := prev[a.ID]
 		if had && old.Enabled && !zoneChanged && old.SameSchedule(a) {
-			continue
+			// Same time and days, but the skip dates can still have moved
+			// the due instant: taking today off the list at 06:31 is an
+			// edit like any other and must not ring the 06:30 alarm at once.
+			before, wasDue := a.MostRecentDue(now, loc, oldSkip)
+			if wasDue == ok && before.Equal(due) {
+				continue
+			}
 		}
-		due, ok := a.MostRecentDue(now, loc)
 		if !ok || now.Sub(due) > alarmGrace {
 			continue
 		}
@@ -376,7 +386,7 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 	status := s.alarmRecallSlot(ctx, a.Slot)
 	gen := s.RecallGeneration()
 	s.logger.Info("alarm: fired", "id", a.ID, "slot", a.Slot, "volume", a.Volume,
-		"autoOffMin", a.AutoOff, "status", status)
+		"autoOffMin", a.AutoOff, "offAt", a.OffAt, "status", status)
 
 	if status >= 400 {
 		// The recall refused for a structural reason (an unplayable Spotify
@@ -389,7 +399,7 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 		return
 	}
 	s.ringArmed(ring, gen)
-	if a.AutoOff > 0 {
+	if after, ok := s.alarmSwitchOffAfter(a, due); ok && after > 0 {
 		// The sleep timer, armed from here: the same standby, the same "already
 		// asleep, stand down" guard and the same NoteUserStop (#419), and it
 		// shows on the phone's sleep card so the user can see it and cancel it.
@@ -399,18 +409,49 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 		//
 		// A monotonic timer is right here, unlike the scheduler above: this is
 		// armed at fire time, a moment the scheduler has already judged the
-		// clock trustworthy, and it counts tens of minutes rather than hours.
+		// clock trustworthy, so there is no decade-sized jump left to miss.
+		// A time-of-day switch-off is turned into a duration at this moment
+		// for the same reason.
 		//
 		// After a snooze this arms it afresh: the switch-off counts from the
 		// latest ring, and the snooze cancelled the one the earlier ring armed.
-		s.armSleep(time.Duration(a.AutoOff)*time.Minute, false)
+		// A time-of-day switch-off stays at its time of day.
+		s.armSleep(after, false)
 		s.ringNoteAutoOff(ring, s.sleepGeneration())
+	} else if ok {
+		// Only reachable for a time of day, after a snooze rang past it.
+		// Switching off the alarm that has just started ringing would be the
+		// worse surprise; the user is plainly awake to end it.
+		s.logger.Info("alarm: the switch-off time has already passed, not switching off", "id", a.ID, "offAt", a.OffAt)
 	}
 	s.alarmBackground.Add(1)
 	go func() {
 		defer s.alarmBackground.Done()
 		s.verifyAlarm(a, due, gen, firedAt, ring)
 	}()
+}
+
+// alarmSwitchOffAfter is how long from now a (re)fire of a, due at due, lets
+// the speaker play before switching it off, and whether it switches off at
+// all. A duration of zero or less means a time-of-day switch-off that has
+// already passed.
+//
+// A switch-off after some minutes is exactly that many minutes from now, the
+// moment this (re)fire rings. A time of day is resolved against the
+// document's zone and the scheduler's clock, so the duration is the real time
+// until that wall-clock reading, DST included (alarm.Alarm.SwitchOff).
+func (s *Server) alarmSwitchOffAfter(a alarm.Alarm, due time.Time) (time.Duration, bool) {
+	if a.OffAt == "" {
+		if a.AutoOff > 0 {
+			return time.Duration(a.AutoOff) * time.Minute, true
+		}
+		return 0, false
+	}
+	until, ok := a.SwitchOff(due, due, s.alarmLoc())
+	if !ok {
+		return 0, false
+	}
+	return until.Sub(s.alarmNowTime()), true
 }
 
 // alarmVerifyStandsDownForRing reports, and records, whether the verify of
