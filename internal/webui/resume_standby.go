@@ -915,13 +915,18 @@ func (s *Server) boxInZone() bool {
 			"master", doc.Master, "slaves", len(doc.Slaves))
 		return true
 	}
-	if err := s.zones.Clear(); err != nil {
+	if err := s.clearZoneDoc(); err != nil {
 		s.logger.Warn("zone: could not drop the stored group the speaker no longer has", "err", err)
 		return true // the document is still there, so keep answering as before
 	}
 	s.forgetZoneDocDoubt()
 	s.logger.Warn("zone: the speaker confirmed twice it is not in the stored group, dropped the document so power-on resume works again",
 		"master", doc.Master, "slaves", len(doc.Slaves))
+	// A permanent group that was set aside for the dropped one is current again,
+	// and a permanent group is answered as above.
+	if back, ok := s.zones.Get(); ok && back.Permanent {
+		return true
+	}
 	return false
 }
 
