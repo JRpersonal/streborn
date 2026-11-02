@@ -537,13 +537,17 @@ export function wirePresetTransferRow() {
     const allOpt = targets.length > 1
       ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
       : '';
-    // A speaker with the second row of keys (#1110) copies both rows, and the
-    // confirmation says that both rows on the target are replaced.
+    // A speaker with the second row of keys (#1110) copies both rows. The
+    // intro is neutral; the line under it follows the key choice (#1551): all
+    // ticked replaces the keys on the target, some ticked keeps the others.
     const twoRows = boxPresetRows(box, state.presets) >= 2;
     const sourcePresets = state.presets.slice();
     const sourceKeys = transferableKeys(sourcePresets, boxMaxSlot(box, sourcePresets));
-    const body = `<p>${escapeHtml(t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp'))}</p>`
-      + (twoRows ? `<p>${escapeHtml(t('presets.transferReplacesBoth'))}</p>` : '')
+    const intro = sourceKeys.length
+      ? t('presets.transferIntro')
+      : t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp');
+    const body = `<p>${escapeHtml(intro)}</p>`
+      + `<p id="presetXferScope">${escapeHtml(transferScopeText(twoRows, true))}</p>`
       + transferKeysMarkup(sourceKeys)
       + `<select id="presetXferTarget" class="preset-xfer-select" style="width:100%;box-sizing:border-box;">${opts}${allOpt}</select>`;
     const asked = confirmWarn(t('settingsView.copyPresetsHeading'), body, {
@@ -551,7 +555,7 @@ export function wirePresetTransferRow() {
       confirmClass: 'btn btn-warning',
     });
     // The dialog body is in place as soon as confirmWarn returns.
-    wireTransferKeys();
+    wireTransferKeys(twoRows);
     const ok = await asked;
     if (!ok) return;
     const sel = document.querySelector('#presetXferTarget');
@@ -589,6 +593,14 @@ export function transferableKeys(presets, maxSlot) {
     .sort((a, b) => a.slot - b.slot);
 }
 
+// transferScopeText is the line under the intro: with every key ticked the
+// copy replaces the keys on the target; with a choice only the ticked keys go
+// and the target's other keys stay as they are.
+export function transferScopeText(twoRows, allTicked) {
+  if (!allTicked) return t('presets.transferKeysNote');
+  return t(twoRows ? 'presets.transferReplacesBoth' : 'presets.transferReplacesRow');
+}
+
 // transferKeysMarkup is the key choice in the transfer dialog: one ticked box
 // per key that holds something, named "Key 2" or "Key 1 · 2×" plus the
 // station, and an All / None pair for the long list of two rows.
@@ -605,19 +617,27 @@ function transferKeysMarkup(keys) {
     + `<button type="button" class="btn btn-mini" data-xfer-keys="none">${escapeHtml(t('presets.transferKeysClear'))}</button>`
     + `</div>`
     + `<div class="preset-xfer-keys-list">${rows}</div>`
-    + `<p class="preset-xfer-keys-note">${escapeHtml(t('presets.transferKeysNote'))}</p>`
     + `</fieldset>`;
 }
 
-// wireTransferKeys hooks up the All / None buttons of the key choice.
-function wireTransferKeys() {
+// wireTransferKeys hooks up the All / None buttons of the key choice and
+// keeps the scope line in step with what is ticked.
+function wireTransferKeys(twoRows) {
+  const boxes = () => [...document.querySelectorAll('#presetXferKeys input[type="checkbox"]')];
+  const sync = () => {
+    const line = document.querySelector('#presetXferScope');
+    const list = boxes();
+    if (line) line.textContent = transferScopeText(twoRows, list.length === 0 || list.every((c) => c.checked));
+  };
   document.querySelectorAll('#presetXferKeys [data-xfer-keys]').forEach((b) => {
     b.onclick = (ev) => {
       ev.preventDefault();
       const on = b.dataset.xferKeys === 'all';
-      document.querySelectorAll('#presetXferKeys input[type="checkbox"]').forEach((c) => { c.checked = on; });
+      boxes().forEach((c) => { c.checked = on; });
+      sync();
     };
   });
+  boxes().forEach((c) => { c.onchange = sync; });
 }
 
 // runKeyTransfer copies only the chosen keys (slots) of box onto the chosen
@@ -654,7 +674,7 @@ export async function runKeyTransfer({ box, targets, val, slots, report = null }
   else {
     // The progress toast is sticky; the dialog says the rest, one speaker per line.
     hideToast();
-    showError(lines.join('\n'));
+    showError(lines.join('\n'), kind === 'warn' ? { title: t('presets.keyCopyPartialTitle') } : undefined);
   }
 }
 

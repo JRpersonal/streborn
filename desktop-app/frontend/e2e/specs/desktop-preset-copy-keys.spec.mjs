@@ -40,7 +40,16 @@ test.describe('classic layout', () => {
     await expect(keyBoxes(page)).toHaveCount(8);
     for (const box of await keyBoxes(page).all()) await expect(box).toBeChecked();
     await expect(page.locator('#presetXferKeys')).toContainText(en('preset.row2.key', { n: 1 }));
-    await expect(page.locator('#presetXferKeys')).toContainText(en('presets.transferKeysNote'));
+    // Neutral intro; with every key ticked the line under it says the keys
+    // on the target are replaced, with a choice that the others stay.
+    await expect(page.locator('#warnBody')).toContainText(en('presets.transferIntro'));
+    await expect(page.locator('#warnBody')).not.toContainText(en('settingsView.copyPresetsHelpAll'));
+    const scope = page.locator('#presetXferScope');
+    await expect(scope).toHaveText(en('presets.transferReplacesBoth'));
+    await keyBox(page, 3).uncheck();
+    await expect(scope).toHaveText(en('presets.transferKeysNote'));
+    await page.locator('#presetXferKeys [data-xfer-keys="all"]').click();
+    await expect(scope).toHaveText(en('presets.transferReplacesBoth'));
     await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
     await page.locator('#warnConfirm').click();
     await mock.expectCalled('CopyPresetsAcrossBoxes', { times: 1 });
@@ -72,6 +81,8 @@ test.describe('classic layout', () => {
       await page.locator('#warnConfirm').click();
       await mock.expectCalled('CopyPresetKeysAcrossBoxes', { times: 1 });
       await expect(page.locator('#errorModal')).toBeVisible();
+      // Partly copied is not an error: the dialog says so in its heading.
+      await expect(page.locator('#errorModal .warn-title')).toHaveText(new RegExp(en('presets.keyCopyPartialTitle')));
       const text = await page.locator('#errorText').inputValue();
       expect(text).toContain(en('presets.keyCopyCopied', { target: BR.friendlyName, keys: en('preset.key', { n: 3 }) }));
       expect(text).toContain(en('presets.keyCopyOnOtherKey', {
