@@ -94,3 +94,27 @@ func TestStandbyClockEndpoint(t *testing.T) {
 		t.Fatalf("WAN caller: %d", rr.Code)
 	}
 }
+
+// The phone page's display card carries the clock's brightness (#1226),
+// against the same agent endpoint, in every locale it speaks.
+func TestPhoneRemoteClockBrightnessRow(t *testing.T) {
+	for _, want := range []string{
+		"standbyClock: '/api/box/standby-clock'",
+		`id="dsBrightWrap" hidden`,
+		"sc.brightnessSupported === true",
+		"sc.hasClock !== false",
+		"{ brightness: parseInt(sl.value, 10) }",
+		"r.result.brightnessHonoured === false",
+		"sl.addEventListener('change', saveBright);",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("phone brightness row: %q is gone", want)
+		}
+	}
+	bundles := strings.Count(indexHTML, "now:\"")
+	for _, key := range []string{"dsBright", "dsBrightHint", "dsBrightKept"} {
+		if got := strings.Count(indexHTML, ","+key+":\""); got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
