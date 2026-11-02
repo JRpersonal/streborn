@@ -441,8 +441,13 @@ func (a *agent) buildMarge() error {
 	store, foreignPresets, regionRes := a.store, a.foreignPresets, a.regionRes
 
 	// Initialize subsystems
+	// Every account read the firmware makes during boot drops its key
+	// registrations; check the keys once more after the last one.
+	bootAccountResync := newAccountResync(accountResyncBootWindow, accountResyncDelay,
+		askPresetRecheckAfterAccountRead(logger))
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
+		marge.WithAccountFetchHook(bootAccountResync.noteAccountRead),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		// Persist the stereo-pair record so the firmware's group poll keeps
 		// getting the same answer across agent restarts (a "not grouped"
