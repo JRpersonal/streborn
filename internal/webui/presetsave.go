@@ -133,8 +133,8 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 	// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
 	// recalls into the agent play-queue. It skips the radio/spotify URL gates
 	// below; require at least one item with a URL instead, mirroring their
-	// 422 shape. The dedup loop below is keyed on URI/StreamURL, both empty
-	// here, so it is harmless for queue presets and leaves other slots alone.
+	// 422 shape. The station dedup loop below is keyed on URI/StreamURL, both
+	// empty here; a folder has its own rule (folderConflict).
 	if p.Type == "queue" {
 		hasItem := false
 		for _, it := range p.Items {
@@ -155,6 +155,16 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		// 2026-08-31). Log the trim; SetSlot below does the actual capping.
 		if n := len(p.Items); n > presets.MaxQueueItems {
 			s.logger.Info("queue preset capped to fit NAND", "slot", slot, "requested", n, "kept", presets.MaxQueueItems)
+		}
+		// One folder, one key (#1695), for a real save gesture (?save=live,
+		// the Library's "save folder to a key"). The other PUTs re-write sets
+		// the user already had (a backup restore, the keys kept over a
+		// reinstall, a copy from another speaker), and a folder an older agent
+		// let onto two keys must come back on both rather than lose one.
+		if req.Live {
+			if ref := s.folderConflict(p, slot, req.UserAgent, req.RemoteAddr); ref != nil {
+				return presets.Preset{}, ref
+			}
 		}
 		prevQ, hadQ := s.presets.Get(slot)
 		if err := s.storeQueuePreset(ctx, p); err != nil {

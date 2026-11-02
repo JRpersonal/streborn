@@ -134,6 +134,11 @@ func (s *Server) SavePlaying(r *http.Request, slot int) (HoldSaved, error) {
 				s.NoteQueueSavedSlot(slot)
 				return HoldSaved{Slot: slot, Kind: "queue", Name: prev.Name, Unchanged: true}, nil
 			}
+			// One folder, one key (#1695): the PUT's own 409 already-on-slot,
+			// which handleSavePlaying re-emits for the move offer.
+			if ref := s.folderConflict(q, slot, ua, remote); ref != nil {
+				return HoldSaved{}, holdSaveErrorFrom(ref)
+			}
 			if err := s.storeQueuePreset(ctx, q); err != nil {
 				return HoldSaved{}, err
 			}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -159,11 +158,9 @@ func (s *Server) SaveSnapshot(ctx context.Context, snap PlayingSnapshot, slot in
 			samePresetItems(cur, p) && cur.Name == p.Name && cur.Source == p.Source {
 			return HoldSaved{Slot: slot, Kind: "queue", Name: cur.Name, Unchanged: true}, nil
 		}
-		for _, other := range s.presets.All() {
-			if other.Slot != slot && other.Type == "queue" && samePresetItems(other, p) &&
-				strings.EqualFold(other.Source, p.Source) {
-				return HoldSaved{}, &HoldSaveError{Code: "already-on-slot", OtherSlot: other.Slot, OtherName: other.Name}
-			}
+		// One folder, one key (#1695), by the rule every folder save uses.
+		if other, dup := s.folderOnOtherSlot(p, slot); dup {
+			return HoldSaved{}, &HoldSaveError{Code: "already-on-slot", OtherSlot: other.Slot, OtherName: other.Name}
 		}
 		if err := s.storeQueuePreset(ctx, p); err != nil {
 			return HoldSaved{}, err

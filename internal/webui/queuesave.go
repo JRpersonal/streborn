@@ -172,10 +172,58 @@ func (s *Server) storeQueuePreset(ctx context.Context, p presets.Preset) error {
 	return nil
 }
 
+// folderOnOtherSlot returns the key other than slot that already holds the
+// folder p (presets.SameFolder), lowest key first. A key that holds the folder
+// itself is no collision: re-saving a folder onto its own key is always fine,
+// also when an older agent left the same folder on a second key as well.
+func (s *Server) folderOnOtherSlot(p presets.Preset, slot int) (presets.Preset, bool) {
+	if s.presets == nil || p.Type != presets.TypeQueue {
+		return presets.Preset{}, false
+	}
+	if cur, have := s.presets.Get(slot); have && presets.SameFolder(cur, p) {
+		return presets.Preset{}, false
+	}
+	var hit presets.Preset
+	found := false
+	for _, other := range s.presets.All() {
+		if other.Slot == slot || !presets.SameFolder(other, p) {
+			continue
+		}
+		if !found || other.Slot < hit.Slot {
+			hit, found = other, true
+		}
+	}
+	return hit, found
+}
+
+// folderConflict is the one-folder-one-key refusal (#1695), the folder
+// counterpart of the station rule of #836: a music-library folder that already
+// sits on another key is not stored a second time. A hold on a key tile is a
+// long click, and one that landed on a key by accident put the album playing
+// from key 3 onto key 6 as well. The answer is the station guard's own 409
+// body, so the apps show the same "already on key N" note with the offer to
+// move it. nil when the folder is on no other key.
+func (s *Server) folderConflict(p presets.Preset, slot int, ua, remote string) *presetRefusal {
+	other, dup := s.folderOnOtherSlot(p, slot)
+	if !dup {
+		return nil
+	}
+	s.logger.Info("preset save refused: this music-library folder is already on another slot",
+		"slot", slot, "existingSlot", other.Slot, "name", other.Name, "source", other.Source,
+		"from", remote, "ua", ua)
+	s.noticeAppRefused(ua, other.Slot)
+	return jsonPresetRefusal(http.StatusConflict, map[string]any{
+		"code": "already-on-slot",
+		"slot": other.Slot,
+		"name": other.Name,
+	})
+}
+
 // handleQueueSaveSlot answers POST /api/queue/save-slot {"slot": N}: store the
 // folder that plays now as a queue preset on key N (the app's hold-to-save
 // while a library folder plays, #1030). 409 with code "no-queue" when no
-// folder plays, so the app can fall back to its other save paths.
+// folder plays, so the app can fall back to its other save paths, and 409
+// already-on-slot when the folder already sits on another key (#1695).
 func (s *Server) handleQueueSaveSlot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -200,6 +248,10 @@ func (s *Server) handleQueueSaveSlot(w http.ResponseWriter, r *http.Request) {
 			"error": "No music-library folder is playing right now.",
 			"code":  "no-queue",
 		})
+		return
+	}
+	if ref := s.folderConflict(p, req.Slot, r.Header.Get("User-Agent"), r.RemoteAddr); ref != nil {
+		writePresetRefusal(w, ref)
 		return
 	}
 	prev, had := s.presets.Get(req.Slot)
