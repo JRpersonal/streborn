@@ -89,6 +89,10 @@ export function renderSoundSections() {
         <button class="btn btn-mini toggle-btn" id="displayTrackOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayTrackOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
+      <!-- Each note sits under the row it explains (#1677): the clock note
+           below the track notes read as a label that had lost its control. -->
+      <small class="muted small" id="displayTrackHelp">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <small class="muted small hidden" id="displayTrackHelpPanel">${escapeHtml(t('settingsView.displayTrackHelpPanel'))}</small>
       <div class="setting-row hidden" id="displayTrackModeRow">
         <span class="muted small" style="margin-right:6px">${escapeHtml(t('settingsView.displayTrackModeLabel'))}</span>
         <button class="btn btn-mini toggle-btn" id="displayTrackModeArtist">${escapeHtml(t('settingsView.displayTrackModeArtist'))}</button>
@@ -100,6 +104,7 @@ export function renderSoundSections() {
         <button class="btn btn-mini toggle-btn" id="displayClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
+      <small class="muted small hidden" id="displayClockHelp">${escapeHtml(t('settingsView.displayClockHelp'))}</small>
       <figure class="display-preview hidden" id="displayPreview">
         <img id="displayPreviewImg" alt="${escapeAttr(t('settingsView.displayPreviewAlt'))}" width="192" height="150">
         <figcaption class="muted small">${escapeHtml(t('settingsView.displayPreviewCaption'))}</figcaption>
@@ -108,9 +113,6 @@ export function renderSoundSections() {
         <div class="warn-icon-inline">&#9888;</div>
         <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
       </div>
-      <small class="muted small" id="displayTrackHelp">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
-      <small class="muted small hidden" id="displayTrackHelpPanel">${escapeHtml(t('settingsView.displayTrackHelpPanel'))}</small>
-      <small class="muted small hidden" id="displayClockHelp">${escapeHtml(t('settingsView.displayClockHelp'))}</small>
       <small class="fw-warn small hidden" id="displayTrackUnknown">${escapeHtml(t('settingsView.displayTrackUnknown'))}</small>
     </div>
 
