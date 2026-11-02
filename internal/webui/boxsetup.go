@@ -120,6 +120,17 @@ func (s *Server) BoxSetup() (state string, episodes, lastSec int) {
 	return "stale", episodes, lastSec
 }
 
+// WLANChangeInProgress reports whether an STR Wi-Fi change (switch, clear,
+// forget) holds the Wi-Fi lock right now, so a background radio action such as
+// the agent's lease recovery can stand aside instead of interleaving with it.
+func (s *Server) WLANChangeInProgress() bool {
+	if s.wlanMu.TryLock() {
+		s.wlanMu.Unlock()
+		return false
+	}
+	return true
+}
+
 // boxSetupDebug is the box_setup_episodes bundle section: the counters plus
 // the two ages that say whether STR was fighting the firmware or watching it.
 func (s *Server) boxSetupDebug() map[string]any {
