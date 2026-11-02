@@ -658,6 +658,9 @@ func (m *Manager) noteLibrespotLine(line string) {
 		if run == keyRefusalRunTrips {
 			m.logger.Warn("spotify: Spotify is refusing the audio key for track after track, so nothing plays through this engine; the speaker's own Spotify entry is unaffected",
 				"tracksInARow", run)
+			// Once per episode (the run hits the trip count exactly once):
+			// remember which account it was, for the sticky notice.
+			m.noteKeyRefusalEpisode()
 			// And stop it there. Letting the engine walk the rest of the playlist
 			// achieves nothing (not one of those tracks will play) and it is not
 			// harmless: on a fleet measured on 2026-09-26 the engine crashed and

@@ -57,6 +57,19 @@ trips the five-refusal run and gets paused by the agent; a newer one trips
 a recall during its back-off fails at once with an explaining message
 instead of waiting out the load timeouts.
 
+`AudioKeyRefused()` lasts ten minutes. For the apps the speaker also keeps
+a sticky, per-account record (`internal/spotify/accountrefused.go`,
+discussion #1671): each refusal episode (either trip above, deduplicated
+within the 30 s run gap) asks the engine once which account is logged in
+and stores it in `sp-accounts/refused.json` beside `names.json` and
+`plans.json`, written only when an account is added or removed. The first
+audio page the Ogg drain sees for that account (real decoded audio, which a
+refused account never produces) removes it again. `/spotify/info` reports
+`accountRefused` (true only for the account logged in now) and
+`accountRefusedName`; the desktop app shows a short notice in the
+now-playing area and the UI 2.0 Spotify accounts card, the phone page under
+its now-playing line, both only while STR's Spotify is the source.
+
 ## Decision update (2026-06-04): go-librespot is the open backend, not librespot-org
 
 The earlier spike picked librespot-org (MIT) as the sidecar. Building the

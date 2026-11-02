@@ -8,6 +8,7 @@
 
 import { spotifySaveContextURI } from '../utils.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
+import { refusalFromReply } from '../spotifyrefused.js';
 
 // A location of this shape is Spotify on the speaker: STR's own engine stream
 // or the speaker's native Spotify entry. The same test savePresetCase makes
@@ -72,11 +73,15 @@ export function keySlots(presets, uri) {
 //   saved    no live session, but a stored login the speaker signs in with
 //   none     never picked in the Spotify app, nothing stored
 //
+// refused is true while the speaker says Spotify refuses the account it is
+// logged in as on (STR) (spotifyrefused.js): the row then carries the same
+// short notice as the now-playing area.
+//
 // plan is 'premium', 'free' (a key cannot start a playlist then) or '' when the
 // speaker could not find out. others are the other accounts the speaker keeps
 // a login for, by name.
 export function accountRow(box, reply, names) {
-  const row = { host: box.host, port: box.port, name: box.name, state: 'unknown', account: '', plan: '', others: [] };
+  const row = { host: box.host, port: box.port, name: box.name, state: 'unknown', account: '', plan: '', others: [], refused: false };
   if (box.offline) return { ...row, state: 'offline' };
   const np = reply || null;
   const canRecall = np && np.canRecall !== null && np.canRecall !== undefined ? !!np.canRecall : undefined;
@@ -89,6 +94,7 @@ export function accountRow(box, reply, names) {
   } else {
     row.state = canRecall ? 'saved' : 'none';
   }
+  row.refused = !!refusalFromReply(np);
   const product = String(np.product || '').toLowerCase();
   if (product === 'premium') row.plan = 'premium';
   else if (product === 'free' || product === 'open' || np.premiumRequired) row.plan = 'free';

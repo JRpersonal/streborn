@@ -7,6 +7,7 @@ import { t } from '../../i18n/index.js';
 import { nowKeyTag } from '../../presetrows.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
+import { refusalNoticeFor } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
@@ -237,6 +238,14 @@ export function renderNowPlayingBar() {
     swapRow.classList.toggle('hidden', !offered);
     const box = $('titleSwapToggle');
     if (box && offered) box.checked = !!state.nowTitleSwapped;
+  }
+  // Spotify refuses the account on (STR): a short notice under the line for
+  // as long as the speaker says so, never as a toast (spotifyrefused.js).
+  const refusedRow = $('spotifyRefusedRow');
+  if (refusedRow) {
+    const refusedText = refusalNoticeFor(state, t);
+    refusedRow.classList.toggle('hidden', !refusedText);
+    if (refusedRow.textContent !== refusedText) refusedRow.textContent = refusedText;
   }
   // Match the source case-insensitively: the firmware is not consistent about
   // casing across models, and AirPlay in particular can read as AIRPLAY,

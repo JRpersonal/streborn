@@ -30,6 +30,7 @@ export function musicViewMarkup() {
       </div>
     </div>
     <label class="title-swap-row hidden" id="titleSwapRow"><input type="checkbox" id="titleSwapToggle"> <span>${escapeHtml(t('status.titleSwap'))}</span></label>
+    <p class="spotify-refused-row hidden" id="spotifyRefusedRow" role="status"></p>
     <div class="group-control" id="groupControl"></div>
     <div class="controls">
       <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>

@@ -254,6 +254,17 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		m.noteEngineAccount(account)
 	}
 	product := m.productPlan()
+	// The sticky refusal is about the account logged in NOW: another account
+	// of the household that Spotify refused must not put the notice on this
+	// one. An engine that did not answer is judged by the account it was last
+	// seen logged in as.
+	refusedUser := account
+	if !accountOK {
+		m.mu.Lock()
+		refusedUser = m.productUser
+		m.mu.Unlock()
+	}
+	refused, refusedName := m.accountRefusedFor(refusedUser)
 	// Prefer the live track from /status over the laggy cached metadata events.
 	lt, la, lc, state := m.liveNowPlayingState(r.Context())
 	switch state {
@@ -316,6 +327,16 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// entry keeps working on the same account, so the message has to say
 		// that too or it reads as "Spotify is broken".
 		AudioKeyRefused bool `json:"audioKeyRefused"`
+		// AccountRefused is the sticky form of AudioKeyRefused: Spotify refused
+		// a whole run of audio keys for the account the engine is logged in as,
+		// and that account has not played through this engine since. It stays
+		// true across reboots until the account actually streams audio, which is
+		// what a free account or one in Spotify's newer-DRM cohort never does
+		// here (accountrefused.go). AccountRefusedName is that account's display
+		// name when the speaker knows it. audioKeyRefused stays as it was, for
+		// older apps.
+		AccountRefused     bool   `json:"accountRefused"`
+		AccountRefusedName string `json:"accountRefusedName,omitempty"`
 		// GroupedRefusal is true when this speaker has just refused to be driven
 		// because it is a MEMBER of a multiroom group: the firmware answers
 		// SetAVTransportURI with 501 "Can't control member of group", nothing
@@ -347,23 +368,25 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// tell a working pair advert from a no-op.
 		Stereo StereoStatus `json:"stereo"`
 	}{
-		Ready:           m.Ready(),
-		Bitrate:         m.Bitrate(),
-		Name:            m.DeviceName(),
-		Track:           track,
-		Artist:          artist,
-		Cover:           cover,
-		Context:         context,
-		Account:         account,
-		AccountNames:    m.AccountNames(),
-		PremiumRequired: m.PremiumRequired(),
-		CanRecall:       m.CanRecall(r.Context()),
-		Product:         product,
-		LowDisk:         lowDisk,
-		LowDiskFreeKB:   lowDiskFreeKB,
-		AudioKeyRefused: m.AudioKeyRefused(),
-		GroupedRefusal:  m.GroupedRefusal(),
-		Stereo:          m.StereoStatusNow(),
+		Ready:              m.Ready(),
+		Bitrate:            m.Bitrate(),
+		Name:               m.DeviceName(),
+		Track:              track,
+		Artist:             artist,
+		Cover:              cover,
+		Context:            context,
+		Account:            account,
+		AccountNames:       m.AccountNames(),
+		PremiumRequired:    m.PremiumRequired(),
+		CanRecall:          m.CanRecall(r.Context()),
+		Product:            product,
+		LowDisk:            lowDisk,
+		LowDiskFreeKB:      lowDiskFreeKB,
+		AudioKeyRefused:    m.AudioKeyRefused(),
+		AccountRefused:     refused,
+		AccountRefusedName: refusedName,
+		GroupedRefusal:     m.GroupedRefusal(),
+		Stereo:             m.StereoStatusNow(),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

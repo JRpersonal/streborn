@@ -791,6 +791,16 @@ html.ui2 .ui2-player .title-swap-row {
   margin: 0;
   font-size: 12px;
 }
+html.ui2 .ui2-player .spotify-refused-row {
+  margin: 0;
+  padding: 2px 8px;
+  border-left: 3px solid var(--u-warn);
+  border-radius: 0;
+  background: transparent;
+  color: var(--u-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
 html.ui2 .ui2-player .controls {
   flex-wrap: nowrap;
   margin-bottom: 0;
@@ -1087,6 +1097,7 @@ html.ui2 #view-spotify .sp2-acct.is-offline .sp2-acct-name { color: var(--u-mute
 html.ui2 #view-spotify .sp2-acct-line { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
 html.ui2 #view-spotify .sp2-acct-line.sp2-muted { color: var(--u-muted); }
 html.ui2 #view-spotify .sp2-acct-plan.is-free { color: var(--u-warn); }
+html.ui2 #view-spotify .sp2-acct-refused { padding-left: 8px; border-left: 3px solid var(--u-warn); }
 
 html.ui2 #view-spotify .sp2 :focus-visible {
   outline: 2px solid var(--u-focus);

@@ -202,6 +202,16 @@ type SpotifyNow struct {
 	// Nothing on the speaker causes it and nothing on the speaker fixes it, so
 	// the app's job is only to say what happened.
 	AudioKeyRefused bool `json:"audioKeyRefused"`
+	// AccountRefused is the sticky form: Spotify refused the account the
+	// speaker's engine is logged in as, and that account has not played through
+	// the engine since (internal/spotify/accountrefused.go). It survives reboots
+	// and clears only when the account streams audio, so the app can keep a
+	// short notice up for as long as it is true. AccountRefusedName is the
+	// account's display name when the speaker knows it. Both absent on an older
+	// agent, which the app then reads as false and falls back to
+	// AudioKeyRefused.
+	AccountRefused     bool   `json:"accountRefused"`
+	AccountRefusedName string `json:"accountRefusedName,omitempty"`
 	// CanRecall reports whether a Spotify preset key on this speaker could play
 	// at all (a live session or a stored credential). A POINTER on purpose: an
 	// agent older than this field sends nothing, and nil has to stay
