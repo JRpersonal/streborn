@@ -225,3 +225,27 @@ func TestPhoneRemoteAlarmHasASnoozeLength(t *testing.T) {
 		t.Error("the snooze length has to be captured before the editor re-renders")
 	}
 }
+
+// The switch-off can also be a time of day (discussion #1364): a choice in the
+// same list that reveals the platform time picker, captured like every other
+// DOM-only field and dropped again when the user picks minutes or Never.
+func TestPhoneRemoteAlarmSwitchOffAtATimeOfDay(t *testing.T) {
+	for _, want := range []string{
+		`'<option value="at"'`,
+		`<input type="time" id="alarmOffAt"`,
+		"row.hidden = offSel.value !== 'at';",
+		"alarmDraft.offAt = String(offAtIn.value).slice(0, 5);",
+		"delete alarmDraft.offAt;",
+		"T.alarmOffAtHint",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the time-of-day switch-off is missing %s", want)
+		}
+	}
+	bundles := strings.Count(indexHTML, "now:\"")
+	for _, key := range []string{"alarmOffAt", "alarmOffAtHint"} {
+		if got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}

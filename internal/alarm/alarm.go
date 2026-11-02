@@ -50,6 +50,10 @@ const (
 	DefaultSnoozeMinutes = 9
 )
 
+// clockLayout is the "HH:MM" form of a switch-off time of day, a wall-clock
+// value in the document's zone, never UTC.
+const clockLayout = "15:04"
+
 // SnoozeChoices are the snooze lengths an alarm may carry, in minutes. The
 // editor offers exactly these; zero on the alarm means DefaultSnoozeMinutes.
 var SnoozeChoices = []int{5, 9, 10, 15}
@@ -78,6 +82,13 @@ type Alarm struct {
 	// omitempty on an int cannot tell absent from zero, so the editor supplies
 	// the useful default instead of hiding one here.
 	AutoOff int `json:"autoOff,omitempty"`
+	// OffAt switches this speaker off at a time of day instead, "HH:MM" in
+	// the document's zone (discussion #1364). It is the first such moment
+	// after the alarm's due time, so a time earlier than the alarm means the
+	// next day: an alarm at 07:00 with OffAt "01:00" plays for 18 hours. When
+	// it is set, AutoOff is ignored and cleared on save. Empty means the
+	// switch-off follows AutoOff.
+	OffAt string `json:"offAt,omitempty"`
 	// Snooze is how many minutes a snoozed alarm stays quiet before it rings
 	// again, one of SnoozeChoices. Zero (an alarm saved before the field
 	// existed) means DefaultSnoozeMinutes. Whether snooze exists at all is not
@@ -187,6 +198,17 @@ func (d *Document) Validate() error {
 		}
 		if a.AutoOff < 0 || a.AutoOff > MaxAutoOffMinutes {
 			return fmt.Errorf("the switch-off time has to be between 0 and %d minutes", MaxAutoOffMinutes)
+		}
+		if a.OffAt = strings.TrimSpace(a.OffAt); a.OffAt != "" {
+			off, err := time.Parse(clockLayout, a.OffAt)
+			if err != nil || len(a.OffAt) != len(clockLayout) {
+				return fmt.Errorf("the switch-off time has to be a time of day like 20:00")
+			}
+			if off.Hour() == a.Hour && off.Minute() == a.Minute {
+				return fmt.Errorf("the switch-off time has to differ from the alarm time")
+			}
+			// One switch-off, not two racing each other: the time of day wins.
+			a.AutoOff = 0
 		}
 		if !validSnooze(a.Snooze) {
 			return fmt.Errorf("the snooze time has to be 5, 9, 10 or 15 minutes")

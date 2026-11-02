@@ -69,6 +69,41 @@ func (a Alarm) NextDue(now time.Time, loc *time.Location) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// SwitchOff returns the moment a (re)fire of this alarm switches the speaker
+// off, and whether it does at all. due is the alarm's scheduled instant and
+// rang the moment this (re)fire started ringing, which differ after a snooze.
+//
+// A switch-off after some minutes counts from rang, so a snooze moves it on.
+// A switch-off at a time of day (OffAt) is the first such moment strictly
+// after due, on due's calendar day or the next one, and does NOT move with a
+// snooze: "off at 20:00" means 20:00. The caller decides what a moment that
+// has already passed means.
+//
+// time.Date carries the DST cases the same way at does: on the spring-forward
+// day a switch-off inside the missing hour lands an hour later, and the
+// duration from due counts the real time in between, so a 20:00 alarm with
+// OffAt 06:00 across the fall-back night plays for eleven real hours, not ten.
+func (a Alarm) SwitchOff(due, rang time.Time, loc *time.Location) (time.Time, bool) {
+	if a.OffAt != "" {
+		off, err := time.Parse(clockLayout, a.OffAt)
+		if err != nil {
+			return time.Time{}, false
+		}
+		local := due.In(loc)
+		for fwd := 0; fwd < 2; fwd++ {
+			cand := time.Date(local.Year(), local.Month(), local.Day()+fwd, off.Hour(), off.Minute(), 0, 0, loc)
+			if cand.After(due) {
+				return cand, true
+			}
+		}
+		return time.Time{}, false
+	}
+	if a.AutoOff > 0 {
+		return rang.Add(time.Duration(a.AutoOff) * time.Minute), true
+	}
+	return time.Time{}, false
+}
+
 // NextFire returns the earliest instant after now that any ENABLED alarm in the
 // document is due, along with that alarm. A document whose zone no longer
 // resolves schedules nothing rather than guessing at UTC.
