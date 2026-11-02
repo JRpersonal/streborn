@@ -118,6 +118,10 @@ export function ConsumeWingetUpgradeFailure() {
   return window['go']['main']['App']['ConsumeWingetUpgradeFailure']();
 }
 
+export function CopyPresetKeysAcrossBoxes(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['CopyPresetKeysAcrossBoxes'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function CopyPresetsAcrossBoxes(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CopyPresetsAcrossBoxes'](arg1, arg2, arg3, arg4);
 }

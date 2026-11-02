@@ -32,7 +32,7 @@
 export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
-  'CopyPresetsAcrossBoxes', 'DeletePreset',
+  'CopyPresetKeysAcrossBoxes', 'CopyPresetsAcrossBoxes', 'DeletePreset',
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
@@ -206,6 +206,26 @@ export function installDesktopMock({ scenario, demo }) {
       const set = presetsFor(src).filter((p) => p.slot >= 1 && p.slot <= max && p.name);
       for (const p of set) putPreset(dst, p.slot, clone(p));
       return set.length;
+    },
+    // The chosen keys only (#1551), with the agent's duplicate guard: a
+    // station already on ANOTHER key of the target (one the copy does not
+    // rewrite) is left out and named; nothing there is deleted.
+    CopyPresetKeysAcrossBoxes: ([src, , dst, , slots]) => {
+      const max = rowsOf(dst) * 6;
+      const want = new Set(slots || []);
+      const res = { copied: [], skipped: [], notKept: [] };
+      const picked = presetsFor(src).filter((p) => want.has(p.slot) && p.name);
+      const rewritten = new Set(picked.filter((p) => p.slot <= max).map((p) => p.slot));
+      for (const p of picked) {
+        if (p.slot > max) { res.notKept.push(p.slot); continue; }
+        const same = (o) => o.slot !== p.slot && !rewritten.has(o.slot)
+          && ((p.stream_url && o.stream_url === p.stream_url) || (p.uri && o.uri === p.uri));
+        const other = presetsFor(dst).find(same);
+        if (other) { res.skipped.push({ slot: p.slot, name: p.name, onSlot: other.slot }); continue; }
+        putPreset(dst, p.slot, clone(p));
+        res.copied.push(p.slot);
+      }
+      return res;
     },
     MovePreset: ([h, , from, to]) => {
       const list = presetsFor(h);

@@ -149,7 +149,7 @@ test.describe('copying to a speaker with the second row', () => {
     const { page } = app;
     await mock.resetCalls();
     await page.locator('#presetTransferBtn').click();
-    await expect(page.locator('#warnBody')).toContainText(en('settingsView.copyPresetsHelpAll'));
+    await expect(page.locator('#warnBody')).toContainText(en('presets.transferIntro'));
     await expect(page.locator('#warnBody')).toContainText(en('presets.transferReplacesBoth'));
     await page.locator('#presetXferTarget').selectOption('192.0.2.52|8888');
     await page.locator('#warnConfirm').click();
