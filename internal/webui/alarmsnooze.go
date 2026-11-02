@@ -274,10 +274,13 @@ func otherInput(src string) bool {
 	return false
 }
 
-// ringMaxFor is how long a fire of a counts as ringing.
-func ringMaxFor(a alarm.Alarm) time.Duration {
-	if a.AutoOff > 0 {
-		return time.Duration(a.AutoOff) * time.Minute
+// ringMaxFor is how long a fire of a, due at due and ringing since since,
+// counts as ringing: until its switch-off, or alarmRingMax without one. A
+// time-of-day switch-off that a snoozed ring already ran past arms nothing
+// (driveAlarm), so that ring falls back to alarmRingMax as well.
+func ringMaxFor(a alarm.Alarm, due, since time.Time, loc *time.Location) time.Duration {
+	if until, ok := a.SwitchOff(due, since, loc); ok && until.After(since) {
+		return until.Sub(since)
 	}
 	return alarmRingMax
 }
@@ -530,7 +533,7 @@ func (s *Server) snoozePress(key, prevSource string) {
 		since: s.ring.since, ringGen: s.ring.gen, curGen: curGen,
 		ringURL: s.ring.url, curURL: curURL,
 		explicitStop: explicit, standbyStop: standby,
-		maxRing: ringMaxFor(a), now: now,
+		maxRing: ringMaxFor(a, s.ring.due, s.ring.since, s.alarmLoc()), now: now,
 	}
 	s.ring.mu.Unlock()
 
@@ -741,15 +744,20 @@ func (s *Server) alarmByID(id string) (alarm.Alarm, bool) {
 	return alarm.Alarm{}, false
 }
 
-// alarmClockText formats t as the alarm document's local "15:04".
-func (s *Server) alarmClockText(t time.Time) string {
-	loc := time.Local
+// alarmLoc is the alarm document's zone, the speaker's own when there is no
+// document or its zone no longer resolves.
+func (s *Server) alarmLoc() *time.Location {
 	if s.alarms != nil {
 		if l, err := s.alarms.Get().Location(); err == nil {
-			loc = l
+			return l
 		}
 	}
-	return t.In(loc).Format("15:04")
+	return time.Local
+}
+
+// alarmClockText formats t as the alarm document's local "15:04".
+func (s *Server) alarmClockText(t time.Time) string {
+	return t.In(s.alarmLoc()).Format("15:04")
 }
 
 // alarmRingView is the status block's and the debug section's view of a

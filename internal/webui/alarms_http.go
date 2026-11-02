@@ -13,7 +13,10 @@ import (
 type alarmView struct {
 	Zone   string        `json:"zone"`
 	Alarms []alarm.Alarm `json:"alarms"`
-	Status alarmStatus   `json:"status"`
+	// SkipDates are the days without an alarm still to come; past ones are
+	// left out here and dropped from NAND on the next save.
+	SkipDates []string    `json:"skipDates"`
+	Status    alarmStatus `json:"status"`
 }
 
 // alarmStatus is what the editor needs to tell the user the truth about what
@@ -33,6 +36,9 @@ type alarmStatus struct {
 	LastFire    *alarm.FireOutcome `json:"lastFire,omitempty"`
 	// Ring is the alarm ringing or snoozed right now, absent when none.
 	Ring *alarmRingView `json:"ring,omitempty"`
+	// MaxSkipDates is how many days without an alarm the speaker keeps, so
+	// the editor can say so before a save is refused.
+	MaxSkipDates int `json:"maxSkipDates"`
 }
 
 // handleAlarms serves the per-speaker alarm clock document.
@@ -61,6 +67,15 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 		if !decodeJSONRequest(w, r, 1<<16, &d) {
 			return
 		}
+		if d.SkipDates == nil {
+			// An editor that does not know about skip dates (a phone page
+			// still cached from before they existed) sends no field at all,
+			// and the wholesale replace must not wipe the user's holidays.
+			// An editor that does know sends [] to clear them.
+			d.SkipDates = s.alarms.Get().SkipDates
+		}
+		// Past days drop off on every save, so they never use up the cap.
+		d.DropPastSkipDates(s.alarmNowTime())
 		if err := d.Validate(); err != nil {
 			// The message reaches the user verbatim.
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -83,16 +98,26 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) alarmView() alarmView {
 	doc := s.alarms.Get()
-	v := alarmView{Zone: doc.Zone, Alarms: doc.Alarms}
+	now := s.alarmNowTime()
+	// A past day is no longer of interest to anyone, so the editor never sees
+	// it; the stored copy loses it on the next save. Reading only, so a page
+	// left open never causes a NAND write.
+	upcoming := doc
+	upcoming.DropPastSkipDates(now)
+	v := alarmView{Zone: doc.Zone, Alarms: doc.Alarms, SkipDates: upcoming.SkipDates}
 	if v.Alarms == nil {
 		v.Alarms = []alarm.Alarm{}
+	}
+	if v.SkipDates == nil {
+		v.SkipDates = []string{}
 	}
 	_, zoneErr := doc.Location()
 	v.Status = alarmStatus{
 		ClockTrusted: s.AlarmClockTrusted(),
 		ZoneResolved: zoneErr == nil,
+		MaxSkipDates: alarm.MaxSkipDates,
 	}
-	if next, which, ok := doc.NextFire(s.alarmNowTime()); ok {
+	if next, which, ok := doc.NextFire(now); ok {
 		v.Status.NextFire = next.Format(time.RFC3339)
 		v.Status.NextAlarmID = which.ID
 	}
@@ -120,6 +145,7 @@ func (s *Server) AlarmsSnapshot() any {
 		"next_alarm_id": v.Status.NextAlarmID,
 		"last_fire":     v.Status.LastFire,
 		"ring":          v.Status.Ring,
+		"skip_dates":    v.SkipDates,
 		"alarms":        v.Alarms,
 	}
 }

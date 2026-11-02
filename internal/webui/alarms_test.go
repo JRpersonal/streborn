@@ -604,6 +604,54 @@ func TestAlarmArmsTheAutoOff(t *testing.T) {
 	}
 }
 
+// A switch-off at a time of day (discussion #1364) arms the same sleep timer,
+// for the real time from the fire to that wall-clock reading.
+func TestAlarmArmsTheTimeOfDaySwitchOff(t *testing.T) {
+	t.Parallel()
+	d := weekdayDoc()
+	d.Alarms[0].OffAt = "20:00"
+	h := newAlarmHarness(t, d)
+	now := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(now)
+	h.s.evaluateAlarms(now)
+	if !waitFor(func() bool { return h.s.sleepStatus()["active"] == true }) {
+		t.Fatal("the alarm did not arm its switch-off at 20:00")
+	}
+	rem, _ := h.s.sleepStatus()["remainingSec"].(int)
+	// 06:30 to 20:00 is 13.5 hours; the sleep status counts against the real
+	// clock, which a test cannot pin, so allow the few seconds the test took.
+	if want := int((13*time.Hour + 30*time.Minute).Seconds()); rem <= want-60 || rem > want {
+		t.Errorf("remainingSec = %d, want just under %d (13.5 hours)", rem, want)
+	}
+}
+
+// After a snooze the ring can start past the switch-off time. Switching the
+// speaker off the moment it rings again would be the worse surprise, so the
+// time of day arms nothing then, and the ring counts for alarmRingMax.
+func TestAlarmTimeOfDaySwitchOffAlreadyPassedArmsNothing(t *testing.T) {
+	t.Parallel()
+	d := weekdayDoc()
+	d.Alarms[0].OffAt = "06:35"
+	h := newAlarmHarness(t, d)
+	due := berlinTime(t, 2026, time.September, 7, 6, 30)
+	h.at(due.Add(9 * time.Minute)) // a nine-minute snooze rang at 06:39
+	h.s.driveAlarm(h.s.alarms.Get().Alarms[0], due)
+	if !waitFor(func() bool { return h.firedCount() == 1 }) {
+		t.Fatal("the ring after the snooze did not play")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if h.s.sleepStatus()["active"] == true {
+		t.Error("a switch-off time that has already passed armed a timer")
+	}
+	loc, _ := time.LoadLocation("Europe/Berlin")
+	if got := ringMaxFor(d.Alarms[0], due, due.Add(9*time.Minute), loc); got != alarmRingMax {
+		t.Errorf("ringMaxFor = %v, want alarmRingMax", got)
+	}
+	if got := ringMaxFor(d.Alarms[0], due, due, loc); got != 5*time.Minute {
+		t.Errorf("ringMaxFor before the switch-off = %v, want 5m", got)
+	}
+}
+
 func TestAlarmWithoutAnAutoOffArmsNothing(t *testing.T) {
 	t.Parallel()
 	h := newAlarmHarness(t, autoOffDoc(0))

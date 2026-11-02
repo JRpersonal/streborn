@@ -225,3 +225,57 @@ func TestPhoneRemoteAlarmHasASnoozeLength(t *testing.T) {
 		t.Error("the snooze length has to be captured before the editor re-renders")
 	}
 }
+
+// Days without an alarm (discussion #1491): a list under the alarms with the
+// platform date picker, saved at once on add and remove, and always sent with
+// a save so an empty list really clears it.
+func TestPhoneRemoteAlarmSkipDates(t *testing.T) {
+	for _, want := range []string{
+		`<input type="date" id="alarmSkipDate"`,
+		`id="btnAlarmSkipAdd"`,
+		"data-skip-del",
+		"skipDates: alarmDoc.skipDates || []",
+		"skipDates: Array.isArray(d.skipDates) ? d.skipDates : []",
+		"}).join('') + alarmSkipHtml();",
+		"fmt(T.alarmSkipFull, { n: max })",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the skip dates are missing %s", want)
+		}
+	}
+	bundles := strings.Count(indexHTML, "now:\"")
+	for _, key := range []string{"alarmSkip", "alarmSkipAdd", "alarmSkipRemove", "alarmSkipHint", "alarmSkipFull"} {
+		if got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+	for _, m := range regexp.MustCompile(`alarmSkipFull:"([^"]*)"`).FindAllStringSubmatch(indexHTML, -1) {
+		if !strings.Contains(m[1], "{n}") {
+			t.Errorf("alarmSkipFull %q lacks the {n} placeholder", m[1])
+		}
+	}
+}
+
+// The switch-off can also be a time of day (discussion #1364): a choice in the
+// same list that reveals the platform time picker, captured like every other
+// DOM-only field and dropped again when the user picks minutes or Never.
+func TestPhoneRemoteAlarmSwitchOffAtATimeOfDay(t *testing.T) {
+	for _, want := range []string{
+		`'<option value="at"'`,
+		`<input type="time" id="alarmOffAt"`,
+		"row.hidden = offSel.value !== 'at';",
+		"alarmDraft.offAt = String(offAtIn.value).slice(0, 5);",
+		"delete alarmDraft.offAt;",
+		"T.alarmOffAtHint",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the time-of-day switch-off is missing %s", want)
+		}
+	}
+	bundles := strings.Count(indexHTML, "now:\"")
+	for _, key := range []string{"alarmOffAt", "alarmOffAtHint"} {
+		if got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1)); got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
