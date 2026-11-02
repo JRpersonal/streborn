@@ -408,9 +408,11 @@ export const PHONE = {
     zone: 'Europe/Berlin',
     alarms: [
       { id: 'a1', enabled: true, hour: 6, minute: 45, days: [1, 2, 3, 4, 5], slot: 3, volume: 18, snooze: 9 },
-      { id: 'a2', enabled: false, hour: 9, minute: 0, days: [0, 6], slot: 5, volume: 15 },
+      { id: 'a2', enabled: false, hour: 9, minute: 0, days: [0, 6], slot: 5, volume: 15, offAt: '13:00' },
     ],
-    status: { clockTrusted: true, zoneResolved: true, nextFire: '2026-10-26T05:45:00Z' },
+    // Days without an alarm (discussion #1491), YYYY-MM-DD in the zone.
+    skipDates: ['2026-12-24', '2026-12-25', '2027-01-01'],
+    status: { clockTrusted: true, zoneResolved: true, nextFire: '2026-10-26T05:45:00Z', maxSkipDates: 60 },
   },
   RECENT: [ // oldest first, the way the agent's ring answers
     { ts: '2026-10-23T08:05:00Z', source: 'radio', cardKey: 'r:npr', cardName: 'NPR News', cardURL: 'http://example.com/npr', track: '' },
