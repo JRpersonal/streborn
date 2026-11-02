@@ -1766,8 +1766,6 @@
   "ui2.preview.noStorage": "This computer does not let the app remember the choice, so the layout cannot be switched.",
   "ui2.skip": "Skip to content",
   "ui2.nav.label": "Main navigation",
-  "ui2.nav.listen": "Listen",
-  "ui2.nav.home": "Home",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Keys on {{name}}",
   "ui2.radio.keysHint": "The six buttons on top of the speaker",

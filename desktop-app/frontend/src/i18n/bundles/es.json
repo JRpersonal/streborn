@@ -1766,8 +1766,6 @@
   "ui2.preview.noStorage": "Este equipo no permite que la app recuerde la elección, así que no se puede cambiar el diseño.",
   "ui2.skip": "Saltar al contenido",
   "ui2.nav.label": "Navegación principal",
-  "ui2.nav.listen": "Escuchar",
-  "ui2.nav.home": "Casa",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Teclas de {{name}}",
   "ui2.radio.keysHint": "Los seis botones de la parte superior del altavoz",

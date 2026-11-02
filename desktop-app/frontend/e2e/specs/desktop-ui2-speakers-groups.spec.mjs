@@ -67,7 +67,7 @@ const undoBtn = (page) => card(page, 'pair', TL.deviceID).getByRole('button', { 
 const deleteBtn = (page) => card(page, 'stored', DINING.deviceID).getByRole('button', { name: `Delete the group ${DINING.friendlyName}` });
 
 async function openGroups(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="speakers"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="speakers"]').click();
   await page.locator('#ui2SpkSubnav .spa-sub[data-route="groups"]').click();
   await expect(page.locator('#ui2MainInner > #view-multiroom')).toBeVisible();
   await expect(page.locator('#view-multiroom > .ui2-grp')).toBeVisible();

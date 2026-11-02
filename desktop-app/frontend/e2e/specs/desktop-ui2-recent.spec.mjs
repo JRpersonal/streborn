@@ -38,7 +38,7 @@ const HISTORY = [
 // The agent answers its ring oldest first; the view sorts.
 const RING = [...HISTORY].reverse();
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const day = (page, label) => page.locator('#recentList .rc-day').filter({ has: page.locator('.rc-day-head', { hasText: label }) });
 const card = (page, name) => page.locator('#recentList .recent-card').filter({ has: page.locator('.rc-name', { hasText: name }) });
 

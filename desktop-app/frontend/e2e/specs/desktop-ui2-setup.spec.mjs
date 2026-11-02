@@ -26,7 +26,7 @@ const LADDER_PLAN = SETUP_CHECK.ladderPlan;
 const ATTIC = { ...STOCK_BOX, name: 'Attic', friendlyName: 'Attic', host: '192.0.2.58', deviceID: 'A1A2A3A4A5A6', offline: true };
 
 const W = (key, vars) => en(`ui2.setup.wizard.${key}`, vars);
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const sub = (page, route) => page.locator(`#ui2SpkSubnav .spa-sub[data-route="${route}"]`);
 const radio = (page, value) => page.locator(`#w2FindList input.w2-radio[value="${value}"]`);
 const step = (page, name) => page.locator(`#w2Steps .w2-step[data-step="${name}"]`);

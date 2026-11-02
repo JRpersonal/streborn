@@ -1,5 +1,5 @@
-// The UI 2.0 shell (#1284, #1285, docs/UI-2.0.md): the sidebar navigation,
-// the sidebar speaker list (which replaced the room switcher), the views that
+// The UI 2.0 shell (#1284, #1285, docs/UI-2.0.md): the tab row above the
+// page, the sidebar speaker list (which replaced the room switcher), the views that
 // must follow a speaker chosen there (regression e92872f7), the persistent
 // player with its group volume and Levels (which replaced the Output
 // popover), More, the nav badges and the Layout switch in the Aa menu.
@@ -21,13 +21,13 @@ const BR = ROSTER.bedroom;
 const OFFICE = ROSTER.office;
 const KITCHEN = ROSTER.kitchen;
 
-// Sidebar order (src/shell2/nav.js), Wishes and Help and info small at the
-// bottom. Speakers stands for the list and the three classic tabs under it
+// Tab order (src/shell2/nav.js), Wishes and Help and info small at the far
+// end. Speakers stands for the list and the three classic tabs under it
 // (phase 3).
 const NAV_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes', 'help'];
 // Every view, the three reached through the Speakers area included.
 const ALL_VIEWS = ['box', 'library', 'recent', 'spotify', 'speakers', 'settings', 'multiroom', 'setup', 'wishes', 'help'];
-// The sidebar entry marked current on each view.
+// The tab marked current on each view.
 const ENTRY = { settings: 'speakers', multiroom: 'speakers', setup: 'speakers' };
 
 // The group document GetZoneState answers on both halves of a Living Room +
@@ -41,9 +41,9 @@ const LR_BR_GROUP = {
 const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
 const row = (page, host) => page.locator('#ui2SpkLists .ui2-spk-row')
   .filter({ has: page.locator(`.ui2-spk-pick[data-host="${host}"]`) });
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 
-// openView opens a view the way a user does: its sidebar entry, or for the
+// openView opens a view the way a user does: its tab, or for the
 // three under Speakers the area's own places (the speaker you control for
 // Speaker settings).
 async function openView(page, view) {
@@ -100,15 +100,57 @@ test.describe('UI 2.0 shell', () => {
   test.use({ ui2: true });
 
   test.describe('navigation', () => {
-    test('1. the sidebar has one entry per view, Wishes and Help and info at the bottom', async ({ app }) => {
+    test('1. the tab row has one entry per view, Wishes and Help and info small at the far end', async ({ app }) => {
       const { page } = app;
-      const items = page.locator('#ui2Sidebar .ui2-nav-item[data-view]');
+      const items = page.locator('#ui2Tabs .ui2-nav-item[data-view]');
       await expect(items).toHaveCount(NAV_VIEWS.length);
       expect(await items.evaluateAll((els) => els.map((e) => e.dataset.view))).toEqual(NAV_VIEWS);
       await expect(page.locator('#ui2NavWishes')).toHaveAttribute('data-view', 'wishes');
-      await expect(page.locator('#ui2Sidebar .ui2-side-small #ui2NavWishes')).toHaveCount(1);
+      await expect(page.locator('#ui2Tabs .ui2-tabs-small #ui2NavWishes')).toHaveCount(1);
       await expect(page.locator('#ui2NavHelp')).toHaveAttribute('data-view', 'help');
-      await expect(page.locator('#ui2Sidebar .ui2-side-small #ui2NavHelp')).toHaveCount(1);
+      await expect(page.locator('#ui2Tabs .ui2-tabs-small #ui2NavHelp')).toHaveCount(1);
+      // A nav landmark of its own, outside the sidebar and outside the
+      // scrolling main pane; no group headings.
+      await expect(page.getByRole('navigation', { name: en('ui2.nav.label') })).toHaveAttribute('id', 'ui2Tabs');
+      await expect(page.locator('#ui2Sidebar .ui2-nav-item, #ui2Main .ui2-nav-item')).toHaveCount(0);
+      await expect(page.locator('#ui2Sidebar nav')).toHaveCount(0);
+      // Small and muted at the far end: right of every main tab, on its line.
+      const geo = await page.locator('#ui2Tabs .ui2-nav-item').evaluateAll((els) => els.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { view: e.dataset.view, left: r.left, right: r.right, top: r.top, size: parseFloat(getComputedStyle(e).fontSize) };
+      }));
+      const main = geo.filter((g) => !['wishes', 'help'].includes(g.view));
+      const small = geo.filter((g) => ['wishes', 'help'].includes(g.view));
+      for (const s of small) {
+        expect(s.left, s.view).toBeGreaterThan(Math.max(...main.map((m) => m.right)));
+        expect(s.size, s.view).toBeLessThan(main[0].size);
+      }
+    });
+
+    test('1b. Left and Right move along the tabs, Home and End to the ends', async ({ app }) => {
+      const { page } = app;
+      await nav(page, 'box').focus();
+      const focused = () => page.evaluate(() => document.activeElement && document.activeElement.dataset.view);
+      await page.keyboard.press('ArrowRight');
+      expect(await focused()).toBe('library');
+      await page.keyboard.press('ArrowRight');
+      expect(await focused()).toBe('recent');
+      await page.keyboard.press('ArrowLeft');
+      expect(await focused()).toBe('library');
+      await page.keyboard.press('ArrowDown');
+      expect(await focused()).toBe('recent');
+      await page.keyboard.press('End');
+      expect(await focused()).toBe('help');
+      await page.keyboard.press('ArrowRight');
+      expect(await focused()).toBe('help');
+      await page.keyboard.press('Home');
+      expect(await focused()).toBe('box');
+      // Moving is not opening: Enter opens.
+      await expect(page.locator('#ui2MainInner > #view-box')).toBeVisible();
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#ui2MainInner > #view-library')).toBeVisible();
+      await expect(nav(page, 'library')).toHaveAttribute('aria-current', 'page');
     });
 
     test('2. every entry opens its view at the top and is the only one marked current', async ({ app }) => {
@@ -123,8 +165,8 @@ test.describe('UI 2.0 shell', () => {
         const item = nav(page, ENTRY[view] || view);
         await expect(item).toHaveAttribute('aria-current', 'page');
         await expect(item).toHaveClass(/\bis-active\b/);
-        await expect(page.locator('#ui2Sidebar .ui2-nav-item[aria-current]')).toHaveCount(1);
-        await expect(page.locator('#ui2Sidebar .ui2-nav-item.is-active')).toHaveCount(1);
+        await expect(page.locator('#ui2Tabs .ui2-nav-item[aria-current]')).toHaveCount(1);
+        await expect(page.locator('#ui2Tabs .ui2-nav-item.is-active')).toHaveCount(1);
         // Polled: a scroll reset done in a frame callback or smoothly would
         // otherwise race this read.
         await expect.poll(() => page.locator('#ui2Main').evaluate((m) => m.scrollTop), { message: `#ui2Main scrollTop on ${view}` }).toBe(0);

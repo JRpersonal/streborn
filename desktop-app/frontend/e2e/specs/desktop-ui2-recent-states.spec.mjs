@@ -19,7 +19,7 @@ const BR = ROSTER.bedroom;
 const radio = (ts, key, name) => ({ ts, source: 'radio', cardKey: key, cardName: name, cardArt: '', cardURL: `http://example.com/${key}`, track: '' });
 const RING = [radio('2026-10-23T16:00:00Z', 'jazz', 'Jazz Example'), radio('2026-10-23T17:40:00Z', 'rock', 'Rock Example')];
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const card = (page, name) => page.locator('#recentList .recent-card').filter({ has: page.locator('.rc-name', { hasText: name }) });
 
 async function openRecent(page) {

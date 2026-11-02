@@ -264,9 +264,9 @@ function markupHasHelpNode() {
   return shellMarkup().includes('<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div>');
 }
 
-// Check for app update answers next to itself, in a live region: the version
-// line at the bottom of the sidebar, where the classic answer goes, is out of
-// the way and not announced.
+// Check for app update answers next to itself, in a live region: the app's
+// version line, where the classic answer goes, waits out of sight in the
+// preview and is not announced.
 describe('the app update check in Help and info', () => {
   it('says what the check found, in the line under the button', () => {
     expect(updateStatus({ state: 'idle' }, t)).toEqual({ kind: '', text: '' });

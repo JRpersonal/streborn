@@ -68,7 +68,7 @@ const CONTROLS = {
 // page's own two cards.
 const ALL_SECTIONS = 32;
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const tab = (page, key) => page.locator(`#ui2SpkTab-${key}`);
 const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
 

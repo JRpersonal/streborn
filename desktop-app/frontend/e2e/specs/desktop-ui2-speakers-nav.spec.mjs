@@ -1,5 +1,5 @@
 // The UI 2.0 Speakers area, phase 3 skeleton (#1287, docs/UI-2.0.md): one
-// sidebar entry for Speaker settings, Multi-room and Set up speaker; its
+// tab for Speaker settings, Multi-room and Set up speaker; its
 // places (the list, one speaker with five tabs, Groups, Add speaker); how a
 // sidebar row relates to one speaker's page; and the classic layout, which
 // must not change at all.
@@ -23,7 +23,7 @@ const HOSTS = SPEAKERS3.boxes.map((k) => ROSTER[k].host);
 const ROW_HOSTS = HOSTS.filter((h) => h !== ROSTER.terraceRight.host);
 const TABS = ['Overview', 'Sound', 'Network', 'Keys and alarms', 'Maintenance'];
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const sub = (page, route) => page.locator(`#ui2SpkSubnav .spa-sub[data-route="${route}"]`);
 const listRow = (page, host) => page.locator(`#view-speakers .spl-open[data-host="${host}"]`);
 const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);

@@ -23,7 +23,7 @@ const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
 const OLD = ROSTER.oldAgent;
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const listCard = (page, host) => page.locator(`#view-speakers li.spl-item[data-host="${host}"]`);
 
 // tokenColour resolves a --u-* token to the rgb() string the browser paints.

@@ -1,6 +1,6 @@
 // UI 2.0 Help and info (phase 5, docs/UI-2.0.md "Help and info";
 // src/shell2/help/help.js): the one place for help, wishes, community,
-// support and about. Reached from the small sidebar entry under Wishes; the
+// support and about. Reached from the small tab after Wishes; the
 // classic footer is hidden on every preview view, so the donate buttons show
 // here and nowhere else. The classic layout keeps its footer, its donate rail
 // and its Wishes tab exactly as they were (last describe).
@@ -9,6 +9,7 @@
 
 import { test, expect } from '../fixtures.mjs';
 import { en } from '../helpers/i18n.mjs';
+import { settle, runFor } from '../helpers/clock.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
@@ -37,7 +38,7 @@ test.describe('UI 2.0 Help and info', () => {
     const { page } = app;
     await openHelp(page);
     await expect(page.locator('#ui2NavHelp')).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('#ui2Sidebar .ui2-nav-item[aria-current]')).toHaveCount(1);
+    await expect(page.locator('#ui2Tabs .ui2-nav-item[aria-current]')).toHaveCount(1);
     const shown = await page.locator('#ui2MainInner > [id^="view-"]').evaluateAll((els) => els
       .filter((e) => !e.classList.contains('hidden')).map((e) => e.id));
     expect(shown).toEqual(['view-help']);
@@ -106,7 +107,7 @@ test.describe('UI 2.0 Help and info', () => {
   test('4. the donate buttons show on Help and info and nowhere else', async ({ app }) => {
     const { page } = app;
     for (const view of ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes']) {
-      await page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`).click();
+      await page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`).click();
       await expect(page.locator(`#ui2MainInner > #view-${view}`)).toBeVisible();
       await expect(page.locator('[data-donate]:visible'), view).toHaveCount(0);
       await expect(page.locator('#appFooter'), view).toBeHidden();
@@ -180,14 +181,21 @@ test.describe('UI 2.0 Help and info', () => {
     await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
   });
 
-  test('8. Check for app updates runs the app\'s check; the answer shows in the version line', async ({ app, mock }) => {
+  test('8. Check for app updates runs the app\'s check; the answer shows next to the button, not in the sidebar', async ({ app, mock }) => {
     const { page } = app;
+    // The version line is no part of the sidebar's resting state: the
+    // version and the check are here, in About.
+    await expect(page.locator('#ui2Version')).toBeHidden();
     await openHelp(page);
+    await expect(section(page, 'about').locator('.hlp-version')).toHaveText(/\d+\.\d+\.\d+/);
     await mock.resetCalls();
     const btn = page.locator('#hlpCheckUpdate');
     await btn.click();
     await mock.expectCalled('CheckAppUpdate');
+    // The app's own version line took the answer, and still waits out of
+    // sight: nothing is pending.
     await expect(page.locator('#ui2Version #appUpdateBanner')).toContainText(en('banner.appIsCurrent'));
+    await expect(page.locator('#ui2Version')).toBeHidden();
     await expect(btn).toHaveText(en('banner.checkForAppUpdate'));
     await expect(btn).not.toHaveAttribute('aria-disabled', /.*/);
     // And next to the button, in a live region, where it was asked.
@@ -200,6 +208,35 @@ test.describe('UI 2.0 Help and info', () => {
     await btn.click();
     await expect(line).toHaveText(en('banner.appCheckFailed'));
     await expect(line).toHaveAttribute('data-kind', 'error');
+  });
+
+  test.describe('with an app update waiting', () => {
+    test.use({ fakeClock: true, scenario: { banners: { appUpdate: true } } });
+
+    test('8b. a dismissed update notice leaves one line in the sidebar that brings it back', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000); // the app update check runs 8 s after boot
+      const notice = page.locator('#ui2Banners #appUpdateBanner:not(.app-update-quiet)');
+      const line = page.locator('#ui2Sidebar #ui2UpdateLine');
+      await expect(notice).toBeVisible();
+      // The full notice is on top, so the sidebar says nothing.
+      await expect(page.locator('#ui2Version')).toBeHidden();
+      await page.locator('#appUpdateDismiss').click();
+      await expect(notice).toHaveCount(0);
+      await expect(line).toBeVisible();
+      await expect(line).toHaveText(`${en('banner.appUpdateAvail')} v1.0.99`);
+      // In the sidebar's foot, above Aa and the language.
+      const geo = await page.evaluate(() => {
+        const r = (el) => el.getBoundingClientRect();
+        return { line: r(document.getElementById('ui2UpdateLine')), aa: r(document.getElementById('ui2AppSettings')) };
+      });
+      expect(geo.line.bottom).toBeLessThanOrEqual(geo.aa.top + 1);
+      // Pressed, the notice comes back on top and the line goes.
+      await line.click();
+      await runFor(page, 1_000);
+      await expect(notice).toBeVisible();
+      await expect(page.locator('#ui2Version')).toBeHidden();
+    });
   });
 
   test.describe('in German', () => {

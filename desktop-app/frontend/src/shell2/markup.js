@@ -1,9 +1,13 @@
 // shell2/markup.js: the empty frame of the UI 2.0 preview.
 //
-// Only the frame is new: the sidebar, the main pane and the persistent player
-// are containers, and mount.js MOVES the existing nodes into them (the views,
-// the status bar, the transport, the volume). Nothing in here duplicates a
-// control the views already own, so both layouts share one DOM and one state.
+// Only the frame is new: the sidebar, the tab row, the main pane and the
+// persistent player are containers, and mount.js MOVES the existing nodes into
+// them (the views, the status bar, the transport, the volume). Nothing in here
+// duplicates a control the views already own, so both layouts share one DOM
+// and one state.
+//
+// The sidebar holds the speakers and, at its foot, the text size and the
+// language; the navigation is the row of tabs above the page (nav.js).
 //
 // Pure: a string, so vitest can read it without a DOM.
 
@@ -50,13 +54,6 @@ function speakersAreaHTML() {
 }
 
 export function shellMarkup() {
-  const groups = NAV.groups.map((g) => {
-    const hid = `ui2NavHead-${g.id}`;
-    return `<div class="ui2-nav-group" role="group" aria-labelledby="${hid}">`
-      + `<div class="ui2-nav-heading" id="${hid}">${escapeHtml(t(g.labelKey))}</div>`
-      + g.items.map(navItemHTML).join('')
-      + '</div>';
-  }).join('');
   return `
 <button type="button" class="u-skip" id="ui2Skip">${escapeHtml(t('ui2.skip'))}</button>
 <div class="ui2-shell" id="ui2Shell">
@@ -69,15 +66,15 @@ export function shellMarkup() {
       <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
       <div class="ui2-spk-lists" id="ui2SpkLists"></div>
     </section>
-    <nav class="ui2-side-nav" aria-label="${escapeAttr(t('ui2.nav.label'))}">
-      <div class="ui2-side-scroll">${groups}</div>
-      <div class="ui2-side-small">${NAV.bottom.map(navItemHTML).join('')}</div>
-    </nav>
     <div class="ui2-side-bottom">
+      <div class="ui2-side-update" id="ui2Version" hidden><button type="button" class="ui2-update-line" id="ui2UpdateLine"></button></div>
       <div class="ui2-app-settings" id="ui2AppSettings" role="group" aria-label="${escapeAttr(t('ui2.nav.appSettings'))}"></div>
-      <div class="ui2-side-version" id="ui2Version"></div>
     </div>
   </div>
+  <nav class="ui2-tabs" id="ui2Tabs" aria-label="${escapeAttr(t('ui2.nav.label'))}">
+    ${NAV.main.map(navItemHTML).join('')}
+    <div class="ui2-tabs-small">${NAV.small.map(navItemHTML).join('')}</div>
+  </nav>
   <main class="ui2-main" id="ui2Main" tabindex="-1">
     <div class="ui2-main-inner" id="ui2MainInner">${speakersAreaHTML()}<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div></div>
   </main>

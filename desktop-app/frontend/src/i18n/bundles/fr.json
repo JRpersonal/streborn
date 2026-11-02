@@ -1766,8 +1766,6 @@
   "ui2.preview.noStorage": "Cet ordinateur ne permet pas à l'application de mémoriser ce choix, la disposition ne peut donc pas être changée.",
   "ui2.skip": "Aller au contenu",
   "ui2.nav.label": "Navigation principale",
-  "ui2.nav.listen": "Écouter",
-  "ui2.nav.home": "Maison",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Touches de {{name}}",
   "ui2.radio.keysHint": "Les six boutons sur le dessus de l'enceinte",

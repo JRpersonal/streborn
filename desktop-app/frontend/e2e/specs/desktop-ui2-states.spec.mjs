@@ -17,7 +17,7 @@ import { noHorizontalOverflow } from '../helpers/layout.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const acts = (loc) => loc.locator('[data-state-act]').evaluateAll((els) => els.map((e) => e.dataset.stateAct));
 const NONE = { boxes: [], current: null, seed: { cachedBoxes: false } };
 
@@ -418,13 +418,15 @@ test.describe('UI 2.0 states: a group dissolve the master does not finish', () =
   });
 });
 
-// The sidebar's state card at Extra large text in the smallest window: the
-// speaker section's floor (mount.js holdSpeakerFloor) keeps the navigation on
-// screen, the card scrolls inside the section, nothing is drawn over anything.
+// The sidebar's state card at Extra large text in the smallest window: with
+// the navigation out of the sidebar the card shows whole above its foot (and
+// would scroll inside the speaker list, the sidebar's one scroll box, if it
+// did not fit), the tab row above the page stays whole, nothing is drawn over
+// anything.
 test.describe('UI 2.0 states at Extra large in 1000 x 600', () => {
   test.use({ ui2: true, scale: '3', viewport: { width: 1000, height: 600 }, scenario: NONE });
 
-  test('14. the empty sidebar card leaves the navigation reachable and scrolls on its own', async ({ app }) => {
+  test('14. the empty sidebar card shows above the foot of the sidebar and leaves the tabs reachable', async ({ app }) => {
     const { page } = app;
     await page.addStyleTag({ content: KILL_ANIM });
     const card = page.locator('#ui2SpkLists .u-state');
@@ -433,30 +435,32 @@ test.describe('UI 2.0 states at Extra large in 1000 x 600', () => {
     const geo = await page.evaluate(() => {
       const r = (el) => el.getBoundingClientRect();
       const side = document.querySelector('#ui2Sidebar');
-      const section = document.querySelector('#ui2Speakers');
-      const nav = document.querySelector('.ui2-side-scroll .ui2-nav-item');
-      const navScroll = document.querySelector('.ui2-side-scroll');
+      const scroll = document.querySelector('#ui2SpkLists .ui2-spk-scroll');
+      const bottom = document.querySelector('.ui2-side-bottom');
+      const tabs = [...document.querySelectorAll('#ui2Tabs .ui2-nav-item')];
       return {
         sideBottom: r(side).bottom,
-        sectionBottom: r(section).bottom,
-        navTop: r(nav).top,
-        navBottom: r(nav).bottom,
-        navScrollTop: r(navScroll).top,
-        navScrollBottom: r(navScroll).bottom,
-        vh: window.innerHeight,
+        scrollBottom: r(scroll).bottom,
+        scrolls: scroll.scrollHeight > scroll.clientHeight + 1,
+        cardBottom: r(document.querySelector('#ui2SpkLists .u-state')).bottom,
+        bottomTop: r(bottom).top,
+        bottomBottom: r(bottom).bottom,
+        tabsIn: tabs.every((t) => { const b = r(t); return b.left >= 0 && b.right <= window.innerWidth + 0.5 && b.top >= 0 && b.bottom <= window.innerHeight; }),
       };
     });
-    // The section ends where the navigation starts, the first entry shows.
-    expect(geo.sectionBottom).toBeLessThanOrEqual(geo.navScrollTop + 1);
-    expect(geo.navScrollBottom - geo.navScrollTop).toBeGreaterThan(20);
-    expect(geo.navTop).toBeLessThan(geo.vh);
+    // The card shows whole inside the list, or scrolls there; the list ends
+    // above the foot of the sidebar, the foot ends inside the sidebar.
+    expect(geo.scrolls || geo.cardBottom <= geo.scrollBottom + 1).toBe(true);
+    expect(geo.scrollBottom).toBeLessThanOrEqual(geo.bottomTop + 1);
+    expect(geo.bottomBottom).toBeLessThanOrEqual(geo.sideBottom + 1);
+    expect(geo.tabsIn).toBe(true);
     // Every button of the card can be reached: scrolled into view, it shows.
     for (const act of ['search', 'add', 'connect']) {
       const b = card.locator(`[data-state-act="${act}"]`);
       await b.scrollIntoViewIfNeeded();
       await expect(b, act).toBeInViewport();
     }
-    await expect(page.locator('#ui2Sidebar .ui2-nav-item[data-view="box"]')).toBeVisible();
+    await expect(page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]')).toBeVisible();
     await noHorizontalOverflow(page);
   });
 });

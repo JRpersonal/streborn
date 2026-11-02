@@ -80,8 +80,8 @@ export function helpModel({ appInfo, locale, faqUrl, logs, update } = {}) {
 }
 
 // updateStatus is the line under Check for app update: the answer the check
-// gave, said next to the button that asked (the version line at the bottom of
-// the sidebar is not a live region and sits out of the way).
+// gave, said next to the button that asked (the app's version line is not a
+// live region, and in the preview it waits out of sight).
 export function updateStatus(update, t) {
   const u = update || {};
   if (u.state === 'working') return { kind: 'working', text: t('banner.checkingForAppUpdate') };
@@ -289,8 +289,8 @@ function paintUpdate() {
 }
 
 // checkUpdate runs the app's own manual check. Its answer appears where it
-// always does (the version line at the bottom of the sidebar, or the notice
-// on top) and in the line under this button, which is a live region. While
+// always does (the app's version line, out of sight in the preview, or the
+// notice on top) and in the line under this button, which is a live region. While
 // it runs the button says so.
 function checkUpdate(btn) {
   if (checking || typeof deps.checkAppUpdate !== 'function') return;

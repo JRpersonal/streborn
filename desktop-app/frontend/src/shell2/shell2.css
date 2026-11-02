@@ -31,10 +31,10 @@ html.ui2 {
   --u-radius: 8px;
   --u-sidebar-w: 264px;
   --u-player-min: 80px;
-  /* The sidebar speaker list: one row's height and how many rows show before
-     a list scrolls. Half a row shows, which says that the list goes on. */
+  /* The sidebar speaker list: one row's height and how many rows of a pinned
+     group show before it scrolls on its own. The other speakers take the rest
+     of the sidebar's height. */
   --u-spk-row: 44px;
-  --u-spk-visible: 6.5;
   --u-spk-pinned: 4.5;
   --u-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -140,11 +140,17 @@ html.ui2 .u-keybtn svg { flex: 0 0 auto; }
 /* Keyboard focus in the new chrome: a real double ring (the page colour, then
    the focus colour) that stays visible on every surface. Scoped to the chrome:
    the views inside keep the focus style they have today. */
-html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover, .u-skip) :focus-visible,
+html.ui2 :is(.ui2-sidebar, .ui2-tabs, .ui2-player, .u-popover, .u-skip) :focus-visible,
 html.ui2 .u-skip:focus-visible {
   outline: 2px solid var(--u-focus) !important;
   outline-offset: 2px !important;
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
+}
+/* A tab draws its ring inside its own box (the page colour, then the focus
+   colour), so the edge of the row never cuts it off. */
+html.ui2 .ui2-tabs .ui2-nav-item:focus-visible {
+  outline-offset: -4px !important;
+  box-shadow: inset 0 0 0 2px var(--u-bg);
 }
 
 /* The status pill: always words, the dot only repeats them. */
@@ -286,7 +292,7 @@ html.ui2 .u-pop-title { font-size: 14px; font-weight: 700; }
 }
 
 /* The hidden attribute wins over the display of every component here. */
-html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover) [hidden],
+html.ui2 :is(.ui2-sidebar, .ui2-tabs, .ui2-player, .u-popover) [hidden],
 html.ui2 .u-popover[hidden],
 html.ui2 .ui2-player-empty[hidden] { display: none !important; }
 
@@ -356,9 +362,10 @@ html.ui2 .ui2-shell {
   height: 100%;
   min-height: 0;
   grid-template-columns: var(--u-sidebar-w) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
     "banners banners"
+    "side tabs"
     "side main"
     "player player";
   background: var(--u-bg);
@@ -391,36 +398,17 @@ html.ui2 .ui2-side-top {
   padding: 8px 8px 2px;
 }
 
-/* The navigation landmark holds only the entries: the speaker list above it
-   and the app settings below it are not navigation. When the sidebar is short
-   the speaker list gives up its room first (it scrolls on its own); the
-   entries scroll only as the last resort, in a window too short for both. The
-   bottom area stays outside every scroll box, so its menus are never clipped. */
-html.ui2 .ui2-side-nav {
-  display: flex;
-  /* Gives up room after the speaker section (flex-shrink 1 against its 100),
-     which in practice means once that section is at its floor. A factor of 1,
-     not a token one: below a total of 1 the browser hands out only that
-     fraction of the shortfall, and the sidebar overflowed the player. */
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-}
-html.ui2 .ui2-side-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 8px 2px;
-}
-html.ui2 .ui2-side-small {
-  padding: 4px 8px 0;
-  border-top: 1px solid var(--u-border);
-}
+/* The sidebar is the speakers' (2026-11-02): the logo, the speaker section
+   taking every pixel left, and a foot with the text size and the language in
+   one row. The navigation is the tab row above the page (.ui2-tabs). The foot
+   stays outside every scroll box, so its menus are never clipped. */
 html.ui2 .ui2-side-bottom {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 8px 6px;
+  gap: 2px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--u-border);
 }
 
 html.ui2 .ui2-brand {
@@ -434,7 +422,7 @@ html.ui2 .ui2-brand .app-logo { color: var(--u-text); }
 html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: 18px; }
 html.ui2 .ui2-brand .app-brand-accent { color: var(--u-accent); }
 /* The tagline lines stay in the page (the current layout shows them) but not
-   in the frame: the sidebar's height belongs to the speakers and the entries. */
+   in the frame: the sidebar's height belongs to the speakers. */
 html.ui2 .ui2-brand .app-tagline,
 html.ui2 .ui2-brand .app-supported { display: none; }
 
@@ -445,34 +433,29 @@ html.ui2 .ui2-room-badges {
 }
 
 /* The speaker list (#1284, speakers.js): every speaker on the network, the
-   group you control pinned on top, the others scrolling on their own. Both
-   lists are capped, so with eight or more speakers (or a big group) the
-   navigation below never scrolls away. */
-/* How the height is shared: the speaker section gives up its room first
-   (flex-shrink 100 against the entries' 1), down to a floor of the pinned
-   group plus three and a half rows of the others (mount.js measures it and
-   sets it as the section's min-height), which is where the others scroll on
-   their own. Below that the navigation entries scroll in their own box
-   (.ui2-side-scroll); the small entries at the bottom never move, and the
-   speaker list scrolling never moves anything. */
+   group you control pinned on top, the others below it. The section takes
+   all the height the sidebar has left (flex 1 1 0). The pinned group keeps
+   its cap (--u-spk-pinned rows) and scrolls on its own beyond that; the other
+   speakers fill the rest and are the sidebar's one scroll box. In a window
+   too short even for that, the pinned group gives up rows before the others
+   go below a row and a half. */
 html.ui2 .ui2-spk {
   display: flex;
-  flex: 0 100 auto;
+  flex: 1 1 0;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
   padding: 2px 4px;
-  border-bottom: 1px solid var(--u-border);
 }
 html.ui2 .ui2-spk-lists {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   min-height: 0;
 }
 html.ui2 .ui2-spk-pinned {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   min-height: 0;
   margin-bottom: 4px;
@@ -504,17 +487,23 @@ html.ui2 .ui2-spk-scroll {
   scroll-padding-block: 4px;
 }
 html.ui2 .ui2-spk-pinned .ui2-spk-list {
+  flex: 0 1 auto;
   min-height: 0;
   max-height: calc(var(--u-spk-row) * var(--u-spk-pinned));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 html.ui2 .ui2-spk-scroll {
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: calc(var(--u-spk-row) * var(--u-spk-visible));
+  flex: 1 1 0;
+  min-height: calc(var(--u-spk-row) * 1.5);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+/* Thin scrollbars: the lists and the main pane scroll, and Windows draws a
+   wide bar that is always there. */
+html.ui2 :is(.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list, .ui2-main) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--u-border) transparent;
 }
 /* The list ends below a whole row (mount.js endOnRow); a shadow on the edge
    where more rows wait says that it scrolls. The two covers scroll with the
@@ -526,19 +515,6 @@ html.ui2 :is(.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list) {
     linear-gradient(color-mix(in srgb, var(--u-text) 22%, transparent), transparent) top / 100% 10px no-repeat scroll,
     linear-gradient(transparent, color-mix(in srgb, var(--u-text) 22%, transparent)) bottom / 100% 10px no-repeat scroll;
   background-color: var(--u-sidebar);
-}
-/* Squeezed (mount.js holdSpeakerFloor): a sidebar too short for both capped
-   lists and the navigation entries. The lists give up their own scroll and
-   caps and scroll together in .ui2-spk-lists, so the section never paints
-   over the entries below it. */
-html.ui2 .ui2-spk.is-squeezed .ui2-spk-lists {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-html.ui2 .ui2-spk.is-squeezed :is(.ui2-spk-pinned .ui2-spk-list, .ui2-spk-scroll) {
-  flex: 0 0 auto;
-  max-height: none;
-  overflow: visible;
 }
 /* Named for screen readers (the section's heading); on screen the sub
    headings and the rows say it, and the height goes to the rows. */
@@ -610,67 +586,81 @@ html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: v
 html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: 4px 12px; color: var(--u-muted); font-size: 12px; }
 
-/* A short window or a larger text size: fewer rows before the lists scroll. */
+/* A short window or a larger text size: fewer pinned rows before that list
+   scrolls, so the other speakers keep room. */
 @media (height <= 700px) {
-  html.ui2 { --u-spk-visible: 3.5; --u-spk-pinned: 2.5; }
+  html.ui2 { --u-spk-pinned: 2.5; }
 }
 html.ui2.a11y-scale-l,
-html.ui2.a11y-scale-xl { --u-spk-visible: 3.5; --u-spk-pinned: 2.5; }
+html.ui2.a11y-scale-xl { --u-spk-pinned: 2.5; }
 
-/* Navigation. Groups are labelled groups of buttons, not a tablist. */
-html.ui2 .ui2-nav-group + .ui2-nav-group { margin-top: 8px; }
-html.ui2 .ui2-nav-heading {
-  padding: 0 16px 4px;
-  color: var(--u-muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+/* ---------- Tabs: the navigation above the page ---------- */
+
+/* A row of buttons in a nav landmark, the open one marked with
+   aria-current="page" (not a tablist: each entry switches the whole page).
+   It sits in its own grid row above the main pane, so the page scrolls below
+   it and the tabs never scroll away. Wishes and Help and info follow small and
+   muted at the far end. When the row does not fit (a larger text size, a long
+   language) it wraps onto a second line: nothing is ever cut off. */
+html.ui2 .ui2-tabs {
+  grid-area: tabs;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  column-gap: 2px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--u-border);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 .ui2-tabs-small {
+  display: flex;
+  align-items: stretch;
+  column-gap: 2px;
+  margin-inline-start: auto;
 }
 html.ui2 .ui2-nav-item {
   position: relative;
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 6px;
+  /* The 40px target and no more: every pixel of the row is taken from the
+     page below it (Radio still shows its first station row without
+     scrolling in the default window). */
   min-height: var(--u-target);
-  padding: 0 16px;
+  padding: 0 10px;
   border: 0;
-  border-radius: var(--u-radius);
+  border-radius: var(--u-radius) var(--u-radius) 0 0;
   background: transparent;
   color: var(--u-text);
   font-family: var(--u-font);
   font-size: 14px;
-  text-align: start;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 html.ui2 .ui2-nav-item:hover { background: var(--u-surface); }
-html.ui2 .ui2-nav-item.is-active { background: var(--u-selected); font-weight: 700; }
-html.ui2 .ui2-nav-item.is-active::before {
+html.ui2 .ui2-nav-item.is-active { font-weight: 700; }
+/* The open tab: a 3px accent line along its foot, on the row's edge. */
+html.ui2 .ui2-nav-item.is-active::after {
   content: '';
   position: absolute;
-  inset-block: 8px;
-  inset-inline-start: 0;
-  width: 4px;
-  border-radius: 2px;
+  inset-inline: 6px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
   background: var(--u-accent);
 }
-/* Labels wrap rather than truncate: a long entry in some languages
-   ("Lautsprecher-Einstellungen" with a badge) keeps its whole name, and the
-   item grows from its 40px minimum. */
-html.ui2 .ui2-nav-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-block: 8px;
-  line-height: 1.3;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: 13px; }
+html.ui2 .ui2-nav-text { line-height: 1.3; }
+html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: 13px; font-weight: 400; }
+html.ui2 .ui2-nav-item--small.is-active { color: var(--u-text); font-weight: 700; }
 html.ui2 .ui2-nav-item .nav-newdot { flex: 0 0 auto; margin: 0; }
 
-/* App settings ("Aa" and the language) at the bottom: their menus open
-   upward, from the leading edge, and scroll when the window is short. */
+/* App settings ("Aa" and the language) in one row at the foot of the
+   sidebar: their menus open upward, from the leading edge, and scroll when
+   the window is short. */
 html.ui2 .ui2-app-settings {
   display: flex;
   align-items: center;
@@ -712,9 +702,9 @@ html.ui2 .ui2-main-inner {
 html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
 /* Every view ends with its own content: the classic footer (version, donate,
    world map, links) is support material, and Help and info (shell2/help, the
-   small sidebar entry under Wishes) is its one place in the preview. Each of
-   its links has a home there, the version line also sits at the bottom of the
-   sidebar (watchAppUpdateBanner), and the donate buttons show nowhere else.
+   small tab after Wishes) is its one place in the preview. Each of its links
+   has a home there, the version and the update check are in its About, and
+   the donate buttons show nowhere else.
    The node stays where mount.js put it, so the classic layout gets it back
    unchanged when the preview is switched off. */
 html.ui2 #appFooter { display: none; }
@@ -939,32 +929,30 @@ html.ui2 .worldmap-invite { bottom: calc(var(--u-player-min) + 24px); }
 }
 
 
-/* The app's version line ("Version ... Check for app updates") at the bottom
-   of the sidebar, a footnote in the frame. A real update notice is a banner
-   and moves to the banner region (mount.js, watchAppUpdateBanner). */
-html.ui2 .ui2-side-version .app-update-banner.app-update-quiet {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  max-width: none;
-  margin: 0;
-  padding: 0 8px;
-  color: var(--u-muted);
-  font-family: var(--u-font);
-  font-size: 12px;
-  line-height: 1.4;
-}
-html.ui2 .ui2-side-version .app-update-banner.app-update-quiet.hidden { display: none; }
-html.ui2 .ui2-side-version .app-update-quiet .footer-link { color: var(--u-accent); font-size: 12px; }
-/* Small text, full-size target: the link and any button in the line take the
-   40px the rest of the sidebar uses. */
-html.ui2 .ui2-side-version .app-update-quiet :is(.footer-link, button) {
+/* The app's version line ("Version ... Check for app updates") waits out of
+   sight in the sidebar's update slot: the version and the update check live
+   on Help and info, About. The slot shows only while an update is waiting and
+   its notice was dismissed, as one small line whose press brings the notice
+   back (mount.js, watchAppUpdateBanner). A real update notice is a banner and
+   moves to the banner region. */
+html.ui2 .ui2-side-update .app-update-banner { display: none; }
+html.ui2 .ui2-update-line {
   display: inline-flex;
   align-items: center;
   min-height: var(--u-target);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--u-radius);
+  background: transparent;
+  color: var(--u-accent);
+  font-family: var(--u-font);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
 }
-html.ui2 .ui2-side-version .app-update-quiet-note { color: var(--u-muted); }
+html.ui2 .ui2-update-line:hover { background: var(--u-surface); }
 
 /* ---------- Spotify (phase 2) ----------
 

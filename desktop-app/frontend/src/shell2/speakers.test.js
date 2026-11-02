@@ -186,7 +186,7 @@ describe('sidebar speaker model', () => {
     expect(m.others).toHaveLength(6);
   });
 
-  it('pins a big group whole, and the pinned list is capped so the navigation stays', () => {
+  it('pins a big group whole, and the pinned list is capped so the other speakers keep room', () => {
     const many = Array.from({ length: 8 }, (_, i) => box(40 + i, `G${i}G`, `Room ${i}`));
     const zl = {
       G0G: { master: 'G0G', members: many.map((b) => ({ deviceID: b.deviceID, ip: b.host })) },
@@ -196,7 +196,9 @@ describe('sidebar speaker model', () => {
     expect(m.pinned).toHaveLength(8);
     expect(m.memberCount).toBe(7);
     expect(css).toMatch(/\.ui2-spk-pinned \.ui2-spk-list \{[^}]*max-height: calc\(var\(--u-spk-row\) \* var\(--u-spk-pinned\)\)[^}]*overflow-y: auto/);
-    expect(css).toMatch(/\.ui2-spk-scroll \{[^}]*max-height: calc\(var\(--u-spk-row\) \* var\(--u-spk-visible\)\)[^}]*overflow-y: auto/);
+    // The others fill what the sidebar has left and scroll there.
+    expect(css).toMatch(/\.ui2-spk-scroll \{[^}]*flex: 1 1 0;[^}]*overflow-y: auto/);
+    expect(css).toMatch(/html\.ui2 \.ui2-spk \{[^}]*flex: 1 1 0;[^}]*min-height: 0/);
   });
 });
 

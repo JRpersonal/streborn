@@ -1766,8 +1766,6 @@
   "ui2.preview.noStorage": "Bu bilgisayar uygulamanın seçimi hatırlamasına izin vermiyor, bu yüzden düzen değiştirilemez.",
   "ui2.skip": "İçeriğe atla",
   "ui2.nav.label": "Ana gezinme",
-  "ui2.nav.listen": "Dinle",
-  "ui2.nav.home": "Ev",
   "ui2.nav.radio": "Radyo",
   "ui2.radio.keysOn": "Tuşlar: {{name}}",
   "ui2.radio.keysHint": "Hoparlörün üstündeki altı tuş",

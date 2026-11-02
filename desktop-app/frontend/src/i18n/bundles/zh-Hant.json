@@ -1766,8 +1766,6 @@
   "ui2.preview.noStorage": "這台電腦不允許應用程式記住這個選擇，因此無法切換版面。",
   "ui2.skip": "跳至內容",
   "ui2.nav.label": "主要導覽",
-  "ui2.nav.listen": "收聽",
-  "ui2.nav.home": "家中",
   "ui2.nav.radio": "電台",
   "ui2.radio.keysOn": "{{name}} 的預設鍵",
   "ui2.radio.keysHint": "喇叭頂部的六個按鍵",

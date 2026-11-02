@@ -95,7 +95,9 @@ describe('UI 2.0 tokens', () => {
 
   it('sizes the sidebar speaker lists with tokens', () => {
     expect(base['u-spk-row']).toBe('44px');
-    expect(Number(base['u-spk-visible'])).toBeGreaterThan(Number(base['u-spk-pinned']));
+    expect(Number(base['u-spk-pinned'])).toBeGreaterThan(1);
+    // The other speakers take the rest of the sidebar: no row cap of their own.
+    expect(base['u-spk-visible']).toBeUndefined();
   });
 
   it('draws the danger button edge in the danger colour', () => {

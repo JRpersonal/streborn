@@ -8,12 +8,12 @@
 //   - in the shell the persistent player (#ui2Player) lies fully inside the
 //     viewport and never overlaps the main pane (#ui2Main), solo and grouped;
 //   - in the shell every control is a 40 x 40 target (shell2.css --u-target):
-//     the navigation entries, More, Levels (grouped scenario only: it exists
+//     the tabs, More, Levels (grouped scenario only: it exists
 //     only while the controlled speaker leads a group), every visible sidebar
 //     row's pick button and "+"/"-" action, the mute button and the
 //     title-swap label the shell moved into the player;
-//   - in the shell every sidebar navigation entry takes a click: neither the
-//     speaker list nor the Aa / language buttons are ever drawn over it.
+//   - in the shell every tab of the row above the page lies inside the window
+//     and takes a click (the row wraps at a large text size, never cuts off).
 //
 // The sidebar lists every speaker (no room switcher, no Output popover any
 // more); group volume and Levels live in the player.
@@ -91,23 +91,28 @@ async function playerGeometry(page) {
   expect(disjoint([pBox, mBox]), `#ui2Player ${JSON.stringify(pBox)} overlaps #ui2Main ${JSON.stringify(mBox)}`).toEqual([]);
 }
 
-// sidebarNavReachable: every navigation entry, scrolled into its own box,
-// is the element a click at its centre lands on. At Extra large text in the
-// smallest window, a group playing, the speaker list once squeezed the
-// entries to nothing and the Aa / language buttons and the Office row were
-// drawn over "Speaker settings" (mount.js holdSpeakerFloor).
-async function sidebarNavReachable(page) {
-  const bad = await page.locator('#ui2Sidebar').evaluate((side) => {
+// tabsReachable: every tab of the row above the page lies inside the window
+// and is the element a click at its centre lands on; the row is never cut
+// off (it wraps at a large text size instead). The sidebar holds no
+// navigation any more, so nothing there can be drawn over an entry.
+async function tabsReachable(page) {
+  const bad = await page.locator('#ui2Tabs').evaluate((row) => {
     const out = [];
-    for (const it of side.querySelectorAll('.ui2-nav-item')) {
-      it.scrollIntoView({ block: 'nearest' });
+    const items = row.querySelectorAll('.ui2-nav-item');
+    if (items.length !== 7) out.push(`${items.length} tabs`);
+    for (const it of items) {
       const b = it.getBoundingClientRect();
+      if (b.left < -0.5 || b.right > window.innerWidth + 0.5 || b.top < -0.5 || b.bottom > window.innerHeight + 0.5) {
+        out.push(`${it.dataset.view}: outside the window`);
+        continue;
+      }
       const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
       if (!hit || !it.contains(hit)) out.push(`${it.dataset.view}: ${hit ? hit.className || hit.tagName : 'nothing'}`);
     }
+    if (row.scrollWidth > row.clientWidth + 1) out.push('the row is cut off sideways');
     return out;
   });
-  expect(bad, 'sidebar entries covered by something else').toEqual([]);
+  expect(bad, 'tabs cut off or covered by something else').toEqual([]);
 }
 
 // waitForTitleSwap runs the page clock until the live-title poll
@@ -150,7 +155,7 @@ for (const scale of SCALES) {
           await noHorizontalOverflow(page);
           await mainFitsX(page);
           await playerGeometry(page);
-          await sidebarNavReachable(page);
+          await tabsReachable(page);
         });
       }
 
@@ -163,7 +168,7 @@ for (const scale of SCALES) {
         await expect(page.locator('#ui2RoomBtn')).toHaveCount(0);
         await expect(page.locator('#ui2OutputBtn')).toHaveCount(0);
 
-        const nav = page.locator('#ui2Sidebar .ui2-nav-item');
+        const nav = page.locator('#ui2Tabs .ui2-nav-item');
         expect(await nav.count()).toBeGreaterThan(0);
         await minSize(nav, 40);
 
