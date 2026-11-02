@@ -16,7 +16,9 @@
 // the repo), SHOOT_THEMES=dark,light adds a <theme> folder level and sets the
 // page's theme, SHOOT_WIDTH=320 shoots a narrower phone. The phone-keys-*,
 // phone-save-row2 and phone-alarm-row2 views show the second row of keys
-// (#1110); they are not in the default set.
+// (#1110); they are not in the default set. Neither are phone-alarm-offat
+// (switch-off at a time of day, #1364) and phone-alarm-skip (days without an
+// alarm, #1491).
 //
 // SHOOT_UI2=1 shoots the UI 2.0 preview (Aa > Layout, localStorage
 // str.ui2Preview) into a ui2/ folder level, with its own default views:
@@ -113,6 +115,16 @@ async function drive(page, view) {
     await page.click('#alarmRowSw button[data-row="2"]');
     await page.click('#alarmSlots [data-alarm-slot="9"]');
     await scrollTo('#alarmTime', 120);
+  } else if (view === 'phone-alarm-offat') {
+    // The weekend alarm switches off at a time of day (discussion #1364).
+    await page.waitForSelector('#alarmList [data-alarm-edit="1"]', { timeout: 9000 });
+    await page.click('#alarmList [data-alarm-edit="1"]');
+    await page.waitForSelector('#alarmOffAtRow:not([hidden])', { timeout: 9000 });
+    await scrollTo('#alarmVol', 160);
+  } else if (view === 'phone-alarm-skip') {
+    // Days without an alarm (discussion #1491).
+    await page.waitForSelector('#alarmSkip', { timeout: 9000 });
+    await scrollTo('#lblAlarm', 70);
   } else if (view === 'phone-list') {
     await page.click('#dev');
     await page.waitForSelector('#u2List #peers a.peer', { timeout: 9000 });
