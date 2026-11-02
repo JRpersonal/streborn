@@ -168,15 +168,21 @@ func TestBulkPresetPutRefusesAStationThatSitsOnASlotOutsideThePayload(t *testing
 		t.Fatalf("answered %d, want 409: %s", rec.Code, rec.Body.String())
 	}
 	var c struct {
-		Code string `json:"code"`
-		Name string `json:"name"`
-		Slot int    `json:"slot"`
+		Code        string `json:"code"`
+		Name        string `json:"name"`
+		Slot        int    `json:"slot"`
+		PayloadSlot int    `json:"payloadSlot"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &c); err != nil {
 		t.Fatalf("409 body is not the documented JSON: %v (%s)", err, rec.Body.String())
 	}
 	if c.Code != "already-on-slot" || c.Slot != 5 || c.Name != "Keeper" {
 		t.Errorf("409 body = %+v, want it to name the untouched key 5 and its station", c)
+	}
+	// The key of the set that collided, so a copy of chosen keys (#1551) can
+	// leave that one out and copy the rest.
+	if c.PayloadSlot != 2 {
+		t.Errorf("409 body names payload key %d, want 2 (the key whose station collided)", c.PayloadSlot)
 	}
 	got := slotNames(store)
 	if len(got) != len(before) || got[5] != "Keeper" {

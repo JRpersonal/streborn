@@ -40,6 +40,7 @@ export {
   RestoreBoxSnapshot,
   RecallBoxPreset,
   CopyPresetsAcrossBoxes,
+  CopyPresetKeysAcrossBoxes,
   GetBoxFirmware,
   GetFirmwareGuide,
   FlashBoseFirmware,

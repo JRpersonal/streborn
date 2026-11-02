@@ -64,6 +64,8 @@ export function ConsumeStableNameNotice():Promise<boolean>;
 
 export function ConsumeWingetUpgradeFailure():Promise<main.WingetUpgradeFailure>;
 
+export function CopyPresetKeysAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number,arg5:Array<number>):Promise<main.KeyCopyResult>;
+
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
 
 export function CurrentWiFi():Promise<string>;
