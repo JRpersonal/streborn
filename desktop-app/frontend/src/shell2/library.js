@@ -217,8 +217,10 @@ export function trackRowHTML(it, { key, attr, value, speaker = '', meta = '', du
 
 // folderActionsHTML is the bar above a folder that holds tracks: play it all
 // as a queue, put it on a key, shuffle and repeat, and the feedback line of
-// the two folder actions.
-export function folderActionsHTML({ speaker = '', shuffle = false, repeat = 'off', status = null } = {}) {
+// the two folder actions. A folder of folders (#1682) gets the same bar with
+// hint, what the actions do there, and note, the line that says when the
+// tracks collected below it were not all of them.
+export function folderActionsHTML({ speaker = '', shuffle = false, repeat = 'off', status = null, hint = '', note = null } = {}) {
   const play = speaker ? t('ui2.library.playFolderOn', { name: speaker }) : t('controls.playFolder');
   const key = speaker ? t('ui2.library.keyFolderOn', { name: speaker }) : t('controls.saveFolderPreset');
   return `
@@ -234,17 +236,20 @@ export function folderActionsHTML({ speaker = '', shuffle = false, repeat = 'off
           </div>
         </div>
         ${statusHTML('folder', status)}
+        ${hint ? `${statusHTML('folderCut', note)}<p class="lib2-hint">${escapeHtml(hint)}</p>` : ''}
       </div>`;
 }
 
 // filterRowHTML is the filter over the open folder (client side, over what is
-// loaded), with its visible label and the count it narrows.
-export function filterRowHTML(filter, count) {
+// loaded), with its visible label and the count it narrows. sort is the order
+// picker (#1257), drawn by views/library.js, which owns the choice.
+export function filterRowHTML(filter, count, sort = '') {
   return `
       <div class="lib2-filter">
         <label class="lib2-filter-label" for="libSearch">${escapeHtml(t('ui2.library.filterLabel'))}</label>
         <input type="search" class="lib2-input" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(filter || '')}">
         <span class="lib2-count" id="libCount" role="status">${escapeHtml(countText(count))}</span>
+        ${sort}
       </div>`;
 }
 

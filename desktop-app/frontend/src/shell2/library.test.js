@@ -82,6 +82,13 @@ describe('the speaker is named', () => {
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('Repeat: one track');
     expect(html).toContain('data-skey="folder"');
+    // Only a folder of folders (#1682) says what the actions do there, with a
+    // line for a walk that had to leave tracks out.
+    expect(html).not.toContain('lib2-hint');
+    expect(html).not.toContain('data-skey="folderCut"');
+    const subs = folderActionsHTML({ speaker: 'Kitchen', hint: 'Plays the subfolders.', note: { tone: 'warn', text: 'Cut.' } });
+    expect(subs).toContain('<p class="lib2-hint">Plays the subfolders.</p>');
+    expect(subs).toMatch(/lib2-status--warn" role="status" data-skey="folderCut">Cut\.</);
   });
 
   it('in the head of every level', () => {
@@ -205,7 +212,7 @@ describe('the view keeps one copy and both layouts', () => {
     const play = srcOf('libraryPlay');
     expect(play).toContain("showToast(t('library.toastPlaying') + ': ' + (item.title || ''));");
     expect(play).toContain('else showError(`PlayURL: $' + '{e}`);');
-    expect(srcOf('libraryPlayFolder')).toContain("showToast(t('library.folderQueued', { n: items.length - start }));");
+    expect(srcOf('libraryPlayFolder')).toContain("showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree));");
     expect(srcOf('libraryBrowseCurrent')).toMatch(/if \(ui2\(\)\) \{[\s\S]*\} else if \(looksUnreachable\(e\)\) \{/);
   });
 

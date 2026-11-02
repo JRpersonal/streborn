@@ -20,7 +20,8 @@
 // Deliberately narrow, as #919 asks:
 //   - only a URL that has actually failed is re-resolved, once, with a short
 //     budget; a key whose URL serves costs one ranged GET and nothing else;
-//   - never a library crawl: one metadata call, at most one folder;
+//   - never a library crawl: one metadata call, at most one folder, or for a
+//     folder of folders the bounded walk it was saved from (libraryfoldertree.go);
 //   - keys saved before this (no ids) keep exactly their old behaviour.
 
 package webui
@@ -268,7 +269,10 @@ func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.
 			"slot", slot, "server", p.Source, "serverOff", off != nil)
 		return false, off
 	}
-	fresh, _, err := s.browseContainerItems(rctx, srv, p.Folder.ContainerID)
+	// A folder of folders (an artist with one folder per album, #1682) is read
+	// with its sub-folders, the way it was walked when it was put on the key.
+	tree, err := s.collectFolderTracks(rctx, srv, p.Folder.ContainerID, false)
+	fresh := tree.items
 	if err != nil || len(fresh) == 0 {
 		s.logger.Info("queue preset: the tracks no longer serve and the folder could not be read again",
 			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID, "err", err)

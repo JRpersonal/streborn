@@ -28,6 +28,9 @@ type fakeRenumberingServer struct {
 	// knowsIDs false answers every BrowseMetadata with 701 No such object:
 	// the server renumbered its object ids too.
 	knowsIDs bool
+	// parentOf, when set, is a folder that holds c-1 as its only child and no
+	// songs: an artist folder over an album (#1682).
+	parentOf string
 	calls    []string
 }
 
@@ -99,15 +102,18 @@ func (f *fakeRenumberingServer) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		didl.WriteString(found)
 	default:
-		if id != "c-1" {
+		switch {
+		case f.parentOf != "" && id == f.parentOf:
+			didl.WriteString(`<container id="c-1" parentID="` + id + `"><dc:title>Album</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>`)
+		case id != "c-1":
 			didl.Reset()
-		} else {
+		default:
 			for _, it := range f.items {
 				didl.WriteString(f.itemXML(it[0], it[1]))
 			}
 		}
 	}
-	n := strings.Count(didl.String(), "<item ")
+	n := strings.Count(didl.String(), "<item ") + strings.Count(didl.String(), "<container ")
 	result := `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">` +
 		didl.String() + `</DIDL-Lite>`
 	_, _ = fmt.Fprintf(w, `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>`+
