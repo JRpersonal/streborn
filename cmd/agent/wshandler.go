@@ -102,6 +102,9 @@ type presetWsHandler struct {
 	// onBassKey moves the bass one step (webui.BassKeyPress), for a thumbs
 	// key bound to bassUp or bassDown. nil-safe.
 	onBassKey func(action string)
+	// onPlayModeKey switches shuffle or steps repeat on a Spotify playlist
+	// (webui.PlayModeKeyPress, #1679). nil-safe.
+	onPlayModeKey func(action string)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
@@ -1157,7 +1160,7 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 		h.logger.Info("a thumbs key carries a saved group, but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so no group was formed or dissolved")
 	}
 	if h.keyActions.Bound(keyactions.KeyThumbsUp) || h.keyActions.Bound(keyactions.KeyThumbsDown) {
-		h.logger.Info("a thumbs key carries a key action (sleep timer, snooze or a bass step), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
+		h.logger.Info("a thumbs key carries a key action (sleep timer, snooze, a bass step, shuffle or repeat), but this press could not be told from the other thumbs key (the speaker's key trace named nothing), so the action did not run")
 	}
 	go func() {
 		src, _, status := h.nowPlayingSummary()

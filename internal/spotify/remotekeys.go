@@ -1,5 +1,6 @@
 // remotekeys.go: what the speaker's own remote does to a Spotify playlist
-// beyond Next: the Back key going to the previous song (#1678).
+// beyond Next: the Back key going to the previous song (#1678), and the
+// shuffle and repeat switches a thumbs key can carry (#1679).
 //
 // Back. go-librespot's /player/prev follows Spotify's rule: past 3 seconds of
 // the song it restarts the song, inside them it goes to the song before. Its
@@ -120,4 +121,98 @@ func (m *Manager) RemotePrev(ctx context.Context) (back bool, err error) {
 	// boundary of its own that used the first arm up.
 	m.NoteSkip()
 	return true, m.Prev(ctx)
+}
+
+// Repeat modes the remote's repeat key steps through, in the Spotify app's
+// order.
+const (
+	RepeatOff     = "off"
+	RepeatContext = "context"
+	RepeatTrack   = "track"
+)
+
+// playModes is the shuffle and repeat state of the live engine.
+type playModes struct {
+	Shuffle       bool `json:"shuffle_context"`
+	RepeatContext bool `json:"repeat_context"`
+	RepeatTrack   bool `json:"repeat_track"`
+}
+
+func (p playModes) repeat() string {
+	switch {
+	case p.RepeatTrack:
+		return RepeatTrack
+	case p.RepeatContext:
+		return RepeatContext
+	}
+	return RepeatOff
+}
+
+// nextRepeat is the mode one press of the repeat key goes to: off -> the whole
+// playlist -> the one song -> off.
+func nextRepeat(cur string) string {
+	switch cur {
+	case RepeatOff:
+		return RepeatContext
+	case RepeatContext:
+		return RepeatTrack
+	}
+	return RepeatOff
+}
+
+func (m *Manager) readPlayModes(ctx context.Context) (playModes, error) {
+	b, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return playModes{}, err
+	}
+	var p playModes
+	if err := json.Unmarshal(b, &p); err != nil {
+		return playModes{}, fmt.Errorf("go-librespot /status: %w", err)
+	}
+	return p, nil
+}
+
+// ToggleShuffle switches the live playlist's shuffle and reports the new
+// state. The state is read fresh, so a change made in the Spotify app since
+// is what the press flips.
+func (m *Manager) ToggleShuffle(ctx context.Context) (on bool, err error) {
+	p, err := m.readPlayModes(ctx)
+	if err != nil {
+		return false, err
+	}
+	on = !p.Shuffle
+	if err := m.apiPost(ctx, "/player/shuffle_context", fmt.Sprintf(`{"shuffle_context":%t}`, on)); err != nil {
+		return p.Shuffle, err
+	}
+	return on, nil
+}
+
+// CycleRepeat moves the live playlist's repeat one step (nextRepeat) and
+// reports the new mode.
+func (m *Manager) CycleRepeat(ctx context.Context) (mode string, err error) {
+	p, err := m.readPlayModes(ctx)
+	if err != nil {
+		return "", err
+	}
+	mode = nextRepeat(p.repeat())
+	if err := m.setRepeatSwitches(ctx, mode != RepeatOff, mode == RepeatTrack); err != nil {
+		return p.repeat(), err
+	}
+	return mode, nil
+}
+
+// setRepeatSwitches writes both engine repeat switches. The song switch goes
+// first when it goes off and last when it goes on, so the playlist switch in
+// between never leaves the engine looping one song the user stepped past.
+func (m *Manager) setRepeatSwitches(ctx context.Context, ctxOn, trackOn bool) error {
+	if !trackOn {
+		if err := m.apiPost(ctx, "/player/repeat_track", `{"repeat_track":false}`); err != nil {
+			return err
+		}
+		return m.apiPost(ctx, "/player/repeat_context", fmt.Sprintf(`{"repeat_context":%t}`, ctxOn))
+	}
+	if err := m.apiPost(ctx, "/player/repeat_context", fmt.Sprintf(`{"repeat_context":%t}`, ctxOn)); err != nil {
+		return err
+	}
+	return m.apiPost(ctx, "/player/repeat_track", `{"repeat_track":true}`)
 }

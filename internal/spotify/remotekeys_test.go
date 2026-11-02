@@ -12,12 +12,13 @@ import (
 	"time"
 )
 
-// fakePlayModeEngine answers /status with a position and records every POST
-// with its body.
+// fakePlayModeEngine answers /status with a position and the play modes, and
+// records every POST with its body.
 type fakePlayModeEngine struct {
 	mu    sync.Mutex
 	posMs int64
 	noPos bool
+	modes playModes
 	posts []string
 }
 
@@ -25,7 +26,11 @@ func (f *fakePlayModeEngine) handler(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r.Method == http.MethodGet && r.URL.Path == "/status" {
-		st := map[string]any{}
+		st := map[string]any{
+			"shuffle_context": f.modes.Shuffle,
+			"repeat_context":  f.modes.RepeatContext,
+			"repeat_track":    f.modes.RepeatTrack,
+		}
 		if !f.noPos {
 			st["track"] = map[string]any{"uri": "spotify:track:x", "position": f.posMs}
 		}
@@ -34,6 +39,16 @@ func (f *fakePlayModeEngine) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	b, _ := io.ReadAll(r.Body)
 	f.posts = append(f.posts, r.URL.Path+" "+strings.TrimSpace(string(b)))
+	var v map[string]bool
+	_ = json.Unmarshal(b, &v)
+	switch r.URL.Path {
+	case "/player/shuffle_context":
+		f.modes.Shuffle = v["shuffle_context"]
+	case "/player/repeat_context":
+		f.modes.RepeatContext = v["repeat_context"]
+	case "/player/repeat_track":
+		f.modes.RepeatTrack = v["repeat_track"]
+	}
 }
 
 func (f *fakePlayModeEngine) calls() []string {
@@ -124,5 +139,50 @@ func TestRemotePrevWithoutPositionLeavesItToTheEngine(t *testing.T) {
 	}
 	if got := f.calls(); len(got) != 1 || !strings.HasPrefix(got[0], "/player/prev") {
 		t.Fatalf("engine calls = %q, want one plain prev", got)
+	}
+}
+
+func TestToggleShuffleFlipsTheLiveState(t *testing.T) {
+	f := &fakePlayModeEngine{}
+	m := newFakePlayModeManager(t, f)
+	on, err := m.ToggleShuffle(context.Background())
+	if err != nil || !on {
+		t.Fatalf("first press: on=%v err=%v", on, err)
+	}
+	on, err = m.ToggleShuffle(context.Background())
+	if err != nil || on {
+		t.Fatalf("second press: on=%v err=%v", on, err)
+	}
+}
+
+func TestCycleRepeatStepsLikeTheSpotifyApp(t *testing.T) {
+	f := &fakePlayModeEngine{}
+	m := newFakePlayModeManager(t, f)
+	for _, want := range []string{RepeatContext, RepeatTrack, RepeatOff, RepeatContext} {
+		mode, err := m.CycleRepeat(context.Background())
+		if err != nil {
+			t.Fatalf("press: %v", err)
+		}
+		if mode != want {
+			t.Fatalf("mode = %q, want %q", mode, want)
+		}
+		f.mu.Lock()
+		if got := f.modes.repeat(); got != want {
+			f.mu.Unlock()
+			t.Fatalf("engine state = %q, want %q", got, want)
+		}
+		f.mu.Unlock()
+	}
+}
+
+func TestCycleRepeatFromSongRepeatGoesOff(t *testing.T) {
+	f := &fakePlayModeEngine{modes: playModes{RepeatContext: true, RepeatTrack: true}}
+	m := newFakePlayModeManager(t, f)
+	mode, err := m.CycleRepeat(context.Background())
+	if err != nil || mode != RepeatOff {
+		t.Fatalf("mode=%q err=%v, want off", mode, err)
+	}
+	if got := f.calls(); got[0] != `/player/repeat_track {"repeat_track":false}` {
+		t.Fatalf("the song repeat must go off first, calls = %q", got)
 	}
 }

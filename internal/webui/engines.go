@@ -122,12 +122,18 @@ type SpotifyEngineLifecycle interface {
 }
 
 // SpotifyRemoteKeys is what the speaker's own remote does to a playlist
-// beyond Next: Back by what the room hears (#1678). Without it Back is the
-// engine's plain prev.
+// beyond Next: Back by what the room hears (#1678) and the shuffle and repeat
+// key actions (#1679). Without it Back is the engine's plain prev and the two
+// key actions do nothing.
 type SpotifyRemoteKeys interface {
 	// RemotePrev (spotifyRemotePrev): the song before inside the first
 	// seconds heard, a restart later.
 	RemotePrev(ctx context.Context) (back bool, err error)
+	// ToggleShuffle (spotifyToggleShuffle): flip shuffle, report the new state.
+	ToggleShuffle(ctx context.Context) (on bool, err error)
+	// CycleRepeat (spotifyCycleRepeat): off -> playlist -> song -> off,
+	// report the new mode.
+	CycleRepeat(ctx context.Context) (mode string, err error)
 }
 
 // WithSpotify wires the whole Spotify control plane from one engine value.
@@ -169,6 +175,8 @@ func WithSpotify(e SpotifyEngine) Option {
 		}
 		if k, ok := e.(SpotifyRemoteKeys); ok {
 			s.spotifyRemotePrev = k.RemotePrev
+			s.spotifyToggleShuffle = k.ToggleShuffle
+			s.spotifyCycleRepeat = k.CycleRepeat
 		}
 		if l, ok := e.(SpotifyEngineLifecycle); ok {
 			s.spotifyReload = l.Reload

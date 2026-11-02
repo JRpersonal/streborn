@@ -43,8 +43,10 @@ func Bass(level, lo, hi int) Notice {
 
 // swapsInPlace reports whether a notice of kind k may be taken over by a
 // newer one of the same kind inside one panel hold: the steps of a key the
-// user taps through (sleep timer, bass).
-func swapsInPlace(k NoticeKind) bool { return k == NoticeSleep || k == NoticeBass }
+// user taps through (sleep timer, bass, shuffle and repeat).
+func swapsInPlace(k NoticeKind) bool {
+	return k == NoticeSleep || k == NoticeBass || k == NoticePlayMode
+}
 
 // bassIcon is a loudspeaker: the magnet, the cone and two sound waves.
 func (c canvas) bassIcon() {

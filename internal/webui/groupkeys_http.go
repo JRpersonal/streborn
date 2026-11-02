@@ -49,6 +49,10 @@ func (s *Server) handleGroupKeys(w http.ResponseWriter, r *http.Request) {
 					what = "snooze"
 				case keyactions.IsBass(a):
 					what = "a bass step"
+				case a == keyactions.ActionShuffle:
+					what = "shuffle"
+				case a == keyactions.ActionRepeat:
+					what = "repeat"
 				}
 				http.Error(w, fmt.Sprintf("key %q already carries %s; a key carries either a group or a key action, take %s off that key first", key, what, what), http.StatusConflict)
 				return

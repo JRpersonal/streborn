@@ -310,6 +310,21 @@ agent logs every step (`snooze key pressed`, `alarm snoozed ... until`,
 `GET /api/alarms` reports a ringing or snoozed alarm in its status block
 (`ring`).
 
+## Shuffle and repeat keys (a thumbs key switches a Spotify playlist's mode)
+
+A thumbs key can carry `shuffle` or `repeat` (#1679), set in the same place
+("Spotify: shuffle on or off", "Spotify: repeat (off, playlist, song)") and
+marked with a small "S" or "R". While a Spotify playlist plays (also paused),
+`shuffle` flips go-librespot's shuffle and `repeat` steps it the Spotify app's
+way: off -> the whole playlist (`repeat_context`) -> the one song
+(`repeat_track`) -> off. Each press reads the state fresh from the engine, so
+a change made in the Spotify app meanwhile is what the press moves on from. A
+speaker with a panel shows SHUFFLE ON / OFF or REPEAT ALL / ONE / OFF. On any
+other source the key does nothing (`shuffle key pressed, but no Spotify
+playlist plays`). Nothing is stored: a Spotify preset's own shuffle and repeat
+flags still apply on its next recall. Thumbs keys only, same one-thing-per-key
+rules as the sleep timer.
+
 ## Alarm clock (a preset, but timed)
 
 An alarm wakes the speaker at a set time on set weekdays and plays one of the

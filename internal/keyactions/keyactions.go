@@ -10,6 +10,10 @@
 //     each press (discussion #1494, internal/webui basskey.go), within the
 //     range the speaker reports. On a speaker without adjustable bass they do
 //     nothing.
+//   - "shuffle" switches the Spotify playlist's shuffle on and off, "repeat"
+//     steps its repeat: off -> the whole playlist -> the one song -> off
+//     (#1679, internal/webui playmodekey.go). Outside a Spotify playlist they
+//     do nothing.
 //
 // Which key may carry which action follows from what the firmware does with
 // the key on its own. The thumbs keys do nothing by themselves, so every
@@ -19,6 +23,7 @@
 // the press as that source change. That is exactly what silences a ringing
 // alarm, so snooze may go on AUX; the sleep timer and the bass steps may not,
 // because each press would also switch the input away from whatever plays.
+// The same goes for shuffle and repeat.
 //
 // A key carries ONE thing: a saved group (internal/groupkeys, thumbs keys
 // only), a key action from here, or a webhook. Group and key action exclude
@@ -60,6 +65,10 @@ const (
 	ActionBassUp = "bassUp"
 	// ActionBassDown lowers the speaker's bass one step on every press.
 	ActionBassDown = "bassDown"
+	// ActionShuffle switches the Spotify playlist's shuffle on or off.
+	ActionShuffle = "shuffle"
+	// ActionRepeat steps the Spotify playlist's repeat.
+	ActionRepeat = "repeat"
 )
 
 // actions maps the lower-cased name of every known action to its canonical
@@ -69,6 +78,8 @@ var actions = map[string]string{
 	"snooze":   ActionSnooze,
 	"bassup":   ActionBassUp,
 	"bassdown": ActionBassDown,
+	"shuffle":  ActionShuffle,
+	"repeat":   ActionRepeat,
 }
 
 func thumbs(id string) bool { return id == KeyThumbsUp || id == KeyThumbsDown }
@@ -82,6 +93,9 @@ func knownAction(a string) bool { _, ok := actions[strings.ToLower(a)]; return o
 // IsBass reports whether a is one of the two bass steps.
 func IsBass(a string) bool { return a == ActionBassUp || a == ActionBassDown }
 
+// IsPlayMode reports whether a is shuffle or repeat.
+func IsPlayMode(a string) bool { return a == ActionShuffle || a == ActionRepeat }
+
 // describe names an action in an error the user reads.
 func describe(a string) string {
 	switch a {
@@ -89,6 +103,10 @@ func describe(a string) string {
 		return "the sleep timer"
 	case ActionBassUp, ActionBassDown:
 		return "the bass step"
+	case ActionShuffle:
+		return "shuffle"
+	case ActionRepeat:
+		return "repeat"
 	}
 	return a
 }
@@ -98,7 +116,7 @@ func describe(a string) string {
 // steps.
 func AllowedOn(action, key string) bool {
 	switch action {
-	case ActionSleep, ActionBassUp, ActionBassDown:
+	case ActionSleep, ActionBassUp, ActionBassDown, ActionShuffle, ActionRepeat:
 		return thumbs(key)
 	case ActionSnooze:
 		return thumbs(key) || key == KeyAux

@@ -122,6 +122,13 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		h.onSleepKey()
 		return
 	}
+	if a := h.keyActions.Action(id); keyactions.IsPlayMode(a) && h.onPlayModeKey != nil {
+		// Shuffle or repeat (#1679). Off the reader's goroutine: a press
+		// reads the engine and writes the new state.
+		h.logger.Info("play mode key pressed", "key", ev.Name, "action", a, "producer", ev.Producer.String())
+		go h.onPlayModeKey(a)
+		return
+	}
 	if a := h.keyActions.Action(id); keyactions.IsBass(a) && h.onBassKey != nil {
 		// Off the reader's goroutine: a step reads the speaker's bass and
 		// writes the new level. The handler runs presses one at a time.

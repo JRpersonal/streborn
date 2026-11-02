@@ -100,3 +100,9 @@ func (e *spotifyEngine) Stop() bool   { return e.m.StopEngine() }
 
 // webui.SpotifyRemoteKeys
 func (e *spotifyEngine) RemotePrev(ctx context.Context) (bool, error) { return e.m.RemotePrev(ctx) }
+func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
+	return e.m.ToggleShuffle(ctx)
+}
+func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
+	return e.m.CycleRepeat(ctx)
+}

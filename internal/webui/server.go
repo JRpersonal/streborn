@@ -148,7 +148,10 @@ type Server struct {
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
 	sleep sleepState
 	// bassKey runs the presses of a key bound to a bass step. See basskey.go.
-	bassKey     bassKeyState
+	bassKey bassKeyState
+	// playModeKey runs the presses of a key bound to shuffle or repeat. See
+	// playmodekey.go.
+	playModeKey playModeKeyState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -320,6 +323,11 @@ type Server struct {
 	// song before inside the first seconds heard, a restart later (#1678,
 	// spotify RemotePrev). nil falls back to spotifySkip.
 	spotifyRemotePrev func(ctx context.Context) (back bool, err error)
+	// spotifyToggleShuffle and spotifyCycleRepeat are the shuffle and repeat
+	// key actions (#1679, playmodekey.go). nil when the engine has no such
+	// switches; the keys then do nothing.
+	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
+	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
 	// skipRepushMu guards the skip re-attach bookkeeping: hwSkipAt marks a
 	// recent hardware skip (whose flow re-attaches the box itself), and
 	// lastSkipRepushAt debounces the soft-skip re-push so a burst of presses
@@ -844,6 +852,9 @@ type Server struct {
 	bassReadFn       func(ctx context.Context) (boxapi.Bass, error)
 	bassWriteFn      func(ctx context.Context, v int) error
 	showBassNoticeFn func(level, lo, hi int)
+	// playModeShowFn replaces the panel notice of the shuffle and repeat
+	// keys (playmodekey.go). nil means production.
+	playModeShowFn func(n oled.Notice)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
