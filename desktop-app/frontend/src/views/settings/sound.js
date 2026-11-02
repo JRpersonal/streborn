@@ -14,7 +14,9 @@ import { copyScreenshot, scoreText } from '../../arcadeshare.js';
 import {
   GetClockFormat24,
   GetClockDisplay,
-  SetClockDisplay,
+  GetClockBrightness,
+  SetClockBrightness,
+  SetStandbyClock,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
   GetDisplayTrack,
@@ -72,6 +74,14 @@ export function renderSoundSections() {
         <span class="muted small">${escapeHtml(t('settingsView.clockNotSupported'))}</span>
       </div>
       <small class="muted small" id="clockHelp">${escapeHtml(t('settingsView.clockHelp'))}</small>
+      <!-- Brightness of the clock (#1226): shown only where the speaker
+           reports a brightnessLevel. Its note sits right under it (#1677). -->
+      <div class="setting-row hidden" id="clockBrightnessRow" style="margin-top:8px">
+        <label class="muted small" for="boxClockBrightness" style="margin-right:6px">${escapeHtml(t('settingsView.clockBrightnessLabel'))}</label>
+        <input type="range" id="boxClockBrightness" min="0" max="100" step="10" value="70">
+        <span class="muted small" id="boxClockBrightnessValue" style="min-width:3.5em;text-align:right">70 %</span>
+      </div>
+      <small class="muted small hidden" id="clockBrightnessHelp">${escapeHtml(t('settingsView.clockBrightnessHelp'))}</small>
     </div>
 
     <div data-ui2-sec="resumeOnPower" class="settings-section" id="resumeOnPowerSection">
@@ -166,6 +176,55 @@ export function renderSoundSections() {
   };
 }
 
+// The clock's brightness (#1226). The row shows only where the speaker reports
+// a brightnessLevel. A slide is sent once, when it is let go; a speaker that
+// takes the write but keeps its own level says so instead of a plain "saved",
+// since not every model is known to dim. A refused write puts the slider back.
+function wireClockBrightness(box, boseHost) {
+  const row = $('clockBrightnessRow');
+  const help = $('clockBrightnessHelp');
+  const slider = $('boxClockBrightness');
+  const value = $('boxClockBrightnessValue');
+  if (!row || !slider) return;
+  let last = Number(slider.value);
+  let userTouched = false;
+  const paint = (v) => {
+    slider.value = String(v);
+    if (value) value.textContent = `${v} %`;
+  };
+  GetClockBrightness(boseHost).then((b) => {
+    if (typeof b !== 'number' || b < 0) return;
+    row.classList.remove('hidden');
+    if (help) help.classList.remove('hidden');
+    if (userTouched) return;
+    last = b;
+    paint(b);
+  }).catch(() => {});
+  slider.addEventListener('input', () => {
+    userTouched = true;
+    if (value) value.textContent = `${slider.value} %`;
+  });
+  slider.addEventListener('change', async () => {
+    const v = Number(slider.value);
+    slider.disabled = true;
+    try {
+      const r = await SetClockBrightness(box.host, box.port, v);
+      last = v;
+      const honoured = r && r.result ? r.result.brightnessHonoured : undefined;
+      if (honoured === false) {
+        reportDone(slider, t('settingsView.clockBrightnessIgnored'), 6000);
+      } else {
+        reportDone(slider, t('settingsView.clockBrightnessSavedToast', { v }));
+      }
+    } catch (e) {
+      paint(last);
+      reportError(slider, e);
+    } finally {
+      slider.disabled = false;
+    }
+  });
+}
+
 export function wireSoundSections(ctx) {
   const { box } = ctx;
   // The clock goes through the Go backend (GetClockDisplay etc.) by host: the
@@ -254,7 +313,10 @@ export function wireSoundSections(ctx) {
         try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
         const offsetMin = -new Date().getTimezoneOffset();
         const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
-        await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
+        // Through the agent, which keeps the choice on the speaker and puts
+        // it back after a restart or when the firmware drops it (#979); an
+        // older agent gets the direct write. -1 keeps the brightness.
+        await SetStandbyClock(box.host, box.port, enable, tz, offsetMin, fmt24, -1);
         reportDone(clockOn || clockFormat, t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
         await refreshClock();
         return true;
@@ -299,6 +361,7 @@ export function wireSoundSections(ctx) {
         await postClock(clockState);
       };
     }
+    wireClockBrightness(box, boseHost);
   }
 
   // Resume last station on power-on (all models, default on). GET reports the

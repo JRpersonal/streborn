@@ -655,6 +655,59 @@ export namespace main {
 	        this.variant = source["variant"];
 	    }
 	}
+	export class KeyCopySkip {
+	    slot: number;
+	    name: string;
+	    onSlot?: number;
+	    reason?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyCopySkip(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.slot = source["slot"];
+	        this.name = source["name"];
+	        this.onSlot = source["onSlot"];
+	        this.reason = source["reason"];
+	    }
+	}
+	export class KeyCopyResult {
+	    copied: number[];
+	    skipped: KeyCopySkip[];
+	    notKept: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new KeyCopyResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.copied = source["copied"];
+	        this.skipped = this.convertValues(source["skipped"], KeyCopySkip);
+	        this.notKept = source["notKept"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class LibraryContainer {
 	    id: string;
 	    parentID: string;

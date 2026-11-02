@@ -758,6 +758,10 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			forceHeld = false
 			forceHeldSince = time.Time{}
 		}
+		// This pass is the look an account-read recheck asked for
+		// (accountresync.go), so consume that ask here: a recheck arriving
+		// DURING the pass stays armed and wakes the wait below once more.
+		presetRecheckAsk.Store(false)
 		ready := reconcileOnce(store, boxHost, logger, force, wh)
 		fullDone = ready
 		if ready {
@@ -766,8 +770,9 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 		if fullDone {
 			// Maintenance cadence, but wake early when the self-heal asked
 			// for a forced re-sync so a dead key recovers in seconds, not
-			// after up to five minutes.
-			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
+			// after up to five minutes, and when the speaker re-read its
+			// account during boot (an ordinary pass, see accountresync.go).
+			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load() && !presetRecheckAsk.Load(); waited += 10 * time.Second {
 				time.Sleep(10 * time.Second)
 			}
 		} else {

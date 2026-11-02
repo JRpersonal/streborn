@@ -585,6 +585,8 @@ func (s *trackScreen) draw(buf []byte) {
 		mStep, mNext = marqueeAt(since, f.steps())
 	}
 	s.cache.render(anim, mStep, buf)
+	// The owner's clock brightness dims STR's screen too (brightness.go).
+	dimFrame(buf, TrackBrightness())
 	el := time.Since(t0)
 	s.mu.Lock()
 	s.draws++

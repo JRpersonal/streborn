@@ -151,6 +151,10 @@ type Server struct {
 	region       func() string
 	nativeMu     sync.Mutex
 	nativePosts  []NativePost
+
+	// accountFetched, when set, is told about every account document
+	// (GET .../account/<id>/full) the firmware reads. See WithAccountFetchHook.
+	accountFetched func()
 }
 
 // SpyEntry is a single logged HTTP request.
@@ -230,6 +234,15 @@ func WithPresets(p []Preset) Option {
 // refresh choreography.
 func WithPresetSource(fn func() []Preset) Option {
 	return func(s *Server) { s.presetSource = fn }
+}
+
+// WithAccountFetchHook wires a callback for every account document the
+// firmware reads (GET /streaming/account/<id>/full). The firmware drops its
+// hardware-key registrations each time it reads the account, so the agent
+// uses this to check the keys once more after the last read of a boot. fn is
+// called on the request goroutine and must return at once.
+func WithAccountFetchHook(fn func()) Option {
+	return func(s *Server) { s.accountFetched = fn }
 }
 
 // WithSources initializes the source list.
