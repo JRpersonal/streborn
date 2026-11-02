@@ -34,6 +34,7 @@ import {
   boxFetch,
 } from '../api.js';
 import { orderLongFolder } from '../trackorder.js';
+import { loadLibrarySort, saveLibrarySort, sortFolders, sortTracks, SORT_AZ, SORT_SERVER } from '../librarysort.js';
 import {
   SERVERS_DEPTH, libraryTrail, headerHTML, trailHTML, stateHTML, loadingHTML, levelHeadHTML,
   serverRowsHTML, folderRowHTML, trackRowHTML, folderActionsHTML, filterRowHTML, manualAddHTML,
@@ -85,6 +86,9 @@ const libState = {
   nudged: new Set(),  // "box|udn|address" the speaker was told to look up (nudgeBoxLibrary)
   shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
   repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
+  // The order folders and loose files are listed in (#1257): the server's, or
+  // A to Z. This viewer's choice, remembered in the app (librarysort.js).
+  sort: SORT_SERVER,
   // The whole-library search across every media server (#1325). active means
   // its results stand in for the folder list until the user goes back.
   search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], partial: false, token: 0 },
@@ -157,7 +161,7 @@ function rememberPath() {
   try {
     localStorage.setItem(LIB_PATH_KEY, JSON.stringify({
       udn: libState.currentUDN,
-      stack: (libState.stack || []).map(s => ({ id: s.id, title: s.title, art: s.art || '' })),
+      stack: (libState.stack || []).map(s => ({ id: s.id, title: s.title, art: s.art || '', cls: s.cls || '' })),
     }));
   } catch { /* same trade-off as rememberServerUDN */ }
 }
@@ -174,6 +178,7 @@ function rememberedPathFor(udn) {
 }
 
 export async function openLibrary() {
+  libState.sort = loadLibrarySort();
   syncPlayModeFromBox();
   renderLibrary();
   if (libState.servers.length === 0) {
@@ -573,7 +578,8 @@ async function libraryBrowseCurrent() {
 async function libraryEnter(container) {
   // The folder's own cover rides along: a folder key saved from here falls
   // back to it when none of the tracks carries one (#1301).
-  libState.stack.push({ id: container.id, title: container.title, art: container.albumArtURL || '' });
+  // Its class too: A to Z leaves an album or a playlist in its own order.
+  libState.stack.push({ id: container.id, title: container.title, art: container.albumArtURL || '', cls: container.class || '' });
   await libraryBrowseCurrent();
 }
 
@@ -621,6 +627,33 @@ function setLibStatus(key, st) {
     el.className = `lib2-status${st && st.tone ? ` lib2-status--${st.tone}` : ''}`;
     el.textContent = (st && st.text) || '';
   });
+}
+
+// libraryContainers and libraryItems are the open folder's sub-folders and
+// tracks in the order the viewer chose (#1257): the server's, or A to Z. What
+// is listed is what "Play folder" and the folder key take, so the queue plays
+// in the order on screen; an album keeps its track order either way.
+function libraryContainers() {
+  return sortFolders((libState.page && libState.page.containers) || [], libState.sort);
+}
+function libraryItems() {
+  const top = libState.stack[libState.stack.length - 1];
+  return sortTracks((libState.page && libState.page.items) || [], libState.sort, top && top.cls);
+}
+
+// librarySetSort switches the order and redraws the open folder.
+function librarySetSort(mode) {
+  libState.sort = mode === SORT_AZ ? SORT_AZ : SORT_SERVER;
+  saveLibrarySort(libState.sort);
+  renderLibrary();
+}
+
+// librarySortSelectHTML is the order picker, with the classes of the layout
+// it sits in.
+function librarySortSelectHTML({ label, select }) {
+  const opt = (v, k) => `<option value="${v}"${libState.sort === v ? ' selected' : ''}>${escapeHtml(t(k))}</option>`;
+  return `<label class="${label}" for="libSort">${escapeHtml(t('library.sortLabel'))}</label>`
+    + `<select class="${select}" id="libSort">${opt(SORT_SERVER, 'library.sortServer')}${opt(SORT_AZ, 'library.sortAZ')}</select>`;
 }
 
 // openFolderId names the folder open in the Library: its server and its
@@ -869,7 +902,7 @@ async function libraryPlayFolder(fromId) {
     else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
-  const all = (libState.page && libState.page.items) || [];
+  const all = libraryItems();
   const items = all
     .filter((it) => it.streamURL)
     .map((it) => ({
@@ -969,7 +1002,7 @@ function librarySaveFolderAsPreset() {
     else showToast(t('library.toastNoBox') || t('common.pickBox'));
     return;
   }
-  const all = (libState.page && libState.page.items) || [];
+  const all = libraryItems();
   const items = all
     .filter((it) => it.streamURL)
     .map((it) => ({
@@ -1112,7 +1145,7 @@ function librarySaveAsPreset(item) {
 // libraryFilteredItems applies the folder search (client-side, over what has been
 // paged in so far) to the loaded items. Matches title, artist or album.
 function libraryFilteredItems() {
-  const all = (libState.page && libState.page.items) || [];
+  const all = libraryItems();
   const f = (libState.filter || '').trim().toLowerCase();
   if (!f) return all;
   return all.filter((it) =>
@@ -1125,7 +1158,7 @@ function libraryFilteredItems() {
 // to be emitted in full whatever was typed, so in an album or artist list, which
 // is folders and nothing else, the search box did visibly nothing (#1026).
 function libraryFilteredContainers() {
-  const all = (libState.page && libState.page.containers) || [];
+  const all = libraryContainers();
   const f = (libState.filter || '').trim().toLowerCase();
   if (!f) return all;
   return all.filter((c) => (c.title || '').toLowerCase().includes(f));
@@ -1464,7 +1497,7 @@ function ui2FolderHTML() {
       status: libState.ui2.status.get('folder'),
     });
   }
-  if (nI > 0 || nC > 0) html += filterRowHTML(libState.filter, libraryCountText());
+  if (nI > 0 || nC > 0) html += filterRowHTML(libState.filter, libraryCountText(), librarySortSelectHTML({ label: 'lib2-search-in', select: 'lib2-select lib2-sort' }));
   html += `<ul class="lib2-list" data-list="folder">${ui2FolderRowsHTML()}</ul>`;
   if (libState.loadingMore) html += loadingHTML(t('library.loadingMore'));
   else if (libState.capped) html += `<p class="lib2-note">${escapeHtml(t(cappedKey(nC, nI), { n: LIB_MAX }))}</p>`;
@@ -1725,6 +1758,9 @@ function wireLibraryUi2(el) {
       libraryAddManualServer(e.target.value, $('libManualAddBtn'));
     }
   };
+  el.onchange = (e) => {
+    if (e.target && e.target.id === 'libSort') librarySetSort(e.target.value);
+  };
   el.oninput = (e) => {
     if (e.target && e.target.id === 'libSearch') {
       libState.filter = e.target.value;
@@ -1873,6 +1909,7 @@ function renderLibrary() {
       <div class="library-search-row">
         <input type="search" class="library-search" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(libState.filter || '')}">
         <span class="library-count" id="libCount">${escapeHtml(libraryCountText())}</span>
+        ${librarySortSelectHTML({ label: 'library-sort-label', select: 'library-sort' })}
       </div>` : '';
     const moreNote = libState.loadingMore
       ? `<p class="library-loading-more">${escapeHtml(t('library.loadingMore'))}</p>`
@@ -1957,6 +1994,8 @@ function renderLibrary() {
     pushMode('/api/queue/repeat', { mode: libState.repeat });
   };
   wireLibraryRows(el);
+  const libSort = $('libSort');
+  if (libSort) libSort.onchange = () => librarySetSort(libSort.value);
   const libSearch = $('libSearch');
   if (libSearch) {
     // Filter the loaded list as the user types. Updates only the list + count

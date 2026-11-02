@@ -12,6 +12,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { allSource, srcOf } from './test/source.js';
+import { sortFolders, sortTracks } from './librarysort.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = allSource();
@@ -20,9 +21,9 @@ const de = JSON.parse(readFileSync(join(here, 'i18n', 'bundles', 'de.json'), 'ut
 
 // The real helpers, cut out of the view and run against a fake libState.
 function build(page, filter) {
-  const libState = { page, filter };
+  const libState = { page, filter, stack: [{ id: '0', title: '' }], sort: 'server' };
   // eslint-disable-next-line no-new-func
-  return new Function('libState', `${srcOf('libraryFilteredItems')}\n${srcOf('libraryFilteredContainers')}\n${srcOf('cappedKey')}\n${srcOf('libraryCountText')}\nreturn { libraryFilteredItems, libraryFilteredContainers, cappedKey, libraryCountText };`)(libState);
+  return new Function('libState', 'sortFolders', 'sortTracks', `${srcOf('libraryContainers')}\n${srcOf('libraryItems')}\n${srcOf('libraryFilteredItems')}\n${srcOf('libraryFilteredContainers')}\n${srcOf('cappedKey')}\n${srcOf('libraryCountText')}\nreturn { libraryFilteredItems, libraryFilteredContainers, cappedKey, libraryCountText };`)(libState, sortFolders, sortTracks);
 }
 
 const albums = {

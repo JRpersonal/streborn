@@ -555,6 +555,9 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		ID         string `json:"id"`
 		Title      string `json:"title"`
 		ChildCount int    `json:"childCount,omitempty"`
+		// Class lets the phone page keep an album or a playlist in its own
+		// order when it lists A to Z (#1257).
+		Class string `json:"class,omitempty"`
 	}
 	type trackOut struct {
 		Title       string `json:"title"`
@@ -564,10 +567,14 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		Art         string `json:"art,omitempty"`
 		Mime        string `json:"mime,omitempty"`
 		DurationSec int    `json:"durationSec,omitempty"`
+		// TrackNumber and DiscNumber tell the phone page an album apart from
+		// loose files, so A to Z leaves an album in track order (#1257).
+		TrackNumber int `json:"trackNumber,omitempty"`
+		DiscNumber  int `json:"discNumber,omitempty"`
 	}
 	folders := []folderOut{}
 	for _, c := range res.Containers {
-		folders = append(folders, folderOut{ID: c.ID, Title: c.Title, ChildCount: c.ChildCount})
+		folders = append(folders, folderOut{ID: c.ID, Title: c.Title, ChildCount: c.ChildCount, Class: c.Class})
 	}
 	tracks := []trackOut{}
 	for _, it := range res.Items {
@@ -578,6 +585,7 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 			Title: it.Title, Artist: it.Artist, Album: it.Album,
 			URL: it.StreamURL, Art: it.AlbumArtURL, Mime: trackMime(it),
 			DurationSec: it.DurationSec,
+			TrackNumber: it.TrackNumber, DiscNumber: it.DiscNumber,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

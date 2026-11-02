@@ -1425,7 +1425,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .library-crumb-active { color: var(--c-text); font-weight: 600; }
 .library-crumb-sep { color: var(--c-faint); padding: 0 4px; }
 .library-folder-actions { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
-.library-search-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.library-search-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+/* The order picker (#1257): server order or A to Z. */
+.library-sort-label { flex: 0 0 auto; color: var(--brand-text-mid); font-size: 12px; }
+.library-sort { flex: 0 0 auto; background: var(--brand-bg); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
 .library-search { flex: 1 1 auto; min-width: 0; background: var(--brand-bg); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
 .library-count { flex: 0 0 auto; color: var(--brand-text-mid); font-size: 12px; font-variant-numeric: tabular-nums; }
 .library-loading-more { color: var(--brand-text-mid); font-size: 12px; padding: 6px 2px; }
