@@ -2,6 +2,7 @@
 // headings, the trademark notice, the save-logs line, the legal pages per
 // language, the strings in all thirteen bundles, the donate buttons living
 // here alone, and an import that touches no DOM.
+import { escapeHtml } from '../../utils.js';
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileSource, sourceFiles } from '../../test/source.js';
@@ -229,6 +230,15 @@ describe('Donate buttons: the sidebar foot and Help and info', () => {
     expect(page()).toContain('data-donate="');
     expect(shellMarkup().match(/data-donate="/g)).toHaveLength(3);
     expect(shellMarkup()).toContain('id="ui2Support"');
+  });
+  it('carries the classic donate rail words above the sidebar buttons', () => {
+    // Jens, 2026-11-02: the same text as before matters.
+    const m = shellMarkup();
+    const head = m.slice(m.indexOf('ui2-support-head'), m.indexOf('data-donate="'));
+    expect(head).toContain(escapeHtml(t('footer.donateSlogan')));
+    expect(head).toContain('&#9749;');
+  });
+  it('keeps the buttons out of every other shell file', () => {
     for (const f of sourceFiles().filter((x) => x.startsWith('shell2/') && !x.endsWith('.test.js') && !['shell2/help/help.js', 'shell2/markup.js'].includes(x))) {
       const src = fileSource(f);
       expect(src, f).not.toContain('data-donate');

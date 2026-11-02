@@ -410,12 +410,16 @@ html.ui2 .ui2-support {
   padding: 8px 8px 6px;
   border-top: 1px solid var(--u-border);
 }
+/* The same words as the classic donate rail (footer.donateSlogan, with the
+   cup): Jens, 2026-11-02, "the same text as before, that matters". */
 html.ui2 .ui2-support-head {
   margin: 0 4px 6px;
   color: var(--u-text);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.35;
 }
+html.ui2 .ui2-support-cup { font-size: 16px; }
 html.ui2 #ui2Sidebar .ui2-donate {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

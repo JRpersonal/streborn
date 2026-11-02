@@ -68,8 +68,8 @@ export function shellMarkup() {
       <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
       <div class="ui2-spk-lists" id="ui2SpkLists"></div>
     </section>
-    <section class="ui2-support" id="ui2Support" aria-labelledby="ui2SupportHead">
-      <h2 class="ui2-support-head" id="ui2SupportHead">${escapeHtml(t('ui2.help.support'))}</h2>
+    <section class="ui2-support" id="ui2Support" aria-label="${escapeAttr(t('ui2.help.support'))}">
+      <p class="ui2-support-head"><span class="ui2-support-cup" aria-hidden="true">&#9749;</span> ${escapeHtml(t('footer.donateSlogan'))}</p>
       <div class="ui2-donate">${donateButtonsHTML()}</div>
     </section>
     <div class="ui2-side-bottom">

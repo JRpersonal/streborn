@@ -105,12 +105,13 @@ test.describe('UI 2.0 Help and info', () => {
   });
 
   // Jens, 2026-11-02: support should be prominent and always visible. The
-  // three buttons sit at the foot of the sidebar on every view, under a
-  // "Support STR" heading, and Help and info keeps its own section.
+  // three buttons sit at the foot of the sidebar on every view, under the
+  // classic donate rail's own words, and Help and info keeps its own section.
   test('4. the donate buttons are always in the sidebar, and in Help and info', async ({ app }) => {
     const { page } = app;
     const side = page.locator('#ui2Sidebar #ui2Support');
-    await expect(side.getByRole('heading', { name: en('ui2.help.support') })).toBeVisible();
+    await expect(page.getByRole('region', { name: en('ui2.help.support') })).toBeVisible();
+    await expect(side.locator('.ui2-support-head')).toContainText(en('footer.donateSlogan'));
     for (const view of ['box', 'library', 'recent', 'spotify', 'speakers', 'wishes']) {
       await page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`).click();
       await expect(page.locator(`#ui2MainInner > #view-${view}`)).toBeVisible();
