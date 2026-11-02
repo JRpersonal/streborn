@@ -91,6 +91,15 @@ for (const c of CASES) {
       }
       const w = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(w, 'the Browse tab scrolls sideways').toBeLessThanOrEqual(c.width);
+      // The favourites above the results carry a star and two move buttons
+      // (#1519). They must stay inside their card, not only inside the page:
+      // CI's wider Linux fonts turned an overhang of a few pixels into a
+      // sideways scroll that a Windows run never showed.
+      const over = await page.evaluate(() => [...document.querySelectorAll('#favResults .row .btn')]
+        .filter((b) => b.offsetParent)
+        .map((b) => b.getBoundingClientRect().right - b.closest('.card').getBoundingClientRect().right)
+        .filter((d) => d > 1).length);
+      expect(over, 'a favourite button sticks out of its card').toBe(0);
     });
   });
 }
