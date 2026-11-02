@@ -86,7 +86,7 @@ type SpotifyEngine interface {
 // state is visible from outside (a route not registered in Run, a feature not
 // advertised by the version endpoint), so a reduced engine, such as a test
 // fake, gets the same server it would have had with the fields left unset.
-// cmd/agent's adapter implements all three, so on the speaker every field is
+// cmd/agent's adapter implements all four, so on the speaker every field is
 // set, as it was before these interfaces existed.
 
 // SpotifyCredentialSync moves the go-librespot login between speakers (#45
@@ -119,6 +119,15 @@ type SpotifyEngineLifecycle interface {
 	Reload() bool
 	// Stop (spotifyStop): stop the engine and wait for it to exit (#119).
 	Stop() bool
+}
+
+// SpotifyRemoteKeys is what the speaker's own remote does to a playlist
+// beyond Next: Back by what the room hears (#1678). Without it Back is the
+// engine's plain prev.
+type SpotifyRemoteKeys interface {
+	// RemotePrev (spotifyRemotePrev): the song before inside the first
+	// seconds heard, a restart later.
+	RemotePrev(ctx context.Context) (back bool, err error)
 }
 
 // WithSpotify wires the whole Spotify control plane from one engine value.
@@ -157,6 +166,9 @@ func WithSpotify(e SpotifyEngine) Option {
 		if p, ok := e.(SpotifyStatusPages); ok {
 			s.spotifyInfo = p.ServeInfo
 			s.spotifyQuality = p.ServeQuality
+		}
+		if k, ok := e.(SpotifyRemoteKeys); ok {
+			s.spotifyRemotePrev = k.RemotePrev
 		}
 		if l, ok := e.(SpotifyEngineLifecycle); ok {
 			s.spotifyReload = l.Reload

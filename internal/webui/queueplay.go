@@ -1656,13 +1656,28 @@ func (s *Server) handleQueuePrev(w http.ResponseWriter, r *http.Request) {
 // a graceful no-op, matching a hardware remote's Next/Prev on those sources. It
 // returns which source handled the skip, for logging.
 func (s *Server) transportSkip(ctx context.Context, forward bool) (source string, err error) {
+	return s.transportSkipFrom(ctx, spotifySkipReq{forward: forward})
+}
+
+// spotifySkipReq is one queued Spotify skip. remote marks a press of the
+// speaker's own remote: its Back goes to the song before by what the room
+// hears (#1678, spotify RemotePrev), while the app's Back keeps Spotify's own
+// rule.
+type spotifySkipReq struct {
+	forward, remote bool
+}
+
+// transportSkipFrom is transportSkip for either caller: the app (remote
+// false) or the speaker's own remote keys (remote true).
+func (s *Server) transportSkipFrom(ctx context.Context, req spotifySkipReq) (source string, err error) {
+	forward := req.forward
 	// Route to Spotify whenever Spotify is the box's current source, not only
 	// while it is actively pulling the Ogg: spotifyStreaming() flaps to false the
 	// moment a Spotify playlist is paused (the Ogg sink detaches), and Next/Prev
 	// must still skip a paused playlist. boxSourceIsSpotify catches that case by
 	// reading the box's now_playing location.
 	if s.spotifySkip != nil && (s.spotifyIsStreaming() || s.boxSourceIsSpotify(ctx)) {
-		s.enqueueSpotifySkip(forward)
+		s.enqueueSpotifySkip(req)
 		return "spotify", nil
 	}
 	if _, _, err := s.queueSkip(forward); err != nil {
@@ -1679,15 +1694,15 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 // Portable, 2026-07-31, four presses). The queue is capped small: a press
 // beyond three waiting skips would fire long after the user stopped caring,
 // as a surprise track change.
-func (s *Server) enqueueSpotifySkip(forward bool) {
+func (s *Server) enqueueSpotifySkip(req spotifySkipReq) {
 	s.spotifySkipOnce.Do(func() {
-		s.spotifySkipCh = make(chan bool, 3)
+		s.spotifySkipCh = make(chan spotifySkipReq, 3)
 		go s.spotifySkipWorker()
 	})
 	select {
-	case s.spotifySkipCh <- forward:
+	case s.spotifySkipCh <- req:
 	default:
-		s.logger.Info("spotify skip: queue full, extra press dropped", "forward", forward)
+		s.logger.Info("spotify skip: queue full, extra press dropped", "forward", req.forward)
 	}
 }
 
@@ -1698,10 +1713,9 @@ func (s *Server) enqueueSpotifySkip(forward bool) {
 // the post-drain recover then repairs a box left not playing via the proven
 // clean slot recall.
 func (s *Server) spotifySkipWorker() {
-	for forward := range s.spotifySkipCh {
-		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-		err := s.spotifySkip(ctx, forward)
-		cancel()
+	for req := range s.spotifySkipCh {
+		forward := req.forward
+		err := s.runSpotifySkip(req)
 		issued := err == nil || isTimeoutErr(err)
 		switch {
 		case err == nil:
@@ -1720,6 +1734,21 @@ func (s *Server) spotifySkipWorker() {
 			s.spotifyRecoverAfterSkip()
 		}
 	}
+}
+
+// runSpotifySkip issues one queued skip to the engine. The remote's Back
+// takes RemotePrev when the engine offers it: a status read and possibly a
+// seek before the prev, so it gets a little more time than the bare skip.
+func (s *Server) runSpotifySkip(req spotifySkipReq) error {
+	if req.remote && !req.forward && s.spotifyRemotePrev != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, err := s.spotifyRemotePrev(ctx)
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	return s.spotifySkip(ctx, req.forward)
 }
 
 // reattachAfterSoftSkip re-points the box at the SAME Spotify stream right
@@ -1981,10 +2010,15 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 // same slot stream; the post-drain safety net (spotifyRecoverAfterSkip) still
 // falls back to the proven clean recall when the box does not come back
 // playing.
+//
+// One thing sets the remote apart from the app's skip: its Back on a Spotify
+// playlist goes to the song before while the room has heard less than ten
+// seconds of the current one (#1678, spotify RemotePrev), where the engine's
+// own rule only ever restarted it.
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
 	slot := s.currentSpotifySlot()
 	if !presets.ValidSlot(slot) {
-		return s.transportSkip(ctx, forward)
+		return s.transportSkipFrom(ctx, spotifySkipReq{forward: forward, remote: true})
 	}
 	// Hold the competing auto-repoint off for the whole handover: the box is
 	// tearing its UPnP source down right now while go-librespot still plays, so
@@ -1997,7 +2031,7 @@ func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error)
 	s.skipRepushMu.Lock()
 	s.hwSkipAt = time.Now()
 	s.skipRepushMu.Unlock()
-	s.enqueueSpotifySkip(forward)
+	s.enqueueSpotifySkip(spotifySkipReq{forward: forward, remote: true})
 	go s.reattachAfterHardwareSkip(slot)
 	s.logger.Info("hardware skip: engine skip issued, re-attaching the box to the slot stream", "slot", slot, "forward", forward)
 	return "spotify-skip", nil
