@@ -122,6 +122,17 @@ func (s *Server) HoldSaveLive(ctx context.Context, slot int) (HoldSaved, error) 
 			s.NoteQueueSavedSlot(slot)
 			return HoldSaved{Slot: slot, Kind: "queue", Name: cur.Name, Unchanged: true}, nil
 		}
+		// One folder, one key (#1695). A held hardware key is an explicit
+		// "put it HERE", so, as for a station (holdSaveOrSwap), the folder
+		// comes over from the key it sat on and that key gets what this one
+		// had, instead of a second copy.
+		if other, dup := s.folderOnOtherSlot(q, slot); dup {
+			saved, err := s.holdSwapKeys(ctx, slot, other.Slot, "queue")
+			if err == nil {
+				s.NoteQueueSavedSlot(slot)
+			}
+			return saved, err
+		}
 		if err := s.storeQueuePreset(ctx, q); err != nil {
 			return HoldSaved{}, err
 		}

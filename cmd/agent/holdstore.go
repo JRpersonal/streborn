@@ -184,6 +184,11 @@ func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldIte
 			if cur, have := store.Get(item.Slot); have && samePresetContent(cur, q) && cur.Source == q.Source {
 				return cur, false, nil
 			}
+			// One folder, one key (#1695), the station rule below for a
+			// folder: one that already sits on another key is refused.
+			if other, dup := folderOnOtherKey(store, q, item.Slot); dup {
+				return presets.Preset{}, false, &alreadyOnKeyError{slot: other.Slot, name: other.Name}
+			}
 			return q, true, nil
 		}
 	}
@@ -251,7 +256,8 @@ func heldPresetCandidate(store *presets.Store, live heldLive, item marge.HeldIte
 			continue
 		}
 		dup := (candidate.URI != "" && other.URI == candidate.URI) ||
-			(candidate.StreamURL != "" && other.StreamURL == candidate.StreamURL)
+			(candidate.StreamURL != "" && other.StreamURL == candidate.StreamURL) ||
+			presets.SameFolder(candidate, other)
 		if dup {
 			return presets.Preset{}, false, &alreadyOnKeyError{slot: other.Slot, name: other.Name}
 		}
@@ -293,6 +299,26 @@ func heldNativeCandidate(store *presets.Store, item marge.HeldItem) (presets.Pre
 		return cur, false, nil
 	}
 	return candidate, true, nil
+}
+
+// folderOnOtherKey returns the key other than slot that already holds the
+// folder q (presets.SameFolder), lowest key first. A key that holds the folder
+// itself is no collision, the same exception the app's folder saves make.
+func folderOnOtherKey(store *presets.Store, q presets.Preset, slot int) (presets.Preset, bool) {
+	if cur, have := store.Get(slot); have && presets.SameFolder(cur, q) {
+		return presets.Preset{}, false
+	}
+	var hit presets.Preset
+	found := false
+	for _, other := range store.All() {
+		if other.Slot == slot || !presets.SameFolder(other, q) {
+			continue
+		}
+		if !found || other.Slot < hit.Slot {
+			hit, found = other, true
+		}
+	}
+	return hit, found
 }
 
 // samePresetContent reports whether two presets describe the same station the

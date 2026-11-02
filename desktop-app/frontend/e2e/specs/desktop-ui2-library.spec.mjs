@@ -226,6 +226,24 @@ test.describe('UI 2.0 Library', () => {
     await expect(lib(page).locator('.lib2-folder-acts .lib2-status')).toHaveText(en('ui2.library.onKey', { n: 2, name: LR.friendlyName }));
   });
 
+  test('8b. a folder already on another key is not saved twice: the note offers to move it', async ({ app, mock }) => {
+    const { page } = app;
+    await walkToTracks(page);
+    // The speaker's one-folder-one-key refusal (#1695), the station's body.
+    await mock.set('SaveFolderPreset', { error: 'status 409: {"code":"already-on-slot","name":"Evening Sessions","slot":1}' });
+    await lib(page).locator('.lib2-key-folder').click();
+    await page.locator('#pickGrid .pick-slot').nth(1).click();
+    await mock.expectCalled('SaveFolderPreset', { times: 1, pred: (c) => c.args[0] === LR.host && c.args[2] === 2 });
+    const modal = page.locator('#warnModal');
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText(en('preset.alreadyOnKeyNamed', { name: 'Evening Sessions', n: 1 }));
+    await expect(modal.locator('#warnConfirm')).toHaveText(en('preset.moveButton', { n: 2 }));
+    // A question, not an error: the folder's line does not say the save failed.
+    await expect(lib(page).locator('.lib2-folder-acts .lib2-status')).not.toHaveClass(/lib2-status--error/);
+    await modal.locator('#warnConfirm').click();
+    await mock.expectCalled('MovePreset', { times: 1, pred: (c) => c.args[0] === LR.host && c.args[2] === 1 && c.args[3] === 2 });
+  });
+
   test('9. the search across every server is one more step, and Back returns without a new browse', async ({ app, mock }) => {
     const { page } = app;
     await openLibrary(page);

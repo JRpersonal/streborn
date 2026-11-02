@@ -171,9 +171,14 @@ func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL
 // it is PUT verbatim to /api/presets/<slot> so the frontend owns the shape and
 // the agent reloads it into the play-queue on recall. Routed through boxDo for
 // the same :8888<->:17008 port fallback as the other preset saves.
+//
+// save=live marks it as a real save gesture: the agent then refuses a folder
+// that already sits on another key with its 409 already-on-slot (#1695), which
+// the Library turns into the move offer. A restore of keys the user already had
+// goes out without it. An older agent ignores the query.
 func (a *App) SaveFolderPreset(host string, port int, slot int, payloadJSON string) error {
 	resp, err := a.boxDo(host, port, http.MethodPut,
-		fmt.Sprintf("%s/%d", presetAPIPath, slot), "application/json", payloadJSON)
+		fmt.Sprintf("%s/%d?save=live", presetAPIPath, slot), "application/json", payloadJSON)
 	if err != nil {
 		return err
 	}

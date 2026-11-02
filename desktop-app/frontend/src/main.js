@@ -385,6 +385,7 @@ import {
   openPick,
   playStation,
   pollFavRemovalsOnCurrentBox,
+  presetMoveOffer,
   pollTrackPosition,
   purgeMusicStateForSpeaker,
   refreshBalance,
@@ -431,7 +432,7 @@ initSpotifyView({
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
-initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus });
+initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus, presetMoveOffer });
 initSetupView({
   switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab,
   // The speaker list reads the same holds (speakertile.js); repaint it when a

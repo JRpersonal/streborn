@@ -43,6 +43,7 @@ import {
 } from '../shell2/library.js';
 import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
+import { parsePresetConflict } from '../presetmove.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -56,6 +57,9 @@ let deps = {
   // Told about a speaker picked here so the music tab and the setup target
   // follow along, the same lock-step speaker settings already does.
   speakerPicked() {},
+  // The "already on key N" question with the offer to move it onto the key the
+  // user picked (views/music/save.js), for a folder already on a key (#1695).
+  presetMoveOffer() {},
   // The now-playing bar, repainted from the cached state the moment a track
   // or folder is sent, and the status poll, asked again shortly after, so the
   // bar does not keep the previous station's song until the next slow poll
@@ -1139,12 +1143,29 @@ async function librarySaveFolderAsPreset() {
           showToast(t('library.folderPresetSaved', { n: keyNum(i, t), name }) + libraryTreeNoteSuffix(tree));
         }
       } catch (e) {
+        // The folder already sits on another key (#1695): a question, not an
+        // error, so the station's note and its offer to move it here.
+        if (folderKeyRefused(e, i)) {
+          if (ui2() && openFolderId() === folder) setLibStatus('folder', null);
+          return;
+        }
         if (ui2()) {
           if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.keyFailed', { name: speakerName(), detail: String(e) }) });
         } else showError(`SaveFolderPreset: ${e}`);
       }
     },
   });
+}
+
+// folderKeyRefused answers a folder save the speaker refused because that
+// folder already sits on another key (#1695, the agent's already-on-slot 409):
+// the note a station gets, with the offer to move the folder onto the key the
+// user picked. false for every other failure, which keeps its own error.
+export function folderKeyRefused(err, slot, offer = (c, n) => deps.presetMoveOffer(c, n)) {
+  const conflict = parsePresetConflict(err);
+  if (!conflict) return false;
+  offer(conflict, slot);
+  return true;
 }
 
 // librarySourceName is the open media server's name as a preset stores it for
