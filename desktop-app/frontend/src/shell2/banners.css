@@ -18,7 +18,7 @@
 html.ui2 #ui2Banners .speaker-update-card {
   position: relative;
   margin: 8px 16px 0;
-  padding: 16px 16px 16px 20px;
+  padding: 12px 16px 12px 20px;
   border: 1px solid var(--u-border);
   border-inline-start: 4px solid var(--u-accent);
   border-radius: var(--u-radius);
@@ -44,12 +44,39 @@ html.ui2 #ui2Banners .speaker-update-card .suc-text {
   font-size: 14px;
   line-height: 1.5;
 }
+/* The speakers side by side, not one per line: with five or six speakers
+   behind, a list of lines made the card taller than the banner region allows
+   (a third of the window) and it scrolled (Jens, 2026-11-02). */
 html.ui2 #ui2Banners .speaker-update-card .suc-list {
-  margin: 8px 0 16px;
-  padding-inline-start: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 6px 0 12px;
+  padding: 0;
+  list-style: none;
   color: var(--u-text);
   font-size: 14px;
 }
+html.ui2 #ui2Banners .speaker-update-card .suc-list li {
+  white-space: nowrap;
+}
+/* The buttons sit beside the text, not below it: the window is at least
+   1000px wide, and a card that stacks them is taller than the region allows
+   in the smallest window. */
+html.ui2 #ui2Banners .speaker-update-card .suc-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  max-width: none;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-body > :not(.suc-actions) { grid-column: 1; }
+html.ui2 #ui2Banners .speaker-update-card .suc-actions {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  align-self: center;
+  flex-wrap: nowrap;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-list { margin-bottom: 0; }
 html.ui2 #ui2Banners .speaker-update-card .suc-ver {
   color: var(--u-muted);
   font-size: 12px;

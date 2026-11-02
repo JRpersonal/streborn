@@ -67,6 +67,37 @@ for (const theme of ['dark', 'light', 'contrast']) {
   });
 }
 
+// Six speakers behind (a whole household after an app update): the card lists
+// them side by side and fits the banner region without a scrollbar, in the
+// default window and in the smallest one (Jens, 2026-11-02: the card scrolled).
+const BEHIND = { version: 'v1.0.10', build: '2026-09-30' };
+for (const vp of [{ width: 1240, height: 740 }, { width: 1000, height: 600 }]) {
+  test.describe(`six speakers behind, ${vp.width}x${vp.height}`, () => {
+    test.use({
+      ui2: true,
+      fakeClock: true,
+      viewport: vp,
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'office', 'hall', 'nursery', 'dining'],
+        boxPatches: { livingRoom: BEHIND, bedroom: BEHIND, office: BEHIND, hall: BEHIND, nursery: BEHIND, dining: BEHIND },
+        banners: { speakerUpdate: true },
+      },
+    });
+
+    test('the card fits the banner region without scrolling', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await page.addStyleTag({ content: KILL_ANIM });
+      const cardEl = page.locator('#ui2Banners #speakerUpdateCard');
+      await expect(cardEl).toBeVisible();
+      await expect(cardEl.locator('.suc-list li')).toHaveCount(6);
+      const region = await page.locator('#ui2Banners').evaluate((el) => ({ client: el.clientHeight, scroll: el.scrollHeight }));
+      expect(region.scroll).toBeLessThanOrEqual(region.client + 1);
+      await expect(cardEl.locator('#sucUpdate')).toBeInViewport();
+    });
+  });
+}
+
 test.describe('notices about one speaker', () => {
   test.use({
     ui2: true,
