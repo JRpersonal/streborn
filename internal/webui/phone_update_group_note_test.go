@@ -66,7 +66,7 @@ func TestPhoneFleetUpdateWarnsGroupedSpeakers(t *testing.T) {
 		t.Fatal("I18N3 dictionary not closed")
 	}
 	dict := indexHTML[start : start+end]
-	vals := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"\},$`).FindAllStringSubmatch(dict, -1)
+	vals := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"[,}]`).FindAllStringSubmatch(dict, -1)
 	if len(vals) != 12 {
 		t.Fatalf("suGrpAllNote in %d locales, want 12", len(vals))
 	}
@@ -158,7 +158,7 @@ func TestPhoneGroupNoteNamesTheJoinControl(t *testing.T) {
 	if singles != 12 {
 		t.Fatalf("checked %d suGrpNote bundles, want 12", singles)
 	}
-	all := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"\},$`).FindAllStringSubmatch(indexHTML, -1)
+	all := regexp.MustCompile(`(?m)^  (\w+):\{suGrpAllNote:"([^"]*)"[,}]`).FindAllStringSubmatch(indexHTML, -1)
 	if len(all) != 12 {
 		t.Fatalf("suGrpAllNote in %d locales, want 12", len(all))
 	}
