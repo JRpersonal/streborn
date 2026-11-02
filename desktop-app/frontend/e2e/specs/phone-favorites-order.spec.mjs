@@ -1,5 +1,6 @@
 // phone-favorites-order: the phone remote's favourites move up and down
-// (#1519), sent to the speaker as the new order.
+// (#1519), and its Pandora list has a star that keeps the station in
+// Favourites (#1663), where it plays through the Pandora call.
 //
 //   E2E_PORT=4194 npx playwright test specs/phone-favorites-order.spec.mjs
 
@@ -8,13 +9,22 @@ import { PHONE } from '../../testkit/demo-data.mjs';
 
 const FAVS = [
   ...PHONE.FAVORITES,
-  { stationuuid: 's9', name: 'Radio Three', url: 'http://example.com/three' },
+  { stationuuid: 'pandora:111', name: 'Jazz Radio', source: 'pandora', location: '111', itemType: 'stationurl' },
 ];
+const PANDORA = {
+  status: 'READY',
+  stations: [
+    { name: 'Jazz Radio', location: '111', type: 'stationurl', art: `${PHONE.ART_HOST}/jazz.svg` },
+    { name: 'Rock Radio', location: '222', type: 'stationurl' },
+  ],
+};
 
 test.use({
   phoneOverrides: {
     '/api/favorites': { status: 200, body: FAVS },
     '/api/favorites/order': { status: 200, body: { ok: true, count: 3, at: 1 } },
+    '/api/pandora/stations': { status: 200, body: PANDORA },
+    '/api/pandora/play': { status: 200, body: { ok: true } },
   },
 });
 
@@ -37,5 +47,25 @@ test('a favourite moves up and down, sent to the speaker as the new order', asyn
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/favorites/order') && r.method() === 'POST');
   await rows.nth(1).locator('.fav-move[data-dir="-1"]').click();
   const req = await sent;
-  expect(JSON.parse(req.postData())).toEqual({ ids: ['s8', 's7', 's9'] });
+  expect(JSON.parse(req.postData())).toEqual({ ids: ['s8', 's7', 'pandora:111'] });
+});
+
+test('the Pandora list has stars, and a Pandora favourite plays through Pandora', async ({ phone }) => {
+  const { page } = phone;
+  await openBrowse(page);
+  const pandora = page.locator('#pandoraResults .station');
+  await expect(pandora).toHaveCount(2);
+  // Jazz Radio is a favourite already, Rock Radio is not.
+  await expect(pandora.nth(0).locator('.fav-star')).toHaveAttribute('title', 'Remove from favourites');
+  await expect(pandora.nth(1).locator('.fav-star')).toHaveAttribute('title', 'Add to favourites');
+
+  const starred = page.waitForRequest((r) => r.url().endsWith('/api/favorites') && r.method() === 'POST');
+  await pandora.nth(1).locator('.fav-star').click();
+  expect(JSON.parse((await starred).postData())).toEqual({
+    source: 'pandora', name: 'Rock Radio', location: '222', itemType: 'stationurl', favicon: '',
+  });
+
+  const played = page.waitForRequest((r) => r.url().endsWith('/api/pandora/play') && r.method() === 'POST');
+  await page.locator('#favResults .fav-row').nth(2).locator('button').first().click();
+  expect(JSON.parse((await played).postData())).toEqual({ location: '111', name: 'Jazz Radio', type: 'stationurl' });
 });

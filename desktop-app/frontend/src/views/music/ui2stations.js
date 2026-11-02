@@ -16,6 +16,7 @@ import { translateCountry, translateTags } from '../../localization.js';
 import { logoImgTag } from '../../logos.js';
 import { escapeAttr, escapeHtml, formatNumber } from '../../utils.js';
 import { keyButtonHTML } from '../../shell2/keybtn.js';
+import { isPandoraFav } from '../../pandorafav.js';
 
 // stationKey is a station's identity across renders: the directory's uuid, or
 // name and address for a station without one (the same identity the
@@ -31,13 +32,15 @@ export function stationKey(s) {
 export function genreLine(s) {
   if (!s) return '';
   if (s.synthetic) return t('search.playUrlCard');
+  if (isPandoraFav(s)) return 'Pandora';
   return translateTags(s.tags || '').slice(0, 2).join(', ');
 }
 
 // stationBroken reports whether the directory's last check could not reach
-// the station. A pasted address was never checked and is not broken.
+// the station. A pasted address was never checked and is not broken, nor is a
+// Pandora station, which the speaker's own client plays (#1663).
 export function stationBroken(s) {
-  return !!s && !s.synthetic && !s.lastcheckok;
+  return !!s && !s.synthetic && !isPandoraFav(s) && !s.lastcheckok;
 }
 
 // stationDetails lists what the details panel shows, as [label, value] pairs
@@ -115,7 +118,9 @@ export function stationRowHTML(s, i, ctx = {}) {
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn" data-act="play" data-i="${i}" aria-label="${escapeAttr(t('ui2.radio.play', { name, speaker }))}" title="${escapeAttr(t('ui2.radio.play', { name, speaker }))}"><span aria-hidden="true">&#9654;</span></button>`
     + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-fav${fav ? ' is-fav' : ''}" data-act="fav" data-i="${i}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${escapeAttr(favLabel)}" title="${escapeAttr(favLabel)}"><span aria-hidden="true">${fav ? '&#9733;' : '&#9734;'}</span></button>`
     + keyButtonHTML({ cls: 'ui2-st-key', attrs: `data-act="key" data-i="${i}"`, name, speaker })
-    + `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-more" data-act="details" data-i="${i}" aria-expanded="${ctx.open ? 'true' : 'false'}" aria-controls="${did}" aria-label="${escapeAttr(t('ui2.radio.detailsLabel', { name }))}" title="${escapeAttr(t('ui2.radio.details'))}"><span aria-hidden="true">&#9432;</span></button>`
+    // A Pandora station has no stream data to show (#1663); an empty slot
+    // keeps its other buttons in line with the rows above and below.
+    + (isPandoraFav(s) ? '<span class="ui2-st-btn-gap" aria-hidden="true"></span>' : `<button type="button" class="u-btn u-btn--icon ui2-st-btn ui2-st-more" data-act="details" data-i="${i}" aria-expanded="${ctx.open ? 'true' : 'false'}" aria-controls="${did}" aria-label="${escapeAttr(t('ui2.radio.detailsLabel', { name }))}" title="${escapeAttr(t('ui2.radio.details'))}"><span aria-hidden="true">&#9432;</span></button>`)
     + (ctx.move ? moveButtonsHTML(i, name, ctx.move) : '')
     + '</div>'
     + '</div>'

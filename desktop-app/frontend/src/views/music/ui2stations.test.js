@@ -217,7 +217,7 @@ describe('strings', () => {
   });
 });
 
-describe('favourite rows (#1519)', () => {
+describe('favourite rows (#1519, #1663)', () => {
   it('moves a favourite up and down, named with the station', () => {
     const html = stationRowHTML(ROCK, 2, { speaker: 'X', fav: true, move: { up: true, down: false } });
     expect(html).toMatch(/data-act="move" data-dir="-1" data-i="2" aria-label="Move Best Of Rock.FM up"/);
@@ -226,5 +226,15 @@ describe('favourite rows (#1519)', () => {
 
   it('has no move buttons outside the Favorites tab', () => {
     expect(stationRowHTML(ROCK, 0, { speaker: 'X' })).not.toContain('data-act="move"');
+  });
+
+  it('shows a Pandora favourite as Pandora, never as unreachable, without stream details', () => {
+    const jazz = { stationuuid: 'pandora:111', name: 'Jazz Radio', url: '', url_resolved: '', source: 'pandora', location: '111', itemType: 'stationurl' };
+    expect(genreLine(jazz)).toBe('Pandora');
+    expect(stationBroken(jazz)).toBe(false);
+    const html = stationRowHTML(jazz, 0, { speaker: 'X', fav: true });
+    expect(html).not.toContain('data-act="details"');
+    expect(html).toContain('data-act="play"');
+    expect(html).toContain('data-act="key"');
   });
 });

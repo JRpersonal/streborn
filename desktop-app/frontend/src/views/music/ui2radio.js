@@ -26,6 +26,8 @@ import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
 import { isFav, loadFavorites, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
+import { isPandoraFav, pandoraRowFromFav } from '../../pandorafav.js';
+import { openPandoraPick, playPandoraRow } from './pandora.js';
 import { putStationOnKey, showSlotPicker } from './picker.js';
 import { doRefilter, openBoxWifiSetup, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
 import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
@@ -518,6 +520,7 @@ async function playRow(s) {
   const key = stationKey(s);
   const box = state.currentBox;
   const speaker = speakerName();
+  if (isPandoraFav(s)) { playPandoraFavRow(s, key, box, speaker); return; }
   const url = s.url_resolved || s.url;
   setStatus(key, startingVerdict(speaker));
   let failed = false;
@@ -540,6 +543,22 @@ async function playRow(s) {
   // yet. The status poll upgrades the line once it does (upgradeSentRows).
   const verdict = playVerdict(speaker, playing);
   if (!playing && box) verdict.pending = { host: box.host, url, name: s.name, speaker };
+  setStatus(key, verdict);
+}
+
+// playPandoraFavRow starts a Pandora favourite (#1663) the way the Pandora list
+// does, on the speaker's own Pandora client, and tells the row what came of it.
+async function playPandoraFavRow(s, key, box, speaker) {
+  setStatus(key, startingVerdict(speaker));
+  let failed = false;
+  const ok = await playPandoraRow(pandoraRowFromFav(s), (msg) => {
+    failed = true;
+    setStatus(key, { kind: 'error', text: t('ui2.radio.playFailed', { speaker, reason: msg }) });
+  });
+  if (failed) return;
+  if (!ok) { setStatus(key, null); return; }
+  const verdict = playVerdict(speaker, false);
+  if (box) verdict.pending = { host: box.host, url: '', name: s.name, speaker };
   setStatus(key, verdict);
 }
 
@@ -602,6 +621,8 @@ function toggleDetails(s, btn) {
 function putOnKey(s) {
   const box = state.currentBox;
   if (!box) return;
+  // A Pandora favourite goes on a key the way its Pandora list row does.
+  if (isPandoraFav(s)) { openPandoraPick(pandoraRowFromFav(s)); return; }
   const speaker = speakerName(box);
   const key = stationKey(s);
   const name = s.name || t('search.unnamed');

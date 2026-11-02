@@ -50,12 +50,13 @@ import {
 } from '../../utils.js';
 import { deps } from './deps.js';
 import { isLibraryFav, libraryFavCard } from '../../libraryfav.js';
+import { isPandoraFav, pandoraRowFromFav } from '../../pandorafav.js';
 import { replayLibraryCard } from '../recent.js';
 import { isFav, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
 import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 import { renderNowPlayingBar } from './nowplaying.js';
-import { renderPandoraStations } from './pandora.js';
+import { openPandoraPick, playPandoraRow, renderPandoraStations } from './pandora.js';
 import { openPick } from './picker.js';
 import { renderPresets } from './presettiles.js';
 import { refreshStatus } from './status.js';
@@ -875,6 +876,9 @@ export function renderSearchResults() {
       // A music-library favourite: no directory metadata either, so it says
       // where it comes from, in the same words as its Recently-played card.
       metaBits.push(escapeHtml(t('recent.srcLibrary')));
+    } else if (isPandoraFav(s)) {
+      // A Pandora station (#1663): the speaker's own Pandora client plays it.
+      metaBits.push('Pandora');
     } else {
       if (countryDe) metaBits.push(escapeHtml(countryDe));
       // No known bitrate, no cell: a "- kbit/s" placeholder on every such row
@@ -929,6 +933,13 @@ export function renderSearchResults() {
         try { await replayLibraryCard(libraryFavCard(s), effectivePlayTarget()); } catch (err) { showError(err); }
         return;
       }
+      // A Pandora favourite plays like its row in the Pandora list (#1663).
+      if (isPandoraFav(s)) {
+        btn.disabled = true;
+        await playPandoraRow(pandoraRowFromFav(s));
+        btn.disabled = false;
+        return;
+      }
       // playStation handles the upstream-failure case (403/503/dead URL): it
       // shows a clear reason and auto-retries another radio-browser entry of the
       // same station before giving up, so a single blocked mirror no longer
@@ -937,7 +948,12 @@ export function renderSearchResults() {
     };
   });
   res.querySelectorAll('.pick').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); openPick(list[parseInt(btn.dataset.i, 10)]); };
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const s = list[parseInt(btn.dataset.i, 10)];
+      if (isPandoraFav(s)) { openPandoraPick(pandoraRowFromFav(s)); return; }
+      openPick(s);
+    };
   });
   res.querySelectorAll('.fav-move').forEach(btn => {
     btn.onclick = (e) => {

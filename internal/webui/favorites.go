@@ -74,6 +74,21 @@ type Favorite struct {
 	Source      string `json:"source,omitempty"`
 	Mime        string `json:"mime,omitempty"`
 	DurationSec int    `json:"durationSec,omitempty"`
+	// Location and ItemType mark a Pandora station (#1663): Source is
+	// "pandora", Location the station reference the speaker listed, ItemType
+	// its item type. It has no stream address: the speaker's own Pandora
+	// client plays it (POST /api/pandora/play), and its key is
+	// "pandora:<location>", the same as its Recently-played card.
+	Location string `json:"location,omitempty"`
+	ItemType string `json:"itemType,omitempty"`
+}
+
+// favoriteSourcePandora marks a Pandora station among the favourites.
+const favoriteSourcePandora = "pandora"
+
+// isPandora reports whether the favourite is a Pandora station.
+func (f Favorite) isPandora() bool {
+	return f.Source == favoriteSourcePandora
 }
 
 // key names a favourite the way the desktop app does (favId in main.js): the
@@ -243,8 +258,20 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 	seen := map[string]bool{}
 	for _, f := range in {
 		f.Name = strings.TrimSpace(f.Name)
-		if f.Name == "" || f.playableURL() == "" {
-			continue // a row with no name or no stream is not a station
+		if f.Name == "" {
+			continue
+		}
+		if f.isPandora() {
+			// A Pandora station plays from its reference, not an address.
+			f.Location = strings.TrimSpace(f.Location)
+			if f.Location == "" {
+				continue
+			}
+			if f.UUID == "" {
+				f.UUID = "pandora:" + f.Location
+			}
+		} else if f.playableURL() == "" {
+			continue // a row with no stream is not a station
 		}
 		key := f.UUID
 		if key == "" {

@@ -176,8 +176,8 @@ func (s *Server) addFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 	local := r.URL.Query().Get("local") == "1"
 	clean := sanitiseFavorites([]Favorite{in})
-	if len(clean) == 0 || !isStreamAddress(clean[0].playableURL()) {
-		http.Error(w, "a favourite needs a name and an http(s) stream address", http.StatusBadRequest)
+	if len(clean) == 0 || (!clean[0].isPandora() && !isStreamAddress(clean[0].playableURL())) {
+		http.Error(w, "a favourite needs a name and an http(s) stream address, or a Pandora station's location", http.StatusBadRequest)
 		return
 	}
 	f := clean[0]

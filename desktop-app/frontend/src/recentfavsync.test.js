@@ -93,6 +93,17 @@ describe('pollFavRemovalsOnCurrentBox (#1339)', () => {
     expect(JSON.parse(api.PushFavoritesAt.mock.calls[0][2])[0]).toMatchObject({ stationuuid: 'u-9', starredAt: 700 });
   });
 
+  // #1663: a Pandora station starred on the phone keeps what plays it.
+  it('takes over a Pandora station starred on the phone with its station reference', async () => {
+    api.FavoriteRemovals.mockResolvedValue(JSON.stringify({
+      removed: [],
+      added: [{ id: 'pandora:111', at: 800, fav: { stationuuid: 'pandora:111', name: 'Jazz Radio', source: 'pandora', location: '111', itemType: 'stationurl' } }],
+    }));
+    expect(await fav.pollFavRemovalsOnCurrentBox()).toBe(true);
+    const pushed = JSON.parse(api.PushFavoritesAt.mock.calls[0][2]);
+    expect(pushed[2]).toMatchObject({ stationuuid: 'pandora:111', source: 'pandora', location: '111', itemType: 'stationurl' });
+  });
+
   // #1519: an order set on the phone after the app's own is taken over, and
   // the push names its time, which settles the note on the speakers.
   it('takes over an order set on the phone and pushes it with its time', async () => {

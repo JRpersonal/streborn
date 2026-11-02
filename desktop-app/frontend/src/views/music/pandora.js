@@ -6,6 +6,8 @@ import { state } from '../../state.js';
 import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
 import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
 import { keyNum } from '../../presetrows.js';
+import { pandoraFavFromRow } from '../../pandorafav.js';
+import { isFav, toggleFav } from './favorites.js';
 import { showSlotPicker } from './picker.js';
 import { listButtonClick, syncSearchModeButtons } from './search.js';
 import { refreshStatus } from './status.js';
@@ -95,7 +97,11 @@ export function renderPandoraStations() {
     res.innerHTML = `<div class="muted">${escapeHtml(t('pandora.empty'))}</div>`;
     return;
   }
-  res.innerHTML = pandoraRows.map((s, i) => `
+  res.innerHTML = pandoraRows.map((s, i) => {
+    // The star keeps the station in Favourites next to the other stations
+    // (#1663), the same star as on a station of the search.
+    const fav = isFav(pandoraFavFromRow(s));
+    return `
       <div class="result-row" data-i="${i}">
         <div class="result-logo">
           ${s.art ? `<img src="${escapeAttr(s.art)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="fav pandora-art" />` : '<div class="fav-empty"></div>'}
@@ -107,8 +113,10 @@ export function renderPandoraStations() {
         <div class="result-actions">
           <button class="btn btn-mini pandora-play" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>
           ${s.presetable ? `<button class="btn btn-mini pandora-pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>` : ''}
+          <button class="btn btn-mini fav-toggle pandora-fav${fav ? ' is-fav' : ''}" data-i="${i}" aria-pressed="${fav ? 'true' : 'false'}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>
         </div>
-      </div>`).join('');
+      </div>`;
+  }).join('');
   // No inline onerror (the CSP forbids inline script): a cover that does not
   // load is simply hidden.
   res.querySelectorAll('img.pandora-art').forEach(img => {
@@ -120,15 +128,20 @@ export function renderPandoraStations() {
       const s = pandoraRows[parseInt(btn.dataset.i, 10)];
       if (!s || !state.currentBox) return;
       btn.disabled = true;
-      try {
-        await PlayPandoraStation(state.currentBox.host, state.currentBox.port, s.location, s.name, s.type);
-        showToast(t('pandora.starting', { name: s.name }));
-        setTimeout(() => { refreshStatus(); }, 1500);
-        setTimeout(() => { refreshStatus(); }, 4000);
-      } catch (err) {
-        showError(t('pandora.playFailed', { err: agentErrorText(err) }));
-      }
+      await playPandoraRow(s);
       btn.disabled = false;
+    };
+  });
+  res.querySelectorAll('.pandora-fav').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const s = pandoraRows[parseInt(btn.dataset.i, 10)];
+      if (!s) return;
+      const nowFav = toggleFav(pandoraFavFromRow(s));
+      btn.classList.toggle('is-fav', nowFav);
+      btn.setAttribute('aria-pressed', nowFav ? 'true' : 'false');
+      btn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
+      btn.title = nowFav ? t('search.removeFav') : t('search.addFav');
     };
   });
   res.querySelectorAll('.pandora-pick').forEach(btn => {
@@ -138,6 +151,27 @@ export function renderPandoraStations() {
       if (s) openPandoraPick(s);
     };
   });
+}
+
+// playPandoraRow starts a Pandora station on the selected speaker's own Pandora
+// client: a row of the Pandora list, or a Pandora favourite (#1663). Reports
+// what came of it as a toast or an error, and resolves to whether it started.
+export async function playPandoraRow(s, report) {
+  if (!s || !state.currentBox) return false;
+  try {
+    await PlayPandoraStation(state.currentBox.host, state.currentBox.port, s.location, s.name, s.type);
+  } catch (err) {
+    const code = agentErrorCode(err);
+    const msg = code === 'not-linked' || code === 'service-off'
+      ? t('pandora.notLinked')
+      : t('pandora.playFailed', { err: agentErrorText(err) });
+    if (report) report(msg, 'error'); else showError(msg);
+    return false;
+  }
+  if (!report) showToast(t('pandora.starting', { name: s.name }));
+  setTimeout(() => { refreshStatus(); }, 1500);
+  setTimeout(() => { refreshStatus(); }, 4000);
+  return true;
 }
 
 // The key is saved from the station item the list carried, so the station is

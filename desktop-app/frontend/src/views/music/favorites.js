@@ -94,9 +94,14 @@ function favMinimal(s) {
     // A music-library item starred from Recently played (#1605): the mark
     // plus MIME and length, so Favourites plays it the library way. Undefined
     // on a radio station, and dropped with it.
-    source: s.source === 'upnp' ? 'upnp' : undefined,
+    source: s.source === 'upnp' || s.source === 'pandora' ? s.source : undefined,
     mime: s.mime || undefined,
     durationSec: s.durationSec > 0 ? s.durationSec : undefined,
+    // A Pandora station (#1663): the station reference and item type the
+    // speaker listed, which its own Pandora client plays. Undefined, and so
+    // dropped, on everything else.
+    location: s.source === 'pandora' && s.location ? s.location : undefined,
+    itemType: s.source === 'pandora' && s.itemType ? s.itemType : undefined,
   };
 }
 

@@ -1,8 +1,9 @@
-// desktop-favorites-order: moving the starred stations (#1519), in the
-// classic layout and in UI 2.0.
+// desktop-favorites-order: moving the starred stations (#1519) and starring a
+// Pandora station (#1663), in the classic layout and in UI 2.0.
 //
 // A move changes the stored order and pushes it to the speakers with the time
-// of the move.
+// of the move; a Pandora station gets a star in the Pandora list, lands in
+// Favourites with its station reference and plays through the Pandora call.
 //
 //   E2E_PORT=4191 npx playwright test specs/desktop-favorites-order.spec.mjs
 
@@ -14,12 +15,24 @@ const FAVORITES = [
   { stationuuid: 'u-3', name: 'Third Radio', url: 'http://example.com/third', bitrate: 128, starredAt: 3 },
 ];
 
+const PANDORA_READY = {
+  standIn: { services: [{ type: 'PANDORA', mode: 'us', registered: true }] },
+  boxSources: { PANDORA: { hasAccount: 'true', status: 'READY' } },
+};
+const PANDORA_STATIONS = {
+  status: 'READY',
+  stations: [
+    { name: 'Jazz Radio', location: '111', type: 'stationurl', art: 'https://img.example.com/111.jpg', presetable: true },
+    { name: 'Rock Radio', location: '222', type: 'stationurl', presetable: true },
+  ],
+};
+
 const SEED = { seed: { extraStorage: { 'str.favStations': JSON.stringify(FAVORITES) } } };
 
 const storedIds = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('str.favStations') || '[]').map((s) => s.stationuuid));
 
 test.describe('classic layout', () => {
-  test.use({ ui2: false, scenario: SEED });
+  test.use({ ui2: false, scenario: { ...SEED, bindings: { USServicesStatus: { value: PANDORA_READY }, PandoraStations: { value: PANDORA_STATIONS } } } });
 
   test('moves a favourite up and down and pushes the new order', async ({ app, mock }) => {
     const { page } = app;
@@ -53,6 +66,31 @@ test.describe('classic layout', () => {
     await page.locator('#topBtn').click();
     await expect(page.locator('#searchResults .result-row').first()).toBeVisible();
     await expect(page.locator('#searchResults .fav-move')).toHaveCount(0);
+  });
+
+  test('stars a Pandora station, which then plays from Favourites', async ({ app, mock }) => {
+    const { page } = app;
+    const pandora = page.locator('#pandoraModeBtn');
+    await expect(pandora).toBeVisible();
+    await pandora.click();
+    const jazz = page.locator('#searchResults .result-row').filter({ hasText: 'Jazz Radio' });
+    const star = jazz.locator('.pandora-fav');
+    await expect(star).toHaveAttribute('aria-pressed', 'false');
+    await star.click();
+    await expect(star).toHaveAttribute('aria-pressed', 'true');
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('str.favStations')).pop());
+    expect(stored).toMatchObject({ stationuuid: 'pandora:111', name: 'Jazz Radio', source: 'pandora', location: '111', itemType: 'stationurl', favicon: 'https://img.example.com/111.jpg' });
+
+    await page.locator('#favModeBtn').click();
+    const fav = page.locator('#searchResults .result-row').filter({ hasText: 'Jazz Radio' });
+    await expect(fav.locator('.result-meta')).toHaveText('Pandora');
+    await expect(fav.locator('.result-online-dot')).toHaveCount(0);
+    await mock.resetCalls();
+    await fav.locator('.play-now').click();
+    await mock.expectCalled('PlayPandoraStation', { times: 1 });
+    const call = await mock.last('PlayPandoraStation');
+    expect(call.args.slice(2)).toEqual(['111', 'Jazz Radio', 'stationurl']);
+    expect(await mock.count('PlayURL')).toBe(0);
   });
 });
 

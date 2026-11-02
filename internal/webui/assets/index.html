@@ -4885,14 +4885,18 @@ async function loadFavorites(quiet) {
   // A favourite whose address is no http(s) stream (a Spotify playlist starred
   // from a card mislabelled as radio, #1077) cannot play as a station: the
   // speaker answered it with a bad-URL error. It is left out here.
+  // A Pandora station (#1663) has no address: the speaker's own Pandora client
+  // plays it from its station reference.
   var next = (Array.isArray(list) ? list : []).filter(function (st) {
-    return st && isStreamURL(st.url_resolved || st.url);
+    return st && (isStreamURL(st.url_resolved || st.url) || isPandoraFav(st));
   });
   var sig = JSON.stringify(next);
   if (quiet && (sig === favSig || box.querySelector('.fav-confirm'))) return;
   favSig = sig;
   favStations = next;
   syncRecentStars();
+  // The Pandora list's stars follow the list too (#1663).
+  if (pandoraStations.length && !document.querySelector('#pandoraResults .fav-confirm')) renderPandora();
   box.innerHTML = '';
   if (head) head.hidden = true;
   if (!favStations.length) return;
@@ -4908,6 +4912,11 @@ async function loadFavorites(quiet) {
 // /api/play accepts.
 function isStreamURL(u) {
   return /^https?:\/\//i.test(String(u || ''));
+}
+
+// isPandoraFav reports whether a favourite is a Pandora station (#1663).
+function isPandoraFav(st) {
+  return !!st && st.source === 'pandora' && !!st.location;
 }
 
 // favKey names a favourite the way the desktop app and the agent do (favId in
@@ -5034,6 +5043,71 @@ function renderUnstarConfirm(host, st, err, onKeep, onFail, onDone) {
 // 409, an older agent 404, and the section then simply stays away.
 var pandoraStations = [];
 
+// renderPandora paints the Pandora list: each station with its play button and
+// its star (#1663).
+function renderPandora() {
+  var box = document.getElementById('pandoraResults');
+  if (!box) return;
+  box.innerHTML = '';
+  pandoraStations.forEach(function (st, idx) {
+    var row = document.createElement('div'); row.className = 'station';
+    var nm = document.createElement('div'); nm.className = 'sname';
+    nm.textContent = st.name || st.itemName || st.location;
+    var sub = document.createElement('small');
+    sub.textContent = 'Pandora';
+    nm.appendChild(sub);
+    row.appendChild(nm);
+    var btns = stationBtns(row);
+    var bPlay = document.createElement('button');
+    bPlay.className = 'btn'; bPlay.type = 'button';
+    bPlay.setAttribute('aria-label', T.play + ': ' + (st.name || ''));
+    bPlay.textContent = T.play;
+    bPlay.addEventListener('click', function () { playPandora(idx, bPlay); });
+    btns.appendChild(bPlay);
+    btns.appendChild(pandoraStar(st, row));
+    box.appendChild(row);
+  });
+}
+
+// pandoraStar is the star on a Pandora station (#1663): it keeps the station in
+// Favourites next to the other stations, the way a search result's star does.
+function pandoraStar(st, row) {
+  var key = 'pandora:' + st.location;
+  var have = null;
+  for (var k = 0; k < favStations.length; k++) {
+    if (favKey(favStations[k]) === key) { have = favStations[k]; break; }
+  }
+  if (have) {
+    return unstarButton(have, function () {
+      var conf = document.createElement('div'); conf.className = 'fav-confirm';
+      row.replaceWith(conf);
+      var ask = function (err) {
+        renderUnstarConfirm(conf, have, err,
+          function () { conf.replaceWith(row); },
+          ask,
+          async function () { await loadFavorites(); renderPandora(); });
+      };
+      ask('');
+    });
+  }
+  var b = document.createElement('button');
+  b.className = 'btn fav-star'; b.type = 'button';
+  b.setAttribute('aria-label', (T.favAdd || 'Add to favourites') + ': ' + (st.name || ''));
+  b.title = T.favAdd || 'Add to favourites';
+  b.innerHTML = '&#9734;';
+  b.addEventListener('click', async function () {
+    b.disabled = true;
+    var r = await api('/api/favorites', 'POST', {
+      source: 'pandora', name: st.name || st.itemName || st.location, location: st.location,
+      itemType: st.type || 'stationurl', favicon: st.art || ''
+    });
+    if (!r) { b.disabled = false; searchMsg(T.recFail || '', true); return; }
+    await loadFavorites();
+    renderPandora();
+  });
+  return b;
+}
+
 async function loadPandora() {
   var head = document.getElementById('lblPandoraSec');
   var box = document.getElementById('pandoraResults');
@@ -5059,22 +5133,7 @@ async function loadPandora() {
     msg.textContent = T.pandoraEmpty; msg.hidden = false;
     return;
   }
-  pandoraStations.forEach(function (st, idx) {
-    var row = document.createElement('div'); row.className = 'station';
-    var nm = document.createElement('div'); nm.className = 'sname';
-    nm.textContent = st.name || st.itemName || st.location;
-    var sub = document.createElement('small');
-    sub.textContent = 'Pandora';
-    nm.appendChild(sub);
-    row.appendChild(nm);
-    var bPlay = document.createElement('button');
-    bPlay.className = 'btn'; bPlay.type = 'button';
-    bPlay.setAttribute('aria-label', T.play + ': ' + (st.name || ''));
-    bPlay.textContent = T.play;
-    bPlay.addEventListener('click', function () { playPandora(idx, bPlay); });
-    stationBtns(row).appendChild(bPlay);
-    box.appendChild(row);
-  });
+  renderPandora();
 }
 
 async function playPandora(idx, btn) {
@@ -5134,6 +5193,11 @@ async function playLibraryFav(st) {
 async function playFavorite(idx, btn) {
   var st = favStations[idx];
   if (!st) return;
+  // A Pandora favourite plays like its row in the Pandora list (#1663).
+  if (isPandoraFav(st)) {
+    startPandora({ location: st.location, name: st.name || '', type: st.itemType || '' }, btn);
+    return;
+  }
   press(btn);
   if (isLibraryFav(st)) {
     var lr = await playLibraryFav(st);
