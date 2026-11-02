@@ -98,6 +98,11 @@ func newTrackServer(t *testing.T, panel bool) (*Server, *fakeTrackPanel, func() 
 	if err := writeFlagFile(s.displayTrackPath, "1"); err != nil {
 		t.Fatal(err)
 	}
+	// The clock is on by default on a panel; these tests are about the track
+	// and switch it on themselves where they want it.
+	if err := writeFlagFile(clockPathFor(s.displayTrackPath), "0"); err != nil {
+		t.Fatal(err)
+	}
 	s.play.last = &lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "Radio Bob", mime: "audio/mpeg"}
 	return s, fp, func() []string {
 		mu.Lock()
@@ -655,5 +660,69 @@ func TestDisplayTrackNotOfferedWithoutADisplay(t *testing.T) {
 	s.displayMsg.hasDisplayFn = func() (bool, bool) { return true, true }
 	if got := get(); got["supported"] != true {
 		t.Fatalf("off with a display: %v, want offered", got)
+	}
+}
+
+// The panel screen is the default where STR draws on the panel: a speaker
+// never set shows track and clock, a speaker without such a panel keeps both
+// off (there a title costs an audio gap), and a user's "off" stays off.
+func TestDisplayDefaultsOnWhereSTRDrawsThePanel(t *testing.T) {
+	for _, panel := range []bool{true, false} {
+		s := &Server{
+			logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+			displayTrackPath: filepath.Join(t.TempDir(), "display-track-on-box"),
+			trackPanel:       &fakeTrackPanel{supported: panel},
+		}
+		if got := s.displayTrackEnabled(); got != panel {
+			t.Fatalf("panel=%v: track default %v, want %v", panel, got, panel)
+		}
+		if got := s.displayClockEnabled(); got != panel {
+			t.Fatalf("panel=%v: clock default %v, want %v", panel, got, panel)
+		}
+		if err := writeFlagFile(s.displayTrackPath, "0"); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeFlagFile(clockPathFor(s.displayTrackPath), "0"); err != nil {
+			t.Fatal(err)
+		}
+		if s.displayTrackEnabled() || s.displayClockEnabled() {
+			t.Fatalf("panel=%v: a stored off was overridden by the default", panel)
+		}
+	}
+}
+
+// The same station played again after its stream ended (the speaker was
+// switched off and back on to the same preset) shows its name and the song
+// still known at once. The stream proxy reports a title only when it changes,
+// so waiting for it meant a dark panel until the next song (live Portable,
+// 2026-11-02).
+func TestSameStationAgainAfterItEndedComesBack(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.HandleStreamTitle("Queen - Under Pressure")
+	s.HandleStreamEnded()
+	s.setLastPlay("http://192.0.2.1:8888/stream/1", "Radio Bob", "", "audio/mpeg")
+	shown, _ := fp.snapshot()
+	want := oled.TrackText{Station: "Radio Bob", Artist: "Queen", Title: "Under Pressure"}
+	if len(shown) != 2 || shown[1] != want {
+		t.Fatalf("panel got %+v, want %+v last", shown, want)
+	}
+}
+
+// After an agent restart the record of the last station comes back from NAND,
+// and playing that station again is not a new stream. The panel knew nothing
+// yet and stayed dark until the first song title (live ST20, 2026-11-02): it
+// now shows the station's name at once.
+func TestSameStationAfterRestartShowsItsName(t *testing.T) {
+	s, fp, _ := newTrackServer(t, true)
+	s.setLastPlay("http://192.0.2.1:8888/stream/1", "Radio Bob", "", "audio/mpeg")
+	shown, _ := fp.snapshot()
+	if len(shown) != 1 || shown[0] != (oled.TrackText{Title: "Radio Bob"}) {
+		t.Fatalf("panel got %+v, want the station name", shown)
+	}
+	// once it shows, the same stream pushed again keeps the screen as it is
+	s.HandleStreamTitle("Queen - Under Pressure")
+	s.setLastPlay("http://192.0.2.1:8888/stream/1", "Radio Bob", "", "audio/mpeg")
+	if shown, _ := fp.snapshot(); len(shown) != 2 {
+		t.Fatalf("a re-push of a playing stream redrew the panel: %+v", shown)
 	}
 }
