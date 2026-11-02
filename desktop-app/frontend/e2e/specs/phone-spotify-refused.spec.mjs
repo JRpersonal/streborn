@@ -55,7 +55,9 @@ test.describe('phone: stopped on the stream', () => {
     await expect(notice(page)).toHaveText(NAMED);
     // The status poll runs every five seconds; the stopped speaker is asked
     // about Spotify once, not on every poll.
-    await page.waitForTimeout(11_000);
+    const polls = () => handler.calls.filter((c) => new URL(c.url).pathname === '/api/status').length;
+    const before = polls();
+    await expect.poll(polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 2);
     const reads = handler.calls.filter((c) => new URL(c.url).pathname === '/spotify/info').length;
     expect(reads).toBe(1);
   });
