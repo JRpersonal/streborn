@@ -1433,7 +1433,6 @@
   "setup.limitedNote": "這個型號沒有 1 到 6 的實體預設鍵，所以那些按鍵不能用。STR 一樣會帶來網路電台、app 裡的預設和串流。",
   "setup.unverifiedNote": "STR 還沒有在這個型號上測試過。大多數 SoundTouch 型號都能用，但在這裡安裝要自行承擔風險。",
   "setup.notSoundTouchNote": "這不是 SoundTouch 喇叭。STR 只支援 SoundTouch 喇叭，沒辦法用在這台上。",
-  "setup.targetEmptyNotSoundTouch": "這裡只會列出 SoundTouch 喇叭。Bose Music 裝置（Home Speaker、Smart Speaker、Smart Soundbar、Soundbar 500、700 或 900）是另一套系統，STR 沒辦法跟它們配合。",
   "setup.targetHeading": "要裝到哪一台喇叭？",
   "setup.netInstallBtn": "立即安裝 STR",
   "setup.useStickInstead": "改用 USB 隨身碟",

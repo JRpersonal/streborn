@@ -1301,7 +1301,6 @@
   "setup.limitedNote": "لا يحتوي هذا الطراز على أزرار الضبط المسبق المادية من 1 إلى 6، لذا لن تعمل. ومع ذلك يضيف STR راديو الإنترنت، والإعدادات المسبقة في التطبيق، والبث.",
   "setup.unverifiedNote": "لم يُختبر STR على هذا الطراز بعد. تعمل معظم طرازات SoundTouch، لكن التثبيت هنا على مسؤوليتك الخاصة.",
   "setup.notSoundTouchNote": "هذا ليس مكبر صوت SoundTouch. يعمل STR مع مكبرات صوت SoundTouch فقط ولا يمكنه العمل مع هذا الجهاز.",
-  "setup.targetEmptyNotSoundTouch": "لا تظهر هنا إلا مكبرات صوت SoundTouch. أجهزة Bose Music (Home Speaker وSmart Speaker وSmart Soundbar وSoundbar 500 و700 و900) نظام مختلف، ولا يمكن لـ STR العمل معها.",
   "setup.targetHeading": "أي سمّاعة؟",
   "setup.netInstallBtn": "ثبّت STR الآن",
   "setup.useStickInstead": "تجهيز ذاكرة USB بدلاً من ذلك",

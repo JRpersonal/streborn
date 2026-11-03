@@ -63,9 +63,10 @@ export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
 //                     buttons 1-6 STR was built around (10, 20, 30, Portable,
 //                     Wave): Verified or Working in MODELS.md.
 //   'limited'       - a SoundTouch-speaking device MODELS.md lists as Working
-//                     that has no hardware preset buttons 1-6: SoundTouch 130
-//                     (CineMate 130), 300 and 520, CineMate, Lifestyle
-//                     consoles, the SA-4 and SA-5
+//                     that has no hardware preset buttons 1-6: SoundTouch 120,
+//                     130, 220 and 520 (the home cinema systems also sold as
+//                     CineMate 120, 130, 220 and 520), SoundTouch 300,
+//                     CineMate, Lifestyle consoles, the SA-4 and SA-5
 //                     amplifiers, the Wireless (Link) Adapter. Callers add a
 //                     short note that those buttons will not work.
 //   'unverified'    - a model string MODELS.md has no row for (its "other
@@ -82,10 +83,15 @@ export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
 //   'unknown'       - type absent (or the bare word "SoundTouch"): treat like
 //                     'supported' (compatibility-first). A speaker whose /info
 //                     has not been read yet must not carry a warning.
+// Underscores count as spaces: a stock speaker found over mDNS can carry the raw
+// Bose TXT product code ("soundtouch_300", "wave_soundtouch") when
+// discovery.stockModelLabel has no label for it, and "_" is a word character, so
+// without this "soundtouch_300" would match no token below and draw the
+// own-risk note on a working box.
 // Nothing here blocks an install; the old 'unsupported' verdict (which
 // dead-ended installs before the stick-free :17000 network path existed) is gone.
 export function boxModelSupport(model) {
-  const m = String(model || '').toLowerCase().trim();
+  const m = String(model || '').toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
   if (!m || m === 'soundtouch') return 'unknown';
   if (/\bhome\s*speaker\b/.test(m) || /\bsmart\s*(speaker|soundbar|ultra)\b/.test(m)
       || /\bsoundbar\s*(500|550|600|700|900)\b/.test(m) || /\bbose\s*music\b/.test(m)
@@ -97,7 +103,7 @@ export function boxModelSupport(model) {
   // list below. Model numbers match as a whole token so "SoundTouch 30" never
   // catches the "SoundTouch 300".
   if (/\blifestyle\b/.test(m) || /\bcinemate\b/.test(m)
-      || /soundtouch\s*(130|300|520)\b/.test(m) || /\bsa-?[45]\b/.test(m)
+      || /soundtouch\s*(120|130|220|300|520)\b/.test(m) || /\bsa-?[45]\b/.test(m)
       || /wireless\s*(link\s*)?adapter/.test(m)) {
     return 'limited';
   }

@@ -473,12 +473,6 @@ export function renderSetupTargetPicker() {
     // unless the app says it right here. A field mail (2026-08-30) burned ten
     // stick attempts across four speakers that were never on the network.
     cards += `<div class="setup-warn setup-target-empty-hint">${escapeHtml(t('setup.targetEmptyBoseApp'))}</div>`;
-    // Bose Music devices (Home Speaker, Smart Speaker, Smart Soundbar, Soundbar
-    // 500/700/900) never show up here: they do not speak SoundTouch, and none of
-    // the discovery paths (the SoundTouch mDNS types, the :8090 /info probe, the
-    // SoundTouch SSDP uuid) sees them. Owners of one wrote in asking why their
-    // speaker is missing, so the empty list says it plainly.
-    cards += `<div class="muted small setup-target-empty-notst">${escapeHtml(t('setup.targetEmptyNotSoundTouch'))}</div>`;
     // ... and the way back INTO the Bose app for a speaker that still holds a
     // dead Wi-Fi (router replaced): the hardware combo that puts it into its
     // setup network. Verified live: key 1 + volume-down clears pairing and

@@ -141,8 +141,7 @@ export function findHTML(model, opts = {}) {
       + (opts.searching
         ? `<p>${escapeHtml(t('ui2.state.searchingTitle'))}</p>`
         : `<p>${escapeHtml(t('ui2.setup.wizard.find.empty'))}</p>`
-          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`
-          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyNotSoundTouch'))}</p>`)
+          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`)
       + '</div>'
       + connectHTML('w2Connect')
       + '</div>';

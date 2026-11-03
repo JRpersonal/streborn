@@ -1433,7 +1433,6 @@
   "setup.limitedNote": "Dieses Modell hat keine Hardware-Tasten 1 bis 6, die funktionieren also nicht. STR bringt trotzdem Internetradio, Presets in der App und Streaming.",
   "setup.unverifiedNote": "STR wurde auf diesem Modell noch nicht getestet. Die meisten SoundTouch-Modelle funktionieren, die Installation hier ist aber dein eigenes Risiko.",
   "setup.notSoundTouchNote": "Das ist kein SoundTouch-Lautsprecher. STR funktioniert nur mit SoundTouch-Lautsprechern und kann mit diesem nicht arbeiten.",
-  "setup.targetEmptyNotSoundTouch": "Hier tauchen nur SoundTouch-Lautsprecher auf. Bose-Music-Geräte (Home Speaker, Smart Speaker, Smart Soundbar, Soundbar 500, 700 oder 900) sind ein anderes System, mit ihnen kann STR nicht arbeiten.",
   "setup.targetHeading": "Für welchen Lautsprecher?",
   "setup.netInstallBtn": "STR jetzt installieren",
   "setup.useStickInstead": "Stattdessen einen USB-Stick vorbereiten",

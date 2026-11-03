@@ -1301,7 +1301,6 @@
   "setup.limitedNote": "このモデルにはハードウェアのプリセットボタン 1 から 6 がないため、それらは機能しません。STR はそれでもインターネットラジオ、アプリのプリセット、ストリーミングを追加します。",
   "setup.unverifiedNote": "このモデルでは STR はまだテストされていません。ほとんどの SoundTouch モデルで動作しますが、ここへのインストールは自己責任となります。",
   "setup.notSoundTouchNote": "これは SoundTouch スピーカーではありません。STR は SoundTouch スピーカー専用で、この機器では動作しません。",
-  "setup.targetEmptyNotSoundTouch": "ここに表示されるのは SoundTouch スピーカーだけです。Bose Music 製品（Home Speaker、Smart Speaker、Smart Soundbar、Soundbar 500・700・900）は別のシステムで、STR は対応できません。",
   "setup.targetHeading": "どのスピーカー?",
   "setup.netInstallBtn": "STRを今すぐインストール",
   "setup.useStickInstead": "代わりにUSBメモリを準備",
