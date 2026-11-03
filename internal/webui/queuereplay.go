@@ -25,10 +25,12 @@ package webui
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 const (
@@ -155,6 +157,13 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<16, &req) {
 		return
 	}
+	// A folder started from a preset key is recorded as "queue:slot:N"
+	// (playSlot), not under its server and container, so the split below has
+	// nothing to work with. Replay it the way the key itself plays it.
+	if slot, isSlotCard := slotFolderCardSlot(req.Key); isSlotCard {
+		s.replaySlotFolderCard(w, r, slot, req.Name)
+		return
+	}
 	// An old phone folder card is replayed under the canonical key, so the queue
 	// it starts carries the same card the app marks as playing.
 	key, ok := canonicalFolderCardKey(req.Key)
@@ -227,6 +236,60 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "tracks": len(items)})
+}
+
+// slotFolderCardSlot reads the card key a folder gets when it was started from
+// a preset key ("queue:slot:N", playSlot). Until this existed the replay split
+// it as server "slot", container "N", answered 404, and the app fell back to
+// playing the folder's first file alone: one song, then silence, under a new
+// card without a song row and so without a time (#1592, 2026-11-03).
+func slotFolderCardSlot(key string) (int, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(key), queueCardKeyPrefix+"slot:")
+	if !ok {
+		return 0, false
+	}
+	slot, err := strconv.Atoi(rest)
+	if err != nil || slot < 1 {
+		return 0, false
+	}
+	return slot, true
+}
+
+// slotStillHoldsFolder reports whether the key a card was played from still
+// holds that folder: a folder preset under the card's name. A key given
+// something else since is not the album the user tapped.
+func slotStillHoldsFolder(p presets.Preset, found bool, cardName string) bool {
+	if !found || p.Type != "queue" || len(p.Items) == 0 {
+		return false
+	}
+	want := strings.TrimSpace(cardName)
+	return want == "" || strings.EqualFold(strings.TrimSpace(p.Name), want)
+}
+
+// replaySlotFolderCard replays a key-started folder card by recalling the key,
+// the same path as pressing it (shuffle as the key was saved). When the key no
+// longer holds that folder it answers 404, which keeps the app's older
+// fallback (the card's own first track) rather than playing a different key.
+func (s *Server) replaySlotFolderCard(w http.ResponseWriter, r *http.Request, slot int, cardName string) {
+	var p presets.Preset
+	found := false
+	if s.presets != nil {
+		p, found = s.presets.Get(slot)
+	}
+	if !slotStillHoldsFolder(p, found, cardName) {
+		s.logger.Info("folder card replay: the key no longer holds this folder", "slot", slot, "card", cardName, "keyHolds", p.Name)
+		http.Error(w, "the key no longer holds this folder", http.StatusNotFound)
+		return
+	}
+	s.logger.Info("folder card replay: recalling the key the folder was played from", "slot", slot, "name", p.Name)
+	res, ref := s.playSlot(r.Context(), slot)
+	if ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
+	body := res.body()
+	body["tracks"] = len(p.Items)
+	writeJSON(w, http.StatusOK, body)
 }
 
 // mediaServerRegistered reports whether this UDN is one of the servers the user
