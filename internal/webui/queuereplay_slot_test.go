@@ -82,3 +82,18 @@ func TestQueueReplayCardSlotKeyReassigned(t *testing.T) {
 		t.Fatalf("a key that no longer holds the folder must 404 (app fallback), got %d: %s", rr.Code, rr.Body.String())
 	}
 }
+
+// #1730: a key-started folder's card shows the key's cover, never the first
+// song a shuffle happened to start with.
+func TestQueueKeyCover(t *testing.T) {
+	items := []presets.PresetItem{{Title: "no cover"}, {Title: "first with cover", Art: "http://192.0.2.60/a.jpg"}, {Art: "http://192.0.2.60/b.jpg"}}
+	if got := queueKeyCover(presets.Preset{Art: " http://192.0.2.60/key.jpg ", Items: items}); got != "http://192.0.2.60/key.jpg" {
+		t.Errorf("the key's own cover must win, got %q", got)
+	}
+	if got := queueKeyCover(presets.Preset{Items: items}); got != "http://192.0.2.60/a.jpg" {
+		t.Errorf("without its own cover the key shows the first song with one in list order, got %q", got)
+	}
+	if got := queueKeyCover(presets.Preset{Items: []presets.PresetItem{{Title: "x"}}}); got != "" {
+		t.Errorf("no cover anywhere stays empty, got %q", got)
+	}
+}

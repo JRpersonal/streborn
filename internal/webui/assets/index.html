@@ -2355,6 +2355,10 @@ function presetArtImg(cands) {
     img.onerror = null;
     var tile = img.parentNode;
     if (tile) { tile.classList.remove('has-art'); tile.removeChild(img); }
+    // Remember the loss: the 15 s re-read only repaints on a changed list, so a
+    // cover lost while its music server was off stayed gone until a reload
+    // (#1233). presetArtRetryDue lets the next re-reads try again.
+    if (!presetArtMissingAt) presetArtMissingAt = Date.now();
   };
   img.src = cands[0];
   return img;
@@ -2376,6 +2380,15 @@ function presetSig(list) {
 }
 var lastPresetSig = null;
 var lastPresetList = [];
+// presetArtMissingAt is when a key's cover last failed to load (0 = none
+// missing). While one is missing the grid is repainted at most once a minute,
+// which asks for the covers again: a music server that was off and is back
+// shows its keys' covers without a page reload (#1233).
+var presetArtMissingAt = 0;
+var PRESET_ART_RETRY_MS = 60000;
+function presetArtRetryDue(missingAt, now) {
+  return !!missingAt && now - missingAt >= PRESET_ART_RETRY_MS;
+}
 
 async function loadPresets() {
   // Never repaint a key that is being renamed. The grid is re-read every 15 s
@@ -2403,9 +2416,11 @@ async function loadPresets() {
   }
   const list = Array.isArray(raw) ? raw : [];
   const sig = presetSig(list);
-  if (sig === lastPresetSig && painted) return;
+  if (sig === lastPresetSig && painted && !presetArtRetryDue(presetArtMissingAt, Date.now())) return;
   lastPresetSig = sig;
   lastPresetList = list;
+  // A repaint asks for every cover again; one that still fails sets this anew.
+  presetArtMissingAt = 0;
   renderPresetGrid();
 }
 

@@ -490,7 +490,7 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// fetch racing this app-initiated recall can hold for the first track
 		// (mirrors the hardware RecallSlot path).
 		s.armQueueRecall(slot)
-		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art, source: p.Source}
+		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source}
 		// -1 = the whole preset, no track picked: with shuffle on the queue
 		// starts on a random song, as the hardware key does (#490). Passing 0
 		// here pinned the folder's first song to the front of every shuffled
