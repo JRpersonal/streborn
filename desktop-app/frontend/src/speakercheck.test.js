@@ -234,7 +234,7 @@ describe('wiring', () => {
     expect(main).toContain('if (box.host) { await checkSpeakerDialog(box); return; }');
     expect(main).not.toMatch(/[^t] checkSpeakerDialog\(box\); return;/);
     expect(main).toContain('if (!installRunActive()) state.setupTarget = { kind: \'stock\', box: live };');
-    expect(main).toContain("reportProblemWithCheck(`${repo}/issues`)");
+    expect(main).toContain("reportProblemWithCheck(`$" + "{repo}/issues`)");
     expect(main).toContain('checkSpeaker: CheckSpeaker,');
     expect(main).toContain('reportProblem: reportProblemWithCheck,');
     expect(main).not.toContain('speaker.strNotRunningConfirmBody');
