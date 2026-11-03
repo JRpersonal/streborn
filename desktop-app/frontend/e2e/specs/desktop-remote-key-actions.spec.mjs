@@ -84,7 +84,7 @@ test.describe('UI 2.0: remote key actions on the speaker page', () => {
 
   test('the keys tab offers the same picker', async ({ app, mock }) => {
     const { page } = app;
-    await page.locator('#ui2Sidebar .ui2-nav-item[data-view="speakers"]').click();
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="speakers"]').click();
     await page.locator(`#view-speakers .spl-open[data-host="${LR.host}"]`).click();
     await expect(page.locator('#ui2SpkPageName')).toHaveText(LR.friendlyName);
     await page.locator('#ui2SpkTab-keys').click();
