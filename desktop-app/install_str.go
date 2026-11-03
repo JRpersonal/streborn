@@ -1288,7 +1288,7 @@ func (a *App) healSDKCloudURLs(host string) error {
 	if strings.Contains(out, "STR_HEALED_SDK_URLS") {
 		a.logger.Info("install_str: healed str-setup.invalid cloud URLs in OverrideSdkPrivateCfg.xml back to stock", "host", host)
 	} else {
-		a.logger.Info("install_str: no str-setup.invalid placeholder in the SDK config to heal (already stock)", "host", host)
+		a.logger.Info("install_str: no str-setup.invalid placeholder in the SDK config to heal (any other non-stock host is healed by install.sh, effective at the next boot)", "host", host)
 	}
 	return nil
 }
@@ -2185,6 +2185,7 @@ func (a *App) waitForAgent(host, model string) (agentWaitResult, error) {
 	// Said once per wait, not once per poll: #367's stuck source is forensics,
 	// not an event.
 	loggedStuckSetupSource := false
+	forcedReboot := false
 	deadline := time.Now().Add(budget)
 	i := 0
 	for time.Now().Before(deadline) {
@@ -2228,6 +2229,14 @@ func (a *App) waitForAgent(host, model string) (agentWaitResult, error) {
 			if a.agentRunningViaSSH(host) {
 				a.logger.Info("install_str: agent process is running on the box; treating as up despite the HTTP API being unreachable from the desktop (e.g. ST10 firewall)", "host", host)
 				return res, nil
+			}
+			// A restart that stalled in init's shutdown scripts leaves the
+			// speaker on its old boot with STR's files waiting on the NAND
+			// (install_hungreboot.go). Forced once per wait; the boot only
+			// starts now, so the speaker gets a fresh budget for it.
+			if !forcedReboot && a.forceRebootIfHung(host) {
+				forcedReboot = true
+				deadline = time.Now().Add(budget)
 			}
 		}
 		i++
