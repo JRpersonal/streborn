@@ -473,8 +473,9 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	}
 	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
 	// instead of the single-URL play below: reload its ordered tracks with the
-	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
-	// use the *Locked variant (startQueue would re-lock and deadlock).
+	// saved shuffle flag, starting on a random song when shuffled and on the
+	// first otherwise. We already hold boxCmdMu, so use the *Locked variant
+	// (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
 		// Emptiness was answered before the wake, in recallRefusal.
 		// The tracks carry the music server's address, so a server that moved
@@ -490,7 +491,11 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// (mirrors the hardware RecallSlot path).
 		s.armQueueRecall(slot)
 		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art, source: p.Source}
-		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
+		// -1 = the whole preset, no track picked: with shuffle on the queue
+		// starts on a random song, as the hardware key does (#490). Passing 0
+		// here pinned the folder's first song to the front of every shuffled
+		// start from the app and the phone (#1701).
+		if err := s.startQueueLocked(playCtx, items, -1, p.Shuffle, repeatOff, card); err != nil {
 			return playResult{}, playFailed("Folder could not be played", err)
 		}
 		recallDelivered = true
