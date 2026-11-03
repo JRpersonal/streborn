@@ -37,6 +37,7 @@ import {
   syntheticStationForURL,
 } from '../../searchflow.js';
 import { saveSearchCountry, state } from '../../state.js';
+import { STATION_DNS } from '../../stationdns.js';
 import {
   $,
   confirmWarn,
@@ -484,6 +485,9 @@ function streamErrorMessage(reason) {
     case 'unavailable': return t('search.streamUnavailable');
     case 'hls':         return t('search.streamHls');
     case 'offline':     return t('search.streamOffline');
+    // The speaker could not look up the station's address: the router's
+    // name resolution or an ad-blocker (stationdns.js).
+    case STATION_DNS:   return t('search.streamDns');
     default:            return t('search.streamUnreachable');
   }
 }
