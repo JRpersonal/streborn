@@ -71,9 +71,30 @@ func TestClassifySpeakerCheck(t *testing.T) {
 			want: checkHung,
 		},
 		{
-			name: "only an ARP entry",
+			// A cached hardware address with no ping reply and every port
+			// silent is what a speaker unplugged a minute ago leaves behind.
+			// Not "hung": the power and Bose app steps must stay on offer.
+			name: "only an ARP entry, ping without reply",
 			f: installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true, PingRan: true,
 				MACPrefix: "aa:bb:cc:xx:xx:xx", Ports: checkPorts(nil)},
+			want: checkNoAnswer,
+		},
+		{
+			name: "stale ARP entry of a listed speaker that stopped answering",
+			f: installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true, PingRan: true,
+				MACPrefix: "aa:bb:cc:xx:xx:xx", TargetSeen: true, TargetMissingSec: 90, Ports: checkPorts(nil)},
+			want: checkNoAnswer,
+		},
+		{
+			name: "only an ARP entry, ping could not run",
+			f: installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true,
+				MACPrefix: "aa:bb:cc:xx:xx:xx", Ports: checkPorts(nil)},
+			want: checkNoAnswer,
+		},
+		{
+			name: "ARP entry and a refusing port: hung",
+			f: installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true, PingRan: true,
+				MACPrefix: "aa:bb:cc:xx:xx:xx", Ports: checkPorts(map[int]portAnswer{8091: {Result: refused}})},
 			want: checkHung,
 		},
 		{
@@ -83,9 +104,10 @@ func TestClassifySpeakerCheck(t *testing.T) {
 			want: checkOffNetwork,
 		},
 		{
+			// "Not even a ping" would claim a measurement that never ran.
 			name: "nothing at all, ping could not run",
 			f:    installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true, Ports: checkPorts(nil)},
-			want: checkOffNetwork,
+			want: checkNoAnswer,
 		},
 		{
 			name: "nothing at all, address in another network",
@@ -115,36 +137,66 @@ func TestClassifySpeakerCheck(t *testing.T) {
 	}
 }
 
-func TestSpeakerCheckResultCarriesKeyAndReport(t *testing.T) {
+func TestSpeakerCheckResultCarriesKeyAndSummary(t *testing.T) {
 	f := installFacts{Host: "198.51.100.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: false, PingRan: true,
 		Ports: checkPorts(nil), TargetSeen: true, TargetMissingSec: 900}
-	at := time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
-	r := speakerCheckResult(f, at)
+	r := speakerCheckResult(f)
 	if r.Verdict != checkOtherNetwork || r.AdviceKey != "speakerCheck.lead.otherNetwork" {
 		t.Fatalf("verdict/key = %q/%q", r.Verdict, r.AdviceKey)
 	}
 	if r.PCNetworks != "192.0.2.0/24 on WLAN" {
 		t.Errorf("PCNetworks = %q", r.PCNetworks)
 	}
-	for _, want := range []string{
-		"speaker check 198.51.100.20",
-		"other-network (nothing answers, and the address is in a different network than this PC)",
-		"no answer for 15 min",
-		"this PC is on",
-		"port 8090, Bose control API",
-		"NO, the speaker address is not in any network this PC is on",
-	} {
-		if !strings.Contains(r.Report, want) {
-			t.Errorf("report misses %q:\n%s", want, r.Report)
-		}
+	want := "speaker check 198.51.100.20: other-network (22=silent 8090=silent 8091=silent 8888=silent 17008=silent; " +
+		"ping no, arp no, list: no answer for 15 min, this PC on 192.0.2.0/24 on WLAN)"
+	if r.Summary != want {
+		t.Errorf("Summary =\n%q\nwant\n%q", r.Summary, want)
 	}
-	if strings.Contains(r.Report, "network facts\n") {
-		t.Errorf("report repeats the failure report's section heading:\n%s", r.Report)
+	if strings.Contains(r.Summary, "\n") {
+		t.Errorf("Summary spans lines: %q", r.Summary)
 	}
 }
 
+func TestSpeakerCheckSummaryPingNotRun(t *testing.T) {
+	f := installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: true,
+		MACPrefix: "aa:bb:cc:xx:xx:xx", Ports: checkPorts(nil)}
+	got := speakerCheckResult(f).Summary
+	if !strings.Contains(got, ": no-answer (") || !strings.Contains(got, "ping not run, arp yes") {
+		t.Errorf("Summary = %q", got)
+	}
+}
+
+// The check and the failure report read the same facts with the same rules:
+// whenever the report is sure a speaker is off the network or in another
+// network, the check says so too.
+func TestSpeakerCheckAgreesWithTheReport(t *testing.T) {
+	var all []installFacts
+	for _, ping := range [][2]bool{{false, false}, {true, false}, {true, true}} {
+		for _, mac := range []string{"", "aa:bb:cc:xx:xx:xx"} {
+			for _, same := range []bool{true, false} {
+				for _, missing := range []int{0, 300} {
+					all = append(all, installFacts{Host: "192.0.2.20", Ifaces: homeIface, SubnetKnown: true, SameSubnet: same,
+						PingRan: ping[0], PingAlive: ping[1], MACPrefix: mac, TargetSeen: missing > 0, TargetMissingSec: missing,
+						Ports: checkPorts(nil)})
+				}
+			}
+		}
+	}
+	for _, f := range all {
+		got := classifySpeakerCheck(f)
+		if speakerOffTheNetwork(f) && got != checkOffNetwork {
+			t.Errorf("report says off the network, check says %q for %+v", got, f)
+		}
+		if speakerInOtherNetwork(failureReport{Facts: f}) && got != checkOtherNetwork {
+			t.Errorf("report says other network, check says %q for %+v", got, f)
+		}
+		if got == checkHung && (!f.PingRan || !f.PingAlive) {
+			t.Errorf("hung without a live answer for %+v", f)
+		}
+	}
+}
 func TestEveryVerdictHasKeyAndWords(t *testing.T) {
-	for _, v := range []string{checkOK, checkSTRSilent, checkPCOffline, checkHung, checkOtherNetwork, checkOffNetwork} {
+	for _, v := range []string{checkOK, checkSTRSilent, checkPCOffline, checkHung, checkOtherNetwork, checkOffNetwork, checkNoAnswer} {
 		if speakerCheckAdviceKeys[v] == "" || speakerCheckWords[v] == "" {
 			t.Errorf("verdict %q lacks an advice key or its words", v)
 		}

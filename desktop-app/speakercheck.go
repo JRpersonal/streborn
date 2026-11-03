@@ -20,8 +20,10 @@ package main
 // Rules:
 //   - no polling. The check runs on a click only. A second click while one
 //     runs joins it, and a finished result is reused for a few seconds.
-//   - the gatherer is the failure report's own (gatherInstallFacts), so the
-//     check and the report can never disagree about what the network said.
+//   - the gatherer is the failure report's own (gatherInstallFacts), and the
+//     other-network and off-network rules are the report's own predicates
+//     (addressInOtherNetwork, silentAtNetworkLayer in updatereport.go), so the
+//     check and the report cannot drift apart about what the network said.
 
 import (
 	"context"
@@ -42,14 +44,23 @@ const (
 	checkSTRSilent = "str-silent"
 	// checkPCOffline: this PC has no network address at all.
 	checkPCOffline = "pc-offline"
-	// checkHung: something is at the address (ping, an ARP entry, a port that
-	// refuses or opens without answering) but no healthy Bose firmware.
+	// checkHung: something answers live at the address (a ping reply, a port
+	// that refuses or opens without answering) but no healthy Bose firmware.
+	// An ARP entry alone does not count: the PC keeps a speaker's hardware
+	// address for a while after it left.
 	checkHung = "hung"
 	// checkOtherNetwork: nothing answers and the address is outside every
 	// network this PC is on.
 	checkOtherNetwork = "other-network"
-	// checkOffNetwork: nothing answers at an address on this PC's network.
+	// checkOffNetwork: nothing answers at an address on this PC's network,
+	// measured down to the network layer: ping ran without a reply and there
+	// is no ARP entry.
 	checkOffNetwork = "off-network"
+	// checkNoAnswer: nothing answers on any port and no ping reply, but the
+	// network layer could not be ruled out: ping could not run on this PC, or
+	// an ARP entry is left over. Same steps as off-network, without the claim
+	// that not even a ping answered.
+	checkNoAnswer = "no-answer"
 )
 
 // speakerCheckAdviceKeys maps a verdict to the i18n key of the sentence that
@@ -62,9 +73,11 @@ var speakerCheckAdviceKeys = map[string]string{
 	checkHung:         "speakerCheck.lead.hung",
 	checkOtherNetwork: "speakerCheck.lead.otherNetwork",
 	checkOffNetwork:   "speakerCheck.lead.offNetwork",
+	checkNoAnswer:     "speakerCheck.lead.noAnswer",
 }
 
-// speakerCheckWords is the verdict in plain English for the mail body.
+// speakerCheckWords is the verdict in plain English for the "speaker check"
+// log line, which the diagnostic bundle carries to support.
 var speakerCheckWords = map[string]string{
 	checkOK:           "STR answers",
 	checkSTRSilent:    "the Bose firmware answers, STR does not",
@@ -72,6 +85,7 @@ var speakerCheckWords = map[string]string{
 	checkHung:         "something is at the address, but the Bose firmware does not answer",
 	checkOtherNetwork: "nothing answers, and the address is in a different network than this PC",
 	checkOffNetwork:   "nothing answers at the address, not even at the network layer",
+	checkNoAnswer:     "nothing answers, the network layer could not be ruled out",
 }
 
 // SpeakerCheck is what CheckSpeaker returns to the frontend.
@@ -85,9 +99,13 @@ type SpeakerCheck struct {
 	// PCNetworks names the networks this PC is on ("192.0.2.0/24 on WLAN"),
 	// for the other-network sentence.
 	PCNetworks string `json:"pcNetworks"`
-	// Report is the plain-English fact block the support mail carries.
-	Report string `json:"report"`
-	Error  string `json:"error,omitempty"`
+	// Summary is the result in one plain-English line for the support mail:
+	// "speaker check 192.0.2.20: off-network (22=silent ...; ping no, arp no)".
+	// One line on purpose: a mailto URL past about 2 KB is cut off or refused
+	// by some mail programs, and the full facts are in the "speaker check" log
+	// line the diagnostic bundle carries.
+	Summary string `json:"summary"`
+	Error   string `json:"error,omitempty"`
 }
 
 // speakerCheckReuse is how long a finished check is handed out again instead
@@ -173,9 +191,10 @@ func (a *App) CheckSpeaker(host string) (out SpeakerCheck) {
 	}()
 
 	f := gather(a.appCtx(), host)
-	c.res = speakerCheckResult(f, now())
+	c.res = speakerCheckResult(f)
 	if a.logger != nil {
 		a.logger.Info("speaker check", "host", host, "verdict", c.res.Verdict,
+			"meaning", speakerCheckWords[c.res.Verdict],
 			"pingRan", f.PingRan, "pingAlive", f.PingAlive, "arp", f.MACPrefix != "",
 			"subnetKnown", f.SubnetKnown, "sameSubnet", f.SameSubnet,
 			"ports", portsSummary(f.Ports))
@@ -184,14 +203,14 @@ func (a *App) CheckSpeaker(host string) (out SpeakerCheck) {
 }
 
 // speakerCheckResult turns the gathered facts into the answer. Pure.
-func speakerCheckResult(f installFacts, at time.Time) SpeakerCheck {
+func speakerCheckResult(f installFacts) SpeakerCheck {
 	v := classifySpeakerCheck(f)
 	return SpeakerCheck{
 		Host:       f.Host,
 		Verdict:    v,
 		AdviceKey:  speakerCheckAdviceKeys[v],
 		PCNetworks: pcNetworksText(f.Ifaces),
-		Report:     formatSpeakerCheck(f, v, at),
+		Summary:    summarizeSpeakerCheck(f, v),
 	}
 }
 
@@ -203,14 +222,19 @@ func speakerCheckResult(f installFacts, at time.Time) SpeakerCheck {
 //     case in which installing STR again can be the fix.
 //  3. This PC has no network address at all: nothing about the speaker can
 //     be known, and the PC is what to fix.
-//  4. Something is at the address (ping reply, an ARP entry, a port that
-//     refused or opened): the speaker is on the network, its firmware is not
+//  4. Something answers live at the address (ping reply, a port that refused
+//     or opened): the speaker is on the network, its firmware is not
 //     answering. A hung speaker; a restart is the fix.
-//  5. Nothing at all, and the address is outside this PC's networks: the two
+//  5. Nothing live, and the address is outside this PC's networks: the two
 //     are in different networks. Checked before 6 because a missing ping and
 //     ARP entry is the expected answer across networks and says nothing about
-//     power (report 2026-11-01).
-//  6. Nothing at all on this PC's own network: the speaker is off it.
+//     power (report 2026-11-01). The failure report's own rule.
+//  6. Nothing on this PC's own network, measured: ping ran without a reply
+//     and there is no ARP entry. The speaker is off it. The failure report's
+//     own rule, without its "seen in the list before" part: the check is only
+//     offered for a speaker the list knows.
+//  7. Nothing live, but ping could not run or an ARP entry is left over: the
+//     same steps as 6, without claiming the network layer was silent.
 func classifySpeakerCheck(f installFacts) string {
 	if agentAnswered(f) {
 		return checkOK
@@ -225,10 +249,13 @@ func classifySpeakerCheck(f installFacts) string {
 	if life {
 		return checkHung
 	}
-	if f.SubnetKnown && !f.SameSubnet {
+	if addressInOtherNetwork(f) {
 		return checkOtherNetwork
 	}
-	return checkOffNetwork
+	if silentAtNetworkLayer(f) {
+		return checkOffNetwork
+	}
+	return checkNoAnswer
 }
 
 // portFact returns the answer for one probed port.
@@ -261,9 +288,15 @@ func boseFirmwareAnswers(f installFacts) bool {
 	return ok && p.Result == "open" && strings.HasPrefix(p.Detail, "HTTP ")
 }
 
-// signOfLife: anything at all answered at the speaker's address.
+// signOfLife: something answered live at the speaker's address just now. An
+// ARP entry alone is not one: Windows, Linux and macOS keep a speaker's
+// hardware address for seconds to minutes after it left, and the check's own
+// dials refresh a stale entry right before the lookup. Counting it called a
+// speaker unplugged a minute ago "hung" and left out the power and Bose app
+// steps. A hung firmware with a live kernel still answers the ping or
+// refuses a port.
 func signOfLife(f installFacts) bool {
-	if (f.PingRan && f.PingAlive) || f.MACPrefix != "" {
+	if f.PingRan && f.PingAlive {
 		return true
 	}
 	for _, p := range f.Ports {
@@ -312,28 +345,31 @@ func portsSummary(ports []portAnswer) string {
 	return strings.Join(parts, " ")
 }
 
-// formatSpeakerCheck is the block the support mail carries: the verdict, how
-// long the list has missed the speaker, and the same network facts the failure
-// report prints. English on purpose, like the rest of the mail body: it is
-// read by support, not shown in the app.
-func formatSpeakerCheck(f installFacts, verdict string, at time.Time) string {
-	var b strings.Builder
-	title := "speaker check " + f.Host
-	fmt.Fprintf(&b, "%s\n%s\n", title, strings.Repeat("-", len(title)))
-	fmt.Fprintf(&b, "%-*s %s\n", factCol, "checked", at.Format(time.RFC3339))
-	fmt.Fprintf(&b, "%-*s %s (%s)\n", factCol, "result", verdict, speakerCheckWords[verdict])
+// summarizeSpeakerCheck is the one line the support mail carries: the verdict
+// and the facts it rests on, in English like the rest of the mail body.
+func summarizeSpeakerCheck(f installFacts, verdict string) string {
+	ping := "not run"
+	if f.PingRan {
+		ping = "no"
+		if f.PingAlive {
+			ping = "yes"
+		}
+	}
+	arp := "no"
+	if f.MACPrefix != "" {
+		arp = "yes"
+	}
+	var facts []string
+	if ps := portsSummary(f.Ports); ps != "" {
+		facts = append(facts, ps)
+	}
+	extra := "ping " + ping + ", arp " + arp
 	if f.TargetSeen && f.TargetMissingSec > 0 {
-		fmt.Fprintf(&b, "%-*s no answer%s\n", factCol, "speaker list", offlineForText(f.TargetMissingSec))
+		extra += ", list: no answer" + offlineForText(f.TargetMissingSec)
 	}
-	fmt.Fprintf(&b, "%-*s %s\n", factCol, "this PC is on", pcNetworksText(f.Ifaces))
-	var facts strings.Builder
-	writeNetworkFacts(&facts, f)
-	// writeNetworkFacts opens with its own section heading; the check block
-	// has its own title already.
-	body := facts.String()
-	if i := strings.Index(body, "speaker address"); i >= 0 {
-		body = body[i:]
+	if verdict == checkOtherNetwork {
+		extra += ", this PC on " + pcNetworksText(f.Ifaces)
 	}
-	b.WriteString(body)
-	return strings.TrimRight(b.String(), "\n")
+	facts = append(facts, extra)
+	return fmt.Sprintf("speaker check %s: %s (%s)", f.Host, verdict, strings.Join(facts, "; "))
 }

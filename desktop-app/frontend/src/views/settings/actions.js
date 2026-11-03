@@ -9,7 +9,7 @@ import { t } from '../../i18n/index.js';
 import { purgeSpeakerLocalState } from '../../speakerPurge.js';
 import { identifyOutcome } from '../../boxstate.js';
 import { runConflictCleanup } from '../../conflictcleanup.js';
-import { checkMailSection, checkTargets, needsAttention, precheckHTML, runSpeakerChecks } from '../../speakercheck.js';
+import { checkTargets, needsAttention, precheckHTML, runSpeakerChecks, supportMailBody } from '../../speakercheck.js';
 import {
   RebootBox,
   ExportBackup,
@@ -175,14 +175,9 @@ export function wireActionSections(ctx) {
         const res = await SaveDiagnosticBundle(hosts, true);
         if (res && res.savePath) {
           const subject = 'ST Reborn support request';
-          const checkBlock = checkMailSection(checks);
-          const body =
-            'Hi,\n\nI need help with ST Reborn.\n\n' +
-            '(Please describe the problem here.)\n\n' +
-            '--------------------------------\n' +
-            'Diagnostic logs were saved to:\n' + res.savePath + '\n\n' +
-            'IMPORTANT: please attach that file to this email before sending.\n' +
-            (checkBlock ? '\n' + checkBlock : '');
+          // One line per speaker the check found something on, never the full
+          // facts: a long mailto is cut off or refused by some mail programs.
+          const body = supportMailBody(res.savePath, checks);
           try {
             // encodeURIStrict, not encodeURIComponent: Wails refuses a URL
             // carrying a bare parenthesis, and this body has one.

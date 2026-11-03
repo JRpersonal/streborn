@@ -3346,8 +3346,10 @@ async function pickBox(box, titleHint) {
     if (shell2Mounted() && shellOfflinePick(box, discoverBoxes())) return;
     // The search runs as it always did; the check says WHY the speaker is
     // not answering and what to try, which "last seen ..." alone never did.
+    // Awaited, like every dialog of pickBox: pickBoxFromShell restores a
+    // running install's setup target only after pickBox is done.
     discoverBoxes();
-    if (box.host) { checkSpeakerDialog(box); return; }
+    if (box.host) { await checkSpeakerDialog(box); return; }
     const title = titleHint || '';
     showToast(title || t('speaker.offlineTooltip', { ago: '' }));
     return;
@@ -3374,7 +3376,7 @@ async function pickBox(box, titleHint) {
     // off the network, in another network or hung, a new install cannot help.
     // The check keeps the install on offer only when the Bose firmware answers
     // and STR does not (checkSpeakerDialog).
-    if (box.strNotRunning) { checkSpeakerDialog(box); return; }
+    if (box.strNotRunning) { await checkSpeakerDialog(box); return; }
     const ok = await confirmWarn(
       t('speaker.stockConfirmTitle'),
       t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
@@ -3393,8 +3395,11 @@ async function pickBox(box, titleHint) {
 // shows what it found with the steps. One check per speaker at a time; the Go
 // side also joins a running check and reuses a fresh result, so nothing here
 // can turn into a probe loop. The dialog's button follows the verdict: "Install
-// STR again" only when the Bose firmware answers and STR does not, otherwise a
-// fresh search of the list, which is the step every other verdict ends on.
+// STR again" only when the Bose firmware answers and STR does not ("To the
+// install" for a Bose original STR was never on, which is simply back),
+// otherwise a fresh search of the list, which is the step every other verdict
+// ends on. Callers await it (pickBox), so a caller that guards a running
+// install's setup target sees the dialog through.
 const speakerChecksRunning = new Set();
 async function checkSpeakerDialog(box) {
   if (!box || !box.host || speakerChecksRunning.has(box.host)) return;
@@ -3408,14 +3413,15 @@ async function checkSpeakerDialog(box) {
     speakerChecksRunning.delete(box.host);
   }
   const install = allowsInstallAgain(res);
+  const firstSetup = install && box.kind === 'stock' && !box.strNotRunning;
   const ok = await confirmWarn(
     t('speakerCheck.title', { name: label }),
-    checkResultHTML(res, label),
+    checkResultHTML(res, label, t, box),
     {
       icon: null,
       calm: true,
       rich: true,
-      confirmLabel: t(install ? 'speakerCheck.installAgain' : 'speakerCheck.refresh'),
+      confirmLabel: t(firstSetup ? 'speaker.stockConfirmCta' : install ? 'speakerCheck.installAgain' : 'speakerCheck.refresh'),
       confirmClass: 'btn btn-primary',
       cancelLabel: t('common.close'),
     },
@@ -3423,7 +3429,10 @@ async function checkSpeakerDialog(box) {
   if (!ok) return;
   if (install) {
     const live = (state.boxes || []).find((b) => b.host === box.host) || box;
-    state.setupTarget = { kind: 'stock', box: live };
+    // An offline entry that answers again: the list catches up with it.
+    if (live.offline) discoverBoxes();
+    // A running install keeps its target; Setup then shows that install.
+    if (!installRunActive()) state.setupTarget = { kind: 'stock', box: live };
     switchView('setup');
     return;
   }

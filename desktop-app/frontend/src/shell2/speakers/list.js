@@ -253,6 +253,11 @@ export function speakerListModel(boxes, ctx = {}) {
       offlineSince: offline && since.length ? Math.min(...since) : 0,
       search: offline ? (search.get(r.host) || '') : '',
       check,
+      // What the check's words depend on (speakercheck.js): a Bose original
+      // STR was never on, and the Portable, which cannot be unplugged.
+      checkBox: checkable
+        ? { kind: r.kind, strNotRunning: !!pick.strNotRunning || r.pill === 'strNotRunning', model: pick.model || r.model || '', variant: pick.variant || '' }
+        : null,
     };
   });
   // The speakers the update-all path would update: reachable STR speakers
@@ -281,7 +286,7 @@ function checkBtnHTML(row) {
 // checkFoundHTML is what the check found, under the card's note.
 function checkFoundHTML(row) {
   if (!row.check || row.check === 'busy') return '';
-  return `<div class="spl-note-result spk-check">${checkResultHTML(row.check, row.name)}</div>`;
+  return `<div class="spl-note-result spk-check">${checkResultHTML(row.check, row.name, t, row.checkBox)}</div>`;
 }
 
 function actionHTML(row) {
@@ -485,9 +490,12 @@ async function runCheck(root, host) {
   repaint(root);
   const box = findBox(host);
   const name = (box && lastCtx.label && lastCtx.label(box)) || (box && (box.friendlyName || box.name)) || host;
-  announce(checkLeadText(res, name));
-  // STR answers again: the list catches up with one search.
-  if (res && res.verdict === 'ok' && typeof lastCtx.discoverBoxes === 'function') {
+  announce(checkLeadText(res, name, t, box));
+  // STR answers again, or a Bose original is back: the list catches up with
+  // one search (the original's card then offers its setup).
+  const back = !!res && (res.verdict === 'ok'
+    || (allowsInstallAgain(res) && !!box && box.kind === 'stock' && !box.strNotRunning));
+  if (back && typeof lastCtx.discoverBoxes === 'function') {
     try { await lastCtx.discoverBoxes(); } catch { /* the search reports its own errors */ }
   }
 }

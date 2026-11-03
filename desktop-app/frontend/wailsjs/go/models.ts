@@ -1244,7 +1244,7 @@ export namespace main {
 	    verdict: string;
 	    adviceKey: string;
 	    pcNetworks: string;
-	    report: string;
+	    summary: string;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1257,7 +1257,7 @@ export namespace main {
 	        this.verdict = source["verdict"];
 	        this.adviceKey = source["adviceKey"];
 	        this.pcNetworks = source["pcNetworks"];
-	        this.report = source["report"];
+	        this.summary = source["summary"];
 	        this.error = source["error"];
 	    }
 	}
