@@ -351,6 +351,7 @@ const rebootCmd = "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &"
 func boxReboot(host string) error {
 	err := boxSSHFireAndForget(host, rebootCmd, 6*time.Second)
 	boxSSHClients.invalidateHost(host)
+	noteRebootSent(host)
 	return err
 }
 
