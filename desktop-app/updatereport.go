@@ -715,6 +715,19 @@ func stripWrongBlame(probeErr error, errMsg, history string) error {
 // to chase guest-network settings on the strength of its stale list entry
 // (mail, 2026-09-06).
 func speakerOffTheNetwork(f installFacts) bool {
+	if !silentAtNetworkLayer(f) {
+		return false
+	}
+	// Positive evidence only: a listed speaker that is currently missing its
+	// probes. A speaker never seen at all (an address typed in by hand) keeps
+	// the older verdicts, there is nothing to say it was ever here.
+	return f.TargetSeen && f.TargetMissingSec > 0
+}
+
+// silentAtNetworkLayer is the facts half of speakerOffTheNetwork, shared with
+// the speaker check (speakercheck.go): ping ran and got no reply, there is no
+// ARP entry, and the address is on one of this PC's own networks.
+func silentAtNetworkLayer(f installFacts) bool {
 	if !f.PingRan || f.PingAlive || f.MACPrefix != "" {
 		return false
 	}
@@ -724,13 +737,7 @@ func speakerOffTheNetwork(f installFacts) bool {
 	// that speaker switched off sent a user after a power cable when the
 	// problem was a second network (report 2026-11-01).
 	// applyOtherNetworkDiagnosis owns that case.
-	if f.SubnetKnown && !f.SameSubnet {
-		return false
-	}
-	// Positive evidence only: a listed speaker that is currently missing its
-	// probes. A speaker never seen at all (an address typed in by hand) keeps
-	// the older verdicts, there is nothing to say it was ever here.
-	return f.TargetSeen && f.TargetMissingSec > 0
+	return !f.SubnetKnown || f.SameSubnet
 }
 
 // applyOffNetworkDiagnosis leads with the off-the-network steps when the facts
@@ -806,16 +813,19 @@ const offNetworkAdvice = "Right now nothing at the speaker's address answers, no
 // are routed to each other: no ping reply (or no ping at all) and no answer
 // from the speaker's agent.
 func speakerInOtherNetwork(r failureReport) bool {
-	f := r.Facts
+	return addressInOtherNetwork(r.Facts) && len(r.BoxNow) == 0
+}
+
+// addressInOtherNetwork is the facts half of speakerInOtherNetwork, shared
+// with the speaker check (speakercheck.go): the address lies outside every
+// network this PC is on, and no ping reply shows the two are routed.
+func addressInOtherNetwork(f installFacts) bool {
 	if !f.SubnetKnown || f.SameSubnet {
 		return false
 	}
-	if f.PingRan && f.PingAlive {
-		// Routed: the PC reaches that network, so the mismatch alone does
-		// not explain the failure and the other verdicts keep the say.
-		return false
-	}
-	return len(r.BoxNow) == 0
+	// Routed: the PC reaches that network, so the mismatch alone does not
+	// explain the failure and the other verdicts keep the say.
+	return !f.PingRan || !f.PingAlive
 }
 
 // applyOtherNetworkDiagnosis leads with the network mismatch when the

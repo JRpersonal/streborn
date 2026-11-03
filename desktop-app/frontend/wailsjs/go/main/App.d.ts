@@ -48,6 +48,8 @@ export function CheckAppUpdate():Promise<Record<string, string>>;
 
 export function CheckFirewall(arg1:boolean):Promise<main.FirewallCheck>;
 
+export function CheckSpeaker(arg1:string):Promise<main.SpeakerCheck>;
+
 export function CheckStereoBeforeInstall(arg1:string):Promise<main.StereoInstallCheck>;
 
 export function CheckStick(arg1:string):Promise<sticksetup.StickCheck>;

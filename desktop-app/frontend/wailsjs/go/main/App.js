@@ -86,6 +86,10 @@ export function CheckFirewall(arg1) {
   return window['go']['main']['App']['CheckFirewall'](arg1);
 }
 
+export function CheckSpeaker(arg1) {
+  return window['go']['main']['App']['CheckSpeaker'](arg1);
+}
+
 export function CheckStereoBeforeInstall(arg1) {
   return window['go']['main']['App']['CheckStereoBeforeInstall'](arg1);
 }

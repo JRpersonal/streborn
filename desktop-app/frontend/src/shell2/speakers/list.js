@@ -15,7 +15,13 @@
 //   - on a stereo pair, "Settings of <half>" for each half (the card itself
 //     opens the pair's main speaker);
 //   - "Search again" on an offline speaker, in its own card, which also says
-//     what happened and what to do (errors where they happen).
+//     what happened and what to do (errors where they happen);
+//   - "Check" on an offline speaker and on one whose STR stopped answering:
+//     the speaker check (speakercheck.js) says why it is not answering and
+//     what to try, in the card. A speaker whose STR stopped gets "Set up STR"
+//     back only when the check finds its Bose firmware answering and STR
+//     gone; for a speaker off the network, in another network or hung, a new
+//     install cannot help.
 //
 // Below the cards: "Stereo pairs and groups: Set up" (open('groups')), "Update
 // every speaker: n waiting" (updateAllBoxes, the classic update-all path) and
@@ -39,6 +45,7 @@ import { roomItems } from '../rooms.js';
 import { chipHTML, pillLabel, statusPillHTML, CHIP_LABEL_KEYS } from '../pill.js';
 import { connectBusy, connectFocus, connectHTML, listStateNow, noSpeakersState, restoreConnectFocus } from '../state.js';
 import { attentionItems, attentionNoteHTML, attentionSig, runAttentionAction } from '../attention.js';
+import { allowsInstallAgain, checkLeadText, checkResultHTML } from '../../speakercheck.js';
 import './list.css';
 
 // The pills of the list, in precedence order: a card shows the first that
@@ -153,6 +160,9 @@ const ver = (v) => (v ? (/^v/i.test(String(v)) ? String(v) : `v${v}`) : '');
 //        otaHost      the speaker an update runs on right now, '' for none
 //        otaRunning   any update runs (one speaker or every speaker)
 //        search       Map host -> 'busy' | 'still' (the offline cards' search)
+//        checks       Map host -> 'busy' | the CheckSpeaker result (the
+//                     speaker check of an offline card or of one whose STR
+//                     stopped)
 export function speakerListModel(boxes, ctx = {}) {
   const list = (boxes || []).filter((b) => b && b.host);
   const label = typeof ctx.label === 'function' ? ctx.label : (b) => b.friendlyName || b.name || b.host;
@@ -160,6 +170,7 @@ export function speakerListModel(boxes, ctx = {}) {
   const roles = fixedGroupRoles(ctx.zoneLive || {}, list, label);
   const cur = ctx.currentBox;
   const search = ctx.search || new Map();
+  const checks = ctx.checks || new Map();
   const rows = roomItems(list, ctx).map((r) => {
     const own = r.hosts.map(boxOf).filter(Boolean);
     const pick = boxOf(r.host) || own[0] || {};
@@ -201,9 +212,16 @@ export function speakerListModel(boxes, ctx = {}) {
     const controls = !!cur && r.hosts.includes(cur.host);
     const now = r.playing && controls && ctx.nowName ? String(ctx.nowName) : '';
     let action = '';
+    // The speaker check of this card, for the speakers that are not
+    // answering: '' (not run), 'busy', or the result.
+    const checkable = offline || kind === 'strNotRunning';
+    const check = checkable ? (checks.get(r.host) || '') : '';
     // An offline Bose original cannot be set up until it is found again: its
     // card offers the search (noteHTML), as the sidebar does for that row.
-    if (stock && !offline) action = 'setup';
+    // One whose STR stopped is checked first; the setup comes back when the
+    // check finds STR gone from a speaker that otherwise answers.
+    if (stock && !offline && kind === 'strNotRunning') action = allowsInstallAgain(check) ? 'setup' : 'check';
+    else if (stock && !offline) action = 'setup';
     else if (r.kind === 'str' && updateReady && !offline && !startingUp) {
       action = ctx.otaHost && r.hosts.includes(ctx.otaHost) ? 'updating' : 'update';
     }
@@ -234,6 +252,12 @@ export function speakerListModel(boxes, ctx = {}) {
       updateLine,
       offlineSince: offline && since.length ? Math.min(...since) : 0,
       search: offline ? (search.get(r.host) || '') : '',
+      check,
+      // What the check's words depend on (speakercheck.js): a Bose original
+      // STR was never on, and the Portable, which cannot be unplugged.
+      checkBox: checkable
+        ? { kind: r.kind, strNotRunning: !!pick.strNotRunning || r.pill === 'strNotRunning', model: pick.model || r.model || '', variant: pick.variant || '' }
+        : null,
     };
   });
   // The speakers the update-all path would update: reachable STR speakers
@@ -250,8 +274,24 @@ function cardState(row) {
     .filter(Boolean).join(', ');
 }
 
+// checkBtnHTML is the Check button of a card, "Checking..." while it runs.
+function checkBtnHTML(row) {
+  const busy = row.check === 'busy';
+  return `<button type="button" class="u-btn u-btn--secondary spl-act" data-act="check" data-host="${escapeAttr(row.host)}"`
+    + `${busy ? ' aria-disabled="true" aria-busy="true"' : ''}`
+    + ` aria-label="${escapeAttr(t(busy ? 'speakerCheck.checking' : 'speakerCheck.checkLabel', { name: row.name }))}">`
+    + `${escapeHtml(busy ? t('speakerCheck.checking', { name: row.name }) : t('speakerCheck.check'))}</button>`;
+}
+
+// checkFoundHTML is what the check found, under the card's note.
+function checkFoundHTML(row) {
+  if (!row.check || row.check === 'busy') return '';
+  return `<div class="spl-note-result spk-check">${checkResultHTML(row.check, row.name, t, row.checkBox)}</div>`;
+}
+
 function actionHTML(row) {
   const host = escapeAttr(row.host);
+  if (row.action === 'check') return checkBtnHTML(row);
   if (row.action === 'setup') {
     return `<button type="button" class="u-btn u-btn--primary spl-act" data-act="setup" data-host="${host}"`
       + ` aria-label="${escapeAttr(t('ui2.speakers.list.setUpLabel', { name: row.name }))}">`
@@ -283,16 +323,18 @@ function noteHTML(row) {
       + `${busy ? ' aria-disabled="true" aria-busy="true"' : ''}`
       + ` aria-label="${escapeAttr(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.searchLabel', { name: row.name }))}">`
       + `${escapeHtml(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.search', { name: row.name }))}</button>`
+      + ` ${checkBtnHTML(row)}`
       + (row.search === 'still'
         ? `<p class="spl-note-result">${escapeHtml(t('ui2.speakers.list.stillOffline', { name: row.name }))}</p>`
         : '')
+      + checkFoundHTML(row)
       + '</div>';
   }
   if (row.startingUp) {
     return `<div class="spl-note"><p class="spl-note-text">${escapeHtml(t('ui2.speakers.list.startingUpNote'))}</p></div>`;
   }
   if (row.pill === 'strNotRunning') {
-    return `<div class="spl-note"><p class="spl-note-text">${escapeHtml(t('ui2.speakers.list.strNotRunningNote'))}</p></div>`;
+    return `<div class="spl-note"><p class="spl-note-text">${escapeHtml(t('ui2.speakers.list.strNotRunningNote'))}</p>${checkFoundHTML(row)}</div>`;
   }
   return '';
 }
@@ -326,8 +368,10 @@ function cardHTML(row) {
   // own wording for the same row). An offline one cannot be set up: its card
   // searches again instead, the way the sidebar answers a pick of it. Every
   // other card is read from its words.
-  const setUp = stock && !row.offline;
-  const route = stock ? (row.offline ? 'search' : 'add') : 'speaker';
+  // A speaker whose STR stopped answering is checked first (its action).
+  const checkFirst = row.action === 'check';
+  const setUp = stock && !row.offline && !checkFirst;
+  const route = stock ? (row.offline ? 'search' : checkFirst ? 'check' : 'add') : 'speaker';
   const aria = setUp ? ` aria-label="${escapeAttr(t('ui2.side.rowLabelSetUp', { name: row.name, state }))}"` : '';
   const badges = listPillHTML(row.pill) + row.chips.map(chipHTML).join('');
   return `<li class="${cls}" data-host="${escapeAttr(row.host)}">`
@@ -409,6 +453,10 @@ const wired = new WeakSet();
 // The offline cards' "Search again": host -> 'busy' while the search runs,
 // 'still' when it came back without the speaker. Cleared when it is back.
 const search = new Map();
+// The cards' speaker check: host -> 'busy' while it runs, then its result.
+// Run on a click only (Check), never by a repaint. Cleared when the speaker
+// answers with STR again.
+const checks = new Map();
 
 const findBox = (host) => ((lastCtx.boxes || []).find((b) => b && b.host === host)) || null;
 
@@ -430,6 +478,26 @@ async function searchAgain(root, host) {
   else search.delete(host);
   repaint(root);
   if (box && box.offline) announce(t('ui2.speakers.list.stillOffline', { name: (lastCtx.label && lastCtx.label(box)) || box.friendlyName || box.name || host }));
+}
+
+async function runCheck(root, host) {
+  if (!host || checks.get(host) === 'busy' || typeof lastCtx.checkSpeaker !== 'function') return;
+  checks.set(host, 'busy');
+  repaint(root);
+  let res = null;
+  try { res = await lastCtx.checkSpeaker(host); } catch (e) { res = { host, verdict: '', error: String((e && e.message) || e) }; }
+  checks.set(host, res || { host, verdict: '' });
+  repaint(root);
+  const box = findBox(host);
+  const name = (box && lastCtx.label && lastCtx.label(box)) || (box && (box.friendlyName || box.name)) || host;
+  announce(checkLeadText(res, name, t, box));
+  // STR answers again, or a Bose original is back: the list catches up with
+  // one search (the original's card then offers its setup).
+  const back = !!res && (res.verdict === 'ok'
+    || (allowsInstallAgain(res) && !!box && box.kind === 'stock' && !box.strNotRunning));
+  if (back && typeof lastCtx.discoverBoxes === 'function') {
+    try { await lastCtx.discoverBoxes(); } catch { /* the search reports its own errors */ }
+  }
 }
 
 // The list's live region: one node outside the repainted markup, created
@@ -480,12 +548,14 @@ function onClick(root, e) {
         break;
       }
       case 'search': searchAgain(root, host); break;
+      case 'check': runCheck(root, host); break;
       default: break;
     }
     return;
   }
   const btn = e.target.closest('.spl-open');
   if (btn && btn.dataset.route === 'search') { searchAgain(root, btn.dataset.host); return; }
+  if (btn && btn.dataset.route === 'check') { runCheck(root, btn.dataset.host); return; }
   if (btn && typeof ctx.open === 'function') ctx.open(btn.dataset.route, { host: btn.dataset.host });
 }
 
@@ -506,7 +576,13 @@ export function renderSpeakerList(root, ctx = {}) {
     const b = findBox(h);
     if (!b || !b.offline) search.delete(h);
   }
-  const model = speakerListModel(ctx.boxes, { ...ctx, search });
+  // A check result is about a speaker that was not answering; once it
+  // answers with STR again, the result is history.
+  for (const h of [...checks.keys()]) {
+    const b = findBox(h);
+    if (checks.get(h) !== 'busy' && (!b || (!b.offline && !b.strNotRunning))) checks.delete(h);
+  }
+  const model = speakerListModel(ctx.boxes, { ...ctx, search, checks });
   const st = listStateNow();
   const sig = JSON.stringify([model, getLocale(), st, attentionSig()]);
   if (sig === lastSig && root.firstChild) return;

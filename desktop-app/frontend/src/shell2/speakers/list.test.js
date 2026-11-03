@@ -272,3 +272,72 @@ describe('agoText', () => {
     expect(agoText(600, 'de')).toBe('vor 10 Minuten');
   });
 });
+
+describe('the speaker check on the cards', () => {
+  const GONE = { ...KIT, host: '192.0.2.60', deviceID: 'GGG', friendlyName: 'Cellar', strNotRunning: true };
+  const list = [...BOXES, GONE];
+  const rowOf = (m, host) => m.rows.find((r) => r.hosts.includes(host));
+  const found = (verdict) => ({ host: GONE.host, verdict, pcNetworks: '192.0.2.0/24 on WLAN', summary: '' });
+
+  it('checks a speaker whose STR stopped instead of sending it to the setup', () => {
+    const m = speakerListModel(list, ctx());
+    expect(rowOf(m, GONE.host).pill).toBe('strNotRunning');
+    expect(rowOf(m, GONE.host).action).toBe('check');
+    const html = speakerListHTML(m);
+    expect(html).toContain(`data-act="check" data-host="${GONE.host}" aria-label="Check why Cellar is not answering">Check</button>`);
+    expect(html).toContain(`data-host="${GONE.host}" data-route="check"`);
+    expect(html).not.toContain(`data-act="setup" data-host="${GONE.host}"`);
+    // A first-time Bose original is still set up directly.
+    expect(rowOf(m, KIT.host).action).toBe('setup');
+  });
+
+  it('offers the setup again only when the check finds STR gone from an answering speaker', () => {
+    const silent = speakerListModel(list, ctx({ checks: new Map([[GONE.host, found('str-silent')]]) }));
+    expect(rowOf(silent, GONE.host).action).toBe('setup');
+    expect(speakerListHTML(silent)).toContain(`data-host="${GONE.host}" data-route="add"`);
+    for (const v of ['off-network', 'no-answer', 'other-network', 'hung', 'pc-offline', 'ok']) {
+      const m = speakerListModel(list, ctx({ checks: new Map([[GONE.host, found(v)]]) }));
+      expect(rowOf(m, GONE.host).action, v).toBe('check');
+    }
+  });
+
+  it('shows what the check found with its steps, in the card', () => {
+    const m = speakerListModel(list, ctx({ checks: new Map([[GONE.host, found('hung')]]) }));
+    const html = speakerListHTML(m);
+    expect(html).toContain('Cellar is on the network, but its Bose software does not answer.');
+    expect(html).toContain('<ol class="spk-check-steps"><li>Unplug the speaker for ten seconds');
+  });
+
+  it('puts a Check next to Search again on an offline card, busy while it runs', () => {
+    const html = speakerListHTML(speakerListModel(BOXES, ctx()));
+    expect(html).toContain('data-act="check" data-host="192.0.2.53" aria-label="Check why Office is not answering">Check</button>');
+    const busy = speakerListHTML(speakerListModel(BOXES, ctx({ checks: new Map([[OFF.host, 'busy']]) })));
+    expect(busy).toContain('data-act="check" data-host="192.0.2.53" aria-disabled="true" aria-busy="true" aria-label="Checking Office...">Checking Office...</button>');
+    const off = speakerListHTML(speakerListModel(BOXES, ctx({ checks: new Map([[OFF.host, { ...found('off-network'), host: OFF.host }]]) })));
+    expect(off).toContain('Nothing answers at 192.0.2.53, not even a ping. Office is probably switched off or no longer on your Wi-Fi.');
+    expect(off).toContain('Add speaker');
+  });
+
+  it('tells an offline Bose original that answers again it can be set up, not installed "again"', () => {
+    const KOFF = { ...KIT, host: '192.0.2.61', deviceID: 'KOF', friendlyName: 'Garage', offline: true };
+    const m = speakerListModel([...BOXES, KOFF], ctx({ checks: new Map([[KOFF.host, { ...found('str-silent'), host: KOFF.host }]]) }));
+    expect(rowOf(m, KOFF.host).checkBox).toMatchObject({ kind: 'stock', strNotRunning: false });
+    const html = speakerListHTML(m);
+    expect(html).toContain('Garage answers again. You can set it up now.');
+    expect(html).not.toContain('but STR does not answer on it');
+    expect(html).not.toContain('install STR again');
+  });
+
+  it('restarts a hung Portable with AUX instead of unplugging it', () => {
+    const PORT = { ...GONE, host: '192.0.2.62', deviceID: 'PPP', friendlyName: 'Patio', model: 'SoundTouch Portable' };
+    const m = speakerListModel([...BOXES, PORT], ctx({ checks: new Map([[PORT.host, { ...found('hung'), host: PORT.host }]]) }));
+    const html = speakerListHTML(m);
+    expect(html).toContain('<ol class="spk-check-steps"><li>Put the Portable on its charger, then hold AUX');
+    expect(html).not.toContain('Unplug the speaker for ten seconds');
+  });
+
+  it('carries no check on a speaker that answers', () => {
+    const m = speakerListModel(BOXES, ctx({ checks: new Map([[LR.host, found('off-network')]]) }));
+    expect(rowOf(m, LR.host).check).toBe('');
+  });
+});

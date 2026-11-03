@@ -2197,6 +2197,16 @@ html.a11y-light .preset.error .name { color: #991b1b; }
   background: none; padding: 0; padding-inline-start: 14px; position: relative;
 }
 .warn-body-rich .warn-notes li::before { content: '\2022'; position: absolute; inset-inline-start: 2px; }
+/* The speaker check's result (speakercheck.js): a lead sentence and the
+   steps as a numbered list, padded with logical properties so the numbers
+   sit on the correct side in Arabic too. Not the speaker chips above. */
+.spk-check-lead { margin: 0 0 6px 0; }
+.spk-check-block { margin-bottom: 10px; }
+.spk-check-steps { margin: 0 0 10px 0; padding-inline-start: 22px; }
+.warn-body-rich .spk-check-steps { list-style: decimal; padding-inline-start: 22px; }
+.warn-body-rich .spk-check-steps li {
+  font-weight: 400; background: none; padding: 0; border-radius: 0; margin-bottom: 4px; line-height: 1.45;
+}
 /* Error detail text. The message itself is normal text colour, NOT the signal
    red: red on the near-black surface measures about 3.5:1, under the 4.5:1 that
    small text needs, and a user photographed exactly this and called it hard to

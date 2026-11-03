@@ -100,6 +100,11 @@ type App struct {
 	// at start-up and again only when the UI asks for it.
 	firewall firewallState
 
+	// speakerCheck rate-limits CheckSpeaker (speakercheck.go): one probe set
+	// per speaker at a time, and a result reused for a few seconds so a
+	// double click does not probe the speaker twice.
+	speakerCheck speakerCheckGate
+
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
