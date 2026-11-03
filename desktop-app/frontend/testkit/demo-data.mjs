@@ -517,4 +517,20 @@ export const SETUP_CHECK = {
       { id: 'st-scm-27.0.6', version: '27.0.6', family: 'st-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 105_879_988, liveVerified: false, networkOk: true, fallback: false },
     ],
   },
+  // GetFirmwareLadder for the SoundTouch 10 on 10.0.11 (guide above): the
+  // documented, unchecked route (bosefw/ladder_routes.go), listed only.
+  routePlan: {
+    status: 'route', family: 'st10-sm2', model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: '', avoid: [],
+    steps: [
+      { id: 'st10-sm2-15.00.20', version: '15.00.20', family: 'st10-sm2', source: 'archive', url: '', fileName: '', innerSize: 0, liveVerified: false, networkOk: false, fallback: false },
+      { id: 'st10-sm2-27.0.6', version: '27.0.6', family: 'st10-sm2', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 95_906_856, liveVerified: false, networkOk: true, fallback: false },
+    ],
+  },
+  // GetFirmwareLadder for a speaker below 15 with no known route at all
+  // (bosefw status "unsupported"): no steps, only the guide.
+  noPathPlan: {
+    status: 'unsupported', reason: 'model', family: '', model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: '', avoid: [], steps: [],
+  },
 };

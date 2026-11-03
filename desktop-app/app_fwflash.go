@@ -116,6 +116,12 @@ func (a *App) flashBoseFirmware(ctx context.Context, host string, force bool) (F
 	if !fi.Outdated && !force {
 		return res, fmt.Errorf("the speaker already runs Bose's last firmware %s", latestBoseFirmware)
 	}
+	// Below 15 Bose's last file stalls on an empty progress bar or ends in a
+	// restart loop (docs/FIRMWARE-UPDATE.md, section 2), whatever the guide
+	// on screen offered: refuse before anything is downloaded or sent.
+	if !bosefw.DirectJumpOK(fi.Firmware) {
+		return res, fmt.Errorf("firmware %s is too old to take Bose's last firmware in one go: it needs in-between updates first, as the firmware guide shows", fi.Short)
+	}
 	entries, _ := boseCatalogue.Entries(ctx)
 	files := bosefw.Match(entries, fi.Model, fi.ModuleType, fi.Variant)
 	if len(files) != 1 {

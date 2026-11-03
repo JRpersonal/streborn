@@ -31,14 +31,14 @@ func TestPlanByStartingVersion(t *testing.T) {
 		{"15.0.20 gets the final step only", "SoundTouch 20", "scm", "15.0.20", nil, StatusFinal, "27.0.6"},
 		{"27.0.3 gets the final step only", "SoundTouch Portable", "scm", "27.0.3", nil, StatusFinal, "27.0.6"},
 		{"27.0.6 is done", "SoundTouch 20", "scm", "27.0.6.46330.5043500", nil, StatusUpToDate, ""},
-		{"Wave 2.1.51 without moduleType is not in phase 1", "Wave SoundTouch", "", "2.1.51", nil, StatusUnsupported, ""},
+		{"Wave 2.1.51 without moduleType gets the documented Wave route", "Wave SoundTouch", "", "2.1.51", nil, StatusRoute, "06.02.01 07.00.37 14.00.33 15.00.20 27.0.6"},
 		{"ST20 10.x without moduleType asks about Bluetooth", "SoundTouch 20", "", "10.0.11", nil, StatusNeedsBluetooth, ""},
 		{"... no Bluetooth button means scm", "SoundTouch 20", "", "10.0.11", boolp(false), StatusLadder, "14.00.33 16.00.09 27.0.6"},
-		{"... a Bluetooth button means sm2, not in phase 1", "SoundTouch 30", "", "10.0.11", boolp(true), StatusUnsupported, ""},
+		{"... a Bluetooth button means sm2: the Bluetooth chassis route", "SoundTouch 30", "", "10.0.11", boolp(true), StatusRoute, "14.00.33 15.00.20 27.0.6"},
 		{"a Portable never asks: it is scm only", "SoundTouch Portable", "", "10.0.11", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
 		{"sm2 below 9 cannot exist, so no moduleType at 7 is scm", "SoundTouch 30", "", "7.2.21", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
-		{"sm2 reported is not in phase 1", "SoundTouch 20", "sm2", "14.0.15", nil, StatusUnsupported, ""},
-		{"SoundTouch 10 is not in phase 1", "SoundTouch 10", "sm2", "14.0.15", nil, StatusUnsupported, ""},
+		{"sm2 reported gets the Bluetooth chassis route", "SoundTouch 20", "sm2", "14.0.15", nil, StatusRoute, "14.00.33 15.00.20 27.0.6"},
+		{"SoundTouch 10 goes via 15.00.20", "SoundTouch 10", "sm2", "14.0.15", nil, StatusRoute, "15.00.20 27.0.6"},
 		{"no version asks for it", "SoundTouch 20", "", "", nil, StatusNeedsVersion, ""},
 		{"a 2.x ST20 gets the full ladder", "SoundTouch 20", "", "2.1.51", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 16.00.09 27.0.6"},
 	}
@@ -69,11 +69,8 @@ func TestPlanFlags(t *testing.T) {
 	if Plan("SoundTouch 20", "", "", "5.2.0", nil).OldStart {
 		t.Error("5.x is not an old start")
 	}
-	if r := Plan("SoundTouch 20", "sm2", "", "10.0.1", nil).Reason; r != "sm2" {
-		t.Errorf("reason %q", r)
-	}
-	if r := Plan("Wave SoundTouch", "", "", "2.1.51", nil).Reason; r != "model" {
-		t.Errorf("reason %q", r)
+	if p := Plan("Lifestyle", "sm2", "", "10.0.1", nil); p.Status != StatusUnsupported || p.Reason != "model" {
+		t.Errorf("Lifestyle: %s %q", p.Status, p.Reason)
 	}
 	fb := Plan("SoundTouch 20", "scm", "", "7.0.37", nil).Fallbacks
 	if got := versions(fb[FamilySTScm+"-14.00.33"]); got != "09.00.41 12.00.09 14.00.33" || len(fb) != 1 {
@@ -124,6 +121,11 @@ func TestFallbackFor(t *testing.T) {
 	}
 	if got := versions(FallbackFor(FamilySTScm+"-27.0.6", "16.0.9")); got != "20.00.06 27.0.6" {
 		t.Errorf("16.x fallback before 27.0.6 %q", got)
+	}
+	// docs/FIRMWARE-UPDATE.md, section 7, row "15.x or newer": 20.00.06 first
+	// if 27.0.6 stalls, from 15 as from 16.
+	if got := versions(FallbackFor(FamilySTScm+"-27.0.6", "15.0.20")); got != "20.00.06 27.0.6" {
+		t.Errorf("15.x fallback before 27.0.6 %q", got)
 	}
 	if FallbackFor(FamilySTScm+"-27.0.6", "20.0.6") != nil {
 		t.Error("20.0.6 has no smaller step before 27.0.6")

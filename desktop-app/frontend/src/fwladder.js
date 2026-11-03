@@ -17,13 +17,18 @@
 //   C  install it on the speaker, then "Done, check again"
 //   D  the last step: the normal guide (one click over the network), with the
 //      stick as the other route
-// plus three small ones: the version picker (when the speaker cannot be read),
-// the Bluetooth question (ST20/30 on 9 to 14 without moduleType), and the
-// "no step-by-step path for this model yet" line.
+// plus the small ones: the version picker (when the speaker cannot be read),
+// the Bluetooth question (ST20/30 on 9 to 14 without moduleType), the probable
+// route of a model outside the checked ladder, and "no known path yet".
 //
-// Phase 1 covers the SoundTouch 20, 30 and Portable on the older (scm)
-// hardware only. Steps other than 06.02.01 and 07.00.37 (by stick) and 27.0.6
-// (over the network) are untested on real speakers, and the screens say so.
+// The checked ladder covers the SoundTouch 20, 30 and Portable on the older
+// (scm) hardware. Every other family docs/FIRMWARE-UPDATE.md covers (Wave,
+// SA-4 and Stereo JC, CineMate, the Bluetooth chassis, SoundTouch 10) gets its
+// documented route as a list (backend status "route"): the steps are not
+// checked and their files have no known fingerprint, so the app prepares no
+// stick for them and links the guide instead. Below 15 no screen offers Bose's
+// last file in one jump (the docs: it stalls on an empty progress bar), and
+// FlashBoseFirmware refuses it too.
 //
 // Rendering is pure (ladderView, ladderHtml and the helpers below are tested in
 // fwladder.test.js without a DOM); wireFirmwareLadders does the clicking with
@@ -33,6 +38,14 @@ import { escapeHtml } from './utils.js';
 
 export const LADDER_MODELS = ['soundtouch 20', 'soundtouch 30', 'soundtouch portable'];
 export const FIRMWARE_DOCS_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/FIRMWARE-UPDATE.md';
+// The guide's sections the screens point at: the ladder, the other models'
+// routes, and what an empty progress bar means.
+export const FIRMWARE_LADDER_URL = `${FIRMWARE_DOCS_URL}#7-very-old-firmware-the-step-by-step-ladder`;
+export const FIRMWARE_OTHER_MODELS_URL = `${FIRMWARE_DOCS_URL}#other-models-no-checked-ladder-yet`;
+export const FIRMWARE_STALL_URL = `${FIRMWARE_DOCS_URL}#6-what-you-see-while-it-updates`;
+// The Internet Archive collection the guide links. STR links it and never
+// copies a file from it.
+export const ARCHIVE_COLLECTION_URL = 'https://archive.org/details/bose-soundtouch-software-and-firmware';
 // The ladder takes over below this major version. From 15 on, Bose's last file
 // goes on directly and the normal guide runs unchanged.
 export const LADDER_BELOW_MAJOR = 15;
@@ -98,12 +111,18 @@ export function ladderApplies(ident) {
   return inFamily(id.model);
 }
 
-// noLadderYet: below 15.x but not a phase-1 model. Those keep the single-step
-// guide plus one line saying there is no step-by-step path for them yet.
+// stepsNeeded: a readable firmware below 15.x. Bose's last file does not go
+// on in one jump from there for any model, so firmwareGuideMount hands every
+// such speaker to the ladder, which asks the backend for the route.
+export function stepsNeeded(ident) {
+  const mj = major((ident || {}).current);
+  return mj !== null && mj < LADDER_BELOW_MAJOR;
+}
+
+// noLadderYet: below 15.x but not on the checked stick ladder. Those get the
+// documented route as a list, or "no known path yet".
 export function noLadderYet(ident) {
-  const id = ident || {};
-  const mj = major(id.current);
-  return mj !== null && mj < LADDER_BELOW_MAJOR && !ladderApplies(id);
+  return stepsNeeded(ident) && !ladderApplies(ident);
 }
 
 // isBatteryModel: the Portable runs on a battery that cannot be removed.
@@ -201,6 +220,7 @@ export function ladderView(plan, st) {
     case 'needs-version': return 'manual';
     case 'needs-bluetooth': return 'bluetooth';
     case 'unsupported': return 'unsupported';
+    case 'route': return 'route';
     case 'uptodate': return 'done';
     case 'final': return s.finalByStick ? (s.screen === 'C' ? 'C' : 'B') : 'D';
     case 'ladder': break;
@@ -555,6 +575,58 @@ function screenManual(plan, st, ident) {
     + (st && st.manualError ? `<div class="small setup-err">${esc(st.manualError)}</div>` : '');
 }
 
+function openLink(url, label, cls) {
+  return `<a href="#" class="${cls || 'link'}" data-ladder="open-url" data-url="${esc(url)}">${esc(label)}</a>`;
+}
+
+// screenRoute is the documented, unchecked route for a model outside the
+// checked ladder: the steps as a list, why the app cannot prepare the stick
+// for them, which archive folder the guide names and which files in it are
+// another model's, and the guide.
+function screenRoute(plan) {
+  const steps = plan.steps || [];
+  const list = steps.map(s => `<li><b>${esc(stepLabel(s))}</b> ${badge(s)}</li>`).join('');
+  const now = plan.versionFrom === 'manual' ? 'fwLadder.nowManual' : 'fwLadder.now';
+  const avoid = Array.isArray(plan.avoid) ? plan.avoid : [];
+  return `<b>${esc(t('fwLadder.routeTitle', { n: steps.length }))}</b>`
+    + `<div>${esc(t(now, { version: plan.current || '?' }))}</div>`
+    + `<ol class="fw-ladder-steps">${list}</ol>`
+    + `<div class="fw-ladder-warn" data-ladder-note="route">${esc(t('fwLadder.routeWhy'))}</div>`
+    + (plan.folder ? `<div class="small" data-ladder-note="folder">${esc(t('fwLadder.routeFolder', { folder: plan.folder }))}</div>` : '')
+    + (avoid.length ? `<div class="small fw-ladder-note" data-ladder-note="avoid">${esc(t('fwLadder.routeAvoid', { files: avoid.join(', ') }))}</div>` : '')
+    + `<div class="small">${esc(t('fwLadder.routeAsk'))}</div>`
+    + '<div class="fw-guide-dl">'
+    + openLink(FIRMWARE_OTHER_MODELS_URL, t('fwLadder.docs'), 'btn btn-mini btn-primary') + ' '
+    + openLink(ARCHIVE_COLLECTION_URL, t('fwLadder.routeArchive'), 'btn btn-mini')
+    + '</div>';
+}
+
+const NO_PATH_KEYS = {
+  model: 'fwLadder.noPathModel',
+  'no-source': 'fwLadder.noPathSource',
+  generation: 'fwLadder.noPathGeneration',
+};
+
+// noPathKey is the sentence for an "unsupported" plan's reason. An unknown
+// reason reads as "no known path for this model".
+export function noPathKey(reason) {
+  return NO_PATH_KEYS[reason] || NO_PATH_KEYS.model;
+}
+
+// screenNoPath says honestly that no route is known for this speaker, warns
+// against the one jump, and points at the guide. It never shows the
+// single-step guide: from below 15 that would propose the jump that stalls.
+function screenNoPath(plan) {
+  return '<div class="fw-ladder-none">'
+    + `<b>${esc(t('fwLadder.noPathTitle'))}</b>`
+    + (plan.current ? `<div>${esc(t('fwLadder.now', { version: plan.current }))}</div>` : '')
+    + `<div>${esc(t(noPathKey(plan.reason)))}</div>`
+    + `<div class="fw-ladder-warn">${esc(t('fwLadder.noDirect'))}</div>`
+    + `<div class="small">${esc(t('fwLadder.noPathAsk'))}</div>`
+    + `<div class="fw-guide-dl">${openLink(FIRMWARE_OTHER_MODELS_URL, t('fwLadder.docs'), 'btn btn-mini btn-primary')}</div>`
+    + '</div>';
+}
+
 function screenBluetooth() {
   return `<b>${esc(t('fwLadder.btQuestion'))}</b>`
     + `<div class="muted small">${esc(t('fwLadder.btWhy'))}</div>`
@@ -581,7 +653,9 @@ export function ladderHtml(ident, plan, st, guideMount) {
     case 'bluetooth':
       return screenBluetooth();
     case 'unsupported':
-      return gm({ ...plainIdent, noLadder: true });
+      return screenNoPath(plan);
+    case 'route':
+      return screenRoute(plan);
     case 'error':
       return gm(plainIdent);
     case 'done':
@@ -684,7 +758,7 @@ class LadderController {
     const prevView = this.view;
     this.view = ladderView(this.sess.plan, this.st);
     this.el.innerHTML = ladderHtml(this.id, this.sess.plan, this.st, this.hooks.guideMount);
-    if (this.hooks.wireGuides && (this.view === 'D' || this.view === 'unsupported' || this.view === 'error')) {
+    if (this.hooks.wireGuides && (this.view === 'D' || this.view === 'error')) {
       this.hooks.wireGuides(this.el);
     }
     if (this.view === 'B' && prevView !== 'B' && !this.st.drives && !this.st.drivesLoading) this.refreshDrives();
@@ -765,6 +839,9 @@ class LadderController {
       case 'prepare': this.prepare(''); break;
       case 'have-file': this.haveFile(); break;
       case 'cancel': try { this.L.cancelStick(); } catch { /* nothing running */ } break;
+      case 'open-url':
+        if (btn.dataset.url) { try { this.deps.openURL(btn.dataset.url); } catch { /* no browser */ } }
+        break;
       case 'open-source': {
         const s = currentStep(plan, this.st);
         if (s && s.url) { try { this.deps.openURL(s.url); } catch { /* no browser */ } }

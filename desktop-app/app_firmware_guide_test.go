@@ -17,29 +17,43 @@ func TestFirmwareTooOldNote(t *testing.T) {
 		{Name: "a.scm.stu", URL: bosefw.DownloadBase + "a.scm.stu", Generation: "scm"},
 		{Name: "a.sm2.stu", URL: bosefw.DownloadBase + "a.sm2.stu", Generation: "sm2"},
 	}
-	for _, files := range [][]bosefw.File{nil, one, two} {
-		note := firmwareTooOldNote("5.2.0", files)
-		for _, banned := range []string{"btu.bose.com", "USB update tool", "Firmware section", "another stick", "\u2014"} {
-			if strings.Contains(note, banned) {
-				t.Errorf("note still says %q: %s", banned, note)
+	for _, short := range []string{"5.2.0", "15.0.4"} {
+		for _, files := range [][]bosefw.File{nil, one, two} {
+			note := firmwareTooOldNote(short, files)
+			for _, banned := range []string{"btu.bose.com", "USB update tool", "Firmware section", "another stick", "\u2014"} {
+				if strings.Contains(note, banned) {
+					t.Errorf("note still says %q: %s", banned, note)
+				}
+			}
+			for _, want := range []string{short, latestBoseFirmware, "firmware update guide"} {
+				if !strings.Contains(note, want) {
+					t.Errorf("note lacks %q: %s", want, note)
+				}
+			}
+			for _, f := range files {
+				if !strings.Contains(note, f.URL) {
+					t.Errorf("note lacks Bose's link %s", f.URL)
+				}
 			}
 		}
-		for _, want := range []string{"5.2.0", latestBoseFirmware, "firmware update guide"} {
-			if !strings.Contains(note, want) {
-				t.Errorf("note lacks %q: %s", want, note)
-			}
+		if n := firmwareTooOldNote(short, two); !strings.Contains(n, "refuses the first") {
+			t.Errorf("two files without the sentence on which is which: %s", n)
 		}
-		for _, f := range files {
-			if !strings.Contains(note, f.URL) {
-				t.Errorf("note lacks Bose's link %s", f.URL)
-			}
+		if n := firmwareTooOldNote(short, nil); strings.Contains(n, "https://") {
+			t.Errorf("a model with no file must not get a guessed link: %s", n)
 		}
 	}
-	if n := firmwareTooOldNote("5.2.0", two); !strings.Contains(n, "refuses the first") {
-		t.Errorf("two files without the sentence on which is which: %s", n)
+	// Below 15 the one jump stalls (docs/FIRMWARE-UPDATE.md, section 2): the
+	// note says so and names Bose's file as the last step only.
+	old := firmwareTooOldNote("5.2.0", one)
+	if !strings.Contains(old, "cannot take Bose's last file in one go") || !strings.Contains(old, "for the last step: "+one[0].URL) {
+		t.Errorf("5.2.0: %s", old)
 	}
-	if n := firmwareTooOldNote("5.2.0", nil); strings.Contains(n, "https://") {
-		t.Errorf("a model with no file must not get a guessed link: %s", n)
+	if strings.Contains(old, "uploaded to the speaker's own update page") {
+		t.Errorf("5.2.0 must not be told to upload Bose's last file: %s", old)
+	}
+	if n := firmwareTooOldNote("15.0.4", one); strings.Contains(n, "in one go") || !strings.Contains(n, "for this speaker: ") {
+		t.Errorf("15.0.4: %s", n)
 	}
 }
 

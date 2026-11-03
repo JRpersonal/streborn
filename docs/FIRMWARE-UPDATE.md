@@ -257,10 +257,17 @@ each step the app:
 
 The last step is Bose's own 27.0.6, over the network or by stick. The
 app remembers the step per speaker, so it picks up again after a
-restart. Other models keep the single-step guide for now. The table the
-app uses lives in `desktop-app/bosefw/ladder_data.go`; every value in it
-comes from the Internet Archive's metadata or the zip itself, never
-from memory.
+restart. The table the app uses lives in `desktop-app/bosefw/ladder_data.go`;
+every value in it comes from the Internet Archive's metadata or the zip
+itself, never from memory.
+
+For the other models below, the app lists the probable route from the
+table under "Other models", says it is not checked, and links this page.
+It cannot prepare the stick for those steps, because their file names
+and checksums are not known yet. A model with no known route gets a
+plain "no known path yet". Below 15 the app never offers Bose's last
+file in one jump, for any model, and its own **Update now** refuses it
+too.
 
 ### Where the in-between files come from
 
@@ -387,7 +394,7 @@ before you start.
 | Wave SoundTouch, first generation (folder `Airplay-1_Wave_SoundTouch`) | 06.02.01, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/n/Update.stu`) | 15.00.20 inside: 107 842 648 / `686cad33`. Bose 27.0.6: 112 367 416 / `49d88de4` | 16.00.09 and 18 to 24 from that folder: they are the SoundTouch 20/30 file |
 | SA-4, Stereo JC, first generation (folder `Airplay-1_SA4_or_STJC`) | Below 14: no source known. From 14.x: 14.0.33, 15.0.20, then 27.0.6 from Bose (`stu/l/Update.stu`) | 15.0.20 inside: 106 491 816 / `f6ef441d` | 14.0.15, 16.0.09, 17.0.08, 18, 19, 22, 23, 24 from that folder: they are the SoundTouch 20/30 file |
 | CineMate adapter, first generation | 06.00.91, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/t/Update.stu`) | | |
-| Bluetooth chassis: SoundTouch 10, SoundTouch 20/30 with Bluetooth, SA-5, 300, Wave IV, Wireless Link | Below 14: 14.00.33, 15.00.20, then 27.0.6 from Bose (the `sm2` path in section 9). SoundTouch 10 below 15: 15.00.20, then 27.0.6. | | Wave IV 14.00.33 from the archive: it is the SA-5's file |
+| Bluetooth chassis: SoundTouch 10, SoundTouch 20/30 with Bluetooth, SA-5, 300, Wave IV, Wireless Link | Below 14: 14.00.33, 15.00.20, then 27.0.6 from Bose (the `sm2` path in section 9). SoundTouch 10 below 15: 15.00.20, then 27.0.6. Wave IV below 14.0.33: no source known, because the archive's 14.00.33 for it is the SA-5's file. | | Wave IV 14.00.33 from the archive: it is the SA-5's file |
 
 All of this table is unverified.
 

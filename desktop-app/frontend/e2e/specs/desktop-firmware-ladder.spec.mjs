@@ -183,8 +183,10 @@ test.describe('the firmware ladder', () => {
     await lad.locator('[data-ladder-field="version"]').selectOption('7-13');
     await lad.locator('[data-ladder="manual-go"]').click();
     await mock.expectCalled('GetFirmwareLadderManual', { pred: (c) => c.args[0] === '' && c.args[2] === '7.0.37', times: 1 });
-    await expect(lad).toContainText(en('fwLadder.unsupported'));
+    await expect(lad).toContainText(en('fwLadder.noPathModel'));
+    await expect(lad).toContainText(en('fwLadder.noDirect'));
     await expect(lad.locator('.fw-ladder-steps')).toHaveCount(0);
+    await expect(lad.locator('[data-fwflash], .fw-guide-download')).toHaveCount(0);
   });
 });
 

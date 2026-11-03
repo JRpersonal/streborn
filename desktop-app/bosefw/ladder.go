@@ -13,8 +13,11 @@ package bosefw
 // That generation is reached with 16.00.09: 15.00.20 itself stalled on the
 // one speaker that tried it, by stick and on its update page.
 //
-// Phase 1 knows one family only (FamilySTScm). Every other model gets
-// StatusUnsupported here and keeps the single-step guide.
+// The checked ladder knows one family (FamilySTScm). Every other family the
+// firmware guide covers gets its documented, unchecked route as a list
+// (StatusRoute, ladder_routes.go); a model with no known path gets
+// StatusUnsupported. Neither is ever offered Bose's last file in one jump from
+// below 15.
 
 import (
 	"strconv"
@@ -34,7 +37,10 @@ const (
 	StatusUpToDate       = "uptodate"        // already on Bose's last firmware
 	StatusNeedsVersion   = "needs-version"   // the version is unknown: ask the user
 	StatusNeedsBluetooth = "needs-bluetooth" // ST20/30 9.x-14.x without moduleType: ask
-	StatusUnsupported    = "unsupported"     // no step-by-step path for this model yet
+	StatusUnsupported    = "unsupported"     // no known step-by-step path for this speaker yet
+	// StatusRoute is the documented, unchecked route for a family outside the
+	// checked ladder: the steps are listed, the app prepares no stick for them.
+	StatusRoute = "route"
 )
 
 // Step is one firmware update on the way up.
@@ -76,9 +82,17 @@ type LadderPlan struct {
 	// OldStart is set for a speaker older than 5.x: 06.02.01 from there is
 	// untested, and the guide offers 05.00.23 first if the speaker refuses it.
 	OldStart bool `json:"oldStart"`
-	// Reason details StatusUnsupported: "model" (no ladder for this model yet)
-	// or "sm2" (newer hardware, no ladder yet).
+	// Reason details StatusUnsupported: "model" (no known path for this model),
+	// "no-source" (a known route, but no source for the first step from this
+	// version) or "generation" (the model was built on both hardware
+	// generations and the speaker does not say which one it is).
 	Reason string `json:"reason,omitempty"`
+	// Folder is the Internet Archive folder the firmware guide names for a
+	// StatusRoute family, empty when it names none.
+	Folder string `json:"folder"`
+	// Avoid lists the files in that folder that belong to another model, as
+	// the firmware guide lists them.
+	Avoid []string `json:"avoid"`
 	// Fallbacks maps a step ID to the smaller steps the guide offers when that
 	// step leaves the speaker on its old version (FallbackFor). Only steps
 	// that have such a route are listed.
@@ -165,6 +179,7 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		Current:    shortVersion(version),
 		Steps:      []Step{},
 		Fallbacks:  map[string][]Step{},
+		Avoid:      []string{},
 	}
 	cur, ok := VersionTuple(version)
 	if !ok {
@@ -189,13 +204,12 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		return p
 	}
 	if !stScmModels[strings.ToLower(p.Model)] {
-		p.Status, p.Reason = StatusUnsupported, "model"
-		return p
+		return planRoute(p, cur)
 	}
 	switch p.ModuleType {
 	case "sm2":
-		p.Status, p.Reason = StatusUnsupported, "sm2"
-		return p
+		// The newer hardware: the Bluetooth chassis route.
+		return planRoute(p, cur)
 	case "scm":
 	default:
 		// No moduleType. Below 9 it can only be scm: no sm2 image older than
@@ -207,8 +221,8 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 			p.Status = StatusNeedsBluetooth
 			return p
 		case *bluetooth:
-			p.Status, p.Reason, p.ModuleType = StatusUnsupported, "sm2", "sm2"
-			return p
+			p.ModuleType = "sm2"
+			return planRoute(p, cur)
 		}
 		p.ModuleType = "scm"
 	}
@@ -290,7 +304,9 @@ func FallbackFor(stepID, current string) []Step {
 			return pick("09.00.41", "12.00.09", "14.00.33")
 		}
 	case FamilySTScm + "-27.0.6":
-		if cur[0] >= 16 && cur[0] < 20 {
+		// docs/FIRMWARE-UPDATE.md, section 7: "15.x or newer: 27.0.6 ...; if it
+		// stalls, 20.00.06 first".
+		if cur[0] >= 15 && cur[0] < 20 {
 			return pick("20.00.06", "27.0.6")
 		}
 	}
