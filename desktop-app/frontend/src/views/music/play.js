@@ -2,14 +2,15 @@
 // its group master), the volume re-apply after a wake, and the friendly error
 // text.
 
-import { PlaySlot } from '../../api.js';
-import { parsePlayRejection, resolveBoxByRef } from '../../groups.js';
+import { boxFetch, PlaySlot } from '../../api.js';
+import { parsePlayRejection, resolveBoxByRef, sameBoxIdentity } from '../../groups.js';
 import { t } from '../../i18n/index.js';
 import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
 import { isNativeServicePreset } from '../../nativeservice.js';
 import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
+import { isRadioPreset, stationDnsKey, watchStationDns } from '../../stationdns.js';
 import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../utils.js';
 import { escalationForCount, noteNotReady, noteWakeSucceeded } from '../../wakeescalation.js';
 import { throttledSetVolume } from '../settings.js';
@@ -64,7 +65,33 @@ function reapplyDesiredVolume() {
   setTimeout(apply, 1500);
 }
 
+// presetPlayGen counts preset presses, so a lookup watch of an earlier press
+// stops when the next press starts.
+let presetPlayGen = 0;
+
+// watchPresetDns looks, for a few seconds after a radio key started, whether
+// the speaker could look up the station's address (stationdns.js). The press
+// itself succeeded the moment the speaker took the command, so without this a
+// station an ad-blocker or the router's name server blocks, or one whose
+// address no longer exists, stayed silent and the app said nothing. Only a failed lookup is said here; every other
+// station failure keeps its existing handling.
+function watchPresetDns(box, p, gen) {
+  if (!box || !isRadioPreset(p)) return;
+  const startBox = state.currentBox;
+  watchStationDns({
+    fetchStatus: async () => {
+      const r = await boxFetch(box, '/api/stream-status', {}, 4000);
+      return r.ok ? r.json() : null;
+    },
+    url: p.stream_url,
+    stillCurrent: () => gen === presetPlayGen && sameBoxIdentity(state.currentBox, startBox),
+  }).then((fail) => {
+    if (fail && gen === presetPlayGen) showToast(t(stationDnsKey(fail.reason)));
+  }).catch(() => {});
+}
+
 export async function play(slot) {
+  const gen = ++presetPlayGen;
   // Was the box idle/standby before this play? Waking resets its volume,
   // so we re-apply the user's chosen level afterwards only in that case
   // (a normal preset switch while already playing keeps the live volume).
@@ -144,6 +171,7 @@ export async function play(slot) {
     if (wasIdle) reapplyDesiredVolume();
     refreshStatus();
     setTimeout(refreshStatus, 1500);
+    watchPresetDns(state.currentBox, p, gen);
   } catch (e0) {
     let e = e0;
     // Newer agents reject a recall sent to a grouped follower with a
@@ -161,6 +189,7 @@ export async function play(slot) {
           if (wasIdle) reapplyDesiredVolume();
           refreshStatus();
           setTimeout(refreshStatus, 1500);
+          watchPresetDns(mb, p, gen);
           return;
         } catch (e2) {
           e = e2; // surface the master's error, not the follower's rejection

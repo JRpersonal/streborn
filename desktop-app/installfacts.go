@@ -74,6 +74,11 @@ type localIface struct {
 	Name string
 	CIDR string
 	Up   bool
+	// Virtual is set for a point-to-point link or an interface without a
+	// hardware address: the shape every VPN tunnel has (utun, tun, wg, ppp,
+	// Wintun) and no Wi-Fi or Ethernet adapter has. On its own it blames
+	// nothing; see findVPN for when such an interface counts.
+	Virtual bool
 }
 
 // lanSighting is one speaker out of the discovery cache. Taken from the cache
@@ -114,6 +119,18 @@ type installFacts struct {
 	MACPrefix string
 
 	Ifaces []localIface
+
+	// Routes is what this PC's routing table picks for the speaker and for the
+	// internet (see pcRoutes); VPN is the tunnel in the way, when findVPN
+	// found one. They decide the VPN and macOS Local Network verdicts.
+	Routes pcRoutes
+	VPN    *vpnFinding
+	// OtherSpeakerAnswered is set when another speaker answered this app in
+	// the last few minutes, TargetFresh when discovery saw this one in a
+	// recent cycle without a miss since. They keep the two PC-side verdicts
+	// off a speaker that is simply switched off (see pcEvidence).
+	OtherSpeakerAnswered bool
+	TargetFresh          bool
 
 	// SameSubnet is filled only when the verdict could be reached at all
 	// (a parseable host address and at least one interface with an IPv4).
@@ -411,9 +428,10 @@ func localIPv4Ifaces() []localIface {
 			continue
 		}
 		up := in.Flags&net.FlagUp != 0
+		virtual := in.Flags&net.FlagPointToPoint != 0 || len(in.HardwareAddr) == 0
 		addrs, aerr := in.Addrs()
 		if aerr != nil {
-			out = append(out, localIface{Name: in.Name, Up: up})
+			out = append(out, localIface{Name: in.Name, Up: up, Virtual: virtual})
 			continue
 		}
 		var v4 []string
@@ -430,11 +448,11 @@ func localIPv4Ifaces() []localIface {
 				// enumerates a dozen virtual adapters.
 				continue
 			}
-			out = append(out, localIface{Name: in.Name, Up: up})
+			out = append(out, localIface{Name: in.Name, Up: up, Virtual: virtual})
 			continue
 		}
 		for _, c := range v4 {
-			out = append(out, localIface{Name: in.Name, CIDR: c, Up: up})
+			out = append(out, localIface{Name: in.Name, CIDR: c, Up: up, Virtual: virtual})
 		}
 	}
 	return out
@@ -610,8 +628,14 @@ func (a *App) gatherInstallFacts(ctx context.Context, host string) installFacts 
 	f.MACPrefix = macVendorPrefix(arpLookup(actx, host))
 	cancel()
 
-	f.Ifaces = localIPv4Ifaces()
+	f.Ifaces = listPCIfaces()
 	f.SubnetKnown, f.SameSubnet, f.SubnetVia = sameSubnet(host, f.Ifaces)
+	f.Routes = probePCRoutes(host)
+	if v, ok := findVPN(host, f.Ifaces, f.Routes); ok {
+		f.VPN = &v
+	}
+	f.OtherSpeakerAnswered = a.otherSpeakerAnswered(host)
+	f.TargetFresh = a.speakerSightedFresh(host)
 	f.Firewall = firewallReportLine(localFirewallState(), a.cachedFirewallCheck())
 	f.LAN = a.lanSightings(12)
 	for _, s := range f.LAN {

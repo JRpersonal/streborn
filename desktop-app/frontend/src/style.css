@@ -1490,6 +1490,12 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   margin: -4px 0 10px; padding: 6px 10px; border-left: 3px solid var(--c-warn-bg); border-radius: 6px;
   background: var(--c-surface-2); color: var(--c-text); font-size: 12px; line-height: 1.4;
 }
+/* The why and the decisive test, folded under the notice until asked for.
+   Shared by both layouts and the UI 2.0 accounts row. */
+.spotify-refused-lead { display: block; }
+.spotify-refused-more { margin-top: 2px; }
+.spotify-refused-more summary { cursor: pointer; color: var(--c-muted); width: fit-content; }
+.spotify-refused-more p { margin: 4px 0 0; }
 /* Battery indicator in the speaker tile (SoundTouch Portable only).
    Drawn as a real battery: a body with a terminal nub, so it reads
    unmistakably as a charge gauge. Right-aligned just left of the gear;
@@ -2695,6 +2701,15 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .setup-help { margin-top: 12px; max-width: 40rem; font-size: 0.92em; }
 .setup-help ul { margin: 6px 0 0; padding-left: 1.2rem; }
 .setup-help li { margin: 4px 0; line-height: 1.4; }
+/* The "has not come back" checklist (darkafterupdate.js): numbered stages,
+   used in the update report host, the Update all rows and the install
+   screens of both layouts. */
+.dark-check-steps { margin: 8px 0 0; padding-left: 1.4rem; }
+.dark-check-steps li { margin: 6px 0; line-height: 1.45; }
+.dark-check-link { white-space: nowrap; }
+.dark-check-hardware { margin-top: 8px; }
+.dark-check-row { margin-top: 6px; font-size: 13px; }
+.dark-check-row > summary { cursor: pointer; }
 .zone-controls { max-width: 40rem; display: flex; flex-direction: column; gap: 12px; }
 .zone-field { display: flex; flex-direction: column; gap: 6px; }
 

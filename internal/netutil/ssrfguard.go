@@ -57,9 +57,22 @@ func DialGuardSSRF(network, address string, _ syscall.RawConn) error {
 	}
 	if ip.IsLoopback() || ip.IsUnspecified() ||
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return fmt.Errorf("stream target %s blocked (loopback/link-local/metadata)", ip)
+		return &BlockedTargetError{IP: ip}
 	}
 	return nil
+}
+
+// BlockedTargetError is DialGuardSSRF's refusal. It is typed so a caller can
+// read the refused address with errors.As: a station name that resolved to
+// 0.0.0.0 or a loopback address is what a DNS ad-blocker (Pi-hole, AdGuard)
+// answers for a blocked host, and the stream proxy says so instead of calling
+// the station unreachable.
+type BlockedTargetError struct {
+	IP net.IP
+}
+
+func (e *BlockedTargetError) Error() string {
+	return fmt.Sprintf("stream target %s blocked (loopback/link-local/metadata)", e.IP)
 }
 
 // GuardedClient returns an *http.Client whose dialer refuses loopback /

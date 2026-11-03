@@ -97,7 +97,7 @@ func TestMergeWithSelfIsIdentity(t *testing.T) {
 		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2", PresetRows: "2",
 		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
-		GroupKeyError: "g", GroupKeyErrorKind: "other", HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
+		GroupKeyError: "g", GroupKeyErrorKind: "other", WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 4, HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
 		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, LANAddrs: "a,b", WiredAddrs: "a", SerialNumber: "sn", Kind: "str", PortVerified: true}
 	if got := mergeBoxInfo(full, full); !reflect.DeepEqual(got, full) {
 		t.Errorf("mergeBoxInfo(x, x) != x:\n got %+v\nwant %+v", got, full)
@@ -177,6 +177,9 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 		{"ForeignCloudURL", str(BoxInfo{ForeignCloudURL: "https://example.invalid"}), str(BoxInfo{}), "", "not carried"},
 		{"GroupKeyError", str(BoxInfo{GroupKeyError: "no partner"}), str(BoxInfo{}), "", "not carried"},
 		{"GroupKeyError", str(BoxInfo{}), str(BoxInfo{GroupKeyError: "no partner"}), "no partner", "a live reason stands"},
+		{"WeakWifiDropout", str(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), str(BoxInfo{}), "", "not carried: a recent event, only a live probe says it is still recent"},
+		{"WeakWifiDropoutAgeSec", str(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), str(BoxInfo{}), 0, "not carried"},
+		{"WeakWifiDropout", str(BoxInfo{}), str(BoxInfo{WeakWifiDropout: "MARGINAL_SIGNAL"}), "MARGINAL_SIGNAL", "a live reading stands"},
 		{"HoldRefusedSource", str(BoxInfo{HoldRefusedSource: "SPOTIFY"}), str(BoxInfo{}), "", "not carried"},
 		{"HoldRefusedSlot", str(BoxInfo{HoldRefusedSlot: "3"}), str(BoxInfo{}), "", "not carried"},
 		{"StaleFolderKeySlot", str(BoxInfo{StaleFolderKeySlot: "1"}), str(BoxInfo{}), "", "not carried"},
@@ -277,6 +280,11 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 		{"GroupKeyError", m(BoxInfo{}), v(BoxInfo{GroupKeyError: "no partner"}), "no partner", "the probe's refusal reason reaches the list"},
 		{"GroupKeyError", m(BoxInfo{GroupKeyError: "stale"}), v(BoxInfo{}), "", "the live no-refusal reading clears a stale one"},
 		{"GroupKeyError", m(BoxInfo{}), m(BoxInfo{GroupKeyError: "x"}), "x", "no probe: whichever has one"},
+		{"WeakWifiDropout", m(BoxInfo{}), v(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), "POOR_SIGNAL", "the probe's reading"},
+		{"WeakWifiDropoutAgeSec", m(BoxInfo{}), v(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), 60, "with its age"},
+		{"WeakWifiDropout", m(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), v(BoxInfo{}), "", "the live reading clears it (the hour is up, or the signal recovered)"},
+		{"WeakWifiDropoutAgeSec", m(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), v(BoxInfo{}), 0, "age too"},
+		{"WeakWifiDropoutAgeSec", m(BoxInfo{}), m(BoxInfo{WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 60}), 60, "no probe: the age follows the marker"},
 		{"HoldRefusedSource", m(BoxInfo{}), v(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), "SPOTIFY", "the probe's reading"},
 		{"HoldRefusedSlot", m(BoxInfo{}), v(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), "3", "with its slot"},
 		{"HoldRefusedSource", m(BoxInfo{HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3"}), v(BoxInfo{}), "", "the live reading clears it"},

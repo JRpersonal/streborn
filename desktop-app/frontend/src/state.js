@@ -192,7 +192,7 @@ function isRoutableHost(h) {
 const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
   'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'foreignCloudURL', 'updateAvailable',
   'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending', 'internet', 'internetReason',
-  'speakerNameUnsafe'];
+  'speakerNameUnsafe', 'weakWifiDropout', 'weakWifiDropoutAgeSec'];
 
 function withoutTransientState(b) {
   const out = { ...b };

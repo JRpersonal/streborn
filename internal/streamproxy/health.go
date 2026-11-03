@@ -83,12 +83,21 @@ func (s *Server) noteReconnect(url, reason string, connBytes int64, connDur, gap
 		noteDelivered(url)
 	}
 	count, total := s.reconnectCount, s.forwardedBytes
+	delivered := s.deliveredAny
 	s.healthMu.Unlock()
 
 	s.logger.Warn("radio upstream disconnect",
 		"url", url, "reason", reason,
 		"connBytes", connBytes, "connectedSec", int(connDur.Seconds()),
 		"gapMs", gap.Milliseconds(), "reconnectCount", count, "forwardedBytesTotal", total)
+
+	// A station that was playing and broke off mid-stream is a dropout the
+	// owner hears. Hand it on so the agent can look at the Wi-Fi signal at
+	// that moment (webui weakwifidropout.go). A clean EOF is left out: at a
+	// steady cadence it is a CDN token running out, not the speaker's link.
+	if reason == "read-fail" && delivered && s.onUpstreamDrop != nil {
+		s.onUpstreamDrop()
+	}
 }
 
 // noteFirstDelivery records that a connection for station has just forwarded

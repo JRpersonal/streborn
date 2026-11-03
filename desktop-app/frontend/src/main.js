@@ -13,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { weakWifiDropoutBoxes } from './weakwifi.js';
 import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
@@ -297,6 +298,9 @@ import { initStreamSourceView } from './views/streamsource.js';
 import { renderWishes, initWishesView, VOTE_URL } from './views/wishes.js';
 import { releaseNotesURL, repoURL } from './shell2/help/about.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
+import {
+  darkAfterUpdate, darkBatchPlan, darkChecklistApplies, darkChecklistHtml, darkChecklistRowHtml, updateNoNetworkHere, wireDarkChecklist,
+} from './darkafterupdate.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
 // Turning a refused preset transfer into a readable sentence is a pure
@@ -2548,6 +2552,13 @@ function checkBoxIssueBanner() {
   // passive verdict, nointernet.js). Not dismissible: every station fails on
   // it, and the fix is on the router, which only a sentence can point at.
   const noNet = noInternetBoxes(boxes);
+  // Playback dropped out recently while the Wi-Fi signal at the speaker was
+  // weak (weakwifi.js). Informational, so dismissible per speaker; the
+  // dismissal holds for a day, because on a speaker with poor reception the
+  // next dropout is never far away.
+  const weakWifi = weakWifiDropoutBoxes(boxes, (b) => {
+    try { return localStorage.getItem(warnDismissKey(b, 'weakwifi')); } catch { return 0; }
+  });
   const msgs = [];
   if (noNet.length) {
     const names = noNet.map(b => getBoxLabel(b)).join(', ');
@@ -2594,12 +2605,16 @@ function checkBoxIssueBanner() {
       name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
+  if (weakWifi.length) {
+    const names = weakWifi.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.weakWifiDropoutBanner', { name: names })));
+  }
   // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
   // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
   // music library cannot play while radio still does, and nothing else on
   // screen says why. Not dismissible; the fix is one tap.
   const badName = unsafeNameBoxes(boxes);
-  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, badName });
+  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, weakWifi, badName });
   if (badName.length) {
     const names = badName.map(b => getBoxLabel(b)).join(', ');
     msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
@@ -2644,7 +2659,7 @@ function checkBoxIssueBanner() {
     ${stormBtn}
     ${conflictBtn}
     ${wifiBtn}
-    ${(conflict.length || noWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
+    ${(conflict.length || noWifi.length || weakWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
   const sb = $('boxIssueStormBtn');
   if (sb) sb.onclick = async () => {
     const box = storm[0];
@@ -2705,6 +2720,7 @@ function checkBoxIssueBanner() {
     const stamp = String(Date.now());
     conflict.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'conflict'), stamp); } catch {} });
     noWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'nowifi'), stamp); } catch {} });
+    weakWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'weakwifi'), stamp); } catch {} });
     el.classList.add('hidden');
   };
   el.classList.remove('hidden');
@@ -3762,6 +3778,9 @@ function noteOTAResult(box, result) {
   // The speaker changed its address mid-update: the update most likely
   // worked, so this is no evidence of an update that cannot stick.
   if (result.unmet === 'address-changed') return;
+  // This computer had no network when the window ran out: the speaker was
+  // never judged, so this is no evidence against it either.
+  if (updateNoNetworkHere(result)) return;
   if (result.outcome === 'timeout' || result.outcome === 'agentGone' || result.outcome === 'boxInSetup') {
     noteOTAFailure(box, result.verdict || '');
   }
@@ -3800,6 +3819,22 @@ function showSt300PowerCycleNotice(box) {
   focusUi2Report(host);
   const c = host.querySelector('#st300NoticeClose');
   if (c) c.onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
+}
+
+// showDarkAfterUpdate puts the "has not come back" checklist on screen for a
+// speaker whose update ended with nothing answering at its address. Same host
+// as the failure report: the speaker's own page in the UI 2.0 preview, the
+// overlay in the classic layout. It stays until the user closes it.
+function showDarkAfterUpdate(box) {
+  const host = ui2ReportHost(box) || $('updateFailureReport');
+  if (!host) { showToast(t('update.tookLongerToast')); return; }
+  host.innerHTML = darkChecklistHtml({ name: getBoxLabel(box), box, context: 'update', framed: true });
+  host.classList.remove('hidden');
+  focusUi2Report(host);
+  wireDarkChecklist(host, {
+    openURL: (url) => { try { BrowserOpenURL(url); } catch {} },
+    close: () => { host.classList.add('hidden'); host.innerHTML = ''; },
+  });
 }
 
 // updateAllShowing: an Update all run is going, or its window is still open
@@ -4268,6 +4303,18 @@ async function runSingleBoxUpdate(targetBox) {
       // this speaker a new one while it restarted. "Check power / network"
       // would send the owner looking for a fault that is not there.
       showToast(t('update.addressChangedToast', { name: getBoxLabel(targetBox) }));
+    } else if (updateNoNetworkHere(result)) {
+      // The verify window ran out while this computer had no network at all
+      // (#963): the speaker was never judged, and the power supply and reset
+      // advice of the dark checklist would be wrong for it.
+      showUpdateNoNetworkNotice();
+    } else if (darkAfterUpdate(result) && darkChecklistApplies(targetBox)) {
+      // Nothing answers at the speaker's address at all. A toast saying it
+      // takes longer left owners of a speaker whose power supply gave out at
+      // the restart with a dark box and no plan, so this gets the staged
+      // checklist (darkafterupdate.js). The SoundTouch 300 is left to its own
+      // power-cycle notice below, which is the one step it needs.
+      showDarkAfterUpdate(targetBox);
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually
@@ -4775,11 +4822,29 @@ async function runUpdateAllBoxes(onStart) {
   // The rows are the record. A terminal event the window missed is filled in
   // from them, and the loop breaker is fed from them, because only the rows
   // carry the confirmation and the classifier's verdict.
+  const darkEntries = [];
   for (const row of (fleet && fleet.rows) || []) {
     const r = rowState.get(row.host);
     if (!r) continue;
     if (!r.outcome) finishRow(r.box, row);
     if (!engineOnly.has(row.host)) noteOTAResult(r.box, row);
+    darkEntries.push({ host: row.host, result: row, box: r.box, engineOnly: engineOnly.has(row.host) });
+  }
+  // A speaker that answers nothing at all after its restart gets the staged
+  // checklist folded out under its own row. Only the returned rows carry the
+  // classifier's verdict, the phase events do not. The 300 keeps its own
+  // power-cycle row text and notice. When this computer had no network, or
+  // every speaker of the run went silent at once, it is this computer's
+  // connection, not a row of dead power supplies: one notice instead of a
+  // checklist on every row (darkBatchPlan).
+  const darkPlan = darkBatchPlan(darkEntries);
+  for (const host of darkPlan.checklist) {
+    const r = rowState.get(host);
+    const slot = r && updateAllRowReport(host);
+    if (slot) {
+      slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), box: r.box });
+      wireDarkChecklist(slot, { openURL: (url) => { try { BrowserOpenURL(url); } catch {} } });
+    }
   }
 
   // Batch done: release the global lock, refresh, summarize.
@@ -4805,6 +4870,8 @@ async function runUpdateAllBoxes(onStart) {
   } else {
     showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
   }
+  if (darkPlan.notice === 'noNetwork') showUpdateNoNetworkNotice();
+  else if (darkPlan.notice === 'allDark') showError(t('darkCheck.allDark'));
   // Any SoundTouch 300 that got this far is now blinking and unreachable until
   // someone unplugs it once. The row already says so, but the row scrolls away
   // with the panel, so the instruction also gets the stays-until-dismissed

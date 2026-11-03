@@ -37,6 +37,7 @@ async function playRadio(page, host) {
 }
 
 const notice = (page) => page.locator('#spotifyRefusedRow');
+const lead = (page) => page.locator('#spotifyRefusedRow .spotify-refused-lead');
 const NAMED = () => en('spotify.accountRefusedNamed', { account: 'Anna' });
 
 for (const ui2 of [false, true]) {
@@ -53,7 +54,15 @@ for (const ui2 of [false, true]) {
       await playStrSpotify(page, LR.host);
       await runFor(page, 8_000);
       await expect(notice(page)).toBeVisible();
-      await expect(notice(page)).toHaveText(NAMED());
+      await expect(lead(page)).toHaveText(NAMED());
+      // The why and the decisive test sit folded under it, one click away.
+      await expect(notice(page).locator('.spotify-refused-why')).toBeHidden();
+      await notice(page).locator('summary').click();
+      await expect(notice(page).locator('.spotify-refused-why')).toHaveText(en('spotify.refusedWhy'));
+      await expect(notice(page).locator('.spotify-refused-try')).toHaveText(en('spotify.refusedTry'));
+      // The next poll leaves it open.
+      await runFor(page, 6_000);
+      await expect(notice(page).locator('.spotify-refused-try')).toBeVisible();
       if (ui2) await expect(page.locator('#ui2Player #spotifyRefusedRow')).toBeVisible();
       // A notice, not a toast: nothing window-wide says it a second time.
       await expect(page.locator('.toast', { hasText: 'Spotify' })).toHaveCount(0);
@@ -82,6 +91,18 @@ for (const ui2 of [false, true]) {
       await expect(notice(page)).toBeHidden();
     });
 
+    test('a free account gets the Premium words, not the newer-account ones', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.set('SpotifyNowPlaying', { value: { ...REFUSED, product: 'free', premiumRequired: true, canRecall: false } });
+      await settle(page, 9_000);
+      await playStrSpotify(page, LR.host);
+      await runFor(page, 8_000);
+      await expect(lead(page)).toHaveText(en('spotify.accountRefusedFreeNamed', { account: 'Anna' }));
+      await notice(page).locator('summary').click();
+      await expect(notice(page).locator('.spotify-refused-why')).toHaveText(en('spotify.refusedFreeWhy'));
+      await expect(notice(page).locator('.spotify-refused-try')).toHaveText(en('spotify.refusedFreeTry'));
+    });
+
     test('an older agent: its short-lived flag feeds the same notice, without a name', async ({ app, mock }) => {
       const { page } = app;
       const old = { ...REFUSED, audioKeyRefused: true };
@@ -91,7 +112,7 @@ for (const ui2 of [false, true]) {
       await settle(page, 9_000);
       await playStrSpotify(page, LR.host);
       await runFor(page, 8_000);
-      await expect(notice(page)).toHaveText(en('spotify.accountRefused'));
+      await expect(lead(page)).toHaveText(en('spotify.accountRefused'));
     });
   });
 }
@@ -105,7 +126,7 @@ test.describe('Spotify refused, UI 2.0 accounts card', () => {
     await page.locator('#ui2Tabs .ui2-nav-item[data-view="spotify"]').click();
     await runFor(page, 2_000);
     const row = page.locator(`#sp2Accounts .sp2-acct[data-host="${LR.host}"]`);
-    await expect(row.locator('.sp2-acct-refused')).toHaveText(en('spotify.accountRefused'));
+    await expect(row.locator('.sp2-acct-refused .spotify-refused-lead')).toHaveText(en('spotify.accountRefused'));
     if (process.env.SHOOT_DIR) {
       await page.locator('#sp2Accounts').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-ui2-accounts.png`, animations: 'disabled' });
     }
