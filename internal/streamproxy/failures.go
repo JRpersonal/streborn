@@ -79,19 +79,20 @@ func isPermanentUpstream(err error) bool {
 type streamFailure struct {
 	when   time.Time
 	code   int    // upstream HTTP status, 0 for a network-level failure
-	reason string // coarse class the UI maps to a message: blocked|gone|unavailable|unreachable|hls|dns
+	reason string // coarse class the UI maps to a message: blocked|gone|unavailable|unreachable|hls|dns|nohost
 	url    string
 }
 
 // classifyFailure maps an upstream error for rawURL to a coarse reason the
 // desktop app turns into a localized, human message. A failure to look up the
-// station's host name lands in "dns" (see dnsfail.go); other network errors
+// station's host name lands in "dns", or in "nohost" when the name server
+// says the name does not exist (see dnsfail.go); other network errors
 // (refused, reset) land in "unreachable"; HTTP statuses split into
 // blocked/gone/unavailable. The lookup check runs before the HLS one, because
 // an HLS playlist whose host does not resolve is a lookup failure too.
 func classifyFailure(rawURL string, err error) (code int, reason string) {
-	if _, ok := stationDNSFailure(rawURL, err); ok {
-		return 0, "dns"
+	if kind, ok := stationDNSFailure(rawURL, err); ok {
+		return 0, dnsReason(kind)
 	}
 	var se *upstreamStatusError
 	if errors.As(err, &se) {
@@ -116,7 +117,7 @@ func classifyFailure(rawURL string, err error) (code int, reason string) {
 // desktop app can poll it and react (message + alternative-source fallback).
 func (s *Server) recordFailure(url string, err error) {
 	code, reason := classifyFailure(url, err)
-	if reason == "dns" {
+	if reason == reasonDNS || reason == reasonNoHost {
 		s.logDNSFailure(url, err)
 	}
 	s.errMu.Lock()
@@ -228,13 +229,13 @@ func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	// The passive internet verdict answers first: when the agent already has
 	// fresh evidence the internet is gone, no probe is needed.
 	//
-	// A lookup failure ("dns") gets the same check: it is only the station's
-	// own when the speaker reaches the internet otherwise. A name server that
-	// fails every lookup (SERVFAIL, timeouts) trips the verdict and reads as
-	// "offline", whose hint names the router's name resolution and
-	// ad-blockers; a single host an ad-blocker answers with NXDOMAIN or
-	// 0.0.0.0 never trips it and stays "dns".
-	if (f.reason == "unreachable" || f.reason == "dns") && (internetDown() || !s.boxHasOutbound()) {
+	// A lookup failure ("dns", "nohost") gets the same check: it is only the
+	// station's own when the speaker reaches the internet otherwise. A name
+	// server that fails every lookup (SERVFAIL, timeouts) trips the verdict
+	// and reads as "offline", whose hint names the router's name resolution
+	// and ad-blockers; a single host an ad-blocker answers with 0.0.0.0 never
+	// trips it and stays "dns", and a dead station host stays "nohost".
+	if (f.reason == "unreachable" || f.reason == reasonDNS || f.reason == reasonNoHost) && (internetDown() || !s.boxHasOutbound()) {
 		f.reason = "offline"
 	}
 	body, err := json.Marshal(struct {

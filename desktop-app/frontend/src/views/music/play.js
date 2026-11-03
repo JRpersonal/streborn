@@ -10,7 +10,7 @@ import { isNativeServicePreset } from '../../nativeservice.js';
 import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
-import { isRadioPreset, watchStationDns } from '../../stationdns.js';
+import { isRadioPreset, stationDnsKey, watchStationDns } from '../../stationdns.js';
 import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../utils.js';
 import { escalationForCount, noteNotReady, noteWakeSucceeded } from '../../wakeescalation.js';
 import { throttledSetVolume } from '../settings.js';
@@ -72,8 +72,8 @@ let presetPlayGen = 0;
 // watchPresetDns looks, for a few seconds after a radio key started, whether
 // the speaker could look up the station's address (stationdns.js). The press
 // itself succeeded the moment the speaker took the command, so without this a
-// station an ad-blocker or the router's name server blocks stayed silent and
-// the app said nothing. Only a failed lookup is said here; every other
+// station an ad-blocker or the router's name server blocks, or one whose
+// address no longer exists, stayed silent and the app said nothing. Only a failed lookup is said here; every other
 // station failure keeps its existing handling.
 function watchPresetDns(box, p, gen) {
   if (!box || !isRadioPreset(p)) return;
@@ -86,7 +86,7 @@ function watchPresetDns(box, p, gen) {
     url: p.stream_url,
     stillCurrent: () => gen === presetPlayGen && sameBoxIdentity(state.currentBox, startBox),
   }).then((fail) => {
-    if (fail && gen === presetPlayGen) showToast(t('search.streamDns'));
+    if (fail && gen === presetPlayGen) showToast(t(stationDnsKey(fail.reason)));
   }).catch(() => {});
 }
 

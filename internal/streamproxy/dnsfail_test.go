@@ -74,6 +74,24 @@ func TestClassifyFailureDNS(t *testing.T) {
 	if _, r := classifyFailure(station, fmt.Errorf("hls: playlist fetch failed: %w", dialErr(station, servfail))); r != "dns" {
 		t.Fatalf("HLS lookup failure: reason %q, want dns", r)
 	}
+	// A name that does not exist is most often a dead station host, so it
+	// gets its own reason instead of blaming the router or an ad-blocker.
+	nx := &net.DNSError{Err: "no such host", Name: "stream.example.org", IsNotFound: true}
+	if _, r := classifyFailure(station, dialErr(station, nx)); r != "nohost" {
+		t.Fatalf("NXDOMAIN: reason %q, want nohost", r)
+	}
+	if _, r := classifyFailure(station, errors.New("dial tcp: lookup stream.example.org on 192.0.2.1:53: no such host")); r != "nohost" {
+		t.Fatalf("NXDOMAIN text: reason %q, want nohost", r)
+	}
+	for name, err := range map[string]error{
+		"timeout":        &net.DNSError{Err: "i/o timeout", Name: "stream.example.org", IsTimeout: true},
+		"blocker answer": &netutil.BlockedTargetError{IP: net.IPv4zero},
+		"other":          &net.DNSError{Err: "no DNS servers", Name: "stream.example.org"},
+	} {
+		if _, r := classifyFailure(station, dialErr(station, err)); r != "dns" {
+			t.Fatalf("%s: reason %q, want dns", name, r)
+		}
+	}
 	if _, r := classifyFailure(station, dialErr(station, errors.New("connect: connection refused"))); r != "unreachable" {
 		t.Fatalf("refused: reason %q, want unreachable", r)
 	}
@@ -85,9 +103,10 @@ func TestClassifyFailureDNS(t *testing.T) {
 	}
 }
 
-// TestStreamStatusDNSWhenOnline: one station host an ad-blocker answers for
-// (NXDOMAIN, or 0.0.0.0) on a speaker that otherwise reaches the internet is
-// reported as "dns", not as an unreachable station and not as "offline".
+// TestStreamStatusDNSWhenOnline: on a speaker that otherwise reaches the
+// internet, a station host that does not exist (NXDOMAIN) is reported as
+// "nohost" and one an ad-blocker answers with 0.0.0.0 as "dns", neither as an
+// unreachable station nor as "offline".
 func TestStreamStatusDNSWhenOnline(t *testing.T) {
 	_ = withTracker(t)
 	var logBuf bytes.Buffer
@@ -99,8 +118,8 @@ func TestStreamStatusDNSWhenOnline(t *testing.T) {
 	const station = "http://stream.example.org/live"
 	s.recordFailure(station, dialErr(station, &net.DNSError{Err: "no such host", Name: "stream.example.org", IsNotFound: true}))
 	got := streamStatus(t, s)
-	if !got.Error || got.Reason != "dns" || got.URL != station {
-		t.Fatalf("NXDOMAIN: got %+v, want dns for %s", got, station)
+	if !got.Error || got.Reason != "nohost" || got.URL != station {
+		t.Fatalf("NXDOMAIN: got %+v, want nohost for %s", got, station)
 	}
 	if !strings.Contains(logBuf.String(), "could not look up the station's address") ||
 		!strings.Contains(logBuf.String(), "kind=not-found") {
@@ -119,6 +138,10 @@ func TestStreamStatusDNSWhenOnline(t *testing.T) {
 	s.netMu.Unlock()
 	if got := streamStatus(t, s); got.Reason != "offline" {
 		t.Fatalf("probe down: got %+v, want offline", got)
+	}
+	s.recordFailure(station, dialErr(station, &net.DNSError{Err: "no such host", Name: "stream.example.org", IsNotFound: true}))
+	if got := streamStatus(t, s); got.Reason != "offline" {
+		t.Fatalf("probe down, NXDOMAIN: got %+v, want offline", got)
 	}
 }
 

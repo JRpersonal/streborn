@@ -10,6 +10,13 @@
 // either, because every other host resolves fine, so nothing named the real
 // place to look: the router's name resolution or the ad-blocker.
 //
+// A name that does not exist (NXDOMAIN) is kept apart: far more often than a
+// blocker, it is a station whose domain expired (radio-browser carries many),
+// and internet.Classify reads it the same way. Pi-hole and AdGuard Home
+// answer a blocked host with 0.0.0.0 by default, which is dnsBlockerAnswer.
+// So NXDOMAIN reaches the app as "nohost", whose text names the dead station
+// first and the ad-blocker only second.
+//
 // This only classifies. It adds no resolver of its own and no retry: whether
 // the agent should fall back to a public resolver is an open decision.
 
@@ -24,13 +31,21 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
-// The kinds of a station-host lookup failure, for the log. The app gets one
-// reason ("dns") for all of them; the kind tells a diagnostic reader which of
-// the field cases it is.
+// The stream-status reasons of a lookup failure (dnsReason).
+const (
+	// reasonDNS: the lookup failed or a blocker answered for the host.
+	reasonDNS = "dns"
+	// reasonNoHost: the station's host name does not exist (NXDOMAIN).
+	reasonNoHost = "nohost"
+)
+
+// The kinds of a station-host lookup failure, for the log. The app gets the
+// coarser reason (dnsReason); the kind tells a diagnostic reader which of the
+// field cases it is.
 const (
 	// dnsNotFound: the name server says the name does not exist (NXDOMAIN).
-	// Either the station's host is gone, or an ad-blocker in NXDOMAIN mode
-	// answers for it.
+	// Usually the station's host is gone; rarely an ad-blocker in NXDOMAIN
+	// mode answers for it.
 	dnsNotFound = "not-found"
 	// dnsServerFailure: the name server answered with an error (SERVFAIL,
 	// REFUSED: Go's "server misbehaving").
@@ -86,6 +101,16 @@ func stationDNSFailure(rawURL string, err error) (kind string, ok bool) {
 		return dnsTimeout, true
 	}
 	return "", false
+}
+
+// dnsReason maps a lookup failure kind to the stream-status reason: a name
+// that does not exist is "nohost" (most often a dead station), every other
+// kind is "dns" (the router's name server or an ad-blocker).
+func dnsReason(kind string) string {
+	if kind == dnsNotFound {
+		return reasonNoHost
+	}
+	return reasonDNS
 }
 
 // logDNSFailure writes one WARN line naming the lookup failure and its kind,
