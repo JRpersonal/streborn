@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   ACTIONS, ACTION_SELECTOR, CONFIRM_LATE_MS, DONE_SHOWN_MS, actionOf, expectationMet, focusKeyOf,
-  liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase,
+  liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase, restoreScroll, scrollPositionsOf,
 } from './groupsmodel.js';
 
 // A stand-in for an element: id, classes and attributes, nothing else.
@@ -200,5 +200,37 @@ describe('Speakers > Groups wiring', () => {
   it('runs only in the preview and falls back to the classic markup on a fault', () => {
     expect(src).toContain("const isOn = (root) => !!(state.ui2Shell && root && root.dataset.ui2Route === 'groups');");
     expect(src).toMatch(/catch \(e\) \{[\s\S]*?setMultiroomRenderHooks\(null\);\s*renderMultiroom\(false\);/);
+  });
+});
+
+describe('the page keeps its place across the live repaints', () => {
+  // The scroll container and the window, as plain objects: a repaint that
+  // replaces the page let the engine drop them to 0 (Linux, v1.4.0).
+  const chain = () => {
+    const doc = { scrollTop: 0, parentElement: null };
+    const main = { scrollTop: 640, parentElement: doc };
+    const view = { scrollTop: 0, parentElement: main };
+    return { doc, main, view };
+  };
+
+  it('puts a scrolled container back where the reader left it', () => {
+    const { main, view } = chain();
+    const saved = scrollPositionsOf(view);
+    main.scrollTop = 0; // what the repaint did
+    restoreScroll(saved);
+    expect(main.scrollTop).toBe(640);
+  });
+
+  it('leaves alone what was not scrolled', () => {
+    const { doc, view } = chain();
+    const saved = scrollPositionsOf(view);
+    doc.scrollTop = 25;
+    restoreScroll(saved);
+    expect(doc.scrollTop).toBe(25);
+  });
+
+  it('copes with no element and no record', () => {
+    expect(scrollPositionsOf(null)).toEqual([]);
+    expect(() => restoreScroll(null)).not.toThrow();
   });
 });
