@@ -1966,6 +1966,7 @@
   "speaker.holdRefusedBanner": "{{name}}：按鍵 {{slot}} 的長按設定無法儲存，該鍵仍保留先前的內容。用這種方式 STR 只能儲存電台。要把 Spotify 播放清單或專輯放到按鍵上，請在播放時於 App 中長按該鍵。",
   "speaker.holdRefusedBannerGeneric": "{{name}}：按鍵 {{slot}} 的長按設定無法儲存，該鍵仍保留先前的內容。",
   "speaker.staleFolderKeyBanner": "{{name}}：按鍵 {{slot}} 找不到它的音樂了。媒體伺服器的檔案位址已變更（例如更換 USB 隨身碟後）。請將資料夾再次儲存到這個按鍵。",
+  "speaker.weakWifiDropoutBanner": "{{name}}：這個喇叭的 Wi-Fi 訊號很弱時，播放最近中斷過。訊號弱可能會造成斷斷續續。把喇叭移近路由器或訊號延伸器（或反過來），通常就會改善。",
   "speaker.badNameBanner": "{{name}}：喇叭名稱含有韌體無法處理的字元，因此 Spotify 和音樂資料庫無法在這台喇叭上播放。",
   "speaker.badNameHint": "將喇叭重新命名並重新啟動即可解決。這個按鈕會同時完成兩件事。",
   "speaker.badNameFixBtn": "修正名稱並重新啟動",

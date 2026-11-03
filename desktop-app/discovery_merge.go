@@ -270,6 +270,10 @@ var boxFieldPolicy = []fieldPolicy{
 	{"ForeignCloudURL", keepBase, verifiedReading},
 	{"GroupKeyError", keepBase, verifiedReading},
 	{"GroupKeyErrorKind", keepBase, follows("GroupKeyError")},
+	// The weak-signal dropout marker is a recent-event reading like the key
+	// refusals: only a live probe carries it, the cache never fills it.
+	{"WeakWifiDropout", keepBase, verifiedReading},
+	{"WeakWifiDropoutAgeSec", keepBase, follows("WeakWifiDropout")},
 	{"HoldRefusedSource", keepBase, verifiedReading},
 	{"HoldRefusedSlot", keepBase, follows("HoldRefusedSource")},
 	{"StaleFolderKeySlot", keepBase, verifiedReading},
@@ -378,6 +382,8 @@ func degradeToSTRNotRunning(b BoxInfo) BoxInfo {
 	b.Storm1036SinceSec = 0
 	b.RecallRefusal = false
 	b.RecallRefusalSinceSec = 0
+	b.WeakWifiDropout = ""
+	b.WeakWifiDropoutAgeSec = 0
 	b.STRSilent = false
 	b.STRNotRunning = true
 	return b

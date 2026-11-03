@@ -1966,6 +1966,7 @@
   "speaker.holdRefusedBanner": "{{name}}: een lange druk op toets {{slot}} kon niet worden opgeslagen, de toets behoudt dus wat er eerder op stond. Op deze manier kan STR alleen een radiozender bewaren. Een Spotify-playlist of -album zet je op een toets door de toets in de app ingedrukt te houden terwijl het speelt.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: een lange druk op toets {{slot}} kon niet worden opgeslagen, de toets behoudt dus wat er eerder op stond.",
   "speaker.staleFolderKeyBanner": "{{name}}: toets {{slot}} vindt zijn muziek niet meer. De mediaserver heeft nieuwe bestandsadressen (bijvoorbeeld na het wisselen van de USB-stick). Sla de map opnieuw op deze toets op.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: het afspelen viel onlangs weg terwijl het wifi-signaal bij deze speaker zwak was. Een zwak signaal kan haperingen veroorzaken. De speaker dichter bij de router of repeater zetten (of andersom) helpt meestal.",
   "speaker.badNameBanner": "{{name}}: de naam van de speaker bevat een teken waar de firmware niet mee overweg kan, daardoor kunnen Spotify en de muziekbibliotheek er niet op spelen.",
   "speaker.badNameHint": "De speaker hernoemen en opnieuw opstarten lost dit op. De knop doet allebei.",
   "speaker.badNameFixBtn": "Naam herstellen en opnieuw opstarten",

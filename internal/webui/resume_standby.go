@@ -1819,6 +1819,9 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 // a live Ogg. Which detaches are worth reporting is decided in the Spotify
 // manager, not here.
 func (s *Server) HandleSpotifyStreamDetach(attachedMs int64) {
+	// A dropout either way, whether or not a resume follows: worth a look at
+	// the signal (weakwifidropout.go).
+	s.NotePlaybackDropout("spotify")
 	if !s.play.tryClaimRePush() {
 		return
 	}

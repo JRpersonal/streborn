@@ -173,6 +173,8 @@ export namespace main {
 	    foreignCloudURL?: string;
 	    groupKeyError?: string;
 	    groupKeyErrorKind?: string;
+	    weakWifiDropout?: string;
+	    weakWifiDropoutAgeSec?: number;
 	    holdRefusedSource?: string;
 	    holdRefusedSlot?: string;
 	    staleFolderKeySlot?: string;
@@ -219,6 +221,8 @@ export namespace main {
 	        this.foreignCloudURL = source["foreignCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];
 	        this.groupKeyErrorKind = source["groupKeyErrorKind"];
+	        this.weakWifiDropout = source["weakWifiDropout"];
+	        this.weakWifiDropoutAgeSec = source["weakWifiDropoutAgeSec"];
 	        this.holdRefusedSource = source["holdRefusedSource"];
 	        this.holdRefusedSlot = source["holdRefusedSlot"];
 	        this.staleFolderKeySlot = source["staleFolderKeySlot"];

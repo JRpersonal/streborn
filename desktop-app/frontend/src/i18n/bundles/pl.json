@@ -1966,6 +1966,7 @@
   "speaker.holdRefusedBanner": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc na przycisku zostało to, co było wcześniej. W ten sposób STR może zapisać tylko stację radiową. Aby umieścić playlistę lub album Spotify na przycisku, przytrzymaj przycisk w aplikacji podczas odtwarzania.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: długiego naciśnięcia przycisku {{slot}} nie udało się zapisać, więc na przycisku zostało to, co było wcześniej.",
   "speaker.staleFolderKeyBanner": "{{name}}: przycisk {{slot}} nie może już znaleźć swojej muzyki. Serwer multimediów ma nowe adresy plików (na przykład po wymianie pendrive'a). Zapisz folder na tym przycisku jeszcze raz.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: odtwarzanie niedawno się przerwało, gdy sygnał Wi-Fi przy tym głośniku był słaby. Słaby sygnał może powodować przerwy. Zwykle pomaga przysunięcie głośnika bliżej routera lub wzmacniacza sygnału (lub odwrotnie).",
   "speaker.badNameBanner": "{{name}}: nazwa głośnika zawiera znak, którego jego oprogramowanie nie obsługuje, dlatego Spotify i biblioteka muzyczna nie mogą na nim grać.",
   "speaker.badNameHint": "Zmiana nazwy głośnika i jego ponowne uruchomienie rozwiązuje problem. Przycisk robi jedno i drugie.",
   "speaker.badNameFixBtn": "Popraw nazwę i uruchom ponownie",

@@ -181,6 +181,11 @@ func strBoxFromVersion(ctx context.Context, ip string, port int, body []byte) Bo
 			n, _ := strconv.Atoi(jsonStringField(s, "presetRefusalSinceSec"))
 			return n
 		}(),
+		WeakWifiDropout: jsonStringField(s, "weakWifiDropout"),
+		WeakWifiDropoutAgeSec: func() int {
+			n, _ := strconv.Atoi(jsonStringField(s, "weakWifiDropoutAgeSec"))
+			return n
+		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
 		LANAddrs:         jsonStringField(s, "lanAddrs"),
 		WiredAddrs:       jsonStringField(s, "wiredAddrs"),

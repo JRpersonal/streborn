@@ -1966,6 +1966,7 @@
   "speaker.holdRefusedBanner": "{{name}}: a long press on key {{slot}} could not be kept, so the key still holds what it held before. STR can only keep a radio station this way. To put a Spotify playlist or album on a key, hold the key in the app while it is playing.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: a long press on key {{slot}} could not be kept, so the key still holds what it held before.",
   "speaker.staleFolderKeyBanner": "{{name}}: key {{slot}} can't find its music any more. The media server has new file addresses (for example after a USB stick swap). Save the folder on this key again.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: playback recently dropped out while the Wi-Fi signal at this speaker was weak. A weak signal can cause dropouts. Moving the speaker closer to the router or repeater (or the other way round) usually helps.",
   "speaker.badNameBanner": "{{name}}: the speaker's name contains a character its firmware cannot handle, so Spotify and the music library cannot play on it.",
   "speaker.badNameHint": "Renaming the speaker and restarting it fixes this. The button does both.",
   "speaker.badNameFixBtn": "Fix the name and restart",

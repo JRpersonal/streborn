@@ -204,6 +204,14 @@ type BoxInfo struct {
 	// explains the refusal in the user's language and keeps the raw reason
 	// for the details. Empty from an agent that predates it.
 	GroupKeyErrorKind string `json:"groupKeyErrorKind,omitempty"`
+	// WeakWifiDropout is the Wi-Fi signal class (MARGINAL_SIGNAL or
+	// POOR_SIGNAL) the agent read when playback last dropped out on this
+	// speaker, reported for an hour after that dropout and empty otherwise.
+	// The UI says the signal at this speaker is weak, which can cause
+	// dropouts, and that moving the speaker or the router closer usually
+	// helps. WeakWifiDropoutAgeSec is how long ago the last such dropout was.
+	WeakWifiDropout       string `json:"weakWifiDropout,omitempty"`
+	WeakWifiDropoutAgeSec int    `json:"weakWifiDropoutAgeSec,omitempty"`
 	// HoldRefusedSource is what the speaker was playing when a long press on a
 	// key could not be kept, empty when there was none. Typically SPOTIFY: STR
 	// has no preset form for it, so the firmware keeps the old station and the
