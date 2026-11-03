@@ -97,7 +97,8 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 		a.logger.Info("failure report: gathered network facts", "host", host, "phase", phase,
 			"pingRan", r.Facts.PingRan, "pingAlive", r.Facts.PingAlive,
 			"arp", r.Facts.MACPrefix != "", "subnetKnown", r.Facts.SubnetKnown,
-			"sameSubnet", r.Facts.SameSubnet)
+			"sameSubnet", r.Facts.SameSubnet, "vpn", r.Facts.VPN != nil,
+			"speakerSrc", r.Facts.Routes.SpeakerSrc, "defaultSrc", r.Facts.Routes.DefaultSrc)
 	}
 
 	// Skip the speaker's own report when the dials have already proven both
@@ -174,6 +175,8 @@ func adviceParagraphs() []string {
 		alreadyInstalledNoStickAdvice,
 		firmwareFirstAdvice,
 		repairBoxRestartedAdvice,
+		vpnAdvice,
+		macLocalNetworkAdvice,
 	}
 }
 
@@ -310,6 +313,7 @@ func formatFailureReport(r failureReport) string {
 	advice = applyIsolationDiagnosis(advice, r)
 	advice = applyOffNetworkDiagnosis(advice, r)
 	advice = applyOtherNetworkDiagnosis(advice, r)
+	advice = applyPCSideDiagnosis(advice, r)
 	advice = applyRepeatedAttempts(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
@@ -599,7 +603,7 @@ func writeNetworkFacts(b *strings.Builder, f installFacts) {
 }
 
 func writeThisPC(b *strings.Builder, f installFacts) {
-	if len(f.Ifaces) == 0 && f.Firewall == "" {
+	if len(f.Ifaces) == 0 && f.Firewall == "" && f.Routes.SpeakerSrc == "" && f.VPN == nil {
 		return
 	}
 	section(b, "this PC")
@@ -614,6 +618,7 @@ func writeThisPC(b *strings.Builder, f installFacts) {
 		}
 		fmt.Fprintf(b, "%-*s %-20s %s\n", factCol, in.Name, addr, state)
 	}
+	writeRouteFacts(b, f)
 	if f.Firewall != "" {
 		b.WriteString(f.Firewall + "\n")
 	}

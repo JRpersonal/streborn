@@ -295,7 +295,7 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 	if stranger != nil {
 		return stranger, nil
 	}
-	return nil, reachabilityHint(allPortsError(failed))
+	return nil, a.reachabilityHintFor(host, allPortsError(failed))
 }
 
 // idempotentMethod reports whether repeating a request on another port is
