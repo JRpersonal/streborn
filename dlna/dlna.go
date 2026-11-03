@@ -910,7 +910,7 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 		Logger.Warn("dlna: browse answered non-200", "status", status,
 			"location", srv.Location, "controlURL", srv.CDSControlURL,
 			"deviceType", srv.CDSDeviceType, "body", bodySnippet(raw))
-		return BrowseResult{}, fmt.Errorf("browse failed: %s", soapFaultMessage(raw, status))
+		return BrowseResult{}, browseFault("browse failed", raw, status)
 	}
 	return parseBrowseResponse(raw)
 }

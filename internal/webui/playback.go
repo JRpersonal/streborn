@@ -481,8 +481,8 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// The tracks carry the music server's address, so a server that moved
 		// takes every folder key with it (#977). Put the key on the address the
 		// server answers at now before the queue is built from it.
-		if off := s.healQueuePresetIfMoved(playCtx, slot, &p); off != nil {
-			return playResult{}, s.libraryServerOfflineRefusal(slot, p.Name, off)
+		if dead := s.healQueuePresetIfMoved(playCtx, slot, &p); dead != nil {
+			return playResult{}, s.libraryKeyRefusal(slot, p.Name, dead)
 		}
 		items := presetItemsToQueue(p.Items)
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
@@ -511,8 +511,10 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// instead of handing the speaker a file nobody serves (#1339). That is
 	// decided here, before the queue below is stopped and Spotify is told the
 	// speaker switched away, so a refused press leaves what plays untouched.
-	if off := s.healLibraryKeyIfMoved(playCtx, slot, &p); off != nil {
-		return playResult{}, s.libraryServerOfflineRefusal(slot, p.Name, off)
+	// The same for a server that answers but no longer has the track (#919):
+	// the speaker would only answer the file with AUDIO_ERROR_BAD_URL.
+	if dead := s.healLibraryKeyIfMoved(playCtx, slot, &p); dead != nil {
+		return playResult{}, s.libraryKeyRefusal(slot, p.Name, dead)
 	}
 	// Every non-queue recall replaces an active library queue. Without this the
 	// queue watcher kept evaluating the OLD track's timing and, when its

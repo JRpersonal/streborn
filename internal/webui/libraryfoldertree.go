@@ -62,6 +62,17 @@ type folderTree struct {
 	// subfolders is set when the songs come from the sub-folders, because the
 	// folder itself holds none.
 	subfolders bool
+	// partial is set when a folder of the walk was read only in part or not
+	// at all: a later page failed, the per-folder cap was reached, or a
+	// sub-folder could not be read and was skipped.
+	partial bool
+}
+
+// complete reports whether the walk read every folder to the end: nothing
+// was cut, left out for depth, or skipped. Only then does a song missing
+// from it say the folder no longer holds that song.
+func (t folderTree) complete() bool {
+	return !t.cut && !t.cutDepth && !t.partial
 }
 
 // collectFolderTracks returns the songs a folder plays as a whole: its own,
@@ -73,7 +84,7 @@ func (s *Server) collectFolderTracks(ctx context.Context, srv dlna.Server, conta
 	if err != nil {
 		return folderTree{}, err
 	}
-	t := folderTree{folders: 1}
+	t := folderTree{folders: 1, partial: !whole}
 	if len(items) > 0 {
 		// Only the whole folder is put in track order: a cut-short list ordered
 		// on its own would not be the album's order either.
@@ -120,10 +131,13 @@ func (s *Server) walkSubfolders(ctx context.Context, srv dlna.Server, subs []dln
 			// One unreadable album does not cost the others.
 			s.logger.Info("library folder: a sub-folder could not be read, skipping it",
 				"server", srv.FriendlyName, "folder", c.ID, "err", err)
+			t.partial = true
 			continue
 		}
 		if whole {
 			items = dlna.OrderContainerItems(ctx, srv, c.ID, items)
+		} else {
+			t.partial = true
 		}
 		if az {
 			items = sortLibraryTracks(items, c.Class)

@@ -237,7 +237,7 @@ func TestPhoneRemoteNamesAMusicServerThatIsOff(t *testing.T) {
 
 func TestLibraryServerOfflineRefusalWithoutAName(t *testing.T) {
 	s := libHealServer(t)
-	ref := s.libraryServerOfflineRefusal(1, "Album", &libraryServerOffline{})
+	ref := s.libraryServerOfflineRefusal(1, "Album", &libraryKeyUnplayable{})
 	if ref.Code != libraryServerOfflineCode || ref.Error != "The music server is not answering. Switch it on and try again." {
 		t.Fatalf("refusal = %+v", ref)
 	}

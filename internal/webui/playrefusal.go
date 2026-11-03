@@ -84,7 +84,7 @@ const libraryServerOfflineCode = "library-server-offline"
 // The body carries the browse offline reply's "offline" and "server" fields,
 // so a server that is off reads the same in every answer, plus the code and an
 // English sentence for a client that knows neither.
-func (s *Server) libraryServerOfflineRefusal(slot int, name string, off *libraryServerOffline) *playRefusal {
+func (s *Server) libraryServerOfflineRefusal(slot int, name string, off *libraryKeyUnplayable) *playRefusal {
 	msg := "The music server is not answering. Switch it on and try again."
 	if off.Server != "" {
 		msg = "The music server " + off.Server + " is not answering. Switch it on and try again."
@@ -96,4 +96,60 @@ func (s *Server) libraryServerOfflineRefusal(slot int, name string, off *library
 		"offline": true, "server": off.Server,
 		"slot": slot, "name": name,
 	})
+}
+
+// libraryKeyRefusal is the answer to an app or phone press on a library key
+// that cannot play: the server-off refusal, or the file-gone one.
+func (s *Server) libraryKeyRefusal(slot int, name string, v *libraryKeyUnplayable) *playRefusal {
+	if v.FileGone {
+		return s.libraryFileGoneRefusal(slot, name, v)
+	}
+	return s.libraryServerOfflineRefusal(slot, name, v)
+}
+
+// libraryFileGoneCode is the code of a library key refused because its music
+// server answers but no longer has the key's music (#919, #733, #726): its
+// library was re-indexed, or the folder or drive with the music is not there
+// any more. Passed through raw by the desktop app (friendlyError) and read by
+// the phone page, both for the server's name, like libraryServerOfflineCode.
+const libraryFileGoneCode = "library-file-gone"
+
+// libraryFileGoneRefusal is the answer to an app or phone press on a library
+// key whose music server answers but could not find the key's music again:
+// the speaker is not handed a file it can only answer with AUDIO_ERROR_BAD_URL.
+// The body names the server ("server") and says "gone", plus the code and an
+// English sentence for a client that knows neither. There is no "offline"
+// field: the server is on, and a client must not say it is not answering.
+func (s *Server) libraryFileGoneRefusal(slot int, name string, gone *libraryKeyUnplayable) *playRefusal {
+	server := "The music server"
+	if gone.Server != "" {
+		server = "The music server " + gone.Server
+	}
+	msg := server + " answers, but no longer has the music on this key. " +
+		"Usually its library was re-indexed, or the folder or drive with the music is not available. " +
+		"Check the server's library (Windows Media Player: Manage libraries > Music), then put the music on the key again."
+	s.logger.Warn("preset slot recall (app): the key's music server answers but no longer has its music, the speaker is not handed it",
+		"slot", slot, "name", name, "server", gone.Server)
+	return jsonRefusal(http.StatusBadGateway, map[string]any{
+		"error": msg, "code": libraryFileGoneCode,
+		"gone": true, "server": gone.Server,
+		"slot": slot, "name": name,
+	})
+}
+
+// logHardwareLibraryVerdict is the line a hardware key press leaves when its
+// library key cannot play. A hardware press has no screen to say so, so the
+// press goes ahead as it always did; the log is what a support bundle reads.
+func (s *Server) logHardwareLibraryVerdict(slot int, name string, v *libraryKeyUnplayable) {
+	if v == nil {
+		return
+	}
+	if v.FileGone {
+		s.logger.Warn("preset slot recall (hardware): the key's music server answers but no longer has its music; "+
+			"the press goes ahead, the speaker will probably not play it. Check the server's library, then put the music on the key again",
+			"slot", slot, "name", name, "server", v.Server)
+		return
+	}
+	s.logger.Warn("preset slot recall (hardware): the key's music server is not answering; the press goes ahead, the speaker will probably not play it",
+		"slot", slot, "name", name, "server", v.Server)
 }

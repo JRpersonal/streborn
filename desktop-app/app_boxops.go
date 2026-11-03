@@ -205,6 +205,11 @@ func friendlyError(resp *http.Response) string {
 		if c, _ := m["code"].(string); c == "library-server-offline" {
 			return string(b)
 		}
+		// And for one whose music server answers but no longer has the
+		// key's music (#919, {"code":"library-file-gone","server":...}).
+		if c, _ := m["code"].(string); c == "library-file-gone" {
+			return string(b)
+		}
 		msg := ""
 		if d, ok := m["detail"].(string); ok && d != "" {
 			msg = d
