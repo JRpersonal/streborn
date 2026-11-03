@@ -310,6 +310,11 @@ type Server struct {
 	// stream, the definitive "Spotify is playing" signal for verifyRecall.
 	// nil when Spotify is not configured.
 	spotifyStreaming func() bool
+	// spotifyHoldsContext reports whether the engine already has this
+	// playlist loaded with a track in it. The recall verify skips its
+	// last-resort re-Play then and keeps the song. Nil means unknown: the
+	// re-Play runs as before.
+	spotifyHoldsContext func(ctx context.Context, uri string) bool
 	// spotifySkip advances go-librespot to the next/previous track for the phone
 	// remote's Previous/Next controls (forward = next), the same skip the hardware
 	// remote keys perform during Spotify playback (the box cannot skip a UPnP

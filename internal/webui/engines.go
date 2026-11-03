@@ -136,6 +136,14 @@ type SpotifyRemoteKeys interface {
 	CycleRepeat(ctx context.Context) (mode string, err error)
 }
 
+// SpotifyRecallRecovery lets the recall verify keep a song the engine already
+// loaded. Without it the last retry re-Plays the playlist as before.
+type SpotifyRecallRecovery interface {
+	// HoldsContext (spotifyHoldsContext): the engine has this playlist
+	// loaded with a track in it right now.
+	HoldsContext(ctx context.Context, uri string) bool
+}
+
 // WithSpotify wires the whole Spotify control plane from one engine value.
 // The base interface fills the fields every Spotify-capable speaker has; the
 // optional sub-interfaces above fill theirs only when implemented (see the
@@ -177,6 +185,9 @@ func WithSpotify(e SpotifyEngine) Option {
 			s.spotifyRemotePrev = k.RemotePrev
 			s.spotifyToggleShuffle = k.ToggleShuffle
 			s.spotifyCycleRepeat = k.CycleRepeat
+		}
+		if r, ok := e.(SpotifyRecallRecovery); ok {
+			s.spotifyHoldsContext = r.HoldsContext
 		}
 		if l, ok := e.(SpotifyEngineLifecycle); ok {
 			s.spotifyReload = l.Reload

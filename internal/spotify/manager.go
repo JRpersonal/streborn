@@ -450,6 +450,10 @@ type Manager struct {
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
 	// plays the new playlist promptly instead of finishing the old buffer.
 	lastContext string
+	// engineContext is the context go-librespot itself last announced via
+	// will_play. Unlike lastContext, a recall never writes it, so it says what
+	// the engine really loaded, not what STR asked for (HoldsContext).
+	engineContext string
 	// loadedTrackDurMs / streamTrackDurMs feed the app-skip detector. The
 	// engine logs "loaded track" for the track it is about to start, always
 	// before that track's BOS, so the newest load names the track the NEXT
