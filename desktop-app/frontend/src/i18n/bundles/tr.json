@@ -1967,6 +1967,7 @@
   "speaker.holdRefusedBanner": "{{name}}: {{slot}} numaralı tuşa yapılan uzun basış kaydedilemedi, tuş önceki içeriğini koruyor. Bu yolla STR yalnızca bir radyo istasyonu kaydedebilir. Bir Spotify listesini veya albümünü tuşa koymak için, o çalarken uygulamadaki tuşu basılı tut.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: {{slot}} numaralı tuşa yapılan uzun basış kaydedilemedi, tuş önceki içeriğini koruyor.",
   "speaker.staleFolderKeyBanner": "{{name}}: {{slot}} numaralı tuş müziğini artık bulamıyor. Medya sunucusundaki dosya adresleri değişti (örneğin USB bellek değiştirildikten sonra). Klasörü bu tuşa yeniden kaydedin.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: Bu hoparlördeki Wi-Fi sinyali zayıfken çalma kısa süre önce kesildi. Zayıf sinyal kesintilere yol açabilir. Hoparlörü yönlendiriciye veya sinyal güçlendiriciye (ya da tam tersi) yaklaştırmak genellikle işe yarar.",
   "speaker.badNameBanner": "{{name}}: hoparlörün adı, yazılımının işleyemediği bir karakter içeriyor; bu yüzden Spotify ve müzik kitaplığı bu hoparlörde çalamıyor.",
   "speaker.badNameHint": "Hoparlörü yeniden adlandırıp yeniden başlatmak bunu düzeltir. Düğme ikisini de yapar.",
   "speaker.badNameFixBtn": "Adı düzelt ve yeniden başlat",

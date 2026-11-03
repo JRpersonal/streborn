@@ -231,6 +231,16 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
+	// Playback dropped out while the speaker's Wi-Fi signal was weak
+	// (weakwifidropout.go). The app tells the owner, on that speaker, that the
+	// signal is weak and that moving the speaker or the router closer usually
+	// helps. Emitted only for an hour after the last such dropout, so the
+	// common response stays small.
+	if sig, src, age, ok := s.WeakWifiDropout(); ok {
+		out["weakWifiDropout"] = sig
+		out["weakWifiDropoutSource"] = src
+		out["weakWifiDropoutAgeSec"] = strconv.FormatInt(int64(age.Seconds()), 10)
+	}
 	// Ongoing 1036 storm: the box is refusing essentially every recall, so
 	// nothing the user presses will play until the state is cleared. Emitted
 	// only while it lasts, and carrying the age so the app can say how long it

@@ -1967,6 +1967,7 @@
   "speaker.holdRefusedBanner": "{{name}}: pogas {{slot}} ilgo nospiešanu neizdevās saglabāt, tāpēc pogā joprojām ir iepriekšējais saturs. Šādi STR var saglabāt tikai radiostaciju. Lai ieliktu Spotify sarakstu vai albumu pogā, turi pogu lietotnē, kamēr tas skan.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: pogas {{slot}} ilgo nospiešanu neizdevās saglabāt, tāpēc pogā joprojām ir iepriekšējais saturs.",
   "speaker.staleFolderKeyBanner": "{{name}}: poga {{slot}} vairs neatrod savu mūziku. Multivides serverim ir jaunas failu adreses (piemēram, pēc USB zibatmiņas nomaiņas). Saglabājiet mapi šajā pogā vēlreiz.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: atskaņošana nesen pārtrūka, kamēr šī skaļruņa Wi-Fi signāls bija vājš. Vājš signāls var izraisīt pārtraukumus. Parasti palīdz novietot skaļruni tuvāk maršrutētājam vai atkārtotājam (vai otrādi).",
   "speaker.badNameBanner": "{{name}}: skaļruņa nosaukumā ir rakstzīme, ar ko tā programmaparatūra netiek galā, tāpēc Spotify un mūzikas bibliotēka tajā nevar atskaņot.",
   "speaker.badNameHint": "Skaļruņa pārdēvēšana un restartēšana to novērš. Poga izdara abus.",
   "speaker.badNameFixBtn": "Labot nosaukumu un restartēt",

@@ -13,6 +13,7 @@ import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from '.
 import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import { runConflictCleanup } from './conflictcleanup.js';
 import { boxCannotReachInternet, noInternetBoxes, noInternetText } from './nointernet.js';
+import { weakWifiDropoutBoxes } from './weakwifi.js';
 import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
@@ -2548,6 +2549,13 @@ function checkBoxIssueBanner() {
   // passive verdict, nointernet.js). Not dismissible: every station fails on
   // it, and the fix is on the router, which only a sentence can point at.
   const noNet = noInternetBoxes(boxes);
+  // Playback dropped out recently while the Wi-Fi signal at the speaker was
+  // weak (weakwifi.js). Informational, so dismissible per speaker; the
+  // dismissal holds for a day, because on a speaker with poor reception the
+  // next dropout is never far away.
+  const weakWifi = weakWifiDropoutBoxes(boxes, (b) => {
+    try { return localStorage.getItem(warnDismissKey(b, 'weakwifi')); } catch { return 0; }
+  });
   const msgs = [];
   if (noNet.length) {
     const names = noNet.map(b => getBoxLabel(b)).join(', ');
@@ -2594,12 +2602,16 @@ function checkBoxIssueBanner() {
       name: names, slot: staleKey[0].staleFolderKeySlot,
     })));
   }
+  if (weakWifi.length) {
+    const names = weakWifi.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.weakWifiDropoutBanner', { name: names })));
+  }
   // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
   // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
   // music library cannot play while radio still does, and nothing else on
   // screen says why. Not dismissible; the fix is one tap.
   const badName = unsafeNameBoxes(boxes);
-  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, badName });
+  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, weakWifi, badName });
   if (badName.length) {
     const names = badName.map(b => getBoxLabel(b)).join(', ');
     msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
@@ -2644,7 +2656,7 @@ function checkBoxIssueBanner() {
     ${stormBtn}
     ${conflictBtn}
     ${wifiBtn}
-    ${(conflict.length || noWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
+    ${(conflict.length || noWifi.length || weakWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
   const sb = $('boxIssueStormBtn');
   if (sb) sb.onclick = async () => {
     const box = storm[0];
@@ -2705,6 +2717,7 @@ function checkBoxIssueBanner() {
     const stamp = String(Date.now());
     conflict.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'conflict'), stamp); } catch {} });
     noWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'nowifi'), stamp); } catch {} });
+    weakWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'weakwifi'), stamp); } catch {} });
     el.classList.add('hidden');
   };
   el.classList.remove('hidden');

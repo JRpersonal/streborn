@@ -5,8 +5,8 @@
 // #boxWedgeBanner (a speaker that accepts playback and never plays; unplug it
 // once) and #boxIssueBanner (no internet, leftovers of another tool, a
 // foreign cloud address, no saved Wi-Fi, a refusal storm, a refused key
-// press, a long press STR could not keep, a stale folder key, a name the
-// firmware cannot survive). In the preview those banners are hidden
+// press, a long press STR could not keep, a stale folder key, a dropout on a
+// weak Wi-Fi signal, a name the firmware cannot survive). In the preview those banners are hidden
 // (banners.css) and the same words and the same buttons stand where the
 // speaker is: as a note on its card in Speakers > list (list.js), as a card at
 // the top of its Overview (speaker.js), and as a chip on its sidebar row (the
@@ -31,7 +31,7 @@ import { groupKeyErrorBanners } from '../groupkeys.js';
 // banner sits above the issue banner).
 export const ATTENTION_KINDS = Object.freeze([
   'wedged', 'noNet', 'conflict', 'foreignCloud', 'noWifi', 'storm',
-  'keyErr', 'holdErr', 'staleKey', 'badName',
+  'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName',
 ]);
 
 // The kinds that stop the speaker from playing at all: the chip says so in
@@ -65,6 +65,7 @@ export function speakerIssuesFrom(parts = {}, label = (b) => (b && (b.friendlyNa
     add(b, { kind: 'holdErr', key: holdRefusedBannerKey(b.holdRefusedSource), slot: b.holdRefusedSlot || '?' });
   }
   for (const b of parts.staleKey || []) add(b, { kind: 'staleKey', slot: b.staleFolderKeySlot || '' });
+  for (const b of parts.weakWifi || []) add(b, { kind: 'weakWifi' });
   for (const b of parts.badName || []) add(b, { kind: 'badName' });
   for (const host of Object.keys(out)) {
     out[host].sort((a, b) => ATTENTION_KINDS.indexOf(a.kind) - ATTENTION_KINDS.indexOf(b.kind));
@@ -96,14 +97,15 @@ export function itemText(item) {
     };
     case 'holdErr': return { text: t(item.key, { name, slot: item.slot }) };
     case 'staleKey': return { text: t('speaker.staleFolderKeyBanner', { name, slot: item.slot }) };
+    case 'weakWifi': return { text: t('speaker.weakWifiDropoutBanner', { name }) };
     case 'badName': return { title: t('speaker.badNameBanner', { name }), text: t('speaker.badNameHint') };
     default: return { text: '' };
   }
 }
 
 // itemActions: the buttons the classic banner offers for this kind, as
-// [{ act, label, primary }]. dismiss covers the two kinds the classic banner
-// lets you dismiss per speaker (warnDismiss:<id>:conflict and :nowifi).
+// [{ act, label, primary }]. dismiss covers the kinds the classic banner lets
+// you dismiss per speaker (warnDismiss:<id>:conflict, :nowifi and :weakwifi).
 export function itemActions(item) {
   switch (item.kind) {
     case 'conflict': return [
@@ -116,6 +118,7 @@ export function itemActions(item) {
       { act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'nowifi' },
     ];
     case 'storm': return [{ act: 'stormRestart', label: t('speaker.stormRestartBtn'), primary: true }];
+    case 'weakWifi': return [{ act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'weakwifi' }];
     case 'badName': return [{ act: 'badNameFix', label: t('speaker.badNameFixBtn'), primary: true }];
     default: return [];
   }

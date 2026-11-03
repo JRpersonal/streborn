@@ -914,6 +914,8 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	cached.Storm1036SinceSec = 0
 	cached.RecallRefusal = false
 	cached.RecallRefusalSinceSec = 0
+	cached.WeakWifiDropout = ""
+	cached.WeakWifiDropoutAgeSec = 0
 	if bosePortOpen {
 		return cached, true, false
 	}

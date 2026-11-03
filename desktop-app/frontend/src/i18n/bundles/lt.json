@@ -1967,6 +1967,7 @@
   "speaker.holdRefusedBanner": "{{name}}: ilgo klavišo {{slot}} paspaudimo nepavyko išsaugoti, todėl klavišas išlaikė ankstesnį turinį. Tokiu būdu STR gali išsaugoti tik radijo stotį. Kad įdėtum Spotify grojaraštį ar albumą į klavišą, palaikyk klavišą programėlėje, kol jis groja.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: ilgo klavišo {{slot}} paspaudimo nepavyko išsaugoti, todėl klavišas išlaikė ankstesnį turinį.",
   "speaker.staleFolderKeyBanner": "{{name}}: klavišas {{slot}} nebegali rasti savo muzikos. Medijos serveris turi naujus failų adresus (pavyzdžiui, pakeitus USB atmintinę). Dar kartą išsaugokite aplanką šiame klaviše.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: neseniai atkūrimas nutrūko, kai šio garsiakalbio Wi-Fi signalas buvo silpnas. Silpnas signalas gali sukelti trūkinėjimą. Paprastai padeda pastatyti garsiakalbį arčiau maršruto parinktuvo ar kartotuvo (arba atvirkščiai).",
   "speaker.badNameBanner": "{{name}}: garsiakalbio pavadinime yra simbolis, kurio jo programinė įranga negali apdoroti, todėl Spotify ir muzikos biblioteka juo groti negali.",
   "speaker.badNameHint": "Pervadinus garsiakalbį ir jį paleidus iš naujo, tai sutvarkoma. Mygtukas atlieka abu veiksmus.",
   "speaker.badNameFixBtn": "Pataisyti pavadinimą ir paleisti iš naujo",

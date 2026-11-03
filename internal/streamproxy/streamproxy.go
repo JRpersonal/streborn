@@ -132,6 +132,13 @@ type Server struct {
 	// the box dropped the stream itself). Used by the auto-re-push.
 	onDisconnect func(upstreamErr error)
 
+	// onUpstreamDrop, if set, is called when the station's connection broke
+	// or stalled mid-stream and the proxy has to reconnect (noteReconnect,
+	// reason read-fail). The agent uses it to check whether the speaker's
+	// Wi-Fi signal was weak at that moment. Never called for a clean EOF,
+	// which is usually a CDN token running out rather than the speaker's link.
+	onUpstreamDrop func()
+
 	// titleMu guards the live ICY StreamTitle of the stream being proxied.
 	// We always request ICY metadata from the upstream, de-interleave it out
 	// of the byte stream the box receives (so the box gets clean audio), and
@@ -230,6 +237,11 @@ type Server struct {
 // SetOnDisconnect registers a callback invoked whenever the box closes a
 // proxied stream (raw or slot). Set once at wiring time.
 func (s *Server) SetOnDisconnect(fn func(upstreamErr error)) { s.onDisconnect = fn }
+
+// SetOnUpstreamDrop registers a callback invoked when a station's connection
+// broke or stalled mid-stream (see onUpstreamDrop). It must not block: it runs
+// on the stream copy path. Set once at wiring time.
+func (s *Server) SetOnUpstreamDrop(fn func()) { s.onUpstreamDrop = fn }
 
 // SetQueueLiveURLFn wires the queue-preset live-track resolver (see queueLiveURLFn).
 func (s *Server) SetQueueLiveURLFn(fn func(slot int) (string, bool)) { s.queueLiveURLFn = fn }

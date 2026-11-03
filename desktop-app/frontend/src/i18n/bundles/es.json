@@ -1967,6 +1967,7 @@
   "speaker.holdRefusedBanner": "{{name}}: la pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes. Por esta vía STR solo puede guardar una emisora de radio. Para poner una lista o un álbum de Spotify en una tecla, mantén pulsada la tecla en la aplicación mientras suena.",
   "speaker.holdRefusedBannerGeneric": "{{name}}: la pulsación larga en la tecla {{slot}} no se pudo guardar, así que la tecla conserva lo que tenía antes.",
   "speaker.staleFolderKeyBanner": "{{name}}: la tecla {{slot}} ya no encuentra su música. El servidor multimedia tiene nuevas direcciones de archivo (por ejemplo, tras cambiar la memoria USB). Vuelve a guardar la carpeta en esta tecla.",
+  "speaker.weakWifiDropoutBanner": "{{name}}: la reproducción se cortó hace poco mientras la señal Wi-Fi en este altavoz era débil. Una señal débil puede provocar cortes. Acercar el altavoz al router o al repetidor (o al revés) suele ayudar.",
   "speaker.badNameBanner": "{{name}}: el nombre del altavoz contiene un carácter que su firmware no admite, así que Spotify y la biblioteca de música no pueden sonar en él.",
   "speaker.badNameHint": "Cambiar el nombre del altavoz y reiniciarlo lo soluciona. El botón hace ambas cosas.",
   "speaker.badNameFixBtn": "Corregir el nombre y reiniciar",

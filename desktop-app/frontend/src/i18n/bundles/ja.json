@@ -1967,6 +1967,7 @@
   "speaker.holdRefusedBanner": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。この方法で STR が保存できるのはラジオ局だけです。Spotify のプレイリストやアルバムをキーに入れるには、再生中にアプリ側でそのキーを長押ししてください。",
   "speaker.holdRefusedBannerGeneric": "{{name}}: キー {{slot}} の長押しを保存できなかったため、キーには以前の内容が残っています。",
   "speaker.staleFolderKeyBanner": "{{name}}: キー {{slot}} の音楽が見つからなくなりました。メディアサーバーのファイルのアドレスが変わりました（USB メモリを差し替えた後など）。このキーにフォルダーをもう一度保存してください。",
+  "speaker.weakWifiDropoutBanner": "{{name}}: このスピーカーのWi-Fi信号が弱い状態で、最近再生が途切れました。信号が弱いと音が途切れることがあります。スピーカーをルーターや中継器に近づける (または逆に) と、たいてい改善します。",
   "speaker.badNameBanner": "{{name}}: スピーカー名にファームウェアが扱えない文字が含まれているため、Spotify と音楽ライブラリを再生できません。",
   "speaker.badNameHint": "スピーカー名を変更して再起動すると直ります。ボタンで両方を行います。",
   "speaker.badNameFixBtn": "名前を修正して再起動",
