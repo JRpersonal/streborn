@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -383,5 +384,126 @@ func TestALengthIsNotLearnedFromAPositionThatRanAhead(t *testing.T) {
 	s.learnSingleTrackLength(singleTrack{boxURL: url, title: "Song"}, endNetFrozen, 120*time.Second, false)
 	if got := s.trackLens.get(url); got != 120*time.Second {
 		t.Fatalf("a plausible freeze taught %v, want 120 s", got)
+	}
+}
+
+// climb raises the scripted position one box second per box second, from
+// `from` to `to`, in PLAY_STATE with no total (the FRITZ!Box shape).
+func (f *fakeNowPlaying) climb(from, to time.Duration) {
+	for p := from; p <= to; p += qsec {
+		f.set("PLAY_STATE", p, 0)
+		time.Sleep(qsec)
+	}
+}
+
+// unknownLengthTrackServer starts the end watch on a lone MP3 the way the
+// FRITZ!Box media server hands one over: no length from the server, no total
+// from the speaker, and the position only starting to count a while after the
+// push. Its log goes to the returned buffer.
+func unknownLengthTrackServer(t *testing.T) (*Server, *soapRecorder, *fakeNowPlaying, *syncBuffer, string) {
+	t.Helper()
+	np := &fakeNowPlaying{}
+	s, rec := singleTrackServer(t, np)
+	logs := &syncBuffer{}
+	s.logger = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	const url = "http://192.0.2.9:49200/AUDIO/DLNA-1-0/Musik/song.mp3"
+	gen := s.setLastPlay(url, "Fly", "", "audio/mpeg")
+	np.set("BUFFERING_STATE", 0, 0)
+	s.armSingleTrackEnd(singleTrack{boxURL: url, title: "Fly", mime: "audio/mpeg"}, gen)
+	time.Sleep(20 * qsec) // the start latency: live, the wall clock was well ahead of the position
+	return s, rec, np, logs, url
+}
+
+// assertNotEndedNorLearned fails when the watch stopped the speaker or ran its
+// length learning (which logs "from where it froze" whether or not it keeps
+// the length: the test positions are below learnedLengthMin).
+func assertNotEndedNorLearned(t *testing.T, s *Server, rec *soapRecorder, logs *syncBuffer, url, when string) {
+	t.Helper()
+	if rec.has("Stop") {
+		t.Fatalf("%s: the speaker was stopped although the track was only paused and resumed\n%s", when, logs.String())
+	}
+	if got := s.trackLens.get(url); got != 0 {
+		t.Fatalf("%s: learned a length of %v from where the track was paused", when, got)
+	}
+	if strings.Contains(logs.String(), "from where it froze") {
+		t.Fatalf("%s: the length learning ran on a pause position\n%s", when, logs.String())
+	}
+}
+
+// Live, ST10, 2026-11-03: a lone FRITZ!Box MP3 with no known length was paused
+// with the speaker's own key at 25 s and resumed five seconds later. The resume
+// reports PLAY_STATE with the position still on the paused second for a few
+// seconds (the firmware re-opens the URL, FIRMWARE-NOTES.md "Play after
+// Pause"). The frozen-position net counted the pause, and the still stretch
+// before it, as frozen playback, "learned" a 25 s length and stopped the
+// speaker 2 s after the resume.
+func TestAShortPauseOfALoneTrackOfUnknownLengthIsNotItsEnd(t *testing.T) {
+	t.Parallel()
+	s, rec, np, logs, url := unknownLengthTrackServer(t)
+
+	np.climb(1*qsec, 5*qsec)
+	np.set("PLAY_STATE", 5*qsec, 0) // the position stood still before the key press, as in the live log
+	time.Sleep(8 * qsec)
+	np.set("PAUSE_STATE", 5*qsec, 0)
+	time.Sleep(5 * qsec)
+	np.set("PLAY_STATE", 5*qsec, 0) // resumed, the position not moving yet
+	time.Sleep(2*s.queueTiming.pollInterval + 2*qsec)
+	np.climb(6*qsec, 10*qsec)
+
+	assertNotEndedNorLearned(t, s, rec, logs, url, "after a short pause")
+}
+
+// The same with a pause longer than the freeze timeout: the pause alone used to
+// be enough for the frozen-position net on the first poll after the resume. A
+// real freeze at the end of the file afterwards still ends the track.
+func TestALongPauseOfALoneTrackOfUnknownLengthIsNotItsEnd(t *testing.T) {
+	t.Parallel()
+	s, rec, np, logs, url := unknownLengthTrackServer(t)
+
+	np.climb(1*qsec, 5*qsec)
+	np.set("PLAY_STATE", 5*qsec, 0) // a poll reads the second the pause will keep
+	time.Sleep(6 * qsec)
+	np.set("PAUSE_STATE", 5*qsec, 0)
+	time.Sleep(2 * s.queueTiming.frozenTimeout)
+	np.set("PLAY_STATE", 5*qsec, 0) // resumed, the position not moving yet
+	time.Sleep(2*s.queueTiming.pollInterval + 2*qsec)
+	np.climb(6*qsec, 10*qsec)
+
+	assertNotEndedNorLearned(t, s, rec, logs, url, "after a long pause")
+
+	np.set("PLAY_STATE", 10*qsec, 0) // frozen at the real end of the file
+	waitForTrackEnd(t, "the box to be stopped at the real end after the resume", func() bool { return rec.has("Stop") })
+}
+
+// A resume that stays on the paused second for a whole freeze timeout is the
+// firmware's frozen resume (#830), which a file without a length cannot be
+// restarted out of. The speaker is stopped so nothing shows it playing, but it
+// is no end of the track: no length is learned and repeat does not start it
+// over.
+func TestAResumeThatNeverMovesIsStoppedButNotTakenForTheEnd(t *testing.T) {
+	t.Parallel()
+	s, rec, np, logs, url := unknownLengthTrackServer(t)
+	withPlayMode(t, s, "shuffle=0 repeat=one\n")
+
+	np.climb(1*qsec, 5*qsec)
+	np.set("PLAY_STATE", 5*qsec, 0)
+	time.Sleep(6 * qsec)
+	np.set("PAUSE_STATE", 5*qsec, 0)
+	time.Sleep(5 * qsec)
+	np.set("PLAY_STATE", 5*qsec, 0) // resumed, and it never moves again
+
+	waitForTrackEnd(t, "the frozen resume to be stopped", func() bool { return rec.has("Stop") })
+	// The line is written once the speaker took the Stop, a moment after it.
+	waitForTrackEnd(t, "the stop to be logged as a frozen resume", func() bool {
+		return strings.Contains(logs.String(), "the resume never moved off the paused position")
+	})
+	if n := rec.countOf("SetAVTransportURI"); n != 0 {
+		t.Fatalf("repeat played the track again %d times after a frozen resume", n)
+	}
+	if got := s.trackLens.get(url); got != 0 {
+		t.Fatalf("learned a length of %v from where the track was paused", got)
+	}
+	if strings.Contains(logs.String(), "from where it froze") {
+		t.Fatalf("the length learning ran on a pause position\n%s", logs.String())
 	}
 }
