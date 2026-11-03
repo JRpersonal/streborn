@@ -1489,6 +1489,8 @@
   "setup.installFirewallHint": "The speaker cannot reach this computer yet (0 callbacks). Allow ST Reborn through your firewall, then it should continue.",
   "setup.limitedNote": "This model has no hardware preset buttons 1 to 6, so those won't work. STR still adds internet radio, app presets and streaming.",
   "setup.rivalCloudNote": "This speaker is still set up for another cloud replacement such as AfterTouch (server {{url}}). Installing STR switches it over to STR.",
+  "setup.unverifiedNote": "STR has not been tested on this model yet. Most SoundTouch models work, but installing it here is at your own risk.",
+  "setup.notSoundTouchNote": "This is not a SoundTouch speaker. STR only works with SoundTouch speakers and cannot work with this one.",
   "setup.targetHeading": "Which speaker?",
   "setup.netInstallBtn": "Install STR now",
   "setup.useStickInstead": "Prepare a USB stick instead",

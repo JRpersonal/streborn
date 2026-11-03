@@ -1354,6 +1354,8 @@
   "setup.installFirewallHint": "L'enceinte ne peut pas encore atteindre cet ordinateur (0 rappel). Autorisez ST Reborn dans votre pare-feu, puis l'installation devrait continuer.",
   "setup.limitedNote": "Ce modèle n'a pas de boutons de préréglage matériels 1 à 6, ils ne fonctionneront donc pas. STR ajoute tout de même la radio Internet, les préréglages dans l'application et le streaming.",
   "setup.rivalCloudNote": "Cette enceinte est encore configurée pour un autre remplaçant du cloud, comme AfterTouch (serveur {{url}}). L'installation de STR la fait passer à STR.",
+  "setup.unverifiedNote": "STR n'a pas encore été testé sur ce modèle. La plupart des modèles SoundTouch fonctionnent, mais l'installation ici se fait à vos risques.",
+  "setup.notSoundTouchNote": "Ce n'est pas une enceinte SoundTouch. STR ne fonctionne qu'avec les enceintes SoundTouch et ne peut pas fonctionner avec celle-ci.",
   "setup.targetHeading": "Quelle enceinte ?",
   "setup.netInstallBtn": "Installer STR maintenant",
   "setup.useStickInstead": "Préparer plutôt une clé USB",

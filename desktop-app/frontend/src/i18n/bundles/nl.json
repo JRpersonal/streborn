@@ -1354,6 +1354,8 @@
   "setup.installFirewallHint": "De speaker kan deze computer nog niet bereiken (0 reacties). Sta ST Reborn toe via je firewall, dan zou het door moeten gaan.",
   "setup.limitedNote": "Dit model heeft geen fysieke presetknoppen 1 tot en met 6, dus die werken niet. STR voegt toch internetradio, presets in de app en streaming toe.",
   "setup.rivalCloudNote": "Deze speaker is nog ingesteld op een andere cloudvervanger, zoals AfterTouch (server {{url}}). Als je STR installeert, schakelt hij over op STR.",
+  "setup.unverifiedNote": "STR is nog niet getest op dit model. De meeste SoundTouch-modellen werken, maar installeren is hier op eigen risico.",
+  "setup.notSoundTouchNote": "Dit is geen SoundTouch-speaker. STR werkt alleen met SoundTouch-speakers en kan met deze niet werken.",
   "setup.targetHeading": "Welke speaker?",
   "setup.netInstallBtn": "STR nu installeren",
   "setup.useStickInstead": "In plaats daarvan een USB-stick voorbereiden",

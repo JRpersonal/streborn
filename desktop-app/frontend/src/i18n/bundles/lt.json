@@ -1354,6 +1354,8 @@
   "setup.installFirewallHint": "Garsiakalbis dar negali pasiekti šio kompiuterio (0 atsakymų). Leiskite ST Reborn savo užkardoje, tada diegimas turėtų tęstis.",
   "setup.limitedNote": "Šis modelis neturi aparatinių išankstinių nustatymų mygtukų nuo 1 iki 6, todėl jie neveiks. STR vis tiek prideda interneto radiją, programėlės išankstinius nustatymus ir transliaciją.",
   "setup.rivalCloudNote": "Šis garsiakalbis vis dar nustatytas kitam debesies pakaitalui, pvz., AfterTouch (serveris {{url}}). Įdiegus STR, jis perjungiamas į STR.",
+  "setup.unverifiedNote": "STR šiame modelyje dar nebuvo išbandytas. Dauguma SoundTouch modelių veikia, tačiau diegiate čia savo rizika.",
+  "setup.notSoundTouchNote": "Tai ne SoundTouch garsiakalbis. STR veikia tik su SoundTouch garsiakalbiais ir su šiuo veikti negali.",
   "setup.targetHeading": "Kuris garsiakalbis?",
   "setup.netInstallBtn": "Įdiegti STR dabar",
   "setup.useStickInstead": "Vietoj to paruošti USB atmintinę",

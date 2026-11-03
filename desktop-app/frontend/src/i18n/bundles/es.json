@@ -1354,6 +1354,8 @@
   "setup.installFirewallHint": "El altavoz todavía no puede alcanzar este ordenador (0 respuestas). Permite ST Reborn en tu cortafuegos y entonces debería continuar.",
   "setup.limitedNote": "Este modelo no tiene botones físicos de presintonía del 1 al 6, así que no funcionarán. STR añade igualmente radio por Internet, presintonías en la aplicación y streaming.",
   "setup.rivalCloudNote": "Este altavoz sigue configurado para otro sustituto de la nube, como AfterTouch (servidor {{url}}). Al instalar STR pasa a usar STR.",
+  "setup.unverifiedNote": "STR aún no se ha probado en este modelo. La mayoría de los modelos SoundTouch funcionan, pero instalarlo aquí es bajo tu propia responsabilidad.",
+  "setup.notSoundTouchNote": "Esto no es un altavoz SoundTouch. STR solo funciona con altavoces SoundTouch y no puede funcionar con este.",
   "setup.targetHeading": "¿Qué altavoz?",
   "setup.netInstallBtn": "Instalar STR ahora",
   "setup.useStickInstead": "Preparar una memoria USB en su lugar",

@@ -77,7 +77,7 @@ const STATE_MARK = Object.freeze({ done: '&#10003;', current: '&#9679;', waiting
 // node is moved, not copied.
 export const SETUP_PLACES = Object.freeze([
   { classic: 'Stock speaker cards (#setupTargetBody .setup-target-card[data-kind=stock])', place: 'find', how: 'one radio per Bose original; choosing clicks the classic card' },
-  { classic: 'Limited model note (.setup-target-limited-note)', place: 'find', how: 'note under the row (setup.limitedNote)' },
+  { classic: 'Model note: no keys 1 to 6, not confirmed yet, not a SoundTouch (.setup-target-limited-note)', place: 'find', how: 'note under the row (modelNoteKey)' },
   { classic: 'STR speaker cards, "already on STR" group (#setupDoneGroup)', place: 'find', how: 'listed as on STR with the way to its page, never as an install target' },
   { classic: 'Empty list hints (setup.targetEmpty*)', place: 'find', how: 'the empty state of the list' },
   { classic: 'New or factory-reset card (data-kind=factory-reset)', place: 'find', how: '"not on the network yet" radio; clicks the classic card' },

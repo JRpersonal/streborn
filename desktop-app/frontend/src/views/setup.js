@@ -30,6 +30,7 @@ import {
   showToast,
   formatRemaining,
   boxModelSupport,
+  modelNoteKey,
   isSoundTouch300,
   neverReadsStick,
 } from '../utils.js';
@@ -511,10 +512,13 @@ export function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, card.kind),
       card.badge, '');
-    // Soundbars / home-cinema systems / adapters ('limited') install fine but
-    // have no hardware preset buttons 1-6; say so honestly under the card.
-    if (boxModelSupport(b.model) === 'limited') {
-      cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
+    // What is known about this model, said under the card BEFORE the install
+    // (docs/MODELS.md via boxModelSupport): no hardware preset buttons 1-6 on
+    // soundbars, home-cinema systems and adapters, not confirmed yet on a model
+    // MODELS.md has no row for, and no way at all on a non-SoundTouch device.
+    const modelNote = modelNoteKey(b.model || b.type);
+    if (modelNote) {
+      cards += `<div class="setup-target-limited-note setup-target-model-note--${boxModelSupport(b.model || b.type)} muted small">${escapeHtml(t(modelNote))}</div>`;
     }
     // Still set up for another cloud replacement (AfterTouch, OpenCloudTouch):
     // its /info cloud address points at a server on the home network. Said

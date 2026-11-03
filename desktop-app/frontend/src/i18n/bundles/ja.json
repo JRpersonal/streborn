@@ -1354,6 +1354,8 @@
   "setup.installFirewallHint": "スピーカーはまだこのパソコンに到達できません（コールバック0回）。ファイアウォールで ST Reborn を許可すると、処理が続行されるはずです。",
   "setup.limitedNote": "このモデルにはハードウェアのプリセットボタン 1 から 6 がないため、それらは機能しません。STR はそれでもインターネットラジオ、アプリのプリセット、ストリーミングを追加します。",
   "setup.rivalCloudNote": "このスピーカーは、AfterTouch などの別のクラウド代替ツール向けの設定のままです（サーバー {{url}}）。STR をインストールすると STR に切り替わります。",
+  "setup.unverifiedNote": "このモデルでは STR はまだテストされていません。ほとんどの SoundTouch モデルで動作しますが、ここへのインストールは自己責任となります。",
+  "setup.notSoundTouchNote": "これは SoundTouch スピーカーではありません。STR は SoundTouch スピーカー専用で、この機器では動作しません。",
   "setup.targetHeading": "どのスピーカー?",
   "setup.netInstallBtn": "STRを今すぐインストール",
   "setup.useStickInstead": "代わりにUSBメモリを準備",
