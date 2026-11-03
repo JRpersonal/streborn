@@ -35,7 +35,7 @@ test.describe('UI 2.0 Library: a folder of folders and A to Z', () => {
   const folder = (page, name) => lib(page).locator('.lib2-folder', { hasText: name });
 
   async function openArtist(page) {
-    await page.locator('#ui2Sidebar .ui2-nav-item[data-view="library"]').click();
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
     await expect(heading(page)).toHaveText(NAS);
     // The server root has no folder actions: its first level is Music, Videos.
     await expect(lib(page).locator('.lib2-play-folder')).toHaveCount(0);

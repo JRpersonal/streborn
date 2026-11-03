@@ -29,7 +29,7 @@ async function openClassic(page) {
 }
 
 async function openGroups(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="speakers"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="speakers"]').click();
   await page.locator('#ui2SpkSubnav .spa-sub[data-route="groups"]').click();
   await expect(page.locator('#view-multiroom > .ui2-grp')).toBeVisible();
 }
