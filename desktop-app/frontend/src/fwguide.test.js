@@ -127,6 +127,17 @@ describe('the rest of the guide', () => {
     expect(html).toContain(esc(en['fwGuide.emptyBar']));
     expect(html).toContain(`data-fwopen="${FIRMWARE_STALL_URL}"`);
     expect(html.indexOf('fw-guide-emptybar')).toBeGreaterThan(html.indexOf('fw-guide-steps'));
+    expect(html).not.toContain(esc(en['fwGuide.emptyBarBattery']));
+  });
+
+  it('tells a Portable to use its power button for an empty bar, never to pull the plug', () => {
+    // Its battery cannot be removed, so unplugging it does not restart it.
+    const portable = firmwareGuideHtml({ ...st20, model: 'SoundTouch Portable' }, { files: [scm], required: '27.0.6' });
+    expect(fwGuidePlan({ ...st20, model: 'SoundTouch Portable' }, null).emptyBarKey).toBe('fwGuide.emptyBarBattery');
+    expect(portable).toContain(esc(en['fwGuide.emptyBarBattery']));
+    expect(portable).not.toContain(esc(en['fwGuide.emptyBar']));
+    expect(portable).toContain(`data-fwopen="${FIRMWARE_STALL_URL}"`);
+    expect(en['fwGuide.emptyBarBattery']).not.toMatch(/unplug/i);
   });
 
   it('gives the update page with copy and open buttons, plus the other address and the USB route', () => {

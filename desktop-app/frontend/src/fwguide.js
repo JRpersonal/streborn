@@ -94,6 +94,9 @@ export function fwGuidePlan(ident, guide) {
     setupKey: setupModeKey(id.model),
     articles: boseFwArticles(String(id.model || '').trim()),
     afterKey: id.context === 'settings' ? 'fwGuide.afterInstalled' : 'fwGuide.after',
+    // The Portable's battery cannot be removed, so pulling the plug does not
+    // restart it: it is switched off and on with its power button instead.
+    emptyBarKey: isBatteryModel(id.model) ? 'fwGuide.emptyBarBattery' : 'fwGuide.emptyBar',
     // direct: Bose's last file may go on in one step. Below 15 it may not
     // (docs/FIRMWARE-UPDATE.md, section 2: the bar stays empty, or the
     // speaker restarts in a loop), so the guide shows no steps for it.
@@ -204,7 +207,7 @@ export function firmwareGuideHtml(ident, guide) {
     + '</ol>'
     // An empty bar means the speaker did not take the file; the documented
     // way round is a smaller in-between update first.
-    + `<div class="muted small fw-guide-emptybar">${escapeHtml(t('fwGuide.emptyBar'))} `
+    + `<div class="muted small fw-guide-emptybar">${escapeHtml(t(plan.emptyBarKey))} `
     + `<a href="#" class="link" data-fwopen="${escapeHtml(FIRMWARE_STALL_URL)}">${escapeHtml(t('fwLadder.docs'))}</a></div>`
     + `<div>${escapeHtml(t(plan.afterKey))}</div>`
     + `<div class="muted small fw-guide-usb">${escapeHtml(t('fwGuide.usb', { url: UPDATE_PAGE_USB }))}</div>`

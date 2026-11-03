@@ -122,17 +122,22 @@ var fwLadderRun struct {
 // firmwareLadderNote is added to the "update the firmware first" install
 // message when one update is not enough for this speaker, so the copied
 // failure report says so too. Empty otherwise.
+//
+// It only ever follows firmwareTooOldNote, which below 15 already states the
+// rule (no single jump, in-between updates one after the other), so this
+// note adds only what is particular to the plan: how many steps, whether they
+// are checked, or that no path is known.
 func firmwareLadderNote(model, moduleType, variant, version string) string {
 	p := bosefw.Plan(model, moduleType, variant, version, nil)
 	switch p.Status {
 	case bosefw.StatusLadder:
-		return fmt.Sprintf(" This firmware is too old to jump straight to Bose's last version: it needs %d updates, one after the other. The firmware update guide below walks you through them.", len(p.Steps))
+		return fmt.Sprintf(" The firmware update guide below walks you through the %d updates this speaker needs.", len(p.Steps))
 	case bosefw.StatusNeedsBluetooth:
-		return " This firmware may be too old to jump straight to Bose's last version. The firmware update guide below asks one question and then shows the steps."
+		return " The firmware update guide below asks one question about this speaker and then shows the steps."
 	case bosefw.StatusRoute:
-		return fmt.Sprintf(" This firmware is too old to jump straight to Bose's last version: it probably needs %d updates, one after the other. The firmware update guide below lists them. They are not checked on this model yet, so please read the guide before you start.", len(p.Steps))
+		return fmt.Sprintf(" The firmware update guide below lists the %d updates this speaker probably needs. They are not checked on this model yet, so please read the guide before you start.", len(p.Steps))
 	case bosefw.StatusUnsupported:
-		return " This firmware is too old to jump straight to Bose's last version, and there is no known step-by-step path for this speaker yet. Please read the firmware update guide below before you try anything."
+		return " There is no known step-by-step path for this speaker yet. Please read the firmware update guide below before you try anything."
 	}
 	return ""
 }

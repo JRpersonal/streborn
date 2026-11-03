@@ -18,6 +18,8 @@
 //      step, no way past it; the step completes when the speaker reports 27.0.6.
 //   8. 10.x on another model: the documented route as a list with the
 //      firmware guide link, never the one jump, no way past it.
+//  8b. 10.x with no known path: "no known path" under an intro that promises
+//      no steps.
 //   9. Not answering: the error in the step, named; Check again recovers.
 //  10. An unreadable version may continue, with the risk named.
 //  11. Back aborts the step.
@@ -242,6 +244,30 @@ test.describe('UI 2.0 setup check: firmware', () => {
       await expect(lad.locator('.fw-ladder-steps li')).toHaveCount(2);
       await expect(lad.locator('[data-ladder="open-url"]').first()).toHaveText(en('fwLadder.docs'));
       await expect(lad.locator('[data-fwflash], [data-ladder="prepare"], .fw-guide-download')).toHaveCount(0);
+      await expect(step.locator('[data-check="skip"]')).toBeHidden();
+    });
+  });
+
+  test.describe('on 10.x, a model with no known path', () => {
+    test.use({
+      scenario: fwScenario(SETUP_CHECK.guide, {
+        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 10', current: '10.0.11' } },
+        GetFirmwareLadder: { value: SETUP_CHECK.noPathPlan },
+      }),
+    });
+
+    test('8b. "no known path" under an intro that promises no steps', async ({ app }) => {
+      const step = await mount(app.page);
+      await expect(step).toHaveAttribute('data-case', 'guide');
+      const intro = en('ui2.setup.check.guideIntro', { name: NAME, version: '10.0.11', required: '27.0.6' });
+      await expect(step.locator('.u-check-callout')).toContainText(intro);
+      // The line above must never promise what the screen below denies.
+      expect(intro).not.toMatch(/steps/i);
+      const none = step.locator('.u-check-guide .fw-ladder-none');
+      await expect(none).toContainText(en('fwLadder.noPathTitle'));
+      await expect(none).toContainText(en('fwLadder.noDirect'));
+      await expect(step.locator('.u-check-guide .fw-ladder-steps li, .u-check-guide .fw-guide-steps li')).toHaveCount(0);
+      await expect(step.locator('[data-fwflash], .fw-guide-download')).toHaveCount(0);
       await expect(step.locator('[data-check="skip"]')).toBeHidden();
     });
   });

@@ -382,14 +382,51 @@ func TestFirmwareLadderNote(t *testing.T) {
 	// The Wave on 2.1.51 (2026-10-22) and every other family the firmware guide
 	// covers: the probable route, never "no note" (which read as "one update
 	// is enough").
-	if n := firmwareLadderNote("Wave SoundTouch", "", "", "2.1.51"); !strings.Contains(n, "probably needs 5 updates") || !strings.Contains(n, "not checked") {
+	if n := firmwareLadderNote("Wave SoundTouch", "", "", "2.1.51"); !strings.Contains(n, "5 updates this speaker probably needs") || !strings.Contains(n, "not checked") {
 		t.Errorf("2.x Wave: %q", n)
 	}
-	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "probably needs 2 updates") {
+	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "2 updates this speaker probably needs") {
 		t.Errorf("10.x ST10: %q", n)
 	}
 	if n := firmwareLadderNote("Lifestyle", "sm2", "", "10.0.11"); !strings.Contains(n, "no known step-by-step path") {
 		t.Errorf("Lifestyle: %q", n)
+	}
+}
+
+// The "firmware-too-old" install message is withFW(msg) + firmwareFirstAdvice
+// + firmwareLadderNote (install_str.go). withFW already carries
+// firmwareTooOldNote, which below 15 states the stepping rule, so the ladder
+// note must not say it a second time: the copied failure report read the
+// same sentence twice.
+func TestFirmwareTooOldMessageStatesTheStepsOnce(t *testing.T) {
+	src := readInstallSrc(t)
+	if !strings.Contains(src, "firmwareFirstAdvice + firmwareLadderNote(res.Model, res.ModuleType, res.Variant, res.Firmware)") {
+		t.Fatal("the firmware-too-old message is no longer built from these parts; if it moved, move this test with it")
+	}
+	one := []bosefw.File{{URL: "https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu"}}
+	for _, c := range []struct{ model, moduleType, version string }{
+		{"SoundTouch 20", "scm", "5.2.0"},    // the checked ladder
+		{"SoundTouch 20", "", "10.0.11"},     // the Bluetooth question
+		{"Wave SoundTouch", "", "2.1.51"},    // a documented route
+		{"SoundTouch 10", "sm2", "10.0.11"},  // a documented route
+		{"Lifestyle", "sm2", "10.0.11"},      // no known path
+		{"SoundTouch SA-4", "scm", "13.0.0"}, // no source for the first step
+	} {
+		ladder := firmwareLadderNote(c.model, c.moduleType, "", c.version)
+		if ladder == "" {
+			t.Errorf("%v: no ladder note; the case no longer covers what it names", c)
+			continue
+		}
+		msg := "The speaker at 192.0.2.1 runs Bose firmware " + c.version + ", which is too old for the install over the network." +
+			firmwareTooOldNote(c.version, one) + "\n\n" + firmwareFirstAdvice + ladder
+		for _, s := range []string{"one after the other", "in one go", "jump straight"} {
+			if n := strings.Count(msg, s); n > 1 {
+				t.Errorf("%v: %q appears %d times:\n%s", c, s, n, msg)
+			}
+		}
+		if strings.Count(msg, "one after the other") != 1 {
+			t.Errorf("%v: the stepping rule is missing:\n%s", c, msg)
+		}
 	}
 }
 

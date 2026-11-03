@@ -527,4 +527,10 @@ export const SETUP_CHECK = {
       { id: 'st10-sm2-27.0.6', version: '27.0.6', family: 'st10-sm2', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 95_906_856, liveVerified: false, networkOk: true, fallback: false },
     ],
   },
+  // GetFirmwareLadder for a speaker below 15 with no known route at all
+  // (bosefw status "unsupported"): no steps, only the guide.
+  noPathPlan: {
+    status: 'unsupported', reason: 'model', family: '', model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: '', avoid: [], steps: [],
+  },
 };
