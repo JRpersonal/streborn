@@ -164,6 +164,12 @@ func displayUp() bool {
 // caller, never waited for inside a caller's request.
 func panelMayHold() bool { return panelGate(boseAppDisplayReady, displayUp, boseAppAge) }
 
+// DisplayReady is panelMayHold for callers outside the package that act on
+// the firmware's display without drawing on it (the standby clock nudge after
+// an update): true once BoseApp's display thread is up and its controller has
+// left Bootup, or BoseApp is old enough that it must have.
+func DisplayReady() bool { return panelMayHold() }
+
 // panelGate evaluates splashMayStart lazily, cheapest and most decisive
 // first: no flip thread ends it before /proc is walked for BoseApp's age, a
 // controller seen up ends it before the age is read.
