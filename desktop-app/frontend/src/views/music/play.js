@@ -8,6 +8,7 @@ import { t } from '../../i18n/index.js';
 import { libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
 import { isNativeServicePreset } from '../../nativeservice.js';
 import { beginRecall } from '../../spotifynowplaying.js';
+import { isKeyRefusedError, refusalSentence } from '../../spotifyrefused.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
 import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../utils.js';
@@ -184,6 +185,12 @@ export async function play(slot) {
     if (errStr.toLowerCase().includes('spotify-premium-required')) {
       showToast(t('play.errSpotifyPremiumHelp'));
     }
+    // Spotify refused the audio keys for this account: the tile says so, the
+    // toast says why and the one test that tells the account from the
+    // speaker (spotifyrefused.js). It used to read as "speaker refused".
+    if (isKeyRefusedError(errStr) && !errStr.toLowerCase().includes('spotify-premium-required')) {
+      showToast(refusalSentence({ name: '', free: !!state.spotifyPremiumRequired }, t));
+    }
     // A library key whose music server is off: the tile says so, the toast
     // names the server and what to do (#1339).
     const offServer = libraryServerOffName(errStr);
@@ -221,6 +228,9 @@ function friendlyPlayError(s, host) {
   // Fallback for a refusal that names Premium without the code. Kept after the
   // not-logged-in check, whose message also mentions Premium.
   if (l.includes('premium')) return t('play.errSpotifyPremium');
+  // Spotify refused the audio keys for this account (keydenied.go). Before
+  // the generic "refused" below, which blames the speaker.
+  if (isKeyRefusedError(s)) return t('play.errSpotifyRefused');
   if (l.includes('no such host') || l.includes('lookup')) return t('play.errNoInternet');
   if (l.includes('timeout') || l.includes('deadline')) return t('play.errSpeakerTimeout');
   if (l.includes('refused')) return t('play.errSpeakerRefused');

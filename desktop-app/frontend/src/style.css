@@ -1490,6 +1490,12 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   margin: -4px 0 10px; padding: 6px 10px; border-left: 3px solid var(--c-warn-bg); border-radius: 6px;
   background: var(--c-surface-2); color: var(--c-text); font-size: 12px; line-height: 1.4;
 }
+/* The why and the decisive test, folded under the notice until asked for.
+   Shared by both layouts and the UI 2.0 accounts row. */
+.spotify-refused-lead { display: block; }
+.spotify-refused-more { margin-top: 2px; }
+.spotify-refused-more summary { cursor: pointer; color: var(--c-muted); width: fit-content; }
+.spotify-refused-more p { margin: 4px 0 0; }
 /* Battery indicator in the speaker tile (SoundTouch Portable only).
    Drawn as a real battery: a body with a terminal nub, so it reads
    unmistakably as a charge gauge. Right-aligned just left of the gear;

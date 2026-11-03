@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { libraryServerOffName, libraryServerOffNotice } from './libraryserveroff.js';
+import { isKeyRefusedError } from './spotifyrefused.js';
 import { srcOf, srcBetween } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -21,13 +22,14 @@ const raw = JSON.stringify({
 });
 
 function friendlyPlayError() {
-  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName',
+  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName', 'isKeyRefusedError',
     `${srcOf('friendlyPlayError')}; return friendlyPlayError;`)(
     (k) => k,
     { stereoStaleForError: () => null },
     () => 'play.errNotReady',
     () => 1,
     libraryServerOffName,
+    isKeyRefusedError,
   );
 }
 

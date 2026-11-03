@@ -26,6 +26,7 @@ import { saveSpotifyToSlot, presetMoveOffer } from './music/save.js';
 import { loadPresets } from './music/presets.js';
 import { refreshStatus } from './music/status.js';
 import { accountRow, keySlots, spotifyPlaying } from './spotifyui2model.js';
+import { refusalHTML } from '../spotifyrefused.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { openSpeakers } from '../shell2/speakers/index.js';
 
@@ -356,7 +357,7 @@ function paintAccounts() {
         ? (r.plan === 'premium' ? t('ui2.spotify.acct.premium') : (r.plan === 'free' ? t('ui2.spotify.acct.free') : ''))
         : '';
       const refused = r.refused && (r.state === 'in' || r.state === 'saved')
-        ? `<p class="sp2-acct-line sp2-acct-refused">${escapeHtml(t('spotify.accountRefused'))}</p>`
+        ? `<div class="sp2-acct-line sp2-acct-refused">${refusalHTML(r.refusal, t, { lead: t(r.refusal.free ? 'spotify.accountRefusedFree' : 'spotify.accountRefused') })}</div>`
         : '';
       const others = r.others.length ? `<p class="sp2-acct-line sp2-muted">${escapeHtml(t('ui2.spotify.acct.others', { accounts: r.others.join(', ') }))}</p>` : '';
       return `<li class="sp2-acct${r.state === 'offline' ? ' is-offline' : ''}" data-host="${escapeAttr(r.host)}" data-state="${escapeAttr(r.state)}">

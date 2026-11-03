@@ -203,3 +203,18 @@ func TestRecallDuringBackoffSaysWhy(t *testing.T) {
 		t.Fatalf("the engine was asked to play %d times during its back-off, want 1", plays)
 	}
 }
+
+// The apps recognise a recall Spotify refused the audio keys for by this one
+// phrase in the agent's answer (desktop spotifyrefused.js isKeyRefusedError,
+// the phone page's playRefusal) and then say why and what to try in the
+// user's language. Rewording the hint must keep the phrase, and must not name
+// Premium, which the desktop app reads as the free-account case first.
+func TestKeyDeniedHintCarriesThePhraseTheAppsMatch(t *testing.T) {
+	hint := strings.ToLower(keyDeniedBackoffHint)
+	if !strings.Contains(hint, "refused the audio key") {
+		t.Fatalf("keyDeniedBackoffHint lost the phrase the apps match on: %q", keyDeniedBackoffHint)
+	}
+	if strings.Contains(hint, "premium") {
+		t.Fatalf("keyDeniedBackoffHint names Premium: %q", keyDeniedBackoffHint)
+	}
+}

@@ -8,19 +8,21 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { srcOf, srcBetween } from './test/source.js';
+import { isKeyRefusedError } from './spotifyrefused.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const langs = ['ar', 'de', 'en', 'es', 'fr', 'ja', 'lt', 'lv', 'nl', 'pl', 'tr', 'uk', 'zh-Hant'];
 const bundle = (l) => JSON.parse(readFileSync(join(here, 'i18n', 'bundles', `${l}.json`), 'utf8'));
 
 function friendlyPlayError() {
-  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName',
+  return new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName', 'isKeyRefusedError',
     `${srcOf('friendlyPlayError')}; return friendlyPlayError;`)(
     (k) => k,
     { stereoStaleForError: () => null },
     () => 'play.errNotReady',
     () => 1,
     () => null,
+    isKeyRefusedError,
   );
 }
 

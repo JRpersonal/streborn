@@ -824,6 +824,10 @@ html.ui2 .ui2-player .spotify-refused-row {
   font-size: 12px;
   line-height: 1.35;
 }
+/* The why and the test under the refused notice (spotifyrefused.js), in the
+   player and the accounts row. */
+html.ui2 .spotify-refused-more summary { color: var(--u-muted); }
+html.ui2 .spotify-refused-more summary:focus-visible { outline: 2px solid var(--u-focus); outline-offset: 2px; }
 html.ui2 .ui2-player .controls {
   flex-wrap: nowrap;
   margin-bottom: 0;

@@ -70,6 +70,20 @@ refused account never produces) removes it again. `/spotify/info` reports
 now-playing area and the UI 2.0 Spotify accounts card, the phone page under
 its now-playing line, both only while STR's Spotify is the source.
 
+Under the notice a folded "Why, and what you can try" says the reason and
+the decisive test. A free account (`product` free/open, or
+`premiumRequired`) gets its own words: Spotify on (STR) needs Premium,
+upgrade and restart, or play once from a Premium account on the (STR)
+entry; nothing is promised about the box's native entry there. Everything
+else, an unknown plan included, gets the cohort words: Spotify refuses
+some accounts on players like (STR), usually newer ones and even on
+Premium, the box's own entry still plays the account, and playing once
+from another, older account on the (STR) entry tells the account from the
+speaker. A preset recall the engine refuses during its back-off
+(`keyDeniedBackoffHint`, matched on "refused the audio key") gets the same
+words as a toast on the desktop and in the phone page's play notice,
+instead of "speaker refused" or the agent's English sentence.
+
 ## Decision update (2026-06-04): go-librespot is the open backend, not librespot-org
 
 The earlier spike picked librespot-org (MIT) as the sidecar. Building the
