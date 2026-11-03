@@ -10,8 +10,9 @@ package webui
 //
 // The agent already sees the dropouts: the stream proxy reconnects when the
 // station's connection breaks or stalls mid-stream (the radio and library
-// path), and the Spotify manager reports the speaker letting go of a stream it
-// was playing. At each such moment this file reads the speaker's CURRENT
+// path), and the Spotify drop recovery (maybeRePush) finds the speaker let go
+// of a stream while it stayed on and idle, after ruling out a power-off, a
+// stop, a source switch and a fresh play. At each such moment this file reads the speaker's CURRENT
 // signal grade, with the same rule the update pre-flight uses in the desktop
 // app (main.js doBoxUpdate): a live Wi-Fi reading of MARGINAL_SIGNAL or
 // POOR_SIGNAL. When the grade is weak it keeps a marker, which the version
@@ -70,6 +71,12 @@ type weakWifiDropout struct {
 	lastCheck time.Time // when a dropout last read the signal
 	lastWeak  bool      // that reading was weak
 	checking  bool      // a reading is in flight
+
+	// readSignal stands in for the speaker's signal reading in tests. nil =
+	// read the speaker (readDropoutWifiSignal). Per server rather than a
+	// package variable, so a test swapping it cannot race a re-push goroutine
+	// another test left running.
+	readSignal func(context.Context) string
 }
 
 // weakSignalClass reports whether a signal class is one the app calls weak.
@@ -92,8 +99,14 @@ func liveWifiSignal(ifaces []boxapi.NetworkInterface) string {
 }
 
 // readDropoutWifiSignal reads the speaker's current Wi-Fi signal class for a
-// dropout. A variable so tests can stand in for the speaker.
-var readDropoutWifiSignal = func(s *Server, ctx context.Context) string {
+// dropout ("" = no reading).
+func (s *Server) readDropoutWifiSignal(ctx context.Context) string {
+	s.weakWifi.mu.Lock()
+	hook := s.weakWifi.readSignal
+	s.weakWifi.mu.Unlock()
+	if hook != nil {
+		return hook(ctx)
+	}
 	if s.boxHost == "" {
 		return ""
 	}
@@ -120,7 +133,7 @@ func dropoutSignalFrom(ifaces []boxapi.NetworkInterface, live *wlanlive.Status) 
 }
 
 // NotePlaybackDropout records that playback just dropped out (source names
-// the path: "radio" for the stream proxy, "spotify" for the Spotify sink) and
+// the path: "radio" for the stream proxy, "spotify" for the Spotify drop recovery) and
 // checks the speaker's signal in the background. Never blocks the caller,
 // which is the stream copy loop or the Spotify manager.
 func (s *Server) NotePlaybackDropout(source string) {
@@ -152,7 +165,7 @@ func (s *Server) noteDropoutAt(source string, now time.Time, async bool) {
 	run := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), weakWifiReadTimeout)
 		defer cancel()
-		sig := readDropoutWifiSignal(s, ctx)
+		sig := s.readDropoutWifiSignal(ctx)
 		s.recordDropoutSignal(source, sig, now)
 	}
 	if async {

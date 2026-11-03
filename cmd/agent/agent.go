@@ -1107,7 +1107,8 @@ func (a *agent) buildWebui() error {
 	// signal at that moment and, when it is weak, reports it for an hour so the
 	// app can say the dropouts probably come from the reception at the speaker
 	// (internal/webui/weakwifidropout.go). The Spotify detach above feeds the
-	// same marker.
+	// same marker, once its drop recovery has ruled out a power-off, a stop or
+	// a source switch.
 	streamProxySrv.SetOnUpstreamDrop(func() { webuiSrv.NotePlaybackDropout("radio") })
 	webui.RegisterDebugSection("weak_wifi_dropout", webuiSrv.WeakWifiDropoutSnapshot)
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /

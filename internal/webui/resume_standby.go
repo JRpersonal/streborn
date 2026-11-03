@@ -1819,9 +1819,10 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 // a live Ogg. Which detaches are worth reporting is decided in the Spotify
 // manager, not here.
 func (s *Server) HandleSpotifyStreamDetach(attachedMs int64) {
-	// A dropout either way, whether or not a resume follows: worth a look at
-	// the signal (weakwifidropout.go).
-	s.NotePlaybackDropout("spotify")
+	// Not every detach is a dropout: a power-off, a stop, a switch to AUX or
+	// Bluetooth and a fresh preset press all end the stream too. maybeRePush
+	// tells those apart and reports the real ones to the weak-signal check
+	// (weakwifidropout.go) once its guards have passed.
 	if !s.play.tryClaimRePush() {
 		return
 	}
@@ -2016,6 +2017,19 @@ func (s *Server) maybeRePush() {
 	lp, gaveUp, ok := s.play.nextRePush()
 	if !ok {
 		return
+	}
+	// Every guard above has passed: no deliberate stop, no power-off, no fresh
+	// play, the speaker is on and idle on a source STR serves, and no group
+	// just changed. So the speaker really lost the stream, which is the moment
+	// to look at its Wi-Fi signal (weakwifidropout.go). Doing this at the top
+	// of HandleSpotifyStreamDetach instead told an owner who switched a
+	// MARGINAL_SIGNAL speaker off for the night that the music had dropped out.
+	//
+	// Spotify only. A radio stream the renderer let go of while the station
+	// was healthy is the firmware ending it, not the link; the station-side
+	// breaks are reported by the stream proxy itself.
+	if strings.Contains(lp.boxURL, "spotify/stream") {
+		s.NotePlaybackDropout("spotify")
 	}
 	if gaveUp {
 		// Hard stop. The stream keeps dropping (a dead/moved radio-browser URL,

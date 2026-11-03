@@ -13,25 +13,24 @@ import (
 	"github.com/JRpersonal/streborn/internal/wlanlive"
 )
 
-// withDropoutSignal stands in for the speaker's signal reading and counts how
-// often a dropout asked for it.
-func withDropoutSignal(t *testing.T, sig *atomic.Value, reads *atomic.Int32) {
-	t.Helper()
-	prev := readDropoutWifiSignal
-	readDropoutWifiSignal = func(*Server, context.Context) string {
+// withDropoutSignal stands in for s's signal reading and counts how often a
+// dropout asked for it.
+func withDropoutSignal(s *Server, sig *atomic.Value, reads *atomic.Int32) {
+	s.weakWifi.mu.Lock()
+	s.weakWifi.readSignal = func(context.Context) string {
 		reads.Add(1)
 		v, _ := sig.Load().(string)
 		return v
 	}
-	t.Cleanup(func() { readDropoutWifiSignal = prev })
+	s.weakWifi.mu.Unlock()
 }
 
 func TestADropoutOnAWeakSignalSetsTheMarker(t *testing.T) {
 	var sig atomic.Value
 	var reads atomic.Int32
 	sig.Store("POOR_SIGNAL")
-	withDropoutSignal(t, &sig, &reads)
 	s := quietServer("127.0.0.1")
+	withDropoutSignal(s, &sig, &reads)
 
 	t0 := time.Date(2026, 11, 3, 20, 0, 0, 0, time.UTC)
 	s.noteDropoutAt("radio", t0, false)
@@ -49,8 +48,8 @@ func TestADropoutOnAGoodSignalSetsNothing(t *testing.T) {
 	var sig atomic.Value
 	var reads atomic.Int32
 	sig.Store("GOOD_SIGNAL")
-	withDropoutSignal(t, &sig, &reads)
 	s := quietServer("127.0.0.1")
+	withDropoutSignal(s, &sig, &reads)
 	s.noteDropoutAt("radio", time.Now(), false)
 	if _, _, _, ok := s.WeakWifiDropout(); ok {
 		t.Fatal("a dropout on a good signal blamed the Wi-Fi")
@@ -63,8 +62,8 @@ func TestNoReadingIsNoEvidence(t *testing.T) {
 	var sig atomic.Value
 	var reads atomic.Int32
 	sig.Store("")
-	withDropoutSignal(t, &sig, &reads)
 	s := quietServer("127.0.0.1")
+	withDropoutSignal(s, &sig, &reads)
 	s.noteDropoutAt("spotify", time.Now(), false)
 	if _, _, _, ok := s.WeakWifiDropout(); ok {
 		t.Fatal("a dropout with no signal reading set the marker")
@@ -78,8 +77,8 @@ func TestReadingsAreRateLimitedButDropsKeepTheMarkerFresh(t *testing.T) {
 	var sig atomic.Value
 	var reads atomic.Int32
 	sig.Store("MARGINAL_SIGNAL")
-	withDropoutSignal(t, &sig, &reads)
 	s := quietServer("127.0.0.1")
+	withDropoutSignal(s, &sig, &reads)
 
 	t0 := time.Date(2026, 11, 3, 20, 0, 0, 0, time.UTC)
 	s.noteDropoutAt("radio", t0, false)
@@ -115,8 +114,8 @@ func TestTheVersionEnvelopeCarriesTheMarker(t *testing.T) {
 	var sig atomic.Value
 	var reads atomic.Int32
 	sig.Store("POOR_SIGNAL")
-	withDropoutSignal(t, &sig, &reads)
 	s := quietServer("127.0.0.1")
+	withDropoutSignal(s, &sig, &reads)
 	get := func() map[string]string {
 		w := httptest.NewRecorder()
 		s.handleAgentVersion(w, httptest.NewRequest(http.MethodGet, "/api/agent/version", nil))
@@ -181,5 +180,95 @@ func TestTheLiveWpaGradeWinsOverTheFirmwaresStaleOne(t *testing.T) {
 	bco := []boxapi.NetworkInterface{{Type: "ETHERNET_INTERFACE", Name: "eth0", State: "NETWORK_ETHERNET_CONNECTED"}}
 	if got := dropoutSignalFrom(bco, nil); got != "" {
 		t.Fatalf("coprocessor chassis: %q, want no reading", got)
+	}
+}
+
+// waitRePushDone waits for the re-push goroutine HandleSpotifyStreamDetach
+// started to finish (its 2 s backoff, then the guards).
+func waitRePushDone(t *testing.T, s *Server) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if !rePushArmed(s) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("the re-push goroutine did not finish")
+}
+
+// A Spotify stream the speaker let go of while it stayed on and idle is a real
+// dropout, and on a weak signal it sets the marker. App-driven Connect
+// playback (no preset behind the stream) is used so the recovery itself ends
+// without a recall.
+func TestASpotifyDropWhileTheSpeakerStaysOnSetsTheMarker(t *testing.T) {
+	t.Parallel()
+	s := spotifyDropServer(t, "http://127.0.0.1:8888/spotify/stream.ogg")
+	var sig atomic.Value
+	var reads atomic.Int32
+	sig.Store("MARGINAL_SIGNAL")
+	withDropoutSignal(s, &sig, &reads)
+
+	s.HandleSpotifyStreamDetach((40 * time.Minute).Milliseconds())
+	waitRePushDone(t, s)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, src, _, ok := s.WeakWifiDropout(); ok {
+			if got != "MARGINAL_SIGNAL" || src != "spotify" {
+				t.Fatalf("marker = %q %q, want MARGINAL_SIGNAL spotify", got, src)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("a real Spotify dropout on a weak signal left no marker")
+}
+
+// Everything that only LOOKS like a dropout must leave the marker alone, even
+// on a weak signal: an owner who switched a MARGINAL_SIGNAL speaker off for
+// the night must not be told for an hour that the music dropped out. Each case
+// is the detach followed by what the owner actually did.
+func TestADeliberateEndOfSpotifyIsNotADropout(t *testing.T) {
+	t.Parallel()
+	idle := `<nowPlaying source="INVALID_SOURCE"><playStatus>STOP_STATE</playStatus></nowPlaying>`
+	cases := []struct {
+		name       string
+		nowPlaying string
+		after      func(s *Server)
+	}{
+		{"power button", idle, func(s *Server) { s.noteStandbyStop() }},
+		{"standby bounce", idle, func(s *Server) { s.standbyStop.noteStop() }},
+		{"stop on the speaker or remote", idle, func(s *Server) { s.NoteUserStop() }},
+		{"speaker in standby", idle, nil},
+		{"switched to AUX", `<nowPlaying source="AUX"><playStatus>STOP_STATE</playStatus></nowPlaying>`, nil},
+		{"switched to Bluetooth", `<nowPlaying source="BLUETOOTH"><playStatus>STOP_STATE</playStatus></nowPlaying>`, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			s, _ := resumeTestServer(t, c.nowPlaying)
+			if c.name == "speaker in standby" {
+				s.playStateFn = func() (bool, bool) { return true, false }
+			}
+			s.play.mu.Lock()
+			s.play.last = &lastPlayInfo{boxURL: "http://127.0.0.1:8888/spotify/stream-4.ogg", title: "Regen", ts: time.Now()}
+			s.play.mu.Unlock()
+			var sig atomic.Value
+			var reads atomic.Int32
+			sig.Store("MARGINAL_SIGNAL")
+			withDropoutSignal(s, &sig, &reads)
+
+			s.HandleSpotifyStreamDetach((40 * time.Minute).Milliseconds())
+			if c.after != nil {
+				c.after(s)
+			}
+			waitRePushDone(t, s)
+			if n := reads.Load(); n != 0 {
+				t.Fatalf("a deliberate end read the signal %d times", n)
+			}
+			if _, _, _, ok := s.WeakWifiDropout(); ok {
+				t.Fatal("a deliberate end of playback was reported as a dropout")
+			}
+		})
 	}
 }
