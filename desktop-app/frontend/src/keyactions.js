@@ -6,7 +6,7 @@
 //     a ringing alarm needs, so the sleep timer cannot go there);
 //   - 'bassUp' / 'bassDown' move the speaker's bass one step per press
 //     (discussion #1494; thumbs keys only, for the same reason as the timer).
-//   - 'sleep15' / 'sleep30' / 'sleep60' start the sleep timer for that fixed
+//   - 'sleep15' / 'sleep30' / 'sleep60' / 'sleep90' start the sleep timer for that fixed
 //     length and switch it off when that length already runs (#1242; thumbs
 //     keys only, like the stepping timer).
 //   - 'shuffle' switches a Spotify playlist's shuffle, 'repeat' steps its
@@ -30,12 +30,12 @@ export const ACTION_BASS_DOWN = 'bassDown';
 export const ACTION_SHUFFLE = 'shuffle';
 export const ACTION_REPEAT = 'repeat';
 // The fixed sleep lengths, action -> minutes.
-export const SLEEP_FIXED = { sleep15: 15, sleep30: 30, sleep60: 60 };
+export const SLEEP_FIXED = { sleep15: 15, sleep30: 30, sleep60: 60, sleep90: 90 };
 // Every known action by its lower-cased name, to its canonical spelling (the
 // agent's keyactions normalises the same way).
 const CANONICAL = {
   sleep: ACTION_SLEEP, snooze: ACTION_SNOOZE, bassup: ACTION_BASS_UP, bassdown: ACTION_BASS_DOWN,
-  sleep15: 'sleep15', sleep30: 'sleep30', sleep60: 'sleep60', shuffle: ACTION_SHUFFLE, repeat: ACTION_REPEAT,
+  sleep15: 'sleep15', sleep30: 'sleep30', sleep60: 'sleep60', sleep90: 'sleep90', shuffle: ACTION_SHUFFLE, repeat: ACTION_REPEAT,
 };
 
 // isBassAction reports whether a is one of the two bass steps.

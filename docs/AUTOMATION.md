@@ -218,8 +218,8 @@ auto-off) goes off, and tapping through never repeats a step because a minute
 passed.
 
 **Fixed lengths (#1242).** For whoever always wants the same length, the
-"Built-in action" also offers "Sleep timer 15 / 30 / 60 min" (`sleep15`,
-`sleep30`, `sleep60`). A press starts the timer for exactly that length; a
+"Built-in action" also offers "Sleep timer 15 / 30 / 60 / 90 min" (`sleep15`,
+`sleep30`, `sleep60`, `sleep90`). A press starts the timer for exactly that length; a
 press while a timer started with that same length runs switches it off. A
 timer of another length (the phone's, the stepping key's) is replaced. Same
 group behaviour, notice and moon as the stepping key.

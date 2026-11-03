@@ -10,7 +10,7 @@
 //     each press (discussion #1494, internal/webui basskey.go), within the
 //     range the speaker reports. On a speaker without adjustable bass they do
 //     nothing.
-//   - "sleep15", "sleep30" and "sleep60" arm the sleep timer for that fixed
+//   - "sleep15", "sleep30", "sleep60" and "sleep90" arm the sleep timer for that fixed
 //     length, and switch it off when the same length already runs (#1242),
 //     for whoever always wants the same length from one press.
 //   - "shuffle" switches the Spotify playlist's shuffle on and off, "repeat"
@@ -68,11 +68,13 @@ const (
 	ActionBassUp = "bassUp"
 	// ActionBassDown lowers the speaker's bass one step on every press.
 	ActionBassDown = "bassDown"
-	// ActionSleep15, ActionSleep30 and ActionSleep60 arm the sleep timer for
-	// that fixed length, or switch it off when that length already runs.
+	// ActionSleep15, ActionSleep30, ActionSleep60 and ActionSleep90 arm the
+	// sleep timer for that fixed length, or switch it off when that length
+	// already runs.
 	ActionSleep15 = "sleep15"
 	ActionSleep30 = "sleep30"
 	ActionSleep60 = "sleep60"
+	ActionSleep90 = "sleep90"
 	// ActionShuffle switches the Spotify playlist's shuffle on or off.
 	ActionShuffle = "shuffle"
 	// ActionRepeat steps the Spotify playlist's repeat.
@@ -89,6 +91,7 @@ var actions = map[string]string{
 	"sleep15":  ActionSleep15,
 	"sleep30":  ActionSleep30,
 	"sleep60":  ActionSleep60,
+	"sleep90":  ActionSleep90,
 	"shuffle":  ActionShuffle,
 	"repeat":   ActionRepeat,
 }
@@ -117,6 +120,8 @@ func SleepMinutes(a string) int {
 		return 30
 	case ActionSleep60:
 		return 60
+	case ActionSleep90:
+		return 90
 	}
 	return 0
 }
@@ -124,7 +129,7 @@ func SleepMinutes(a string) int {
 // describe names an action in an error the user reads.
 func describe(a string) string {
 	switch a {
-	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60:
+	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60, ActionSleep90:
 		return "the sleep timer"
 	case ActionBassUp, ActionBassDown:
 		return "the bass step"
@@ -141,7 +146,7 @@ func describe(a string) string {
 // steps.
 func AllowedOn(action, key string) bool {
 	switch action {
-	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60,
+	case ActionSleep, ActionSleep15, ActionSleep30, ActionSleep60, ActionSleep90,
 		ActionBassUp, ActionBassDown, ActionShuffle, ActionRepeat:
 		return thumbs(key)
 	case ActionSnooze:
