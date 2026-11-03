@@ -607,7 +607,35 @@ func (a *agent) buildMarge() error {
 		return r != nil && r.DisplayControllerUp()
 	}
 	oled.SetDisplayUp(displayControllerUp)
-	go oled.ShowAtStart(splashKind, logger.With("comp", "oled"), displayControllerUp)
+	// Read here for the same reason as splashKind: webui.New consumes the marker.
+	afterUpdate := webui.OTARebootPending()
+	go func() {
+		oled.ShowAtStart(splashKind, logger.With("comp", "oled"), displayControllerUp)
+		if !afterUpdate {
+			return
+		}
+		// One standby after an update, once the splash has let go of the panel,
+		// so a sleeping speaker draws its standby clock again (clocknudge.go).
+		bc := boxapi.New(a.flags.boxHost)
+		clockNudge{
+			displayReady: oled.DisplayReady,
+			hasDisplay:   bc.HasDisplay,
+			inStandby: func(ctx context.Context) (bool, error) {
+				np, err := bc.NowPlaying(ctx)
+				if err != nil {
+					return false, err
+				}
+				return np.IsStandby(), nil
+			},
+			standby:    bc.Standby,
+			sleep:      sleepCtx,
+			logger:     logger.With("comp", "standbyclock"),
+			readyWait:  3 * time.Minute,
+			settle:     5 * time.Second,
+			stateTries: 4,
+			readRetry:  20 * time.Second,
+		}.run(ctx)
+	}()
 	// The short display notices (saved keys, empty keys, find this speaker)
 	// log under the same component; a box boot arms the "keys restored
 	// after reboot" notice, shown once per speaker (displaynotices.go).
