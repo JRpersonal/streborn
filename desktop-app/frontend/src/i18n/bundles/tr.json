@@ -270,6 +270,7 @@
   "library.folderQueued": "Klasör çalınıyor ({{n}} parça)",
   "library.subfoldersHint": "Bu klasörün kendi parçası yok, bu yüzden alt klasörlerindeki parçaları çalar, en fazla {{depth}} seviye derine kadar.",
   "library.collecting": "Alt klasörlerdeki parçalar toplanıyor…",
+  "library.collectingCount": "Alt klasörlerdeki parçalar toplanıyor… şu ana kadar {{folders}} klasörden {{tracks}} parça",
   "library.treeCut": "Bu klasör çok büyük, bu yüzden yalnızca ilk {{n}} parça dahil edildi.",
   "library.treeDepthCut": "{{depth}} seviyeden daha derindeki klasörler dahil edilmedi.",
   "library.treeEmpty": "Alt klasörlerde hoparlörün çalabileceği bir parça yok.",

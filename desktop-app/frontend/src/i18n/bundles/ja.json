@@ -270,6 +270,7 @@
   "library.folderQueued": "フォルダを再生中（{{n}} 曲）",
   "library.subfoldersHint": "このフォルダー自体には曲がないため、サブフォルダーの曲を再生します（{{depth}} 階層下まで）。",
   "library.collecting": "サブフォルダーの曲を集めています…",
+  "library.collectingCount": "サブフォルダーの曲を集めています… これまでに {{folders}} フォルダーから {{tracks}} 曲",
   "library.treeCut": "このフォルダーはとても大きいため、最初の {{n}} 曲だけが含まれます。",
   "library.treeDepthCut": "{{depth}} 階層より深いフォルダーは含まれません。",
   "library.treeEmpty": "サブフォルダーにはスピーカーで再生できる曲がありません。",

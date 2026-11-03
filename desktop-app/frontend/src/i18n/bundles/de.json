@@ -283,6 +283,7 @@
   "library.folderQueued": "Ordner wird abgespielt ({{n}} Titel)",
   "library.subfoldersHint": "Dieser Ordner enthält selbst keine Titel. Deshalb spielt er die Titel seiner Unterordner, bis zu {{depth}} Ebenen tief.",
   "library.collecting": "Die Titel aus den Unterordnern werden gesammelt…",
+  "library.collectingCount": "Die Titel aus den Unterordnern werden gesammelt… bisher {{tracks}} Titel aus {{folders}} Ordnern",
   "library.treeCut": "Dieser Ordner ist sehr groß, deshalb sind nur die ersten {{n}} Titel dabei.",
   "library.treeDepthCut": "Ordner, die mehr als {{depth}} Ebenen tief liegen, sind nicht dabei.",
   "library.treeEmpty": "In den Unterordnern sind keine Titel, die der Lautsprecher abspielen kann.",

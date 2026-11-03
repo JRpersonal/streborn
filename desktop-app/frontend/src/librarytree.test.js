@@ -101,3 +101,20 @@ describe('a folder of folders plays its albums (#1682)', () => {
       .toBe('library.treeCut:{"n":2} library.treeDepthCut:{"depth":3}');
   });
 });
+
+// Mail 2026-11-03: 332 songs on a slow QNAP took half a minute to collect and
+// the screen said nothing meanwhile. The walk reports its count as it goes.
+describe('the walk reports its progress', () => {
+  it('counts the folders read and the tracks collected after every folder', async () => {
+    const { browse } = server(ARTIST);
+    const seen = [];
+    await collectFolderTree({ browse, subfolders: SUBS, sort: SORT_SERVER, onProgress: (p) => seen.push(p) });
+    expect(seen).toEqual([{ folders: 2, tracks: 2 }, { folders: 3, tracks: 4 }]);
+  });
+
+  it('a progress callback that throws does not stop the walk', async () => {
+    const { browse } = server(ARTIST);
+    const tree = await collectFolderTree({ browse, subfolders: SUBS, sort: SORT_SERVER, onProgress: () => { throw new Error('ui gone'); } });
+    expect(titles(tree)).toEqual(['Omega', 'Alpha', 'Eins', 'Zwei']);
+  });
+});

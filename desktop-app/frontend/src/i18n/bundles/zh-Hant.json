@@ -283,6 +283,7 @@
   "library.folderQueued": "正在播放資料夾（{{n}} 首曲目）",
   "library.subfoldersHint": "這個資料夾本身沒有曲目，所以會播放其子資料夾裡的曲目，最多往下 {{depth}} 層。",
   "library.collecting": "正在收集子資料夾裡的曲目…",
+  "library.collectingCount": "正在收集子資料夾裡的曲目… 目前已從 {{folders}} 個資料夾找到 {{tracks}} 首",
   "library.treeCut": "這個資料夾非常大，因此只包含前 {{n}} 首曲目。",
   "library.treeDepthCut": "超過 {{depth}} 層深的資料夾不會包含在內。",
   "library.treeEmpty": "子資料夾裡沒有喇叭能播放的曲目。",

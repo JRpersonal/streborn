@@ -270,6 +270,7 @@
   "library.folderQueued": "Reproduciendo carpeta ({{n}} pistas)",
   "library.subfoldersHint": "Esta carpeta no contiene pistas propias, así que reproduce las pistas de sus subcarpetas, hasta {{depth}} niveles de profundidad.",
   "library.collecting": "Reuniendo las pistas de las subcarpetas…",
+  "library.collectingCount": "Reuniendo las pistas de las subcarpetas… {{tracks}} pistas de {{folders}} carpetas hasta ahora",
   "library.treeCut": "Esta carpeta es muy grande, así que solo se incluyen las primeras {{n}} pistas.",
   "library.treeDepthCut": "Las carpetas a más de {{depth}} niveles de profundidad se dejan fuera.",
   "library.treeEmpty": "Las subcarpetas no contienen pistas que el altavoz pueda reproducir.",

@@ -270,6 +270,7 @@
   "library.folderQueued": "Map afspelen ({{n}} nummers)",
   "library.subfoldersHint": "Deze map bevat zelf geen nummers. Daarom speelt hij de nummers uit zijn submappen af, tot {{depth}} niveaus diep.",
   "library.collecting": "De nummers uit de submappen worden verzameld…",
+  "library.collectingCount": "De nummers uit de submappen worden verzameld… tot nu toe {{tracks}} nummers uit {{folders}} mappen",
   "library.treeCut": "Deze map is erg groot, daarom zijn alleen de eerste {{n}} nummers meegenomen.",
   "library.treeDepthCut": "Mappen die meer dan {{depth}} niveaus diep liggen, zijn weggelaten.",
   "library.treeEmpty": "De submappen bevatten geen nummers die de speaker kan afspelen.",
