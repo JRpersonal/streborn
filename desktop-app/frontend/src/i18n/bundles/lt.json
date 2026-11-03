@@ -1776,8 +1776,6 @@
   "ui2.preview.noStorage": "Šis kompiuteris neleidžia programai įsiminti pasirinkimo, todėl išdėstymo pakeisti negalima.",
   "ui2.skip": "Pereiti prie turinio",
   "ui2.nav.label": "Pagrindinė navigacija",
-  "ui2.nav.listen": "Klausytis",
-  "ui2.nav.home": "Namai",
   "ui2.nav.radio": "Radijas",
   "ui2.radio.keysOn": "Mygtukai: {{name}}",
   "ui2.radio.keysHint": "Šeši mygtukai garsiakalbio viršuje",

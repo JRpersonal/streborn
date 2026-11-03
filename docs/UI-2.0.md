@@ -41,11 +41,12 @@ releases later.
 | Multi-room | Sidebar speaker list (who plays along: `+` on a speaker, `−` to take it out), Speakers > Groups (stereo pairs, fixed groups) |
 | Speaker settings | Speakers > one speaker |
 | Set up speaker | Speakers > Add speaker (wizard) |
-| Wishes | Sidebar, bottom; Help and info |
+| Wishes | Tab row, small at the far end; Help and info |
 
 ## What we take from the concept
 
-- Sidebar plus a player that stays in place on every view.
+- Sidebar plus a player that stays in place on every view (the navigation
+  became a tab row above the page on 2 November, see below).
 - Favorite and key are two named actions: saving a station is not assigning
   a hardware button.
 - Technical details (codec, bitrate, stream address) live in the station
@@ -54,8 +55,11 @@ releases later.
   opened from it (Levels).
 - Restart, remove and reset sit in a separate maintenance context, confirmed,
   and the confirmation names the speaker.
-- Help and info is one fixed place. Support links appear only there, never as
-  a banner in the music views.
+- Help and info is one fixed place for help. Support is always on screen:
+  the three donate buttons sit at the foot of the sidebar under "Support
+  STR" on every view (Jens, 2026-11-02: the preview had hidden them in Help
+  and info, while the classic layout keeps its rail). Never a banner, never a
+  prompt in a success moment.
 - Every empty, loading, offline and error state explains what happened and
   what can be done next. Status is never shown by color alone.
 
@@ -72,11 +76,33 @@ releases later.
   because it only plays as a whole. The playing group stays pinned on
   top (the one you control first when several play; with nothing playing,
   the speaker you control, so a group can be put together before Play);
-  with many speakers the rest of the list scrolls on its own, so the music
-  entries below it never scroll away. Offline speakers are greyed and
-  say "Offline"; Bose originals say "Ready for STR" and open the setup. This
+  with many speakers the rest of the list scrolls on its own. Offline
+  speakers are greyed and say "Offline"; Bose originals say "Ready for STR"
+  and open the setup. This
   replaces the room switcher and the separate output popover of the first
   draft.
+- **The sidebar belongs to the speakers, the navigation is a row of tabs
+  above the page** (2 November 2026). Until then the sidebar stacked the
+  speaker list and the navigation, each in its own scroll box: on Windows
+  two scrollbars were always on screen, in the default 1240 x 740 window the
+  menu was already cut off (Spotify half visible, Speakers hidden), and at
+  the smallest 1000 x 600 only two entries showed. Now the sidebar holds the
+  logo, the speaker section, "Support STR" with the three donate buttons
+  side by side, and a foot with the text size (Aa) and the language in one
+  row. The speaker section takes all the height left: the
+  pinned group keeps its cap and scrolls on its own beyond it, the other
+  speakers fill the rest and are the one scroll box (thin scrollbars, as in
+  the main pane). The navigation is a tab row in its own grid row above the
+  main pane, so the page scrolls below it and the tabs never scroll away:
+  Radio, Library, Recently played, Spotify, Speakers (marked current on all
+  four Speakers places), then Wishes and Help and info small and muted at
+  the far end. The open tab has a 3 px accent underline and
+  `aria-current="page"`; Left and Right move between the tabs. The row fits
+  at 1000 px in English and German at the default text size and wraps onto a
+  second line at a larger one, so no tab is ever cut off. The app's version
+  line left the sidebar for Help and info, About; only while an app update
+  waits and its notice was dismissed does one small line in the sidebar's
+  foot say so, and pressing it brings the notice back.
 - **A speaker's settings live on its page, Speakers > one speaker** (the
   open question "where do speaker settings live" from the concept). The page
   always shows the speaker you control: opening a speaker from the Speakers
@@ -114,8 +140,8 @@ releases later.
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
-- **Wishes stay visible**, small at the bottom of the sidebar. The Ideas vote
-  is the backlog.
+- **Wishes stay visible**, small and muted at the far end of the tab row,
+  next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.
 - **The phone remote follows the same structure:** the speaker list on top,
   then Listen, Find, Speakers, More.
@@ -142,8 +168,9 @@ every pairing is checked by `shell2/tokens.test.js`.
 | `--u-focus` | `#66BBDD` | `#1769AA` | `#FFFFFF` |
 
 The sidebar speaker list adds no colour token, only two sizes:
-`--u-spk-row` (one row) and `--u-spk-visible` / `--u-spk-pinned` (how many
-rows show before the other speakers, or a large pinned group, scroll).
+`--u-spk-row` (one row) and `--u-spk-pinned` (how many rows of a large
+pinned group show before it scrolls on its own). The other speakers take all
+the height the sidebar has left and are its one scroll box.
 An offline speaker is greyed with `--u-muted`, never with opacity, so its
 name keeps 4.5:1.
 

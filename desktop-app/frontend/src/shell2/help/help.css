@@ -133,7 +133,7 @@ html.ui2 #view-help .hlp-donate {
   flex-wrap: wrap;
   gap: 8px;
 }
-html.ui2 #view-help .hlp-donate .donate-btn {
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -148,19 +148,21 @@ html.ui2 #view-help .hlp-donate .donate-btn {
   font-weight: 600;
   cursor: pointer;
 }
-html.ui2 #view-help .hlp-donate .donate-btn-icon { display: inline-flex; align-items: center; }
-html.ui2 #view-help .hlp-donate .donate-btn-label { line-height: 1; }
-html.ui2 #view-help .hlp-donate .donate-paypal-mark { display: none; }
-html.ui2 #view-help .hlp-donate .donate-gh { background: #fff; color: #24292f; border-color: #bf3989; }
-html.ui2 #view-help .hlp-donate .donate-gh .donate-btn-icon { color: #bf3989; }
-html.ui2 #view-help .hlp-donate .donate-paypal { background: #ffc439; border-color: #e0a800; }
-html.ui2 #view-help .hlp-donate .donate-paypal-wordmark {
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-btn-icon { display: inline-flex; align-items: center; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-btn-label { line-height: 1; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-paypal-mark { display: none; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-gh { background: #fff; color: #24292f; border-color: #bf3989; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-gh .donate-btn-icon { color: #bf3989; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-paypal { background: #ffc439; border-color: #e0a800; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-paypal-wordmark {
   font-family: Helvetica, Arial, sans-serif;
   font-size: 15px;
   font-style: italic;
   font-weight: 800;
 }
-html.ui2 #view-help .hlp-donate .donate-paypal-wordmark .pay { color: #003087; }
-html.ui2 #view-help .hlp-donate .donate-paypal-wordmark .pal { color: #009cde; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-paypal-wordmark .pay { color: #003087; }
+/* PayPal's light blue #009CDE is about 2:1 on the gold; a deeper blue keeps
+   the two tones and clears 4.5:1 (4.6), as Ko-fi below keeps its coral. */
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-paypal-wordmark .pal { color: #0055a4; }
 /* Ko-fi's coral with dark words: white on #FF5E5B is below 4.5:1. */
-html.ui2 #view-help .hlp-donate .donate-kofi { background: #ff5e5b; color: #1a1a1a; }
+html.ui2 :is(#view-help .hlp-donate, #ui2Sidebar .ui2-donate) .donate-kofi { background: #ff5e5b; color: #1a1a1a; }

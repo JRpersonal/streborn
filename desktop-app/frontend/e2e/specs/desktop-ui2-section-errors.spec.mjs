@@ -16,7 +16,7 @@ import { onHost } from '../helpers/mockclient.mjs';
 
 const LR = ROSTER.livingRoom;
 
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const tab = (page, key) => page.locator(`#ui2SpkTab-${key}`);
 const card = (page, key) => page.locator(`#ui2SpkPanels [data-ui2-sec="${key}"]`);
 

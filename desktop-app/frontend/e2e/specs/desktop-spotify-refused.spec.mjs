@@ -102,7 +102,7 @@ test.describe('Spotify refused, UI 2.0 accounts card', () => {
   test('the speaker\'s login row says it too', async ({ app }) => {
     const { page } = app;
     await settle(page, 9_000);
-    await page.locator('#ui2Sidebar .ui2-nav-item[data-view="spotify"]').click();
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="spotify"]').click();
     await runFor(page, 2_000);
     const row = page.locator(`#sp2Accounts .sp2-acct[data-host="${LR.host}"]`);
     await expect(row.locator('.sp2-acct-refused')).toHaveText(en('spotify.accountRefused'));

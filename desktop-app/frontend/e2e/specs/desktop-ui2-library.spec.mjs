@@ -32,7 +32,7 @@ const track = (page, it) => lib(page).locator('.lib2-track', { hasText: it.title
 const rowStatus = (page, it) => track(page, it).locator('.lib2-status');
 
 async function openLibrary(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="library"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
   await expect(heading(page)).toHaveText(NAS);
 }
 
@@ -173,7 +173,7 @@ test.describe('UI 2.0 Library', () => {
 
     test('6. says so in place, with Try again and the way back', async ({ app, mock }) => {
       const { page } = app;
-      await page.locator('#ui2Sidebar .ui2-nav-item[data-view="library"]').click();
+      await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
       const state = lib(page).locator('.lib2-state--error');
       await expect(state).toHaveAttribute('role', 'alert');
       await expect(state.locator('.lib2-state-title')).toHaveText(en('ui2.library.asleepTitle', { name: NAS }));
@@ -193,7 +193,7 @@ test.describe('UI 2.0 Library', () => {
 
     test('7. explains what to do and offers the search and the address', async ({ app, mock }) => {
       const { page } = app;
-      await page.locator('#ui2Sidebar .ui2-nav-item[data-view="library"]').click();
+      await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
       await expect(lib(page).locator('.lib2-state-title')).toHaveText(en('ui2.library.noServersTitle'));
       await expect(lib(page).locator('.lib2-state')).toContainText(en('ui2.library.noServersBody'));
       await expect(lib(page).locator('.lib2-manual')).toHaveAttribute('open', '');

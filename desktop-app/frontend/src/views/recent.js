@@ -937,7 +937,7 @@ function wireRecentStateButtons(listEl) {
   });
 }
 
-// goToView opens another view of the preview the way its sidebar entry does
+// goToView opens another view of the preview the way its tab does
 // (the same switchView behind the same button), so nothing here needs main.js.
 function goToView(view) {
   if (typeof deps.switchView === 'function') { deps.switchView(view); return; }

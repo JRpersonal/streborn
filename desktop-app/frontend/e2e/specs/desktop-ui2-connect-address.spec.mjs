@@ -15,7 +15,7 @@ import { ROSTER } from '../../testkit/demo-data.mjs';
 
 const IP = '192.0.2.77';
 const NONE = { boxes: [], current: null, seed: { cachedBoxes: false } };
-const nav = (page, view) => page.locator(`#ui2Sidebar .ui2-nav-item[data-view="${view}"]`);
+const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 
 test.describe('Connect by address from the empty sidebar', () => {
   test.use({ ui2: true, scenario: { ...NONE, bindings: { AddBoxByIP: { value: null } } } });
@@ -97,7 +97,7 @@ test.describe('Connect by address: an address left after a failed connect', () =
     await expect(page.locator('#ui2SpkLists .u-connect-error')).toHaveText(en('speaker.manualIpNotFound', { ip: IP }));
     await expect(field).toHaveValue(IP);
     // The user moves on; the address stays in the field.
-    await page.locator('#ui2Sidebar .ui2-nav-item[data-view="box"]').focus();
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').focus();
     // A minute later the search finds the speakers.
     await mock.set('DiscoverBoxes', { value: [ROSTER.livingRoom, ROSTER.bedroom] });
     await settle(page, 70_000);

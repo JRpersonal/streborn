@@ -4,9 +4,11 @@
 // (../testkit via demo.mjs: eleven speakers, a group of two playing, a stereo pair, an
 // offline speaker, a Bose original), switches the preview on and checks what
 // the sidebar promises: every speaker listed once, the pair as one row,
-// Offline in words, "+" and "-" where the group edit acts, the keyboard, the
-// pinned group staying put while the list scrolls, the player's Levels, the
-// version line in the frame, and that "+" sends the edit to the right group.
+// Offline in words, "+" and "-" where the group edit acts, the keyboard, every
+// speaker shown whole in the default window and the other speakers as the
+// sidebar's one scroll box in the smallest, the tabs above the page, the
+// player's Levels, the version line in the frame, and that "+" sends the edit
+// to the right group.
 //
 // Runs in CI (build.yml, job "UI 2.0 preview"). Locally:
 //   cd desktop-app/frontend && npm ci
@@ -110,10 +112,53 @@ async function run(page) {
   });
   check(clipped.length === 0, `the focus ring has room on every side of every row (${clipped.join(', ') || 'none clipped'})`);
 
-  // The others scroll on their own; the pinned group and the entries stay.
+  // The sidebar is the speakers' (2026-11-02): in the default window every
+  // speaker of the eleven-speaker network shows whole, and the navigation is
+  // the tab row above the page, every tab on screen.
+  const sideGeo = () => page.evaluate(() => {
+    const r = (el) => el.getBoundingClientRect();
+    const side = document.querySelector('#ui2Sidebar');
+    // Every box in the sidebar that scrolls vertically right now.
+    const scrolling = [...side.querySelectorAll('*')].filter((el) => {
+      const oy = getComputedStyle(el).overflowY;
+      return (oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1;
+    }).map((el) => el.className);
+    const whole = [...side.querySelectorAll('#ui2SpkLists .ui2-spk-row')].filter((li) => {
+      const b = r(li);
+      const list = li.closest('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list');
+      const lb = r(list);
+      return b.top >= lb.top - 0.5 && b.bottom <= lb.bottom + 0.5;
+    }).length;
+    const tabs = [...document.querySelectorAll('#ui2Tabs .ui2-nav-item')].map((el) => {
+      const b = r(el);
+      return { view: el.dataset.view, inside: b.left >= 0 && b.right <= window.innerWidth + 0.5 && b.top >= 0 && b.bottom <= window.innerHeight + 0.5 };
+    });
+    const bottom = r(document.querySelector('.ui2-side-bottom'));
+    return {
+      scrolling,
+      whole,
+      tabs,
+      noNavInSidebar: !side.querySelector('.ui2-nav-item, nav'),
+      bottomIn: bottom.height > 0 && bottom.bottom <= r(side).bottom + 0.5,
+    };
+  });
+  const big = await sideGeo();
+  check(big.whole === STR_ROWS && big.scrolling.length === 0, `all ${STR_ROWS} speakers show whole in the 1240 x 740 window, no scroll box needed (${big.whole}, ${big.scrolling.join(', ') || 'none scrolling'})`);
+  check(big.noNavInSidebar, 'the sidebar holds no navigation');
+  check(big.tabs.length === 7 && big.tabs.every((x) => x.inside), `every tab is on screen above the page (${big.tabs.filter((x) => !x.inside).map((x) => x.view).join(', ') || 'all'})`);
+  check(big.bottomIn, 'Aa and the language stay at the foot of the sidebar');
+
+  // The smallest window: the other speakers are the sidebar's one scroll box;
+  // the pinned group and the tabs stay put while it scrolls.
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.waitForTimeout(400);
+  const small = await sideGeo();
+  check(small.scrolling.length === 1 && /\bui2-spk-scroll\b/.test(small.scrolling[0]), `exactly one vertical scroll box in the sidebar at 1000 x 600, the other speakers (${small.scrolling.join(', ') || 'none'})`);
+  check(small.tabs.length === 7 && small.tabs.every((x) => x.inside), `every tab is on screen at 1000 x 600 (${small.tabs.filter((x) => !x.inside).map((x) => x.view).join(', ') || 'all'})`);
+  check(small.bottomIn, 'Aa and the language stay at the foot of the sidebar at 1000 x 600');
   const before = await page.evaluate(() => ({
     pinned: document.querySelector('.ui2-spk-pinned').getBoundingClientRect().top,
-    radio: document.querySelector('.ui2-nav-item[data-view="box"]').getBoundingClientRect().top,
+    radio: document.querySelector('#ui2Tabs .ui2-nav-item[data-view="box"]').getBoundingClientRect().top,
   }));
   const scrolled = await page.evaluate(() => {
     const s = document.querySelector('.ui2-spk-scroll');
@@ -124,38 +169,14 @@ async function run(page) {
   });
   const after = await page.evaluate(() => ({
     pinned: document.querySelector('.ui2-spk-pinned').getBoundingClientRect().top,
-    radio: document.querySelector('.ui2-nav-item[data-view="box"]').getBoundingClientRect().top,
+    radio: document.querySelector('#ui2Tabs .ui2-nav-item[data-view="box"]').getBoundingClientRect().top,
   }));
-  check(scrolled, 'with eleven speakers the list scrolls on its own');
-  check(before.pinned === after.pinned && before.radio === after.radio, 'the pinned group and the navigation stay put while it scrolls');
-  // In the default window the others show at least three whole rows; the
-  // navigation entries give up room for that in their own scroll box, and the
-  // small entries and the bottom area stay on screen.
-  const room = await page.evaluate(() => {
-    const s = document.querySelector('.ui2-spk-scroll');
-    const box = s.getBoundingClientRect();
-    s.scrollTop = 0;
-    const whole = [...s.querySelectorAll('.ui2-spk-row')].filter((li) => {
-      const r = li.getBoundingClientRect();
-      return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
-    }).length;
-    const side = document.querySelector('#ui2Sidebar').getBoundingClientRect();
-    const fixed = ['.ui2-side-small', '.ui2-side-bottom'].every((sel) => {
-      const r = document.querySelector(sel).getBoundingClientRect();
-      return r.height > 0 && r.bottom <= side.bottom + 0.5;
-    });
-    const nav = document.querySelector('.ui2-side-scroll');
-    const last = [...nav.querySelectorAll('.ui2-nav-item')].pop();
-    nav.scrollTop = nav.scrollHeight;
-    const lr = last.getBoundingClientRect();
-    const nr = nav.getBoundingClientRect();
-    const reachable = lr.bottom <= nr.bottom + 0.5 && lr.top >= nr.top - 0.5;
-    nav.scrollTop = 0;
-    return { whole, fixed, reachable };
-  });
-  check(room.whole >= 3, `the other speakers show at least three whole rows in the default window (${room.whole})`);
-  check(room.fixed, 'the small entries and the bottom area stay on screen');
-  check(room.reachable, 'every navigation entry can be reached in its own scroll box');
+  check(scrolled, 'in the smallest window the eleven speakers scroll on their own');
+  check(before.pinned === after.pinned && before.radio === after.radio, 'the pinned group and the tabs stay put while it scrolls');
+  check(small.whole >= 5, `the smallest window still shows at least five whole rows (${small.whole})`);
+  await page.evaluate(() => { document.querySelector('.ui2-spk-scroll').scrollTop = 0; });
+  await page.setViewportSize({ width: 1240, height: 740 });
+  await page.waitForTimeout(400);
 
   // The player: group volume and Levels, no Output popover.
   check(!(await page.$('#ui2OutputBtn')) && !(await page.$('#ui2RoomBtn')), 'no room switcher and no Output popover');
@@ -186,8 +207,10 @@ async function run(page) {
   check(idleSel.pinned.join() === [host('Living Room'), host('Dining room')].join(), 'with an idle speaker chosen, the playing group stays pinned');
   check(idleSel.masters.length > 0 && idleSel.masters.every((m) => m === host('Living Room')), 'every "+" adds to the playing group');
 
-  // The version line sits in the frame.
-  check(!!(await page.$('#ui2Version #appUpdateBanner.app-update-quiet')), 'the version line is at the bottom of the sidebar');
+  // The version line waits in the frame, out of sight: nothing is pending,
+  // and the version and the update check live on Help and info.
+  check(!!(await page.$('#ui2Version #appUpdateBanner.app-update-quiet')), 'the version line waits in the update slot of the sidebar');
+  check(await page.$eval('#ui2Version', (el) => el.hidden && el.offsetParent === null), 'with no update waiting the sidebar shows no version line');
 
   // "+" edits the playing group, even when the row is chosen right after
   // (the batch keeps the group it was clicked in).
@@ -201,13 +224,14 @@ async function run(page) {
   check(form[1] === host('Living Room'), 'the edit goes to the master of the group it was clicked in');
   check(slaves.join() === [host('Dining room'), host('Office')].sort().join(), 'the edit keeps the member and adds Office, never the master itself');
 
-  // Help and info (phase 5): the small entry under Wishes opens the one place
+  // Help and info (phase 5): the small tab after Wishes opens the one place
   // for help, wishes, community, support and about. The classic footer is
-  // hidden on every preview view, so the donate buttons show only here.
-  const helpEntry = await page.$eval('#ui2Sidebar .ui2-side-small', (el) => [...el.querySelectorAll('.ui2-nav-item')].map((b) => b.dataset.view));
-  check(helpEntry.join() === 'wishes,help', `Wishes and Help and info are the small entries, Help last (${helpEntry.join()})`);
-  const donateBefore = await page.$$eval('[data-donate]', (els) => els.filter((e) => e.offsetParent !== null).length);
-  check(donateBefore === 0, `no donate button on screen outside Help and info (${donateBefore})`);
+  // hidden on every preview view; the donate buttons sit at the foot of the
+  // sidebar on every view, and Help and info has its own three.
+  const helpEntry = await page.$eval('#ui2Tabs .ui2-tabs-small', (el) => [...el.querySelectorAll('.ui2-nav-item')].map((b) => b.dataset.view));
+  check(helpEntry.join() === 'wishes,help', `Wishes and Help and info are the small tabs, Help last (${helpEntry.join()})`);
+  const donateBefore = await page.$$eval('[data-donate]', (els) => els.filter((e) => e.offsetParent !== null).map((e) => !!e.closest('#ui2Support')));
+  check(donateBefore.length === 3 && donateBefore.every(Boolean), `the three donate buttons are on screen at the foot of the sidebar, and only there (${donateBefore.length})`);
   await page.click('#ui2NavHelp');
   await page.waitForSelector('#view-help:not(.hidden) #hlpTitle', { timeout: 5000 });
   const helpPage = await page.evaluate(() => {
@@ -223,7 +247,7 @@ async function run(page) {
       }),
       current: document.getElementById('ui2NavHelp').getAttribute('aria-current'),
       footerHidden: !footer || footer.offsetParent === null,
-      donateInHelp: donate.length === 3 && donate.every((e) => v.contains(e)),
+      donateInHelp: donate.filter((e) => v.contains(e)).length === 3 && donate.filter((e) => !v.contains(e)).every((e) => !!e.closest('#ui2Support')),
       trademark: !!tm && tm.offsetParent !== null && /Bose Corporation/.test(tm.textContent),
     };
   });
@@ -231,7 +255,7 @@ async function run(page) {
   check(helpPage.labelled, 'every Help and info section is labelled by its own heading');
   check(helpPage.current === 'page', 'the Help entry is marked current');
   check(helpPage.footerHidden, 'the classic footer is hidden on Help and info');
-  check(helpPage.donateInHelp, 'the three donate buttons show on Help and info, inside it');
+  check(helpPage.donateInHelp, 'Help and info shows its own three donate buttons, besides the sidebar foot');
   check(helpPage.trademark, 'the trademark notice is on screen');
 }
 

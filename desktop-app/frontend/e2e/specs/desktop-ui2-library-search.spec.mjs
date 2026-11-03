@@ -15,7 +15,7 @@ const lib = (page) => page.locator('#ui2MainInner > #view-library');
 const heading = (page) => lib(page).locator('#lib2LevelTitle');
 
 async function openLibrary(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="library"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
   await expect(heading(page)).toHaveText(NAS);
 }
 

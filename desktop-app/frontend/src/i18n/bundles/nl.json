@@ -1776,8 +1776,6 @@
   "ui2.preview.noStorage": "Deze computer laat de app de keuze niet onthouden, dus de indeling kan niet worden gewisseld.",
   "ui2.skip": "Naar inhoud springen",
   "ui2.nav.label": "Hoofdnavigatie",
-  "ui2.nav.listen": "Luisteren",
-  "ui2.nav.home": "Thuis",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Toetsen op {{name}}",
   "ui2.radio.keysHint": "De zes knoppen boven op de speaker",

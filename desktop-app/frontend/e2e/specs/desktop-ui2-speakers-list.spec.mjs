@@ -23,7 +23,7 @@ const pill = (page, host) => card(page, host).locator('.u-pill');
 const act = (page, what, host) => page.locator(`#view-speakers .spl-act[data-act="${what}"]${host ? `[data-host="${host}"]` : ''}`);
 
 async function openList(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="speakers"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="speakers"]').click();
   await expect(page.locator('#ui2MainInner > #view-speakers')).toBeVisible();
   // The zone poll has answered once the stereo pair is one card.
   await expect(page.locator('#view-speakers .spl-item')).toHaveCount(9);

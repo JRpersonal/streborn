@@ -1776,8 +1776,6 @@
   "ui2.preview.noStorage": "Šis dators neļauj lietotnei atcerēties izvēli, tāpēc izkārtojumu nevar pārslēgt.",
   "ui2.skip": "Pāriet uz saturu",
   "ui2.nav.label": "Galvenā navigācija",
-  "ui2.nav.listen": "Klausīties",
-  "ui2.nav.home": "Mājas",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Pogas: {{name}}",
   "ui2.radio.keysHint": "Sešas pogas skaļruņa augšpusē",

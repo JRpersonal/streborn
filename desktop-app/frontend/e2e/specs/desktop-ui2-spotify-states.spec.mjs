@@ -34,7 +34,7 @@ const NET = {
 };
 
 async function openSpotify(page) {
-  await page.locator('#ui2Sidebar .ui2-nav-item[data-view="spotify"]').click();
+  await page.locator('#ui2Tabs .ui2-nav-item[data-view="spotify"]').click();
   await expect(page.locator('#ui2MainInner > #view-spotify')).toBeVisible();
 }
 

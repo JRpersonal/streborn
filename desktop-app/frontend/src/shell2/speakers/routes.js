@@ -1,7 +1,7 @@
 // shell2/speakers/routes.js: the routes of the UI 2.0 Speakers area, as data
 // (phase 3, #1287, docs/UI-2.0.md "Navigation, current and new").
 //
-// The Speakers area is one sidebar entry with four places under it. Three of
+// The Speakers area is one tab with four places under it. Three of
 // them ARE the views the classic tabs open, so their lifecycle (the settings
 // load and reconnect loop, the Multi-room live poll, the setup drive scan)
 // stays exactly where it is and works the same in both layouts; only the

@@ -886,7 +886,7 @@ function paintFoot(name) {
 
 // ---- leaving mid-install ---------------------------------------------------
 
-// leaveGuard holds a click that would leave the wizard (a sidebar entry, a
+// leaveGuard holds a click that would leave the wizard (a tab above the page, a
 // place of the Speakers row) while an install or a firmware update runs, and
 // asks first. The install keeps running either way; the question is whether
 // the user wants to stop watching it.

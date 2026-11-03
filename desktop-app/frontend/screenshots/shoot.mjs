@@ -209,7 +209,7 @@ async function drive(page, view) {
 // played under its day headings, Spotify with a playlist playing on the
 // speaker you control.
 async function driveUi2Phase2(page, which) {
-  const open = (v) => page.click(`#ui2Sidebar .ui2-nav-item[data-view="${v}"]`);
+  const open = (v) => page.click(`#ui2Tabs .ui2-nav-item[data-view="${v}"]`);
   if (which === 'radio' || which === 'radiorows') {
     await open('box');
     await page.waitForSelector('#ui2KeysTitle', { timeout: 9000 });
@@ -250,7 +250,7 @@ async function driveUi2Phase2(page, which) {
 // Groups, or a confirmation (restart on Maintenance, undoing the stereo pair
 // on Groups), left open for the shot.
 async function driveUi2Phase3(page, which) {
-  await page.click('#ui2Sidebar .ui2-nav-item[data-view="speakers"]');
+  await page.click('#ui2Tabs .ui2-nav-item[data-view="speakers"]');
   await page.waitForSelector('#view-speakers .spl-open', { timeout: 9000 });
   const top = () => page.evaluate(() => { const m = document.getElementById('ui2Main'); if (m) m.scrollTop = 0; });
   if (which === 'list') {

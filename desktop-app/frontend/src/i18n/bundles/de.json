@@ -1776,8 +1776,6 @@
   "ui2.preview.noStorage": "Dieser Computer lässt die App die Auswahl nicht speichern, deshalb kannst du das Layout nicht wechseln.",
   "ui2.skip": "Zum Inhalt springen",
   "ui2.nav.label": "Hauptnavigation",
-  "ui2.nav.listen": "Hören",
-  "ui2.nav.home": "Zuhause",
   "ui2.nav.radio": "Radio",
   "ui2.radio.keysOn": "Tasten auf {{name}}",
   "ui2.radio.keysHint": "Die sechs Tasten oben auf dem Lautsprecher",

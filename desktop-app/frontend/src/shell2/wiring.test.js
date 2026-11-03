@@ -92,9 +92,11 @@ describe('UI 2.0 hooks in the app', () => {
   });
 
   it('opens Help and info as a preview view after Wishes, and hides the footer in every preview view', () => {
-    // Small, outside the scroll area, under Wishes.
-    const small = markup.indexOf('<div class="ui2-side-small">');
-    expect(small).toBeGreaterThan(markup.indexOf('<div class="ui2-side-scroll">'));
+    // Small, at the far end of the tab row, after Wishes.
+    const tabs = markup.indexOf('<nav class="ui2-tabs" id="ui2Tabs"');
+    const small = markup.indexOf('<div class="ui2-tabs-small">');
+    expect(small).toBeGreaterThan(tabs);
+    expect(small).toBeLessThan(markup.indexOf('</nav>', tabs));
     expect(markup).toContain('<div id="view-help" class="view hidden"></div>');
     // switchView toggles the node only when it exists (classic has none).
     expect(srcOf('switchView')).toContain("const helpView = $('view-help'); if (helpView) helpView.classList.toggle('hidden', view !== 'help');");
@@ -156,11 +158,42 @@ describe('UI 2.0 sidebar speaker list', () => {
     for (const id of ['ui2RoomBtn', 'ui2RoomPop', 'ui2RoomList', 'ui2RoomAdd', 'ui2OutputBtn', 'ui2OutputPop']) {
       expect(markup, id).not.toContain(id);
     }
-    const spk = markup.indexOf('id="ui2Speakers"');
-    const nav = markup.indexOf('<nav class="ui2-side-nav"');
-    expect(spk).toBeGreaterThan(0);
-    expect(nav).toBeGreaterThan(spk);
-    for (const id of ['ui2LevelsPop', 'ui2GroupVolSlot', 'ui2Version', 'ui2SpkLists']) expect(markup, id).toContain(`id="${id}"`);
+    for (const id of ['ui2LevelsPop', 'ui2GroupVolSlot', 'ui2Version', 'ui2UpdateLine', 'ui2SpkLists']) expect(markup, id).toContain(`id="${id}"`);
+  });
+
+  it('gives the sidebar to the speakers and the navigation to the tab row', () => {
+    // The sidebar: logo, the speaker section, the foot (update line, Aa and
+    // the language). No navigation in it any more.
+    const side = markup.slice(markup.indexOf('id="ui2Sidebar"'), markup.indexOf('<nav class="ui2-tabs"'));
+    expect(side).toContain('id="ui2Speakers"');
+    expect(side).toContain('id="ui2AppSettings"');
+    expect(side).not.toContain('ui2-nav-item');
+    expect(side).not.toContain('<nav');
+    for (const gone of ['ui2-side-nav', 'ui2-side-scroll', 'ui2-side-small', 'ui2-nav-heading', 'ui2NavHead', 'ui2-nav-group']) {
+      expect(markup, gone).not.toContain(gone);
+      expect(shellCss, gone).not.toContain(gone);
+    }
+    // The tab row is its own grid row above the main pane, outside its scroll.
+    const tabs = markup.indexOf('<nav class="ui2-tabs" id="ui2Tabs" aria-label=');
+    expect(tabs).toBeGreaterThan(0);
+    expect(markup.indexOf('<main class="ui2-main"')).toBeGreaterThan(markup.indexOf('</nav>', tabs));
+    expect(shellCss).toMatch(/grid-template-areas:\s*"banners banners"\s*"side tabs"\s*"side main"\s*"player player";/);
+    expect(srcOf('syncShellNav')).toContain("'#ui2Tabs .ui2-nav-item[data-view]'");
+    // The floor and squeeze machinery that shared the height with the
+    // navigation is gone.
+    for (const gone of ['holdSpeakerFloor', 'is-squeezed', 'NAV_RESERVE_ENTRIES', 'halfRowCut', 'rowsHeight']) {
+      expect(mount, gone).not.toContain(gone);
+      expect(shellCss, gone).not.toContain(gone);
+    }
+    expect(mount).toContain('fitSpeakerLists(lists);');
+  });
+
+  it('shows the update line in the sidebar only while an update waits', () => {
+    const watch = srcOf('watchAppUpdateBanner');
+    expect(watch).toContain("const pending = quiet && !!state.appUpdateVersion && !banner.classList.contains('hidden');");
+    expect(watch).toContain('versionSlot.hidden = !pending;');
+    expect(watch).toContain("banner.querySelector('#appUpdateCheckLink')");
+    expect(markup).toContain('<div class="ui2-side-update" id="ui2Version" hidden>');
   });
 
   it('moves the group panel into Levels and keeps the version line in the frame', () => {
@@ -217,7 +250,7 @@ describe('UI 2.0 shell hygiene', () => {
   });
 
   it('scopes the new focus ring to the shell chrome', () => {
-    expect(shellCss).toContain('html.ui2 :is(.ui2-sidebar, .ui2-player, .u-popover, .u-skip) :focus-visible');
+    expect(shellCss).toContain('html.ui2 :is(.ui2-sidebar, .ui2-tabs, .ui2-player, .u-popover, .u-skip) :focus-visible');
     expect(shellCss).not.toMatch(/^html\.ui2 \*:focus-visible/m);
   });
 });

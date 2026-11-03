@@ -2,6 +2,7 @@
 // headings, the trademark notice, the save-logs line, the legal pages per
 // language, the strings in all thirteen bundles, the donate buttons living
 // here alone, and an import that touches no DOM.
+import { escapeHtml } from '../../utils.js';
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileSource, sourceFiles } from '../../test/source.js';
@@ -222,11 +223,23 @@ describe('Help and info strings', () => {
   });
 });
 
-describe('Donate buttons live in Help and info alone', () => {
-  it('appear in the help markup and nowhere else the shell renders', () => {
+// Jens, 2026-11-02: support always on screen. The shell renders the three
+// buttons once, at the foot of the sidebar; Help and info has its own section.
+describe('Donate buttons: the sidebar foot and Help and info', () => {
+  it('appear once in the shell (the sidebar foot), once in help, nowhere else', () => {
     expect(page()).toContain('data-donate="');
-    expect(shellMarkup()).not.toContain('data-donate');
-    for (const f of sourceFiles().filter((x) => x.startsWith('shell2/') && !x.endsWith('.test.js') && x !== 'shell2/help/help.js')) {
+    expect(shellMarkup().match(/data-donate="/g)).toHaveLength(3);
+    expect(shellMarkup()).toContain('id="ui2Support"');
+  });
+  it('carries the classic donate rail words above the sidebar buttons', () => {
+    // Jens, 2026-11-02: the same text as before matters.
+    const m = shellMarkup();
+    const head = m.slice(m.indexOf('ui2-support-head'), m.indexOf('data-donate="'));
+    expect(head).toContain(escapeHtml(t('footer.donateSlogan')));
+    expect(head).toContain('&#9749;');
+  });
+  it('keeps the buttons out of every other shell file', () => {
+    for (const f of sourceFiles().filter((x) => x.startsWith('shell2/') && !x.endsWith('.test.js') && !['shell2/help/help.js', 'shell2/markup.js'].includes(x))) {
       const src = fileSource(f);
       expect(src, f).not.toContain('data-donate');
       expect(src, f).not.toContain('donateButtonsHTML');
@@ -264,9 +277,9 @@ function markupHasHelpNode() {
   return shellMarkup().includes('<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div>');
 }
 
-// Check for app update answers next to itself, in a live region: the version
-// line at the bottom of the sidebar, where the classic answer goes, is out of
-// the way and not announced.
+// Check for app update answers next to itself, in a live region: the app's
+// version line, where the classic answer goes, waits out of sight in the
+// preview and is not announced.
 describe('the app update check in Help and info', () => {
   it('says what the check found, in the line under the button', () => {
     expect(updateStatus({ state: 'idle' }, t)).toEqual({ kind: '', text: '' });

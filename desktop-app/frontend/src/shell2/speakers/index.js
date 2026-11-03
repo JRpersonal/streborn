@@ -1,7 +1,7 @@
 // shell2/speakers/index.js: the router of the UI 2.0 Speakers area (phase 3,
 // #1287; docs/UI-2.0.md, "Navigation, current and new").
 //
-// One sidebar entry, Speakers, and four places under it (routes.js):
+// One tab, Speakers, and four places under it (routes.js):
 //
 //   list     every speaker with its state             view 'speakers' (list.js)
 //   speaker  one speaker, five tabs                   view 'settings' (speaker.js)

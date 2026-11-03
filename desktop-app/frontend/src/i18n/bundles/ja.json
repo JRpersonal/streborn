@@ -1776,8 +1776,6 @@
   "ui2.preview.noStorage": "このコンピューターではアプリが選択を記憶できないため、レイアウトを切り替えられません。",
   "ui2.skip": "コンテンツへスキップ",
   "ui2.nav.label": "メインナビゲーション",
-  "ui2.nav.listen": "聴く",
-  "ui2.nav.home": "ホーム",
   "ui2.nav.radio": "ラジオ",
   "ui2.radio.keysOn": "{{name}} のキー",
   "ui2.radio.keysHint": "スピーカー上部の 6 つのボタン",

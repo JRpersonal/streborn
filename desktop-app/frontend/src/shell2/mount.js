@@ -25,6 +25,7 @@ import { state } from '../state.js';
 import { t } from '../i18n/index.js';
 import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
+import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
@@ -37,6 +38,7 @@ import {
 // Phase 5: the banner region's cards in the shell's tokens (html.ui2 only).
 import './banners.css';
 import { mountHelp, syncHelpView } from './help/help.js';
+import { wireDonateButtons } from '../donate.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -114,6 +116,7 @@ function collect(frame) {
     fLevelsBody: q('#ui2LevelsBody'),
     fSpeakers: q('#ui2SpkLists'),
     fVersion: q('#ui2Version'),
+    fUpdateLine: q('#ui2UpdateLine'),
     fGroupVolSlot: q('#ui2GroupVolSlot'),
   };
   const views = VIEW_IDS.map(byId);
@@ -217,7 +220,7 @@ export function mountShell2(d) {
   wire(frame, skip);
   state.ui2Shell = true;
   document.documentElement.classList.add('ui2');
-  watchAppUpdateBanner(n.appUpdateBanner, n.fVersion, n.fBanners);
+  watchAppUpdateBanner(n.appUpdateBanner, n.fVersion, n.fBanners, n.fUpdateLine);
   syncShellNav(state.view);
   syncShellPlayer(!!state.currentBox);
   paintSpeakers(true);
@@ -260,12 +263,18 @@ function wire(frame, skip) {
     btn.addEventListener('click', () => {
       if (typeof deps.switchView === 'function') deps.switchView(btn.dataset.view);
     });
+    // The tab row: Left and Right move along it (Up and Down too), Home and
+    // End to its ends. Every entry stays a Tab stop of its own.
     btn.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (e.ctrlKey || e.altKey || e.shiftKey) return;
       const list = navItems();
-      const at = list.indexOf(btn);
-      const next = list[e.key === 'ArrowDown' ? Math.min(list.length - 1, at + 1) : Math.max(0, at - 1)];
-      if (next) { e.preventDefault(); next.focus(); }
+      const rtl = getComputedStyle(btn).direction === 'rtl';
+      const to = navStep(e.key, list.indexOf(btn), list.length, rtl);
+      const next = to >= 0 ? list[to] : null;
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+      if (typeof next.scrollIntoView === 'function') next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
   });
 
@@ -275,6 +284,9 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  // Support STR, always on screen at the foot of the sidebar (Jens,
+  // 2026-11-02: the classic layout's rail had no equivalent in the preview).
+  wireDonateButtons(frame.querySelector('#ui2Support'));
   // A group edit waiting for the speakers is decided when a zone round lands.
   onZoneLive(() => { if (state.ui2Shell && awaiting.size) paintSpeakers(false); });
   // The Speakers area (phase 3): its row of places and its routes.
@@ -580,44 +592,64 @@ function setRoving(root, host) {
   });
 }
 
-// watchAppUpdateBanner keeps the app's version line inside the frame. Quiet
-// ("Version ... Check for app updates") it is a footnote, and sits at the
-// bottom of the sidebar; a real notice (an update, a download hand-off) is a
-// window-wide banner and goes to the banner region on top. main.js renders
+// watchAppUpdateBanner keeps the app's version line inside the frame. A real
+// notice (an update, a download hand-off) is a window-wide banner and goes to
+// the banner region on top. Quiet ("Version ... Check for app updates") it
+// waits out of sight in the sidebar's update slot (#ui2Version): the version
+// and the update check live on Help and info, About, and the sidebar's
+// resting state belongs to the speakers. Only while an update is waiting and
+// its notice was dismissed does the slot show one small line, "New app version
+// available: 1.4.0", whose press brings the notice back (the quiet link's own
+// path: the dismissal is cleared and the check runs again). main.js renders
 // the banner as it always did; this only follows its quiet class, so every
 // path that draws it (the quiet link, the full notice, the mac, deb and
 // winget hand-offs) lands in the right place without touching them.
-function watchAppUpdateBanner(banner, versionSlot, bannersSlot) {
+function watchAppUpdateBanner(banner, versionSlot, bannersSlot, line) {
   if (!banner || !versionSlot || !bannersSlot || typeof MutationObserver === 'undefined') return;
-  // A manual check is a press inside the banner; the notice it brings back
-  // replaces the link that had focus, so focus follows the moved banner.
+  // A manual check is a press inside the banner (or on the line standing in
+  // for it); the notice it brings back replaces what had focus, so focus
+  // follows the moved banner.
   let pressedAt = 0;
   banner.addEventListener('click', () => { pressedAt = Date.now(); });
+  if (line) {
+    line.addEventListener('click', () => {
+      pressedAt = Date.now();
+      const link = banner.querySelector('#appUpdateCheckLink');
+      if (link) link.click();
+      else if (typeof deps.checkAppUpdate === 'function') deps.checkAppUpdate(true);
+    });
+  }
   const place = () => {
     const quiet = banner.classList.contains('app-update-quiet');
     const target = quiet ? versionSlot : bannersSlot;
+    // The line: only for an update that is waiting while its notice is not
+    // on screen.
+    const pending = quiet && !!state.appUpdateVersion && !banner.classList.contains('hidden');
+    if (line) line.textContent = pending ? `${t('banner.appUpdateAvail')} ${state.appUpdateVersion}` : '';
+    versionSlot.hidden = !pending;
     if (banner.parentNode === target) return;
     const active = document.activeElement;
-    const hadFocus = banner.contains(active)
+    const hadFocus = banner.contains(active) || versionSlot.contains(active)
       || ((!active || active === document.body) && Date.now() - pressedAt < 20000);
     if (quiet) target.appendChild(banner);
     else target.insertBefore(banner, target.firstChild);
-    if (hadFocus) {
-      const f = banner.querySelector('button, a[href]');
-      if (f) f.focus();
-    }
+    if (!hadFocus) return;
+    // The notice on top takes the keyboard; a dismissed one hands it to the
+    // line that stands in for it (the quiet banner itself is out of sight).
+    const f = quiet ? (pending ? line : null) : banner.querySelector('button, a[href]');
+    if (f) f.focus();
   };
-  new MutationObserver(place).observe(banner, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(place).observe(banner, { attributes: true, attributeFilter: ['class'], childList: true });
   place();
 }
 
-// syncShellNav marks the open view in the sidebar and starts it at the top,
+// syncShellNav marks the open view in the tab row and starts it at the top,
 // the way a fresh tab did when the whole window scrolled. An area entry
 // (Speakers) is marked on every view it stands for (data-views), and the
 // area's own head follows the view too.
 export function syncShellNav(view) {
   if (!state.ui2Shell) return;
-  document.querySelectorAll('#ui2Sidebar .ui2-nav-item[data-view]').forEach((btn) => {
+  document.querySelectorAll('#ui2Tabs .ui2-nav-item[data-view]').forEach((btn) => {
     const on = btn.dataset.view === view || (btn.dataset.views || '').split(' ').includes(view);
     btn.classList.toggle('is-active', on);
     if (on) btn.setAttribute('aria-current', 'page');
@@ -803,16 +835,14 @@ function paintSpeakers(force) {
     const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
     const keepHost = inList ? active.dataset.host : '';
     const keepAct = inList && active.classList.contains('ui2-spk-act');
-    const scrolls = [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].map((el) => el.scrollTop);
-    const listsTop = lists.scrollTop;
+    const scrolls = [...lists.querySelectorAll(SPK_LISTS)].map((el) => el.scrollTop);
     const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
     restoreConnectFocus(lists, keepField);
-    holdSpeakerFloor(lists);
-    [...lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list')].forEach((el, i) => {
+    fitSpeakerLists(lists);
+    [...lists.querySelectorAll(SPK_LISTS)].forEach((el, i) => {
       if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];
     });
-    lists.scrollTop = listsTop;
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
       const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
@@ -834,93 +864,39 @@ function paintSpeakers(force) {
   }
 }
 
-// holdSpeakerFloor sets how far the speaker section may shrink when the
-// sidebar is short: the pinned group down to two and a half rows (its list
-// scrolls below that) and the others down to three rows and half of the
-// fourth, or all of them when there are fewer. Measured, because a row is one
-// line or two depending on its name and pill, and the text size zooms all of
-// it. The floor is cut at whole rows plus half the next one, so the cut row
-// shows a piece of its name next to a piece of its "+", never a bare button
-// edge. The navigation entries give up their room only after that
-// (shell2.css).
-//
-// In a window too short for that (a large text size, a low window) the floor
-// is held back so two and a half navigation entries and everything below them
-// stay on screen; the others then keep at least one row and a half, as long as
-// that leaves the entries one and a half. When even that is too much (Extra
-// large in the smallest window), the entries keep one and a half and the
-// speakers get the rest, at least their first row whole. Below the floor of the
-// two lists the section turns into one scroll box (is-squeezed): the pinned
-// group and the others scroll together inside it, and nothing in the sidebar
-// is ever drawn over anything else. The entries are counted in entry heights
-// of the navigation's scroll box, its first group heading included: at Extra
-// large in the 1000 x 600 window the one and a half show the heading and most
-// of the first entry, and the rest scrolls. The sidebar's own size is watched,
-// so a resize or a text size change sets the floor again.
-const OTHERS_FLOOR_ROWS = 3;
-const NAV_RESERVE_ENTRIES = 2.5;
-const NAV_LEAST_ENTRIES = 1.5;
-let floorWatch = null;
-let floorWatched = null;
-function holdSpeakerFloor(lists) {
+// The two speaker lists of the sidebar: the pinned group (capped at
+// --u-spk-pinned rows, shell2.css) and the other speakers, which take the
+// rest of the sidebar's height.
+const SPK_LISTS = '.ui2-spk-pinned .ui2-spk-list, .ui2-spk-scroll';
+
+// fitSpeakerLists ends each list that scrolls below a whole row (endOnRow)
+// and does it again whenever the speaker section changes size (a resize of
+// the window, a text size change). The sidebar holds nothing else that wants
+// its height since the navigation moved into the tab row (2026-11-02), so the
+// section simply takes all of it; nothing is measured against anything else.
+let fitWatch = null;
+let fitWatched = null;
+function fitSpeakerLists(lists) {
   const section = lists.closest('.ui2-spk');
-  if (!section) return;
-  const side = section.parentElement;
-  if (side && side !== floorWatched && typeof ResizeObserver === 'function') {
-    if (floorWatch) floorWatch.disconnect();
-    floorWatch = new ResizeObserver(() => {
+  if (section && section !== fitWatched && typeof ResizeObserver === 'function') {
+    if (fitWatch) fitWatch.disconnect();
+    fitWatch = new ResizeObserver(() => {
       const l = byId('ui2SpkLists');
-      if (l) holdSpeakerFloor(l);
+      if (l) fitSpeakerLists(l);
     });
-    floorWatch.observe(side);
-    floorWatched = side;
+    fitWatch.observe(section);
+    fitWatched = section;
   }
-  // Measured as the two capped lists, never as the one squeezed scroll box.
-  section.classList.remove('is-squeezed');
-  const pinned = lists.querySelector('.ui2-spk-pinned');
-  const pinnedList = pinned && pinned.querySelector('.ui2-spk-list');
-  const scroll = lists.querySelector('.ui2-spk-scroll');
-  const pinnedH = pinned
-    ? pinned.offsetHeight - (pinnedList ? pinnedList.offsetHeight - rowsHeight(pinnedList, 2) : 0)
-    : 0;
-  const others = scroll ? rowsHeight(scroll, OTHERS_FLOOR_ROWS) : 0;
-  const pad = Math.max(0, section.offsetHeight - lists.offsetHeight);
-  let floor = pinnedH + others + pad;
-  // squeezed: the floor leaves less than the pinned group at its least and a
-  // row and a half of the others, so the two lists share one scroll instead.
-  let squeezed = false;
-  if (side) {
-    const nav = side.querySelector('.ui2-side-nav');
-    const entry = side.querySelector('.ui2-side-scroll .ui2-nav-item');
-    const small = side.querySelector('.ui2-side-small');
-    const entryH = entry ? entry.offsetHeight : 0;
-    let fixed = small ? small.offsetHeight : 0;
-    for (const el of side.children) if (el !== section && el !== nav) fixed += el.offsetHeight;
-    const room = Math.max(0, side.clientHeight - fixed);
-    // At the least the first row whole, its sub heading above it included.
-    const row = lists.querySelector('.ui2-spk-row');
-    const spkLeast = Math.min(floor, (row ? layoutTop(row) - layoutTop(lists) + row.offsetHeight + 4 : 0) + pad);
-    const navLeast = Math.max(0, room - entryH * NAV_LEAST_ENTRIES);
-    const listsLeast = pinnedH + (scroll ? rowsHeight(scroll, 1) : 0) + pad;
-    const spkRoom = Math.min(Math.max(room - entryH * NAV_RESERVE_ENTRIES, spkLeast), navLeast);
-    floor = Math.min(floor, Math.max(spkRoom, Math.min(listsLeast, navLeast)));
-    squeezed = floor < listsLeast - 1;
-  }
-  section.classList.toggle('is-squeezed', squeezed);
-  // The one scroll box is cut at a row too, measured as it now stands.
-  if (squeezed) floor = halfRowCut(lists, floor - pad) + pad;
-  section.style.minHeight = floor > 0 ? `${Math.ceil(floor)}px` : '';
-  lists.querySelectorAll('.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list').forEach((el) => endOnRow(el, squeezed));
+  lists.querySelectorAll(SPK_LISTS).forEach(endOnRow);
 }
 
 // endOnRow lets a scrolling list end below a whole row instead of through
 // one: the height the sidebar gives it is cut back to the last row that fits
-// whole (its focus ring room included). What is left goes to the navigation
-// below; the shadow at the cut edge (shell2.css) says the list goes on. A list
-// that shows every row, and the squeezed lists (one scroll box), keep theirs.
-function endOnRow(list, squeezed) {
+// whole (its focus ring room included); the shadow at the cut edge
+// (shell2.css) says the list goes on. A list that shows every row keeps its
+// height.
+function endOnRow(list) {
   list.style.maxHeight = '';
-  if (squeezed) return;
   const room = list.clientHeight;
   if (list.scrollHeight <= room + 1) return;
   const top = layoutTop(list);
@@ -939,22 +915,6 @@ function endOnRow(list, squeezed) {
   if (best > 2 * pad) list.style.maxHeight = `${best - 2 * pad}px`;
 }
 
-// halfRowCut is the largest height up to room that ends halfway down a row of
-// the squeezed lists or just below a whole one (up to the 4px its focus ring
-// would like), or room itself when not even the first row's half fits.
-function halfRowCut(lists, room) {
-  let best = 0;
-  const top = layoutTop(lists);
-  for (const row of lists.querySelectorAll('.ui2-spk-row')) {
-    const at = layoutTop(row) - top;
-    const half = at + row.offsetHeight / 2;
-    const whole = at + row.offsetHeight;
-    if (half <= room) best = Math.max(best, half);
-    if (whole <= room) best = Math.max(best, Math.min(room, whole + 4));
-  }
-  return best || Math.max(0, room);
-}
-
 // layoutTop is el's distance from the top of the page in layout units: the
 // offset chain, which ignores scrolling and, unlike getBoundingClientRect,
 // is not scaled by the text-size zoom, so it compares with offsetHeight.
@@ -964,23 +924,10 @@ function layoutTop(el) {
   return y;
 }
 
-// rowsHeight is the height a scrolling list needs to show its first n rows
-// whole and half of the next, its own padding included; the full height when
-// it holds no more than that. Layout units throughout (layoutTop): a client
-// rect is zoomed by the text size and came out a third too tall at Extra
-// large.
-function rowsHeight(list, n) {
-  const rows = [...list.querySelectorAll('.ui2-spk-row')];
-  const full = list.scrollHeight + (list.offsetHeight - list.clientHeight);
-  if (rows.length <= n) return full;
-  const next = rows[n];
-  return Math.min(full, layoutTop(next) - layoutTop(list) + next.offsetHeight / 2);
-}
-
-// mirrorShellBadges copies the counts the tab bar shows onto the sidebar:
-// speakers due an update on Speaker settings, groups on Multi-room. The badge
-// shows the bare number; its accessible name says what is counted, worded so
-// it reads right for any number in every language.
+// mirrorShellBadges copies the counts the classic tab bar shows onto the
+// preview: speakers due an update on the Speakers tab, groups on Speakers >
+// Groups. The badge shows the bare number; its accessible name says what is
+// counted, worded so it reads right for any number in every language.
 export function mirrorShellBadges(o = {}) {
   if (!state.ui2Shell) return;
   if (Object.prototype.hasOwnProperty.call(o, 'settingsUpdates')) {
