@@ -72,7 +72,11 @@ async function readFolder(browse, id) {
 // (each played once, however many folders list it), how many folders were
 // read, whether the walk stopped at a cap, and whether deeper folders were
 // left out. A sub-folder that cannot be read is skipped, not fatal.
-export async function collectFolderTree({ browse, subfolders, sort, isCancelled = () => false, limits = {} }) {
+//   onProgress({folders, tracks})  optional, after every folder read: a slow
+//                             NAS takes half a minute for an artist with a few
+//                             hundred songs, and a screen that says nothing
+//                             for that long reads as a hung app
+export async function collectFolderTree({ browse, subfolders, sort, isCancelled = () => false, limits = {}, onProgress = null }) {
   const maxDepth = limits.depth || LIB_TREE_MAX_DEPTH;
   const maxTracks = limits.tracks || LIB_TREE_MAX_TRACKS;
   const maxFolders = limits.folders || LIB_TREE_MAX_FOLDERS;
@@ -108,6 +112,9 @@ export async function collectFolderTree({ browse, subfolders, sort, isCancelled 
           out.cut = true;
           return;
         }
+      }
+      if (onProgress) {
+        try { onProgress({ folders: out.folders, tracks: out.items.length }); } catch { /* display only */ }
       }
       if (!f.containers.length) continue;
       if (depth >= maxDepth) {

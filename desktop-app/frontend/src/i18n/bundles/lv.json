@@ -270,6 +270,7 @@
   "library.folderQueued": "Atskaņo mapi ({{n}} ieraksti)",
   "library.subfoldersHint": "Šajā mapē pašā nav ierakstu, tāpēc tiek atskaņoti tās apakšmapju ieraksti, līdz {{depth}} līmeņiem dziļumā.",
   "library.collecting": "Tiek savākti ieraksti no apakšmapēm…",
+  "library.collectingCount": "Tiek savākti ieraksti no apakšmapēm… pagaidām {{tracks}} ieraksti no {{folders}} mapēm",
   "library.treeCut": "Šī mape ir ļoti liela, tāpēc iekļauti tikai pirmie {{n}} ieraksti.",
   "library.treeDepthCut": "Mapes, kas atrodas dziļāk par {{depth}} līmeņiem, ir izlaistas.",
   "library.treeEmpty": "Apakšmapēs nav ierakstu, ko skaļrunis var atskaņot.",

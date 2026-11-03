@@ -270,6 +270,7 @@
   "library.folderQueued": "Grojamas aplankas ({{n}} kūrinių)",
   "library.subfoldersHint": "Šiame aplanke pačiame kūrinių nėra, todėl grojami jo poaplankių kūriniai, iki {{depth}} lygių gilyn.",
   "library.collecting": "Renkami kūriniai iš poaplankių…",
+  "library.collectingCount": "Renkami kūriniai iš poaplankių… kol kas {{tracks}} kūr. iš {{folders}} aplankų",
   "library.treeCut": "Šis aplankas labai didelis, todėl įtraukti tik pirmi {{n}} kūriniai.",
   "library.treeDepthCut": "Aplankai, esantys giliau nei {{depth}} lygiai, praleisti.",
   "library.treeEmpty": "Poaplankiuose nėra kūrinių, kuriuos garsiakalbis galėtų groti.",

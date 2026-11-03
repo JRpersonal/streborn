@@ -270,6 +270,7 @@
   "library.folderQueued": "Lecture du dossier ({{n}} pistes)",
   "library.subfoldersHint": "Ce dossier ne contient lui-même aucune piste. Il lit donc les pistes de ses sous-dossiers, jusqu’à {{depth}} niveaux de profondeur.",
   "library.collecting": "Récupération des pistes des sous-dossiers…",
+  "library.collectingCount": "Récupération des pistes des sous-dossiers… {{tracks}} pistes de {{folders}} dossiers pour l'instant",
   "library.treeCut": "Ce dossier est très grand, seules les {{n}} premières pistes sont donc incluses.",
   "library.treeDepthCut": "Les dossiers situés à plus de {{depth}} niveaux de profondeur sont laissés de côté.",
   "library.treeEmpty": "Les sous-dossiers ne contiennent aucune piste que l’enceinte peut lire.",

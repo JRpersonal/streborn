@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, hideToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
 import {
@@ -679,14 +679,28 @@ async function libraryFolderTracks() {
   if (!libraryOnlySubfolders()) return { list: libraryItems(), tree: null };
   const token = libState.browseToken;
   const udn = libState.currentUDN;
-  if (ui2()) setLibStatus('folder', { tone: 'busy', text: t('library.collecting') });
-  else showToast(t('library.collecting'));
+  // The classic toast stays up (sticky) while the walk runs and counts along:
+  // a plain toast was gone after three seconds of a half-minute walk on a slow
+  // NAS, and the app looked hung (mail, 2026-11-03, 332 songs on a QNAP).
+  const showCollecting = (text) => {
+    if (ui2()) setLibStatus('folder', { tone: 'busy', text });
+    else showToast(text, 0);
+  };
+  showCollecting(t('library.collecting'));
+  let lastProgress = 0;
   const tree = await collectFolderTree({
     browse: (id, start, count) => BrowseLibrary(udn, id, start, count),
     subfolders: libraryContainers(),
     sort: libState.sort,
     isCancelled: () => token !== libState.browseToken,
+    onProgress: ({ folders, tracks }) => {
+      const now = Date.now();
+      if (now - lastProgress < 500 || token !== libState.browseToken) return;
+      lastProgress = now;
+      showCollecting(t('library.collectingCount', { tracks, folders }));
+    },
   });
+  if (!ui2()) hideToast();
   if (token !== libState.browseToken) return null;
   if (ui2()) setLibStatus('folderCut', treeNote(tree, t) ? { tone: 'warn', text: treeNote(tree, t) } : null);
   return { list: tree.items, tree };

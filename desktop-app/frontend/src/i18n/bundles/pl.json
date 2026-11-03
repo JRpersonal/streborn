@@ -270,6 +270,7 @@
   "library.folderQueued": "Odtwarzanie folderu ({{n}} utworów)",
   "library.subfoldersHint": "Ten folder sam nie zawiera utworów, więc odtwarza utwory ze swoich podfolderów, do {{depth}} poziomów w głąb.",
   "library.collecting": "Zbieranie utworów z podfolderów…",
+  "library.collectingCount": "Zbieranie utworów z podfolderów… na razie {{tracks}} utw. z {{folders}} folderów",
   "library.treeCut": "Ten folder jest bardzo duży, więc uwzględniono tylko pierwsze {{n}} utworów.",
   "library.treeDepthCut": "Foldery położone głębiej niż {{depth}} poziomy zostały pominięte.",
   "library.treeEmpty": "W podfolderach nie ma utworów, które głośnik może odtworzyć.",

@@ -283,6 +283,7 @@
   "library.folderQueued": "Playing folder ({{n}} tracks)",
   "library.subfoldersHint": "This folder holds no tracks itself, so it plays the tracks of its subfolders, up to {{depth}} levels down.",
   "library.collecting": "Collecting the tracks from the subfolders…",
+  "library.collectingCount": "Collecting the tracks from the subfolders… {{tracks}} tracks from {{folders}} folders so far",
   "library.treeCut": "This folder is very big, so only the first {{n}} tracks are included.",
   "library.treeDepthCut": "Folders more than {{depth}} levels down are left out.",
   "library.treeEmpty": "The subfolders hold no tracks the speaker can play.",
