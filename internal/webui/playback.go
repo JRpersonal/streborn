@@ -638,8 +638,15 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 				// cold-boot auth race where the playlist never loaded at all - and
 				// never on an audio-key denial, where it would only amplify the
 				// skip storm.
+				// A playlist the engine already holds keeps its song: a re-Play
+				// would pick a new random song of a shuffle preset, shown in the
+				// Spotify app as a skip nobody heard (ST30, 2026-11-02).
 				if lastAttempt && !keyDenied {
-					_ = s.spotifyPlay(ctx, uri, account, shuffle, repeat)
+					if s.spotifyHoldsContext != nil && s.spotifyHoldsContext(ctx, uri) {
+						s.logger.Warn("spotify recall (app) not playing, the engine holds the playlist; re-pointing the box and keeping the loaded song (no re-Play)", "slot", slot)
+					} else {
+						_ = s.spotifyPlay(ctx, uri, account, shuffle, repeat)
+					}
 				}
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)

@@ -304,6 +304,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			if json.Unmarshal(ev.Data, &wp) == nil && wp.ContextURI != "" {
 				m.mu.Lock()
 				m.noteRecallContextLocked(wp.ContextURI)
+				m.engineContext = wp.ContextURI
 				prevContext := m.lastContext
 				playingNow := m.curName
 				// Compare the NORMALIZED contexts: a recall stores the

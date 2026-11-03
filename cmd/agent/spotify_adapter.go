@@ -21,7 +21,7 @@ type spotifyEngine struct {
 	m *spotify.Manager
 }
 
-// The adapter implements the base interface and all four optional
+// The adapter implements the base interface and all five optional
 // sub-interfaces, so every Spotify field of the server is set on the speaker,
 // exactly as the per-field options set them before.
 var (
@@ -30,6 +30,7 @@ var (
 	_ webui.SpotifyStatusPages     = (*spotifyEngine)(nil)
 	_ webui.SpotifyEngineLifecycle = (*spotifyEngine)(nil)
 	_ webui.SpotifyRemoteKeys      = (*spotifyEngine)(nil)
+	_ webui.SpotifyRecallRecovery  = (*spotifyEngine)(nil)
 )
 
 func (e *spotifyEngine) SwitchedAway(ctx context.Context)                   { e.m.SwitchedAway(ctx) }
@@ -105,4 +106,9 @@ func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
 }
 func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
 	return e.m.CycleRepeat(ctx)
+}
+
+// webui.SpotifyRecallRecovery
+func (e *spotifyEngine) HoldsContext(ctx context.Context, uri string) bool {
+	return e.m.HoldsContext(ctx, uri)
 }

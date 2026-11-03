@@ -2103,8 +2103,12 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 		// reshuffling/restarting the track. A re-Play here was the cause of the
 		// "same song restarts a few seconds in" the user saw. Only the final
 		// attempt does a full re-Play, to recover a genuine cold-boot auth race
-		// where the playlist never loaded at all.
-		if attempt == 3 {
+		// where the playlist never loaded at all. A playlist that DID load keeps
+		// its song: a re-Play there picks a new random song of a shuffle preset,
+		// and the Spotify app shows the first one skipped (ST30, 2026-11-02).
+		if attempt == 3 && h.spotify.HoldsContext(ctx, p.URI) {
+			h.logger.Warn("spotify recall not playing, the engine holds the playlist; re-pointing the box and keeping the loaded song (no re-Play)", "slot", slot)
+		} else if attempt == 3 {
 			h.logger.Warn("spotify recall not playing, full re-Play (last resort)", "slot", slot)
 			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle, Repeat: p.Repeat})
 		} else {
