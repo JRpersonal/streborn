@@ -407,3 +407,21 @@ func (s *Server) browseContainerChildren(ctx context.Context, srv dlna.Server, c
 	}
 	return folders, out, false, nil
 }
+
+// queueKeyCover is the cover a folder key shows: its own, or else the first
+// song's in the folder's list order (presetOwnArt in the desktop app, the same
+// rule the phone page follows). A key-started folder's Recently-played card
+// takes it too. Leaving the card's art empty made it fall back to the first
+// song PLAYED, which under shuffle is a random one, so the card showed another
+// album than the key (#1730).
+func queueKeyCover(p presets.Preset) string {
+	if a := strings.TrimSpace(p.Art); a != "" {
+		return a
+	}
+	for _, it := range p.Items {
+		if a := strings.TrimSpace(it.Art); a != "" {
+			return a
+		}
+	}
+	return ""
+}
