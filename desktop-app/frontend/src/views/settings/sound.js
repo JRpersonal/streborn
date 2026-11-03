@@ -166,6 +166,16 @@ export function renderSoundSections() {
   };
 }
 
+// modelWithoutClockDisplay names the models that have no front display at all,
+// so no clock can ever show there whatever /clockDisplay answers: the
+// SoundTouch 10 (#299), the Wireless Link Adapter (#635, its firmware answers
+// /clockDisplay like any speaker's) and the SA-4 / SA-5 amplifiers. The Wave is
+// NOT on the list: its segment display shows the time.
+export function modelWithoutClockDisplay(model) {
+  const m = String(model || '');
+  return /\b10\b/.test(m) || /wireless\s*link/i.test(m) || /\bSA-?[45]\b/i.test(m);
+}
+
 export function wireSoundSections(ctx) {
   const { box } = ctx;
   // The clock goes through the Go backend (GetClockDisplay etc.) by host: the
@@ -185,7 +195,7 @@ export function wireSoundSections(ctx) {
   // controls for a plain "not supported" note, which is exactly what the help
   // text promises, and skip the GET/POST wiring entirely. Fixes #299. Same
   // \b10\b model test as the stereo-pair gate in multiroom.js.
-  const noClockDisplay = /\b10\b/.test(box.model || '');
+  const noClockDisplay = modelWithoutClockDisplay(box.model);
   if (noClockDisplay) {
     const ctlRow = $('clockControlsRow');
     const clockHelp = $('clockHelp');
