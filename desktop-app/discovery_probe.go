@@ -354,14 +354,31 @@ func probeStockDetail(ctx context.Context, ip string) (BoxInfo, bool, error) {
 // the owner had cleaned reported Bose's. Not a rival: an empty value, Bose's own
 // host, and STR's own stick-free unlock, which sets the address to its
 // placeholder host or to a command injection for the duration of the unlock.
+//
+// AfterTouch's own SSH unlock uses the same injection shape, and a third Wave
+// in the same thread was left on it after the owner's revert:
+// https://aftertouch.invalid;touch /tmp/remote_services;/etc/init.d/sshd start.
+// An injection cannot be told apart by its shape (STR's older unlock put a LAN
+// address in front of the ';' too), so an injected value counts as a rival only
+// when it names AfterTouch, and the note shows the address in front of the ';',
+// not the commands behind it.
 func rivalCloudURL(margeURL string) string {
 	u := strings.TrimSpace(margeURL)
 	if u == "" {
 		return ""
 	}
 	l := strings.ToLower(u)
-	if strings.Contains(l, "str-setup.invalid") || strings.ContainsAny(l, "; ") {
+	if strings.Contains(l, "str-setup.invalid") {
 		return ""
+	}
+	if i := strings.IndexAny(l, "; "); i >= 0 {
+		if !strings.Contains(l, "aftertouch") {
+			return ""
+		}
+		u, l = strings.TrimSpace(u[:i]), l[:i]
+		if u == "" {
+			return "AfterTouch"
+		}
 	}
 	host := l
 	if i := strings.Index(host, "://"); i >= 0 {

@@ -15,6 +15,9 @@ func TestRivalCloudURL(t *testing.T) {
 		{" http://192.0.2.13:8880 ", "http://192.0.2.13:8880", "trimmed"},
 		{"https://str-setup.invalid", "", "STR's own unlock placeholder"},
 		{"http://192.0.2.5:9090/;touch /tmp/remote_services;/etc/init.d/sshd start", "", "STR's own unlock injection"},
+		{"https://str-setup.invalid;touch /tmp/remote_services;/etc/init.d/sshd start #", "", "STR's own unlock injection on the placeholder host"},
+		{"https://aftertouch.invalid;touch /tmp/remote_services;/etc/init.d/sshd start", "https://aftertouch.invalid", "AfterTouch's own SSH unlock left behind (field bundle 2026-11-03)"},
+		{";touch /tmp/remote_services # aftertouch", "AfterTouch", "an AfterTouch injection with no address in front"},
 	}
 	for _, c := range cases {
 		if got := rivalCloudURL(c.in); got != c.want {
