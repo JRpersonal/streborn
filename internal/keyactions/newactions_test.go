@@ -9,7 +9,7 @@ import (
 // thumbs keys only, like the stepping sleep timer: AUX would also switch the
 // input away from what they act on.
 func TestValidateNewActionsOnThumbsOnly(t *testing.T) {
-	for _, a := range []string{ActionSleep15, ActionSleep30, ActionSleep60, ActionShuffle, ActionRepeat} {
+	for _, a := range []string{ActionSleep15, ActionSleep30, ActionSleep60, ActionSleep90, ActionShuffle, ActionRepeat} {
 		d := Document{Keys: map[string]string{"thumbsDown": strings.ToUpper(a)}}
 		if err := d.Validate(nil); err != nil {
 			t.Fatalf("%s on a thumbs key refused: %v", a, err)
@@ -25,7 +25,7 @@ func TestValidateNewActionsOnThumbsOnly(t *testing.T) {
 }
 
 func TestSleepMinutesAndPlayMode(t *testing.T) {
-	for a, want := range map[string]int{ActionSleep15: 15, ActionSleep30: 30, ActionSleep60: 60, ActionSleep: 0, ActionShuffle: 0} {
+	for a, want := range map[string]int{ActionSleep15: 15, ActionSleep30: 30, ActionSleep60: 60, ActionSleep90: 90, ActionSleep: 0, ActionShuffle: 0} {
 		if got := SleepMinutes(a); got != want {
 			t.Errorf("SleepMinutes(%q) = %d, want %d", a, got, want)
 		}

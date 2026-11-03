@@ -10,7 +10,7 @@ import {
 
 describe('fixed sleep lengths, shuffle and repeat', () => {
   it('go on the thumbs keys only, like the agent allows', () => {
-    for (const a of ['sleep15', 'sleep30', 'sleep60', 'shuffle', 'repeat']) {
+    for (const a of ['sleep15', 'sleep30', 'sleep60', 'sleep90', 'shuffle', 'repeat']) {
       expect(actionAllowed(a, 'thumbsUp'), a).toBe(true);
       expect(actionAllowed(a, 'aux'), a).toBe(false);
       expect(actionAllowed(a, 'next'), a).toBe(false);
@@ -24,6 +24,7 @@ describe('fixed sleep lengths, shuffle and repeat', () => {
     const d = { keys: { thumbsUp: 'sleep60', thumbsDown: 'repeat' } };
     expect(sleepOn(d, 'thumbsUp')).toBe(true);
     expect(sleepMinutesOf('sleep60')).toBe(60);
+    expect(sleepMinutesOf('sleep90')).toBe(90);
     expect(sleepMinutesOf('sleep')).toBe(0);
     expect(isSleepAction('sleep15') && isSleepAction('sleep')).toBe(true);
     expect(playModeOn(d, 'thumbsDown')).toBe(true);

@@ -105,7 +105,7 @@ func nextFixedSleep(active bool, armed, fixed time.Duration) time.Duration {
 }
 
 // SleepFixedKeyPress is the press handler of a key bound to a fixed sleep
-// length (keyactions.ActionSleep15/30/60, #1242). Same debounce, group timer
+// length (keyactions.ActionSleep15/30/60/90, #1242). Same debounce, group timer
 // and notice as the stepping key; returns at once.
 func (s *Server) SleepFixedKeyPress(minutes int) {
 	if minutes <= 0 || minutes > sleepMaxMinutes {
