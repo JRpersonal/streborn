@@ -793,7 +793,14 @@ function paint() {
   // The classic words travel along to Confirm and stay calm there too.
   W.root.classList.toggle('is-calm', (W.step === 'install' || W.step === 'confirm') && ['update-finishing', 'str-running'].includes(W.installKind));
   if (W.step === 'confirm') {
-    const cm = { status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '', model: (tg && tg.model) || '' };
+    // The model picks the checklist's wording and keeps the SoundTouch 300 out
+    // of it. A stock speaker's record often carries only `type`, which the
+    // target does not copy, so the record is asked too.
+    const tgBox = tg && tg.host ? (state.boxes || []).find((b) => b && b.host === tg.host) : null;
+    const cm = {
+      status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '',
+      model: (tg && tg.model) || (tgBox && (tgBox.model || tgBox.type)) || '',
+    };
     setHTML('w2ConfirmBody', confirmHTML(cm));
     const live = byId('w2ConfirmLive');
     const say = confirmLiveText(cm);

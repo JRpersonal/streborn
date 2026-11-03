@@ -103,7 +103,8 @@ type UpdateOutcome struct {
 	Confirmed bool `json:"confirmed"`
 	// Verdict is ClassifyOTAResult's word when the verify window expired
 	// (not-landed, landed-not-running, swap-failed, unreachable, agent-gone,
-	// box-in-setup), fed to the frontend's loop breaker. Empty otherwise.
+	// box-in-setup, no-network-here), fed to the frontend's loop breaker.
+	// Empty otherwise.
 	Verdict         string `json:"verdict"`
 	EngineDelivered bool   `json:"engineDelivered"`
 	EngineTooFull   bool   `json:"engineTooFull"`

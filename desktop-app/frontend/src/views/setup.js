@@ -41,7 +41,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 import { langOptionsHtml, wireCombobox } from './settings.js';
 import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../fwguide.js';
 import { firmwareLadderDeps } from '../fwladderdeps.js';
-import { darkChecklistHtml, wireDarkChecklist } from '../darkafterupdate.js';
+import { darkChecklistApplies, darkChecklistHtml, wireDarkChecklist } from '../darkafterupdate.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -2122,10 +2122,14 @@ function wireOutdatedFirmwareLinks() {
 // installDarkChecklistHtml is the "has not come back" checklist for an
 // install whose speaker answered nothing (darkafterupdate.js), unframed: the
 // screen's own red headline already says the speaker did not come back.
+// Empty for the SoundTouch 300 (darkChecklistApplies): its one step is the
+// power cycle, and the checklist's Wi-Fi and factory reset lines are exactly
+// the network steps installHelpHtml removes for that model.
 function installDarkChecklistHtml(box) {
+  if (!darkChecklistApplies(box)) return '';
   return darkChecklistHtml({
     name: (box && (box.friendlyName || box.name || box.host)) || '',
-    model: (box && (box.model || box.type)) || '',
+    box: box || null,
     context: 'install',
     framed: false,
   });
@@ -2752,9 +2756,11 @@ function verifyInstalledState(box, onState) {
       // firmware by stick. Several of these turned out to be a power supply
       // that gave out at the restart. The setup phase keeps its own list:
       // pulling the plug on a speaker mid-setup is the wrong advice there.
-      const steps = inSetup
+      // So does the SoundTouch 300: its logs-only list and the red
+      // power-cycle step are the whole answer (installHelpHtml).
+      const steps = (inSetup || !darkChecklistApplies(foundBox))
         ? help + powerCycleAdviceHtml(foundBox)
-        : (isSoundTouch300(foundBox) ? powerCycleAdviceHtml(foundBox) : '') + installDarkChecklistHtml(foundBox);
+        : installDarkChecklistHtml(foundBox);
       render(`<div class="setup-err">${escapeHtml(t('setup.installWaitGaveUp'))}</div>`
         + (fwBlock || '') + steps + installFailureReportHtml() + (log || ''));
       wireOutdatedFirmwareLinks();
@@ -2863,8 +2869,10 @@ function verifyInstalledState(box, onState) {
       // The verify ends this way only when the agent never answered once in
       // the whole window (verifyInstalledLoop): the speaker is dark, so the
       // same staged checklist as the give-up screen goes under the headline.
+      // The SoundTouch 300 gets its red power-cycle step instead.
       render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>`
-        + installDarkChecklistHtml(foundBox) + installFailureReportHtml());
+        + (darkChecklistApplies(foundBox) ? installDarkChecklistHtml(foundBox) : powerCycleAdviceHtml(foundBox))
+        + installFailureReportHtml());
       wireInstallDarkChecklist();
       wireInstallFailureReport(agentPortBox);
       fillFailReport(agentPortBox, 'install:verify', installed.reason || '');

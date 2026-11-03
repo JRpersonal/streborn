@@ -11,7 +11,7 @@
 
 import { t } from '../../i18n/index.js';
 import { escapeHtml, escapeAttr } from '../../utils.js';
-import { darkChecklistHtml } from '../../darkafterupdate.js';
+import { darkChecklistApplies, darkChecklistHtml } from '../../darkafterupdate.js';
 
 export const CONFIRM_POLL_MS = 3000;
 export const CONFIRM_WINDOW_MS = 5 * 60 * 1000;
@@ -111,7 +111,11 @@ export function confirmHTML(m) {
       + `<p class="w2-note-text">${escapeHtml(t('ui2.setup.wizard.confirm.failedBody'))}</p>`
       // The speaker answered nothing for the whole window: the same staged
       // checklist the classic install and the update show (darkafterupdate.js).
-      + darkChecklistHtml({ name, model: m.model || '', context: 'install', framed: false })
+      // Not for the SoundTouch 300, which blinks unreachable after every
+      // install until it is unplugged once: that one step is its answer.
+      + (darkChecklistApplies({ model: m.model || '' })
+        ? darkChecklistHtml({ name, model: m.model || '', context: 'install', framed: false })
+        : `<p class="w2-note-text">${escapeHtml(t('update.st300PowerCycle'))}</p>`)
       + '<div class="w2-note-acts">'
       + `<button type="button" class="u-btn u-btn--primary w2-act" data-act="recheck" aria-label="${escapeAttr(t('ui2.setup.wizard.confirm.recheckLabel', { name }))}">`
       + `${escapeHtml(t('ui2.setup.wizard.confirm.recheck'))}</button>`

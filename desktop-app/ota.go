@@ -611,6 +611,8 @@ func (a *App) RecordOTAOutcome(host, verdict string) {
 //	"not-landed"         box answers with the old version and does not have
 //	                     the pushed binary on disk
 //	"unreachable"        box does not answer at all
+//	"no-network-here"    this computer has no network (ENETUNREACH), so the
+//	                     box was never asked; not evidence against it
 //	"agent-gone"         the SPEAKER answers (its own Bose web API is up) but
 //	                     STR's agent is not running on it. A power cycle is the
 //	                     fix, and it is the only thing that is.
@@ -634,6 +636,18 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		// whitelisted chassis Bose's own SoftwareUpdate daemon accepts a
 		// connection on :17008 and then never answers, which is what made the
 		// verify probe time out rather than fail fast in the first place.
+		// This computer has no network at all (the ENETUNREACH family): the
+		// request never left it, so the speaker was not judged. A laptop that
+		// slept or lost its Wi-Fi inside the verify window used to read as a
+		// dark speaker here, and the app then walked its owner through power
+		// supplies and a factory reset of a healthy box (#963 is the same
+		// mistake in the preflight). Its own verdict, so the window says
+		// "reconnect this computer" and the loop breaker does not count it.
+		if noNetworkHere(err) {
+			a.recordOTA(host, "outcome: NOT CONFIRMED - this computer had no network connection when the verify window ended (the system reports the speaker's network as unreachable); the speaker was not judged, a later discovery sighting adds a corrective line: "+err.Error())
+			a.noteOTAUnconfirmed(host, "no-network-here")
+			return "no-network-here"
+		}
 		if a.boxAnswersBoseAPI(host) {
 			// Before blaming the agent, ask what the SPEAKER is doing. A box in
 			// its own out-of-box setup answers :8090 between the phases in
