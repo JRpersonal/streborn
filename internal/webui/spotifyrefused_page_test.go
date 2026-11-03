@@ -89,9 +89,37 @@ func TestPhoneSpotifyRefusedSaysWhyAndTheTest(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	// A key Spotify refused the audio keys for gets the page's words, not the
-	// agent's English sentence.
-	if !strings.Contains(page, "if (/refused the audio key/i.test(String((detail && detail.error) || ''))) {") {
-		t.Error("playRefusal does not translate the agent's key-refused answer")
+}
+
+// Spotify presets carry the account they were saved under and switch back to
+// it before each recall, so the free-account cure "play once from a Premium
+// account" only sticks once the Spotify presets are saved again. Every
+// language must keep that step after the (STR) entry.
+func TestPhoneSpotifyRefusedFreeCureSavesThePresetsAgain(t *testing.T) {
+	page := readIndexHTML(t)
+	start := strings.Index(page, "var I18N2 = {")
+	if start < 0 {
+		t.Fatal("I18N2 dictionary not found")
+	}
+	end := strings.Index(page[start:], "\n};")
+	lang := regexp.MustCompile(`^  ([a-z]{2}):\{`)
+	try := regexp.MustCompile(`spRefusedFreeTry:"([^"]*)"`)
+	for _, line := range strings.Split(page[start:start+end], "\n") {
+		m := lang.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		tm := try.FindStringSubmatch(line)
+		if tm == nil {
+			t.Errorf("language %q has no spRefusedFreeTry", m[1])
+			continue
+		}
+		after := tm[1][strings.Index(tm[1], "(STR)")+len("(STR)"):]
+		if !strings.Contains(after, "Spotify") {
+			t.Errorf("language %q: spRefusedFreeTry does not say to save the Spotify presets again: %q", m[1], tm[1])
+		}
+		if m[1] == "en" && !strings.Contains(tm[1], "then save your Spotify presets again.") {
+			t.Errorf("English spRefusedFreeTry lost the re-save step: %q", tm[1])
+		}
 	}
 }

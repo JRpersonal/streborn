@@ -65,14 +65,6 @@ export function refusalHelp(ref, t) {
     : { why: t('spotify.refusedWhy'), tryText: t('spotify.refusedTry') };
 }
 
-// refusalSentence is the whole message in one string, for a toast after a
-// key that could not start: the notice, the why and the test.
-export function refusalSentence(ref, t) {
-  if (!ref) return '';
-  const help = refusalHelp(ref, t);
-  return [refusalText(ref, t), help.why, help.tryText].filter(Boolean).join(' ');
-}
-
 // refusalHTML is the notice with its why and what-to-try folded away under a
 // short toggle, so the now-playing area stays one line until someone asks.
 // opts.lead overrides the first line (the UI 2.0 accounts row names the
@@ -109,12 +101,4 @@ export function refusalFor(st) {
 // refusalNoticeFor is the text the now-playing area leads with, '' for none.
 export function refusalNoticeFor(st, t) {
   return refusalText(refusalFor(st), t);
-}
-
-// isKeyRefusedError reports whether a failed play is the agent's answer for a
-// recall Spotify refused the audio keys for (internal/spotify/keydenied.go,
-// keyDeniedBackoffHint). Matched on that sentence, the only stable part of
-// the answer; it would otherwise read as "speaker refused".
-export function isKeyRefusedError(s) {
-  return /refused the audio key/i.test(String(s || ''));
 }

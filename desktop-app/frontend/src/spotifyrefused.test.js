@@ -4,8 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  isKeyRefusedError, refusalFor, refusalFromReply, refusalHelp, refusalHTML, refusalNoticeFor, refusalSentence,
-  refusalText, strSpotifyLocation,
+  refusalFor, refusalFromReply, refusalHelp, refusalHTML, refusalNoticeFor, refusalText, strSpotifyLocation,
 } from './spotifyrefused.js';
 import { accountRow } from './views/spotifyui2model.js';
 import { srcOf } from './test/source.js';
@@ -45,18 +44,16 @@ describe('refusalFromReply', () => {
   });
 });
 
-describe('refusalHelp and the whole message', () => {
+describe('refusalHelp', () => {
   it('a Premium or unknown account gets Spotify\'s rule and the decisive test', () => {
     expect(refusalHelp({ name: '', free: false }, t)).toEqual({ why: 'spotify.refusedWhy', tryText: 'spotify.refusedTry' });
-    expect(refusalSentence({ name: 'Alex', free: false }, t))
-      .toBe('spotify.accountRefusedNamed|{"account":"Alex"} spotify.refusedWhy spotify.refusedTry');
+    expect(refusalHelp(null, t)).toEqual({ why: '', tryText: '' });
   });
 
   it('a free account gets Premium as the cure, separately', () => {
     expect(refusalText({ name: '', free: true }, t)).toBe('spotify.accountRefusedFree');
     expect(refusalText({ name: 'Alex', free: true }, t)).toBe('spotify.accountRefusedFreeNamed|{"account":"Alex"}');
     expect(refusalHelp({ name: '', free: true }, t)).toEqual({ why: 'spotify.refusedFreeWhy', tryText: 'spotify.refusedFreeTry' });
-    expect(refusalSentence(null, t)).toBe('');
   });
 
   it('folds the why and the test under the notice, escaped', () => {
@@ -68,21 +65,12 @@ describe('refusalHelp and the whole message', () => {
     expect(refusalHTML({ name: 'Alex', free: true }, t, { lead: 'own lead' })).toContain('<span class="spotify-refused-lead">own lead</span>');
     expect(refusalHTML(null, t)).toBe('');
   });
-
-  it('reads the agent\'s key-refused answer, and nothing else', () => {
-    const hint = 'spotify play refused: Spotify refused the audio key for several tracks in a row, so the speaker\'s Spotify engine stopped';
-    expect(isKeyRefusedError(hint)).toBe(true);
-    expect(isKeyRefusedError(new Error(hint))).toBe(true);
-    expect(isKeyRefusedError('connection refused')).toBe(false);
-    expect(isKeyRefusedError('')).toBe(false);
-  });
 });
 
 describe('the words, in every language', () => {
   const keys = [
     'spotify.accountRefused', 'spotify.accountRefusedNamed', 'spotify.accountRefusedFree', 'spotify.accountRefusedFreeNamed',
     'spotify.refusedMore', 'spotify.refusedWhy', 'spotify.refusedTry', 'spotify.refusedFreeWhy', 'spotify.refusedFreeTry',
-    'play.errSpotifyRefused',
   ];
   it('has every key in all 13 bundles', () => {
     for (const l of LANGS) {
@@ -93,6 +81,10 @@ describe('the words, in every language', () => {
       // The test and the cure point at the (STR) entry.
       expect(b['spotify.refusedTry'], l).toContain('(STR)');
       expect(b['spotify.refusedFreeTry'], l).toContain('(STR)');
+      // Presets keep the account they were saved under and switch back to it,
+      // so playing from another Premium account only helps once the Spotify
+      // presets are saved again: that step follows the (STR) entry.
+      expect(b['spotify.refusedFreeTry'], l).toMatch(/\(STR\).*Spotify/);
       expect(b['spotify.refusedWhy'], l).toContain('Premium');
       expect(b['spotify.refusedFreeWhy'], l).toContain('Premium');
       for (const k of keys) expect(b[k], `${l} ${k}`).not.toMatch(/[–—]| - /);
@@ -106,31 +98,11 @@ describe('the words, in every language', () => {
     expect(en['spotify.refusedWhy']).toContain('even with Premium');
     expect(en['spotify.refusedWhy']).not.toMatch(/20\d\d/);
     expect(en['spotify.refusedTry']).toContain('another, older Spotify account');
+    expect(en['spotify.refusedFreeTry']).toContain('then save your Spotify presets again.');
     // A free account is never promised the speaker's own entry.
     for (const k of ['spotify.accountRefusedFree', 'spotify.accountRefusedFreeNamed', 'spotify.refusedFreeWhy', 'spotify.refusedFreeTry']) {
       expect(en[k], k).not.toContain('without (STR)');
     }
-  });
-});
-
-describe('a key Spotify refused the audio keys for', () => {
-  const friendlyPlayError = new Function('t', 'deps', 'escalationForCount', 'noteNotReady', 'libraryServerOffName', 'isKeyRefusedError',
-    `${srcOf('friendlyPlayError')}; return friendlyPlayError;`)(
-    (k) => k, { stereoStaleForError: () => null }, () => 'play.errNotReady', () => 1, () => null, isKeyRefusedError,
-  );
-  const hint = 'spotify play refused: Spotify refused the audio key for several tracks in a row, so the speaker\'s Spotify engine stopped';
-
-  it('labels the tile as Spotify refusing the account, not the speaker', () => {
-    expect(friendlyPlayError(hint, '')).toBe('play.errSpotifyRefused');
-    expect(friendlyPlayError('connection refused', '')).toBe('play.errSpeakerRefused');
-    // The free-account code keeps its own label.
-    expect(friendlyPlayError('spotify-premium-required', '')).toBe('play.errSpotifyPremium');
-  });
-
-  it('shows why and the test as a toast', () => {
-    const src = srcOf('play');
-    expect(src).toContain('if (isKeyRefusedError(errStr)');
-    expect(src).toContain('showToast(refusalSentence({ name: \'\', free: !!state.spotifyPremiumRequired }, t))');
   });
 });
 
