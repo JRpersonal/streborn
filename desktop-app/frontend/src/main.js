@@ -297,6 +297,7 @@ import { initStreamSourceView } from './views/streamsource.js';
 import { renderWishes, initWishesView, VOTE_URL } from './views/wishes.js';
 import { releaseNotesURL, repoURL } from './shell2/help/about.js';
 import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
+import { darkAfterUpdate, darkChecklistHtml, darkChecklistRowHtml, wireDarkChecklist } from './darkafterupdate.js';
 // Which of a speaker's sources are line inputs a person can switch to, and what
 // each button is called (sourceinputs.js, vitest-covered).
 // Turning a refused preset transfer into a readable sentence is a pure
@@ -3802,6 +3803,22 @@ function showSt300PowerCycleNotice(box) {
   if (c) c.onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
 }
 
+// showDarkAfterUpdate puts the "has not come back" checklist on screen for a
+// speaker whose update ended with nothing answering at its address. Same host
+// as the failure report: the speaker's own page in the UI 2.0 preview, the
+// overlay in the classic layout. It stays until the user closes it.
+function showDarkAfterUpdate(box) {
+  const host = ui2ReportHost(box) || $('updateFailureReport');
+  if (!host) { showToast(t('update.tookLongerToast')); return; }
+  host.innerHTML = darkChecklistHtml({ name: getBoxLabel(box), model: box.model || box.type || '', context: 'update', framed: true });
+  host.classList.remove('hidden');
+  focusUi2Report(host);
+  wireDarkChecklist(host, {
+    openURL: (url) => { try { BrowserOpenURL(url); } catch {} },
+    close: () => { host.classList.add('hidden'); host.innerHTML = ''; },
+  });
+}
+
 // updateAllShowing: an Update all run is going, or its window is still open
 // (it stays open after the run until the user closes it).
 function updateAllShowing() {
@@ -4268,6 +4285,13 @@ async function runSingleBoxUpdate(targetBox) {
       // this speaker a new one while it restarted. "Check power / network"
       // would send the owner looking for a fault that is not there.
       showToast(t('update.addressChangedToast', { name: getBoxLabel(targetBox) }));
+    } else if (darkAfterUpdate(result) && !(targetBox.model || '').includes('300')) {
+      // Nothing answers at the speaker's address at all. A toast saying it
+      // takes longer left owners of a speaker whose power supply gave out at
+      // the restart with a dark box and no plan, so this gets the staged
+      // checklist (darkafterupdate.js). The SoundTouch 300 is left to its own
+      // power-cycle notice below, which is the one step it needs.
+      showDarkAfterUpdate(targetBox);
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually
@@ -4780,6 +4804,17 @@ async function runUpdateAllBoxes(onStart) {
     if (!r) continue;
     if (!r.outcome) finishRow(r.box, row);
     if (!engineOnly.has(row.host)) noteOTAResult(r.box, row);
+    // A speaker that answers nothing at all after its restart gets the
+    // staged checklist folded out under its own row. Only the returned row
+    // carries the classifier's verdict, the phase event does not. The 300
+    // keeps its own power-cycle row text and notice.
+    if (!engineOnly.has(row.host) && darkAfterUpdate(row) && !(r.box.model || '').includes('300')) {
+      const slot = updateAllRowReport(row.host);
+      if (slot) {
+        slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), model: r.box.model || r.box.type || '' });
+        wireDarkChecklist(slot, { openURL: (url) => { try { BrowserOpenURL(url); } catch {} } });
+      }
+    }
   }
 
   // Batch done: release the global lock, refresh, summarize.

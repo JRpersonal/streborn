@@ -11,6 +11,7 @@
 
 import { t } from '../../i18n/index.js';
 import { escapeHtml, escapeAttr } from '../../utils.js';
+import { darkChecklistHtml } from '../../darkafterupdate.js';
 
 export const CONFIRM_POLL_MS = 3000;
 export const CONFIRM_WINDOW_MS = 5 * 60 * 1000;
@@ -89,7 +90,7 @@ export function confirmLiveText(m) {
 }
 
 // confirmHTML is the step's body for one state of the check:
-//   { status: 'waiting' | 'done' | 'failed', name, version, host }
+//   { status: 'waiting' | 'done' | 'failed', name, version, host, model }
 export function confirmHTML(m) {
   const name = m.name || t('ui2.setup.wizard.newSpeaker');
   if (m.status === 'done') {
@@ -108,6 +109,9 @@ export function confirmHTML(m) {
     return '<div class="w2-note w2-note--failed" role="alert">'
       + `<p class="w2-note-head"><span class="w2-ico" aria-hidden="true">!</span>${escapeHtml(t('ui2.setup.wizard.confirm.failedHead', { name }))}</p>`
       + `<p class="w2-note-text">${escapeHtml(t('ui2.setup.wizard.confirm.failedBody'))}</p>`
+      // The speaker answered nothing for the whole window: the same staged
+      // checklist the classic install and the update show (darkafterupdate.js).
+      + darkChecklistHtml({ name, model: m.model || '', context: 'install', framed: false })
       + '<div class="w2-note-acts">'
       + `<button type="button" class="u-btn u-btn--primary w2-act" data-act="recheck" aria-label="${escapeAttr(t('ui2.setup.wizard.confirm.recheckLabel', { name }))}">`
       + `${escapeHtml(t('ui2.setup.wizard.confirm.recheck'))}</button>`

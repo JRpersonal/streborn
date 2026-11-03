@@ -42,7 +42,8 @@
 import { state } from '../../state.js';
 import { t } from '../../i18n/index.js';
 import { escapeHtml, escapeAttr, confirmWarn } from '../../utils.js';
-import { BoxAgentVersion } from '../../api.js';
+import { BoxAgentVersion, BrowserOpenURL } from '../../api.js';
+import { handleDarkChecklistClick } from '../../darkafterupdate.js';
 import { renderSetupTargetPicker, installRunActive } from '../../views/setup.js';
 import { FACTORY, findModel, paintFind, selectedCandidate } from './find.js';
 import { announceState, discoveryPhase } from '../state.js';
@@ -323,6 +324,11 @@ function wire(root) {
     if (r && r.checked) choose(r.value);
   });
   root.addEventListener('click', (e) => {
+    // The Confirm step's "has not come back" checklist links the firmware
+    // guide's USB stick route. The classic install screens moved into the
+    // wizard wire their own copy, so only the wizard's own markup counts here.
+    if (!(e.target.closest && e.target.closest('#setupResult'))
+      && handleDarkChecklistClick(e, { openURL: BrowserOpenURL })) return;
     const open = e.target.closest('.w2-open[data-host]');
     if (open) {
       if (typeof W.ctx.open === 'function') W.ctx.open('speaker', { host: open.dataset.host });
@@ -787,7 +793,7 @@ function paint() {
   // The classic words travel along to Confirm and stay calm there too.
   W.root.classList.toggle('is-calm', (W.step === 'install' || W.step === 'confirm') && ['update-finishing', 'str-running'].includes(W.installKind));
   if (W.step === 'confirm') {
-    const cm = { status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '' };
+    const cm = { status: W.confirm.status, name, version: W.confirm.version, host: (tg && tg.host) || '', model: (tg && tg.model) || '' };
     setHTML('w2ConfirmBody', confirmHTML(cm));
     const live = byId('w2ConfirmLive');
     const say = confirmLiveText(cm);

@@ -41,6 +41,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 import { langOptionsHtml, wireCombobox } from './settings.js';
 import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../fwguide.js';
 import { firmwareLadderDeps } from '../fwladderdeps.js';
+import { darkChecklistHtml, wireDarkChecklist } from '../darkafterupdate.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
@@ -2118,6 +2119,23 @@ function wireOutdatedFirmwareLinks() {
   });
 }
 
+// installDarkChecklistHtml is the "has not come back" checklist for an
+// install whose speaker answered nothing (darkafterupdate.js), unframed: the
+// screen's own red headline already says the speaker did not come back.
+function installDarkChecklistHtml(box) {
+  return darkChecklistHtml({
+    name: (box && (box.friendlyName || box.name || box.host)) || '',
+    model: (box && (box.model || box.type)) || '',
+    context: 'install',
+    framed: false,
+  });
+}
+
+// wireInstallDarkChecklist wires the checklist's firmware guide link.
+function wireInstallDarkChecklist() {
+  wireDarkChecklist($('setupResult'), { openURL: BrowserOpenURL });
+}
+
 // installHelpHtml renders the localized help checklist for a failure code.
 // isNetwork picks the OTA-appropriate step list (no USB-stick advice), and box
 // is needed because on one model the code alone gives the wrong instructions.
@@ -2728,9 +2746,19 @@ function verifyInstalledState(box, onState) {
     // user pressing the button. One render, so both routes tell the same story.
     const giveUp = () => {
       baseHtml = '';
+      // A speaker that answered nothing for the whole wait gets the staged
+      // checklist in place of the generic one (darkafterupdate.js): give it
+      // time, the power supply, the Bose app, the resets and the Bose
+      // firmware by stick. Several of these turned out to be a power supply
+      // that gave out at the restart. The setup phase keeps its own list:
+      // pulling the plug on a speaker mid-setup is the wrong advice there.
+      const steps = inSetup
+        ? help + powerCycleAdviceHtml(foundBox)
+        : (isSoundTouch300(foundBox) ? powerCycleAdviceHtml(foundBox) : '') + installDarkChecklistHtml(foundBox);
       render(`<div class="setup-err">${escapeHtml(t('setup.installWaitGaveUp'))}</div>`
-        + (fwBlock || '') + help + powerCycleAdviceHtml(foundBox) + installFailureReportHtml() + (log || ''));
+        + (fwBlock || '') + steps + installFailureReportHtml() + (log || ''));
       wireOutdatedFirmwareLinks();
+      wireInstallDarkChecklist();
       wireInstallFailureReport(foundBox);
       fillFailReport(foundBox, 'install:' + (inSetup ? 'speaker-in-setup' : 'speaker-not-back'), msg);
     };
@@ -2832,7 +2860,12 @@ function verifyInstalledState(box, onState) {
     });
     try { SetOTARunning(false); } catch {}
     if (!installed.ok) {
-      render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + installFailureReportHtml());
+      // The verify ends this way only when the agent never answered once in
+      // the whole window (verifyInstalledLoop): the speaker is dark, so the
+      // same staged checklist as the give-up screen goes under the headline.
+      render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>`
+        + installDarkChecklistHtml(foundBox) + installFailureReportHtml());
+      wireInstallDarkChecklist();
       wireInstallFailureReport(agentPortBox);
       fillFailReport(agentPortBox, 'install:verify', installed.reason || '');
       return;
