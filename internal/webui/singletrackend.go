@@ -201,6 +201,10 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// worked) has to get the same, or a long pause cuts the track short
 		// by its own length once the position stops climbing in now_playing.
 		pausedSince time.Time
+		// resumeUnmoved: the play came back from a pause and its position has
+		// not climbed past the paused second since. Where the listener paused
+		// says nothing about where the file ends (see resumeFreezeClock).
+		resumeUnmoved bool
 	)
 	for {
 		select {
@@ -228,7 +232,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			resume.restarted()
 			lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
 			start = time.Now().Add(-s.pausePosition())
-			pausedSince = time.Time{}
+			pausedSince, resumeUnmoved = time.Time{}, false
 			continue
 		}
 		// A pause from the app records a user stop as well, but the file stays
@@ -252,6 +256,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		} else if !pausedSince.IsZero() {
 			start = start.Add(time.Since(pausedSince))
 			pausedSince = time.Time{}
+			lastPosAt, resumeUnmoved = resumeFreezeClock(lastPosAt)
 		}
 		if tornDown && !sawPlay && !retried && time.Since(start) < qt.stallTimeout {
 			// Not started yet, and the source reads torn down: on a speaker
@@ -263,7 +268,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		if tornDown && !sawPlay && !retried {
 			if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker dropped the track before it started"); ok {
 				gen, start, retried = next, time.Now(), true
-				lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
+				lastPos, lastPosAt, ranAhead, resumeUnmoved = 0, time.Time{}, false, false
 				s.noteActiveFile(tr, gen)
 				continue
 			}
@@ -364,6 +369,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			if pos > lastPos {
 				lastPos = pos
 				lastPosAt = time.Now()
+				resumeUnmoved = false
 				if !ranAhead && qt.positionRunsAhead(pos, time.Since(start)) {
 					ranAhead = true
 					s.logger.Info("single track: position runs ahead of real time, not timing the end by it",
@@ -417,10 +423,45 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		in.ranAhead = ranAhead
 		in.echoedTotal = tr.claimedLength && obsTotal > 0 && absDur(obsTotal-tr.dur) <= qt.ownEndSlack
 		if net := trackEndNet(in); net != endNetNone {
+			if net == endNetFrozen && end == 0 && resumeUnmoved {
+				// A whole freeze timeout on the paused second after the
+				// resume, with no length to say the file ended there: the
+				// resume froze (#830), and a file STR cannot seek in cannot be
+				// restarted at its paused position. Stopped, so nothing shows
+				// a silent speaker as playing, but not a natural end: no
+				// length is learned from the pause position and repeat does
+				// not start it over.
+				s.endSingleTrack(title, "the resume never moved off the paused position", lastPos, end)
+				return false, gen
+			}
 			s.learnSingleTrackLength(tr, net, lastPos, ranAhead)
 			return s.finishSingleTrack(title, net.why(), lastPos, end), gen
 		}
 	}
+}
+
+// resumeFreezeClock is the frozen-position net's clock when a pause ends.
+//
+// Live, ST10 on FW 27.0.6 (2026-11-03): a lone FRITZ!Box MP3 with no known
+// length, paused with the speaker's own key at 25 s and resumed five seconds
+// later. The wall clock (start) left the pause out, but the time the position
+// last moved did not, so the pause counted as frozen playback; on top of it a
+// resume reports PLAY_STATE with the position still on the paused second for a
+// few seconds while the firmware re-opens the URL (resumefile.go). Two seconds
+// after the resume the frozen-position net "learned" a 25 s length and stopped
+// the speaker. A file with a known length has fileResumeWatch to hold that
+// stretch; one without has nothing, as the restart needs a seek.
+//
+// So the freeze clock starts over at the resume: neither the pause nor the
+// moments before it count, and a resume gets a whole freeze timeout to move
+// before anything is read into its standing still. The second result marks
+// the position as the paused one, until it climbs. A play that never reported
+// a position (zero lastPosAt) keeps it that way.
+func resumeFreezeClock(lastPosAt time.Time) (time.Time, bool) {
+	if lastPosAt.IsZero() {
+		return lastPosAt, false
+	}
+	return time.Now(), true
 }
 
 // foreignFileLocation reports whether the location the speaker reports is
