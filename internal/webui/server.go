@@ -753,6 +753,9 @@ type Server struct {
 	// while Spotify runs is the common one, and until now it left no trace the
 	// owner could see, so the key simply snapped back.
 	heldRefusalFn func() (time.Time, int, string, string, bool)
+	// weakWifi is the "playback dropped out while the Wi-Fi signal was weak"
+	// marker (weakwifidropout.go). Zero value ready.
+	weakWifi weakWifiDropout
 	// heldRefusalClearFn forgets that refusal once the slot it names has been
 	// stored or deleted through the app, so the banner does not outlive the
 	// save that fixed it (#1217). nil = not wired.

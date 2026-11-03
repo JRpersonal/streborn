@@ -16,6 +16,9 @@ const INFO = {
 const NAMED = "Spotify won't stream the account Anna on (STR). The speaker's own Spotify entry, the one without (STR), still plays it.";
 
 const notice = (page) => page.locator('#statusCard #spRefused');
+const lead = (page) => page.locator('#statusCard #spRefused .sp-refused-lead');
+const WHY = "Spotify refuses some accounts on players like (STR), even with Premium, usually newer accounts. This is Spotify's rule, not a fault of your speaker.";
+const TRY = 'To check, play once from another, older Spotify account on the entry ending in (STR). If that one plays, Spotify refuses only this account.';
 
 test.describe('phone: Spotify refused notice', () => {
   test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: INFO } } });
@@ -23,7 +26,11 @@ test.describe('phone: Spotify refused notice', () => {
   test('shows under the now-playing line while STR Spotify plays the refused account', async ({ phone }) => {
     const { page } = phone;
     await expect(notice(page)).toBeVisible();
-    await expect(notice(page)).toHaveText(NAMED);
+    await expect(lead(page)).toHaveText(NAMED);
+    // The why and the decisive test, one tap away.
+    await notice(page).locator('summary').click();
+    await expect(notice(page).locator('details p').nth(0)).toHaveText(WHY);
+    await expect(notice(page).locator('details p').nth(1)).toHaveText(TRY);
     if (process.env.SHOOT_DIR) {
       await page.locator('#statusCard').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-phone.png`, animations: 'disabled' });
     }
@@ -35,7 +42,7 @@ test.describe('phone: Spotify refused notice', () => {
     await page.reload();
     await expect(page.locator('html')).toHaveClass(/(^|\s)ui2(\s|$)/);
     await expect(notice(page)).toBeVisible();
-    await expect(notice(page)).toHaveText(NAMED);
+    await expect(lead(page)).toHaveText(NAMED);
     if (process.env.SHOOT_DIR) {
       await page.locator('#statusCard').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-phone-ui2.png`, animations: 'disabled' });
     }
@@ -52,7 +59,7 @@ test.describe('phone: stopped on the stream', () => {
 
   test('still says it, from one read per change', async ({ phone }) => {
     const { page, handler } = phone;
-    await expect(notice(page)).toHaveText(NAMED);
+    await expect(lead(page)).toHaveText(NAMED);
     // The status poll runs every five seconds; the stopped speaker is asked
     // about Spotify once, not on every poll.
     const polls = () => handler.calls.filter((c) => new URL(c.url).pathname === '/api/status').length;
@@ -67,7 +74,19 @@ test.describe('phone: German', () => {
   test.use({ phoneLang: 'de', phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: { ...INFO, accountRefusedName: '' } } } });
 
   test('without a name it speaks about this account', async ({ phone }) => {
-    await expect(notice(phone.page)).toHaveText('Spotify sperrt dieses Konto für (STR). Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt es weiterhin.');
+    await expect(lead(phone.page)).toHaveText('Spotify sperrt dieses Konto für (STR). Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt es weiterhin.');
+  });
+});
+
+test.describe('phone: a free account', () => {
+  test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: { ...INFO, product: 'free', premiumRequired: true } } } });
+
+  test('gets the Premium words, and no promise about the own entry', async ({ phone }) => {
+    const { page } = phone;
+    await expect(lead(page)).toHaveText("Spotify won't stream the account Anna on (STR) because it is a free account.");
+    await notice(page).locator('summary').click();
+    await expect(notice(page).locator('details p').nth(0)).toHaveText('Spotify on (STR) only plays with Spotify Premium.');
+    await expect(notice(page)).not.toContainText('without (STR)');
   });
 });
 

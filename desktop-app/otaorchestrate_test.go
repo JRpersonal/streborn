@@ -544,6 +544,9 @@ func TestSpeakerUpdateNoRetryOnOtherVerdicts(t *testing.T) {
 		{"landed-not-running", outcomeTimeout},
 		{"swap-failed", outcomeTimeout},
 		{"unreachable", outcomeTimeout},
+		// This computer had no network: a timeout carrying its own verdict,
+		// so the window can say "reconnect this computer" (darkafterupdate.js).
+		{"no-network-here", outcomeTimeout},
 		{"agent-gone", outcomeAgentGone},
 		{"box-in-setup", outcomeBoxInSetup},
 	} {

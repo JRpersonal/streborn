@@ -33,7 +33,18 @@ describe('speakerIssuesFrom', () => {
 
   it('knows every classic banner kind', () => {
     expect(ATTENTION_KINDS).toEqual(['wedged', 'noNet', 'conflict', 'foreignCloud', 'noWifi', 'storm',
-      'keyErr', 'holdErr', 'staleKey', 'badName']);
+      'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName']);
+  });
+
+  it('says a dropout on a weak Wi-Fi signal on that speaker, as a dismissible heads-up', () => {
+    const issues = speakerIssuesFrom({ weakWifi: [kitchen] }, label);
+    const items = issues[kitchen.host];
+    expect(items.map((i) => i.kind)).toEqual(['weakWifi']);
+    expect(attentionChip(items).kind).toBe('warn');
+    const html = attentionNoteHTML(items);
+    expect(html).toContain(escapeHtml(t('speaker.weakWifiDropoutBanner', { name: 'Kitchen' })));
+    expect(itemActions(items[0])).toEqual([{ act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'weakwifi' }]);
+    expect(html).toContain('data-dismiss="weakwifi"');
   });
 
   it('is empty without issues', () => {

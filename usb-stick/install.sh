@@ -87,11 +87,44 @@ heal_sdk_cloud_urls() {
     echo "Healed non-stock cloud URLs in $sdk_cfg back to stock (redirect-catchable)"
 }
 
+# remove_rival_mod_leftovers deletes what AfterTouch (gesellix/Bose-SoundTouch)
+# leaves on NAND: its /mnt/nv/aftertouch directory and its resolv.conf override.
+# Two cloud replacements on one speaker fight over the cloud redirect, the
+# display, Wi-Fi and the presets (#270). Until now these were only removed by the
+# agent's "remove conflicting mod" button AFTER the install, so every former
+# AfterTouch user first got a warning banner and had to click it. The user has
+# chosen STR by installing it, so the install takes them out itself.
+#
+# Touches exactly these two paths and nothing else on NAND. The third AfterTouch
+# fingerprint, a hook line in rc.local, needs no step here: phase1_install
+# replaces rc.local in full. The cloud URL a rival tool set is healed by
+# heal_sdk_cloud_urls. The post-install reboot ends the tool's running
+# processes. $1 overrides the NAND root for the tests.
+remove_rival_mod_leftovers() {
+    nv="${1:-/mnt/nv}"
+    if [ -d "$nv/aftertouch" ]; then
+        rm -rf "$nv/aftertouch" 2>/dev/null
+        if [ -d "$nv/aftertouch" ]; then
+            echo "WARNING: could not remove the AfterTouch leftovers in $nv/aftertouch"
+        else
+            echo "Removed AfterTouch leftovers: $nv/aftertouch"
+        fi
+    fi
+    if [ -f "$nv/aftertouch.resolv.conf" ]; then
+        rm -f "$nv/aftertouch.resolv.conf" 2>/dev/null
+        echo "Removed AfterTouch leftovers: $nv/aftertouch.resolv.conf"
+    fi
+    return 0
+}
+
 phase1_install() {
     if [ ! -f "$RC_SRC" ]; then
         echo "ERROR: $RC_SRC not found" >&2
         exit 1
     fi
+    # Before the NAND space checks below: AfterTouch's directory can be large,
+    # and freeing it first can be what lets the agent copy fit.
+    remove_rival_mod_leftovers
     # Remove phase 2 first if active
     if [ -d /mnt/nv/shepherd ]; then
         echo "Phase 2 is active, removing it first"

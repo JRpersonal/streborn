@@ -195,6 +195,15 @@ type BoxInfo struct {
 	// healthy (#986). Empty on a healthy box. The Settings action that removes a
 	// rival mod's leftovers also resets this.
 	ForeignCloudURL string `json:"foreignCloudURL,omitempty"`
+	// RivalCloudURL is the same finding for a speaker WITHOUT STR, read from
+	// the stock firmware's own /info margeURL: a server on the home network
+	// instead of Bose's, the trace of another cloud replacement (AfterTouch,
+	// OpenCloudTouch) that still runs or ran on it. The setup picker says so
+	// under the speaker's card before the install. Kept apart from
+	// ForeignCloudURL because that one comes with a Settings action that needs
+	// the STR agent. Empty for a stock Bose address and while STR's own
+	// stick-free unlock has the address set.
+	RivalCloudURL string `json:"rivalCloudURL,omitempty"`
 	// GroupKeyError is the reason the last thumbs-key press was refused, when
 	// it was recent. Before this the refusal was invisible: the owner pressed
 	// the key, nothing happened, and only a diagnostic bundle explained why.
@@ -204,6 +213,14 @@ type BoxInfo struct {
 	// explains the refusal in the user's language and keeps the raw reason
 	// for the details. Empty from an agent that predates it.
 	GroupKeyErrorKind string `json:"groupKeyErrorKind,omitempty"`
+	// WeakWifiDropout is the Wi-Fi signal class (MARGINAL_SIGNAL or
+	// POOR_SIGNAL) the agent read when playback last dropped out on this
+	// speaker, reported for an hour after that dropout and empty otherwise.
+	// The UI says the signal at this speaker is weak, which can cause
+	// dropouts, and that moving the speaker or the router closer usually
+	// helps. WeakWifiDropoutAgeSec is how long ago the last such dropout was.
+	WeakWifiDropout       string `json:"weakWifiDropout,omitempty"`
+	WeakWifiDropoutAgeSec int    `json:"weakWifiDropoutAgeSec,omitempty"`
 	// HoldRefusedSource is what the speaker was playing when a long press on a
 	// key could not be kept, empty when there was none. Typically SPOTIFY: STR
 	// has no preset form for it, so the firmware keeps the old station and the
