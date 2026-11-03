@@ -29,7 +29,6 @@ package webui
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -124,12 +123,14 @@ func libraryTitleKey(t string) string {
 // was found, for the log line. A title that is not unique in that folder is
 // not certain enough, so nothing is found then.
 //
-// missing is set when nothing was found and the server's own answers say the
-// track is not there any more: it answered the last question it was asked (no
-// connection failure, no timeout) and that answer held no such track. A title
-// that is listed twice is not missing, only ambiguous.
+// missing is set when nothing was found and the server's own answer to the
+// last question it was asked says the track is not there any more: a "no such
+// object" (libraryServerAnswered), or the whole folder listed without the
+// title. A folder read only in part (a later page failed, or the cap was
+// reached) is not that answer: the title may sit in the part that was not
+// read. A title that is listed twice is not missing, only ambiguous.
 func (s *Server) findLibraryItem(ctx context.Context, srv dlna.Server, ref presets.TrackRef) (it dlna.Item, how string, ok, missing bool) {
-	answered := true
+	answered := false
 	if ref.ObjectID != "" {
 		got, err := dlna.ItemMetadata(ctx, srv, ref.ObjectID)
 		if err == nil && got.StreamURL != "" {
@@ -143,7 +144,7 @@ func (s *Server) findLibraryItem(ctx context.Context, srv dlna.Server, ref prese
 	if ref.ParentID == "" || want == "" {
 		return dlna.Item{}, "", false, answered
 	}
-	items, _, err := s.browseContainerItems(ctx, srv, ref.ParentID)
+	items, whole, err := s.browseContainerItems(ctx, srv, ref.ParentID)
 	if err != nil {
 		s.logger.Info("library key: the track's folder could not be read", "server", srv.FriendlyName,
 			"folder", ref.ParentID, "err", err)
@@ -157,27 +158,20 @@ func (s *Server) findLibraryItem(ctx context.Context, srv dlna.Server, ref prese
 		}
 	}
 	if n != 1 {
-		return dlna.Item{}, "", false, n == 0 && ctx.Err() == nil
+		return dlna.Item{}, "", false, n == 0 && whole && ctx.Err() == nil
 	}
 	return it, "title in its folder", true, false
 }
 
-// libraryServerAnswered reports whether a failed library question was answered
-// by the server: a SOAP fault or an answer without the item, as opposed to a
-// connection that failed or a budget that ran out. Only an answer says
-// anything about what the server holds.
+// libraryServerAnswered reports whether a failed library question was the
+// server saying the object is not there: a UPnP 701 or 710, or a metadata
+// answer without the item (dlna.ErrNoSuchObject). Nothing else counts: a
+// connection that failed, a budget that ran out, a server that refuses the
+// speaker (401, 403) or is busy rescanning (503, a 501 "Action Failed"), or an
+// answer that could not be read say nothing about what the server holds, and
+// the press keeps its old behaviour then.
 func libraryServerAnswered(ctx context.Context, err error) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
-	}
-	var ne net.Error
-	return !errors.As(err, &ne)
+	return ctx.Err() == nil && errors.Is(err, dlna.ErrNoSuchObject)
 }
 
 // sameHost reports whether two absolute URLs sit on the same host. A cover on
@@ -329,7 +323,14 @@ func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.
 	tree, err := s.collectFolderTracks(rctx, srv, p.Folder.ContainerID, false)
 	fresh := tree.items
 	if err != nil || len(fresh) == 0 {
+		// Gone only on the server's own word: a "no such container" for the
+		// folder, or a walk that read every folder to the end and found no song.
+		// A sub-folder that could not be read, a page that failed or a walk that
+		// was cut short leaves the music possibly where nobody looked.
 		gone := libraryServerAnswered(rctx, err)
+		if err == nil {
+			gone = rctx.Err() == nil && tree.complete()
+		}
 		s.logger.Info("queue preset: the tracks no longer serve and the folder could not be read again",
 			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID, "err", err, "fileGone", gone)
 		if gone {
@@ -341,8 +342,10 @@ func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.
 	if n == 0 {
 		// None moved. Gone only when the folder lists none of the key's tracks
 		// under the address the key has either: a track listed where the key
-		// already points is still there, whatever the probe said.
-		gone := rctx.Err() == nil && !queueItemsListed(p.Items, fresh)
+		// already points is still there, whatever the probe said. And only when
+		// the walk read the whole tree: the key's tracks may sit in the part that
+		// was not read.
+		gone := rctx.Err() == nil && tree.complete() && !queueItemsListed(p.Items, fresh)
 		s.logger.Info("queue preset: the tracks no longer serve and none was found in the folder again",
 			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID, "fileGone", gone)
 		if gone {

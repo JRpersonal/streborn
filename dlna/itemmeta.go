@@ -20,7 +20,7 @@ func ItemMetadata(ctx context.Context, srv Server, objectID string) (Item, error
 		return Item{}, err
 	}
 	if status != http.StatusOK {
-		return Item{}, fmt.Errorf("browse metadata failed: %s", soapFaultMessage(raw, status))
+		return Item{}, browseFault("browse metadata failed", raw, status)
 	}
 	res, err := parseBrowseResponse(raw)
 	if err != nil {
@@ -31,5 +31,5 @@ func ItemMetadata(ctx context.Context, srv Server, objectID string) (Item, error
 			return it, nil
 		}
 	}
-	return Item{}, fmt.Errorf("browse metadata: no item %q in the answer", objectID)
+	return Item{}, &answerError{msg: fmt.Sprintf("browse metadata: no item %q in the answer", objectID), noSuch: true}
 }

@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"html"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -268,5 +272,280 @@ func TestPhoneRemoteExplainsAMusicFileThatIsGone(t *testing.T) {
 	}
 	if got := len(regexp.MustCompile(`libFileGoneAny:"[^"{]*"`).FindAllString(indexHTML, -1)); got != bundles {
 		t.Errorf("libFileGoneAny has a placeholder in some of %d locales", bundles)
+	}
+}
+
+// scriptedCDS is a ContentDirectory whose every answer the test writes: answer
+// gets the Browse flag, object id and starting index and returns the status
+// and body to send, or hangup to drop the connection without a word (a server
+// restarting mid-press).
+type scriptedCDS struct {
+	ts     *httptest.Server
+	answer func(flag, id string, start int) (status int, body string, hangup bool)
+}
+
+func newScriptedCDS(t *testing.T, answer func(flag, id string, start int) (int, string, bool)) *scriptedCDS {
+	t.Helper()
+	c := &scriptedCDS{answer: answer}
+	c.ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		start, _ := strconv.Atoi(soapValue(string(b), "StartingIndex"))
+		status, body, hangup := c.answer(soapValue(string(b), "BrowseFlag"), soapValue(string(b), "ObjectID"), start)
+		if hangup {
+			if hj, ok := w.(http.Hijacker); ok {
+				if conn, _, err := hj.Hijack(); err == nil {
+					_ = conn.Close()
+					return
+				}
+			}
+			panic(http.ErrAbortHandler)
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(c.ts.Close)
+	return c
+}
+
+func (c *scriptedCDS) srv() dlna.Server {
+	return dlna.Server{UDN: "uuid:PC-MEDIA", FriendlyName: "PC: Media", CDSControlURL: c.ts.URL + "/cds"}
+}
+
+// browseOK is a 200 Browse answer listing didl, total being what the server
+// claims the folder holds in all.
+func browseOK(didl string, returned, total int) (int, string, bool) {
+	result := `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">` +
+		didl + `</DIDL-Lite>`
+	return http.StatusOK, fmt.Sprintf(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>`+
+		`<u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><Result>%s</Result>`+
+		`<NumberReturned>%d</NumberReturned><TotalMatches>%d</TotalMatches></u:BrowseResponse></s:Body></s:Envelope>`,
+		html.EscapeString(result), returned, total), false
+}
+
+func upnpFaultAnswer(code string) (int, string, bool) {
+	return http.StatusInternalServerError, `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault>` +
+		`<faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring>` +
+		`<detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>` + code + `</errorCode></UPnPError></detail>` +
+		`</s:Fault></s:Body></s:Envelope>`, false
+}
+
+func scriptedTrack(id, title string) string {
+	return fmt.Sprintf(`<item id="%s" parentID="c-1"><dc:title>%s</dc:title>`+
+		`<upnp:class>object.item.audioItem.musicTrack</upnp:class>`+
+		`<res protocolInfo="http-get:*:audio/mpeg:*">http://192.0.2.5/new/%s.mp3</res></item>`, id, title, id)
+}
+
+func scriptedFolder(id, title string) string {
+	return fmt.Sprintf(`<container id="%s" parentID="artist"><dc:title>%s</dc:title>`+
+		`<upnp:class>object.container.album.musicAlbum</upnp:class></container>`, id, title)
+}
+
+// scriptedServer is a library-heal server whose keys' files never serve and
+// whose music server is the scripted one.
+func scriptedServer(t *testing.T, c *scriptedCDS) *Server {
+	t.Helper()
+	s := libHealServer(t, mediaservers.Server{ID: "uuid:PC-MEDIA", Name: "PC: Media", Location: c.ts.URL + "/description.xml"})
+	s.libraryURLServes = func(context.Context, string) bool { return false }
+	s.queueHostAnswers = func(context.Context, string) bool { return true }
+	s.libraryServerResolve = func(context.Context, string) (dlna.Server, bool) { return c.srv(), true }
+	return s
+}
+
+func scriptedTrackKey(ref *presets.TrackRef) presets.Preset {
+	return presets.Preset{Slot: 6, Type: "radio", Name: "Song", Source: "PC: Media",
+		StreamURL: "http://192.0.2.5/old/obj-7.mp3", Track: ref}
+}
+
+func scriptedFolderKey(container string) presets.Preset {
+	return presets.Preset{Slot: 2, Type: "queue", Name: "Artist", Source: "PC: Media",
+		Folder: &presets.FolderRef{ServerUDN: "uuid:PC-MEDIA", ContainerID: container},
+		Items: []presets.PresetItem{
+			{URL: "http://192.0.2.5/old/x1.mp3", Title: "Intro"},
+			{URL: "http://192.0.2.5/old/x2.mp3", Title: "Song"},
+		}}
+}
+
+// A big flat folder (an "All music" container) whose second page fails: the
+// title may sit on that page, so the track is not called gone.
+func TestLibraryKeyIsNotCalledGoneWhenALaterPageOfItsFolderFails(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		fail func() (int, string, bool)
+	}{
+		{"connection dropped", func() (int, string, bool) { return 0, "", true }},
+		{"HTTP 500", func() (int, string, bool) { return http.StatusInternalServerError, "busy", false }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cds := newScriptedCDS(t, func(flag, id string, start int) (int, string, bool) {
+				switch {
+				case flag == "BrowseMetadata":
+					return upnpFaultAnswer("701")
+				case id == "c-1" && start == 0:
+					return browseOK(scriptedTrack("a", "Other")+scriptedTrack("b", "Else"), 2, 400)
+				default:
+					return c.fail()
+				}
+			})
+			s := scriptedServer(t, cds)
+			key := scriptedTrackKey(&presets.TrackRef{ServerUDN: "uuid:PC-MEDIA", ObjectID: "obj-7", ParentID: "c-1", Title: "Song"})
+			if _, dead := s.reresolveLibraryKey(context.Background(), 6, &key); dead != nil {
+				t.Fatalf("a folder read in part was taken as the server's answer: %+v", dead)
+			}
+		})
+	}
+}
+
+// A server that refuses the speaker, is busy or fails the action has said
+// nothing about its library: no verdict, the press goes ahead. Only its "no
+// such object" counts.
+func TestLibraryKeyIsCalledGoneOnlyOnTheServersNoSuchObject(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		answer func() (int, string, bool)
+		gone   bool
+	}{
+		{"701 no such object", func() (int, string, bool) { return upnpFaultAnswer("701") }, true},
+		{"501 action failed", func() (int, string, bool) { return upnpFaultAnswer("501") }, false},
+		{"401 invalid action", func() (int, string, bool) { return upnpFaultAnswer("401") }, false},
+		{"HTTP 503 rescanning", func() (int, string, bool) { return http.StatusServiceUnavailable, "rescanning", false }, false},
+		{"HTTP 403 access list", func() (int, string, bool) { return http.StatusForbidden, "<html>forbidden</html>", false }, false},
+		{"garbled answer", func() (int, string, bool) { return http.StatusOK, "<s:Envelope", false }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cds := newScriptedCDS(t, func(string, string, int) (int, string, bool) { return c.answer() })
+			s := scriptedServer(t, cds)
+			key := scriptedTrackKey(&presets.TrackRef{ServerUDN: "uuid:PC-MEDIA", ObjectID: "obj-7"})
+			_, dead := s.reresolveLibraryKey(context.Background(), 6, &key)
+			if got := dead != nil && dead.FileGone; got != c.gone {
+				t.Fatalf("verdict = %+v, want gone %v", dead, c.gone)
+			}
+		})
+	}
+}
+
+// The same answers on the track's folder: a 503 or 403 there is no verdict
+// either, a 710 "no such container" is.
+func TestLibraryKeyFolderAnswerCountsOnlyAsNoSuchContainer(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		answer func() (int, string, bool)
+		gone   bool
+	}{
+		{"710 no such container", func() (int, string, bool) { return upnpFaultAnswer("710") }, true},
+		{"HTTP 503", func() (int, string, bool) { return http.StatusServiceUnavailable, "busy", false }, false},
+		{"HTTP 403", func() (int, string, bool) { return http.StatusForbidden, "no", false }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cds := newScriptedCDS(t, func(flag, _ string, _ int) (int, string, bool) {
+				if flag == "BrowseMetadata" {
+					return upnpFaultAnswer("701")
+				}
+				return c.answer()
+			})
+			s := scriptedServer(t, cds)
+			key := scriptedTrackKey(&presets.TrackRef{ServerUDN: "uuid:PC-MEDIA", ObjectID: "obj-7", ParentID: "c-1", Title: "Song"})
+			_, dead := s.reresolveLibraryKey(context.Background(), 6, &key)
+			if got := dead != nil && dead.FileGone; got != c.gone {
+				t.Fatalf("verdict = %+v, want gone %v", dead, c.gone)
+			}
+		})
+	}
+}
+
+// A folder of folders (#1682) whose album folders cannot be read: the walk
+// found no song, but because it looked nowhere, not because there is none.
+func TestFolderKeyIsNotCalledGoneWhenItsSubFoldersCannotBeRead(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		fail func() (int, string, bool)
+	}{
+		{"connection dropped", func() (int, string, bool) { return 0, "", true }},
+		{"HTTP 500", func() (int, string, bool) { return http.StatusInternalServerError, "busy", false }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cds := newScriptedCDS(t, func(flag, id string, _ int) (int, string, bool) {
+				if flag == "BrowseDirectChildren" && id == "artist" {
+					return browseOK(scriptedFolder("al-1", "First")+scriptedFolder("al-2", "Second"), 2, 2)
+				}
+				return c.fail()
+			})
+			s := scriptedServer(t, cds)
+			key := scriptedFolderKey("artist")
+			if _, dead := s.reresolveQueuePreset(context.Background(), 2, &key); dead != nil {
+				t.Fatalf("a walk whose folders all failed was called %+v", dead)
+			}
+		})
+	}
+}
+
+// One album of the artist read, the other failed: the key's songs may be in
+// the one that failed, so the songs that were read not matching is no verdict.
+func TestFolderKeyIsNotCalledGoneWhenOneSubFolderFails(t *testing.T) {
+	cds := newScriptedCDS(t, func(flag, id string, _ int) (int, string, bool) {
+		switch {
+		case flag != "BrowseDirectChildren":
+			return http.StatusInternalServerError, "", false
+		case id == "artist":
+			return browseOK(scriptedFolder("al-1", "First")+scriptedFolder("al-2", "Second"), 2, 2)
+		case id == "al-1":
+			return browseOK(scriptedTrack("o1", "Other"), 1, 1)
+		default:
+			return 0, "", true
+		}
+	})
+	s := scriptedServer(t, cds)
+	key := scriptedFolderKey("artist")
+	if _, dead := s.reresolveQueuePreset(context.Background(), 2, &key); dead != nil {
+		t.Fatalf("a walk with a skipped album was called %+v", dead)
+	}
+}
+
+// A flat folder key whose second page fails: what was read holds none of the
+// key's songs, but the rest of the folder was never seen.
+func TestFolderKeyIsNotCalledGoneWhenALaterPageFails(t *testing.T) {
+	cds := newScriptedCDS(t, func(flag, id string, start int) (int, string, bool) {
+		if flag == "BrowseDirectChildren" && id == "c-1" && start == 0 {
+			return browseOK(scriptedTrack("o1", "Other"), 1, 400)
+		}
+		return 0, "", true
+	})
+	s := scriptedServer(t, cds)
+	key := scriptedFolderKey("c-1")
+	if _, dead := s.reresolveQueuePreset(context.Background(), 2, &key); dead != nil {
+		t.Fatalf("a folder read in part was called %+v", dead)
+	}
+}
+
+// The whole tree read, every album answered, none holds the key's songs: that
+// is the server's answer, and the key is called gone.
+func TestFolderKeyIsCalledGoneWhenTheWholeTreeWasRead(t *testing.T) {
+	cds := newScriptedCDS(t, func(flag, id string, _ int) (int, string, bool) {
+		switch {
+		case flag != "BrowseDirectChildren":
+			return http.StatusInternalServerError, "", false
+		case id == "artist":
+			return browseOK(scriptedFolder("al-1", "First")+scriptedFolder("al-2", "Second"), 2, 2)
+		case id == "al-1":
+			return browseOK(scriptedTrack("o1", "Other"), 1, 1)
+		default:
+			return browseOK(scriptedTrack("o2", "Else"), 1, 1)
+		}
+	})
+	s := scriptedServer(t, cds)
+	key := scriptedFolderKey("artist")
+	if _, dead := s.reresolveQueuePreset(context.Background(), 2, &key); dead == nil || !dead.FileGone {
+		t.Fatalf("verdict = %+v, want the music gone", dead)
+	}
+}
+
+// The tree bookkeeping the verdict rests on.
+func TestFolderTreeCompleteOnlyWithoutGaps(t *testing.T) {
+	if !(folderTree{}).complete() {
+		t.Fatal("a clean walk is not complete")
+	}
+	for _, tr := range []folderTree{{cut: true}, {cutDepth: true}, {partial: true}} {
+		if tr.complete() {
+			t.Fatalf("%+v counted as complete", tr)
+		}
 	}
 }
