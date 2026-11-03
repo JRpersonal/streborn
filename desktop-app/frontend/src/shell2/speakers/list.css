@@ -96,6 +96,12 @@ html.ui2 #view-speakers .spl-note-result {
   line-height: 1.45;
 }
 html.ui2 #view-speakers .spl-note-result { flex-basis: 100%; color: var(--u-warn); font-weight: 600; }
+/* The speaker check's result: plain text with numbered steps, not the
+   one-line warning above. */
+html.ui2 #view-speakers .spl-note-result.spk-check { color: var(--u-text); font-weight: 400; }
+html.ui2 #view-speakers .spk-check .spk-check-lead { margin: 0 0 4px 0; font-weight: 600; }
+html.ui2 #view-speakers .spk-check .spk-check-steps { margin: 0; padding-inline-start: 20px; }
+html.ui2 #view-speakers .spk-check .spk-check-steps li { margin-bottom: 2px; }
 html.ui2 #view-speakers .spl-foot {
   display: flex;
   flex-direction: column;

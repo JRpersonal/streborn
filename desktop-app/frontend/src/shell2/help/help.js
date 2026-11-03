@@ -142,7 +142,7 @@ function getHelpHTML(m, t) {
     + `<p class="hlp-hint" id="hlpSaveLogsHint">${escapeHtml(t('footer.saveLogsHint'))}</p>`
     + `<p class="hlp-status" id="hlpLogsStatus" role="status" aria-live="polite" data-kind="${st.kind}">${escapeHtml(st.text)}</p>`
     + '</li>'
-    + `<li class="hlp-row">${openBtn(m.urls.issues, t('footer.reportProblem'))}</li>`
+    + `<li class="hlp-row">${openBtn(m.urls.issues, t('footer.reportProblem'), ' data-report="1"')}</li>`
     + `<li class="hlp-row">${openBtn(m.urls.discussions, t('ui2.help.ask'))}</li>`
     + '</ul>'
     + `<p class="hlp-pointer">${pointer}</p>`);
@@ -320,7 +320,10 @@ function onClick(e) {
   const btn = e.target.closest('[data-act]');
   if (!btn || !root || !root.contains(btn)) return;
   const act = btn.dataset.act;
-  if (act === 'open') open(btn.dataset.url, btn.dataset.site === '1');
+  // Report a problem checks the speakers that are not answering first
+  // (main.js reportProblemWithCheck), the same as the classic footer link.
+  if (act === 'open' && btn.dataset.report === '1' && typeof deps.reportProblem === 'function') deps.reportProblem(btn.dataset.url);
+  else if (act === 'open') open(btn.dataset.url, btn.dataset.site === '1');
   else if (act === 'worldMap') open(worldMapURL(), false);
   else if (act === 'view' && typeof deps.switchView === 'function') deps.switchView(btn.dataset.view);
   else if (act === 'saveLogs') saveLogs();

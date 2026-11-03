@@ -178,6 +178,8 @@ function paintRoute(route, entry = false) {
       doBoxUpdate: deps.doBoxUpdate,
       updateAll: deps.updateAllBoxes,
       discoverBoxes: deps.discoverBoxes,
+      // The Check action of a card whose speaker is not answering.
+      checkSpeaker: deps.checkSpeaker,
     });
   } else if (route === 'speaker') {
     const tab = wantTab;

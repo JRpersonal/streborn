@@ -29,6 +29,7 @@ export {
   ClearUpdateIntent,
   PendingUpdateIntent,
   UpdateFailureReport,
+  CheckSpeaker,
   SetOTARunning,
   TrackPosition,
   RemoveConflictingMod,

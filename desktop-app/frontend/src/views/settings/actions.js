@@ -9,6 +9,7 @@ import { t } from '../../i18n/index.js';
 import { purgeSpeakerLocalState } from '../../speakerPurge.js';
 import { identifyOutcome } from '../../boxstate.js';
 import { runConflictCleanup } from '../../conflictcleanup.js';
+import { checkMailSection, checkTargets, needsAttention, precheckHTML, runSpeakerChecks } from '../../speakercheck.js';
 import {
   RebootBox,
   ExportBackup,
@@ -19,8 +20,9 @@ import {
   UninstallSTR,
   RemoveConflictingMod,
   IdentifyBox,
+  CheckSpeaker,
 } from '../../api.js';
-import { deps, helpBlock, renderSTRRemovedPanel, confirmFor, reportError, reportDone } from './shared.js';
+import { deps, helpBlock, renderSTRRemovedPanel, confirmFor, reportError, reportDone, settingsBoxLabel } from './shared.js';
 
 export function renderActionSections(ctx) {
   const { box } = ctx;
@@ -145,21 +147,42 @@ export function wireActionSections(ctx) {
   // mailto cannot attach a file itself (browser/OS limitation), so the body and
   // the toast both point at the saved zip. Body kept in English (it is a support
   // ticket); the button, help and toast are localized.
+  //
+  // The speaker check runs first, for this speaker and the ones the list shows
+  // as not answering (speakercheck.js). Most support mails are about a speaker
+  // that is off the network, in another network or hung, and the check names
+  // that with the steps before anyone has to write. The mail stays possible
+  // from the same dialog and carries what the check found.
   const emailSupportBtn = $('boxEmailSupportBtn');
   if (emailSupportBtn) {
     emailSupportBtn.onclick = async () => {
       emailSupportBtn.disabled = true;
       try {
+        const checks = await runSpeakerChecks(CheckSpeaker, checkTargets(box, state.boxes));
+        const found = checks.filter((r) => needsAttention(r.res));
+        if (found.length) {
+          const go = await confirmFor(box, t('speakerCheck.beforeReportTitle'), precheckHTML(found, settingsBoxLabel), {
+            icon: null,
+            calm: true,
+            rich: true,
+            confirmLabel: t('speakerCheck.mailAnyway'),
+            confirmClass: 'btn btn-secondary',
+            cancelLabel: t('common.close'),
+          });
+          if (!go) { emailSupportBtn.disabled = false; return; }
+        }
         const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
         const res = await SaveDiagnosticBundle(hosts, true);
         if (res && res.savePath) {
           const subject = 'ST Reborn support request';
+          const checkBlock = checkMailSection(checks);
           const body =
             'Hi,\n\nI need help with ST Reborn.\n\n' +
             '(Please describe the problem here.)\n\n' +
             '--------------------------------\n' +
             'Diagnostic logs were saved to:\n' + res.savePath + '\n\n' +
-            'IMPORTANT: please attach that file to this email before sending.\n';
+            'IMPORTANT: please attach that file to this email before sending.\n' +
+            (checkBlock ? '\n' + checkBlock : '');
           try {
             // encodeURIStrict, not encodeURIComponent: Wails refuses a URL
             // carrying a bare parenthesis, and this body has one.

@@ -17,6 +17,7 @@ import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
 import { holdsByHost, holdFor } from './installhold.js';
+import { allowsInstallAgain, checkResultHTML, checkTargets, failingSpeakers, needsAttention, precheckHTML, runSpeakerChecks } from './speakercheck.js';
 import { wantsFastPoll } from './trackprogress.js';
 import {
   DiscoverBoxes,
@@ -27,6 +28,7 @@ import {
   RemoveConflictingMod,
   RestoreSTRCloud,
   UpdateFailureReport,
+  CheckSpeaker,
   PendingUpdateIntent,
   RunSpeakerUpdate,
   RunFleetUpdate,
@@ -1200,7 +1202,10 @@ async function renderFooter() {
   // with a problem wants to see whether it is already reported and to write it
   // down, not to read a README.
   const reportLink = $('footerReport');
-  if (reportLink) reportLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(`${repo}/issues`); };
+  // The speakers the list already shows as not answering are checked first
+  // (reportProblemWithCheck): most reports about them are a speaker off the
+  // network, which the check explains with the steps.
+  if (reportLink) reportLink.onclick = (e) => { e.preventDefault(); reportProblemWithCheck(`${repo}/issues`); };
   const voteLink = $('footerVoteIdeas');
   if (voteLink) voteLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(VOTE_URL); };
   const shareLink = $('footerShare');
@@ -1779,6 +1784,10 @@ function safeMountShell2() {
       // update check like the version line's own link (which also forgets a
       // dismissed notice); the result shows where it always does.
       showCredits,
+      // The speaker check (speakercheck.js): the list's Check action and the
+      // check in front of "Report a problem".
+      checkSpeaker: CheckSpeaker,
+      reportProblem: reportProblemWithCheck,
       checkAppUpdate: (manual) => {
         try { clearNoticeDismissal('appUpdate'); } catch {}
         return checkAppUpdate(manual);
@@ -3335,9 +3344,12 @@ async function pickBox(box, titleHint) {
     // UI 2.0 preview: no toast across the window; the speaker's own row says
     // it is not reachable and that the search runs, then what came of it.
     if (shell2Mounted() && shellOfflinePick(box, discoverBoxes())) return;
-    const title = titleHint || (box.host ? offlineTitle(box) : '');
-    showToast(title || t('speaker.offlineTooltip', { ago: '' }));
+    // The search runs as it always did; the check says WHY the speaker is
+    // not answering and what to try, which "last seen ..." alone never did.
     discoverBoxes();
+    if (box.host) { checkSpeakerDialog(box); return; }
+    const title = titleHint || '';
+    showToast(title || t('speaker.offlineTooltip', { ago: '' }));
     return;
   }
   if (box.kind === 'stock') {
@@ -3357,9 +3369,15 @@ async function pickBox(box, titleHint) {
       showToast(t('speaker.updateFinishingToast', { label }));
       return;
     }
+    // A speaker whose STR stopped answering is checked first. "Install STR
+    // again" was the only direction it used to get, and for a speaker that is
+    // off the network, in another network or hung, a new install cannot help.
+    // The check keeps the install on offer only when the Bose firmware answers
+    // and STR does not (checkSpeakerDialog).
+    if (box.strNotRunning) { checkSpeakerDialog(box); return; }
     const ok = await confirmWarn(
       t('speaker.stockConfirmTitle'),
-      t(box.strNotRunning ? 'speaker.strNotRunningConfirmBody' : 'speaker.stockConfirmBody', { label: escapeHtml(label) }),
+      t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
       { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
     );
     // Pin the clicked box as the setup target so Setup opens on the
@@ -3369,6 +3387,71 @@ async function pickBox(box, titleHint) {
     return;
   }
   selectBox(box);
+}
+
+// checkSpeakerDialog runs the speaker check (speakercheck.js) on a click and
+// shows what it found with the steps. One check per speaker at a time; the Go
+// side also joins a running check and reuses a fresh result, so nothing here
+// can turn into a probe loop. The dialog's button follows the verdict: "Install
+// STR again" only when the Bose firmware answers and STR does not, otherwise a
+// fresh search of the list, which is the step every other verdict ends on.
+const speakerChecksRunning = new Set();
+async function checkSpeakerDialog(box) {
+  if (!box || !box.host || speakerChecksRunning.has(box.host)) return;
+  speakerChecksRunning.add(box.host);
+  const label = getBoxLabel(box);
+  let res = null;
+  try {
+    showToast(t('speakerCheck.checking', { name: label }));
+    [{ res }] = await runSpeakerChecks(CheckSpeaker, [box]);
+  } finally {
+    speakerChecksRunning.delete(box.host);
+  }
+  const install = allowsInstallAgain(res);
+  const ok = await confirmWarn(
+    t('speakerCheck.title', { name: label }),
+    checkResultHTML(res, label),
+    {
+      icon: null,
+      calm: true,
+      rich: true,
+      confirmLabel: t(install ? 'speakerCheck.installAgain' : 'speakerCheck.refresh'),
+      confirmClass: 'btn btn-primary',
+      cancelLabel: t('common.close'),
+    },
+  );
+  if (!ok) return;
+  if (install) {
+    const live = (state.boxes || []).find((b) => b.host === box.host) || box;
+    state.setupTarget = { kind: 'stock', box: live };
+    switchView('setup');
+    return;
+  }
+  discoverBoxes();
+}
+
+// reportProblemWithCheck is "Report a problem" (classic footer, UI 2.0 Help):
+// when the list shows speakers that are not answering, they are checked first
+// and what the check found is shown with its steps. Reporting stays possible
+// from the same dialog. Nothing is checked when every speaker answers.
+async function reportProblemWithCheck(url) {
+  const failing = checkTargets(null, failingSpeakers(state.boxes));
+  if (failing.length) {
+    showToast(t('speakerCheck.checking', { name: failing.map(getBoxLabel).join(', ') }));
+    const found = (await runSpeakerChecks(CheckSpeaker, failing)).filter((r) => needsAttention(r.res));
+    if (found.length) {
+      const go = await confirmWarn(t('speakerCheck.beforeReportTitle'), precheckHTML(found, getBoxLabel), {
+        icon: null,
+        calm: true,
+        rich: true,
+        confirmLabel: t('speakerCheck.reportAnyway'),
+        confirmClass: 'btn btn-secondary',
+        cancelLabel: t('common.close'),
+      });
+      if (!go) return;
+    }
+  }
+  BrowserOpenURL(url);
 }
 
 // pickBoxFromShell is pickBox for the UI 2.0 sidebar speaker list. Unlike the Music

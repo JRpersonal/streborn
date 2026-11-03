@@ -1239,6 +1239,28 @@ export namespace main {
 	        this.logTail = source["logTail"];
 	    }
 	}
+	export class SpeakerCheck {
+	    host: string;
+	    verdict: string;
+	    adviceKey: string;
+	    pcNetworks: string;
+	    report: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpeakerCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.verdict = source["verdict"];
+	        this.adviceKey = source["adviceKey"];
+	        this.pcNetworks = source["pcNetworks"];
+	        this.report = source["report"];
+	        this.error = source["error"];
+	    }
+	}
 	export class SpotifyNow {
 	    bitrate: number;
 	    track: string;

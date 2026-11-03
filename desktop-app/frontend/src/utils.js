@@ -449,12 +449,14 @@ let warnWired = false;
 // the caller overrides them, otherwise a positive prompt's styling would
 // leak into the next destructive one.
 let warnConfirmDefaults = null;
+let warnCancelDefault = null;
 function wireWarn() {
   if (warnWired) return;
   warnWired = true;
   const cancel = $('warnCancel');
   const confirm = $('warnConfirm');
   if (confirm) warnConfirmDefaults = { label: confirm.textContent, cls: confirm.className };
+  if (cancel) warnCancelDefault = cancel.textContent;
   // Clear the resolver as it fires: a stray second click on the same button
   // must not resolve an already-settled promise, and the displacement path
   // above relies on warnResolve being null once a prompt has been answered.
@@ -471,6 +473,9 @@ function wireWarn() {
 //                     localized "Proceed anyway").
 //   opts.confirmClass class for the confirm button (default: btn-danger).
 //                     Pass 'btn btn-primary' for an encouraging CTA.
+//   opts.cancelLabel  text for the cancel button (default: the static
+//                     localized "Cancel"). A prompt that only reports
+//                     something says "Close" there.
 //   opts.calm         true drops the red alarm colour from the title. The modal
 //                     doubles as the confirmation for ROUTINE actions (updating
 //                     the speakers), and a red-on-triangle "warning" for the
@@ -497,6 +502,8 @@ export function confirmWarn(title, bodyHtml, opts) {
     confirm.textContent = opts.confirmLabel || warnConfirmDefaults.label;
     confirm.className = opts.confirmClass || warnConfirmDefaults.cls;
   }
+  const cancel = $('warnCancel');
+  if (cancel && warnCancelDefault !== null) cancel.textContent = opts.cancelLabel || warnCancelDefault;
   $('warnBody').innerHTML = bodyHtml;
   m.classList.remove('hidden');
   // One modal, one resolver. A second prompt raised while the first is still
