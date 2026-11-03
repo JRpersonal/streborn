@@ -125,6 +125,12 @@ type installFacts struct {
 	// found one. They decide the VPN and macOS Local Network verdicts.
 	Routes pcRoutes
 	VPN    *vpnFinding
+	// OtherSpeakerAnswered is set when another speaker answered this app in
+	// the last few minutes, TargetFresh when discovery saw this one in a
+	// recent cycle without a miss since. They keep the two PC-side verdicts
+	// off a speaker that is simply switched off (see pcEvidence).
+	OtherSpeakerAnswered bool
+	TargetFresh          bool
 
 	// SameSubnet is filled only when the verdict could be reached at all
 	// (a parseable host address and at least one interface with an IPv4).
@@ -628,6 +634,8 @@ func (a *App) gatherInstallFacts(ctx context.Context, host string) installFacts 
 	if v, ok := findVPN(host, f.Ifaces, f.Routes); ok {
 		f.VPN = &v
 	}
+	f.OtherSpeakerAnswered = a.otherSpeakerAnswered(host)
+	f.TargetFresh = a.speakerSightedFresh(host)
 	f.Firewall = firewallReportLine(localFirewallState(), a.cachedFirewallCheck())
 	f.LAN = a.lanSightings(12)
 	for _, s := range f.LAN {

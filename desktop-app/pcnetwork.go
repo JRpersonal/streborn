@@ -30,6 +30,7 @@ import (
 	"net"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -160,10 +161,7 @@ func ifaceByIP(ip string, ifaces []localIface) (localIface, bool) {
 	return localIface{}, false
 }
 
-// ifaceCovers reports whether host lies in the interface's own network. A
-// tunnel-shaped interface that does is the speaker's own network (a bridged
-// TAP into the home LAN, an odd driver without a MAC), not a VPN taking the
-// traffic elsewhere.
+// ifaceCovers reports whether host lies in the interface's own network.
 func ifaceCovers(in localIface, host string) bool {
 	ip := net.ParseIP(strings.TrimSpace(host))
 	_, n, err := net.ParseCIDR(strings.TrimSpace(in.CIDR))
@@ -174,6 +172,29 @@ func ifaceCovers(in localIface, host string) bool {
 	return bits-ones > 1 && n.Contains(ip)
 }
 
+// tunnelTakesAway reports whether a tunnel-shaped interface takes the
+// speaker's traffic away from the home network. One whose own network covers
+// the speaker is normally the speaker's network itself (a bridged TAP into the
+// home LAN, an odd driver without a MAC) and is exempt, except in the classic
+// VPN subnet clash: the VPN pushes the same range as the home LAN, so a Wi-Fi
+// or Ethernet adapter ALSO holds an address next to the speaker, and the
+// routing table still picks the tunnel. Then the tunnel wins the route and the
+// speaker is out of reach through it.
+func tunnelTakesAway(in localIface, host string, ifaces []localIface) bool {
+	if !ifaceCovers(in, host) {
+		return true
+	}
+	for _, o := range ifaces {
+		if o == in || !o.Up || tunnelIface(o) {
+			continue
+		}
+		if ifaceCovers(o, host) {
+			return true
+		}
+	}
+	return false
+}
+
 // findVPN decides whether a VPN on this PC is in the way of the speaker.
 //
 // Only a tunnel that holds the route to the speaker or the default route
@@ -181,25 +202,85 @@ func ifaceCovers(in localIface, host string) bool {
 // never be blamed: Tailscale (or any mesh VPN) with its single /32 address and
 // no exit node, and the utun interfaces macOS keeps up for its own services.
 func findVPN(host string, ifaces []localIface, r pcRoutes) (vpnFinding, bool) {
-	if in, ok := ifaceByIP(r.SpeakerSrc, ifaces); ok && in.Up && tunnelIface(in) && !ifaceCovers(in, host) {
+	if in, ok := ifaceByIP(r.SpeakerSrc, ifaces); ok && in.Up && tunnelIface(in) && tunnelTakesAway(in, host, ifaces) {
 		return vpnFinding{Iface: in, SpeakerRoute: true}, true
 	}
-	if in, ok := ifaceByIP(r.DefaultSrc, ifaces); ok && in.Up && tunnelIface(in) && !ifaceCovers(in, host) {
+	if in, ok := ifaceByIP(r.DefaultSrc, ifaces); ok && in.Up && tunnelIface(in) && tunnelTakesAway(in, host, ifaces) {
 		return vpnFinding{Iface: in}, true
 	}
 	return vpnFinding{}, false
 }
 
+// Windows socket error numbers. Windows words its socket errors in the system
+// language (a German PC words WSAEACCES "Der Zugriff auf einen Socket war
+// aufgrund der Zugriffsrechte des Sockets unzulässig"), so the English text
+// matches below only catch an English Windows. The number is the same
+// everywhere. None of them collides with a Unix errno, so one check covers
+// every platform without build tags.
+const (
+	wsaEACCES        syscall.Errno = 10013
+	wsaEADDRNOTAVAIL syscall.Errno = 10049
+	wsaENETUNREACH   syscall.Errno = 10051
+	wsaECONNRESET    syscall.Errno = 10054
+	wsaETIMEDOUT     syscall.Errno = 10060
+	wsaECONNREFUSED  syscall.Errno = 10061
+	wsaEHOSTDOWN     syscall.Errno = 10064
+	wsaEHOSTUNREACH  syscall.Errno = 10065
+)
+
+// errnoIs reports whether the error chain carries one of the given OS error
+// numbers. boxDo's errors keep the whole *url.Error -> *net.OpError ->
+// *os.SyscallError -> syscall.Errno chain (allPortsErr unwraps to its first
+// port's), so this works on the live path; errors that were flattened into
+// text on the way fall through to the string matches.
+func errnoIs(err error, codes ...syscall.Errno) bool {
+	var e syscall.Errno
+	if !errors.As(err, &e) {
+		return false
+	}
+	for _, c := range codes {
+		if e == c {
+			return true
+		}
+	}
+	return false
+}
+
 // noRouteToHost reports EHOSTUNREACH ("no route to host"; Windows words
 // WSAEHOSTUNREACH as "attempted to an unreachable host"). Kept apart from
 // noNetworkHere on purpose, see there: on its own it mostly means a speaker
-// that is switched off. Only the VPN and macOS checks give it more weight.
+// that is switched off. Only the VPN and macOS checks give it more weight, and
+// only with evidence beside it.
 func noRouteToHost(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errnoIs(err, wsaEHOSTUNREACH, syscall.EHOSTUNREACH) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "no route to host") || strings.Contains(msg, "unreachable host")
+}
+
+// hostIsDown reports EHOSTDOWN: the network layer looked for the host and
+// found nobody, which is a speaker that is off, never a permission.
+func hostIsDown(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errnoIs(err, wsaEHOSTDOWN, syscall.EHOSTDOWN) ||
+		strings.Contains(strings.ToLower(err.Error()), "host is down")
+}
+
+// netUnreachable is noNetworkHere (ENETUNREACH) with the error number checked
+// first, for a Windows that does not word it in English.
+func netUnreachable(err error) bool {
+	return err != nil && (errnoIs(err, wsaENETUNREACH, syscall.ENETUNREACH) || noNetworkHere(err))
+}
+
+// noLocalAddr is noLocalRoute (EADDRNOTAVAIL), likewise.
+func noLocalAddr(err error) bool {
+	return err != nil && (errnoIs(err, wsaEADDRNOTAVAIL, syscall.EADDRNOTAVAIL) || noLocalRoute(err))
 }
 
 // blockedLocally reports a connection this PC itself refused to make:
@@ -210,6 +291,9 @@ func blockedLocally(err error) bool {
 	if err == nil {
 		return false
 	}
+	if errnoIs(err, wsaEACCES, syscall.EACCES, syscall.EPERM) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "forbidden by its access permissions") ||
 		strings.Contains(msg, "permission denied") ||
@@ -219,25 +303,12 @@ func blockedLocally(err error) bool {
 // refusedOrReset reports an answer from the far end. A refused or reset
 // connection got there, so whatever is wrong, the VPN did not stop it.
 func refusedOrReset(err error) bool {
+	if errnoIs(err, wsaECONNREFUSED, wsaECONNRESET, syscall.ECONNREFUSED, syscall.ECONNRESET) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "refused") || strings.Contains(msg, "reset by peer") ||
 		strings.Contains(msg, "forcibly closed")
-}
-
-// vpnMayExplain reports whether a failed speaker request is one a VPN in the
-// given position produces. A tunnel that carries the speaker connection
-// explains any failure short of an answer; a tunnel that only holds the
-// default route explains the errors that mean "never got onto the home
-// network": a local block, no usable route, or silence.
-func vpnMayExplain(err error, v vpnFinding) bool {
-	if err == nil || refusedOrReset(err) {
-		return false
-	}
-	if v.SpeakerRoute {
-		return true
-	}
-	return noLocalRoute(err) || noNetworkHere(err) || noRouteToHost(err) ||
-		blockedLocally(err) || isTimeoutErr(err)
 }
 
 // isTimeoutErr matches a timed-out request the way briefTransportErr does.
@@ -246,18 +317,96 @@ func isTimeoutErr(err error) bool {
 	if errors.As(err, &nerr) && nerr.Timeout() {
 		return true
 	}
+	if errnoIs(err, wsaETIMEDOUT, syscall.ETIMEDOUT) {
+		return true
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "timeout") || strings.Contains(msg, "timed out") ||
 		strings.Contains(msg, "deadline exceeded")
 }
 
+// portErrs splits boxDo's error into one error per port tried. allPortsErr
+// only unwraps to its first port, and its text folds the others into short
+// clauses, so a check over "every port" has to look at each one itself.
+func portErrs(err error) []error {
+	var ae *allPortsErr
+	if errors.As(err, &ae) {
+		out := []error{ae.first.err}
+		for _, f := range ae.rest {
+			out = append(out, f.err)
+		}
+		return out
+	}
+	return []error{err}
+}
+
+// pcEvidence is what the app knows beyond the failed request itself. Both
+// checks below fire on errors a speaker that is simply switched off produces
+// as well (a timeout, "no route to host"), and these facts tell the two apart.
+type pcEvidence struct {
+	// OtherAnswered is set when another speaker answered this app a short
+	// while ago. A VPN kill switch blocks every device at home and the macOS
+	// Local Network permission covers the whole app, so either would have
+	// stopped that one too: with another speaker answering, the silent one is
+	// most likely off or asleep.
+	OtherAnswered bool
+	// TargetAlive is set when something other than this app's connection says
+	// the speaker is on the network right now (a fresh discovery sighting, an
+	// ARP entry, a ping reply).
+	TargetAlive bool
+}
+
+// vpnMayExplain reports whether a failed speaker request is one a VPN in the
+// given position produces. A tunnel that carries the speaker connection
+// explains any failure short of an answer. A tunnel that only holds the
+// default route is also the normal shape of a full-tunnel VPN that still lets
+// the home network through, so it explains on its own only what such a VPN
+// cannot leave behind: a local block, no local address, no route to the
+// network. A timeout or "no route to host" is also what a switched-off speaker
+// gives, so those count only when no other speaker has answered this app
+// either.
+func vpnMayExplain(err error, v vpnFinding, ev pcEvidence) bool {
+	if err == nil || refusedOrReset(err) {
+		return false
+	}
+	if v.SpeakerRoute {
+		return true
+	}
+	if noLocalAddr(err) || netUnreachable(err) || blockedLocally(err) {
+		return true
+	}
+	return !ev.OtherAnswered && (noRouteToHost(err) || isTimeoutErr(err))
+}
+
 // macLocalNetworkDenied is the macOS Local Network permission fingerprint: the
 // system says there is no route ("no route to host" or "network is
-// unreachable") to an address that lies inside a network this Mac is on right
-// now. A Mac with a working address in that network has a route by definition,
-// so the refusal came from macOS itself.
-func macLocalNetworkDenied(host string, err error, ifaces []localIface, r pcRoutes) bool {
-	if r.OS != "darwin" || err == nil || !(noNetworkHere(err) || noRouteToHost(err)) {
+// unreachable") on every port, to an address that lies inside a network this
+// Mac is on right now. A Mac with a working address in that network has a
+// route by definition, so the refusal came from macOS itself.
+//
+// "network is unreachable" is enough on its own. "no route to host" is not:
+// macOS also returns it for a host on its own network that does not answer
+// ARP, which is a speaker that is off or asleep. So that one counts only with
+// the speaker shown alive some other way. And since the permission covers the
+// whole app, another speaker answering rules it out, as does any port that
+// reported the host as down.
+func macLocalNetworkDenied(host string, err error, ifaces []localIface, r pcRoutes, ev pcEvidence) bool {
+	if r.OS != "darwin" || err == nil || ev.OtherAnswered {
+		return false
+	}
+	needAlive := false
+	for _, e := range portErrs(err) {
+		switch {
+		case hostIsDown(e):
+			return false
+		case netUnreachable(e):
+		case noRouteToHost(e):
+			needAlive = true
+		default:
+			return false
+		}
+	}
+	if needAlive && !ev.TargetAlive {
 		return false
 	}
 	known, same, _ := sameSubnet(host, upIfaces(ifaces))
@@ -280,11 +429,11 @@ func upIfaces(ifaces []localIface) []localIface {
 // request, or "" when the facts point at none. The VPN is checked first: with
 // a tunnel holding the route, a Mac's "no route" is the tunnel's doing and
 // granting a permission would change nothing.
-func pcSideAdvice(host string, err error, ifaces []localIface, r pcRoutes) (advice, why string) {
-	if v, ok := findVPN(host, ifaces, r); ok && vpnMayExplain(err, v) {
+func pcSideAdvice(host string, err error, ifaces []localIface, r pcRoutes, ev pcEvidence) (advice, why string) {
+	if v, ok := findVPN(host, ifaces, r); ok && vpnMayExplain(err, v, ev) {
 		return vpnAdviceFor(v), "vpn: " + v.describe()
 	}
-	if macLocalNetworkDenied(host, err, ifaces, r) {
+	if macLocalNetworkDenied(host, err, ifaces, r, ev) {
 		return macLocalNetworkAdvice, "macOS refused a route inside its own network"
 	}
 	return "", ""
@@ -301,6 +450,50 @@ func vpnAdviceFor(v vpnFinding) string {
 	return vpnAdvice + " " + fmt.Sprintf(vpnAdapterNote, name)
 }
 
+// recentAnswerWindow is how long a speaker's answer counts as proof that the
+// path from this PC into the home network works.
+const recentAnswerWindow = 5 * time.Minute
+
+// otherSpeakerAnswered reports whether a speaker other than host answered
+// this app within recentAnswerWindow. Read from the port cache, which boxDo
+// fills only on a real HTTP answer and empties on a failure. A discovery
+// sighting does not count: an mDNS announcement alone can be the host OS
+// replaying a cached one.
+func (a *App) otherSpeakerAnswered(host string) bool {
+	if a == nil {
+		return false
+	}
+	a.portMu.Lock()
+	defer a.portMu.Unlock()
+	now := time.Now()
+	for h, at := range a.portAt {
+		if h == host {
+			continue
+		}
+		if _, live := a.portCache[h]; live && now.Sub(at) <= recentAnswerWindow {
+			return true
+		}
+	}
+	return false
+}
+
+// speakerSightedFresh reports whether discovery saw host in a recent cycle
+// with no miss since: the one sign, short of a connection, that the speaker is
+// on the network right now.
+func (a *App) speakerSightedFresh(host string) bool {
+	if a == nil {
+		return false
+	}
+	a.discMu.Lock()
+	defer a.discMu.Unlock()
+	for _, e := range a.discCache {
+		if e.box.Host == host && e.firstMiss.IsZero() && !e.seen.IsZero() && time.Since(e.seen) <= recentAnswerWindow {
+			return true
+		}
+	}
+	return false
+}
+
 // reachabilityHintFor is reachabilityHint with the speaker's address, which
 // lets it check this PC for a VPN in the way and, on a Mac, for the Local
 // Network permission before falling back to the generic verdicts.
@@ -310,13 +503,15 @@ func (a *App) reachabilityHintFor(host string, err error) error {
 	}
 	ifaces := listPCIfaces()
 	routes := probePCRoutes(host)
-	if adv, why := pcSideAdvice(host, err, ifaces, routes); adv != "" {
+	ev := pcEvidence{OtherAnswered: a.otherSpeakerAnswered(host), TargetAlive: a.speakerSightedFresh(host)}
+	if adv, why := pcSideAdvice(host, err, ifaces, routes, ev); adv != "" {
 		logger := slog.Default()
 		if a != nil && a.logger != nil {
 			logger = a.logger
 		}
 		logger.Info("speaker unreachable: PC-side cause found", "host", host, "why", why,
-			"speakerSrc", routes.SpeakerSrc, "defaultSrc", routes.DefaultSrc, "err", err)
+			"speakerSrc", routes.SpeakerSrc, "defaultSrc", routes.DefaultSrc,
+			"otherAnswered", ev.OtherAnswered, "targetAlive", ev.TargetAlive, "err", err)
 		return fmt.Errorf("%w\n\n%s", err, adv)
 	}
 	return reachabilityHint(err)
@@ -325,10 +520,10 @@ func (a *App) reachabilityHintFor(host string, err error) error {
 // The advice for the two PC-side causes. Constants for the same reason as the
 // others in app_transport.go: the failure report recognises them by prefix.
 const (
-	vpnAdvice = "A VPN is active on this PC, and it probably keeps ST Reborn from reaching your speaker: VPN apps often send the connection out through the VPN, or block devices at home, instead of letting it into your home network. Disconnect the VPN, or turn on its setting for local network access (often called LAN access, local network sharing or split tunnelling), then try again. If it still fails with the VPN off, check next whether a firewall or antivirus blocks ST Reborn."
+	vpnAdvice = "A VPN is active on this PC, and it probably keeps ST Reborn from reaching your speaker: VPN apps often send the connection out through the VPN, or block devices at home, instead of letting it into your home network. Disconnect the VPN, or turn on its setting for local network access (often called LAN access, local network sharing or split tunnelling), then try again. If it fails the same way with the VPN off, check that the speaker is switched on and awake, and then whether a firewall or antivirus blocks ST Reborn."
 
 	// vpnAdapterNote names the adapter. %s is its name as the system shows it.
 	vpnAdapterNote = "The VPN adapter on this PC is called %s."
 
-	macLocalNetworkAdvice = "Your Mac is on the same network as the speaker, but macOS did not let ST Reborn reach it. That is usually the Local Network permission. Open System Settings > Privacy & Security > Local Network and switch ST Reborn on. Then quit ST Reborn and open it again. If ST Reborn is already switched on there, switch it off and on once, and check that the speaker is powered and awake."
+	macLocalNetworkAdvice = "Your Mac is on the same network as the speaker, but macOS may not be letting ST Reborn reach it. That is usually the Local Network permission. Open System Settings > Privacy & Security > Local Network and switch ST Reborn on. Then quit ST Reborn and open it again. If ST Reborn is already switched on there, switch it off and on once. Also check that the speaker is powered and awake."
 )

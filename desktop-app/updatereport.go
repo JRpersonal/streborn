@@ -426,6 +426,12 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
 			continue
 		}
+		// The VPN and Local Network paragraphs blame this PC's path to the
+		// speaker just as the three above do, and that path demonstrably
+		// worked.
+		if isPCSideAdvice(p) {
+			continue
+		}
 		out = append(out, p)
 	}
 	return out
@@ -546,7 +552,10 @@ func dropContradictedBlame(advice []string) []string {
 	}
 	out := advice[:0:0]
 	for _, p := range advice {
-		if strings.HasPrefix(p, firewallAdvice) {
+		// The VPN and Local Network paragraphs are the same blame in other
+		// words: a speaker that answered was reached through this PC's VPN
+		// and with this app's permissions.
+		if strings.HasPrefix(p, firewallAdvice) || isPCSideAdvice(p) {
 			continue
 		}
 		out = append(out, p)
@@ -666,14 +675,34 @@ func writeLANSnapshot(b *strings.Builder, f installFacts) {
 //
 // This must keep running BEFORE splitAdvice peels the paragraphs out, or the
 // swap decides nothing and the 2026-08-07 wrong-blame comes straight back.
+//
+// The VPN and macOS Local Network paragraphs (reachabilityHintFor) are swapped
+// the same way. Each is replaced up to the end of its paragraph, because the
+// VPN one carries the adapter's name after the constant.
 func stripWrongBlame(probeErr error, errMsg, history string) error {
-	if probeErr == nil || !strings.Contains(probeErr.Error(), firewallAdvice) {
+	if probeErr == nil {
 		return probeErr
 	}
-	if !answeredNotSTR(errors.New(errMsg + "\n" + history)) {
+	msg := probeErr.Error()
+	blame := ""
+	for _, k := range []string{firewallAdvice, vpnAdvice, macLocalNetworkAdvice} {
+		if strings.Contains(msg, k) {
+			blame = k
+			break
+		}
+	}
+	if blame == "" || !answeredNotSTR(errors.New(errMsg+"\n"+history)) {
 		return probeErr
 	}
-	return errors.New(strings.Replace(probeErr.Error(), firewallAdvice, answeredNotSTRAdvice, 1))
+	if blame == firewallAdvice {
+		return errors.New(strings.Replace(msg, firewallAdvice, answeredNotSTRAdvice, 1))
+	}
+	start := strings.Index(msg, blame)
+	end := len(msg)
+	if i := strings.Index(msg[start:], "\n\n"); i >= 0 {
+		end = start + i
+	}
+	return errors.New(msg[:start] + answeredNotSTRAdvice + msg[end:])
 }
 
 // speakerOffTheNetwork is the fingerprint of a speaker that is simply not

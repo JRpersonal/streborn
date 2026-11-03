@@ -79,6 +79,12 @@ type App struct {
 	// call simply fails over and re-pins to the working port.
 	portMu    sync.Mutex
 	portCache map[string]int
+	// portAt is when each portCache entry last answered. The PC-side
+	// verdicts (pcnetwork.go) read it: a speaker that answered this app a
+	// minute ago proves the path from this PC into the home network works,
+	// so a VPN kill switch or a missing macOS permission cannot be why a
+	// different speaker is silent.
+	portAt map[string]time.Time
 
 	// uninstalling holds the hosts whose STR removal is in progress or done in
 	// this app session (host -> struct{}). The post-update Spotify engine
