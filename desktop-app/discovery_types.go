@@ -195,6 +195,15 @@ type BoxInfo struct {
 	// healthy (#986). Empty on a healthy box. The Settings action that removes a
 	// rival mod's leftovers also resets this.
 	ForeignCloudURL string `json:"foreignCloudURL,omitempty"`
+	// RivalCloudURL is the same finding for a speaker WITHOUT STR, read from
+	// the stock firmware's own /info margeURL: a server on the home network
+	// instead of Bose's, the trace of another cloud replacement (AfterTouch,
+	// OpenCloudTouch) that still runs or ran on it. The setup picker says so
+	// under the speaker's card before the install. Kept apart from
+	// ForeignCloudURL because that one comes with a Settings action that needs
+	// the STR agent. Empty for a stock Bose address and while STR's own
+	// stick-free unlock has the address set.
+	RivalCloudURL string `json:"rivalCloudURL,omitempty"`
 	// GroupKeyError is the reason the last thumbs-key press was refused, when
 	// it was recent. Before this the refusal was invisible: the owner pressed
 	// the key, nothing happened, and only a diagnostic bundle explained why.

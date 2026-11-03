@@ -1299,6 +1299,7 @@
   "setup.wifiWriteFailed": "STR est installé, mais l'enregistrement du Wi-Fi sur l'enceinte a échoué. Gardez le câble réseau branché et ajoutez le Wi-Fi plus tard dans Réglages de l'enceinte.",
   "setup.installFirewallHint": "L'enceinte ne peut pas encore atteindre cet ordinateur (0 rappel). Autorisez ST Reborn dans votre pare-feu, puis l'installation devrait continuer.",
   "setup.limitedNote": "Ce modèle n'a pas de boutons de préréglage matériels 1 à 6, ils ne fonctionneront donc pas. STR ajoute tout de même la radio Internet, les préréglages dans l'application et le streaming.",
+  "setup.rivalCloudNote": "Cette enceinte est encore configurée pour un autre remplaçant du cloud, comme AfterTouch (serveur {{url}}). L'installation de STR la fait passer à STR.",
   "setup.targetHeading": "Quelle enceinte ?",
   "setup.netInstallBtn": "Installer STR maintenant",
   "setup.useStickInstead": "Préparer plutôt une clé USB",

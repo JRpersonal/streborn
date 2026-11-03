@@ -268,6 +268,11 @@ var boxFieldPolicy = []fieldPolicy{
 	// down, #270 2026-07-12).
 	{"ConflictingMod", keepBase, verifiedReading},
 	{"ForeignCloudURL", keepBase, verifiedReading},
+	// The stock firmware's own reading, from the /info probe of this cycle.
+	// The cache never fills it, so the note goes away with the next cycle once
+	// the install has healed the address; within a cycle a thin mDNS sighting
+	// does not erase what the probe saw.
+	{"RivalCloudURL", keepBase, preferNonEmpty},
 	{"GroupKeyError", keepBase, verifiedReading},
 	{"GroupKeyErrorKind", keepBase, follows("GroupKeyError")},
 	{"HoldRefusedSource", keepBase, verifiedReading},

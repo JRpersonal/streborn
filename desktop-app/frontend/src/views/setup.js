@@ -515,6 +515,13 @@ export function renderSetupTargetPicker() {
     if (boxModelSupport(b.model) === 'limited') {
       cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
     }
+    // Still set up for another cloud replacement (AfterTouch, OpenCloudTouch):
+    // its /info cloud address points at a server on the home network. Said
+    // before the install, so a former AfterTouch user knows the switch is
+    // expected and what the install does about it (field mail 2026-11-03).
+    if (b.rivalCloudURL) {
+      cards += `<div class="setup-target-rival-note muted small">${escapeHtml(t('setup.rivalCloudNote', { url: b.rivalCloudURL }))}</div>`;
+    }
   }
   // Speakers that already run STR fold away. A household that has done this
   // once has four cards saying "done" and one saying "to do", all the same

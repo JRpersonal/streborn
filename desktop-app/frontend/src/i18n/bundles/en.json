@@ -1431,6 +1431,7 @@
   "setup.wifiWriteFailed": "STR is installed, but saving Wi-Fi to the speaker failed. Add Wi-Fi in Speaker settings; if you installed over a network cable, keep it connected until you have.",
   "setup.installFirewallHint": "The speaker cannot reach this computer yet (0 callbacks). Allow ST Reborn through your firewall, then it should continue.",
   "setup.limitedNote": "This model has no hardware preset buttons 1 to 6, so those won't work. STR still adds internet radio, app presets and streaming.",
+  "setup.rivalCloudNote": "This speaker is still set up for another cloud replacement such as AfterTouch (server {{url}}). Installing STR switches it over to STR.",
   "setup.targetHeading": "Which speaker?",
   "setup.netInstallBtn": "Install STR now",
   "setup.useStickInstead": "Prepare a USB stick instead",

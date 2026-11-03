@@ -171,6 +171,7 @@ export namespace main {
 	    arcadeAt?: string;
 	    conflictingMod?: string;
 	    foreignCloudURL?: string;
+	    rivalCloudURL?: string;
 	    groupKeyError?: string;
 	    groupKeyErrorKind?: string;
 	    holdRefusedSource?: string;
@@ -217,6 +218,7 @@ export namespace main {
 	        this.arcadeAt = source["arcadeAt"];
 	        this.conflictingMod = source["conflictingMod"];
 	        this.foreignCloudURL = source["foreignCloudURL"];
+	        this.rivalCloudURL = source["rivalCloudURL"];
 	        this.groupKeyError = source["groupKeyError"];
 	        this.groupKeyErrorKind = source["groupKeyErrorKind"];
 	        this.holdRefusedSource = source["holdRefusedSource"];

@@ -1299,6 +1299,7 @@
   "setup.wifiWriteFailed": "STR jest zainstalowany, ale zapisanie Wi-Fi w głośniku się nie powiodło. Pozostaw kabel sieciowy podłączony i dodaj Wi-Fi później w Ustawieniach głośnika.",
   "setup.installFirewallHint": "Głośnik nie może jeszcze osiągnąć tego komputera (0 odpowiedzi). Zezwól aplikacji ST Reborn w zaporze sieciowej, a wtedy instalacja powinna być kontynuowana.",
   "setup.limitedNote": "Ten model nie ma sprzętowych przycisków presetów od 1 do 6, więc nie będą one działać. STR i tak dodaje radio internetowe, presety w aplikacji oraz streaming.",
+  "setup.rivalCloudNote": "Ten głośnik jest nadal ustawiony na inny zamiennik chmury, np. AfterTouch (serwer {{url}}). Instalacja STR przełącza go na STR.",
   "setup.targetHeading": "Który głośnik?",
   "setup.netInstallBtn": "Zainstaluj STR teraz",
   "setup.useStickInstead": "Zamiast tego przygotuj pendrive USB",
