@@ -97,7 +97,8 @@ func (a *App) UpdateFailureReport(host string, port int, phase, errMsg, targetVe
 		a.logger.Info("failure report: gathered network facts", "host", host, "phase", phase,
 			"pingRan", r.Facts.PingRan, "pingAlive", r.Facts.PingAlive,
 			"arp", r.Facts.MACPrefix != "", "subnetKnown", r.Facts.SubnetKnown,
-			"sameSubnet", r.Facts.SameSubnet)
+			"sameSubnet", r.Facts.SameSubnet, "vpn", r.Facts.VPN != nil,
+			"speakerSrc", r.Facts.Routes.SpeakerSrc, "defaultSrc", r.Facts.Routes.DefaultSrc)
 	}
 
 	// Skip the speaker's own report when the dials have already proven both
@@ -174,6 +175,8 @@ func adviceParagraphs() []string {
 		alreadyInstalledNoStickAdvice,
 		firmwareFirstAdvice,
 		repairBoxRestartedAdvice,
+		vpnAdvice,
+		macLocalNetworkAdvice,
 	}
 }
 
@@ -310,6 +313,7 @@ func formatFailureReport(r failureReport) string {
 	advice = applyIsolationDiagnosis(advice, r)
 	advice = applyOffNetworkDiagnosis(advice, r)
 	advice = applyOtherNetworkDiagnosis(advice, r)
+	advice = applyPCSideDiagnosis(advice, r)
 	advice = applyRepeatedAttempts(advice, r)
 	if len(advice) > 0 {
 		section(&b, "what to try")
@@ -420,6 +424,12 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 			continue
 		}
 		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
+			continue
+		}
+		// The VPN and Local Network paragraphs blame this PC's path to the
+		// speaker just as the three above do, and that path demonstrably
+		// worked.
+		if isPCSideAdvice(p) {
 			continue
 		}
 		out = append(out, p)
@@ -542,7 +552,10 @@ func dropContradictedBlame(advice []string) []string {
 	}
 	out := advice[:0:0]
 	for _, p := range advice {
-		if strings.HasPrefix(p, firewallAdvice) {
+		// The VPN and Local Network paragraphs are the same blame in other
+		// words: a speaker that answered was reached through this PC's VPN
+		// and with this app's permissions.
+		if strings.HasPrefix(p, firewallAdvice) || isPCSideAdvice(p) {
 			continue
 		}
 		out = append(out, p)
@@ -599,7 +612,7 @@ func writeNetworkFacts(b *strings.Builder, f installFacts) {
 }
 
 func writeThisPC(b *strings.Builder, f installFacts) {
-	if len(f.Ifaces) == 0 && f.Firewall == "" {
+	if len(f.Ifaces) == 0 && f.Firewall == "" && f.Routes.SpeakerSrc == "" && f.VPN == nil {
 		return
 	}
 	section(b, "this PC")
@@ -614,6 +627,7 @@ func writeThisPC(b *strings.Builder, f installFacts) {
 		}
 		fmt.Fprintf(b, "%-*s %-20s %s\n", factCol, in.Name, addr, state)
 	}
+	writeRouteFacts(b, f)
 	if f.Firewall != "" {
 		b.WriteString(f.Firewall + "\n")
 	}
@@ -661,14 +675,34 @@ func writeLANSnapshot(b *strings.Builder, f installFacts) {
 //
 // This must keep running BEFORE splitAdvice peels the paragraphs out, or the
 // swap decides nothing and the 2026-08-07 wrong-blame comes straight back.
+//
+// The VPN and macOS Local Network paragraphs (reachabilityHintFor) are swapped
+// the same way. Each is replaced up to the end of its paragraph, because the
+// VPN one carries the adapter's name after the constant.
 func stripWrongBlame(probeErr error, errMsg, history string) error {
-	if probeErr == nil || !strings.Contains(probeErr.Error(), firewallAdvice) {
+	if probeErr == nil {
 		return probeErr
 	}
-	if !answeredNotSTR(errors.New(errMsg + "\n" + history)) {
+	msg := probeErr.Error()
+	blame := ""
+	for _, k := range []string{firewallAdvice, vpnAdvice, macLocalNetworkAdvice} {
+		if strings.Contains(msg, k) {
+			blame = k
+			break
+		}
+	}
+	if blame == "" || !answeredNotSTR(errors.New(errMsg+"\n"+history)) {
 		return probeErr
 	}
-	return errors.New(strings.Replace(probeErr.Error(), firewallAdvice, answeredNotSTRAdvice, 1))
+	if blame == firewallAdvice {
+		return errors.New(strings.Replace(msg, firewallAdvice, answeredNotSTRAdvice, 1))
+	}
+	start := strings.Index(msg, blame)
+	end := len(msg)
+	if i := strings.Index(msg[start:], "\n\n"); i >= 0 {
+		end = start + i
+	}
+	return errors.New(msg[:start] + answeredNotSTRAdvice + msg[end:])
 }
 
 // speakerOffTheNetwork is the fingerprint of a speaker that is simply not
