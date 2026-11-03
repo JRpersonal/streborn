@@ -52,40 +52,73 @@ export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
   return sa < sb ? -1 : 1;
 }
 
-// boxModelSupport classifies a Bose /info <type> model string for STR.
-// Every SoundTouch-speaking device STR can reach on the LAN is an install
-// candidate now: a box reachable by IP installs over the network (stick-free
-// via the :17000 unlock + RepairInstallViaSSH), so no model is blocked. The
-// classification only frames the install:
-//   'supported' - a standalone SoundTouch speaker with the hardware preset
-//                 buttons 1-6 STR was built around (10, 20, 30, Portable, Wave)
-//   'limited'   - a SoundTouch-speaking device STR still installs on over the
-//                 network (soundbar / home-cinema system / Wireless Link Adapter)
-//                 but which has no hardware preset buttons 1-6. Installable;
-//                 callers add a short note that those buttons will not work.
-//   'unknown'   - type absent or unrecognised: treat like 'supported'
-//                 (compatibility-first). An odd type string on a real speaker
-//                 must still be installable.
-// Nothing here blocks an install any more; the old 'unsupported' verdict (which
+// boxModelSupport classifies a Bose /info <type> model string for STR, along
+// the status table in docs/MODELS.md. Every SoundTouch-speaking device STR can
+// reach on the LAN is an install candidate: a box reachable by IP installs over
+// the network (stick-free via the :17000 unlock + RepairInstallViaSSH), so no
+// model is blocked. The classification only frames the install, so the owner
+// knows what to expect BEFORE pressing Install (about two dozen mails asked
+// whether a given model works at all):
+//   'supported'     - a standalone SoundTouch speaker with the hardware preset
+//                     buttons 1-6 STR was built around (10, 20, 30, Portable,
+//                     Wave): Verified or Working in MODELS.md.
+//   'limited'       - a SoundTouch-speaking device MODELS.md lists as Working
+//                     that has no hardware preset buttons 1-6: SoundTouch 130
+//                     (CineMate 130), 300 and 520, CineMate, Lifestyle
+//                     consoles, the SA-4 and SA-5
+//                     amplifiers, the Wireless (Link) Adapter. Callers add a
+//                     short note that those buttons will not work.
+//   'unverified'    - a model string MODELS.md has no row for (its "other
+//                     (Soundbar, ...)" row is Unknown): installable, but callers
+//                     say nobody has confirmed it yet and that it is the owner's
+//                     own risk.
+//   'notSoundTouch' - a Bose Music or Bluetooth product name (Home Speaker,
+//                     Smart Speaker, Smart Soundbar, Soundbar 500/700/900,
+//                     SoundLink, ...). Those are a different system; STR cannot
+//                     work with them. They do not answer the SoundTouch /info, so
+//                     this only fires on a name that reached the app some other
+//                     way; checked first because "Portable Smart Speaker" would
+//                     otherwise pass as a SoundTouch Portable.
+//   'unknown'       - type absent (or the bare word "SoundTouch"): treat like
+//                     'supported' (compatibility-first). A speaker whose /info
+//                     has not been read yet must not carry a warning.
+// Nothing here blocks an install; the old 'unsupported' verdict (which
 // dead-ended installs before the stick-free :17000 network path existed) is gone.
 export function boxModelSupport(model) {
   const m = String(model || '').toLowerCase().trim();
   if (!m || m === 'soundtouch') return 'unknown';
-  // Soundbar / home-cinema / adapter families first: these can themselves
+  if (/\bhome\s*speaker\b/.test(m) || /\bsmart\s*(speaker|soundbar|ultra)\b/.test(m)
+      || /\bsoundbar\s*(500|550|600|700|900)\b/.test(m) || /\bbose\s*music\b/.test(m)
+      || /\bsoundlink\b/.test(m) || /\btv\s*speaker\b/.test(m)) {
+    return 'notSoundTouch';
+  }
+  // Working models without the hardware preset buttons. These can themselves
   // contain the word "soundtouch", so they take precedence over the speaker
-  // whitelist below. STR installs on them over the network; they just lack the
-  // hardware preset buttons, hence 'limited' rather than a hard block.
-  if (/\blifestyle\b/.test(m) || /\bcinemate\b/.test(m) || /\bacoustimass\b/.test(m)
-      || /soundtouch\s*300\b/.test(m) || /\bsoundbar\b/.test(m)
-      || /wireless\s*link\s*adapter/.test(m) || /\badapter\b/.test(m)) {
+  // list below. Model numbers match as a whole token so "SoundTouch 30" never
+  // catches the "SoundTouch 300".
+  if (/\blifestyle\b/.test(m) || /\bcinemate\b/.test(m)
+      || /soundtouch\s*(130|300|520)\b/.test(m) || /\bsa-?[45]\b/.test(m)
+      || /wireless\s*(link\s*)?adapter/.test(m)) {
     return 'limited';
   }
-  // Standalone speakers with hardware preset buttons. Match the model number as
-  // a whole token so "SoundTouch 30" does not also catch the "SoundTouch 300".
+  // Standalone speakers with hardware preset buttons.
   if (/soundtouch\s*(10|20|30)\b/.test(m) || /\bportable\b/.test(m) || /\bwave\b/.test(m)) {
     return 'supported';
   }
-  return 'unknown';
+  return 'unverified';
+}
+
+// modelNoteKey is the i18n key of the note the setup picker shows under a
+// speaker's card for its model (see boxModelSupport), or '' for none. Both
+// layouts draw it: the classic picker (views/setup.js) and UI 2.0's Find
+// (shell2/setup/find.js).
+export function modelNoteKey(model) {
+  switch (boxModelSupport(model)) {
+    case 'limited': return 'setup.limitedNote';
+    case 'unverified': return 'setup.unverifiedNote';
+    case 'notSoundTouch': return 'setup.notSoundTouchNote';
+    default: return '';
+  }
 }
 
 // isSoundTouch300 reports whether a box record is a SoundTouch 300 soundbar.

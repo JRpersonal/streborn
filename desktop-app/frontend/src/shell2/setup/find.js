@@ -19,7 +19,7 @@
 // focus when nothing changed (it runs on every discovery refresh).
 
 import { t } from '../../i18n/index.js';
-import { escapeHtml, escapeAttr, boxModelSupport } from '../../utils.js';
+import { escapeHtml, escapeAttr, boxModelSupport, modelNoteKey } from '../../utils.js';
 import { connectBusy, connectFocus, connectHTML, restoreConnectFocus } from '../state.js';
 
 // FACTORY is the radio value of "not on the network yet".
@@ -49,8 +49,11 @@ export function findModel(boxes, { label, selected = '' } = {}) {
       candidates.push({
         ...row,
         // Soundbars, home cinema systems and adapters install fine but have no
-        // keys 1 to 6: the classic card says so, and so does this row.
-        limited: boxModelSupport(b.model) === 'limited',
+        // keys 1 to 6; a model docs/MODELS.md has no row for is the owner's own
+        // risk; a non-SoundTouch device cannot work at all. The classic card
+        // says so, and so does this row (modelNote is the i18n key, or '').
+        limited: boxModelSupport(b.model || b.type) === 'limited',
+        modelNote: modelNoteKey(b.model || b.type),
         // STR is on it but does not answer: installing again repairs it.
         strNotRunning: !!b.strNotRunning,
         selected: selected === b.host && !b.offline,
@@ -86,7 +89,7 @@ function candidateHTML(c) {
   const notes = [];
   if (c.offline) notes.push(t('ui2.setup.wizard.find.offlineNote', { name: c.name }));
   if (c.strNotRunning) notes.push(t('ui2.setup.wizard.find.repairNote'));
-  if (c.limited) notes.push(t('setup.limitedNote'));
+  if (c.modelNote) notes.push(t(c.modelNote));
   return `<li class="w2-row${c.selected ? ' is-selected' : ''}${c.offline ? ' is-offline' : ''}" data-host="${escapeAttr(c.host)}">`
     + '<label class="w2-choice">'
     + `<input type="radio" name="w2Target" class="w2-radio" value="${escapeAttr(c.host)}"${c.selected ? ' checked' : ''}${c.offline ? ' disabled' : ''} />`
@@ -138,7 +141,8 @@ export function findHTML(model, opts = {}) {
       + (opts.searching
         ? `<p>${escapeHtml(t('ui2.state.searchingTitle'))}</p>`
         : `<p>${escapeHtml(t('ui2.setup.wizard.find.empty'))}</p>`
-          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`)
+          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyBoseApp'))}</p>`
+          + `<p class="w2-muted">${escapeHtml(t('setup.targetEmptyNotSoundTouch'))}</p>`)
       + '</div>'
       + connectHTML('w2Connect')
       + '</div>';

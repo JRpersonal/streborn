@@ -97,7 +97,7 @@ describe('the setup picker card of a held speaker', () => {
     expect(stockLoop).toContain('card.badge');
     // The old hard-wired stock wording is gone from the card: it comes only
     // from stockCardText now, which knows about the hold.
-    expect(stockLoop.slice(0, stockLoop.indexOf('limitedNote'))).not.toContain("t('setup.targetCardKindStock')");
+    expect(stockLoop.slice(0, stockLoop.indexOf('modelNoteKey'))).not.toContain("t('setup.targetCardKindStock')");
     // And the picker asks for the holds of the speakers it lists.
     expect(picker).toContain('refreshInstallHolds(stockBoxes.map(b => b.host))');
   });

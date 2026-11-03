@@ -30,6 +30,7 @@ import {
   showToast,
   formatRemaining,
   boxModelSupport,
+  modelNoteKey,
   isSoundTouch300,
   neverReadsStick,
 } from '../utils.js';
@@ -472,6 +473,12 @@ export function renderSetupTargetPicker() {
     // unless the app says it right here. A field mail (2026-08-30) burned ten
     // stick attempts across four speakers that were never on the network.
     cards += `<div class="setup-warn setup-target-empty-hint">${escapeHtml(t('setup.targetEmptyBoseApp'))}</div>`;
+    // Bose Music devices (Home Speaker, Smart Speaker, Smart Soundbar, Soundbar
+    // 500/700/900) never show up here: they do not speak SoundTouch, and none of
+    // the discovery paths (the SoundTouch mDNS types, the :8090 /info probe, the
+    // SoundTouch SSDP uuid) sees them. Owners of one wrote in asking why their
+    // speaker is missing, so the empty list says it plainly.
+    cards += `<div class="muted small setup-target-empty-notst">${escapeHtml(t('setup.targetEmptyNotSoundTouch'))}</div>`;
     // ... and the way back INTO the Bose app for a speaker that still holds a
     // dead Wi-Fi (router replaced): the hardware combo that puts it into its
     // setup network. Verified live: key 1 + volume-down clears pairing and
@@ -510,10 +517,13 @@ export function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, card.kind),
       card.badge, '');
-    // Soundbars / home-cinema systems / adapters ('limited') install fine but
-    // have no hardware preset buttons 1-6; say so honestly under the card.
-    if (boxModelSupport(b.model) === 'limited') {
-      cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
+    // What is known about this model, said under the card BEFORE the install
+    // (docs/MODELS.md via boxModelSupport): no hardware preset buttons 1-6 on
+    // soundbars, home-cinema systems and adapters, not confirmed yet on a model
+    // MODELS.md has no row for, and no way at all on a non-SoundTouch device.
+    const modelNote = modelNoteKey(b.model || b.type);
+    if (modelNote) {
+      cards += `<div class="setup-target-limited-note setup-target-model-note--${boxModelSupport(b.model || b.type)} muted small">${escapeHtml(t(modelNote))}</div>`;
     }
   }
   // Speakers that already run STR fold away. A household that has done this

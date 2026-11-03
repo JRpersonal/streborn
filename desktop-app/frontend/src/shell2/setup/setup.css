@@ -163,7 +163,8 @@ html.ui2 .w2 .setup-done-group,
 html.ui2 .w2 .setup-target-limited-note,
 html.ui2 .w2 .setup-target-empty,
 html.ui2 .w2 .setup-target-empty-hint,
-html.ui2 .w2 .setup-target-empty-reset { display: none; }
+html.ui2 .w2 .setup-target-empty-reset,
+html.ui2 .w2 .setup-target-empty-notst { display: none; }
 html.ui2 .w2 .w2-onboard { display: none; margin-top: 16px; }
 html.ui2 .w2.is-onboarding .w2-onboard { display: block; }
 html.ui2 .w2.is-missing #setupPrimaryAction { display: none; }
