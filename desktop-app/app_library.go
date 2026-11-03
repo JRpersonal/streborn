@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -439,36 +440,129 @@ type LibrarySearchResult struct {
 	Items []LibraryItem `json:"items"`
 	// Searched is how many servers were asked.
 	Searched int `json:"searched"`
-	// Unanswered names the servers that have no working search or did not
-	// answer in time, so the list can say its result is not complete.
+	// Unanswered names the servers that could not be searched at all: not even
+	// the root of their library could be read in time. A server whose Search
+	// action is missing or broken is NOT in here; it is walked instead (#1705).
 	Unanswered []string `json:"unanswered,omitempty"`
-	// Partial is true when a server had more hits than it handed over, so
-	// the list is not the whole answer. Same three notes as the phone page:
-	// a server that did not answer, a partial list, nothing found.
+	// Partial is true when a server had more hits than it handed over, or its
+	// walk was cut short, so the list is not the whole answer. Same three
+	// notes as the phone page: a server that did not answer, a partial list,
+	// nothing found.
 	Partial bool `json:"partial"`
 }
 
 const (
-	// librarySearchPerServer caps one server's search. A NAS that is asleep
-	// or switched off must not hold the other servers' hits back.
-	librarySearchPerServer = 12 * time.Second
+	// librarySearchPerServer caps one server's whole search, Search action and
+	// browse walk together. A NAS that is asleep or switched off must not hold
+	// the other servers' hits back. It was 12 s while only the Search action
+	// ran; the walk for servers that refuse Search needs room of its own (the
+	// #1705 reporter's speaker walked the same NAS in 2 to 16 s, inside the
+	// phone page's 15 s), so it is 20 s now, with the Search action held to
+	// its old 12 s inside it. A walk the deadline cuts short is marked Partial.
+	librarySearchPerServer = 20 * time.Second
+	// librarySearchActionBudget is the Search action's share (both attempts):
+	// a Search that hangs still leaves the walk at least 8 s.
+	librarySearchActionBudget = 12 * time.Second
 	// librarySearchMaxPerServer caps the hits asked from one server; a longer
 	// list is a query to narrow, not a page to scroll.
 	librarySearchMaxPerServer = 200
+	// librarySearchMaxReadErrors caps how many unreadable containers one
+	// server's log line names.
+	librarySearchMaxReadErrors = 5
 )
+
+// The ways a server's hits can have come back, as logged per server.
+const (
+	searchPathSearch    = "search"
+	searchPathTitleOnly = "title-only"
+	searchPathWalk      = "walk"
+)
+
+// serverSearch is one server's answer to a whole-library search, and how it
+// was reached: the per-server log line is built from it, so a diagnostic bundle
+// shows why a server came back empty or unanswered (#1705 had nothing to go on).
+type serverSearch struct {
+	Items   []dlna.Item
+	Partial bool
+	// Path is searchPathSearch, searchPathTitleOnly or searchPathWalk.
+	Path string
+	// SearchErr and TitleOnlyErr are why the Search action failed, when it did.
+	SearchErr, TitleOnlyErr error
+	// Browses and ReadErrors describe the walk, when one ran.
+	Browses    int
+	ReadErrors []string
+	// Err is set when the server could not be searched at all (the walk could
+	// not read its root). Only then is the server unanswered.
+	Err error
+}
 
 // librarySearchFn is the per-server search, swapped out in tests.
 var librarySearchFn = librarySearchOne
 
-// librarySearchOne asks one server. A server that indexes titles only
-// rejects the widened "any" criteria, so that one is asked again title-only,
-// as the phone page's search does.
-func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string) (dlna.BrowseResult, error) {
-	res, err := dlna.SearchBy(ctx, srv, query, field, librarySearchMaxPerServer)
-	if err != nil && (field == "" || field == dlna.SearchAny) {
-		res, err = dlna.SearchTitleOnly(ctx, srv, query, librarySearchMaxPerServer)
+// librarySearchOne asks one server the same way the phone page's search does
+// (internal/webui/librarysearch.go): the Search action first; for a search
+// that includes the title, one title-only retry when the widened criteria
+// faults or answers nothing (servers that index titles only reject it with
+// UPnPError 708, and the FRITZ!Box index answers some queries with zero for a
+// track it holds); and when that still brings nothing, the bounded browse walk
+// of dlna.WalkSearch. Synology and Windows Media Player answer Search with
+// UPnPError 501, so without the walk the app found nothing on them and called
+// them unanswered (#1705).
+func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string) serverSearch {
+	field = librarySearchField(field)
+	titleRetry := field == dlna.SearchAny || field == dlna.SearchTitle
+	var out serverSearch
+
+	actx, acancel := context.WithTimeout(ctx, librarySearchActionBudget)
+	res, err := dlna.SearchBy(actx, srv, query, field, librarySearchMaxPerServer)
+	path := searchPathSearch
+	if err != nil {
+		out.SearchErr = err
+		if titleRetry {
+			if narrow, nerr := dlna.SearchTitleOnly(actx, srv, query, librarySearchMaxPerServer); nerr == nil {
+				res, err, path = narrow, nil, searchPathTitleOnly
+			} else {
+				out.TitleOnlyErr = nerr
+			}
+		}
+	} else if len(res.Items) == 0 && titleRetry {
+		if narrow, nerr := dlna.SearchTitleOnly(actx, srv, query, librarySearchMaxPerServer); nerr == nil && len(narrow.Items) > 0 {
+			res, path = narrow, searchPathTitleOnly
+		}
 	}
-	return res, err
+	acancel()
+	if err == nil && len(res.Items) > 0 {
+		out.Items, out.Path = res.Items, path
+		out.Partial = res.TotalMatches > len(res.Items)
+		return out
+	}
+
+	// The Search action failed or found nothing: walk the tree. Its root
+	// answering is what tells a server that refuses Search from one that is
+	// not there at all.
+	walk := dlna.WalkSearch(ctx, srv, query, field, dlna.WalkOptions{
+		MaxHits: librarySearchMaxPerServer,
+		OnReadError: func(container string, start int, err error) {
+			if len(out.ReadErrors) < librarySearchMaxReadErrors {
+				out.ReadErrors = append(out.ReadErrors, fmt.Sprintf("%s@%d: %v", container, start, err))
+			}
+		},
+	})
+	out.Path, out.Items, out.Browses = searchPathWalk, walk.Items, walk.Browses
+	// A walk that stopped at the hit cap may have left more behind.
+	out.Partial = walk.Partial || len(walk.Items) >= librarySearchMaxPerServer
+	out.Err = walk.RootErr
+	return out
+}
+
+// librarySearchField reads the field a search is narrowed to (#1325): album,
+// artist or title; anything else is any, the title-artist-album match.
+func librarySearchField(raw string) string {
+	switch f := strings.ToLower(strings.TrimSpace(raw)); f {
+	case dlna.SearchAlbum, dlna.SearchArtist, dlna.SearchTitle:
+		return f
+	}
+	return dlna.SearchAny
 }
 
 // SearchLibrary searches the WHOLE library of EVERY media server the app
@@ -490,22 +584,22 @@ func (a *App) SearchLibrary(query, field string) (LibrarySearchResult, error) {
 	if len(servers) == 0 {
 		return LibrarySearchResult{}, fmt.Errorf("no media server known, call ListMediaServers first")
 	}
-	out := searchServers(a.appCtx(), servers, query, field)
+	out := searchServers(a.appCtx(), a.logger, servers, query, field)
 	if a.logger != nil {
 		a.logger.Info("library search", "field", field, "servers", out.Searched,
-			"hits", len(out.Items), "unanswered", out.Unanswered)
+			"hits", len(out.Items), "unanswered", out.Unanswered, "partial", out.Partial)
 	}
 	return out, nil
 }
 
 // searchServers runs the per-server searches in parallel and merges them in a
-// stable order: by server name, then in the order each server answered.
-func searchServers(parent context.Context, servers []dlna.Server, query, field string) LibrarySearchResult {
+// stable order: by server name, then in the order each server answered. Each
+// server's outcome gets its own log line when log is set.
+func searchServers(parent context.Context, log *slog.Logger, servers []dlna.Server, query, field string) LibrarySearchResult {
 	type answer struct {
-		name    string
-		items   []LibraryItem
-		partial bool
-		err     error
+		name  string
+		items []LibraryItem
+		res   serverSearch
 	}
 	answers := make([]answer, len(servers))
 	var wg sync.WaitGroup
@@ -519,16 +613,16 @@ func searchServers(parent context.Context, servers []dlna.Server, query, field s
 			if name == "" {
 				name = srv.UDN
 			}
-			res, err := librarySearchFn(ctx, srv, query, field)
-			answers[i] = answer{name: name, err: err}
-			if err != nil {
-				return
+			began := time.Now()
+			res := librarySearchFn(ctx, srv, query, field)
+			answers[i] = answer{name: name, res: res}
+			if res.Err == nil {
+				for _, it := range libraryPageFrom(dlna.BrowseResult{Items: res.Items}).Items {
+					it.Server = name
+					answers[i].items = append(answers[i].items, it)
+				}
 			}
-			answers[i].partial = res.TotalMatches > len(res.Items)
-			for _, it := range libraryPageFrom(res).Items {
-				it.Server = name
-				answers[i].items = append(answers[i].items, it)
-			}
+			logServerSearch(log, name, srv, res, len(answers[i].items), time.Since(began))
 		}(i, srv)
 	}
 	wg.Wait()
@@ -537,14 +631,42 @@ func searchServers(parent context.Context, servers []dlna.Server, query, field s
 	})
 	out := LibrarySearchResult{Searched: len(servers), Items: []LibraryItem{}}
 	for _, a := range answers {
-		if a.err != nil {
+		if a.res.Err != nil {
 			out.Unanswered = append(out.Unanswered, a.name)
 			continue
 		}
-		out.Partial = out.Partial || a.partial
+		out.Partial = out.Partial || a.res.Partial
 		out.Items = append(out.Items, a.items...)
 	}
 	return out
+}
+
+// logServerSearch writes one server's outcome: which path answered, how many
+// hits, and why the Search action failed when it did. Before #1705 a server
+// that refused Search left nothing in the log but its name under "unanswered".
+func logServerSearch(log *slog.Logger, name string, srv dlna.Server, res serverSearch, hits int, took time.Duration) {
+	if log == nil {
+		return
+	}
+	args := []any{"server", name, "address", srv.Address, "path", res.Path, "hits", hits,
+		"partial", res.Partial, "ms", took.Milliseconds()}
+	if res.SearchErr != nil {
+		args = append(args, "searchErr", res.SearchErr.Error())
+	}
+	if res.TitleOnlyErr != nil {
+		args = append(args, "titleOnlyErr", res.TitleOnlyErr.Error())
+	}
+	if res.Path == searchPathWalk {
+		args = append(args, "browses", res.Browses)
+	}
+	if len(res.ReadErrors) > 0 {
+		args = append(args, "readErrors", res.ReadErrors)
+	}
+	if res.Err != nil {
+		log.Warn("library search: server could not be searched", append(args, "err", res.Err.Error())...)
+		return
+	}
+	log.Info("library search: server answered", args...)
 }
 
 // libraryPageFrom turns a browse or search answer into the page the Library

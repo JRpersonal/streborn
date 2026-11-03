@@ -42,25 +42,13 @@ const (
 	// librarySearchMax caps the merged result list; a phone screen shows a
 	// handful, and every extra row costs the box memory it does not have.
 	librarySearchMax = 40
-	// libraryWalkMaxBrowses bounds the fallback walk for servers without a
-	// usable ContentDirectory Search action. At libraryWalkPage children per
-	// call this is 12000 entries, enough to cover the 2600 track library of
-	// #666 and still a hard ceiling on how long the box can be kept busy.
-	libraryWalkMaxBrowses = 60
-	// libraryWalkMaxDepth keeps the fallback out of pathological trees. It was
-	// 4, on the assumption that libraries are Artist/Album/Track. The #666
-	// screenshots show a real one seven levels down (Music > Folder > Music >
-	// Acoustic > Acoustic Chill > Adrianne Lenker > abysskiss), which the old
-	// cap cut off entirely: that song could never be found from the phone.
-	libraryWalkMaxDepth = 8
-	// libraryWalkPage is how many children one Browse asks for. Same page size
-	// the desktop Library uses (LIB_PAGE in views/library.js), for the same
-	// reason: fewer, bigger SOAP calls beat many small ones on a weak CPU.
-	libraryWalkPage = 200
-	// libraryWalkMaxPerContainer stops the paging of ONE container, so a flat
-	// "all songs" folder with 50k rows cannot eat the whole browse budget.
-	// 2500 mirrors the desktop's LIB_MAX ceiling.
-	libraryWalkMaxPerContainer = 2500
+	// libraryWalkMaxBrowses and libraryWalkPage are the bounds of the fallback
+	// walk for servers without a usable ContentDirectory Search action. The walk
+	// itself lives in the shared dlna package (dlna.WalkSearch) so the desktop
+	// app searches such servers the same way (#1705); the bounds and their
+	// history are documented there.
+	libraryWalkMaxBrowses = dlna.WalkMaxBrowses
+	libraryWalkPage       = dlna.WalkPageSize
 	// librarySearchDiscovery is the SSDP window. 3 s used to be it, and #110
 	// taught the desktop that a NAS needs longer to compose its answer; the
 	// same speaker-side miss makes a search silently report nothing.
@@ -434,154 +422,22 @@ func (s *Server) walkOneServer(ctx context.Context, srv dlna.Server, q string) (
 }
 
 // walkOneServerBy is the walk, matching only the field a search was narrowed
-// to (#1325).
+// to (#1325). The walk is dlna.WalkSearch, shared with the desktop app; the
+// agent keeps its own log lines around it.
 func (s *Server) walkOneServerBy(ctx context.Context, srv dlna.Server, q, field string) ([]dlna.Item, bool) {
-	qLower := strings.ToLower(q)
-	has := func(v string) bool { return strings.Contains(strings.ToLower(v), qLower) }
-	matches := func(it dlna.Item) bool {
-		switch field {
-		case dlna.SearchTitle:
-			return has(it.Title)
-		case dlna.SearchArtist:
-			return has(it.Artist)
-		case dlna.SearchAlbum:
-			return has(it.Album)
-		}
-		return has(it.Title) || has(it.Artist) || has(it.Album)
-	}
-	type node struct {
-		id    string
-		depth int
-	}
-	queue := []node{{id: "0"}}
-	queued := map[string]bool{"0": true}
-	// A track is reachable through several containers on the same server (the
-	// flat Songs list, its album, and the folder view all expose the same
-	// file), and a deeper walk meets all three. Deduplicate on the stream URL
-	// so the phone does not show one song three times.
-	seenStream := map[string]bool{}
-	var out []dlna.Item
-	browses := 0
-	partial := false
-	for len(queue) > 0 && len(out) < librarySearchMax {
-		if browses >= libraryWalkMaxBrowses || ctx.Err() != nil {
-			partial = true
-			break
-		}
-		n := queue[0]
-		queue = queue[1:]
-
-		// Page through the container instead of reading only its first page.
-		// The old code passed StartingIndex 0 with a count of 100 and never
-		// asked again, so on the reporter's flat "Songs" container only the
-		// first 100 of 2600 tracks were ever searchable. His working example
-		// is literally row one of that container, his failing one is not.
-		start := 0
-		seenChild := map[string]bool{}
-		for {
-			if browses >= libraryWalkMaxBrowses || ctx.Err() != nil {
-				partial = true
-				break
-			}
-			browses++
-			res, err := dlna.Browse(ctx, srv, n.id, start, libraryWalkPage)
-			if err != nil {
-				// A container we could not read is a hole in the coverage, not
-				// a container that holds nothing. Log it: the reporter's own
-				// server in #666 could not be reproduced here, and a diagnostic
-				// taken after a failing search is the only way to learn that
-				// his NAS refuses a particular container or page offset.
-				s.logger.Info("library search: a container could not be read, coverage is incomplete",
-					"server", srv.FriendlyName, "container", n.id, "start", start, "err", err)
-				partial = true
-				break
-			}
-			returned := len(res.Items) + len(res.Containers)
-			fresh := 0
-			for _, it := range res.Items {
-				if seenChild[it.ID] {
-					continue
-				}
-				seenChild[it.ID] = true
-				fresh++
-				// The walk now reaches Video and Pictures branches too, so the
-				// class filter is no longer optional.
-				if !it.IsAudioItem() || it.StreamURL == "" || !matches(it) {
-					continue
-				}
-				if seenStream[it.StreamURL] {
-					continue
-				}
-				seenStream[it.StreamURL] = true
-				out = append(out, it)
-				if len(out) >= librarySearchMax {
-					break
-				}
-			}
-			for _, c := range res.Containers {
-				if seenChild[c.ID] {
-					continue
-				}
-				seenChild[c.ID] = true
-				fresh++
-				if n.depth+1 >= libraryWalkMaxDepth {
-					// Deeper than the walk goes: say the answer is incomplete
-					// rather than let a nested corner of the library look like
-					// a corner that holds nothing.
-					partial = true
-					continue
-				}
-				if queued[c.ID] {
-					continue
-				}
-				queued[c.ID] = true
-				// Folders whose NAME matches are worth descending into ahead
-				// of the breadth order (an album named like the query holds
-				// the tracks being looked for).
-				if strings.Contains(strings.ToLower(c.Title), qLower) {
-					queue = append([]node{{id: c.ID, depth: n.depth + 1}}, queue...)
-				} else {
-					queue = append(queue, node{id: c.ID, depth: n.depth + 1})
-				}
-			}
-			if len(out) >= librarySearchMax {
-				break
-			}
-			start += returned
-			// Stop on the two ways a server can refuse to page: an empty
-			// answer, or one that ignores StartingIndex and hands back the
-			// same children forever (fresh == 0).
-			if returned == 0 || fresh == 0 {
-				break
-			}
-			// TotalMatches, not the size of the page, decides whether the
-			// container is exhausted. A short page is NOT proof: plenty of
-			// ContentDirectory servers silently cap RequestedCount (the spec
-			// lets them), and treating their cap as the end of the container
-			// would rebuild the very defect this walk exists to fix: the tail
-			// of a big container silently unsearchable, at whatever offset the
-			// server happens to cap at. Only when the server declines
-			// to say how many children it has is the short page all we have to
-			// go on. The runaway cases are already caught above and by the
-			// browse budget, so trusting TotalMatches here cannot loop.
-			if res.TotalMatches > 0 {
-				if start >= res.TotalMatches {
-					break
-				}
-			} else if returned < libraryWalkPage {
-				break
-			}
-			if start >= libraryWalkMaxPerContainer {
-				partial = true
-				break
-			}
-		}
-	}
-	if len(queue) > 0 && len(out) < librarySearchMax {
-		// Containers left unvisited: the answer covers part of the tree only.
-		partial = true
-	}
+	res := dlna.WalkSearch(ctx, srv, q, field, dlna.WalkOptions{
+		MaxHits: librarySearchMax,
+		OnReadError: func(container string, start int, err error) {
+			// A container we could not read is a hole in the coverage, not a
+			// container that holds nothing. Log it: the reporter's own server
+			// in #666 could not be reproduced here, and a diagnostic taken
+			// after a failing search is the only way to learn that his NAS
+			// refuses a particular container or page offset.
+			s.logger.Info("library search: a container could not be read, coverage is incomplete",
+				"server", srv.FriendlyName, "container", container, "start", start, "err", err)
+		},
+	})
 	s.logger.Info("library search: bounded walk finished",
-		"server", srv.FriendlyName, "q", q, "browses", browses, "hits", len(out), "partial", partial)
-	return out, partial
+		"server", srv.FriendlyName, "q", q, "browses", res.Browses, "hits", len(res.Items), "partial", res.Partial)
+	return res.Items, res.Partial
 }
