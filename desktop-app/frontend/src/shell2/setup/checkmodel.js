@@ -28,7 +28,9 @@ export const STICK_ROUTE_URL = `${FIRMWARE_DOCS_URL}#5-route-c-usb-stick`;
 //   current      27.0.6 or newer: nothing to do
 //   routeA       15.x up to 27.0.5: the one-click update over the network
 //   ladder       below 15 on a first generation SoundTouch 20/30/Portable
-//   guide        below 15 on any other model: the single-step guide
+//   guide        below 15 on any other model: the documented route as a
+//                list, or "no known path yet" (fwladder.js), never the one
+//                jump to Bose's last file
 export const CHECK_CASES = Object.freeze(['unreachable', 'unknown', 'current', 'routeA', 'ladder', 'guide']);
 
 function majorOf(v) {

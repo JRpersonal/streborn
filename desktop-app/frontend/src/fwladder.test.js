@@ -23,16 +23,20 @@ import {
   loadLadderState,
   loadLadderStateAny,
   noLadderYet,
+  noPathKey,
   notStartedStartKey,
   persistable,
   portMaybeOtg,
   powerOffKey,
   resumeState,
   saveLadderState,
+  stepsNeeded,
   stickVerdict,
   usbUpdateKey,
   usbUpdateUnconfirmed,
   versionReached,
+  ARCHIVE_COLLECTION_URL,
+  FIRMWARE_OTHER_MODELS_URL,
   MANUAL_VERSIONS,
 } from './fwladder.js';
 import { firmwareGuideMount, plainGuideMount } from './fwguide.js';
@@ -76,19 +80,22 @@ describe('when the ladder replaces the single-step guide', () => {
     expect(ladderApplies({ ...ident, current: '27.0.3' })).toBe(false);
     expect(ladderApplies({ ...ident, current: '' })).toBe(false);
   });
-  it('leaves sm2 and other models on the old guide, with the "no step-by-step path" line', () => {
+  it('hands sm2 and other models below 15 to the ladder too, never to the one-jump guide', () => {
     expect(ladderApplies({ ...ident, moduleType: 'sm2', current: '14.0.15' })).toBe(false);
     expect(ladderApplies({ ...ident, model: 'Wave SoundTouch', current: '2.1.51' })).toBe(false);
     expect(noLadderYet({ ...ident, model: 'Wave SoundTouch', current: '2.1.51' })).toBe(true);
     expect(noLadderYet({ ...ident, model: 'SoundTouch 10', current: '27.0.3' })).toBe(false);
+    expect(stepsNeeded({ model: 'Wave SoundTouch', current: '2.1.51' })).toBe(true);
+    expect(stepsNeeded({ model: 'Wave SoundTouch', current: '15.0.20' })).toBe(false);
+    expect(stepsNeeded({ model: 'Wave SoundTouch', current: '' })).toBe(false);
     const html = firmwareGuideMount({ model: 'Wave SoundTouch', current: '2.1.51' });
-    expect(html).toContain('data-fwguide=');
-    expect(html).toContain(esc(en['fwLadder.unsupported']));
+    expect(html).toContain('data-fwladder=');
+    expect(html).not.toContain('data-fwguide=');
   });
   it('mounts the ladder for a 5.x ST20 and the plain guide for 27.0.3', () => {
     expect(firmwareGuideMount(ident)).toContain('data-fwladder=');
     expect(firmwareGuideMount({ ...ident, current: '27.0.3' })).toContain('data-fwguide=');
-    expect(firmwareGuideMount({ ...ident, current: '27.0.3' })).not.toContain(esc(en['fwLadder.unsupported']));
+    expect(firmwareGuideMount({ ...ident, current: '27.0.3' })).not.toContain(esc(en['fwGuide.tooOld']));
     expect(firmwareLadderMount(ident, plainGuideMount)).toContain(esc(en['fwLadder.loading']));
   });
 });
@@ -108,7 +115,9 @@ describe('screen transitions', () => {
     expect(ladderView({ status: 'needs-version', steps: [] }, {})).toBe('manual');
     expect(ladderView(plan5x, { manual: true })).toBe('manual');
     expect(ladderView({ status: 'needs-bluetooth', steps: [] }, {})).toBe('bluetooth');
-    expect(ladderView({ status: 'unsupported', steps: [], reason: 'sm2' }, {})).toBe('unsupported');
+    expect(ladderView({ status: 'unsupported', steps: [], reason: 'model' }, {})).toBe('unsupported');
+    expect(ladderView({ status: 'route', steps: [] }, {})).toBe('route');
+    expect(ladderView({ status: 'route', steps: [] }, { started: true })).toBe('route');
     expect(ladderView({ status: 'uptodate', steps: [] }, {})).toBe('done');
     expect(ladderView({ status: 'error', steps: [] }, {})).toBe('error');
   });
@@ -352,6 +361,60 @@ describe('the fallback sub-ladder', () => {
     const st = { started: true, screen: 'C', recheck: { state: 'same', version: '12.0.9', started: true } };
     expect(ladderHtml(ident, on12, st)).toContain('data-ladder="retry"');
     expect(ladderHtml(ident, on12, st)).not.toContain('data-ladder="smaller"');
+  });
+});
+
+// docs/FIRMWARE-UPDATE.md, section 7, "Other models: no checked ladder yet":
+// the route as the backend plans it (bosefw/ladder_routes.go), listed, never
+// prepared, never the one jump.
+describe('the documented route of a model outside the checked ladder', () => {
+  const route = (v, src = 'archive') => ({ id: `wave-scm-${v}`, version: v, family: 'wave-scm', source: src, url: '', innerSize: 0, liveVerified: false });
+  const wave = {
+    status: 'route', family: 'wave-scm', model: 'Wave SoundTouch', moduleType: 'scm', current: '2.1.51', versionFrom: 'lan',
+    folder: 'Airplay-1_Wave_SoundTouch', avoid: ['16.00.09', '18.x'], fallbacks: {},
+    steps: [route('06.02.01'), route('07.00.37'), route('14.00.33'), route('15.00.20'), route('27.0.6', 'bose')],
+  };
+
+  it('lists every step, marked untested, with the folder, the files to avoid and the guide', () => {
+    const html = ladderHtml(ident, wave, {}, plainGuideMount);
+    expect(html).toContain(esc(en['fwLadder.routeTitle'].replace('{{n}}', '5')));
+    for (const v of ['06.02.01', '07.00.37', '14.00.33', '15.00.20', '27.0.6']) expect(html).toContain(v);
+    expect(html.match(/fw-ladder-untested/g)).toHaveLength(5);
+    expect(html).toContain(esc(en['fwLadder.routeWhy']));
+    expect(html).toContain('Airplay-1_Wave_SoundTouch');
+    expect(html).toContain('16.00.09, 18.x');
+    expect(html).toContain(`data-url="${FIRMWARE_OTHER_MODELS_URL}"`);
+    expect(html).toContain(`data-url="${ARCHIVE_COLLECTION_URL}"`);
+  });
+
+  it('never offers a stick, a download, the one jump or the plain guide', () => {
+    const html = ladderHtml(ident, wave, { started: true, stepId: 'wave-scm-06.02.01' }, plainGuideMount);
+    for (const bad of ['data-ladder="prepare"', 'data-ladder="start"', 'data-ladder="drive"', 'data-fwguide=', 'data-fwflash', 'downloads.bose.com']) {
+      expect(html, bad).not.toContain(bad);
+    }
+  });
+
+  it('leaves out the folder and avoid lines where the guide names none', () => {
+    const html = ladderHtml(ident, { ...wave, folder: '', avoid: [] }, {}, plainGuideMount);
+    expect(html).not.toContain('data-ladder-note="folder"');
+    expect(html).not.toContain('data-ladder-note="avoid"');
+  });
+});
+
+describe('no known path', () => {
+  it('says so per reason, warns against the one jump and links the guide, without the plain guide', () => {
+    expect(noPathKey('model')).toBe('fwLadder.noPathModel');
+    expect(noPathKey('no-source')).toBe('fwLadder.noPathSource');
+    expect(noPathKey('generation')).toBe('fwLadder.noPathGeneration');
+    expect(noPathKey('sm2')).toBe('fwLadder.noPathModel');
+    for (const reason of ['model', 'no-source', 'generation']) {
+      const html = ladderHtml(ident, { status: 'unsupported', reason, current: '10.0.11', steps: [] }, {}, plainGuideMount);
+      expect(html).toContain(esc(en[noPathKey(reason)]));
+      expect(html).toContain(esc(en['fwLadder.noDirect']));
+      expect(html).toContain(`data-url="${FIRMWARE_OTHER_MODELS_URL}"`);
+      expect(html).not.toContain('data-fwguide=');
+      expect(html).not.toContain('downloads.bose.com');
+    }
   });
 });
 

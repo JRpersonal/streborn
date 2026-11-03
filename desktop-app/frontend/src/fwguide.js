@@ -25,11 +25,12 @@ import { t } from './i18n/index.js';
 import { escapeHtml } from './utils.js';
 import { LATEST_BOSE_FIRMWARE, boseFwArticles, firmwareOlderThanLatest } from './firmware.js';
 import {
-  FIRMWARE_DOCS_URL,
+  FIRMWARE_LADDER_URL,
+  FIRMWARE_STALL_URL,
+  LADDER_BELOW_MAJOR,
   firmwareLadderMount,
   isBatteryModel,
-  ladderApplies,
-  noLadderYet,
+  stepsNeeded,
   wireFirmwareLadders,
 } from './fwladder.js';
 
@@ -84,6 +85,7 @@ export function fwGuidePlan(ident, guide) {
   const files = guide && Array.isArray(guide.files) ? guide.files.filter(f => f && f.url) : null;
   let download = 'loading';
   if (files) download = files.length === 0 ? 'none' : (files.length === 1 ? 'one' : 'two');
+  const direct = directJumpOK(id.current);
   return {
     current: shortVersion(id.current) || '?',
     required: (guide && guide.required) || LATEST_BOSE_FIRMWARE,
@@ -92,10 +94,21 @@ export function fwGuidePlan(ident, guide) {
     setupKey: setupModeKey(id.model),
     articles: boseFwArticles(String(id.model || '').trim()),
     afterKey: id.context === 'settings' ? 'fwGuide.afterInstalled' : 'fwGuide.after',
+    // direct: Bose's last file may go on in one step. Below 15 it may not
+    // (docs/FIRMWARE-UPDATE.md, section 2: the bar stays empty, or the
+    // speaker restarts in a loop), so the guide shows no steps for it.
+    direct,
     // The app can do the update itself for a speaker it reaches on the home
     // network and whose file is known for certain (FlashBoseFirmware).
-    auto: !!String(id.host || '').trim() && download === 'one',
+    auto: direct && !!String(id.host || '').trim() && download === 'one',
   };
+}
+
+// directJumpOK mirrors bosefw.DirectJumpOK: from 15 on, or when the version
+// cannot be read (no evidence is no reason to block).
+export function directJumpOK(current) {
+  const m = String(current || '').trim().match(/^(\d+)\./);
+  return !m || parseInt(m[1], 10) >= LADDER_BELOW_MAJOR;
 }
 
 function shortVersion(v) {
@@ -160,23 +173,24 @@ function autoHtml(plan) {
     + '</div>';
 }
 
-// noLadderHtml is the one line a speaker below 15.x gets when the firmware
-// ladder (fwladder.js) has no step-by-step path for its model yet: the single
-// jump to Bose's last file may not work from there.
-function noLadderHtml(ident) {
-  const id = ident || {};
-  if (!id.noLadder && !noLadderYet(id)) return '';
-  return `<div class="small fw-ladder-none">${escapeHtml(t('fwLadder.unsupported'))} `
-    + `<a href="#" class="link" data-fwopen="${escapeHtml(FIRMWARE_DOCS_URL)}">${escapeHtml(t('fwLadder.docs'))}</a></div>`;
+// tooOldHtml is the guide for a speaker below 15: no download, no update
+// button, no steps for the one jump, only why and where the steps are. The
+// ladder (fwladder.js) normally takes such a speaker; this is what shows when
+// its plan could not be loaded.
+function tooOldHtml(plan) {
+  return `<b>${escapeHtml(t('fwGuide.title'))}</b>`
+    + `<div>${escapeHtml(t('fwGuide.versions', { current: plan.current, required: plan.required }))}</div>`
+    + `<div class="fw-ladder-warn" data-fwnote="too-old">${escapeHtml(t('fwGuide.tooOld'))}</div>`
+    + `<div class="fw-guide-dl">${btn(t('fwLadder.docs'), FIRMWARE_LADDER_URL, 'btn-primary')}</div>`;
 }
 
 // firmwareGuideHtml renders the guide body for a plan.
 export function firmwareGuideHtml(ident, guide) {
   const plan = fwGuidePlan(ident, guide);
+  if (!plan.direct) return tooOldHtml(plan);
   const articles = plan.articles.map(([series, url]) =>
     btn(series ? `${t('fw.boseGuideLink')} (${series})` : t('fw.boseGuideLink'), url, 'fw-guide-link')).join(' ');
   return `<b>${escapeHtml(t('fwGuide.title'))}</b>`
-    + noLadderHtml(ident)
     + `<div>${escapeHtml(t('fwGuide.versions', { current: plan.current, required: plan.required }))}</div>`
     + `<div class="muted small">${escapeHtml(t('fwGuide.why'))}</div>`
     + autoHtml(plan)
@@ -188,6 +202,10 @@ export function firmwareGuideHtml(ident, guide) {
     + `<div class="muted small">${escapeHtml(t('fwGuide.step4Alt', { url: UPDATE_PAGE_ALT }))}</div></li>`
     + `<li>${escapeHtml(t('fwGuide.step5'))}</li>`
     + '</ol>'
+    // An empty bar means the speaker did not take the file; the documented
+    // way round is a smaller in-between update first.
+    + `<div class="muted small fw-guide-emptybar">${escapeHtml(t('fwGuide.emptyBar'))} `
+    + `<a href="#" class="link" data-fwopen="${escapeHtml(FIRMWARE_STALL_URL)}">${escapeHtml(t('fwLadder.docs'))}</a></div>`
     + `<div>${escapeHtml(t(plan.afterKey))}</div>`
     + `<div class="muted small fw-guide-usb">${escapeHtml(t('fwGuide.usb', { url: UPDATE_PAGE_USB }))}</div>`
     + (articles ? `<p>${articles}</p>` : '');
@@ -226,11 +244,12 @@ export function watchFwGuideFlash(cb) {
 
 // firmwareGuideMount is the placeholder a view puts into its HTML. It renders
 // the guide at once (download step "looking up") and wireFirmwareGuides fills in
-// Bose's link. A speaker whose firmware is too old for the single jump gets the
-// step-by-step firmware ladder (fwladder.js) instead, which shows this same
-// guide again for its last step.
+// Bose's link. A speaker whose firmware is too old for the single jump (below
+// 15, any model) gets the firmware ladder (fwladder.js) instead: the checked
+// stick ladder, the documented route as a list, or "no known path yet", as the
+// backend plans it. The ladder shows this same guide again for its last step.
 export function firmwareGuideMount(ident) {
-  if (ladderApplies(ident)) return firmwareLadderMount(ident, plainGuideMount);
+  if (stepsNeeded(ident)) return firmwareLadderMount(ident, plainGuideMount);
   return plainGuideMount(ident);
 }
 
@@ -244,7 +263,6 @@ export function plainGuideMount(ident) {
     context: (ident && ident.context) || '',
     host: (ident && ident.host) || '',
   };
-  if (ident && ident.noLadder) id.noLadder = true;
   const cached = guideCache.get(identKey(id)) || null;
   return `<div class="fw-guide" data-fwguide="${escapeHtml(JSON.stringify(id))}">${firmwareGuideHtml(id, cached)}</div>`;
 }

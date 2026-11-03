@@ -73,6 +73,8 @@ export namespace bosefw {
 	    steps: Step[];
 	    oldStart: boolean;
 	    reason?: string;
+	    folder: string;
+	    avoid: string[];
 	    fallbacks: Record<string, Array<Step>>;
 	
 	    static createFrom(source: any = {}) {
@@ -91,6 +93,8 @@ export namespace bosefw {
 	        this.steps = this.convertValues(source["steps"], Step);
 	        this.oldStart = source["oldStart"];
 	        this.reason = source["reason"];
+	        this.folder = source["folder"];
+	        this.avoid = source["avoid"];
 	        this.fallbacks = this.convertValues(source["fallbacks"], Array<Step>, true);
 	    }
 	

@@ -17,13 +17,17 @@ import {
   UPDATE_PAGE_ALT,
   UPDATE_PAGE_USB,
   BOSE_SUPPORT_URL,
+  directJumpOK,
 } from './fwguide.js';
+import { FIRMWARE_LADDER_URL, FIRMWARE_STALL_URL } from './fwladder.js';
 import en from './i18n/bundles/en.json';
 
 const BASE = 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/';
 const scm = { name: 'Update_ti_27.0.6.46330.5043500.scm.stu', url: BASE + 'Update_ti_27.0.6.46330.5043500.scm.stu', generation: 'scm' };
 const sm2 = { name: 'Update_ti_27.0.6.46330.5043500.sm2.stu', url: BASE + 'Update_ti_27.0.6.46330.5043500.sm2.stu', generation: 'sm2' };
-const st20 = { model: 'SoundTouch 20', moduleType: '', variant: '', current: '5.2.0.11111.222' };
+// 15.x: the one jump to Bose's last file is the documented route from here
+// (docs/FIRMWARE-UPDATE.md, section 2), so the full guide shows.
+const st20 = { model: 'SoundTouch 20', moduleType: '', variant: '', current: '15.0.4.11111.222' };
 
 // Before any describe body runs: the last block renders at collection time.
 setLocale('en');
@@ -106,7 +110,7 @@ describe('the setup-mode step', () => {
 
   it('renders the model\'s instruction into the steps', () => {
     expect(firmwareGuideHtml(st20, null)).toContain(esc(en['fwGuide.setupTwoVol']));
-    expect(firmwareGuideHtml({ model: 'Lifestyle', current: '1.0.0' }, null)).toContain(esc(en['fwGuide.setupGeneric']));
+    expect(firmwareGuideHtml({ model: 'Lifestyle', current: '18.0.0' }, null)).toContain(esc(en['fwGuide.setupGeneric']));
   });
 });
 
@@ -114,9 +118,15 @@ describe('the rest of the guide', () => {
   const html = firmwareGuideHtml(st20, { files: [scm, sm2], required: '27.0.6' });
 
   it('names both versions', () => {
-    expect(html).toContain('5.2.0');
+    expect(html).toContain('15.0.4');
     expect(html).toContain('27.0.6');
-    expect(html).not.toContain('5.2.0.11111');
+    expect(html).not.toContain('15.0.4.11111');
+  });
+
+  it('names the documented fix for an empty progress bar, with the guide section', () => {
+    expect(html).toContain(esc(en['fwGuide.emptyBar']));
+    expect(html).toContain(`data-fwopen="${FIRMWARE_STALL_URL}"`);
+    expect(html.indexOf('fw-guide-emptybar')).toBeGreaterThan(html.indexOf('fw-guide-steps'));
   });
 
   it('gives the update page with copy and open buttons, plus the other address and the USB route', () => {
@@ -189,5 +199,42 @@ describe('one-click firmware update', () => {
     expect(fwFlashStatus({ phase: 'done', version: '27.0.6' })).toContain('27.0.6');
     expect(fwFlashStatus({ phase: 'error', error: 'boom' })).toContain('boom');
     for (const ph of ['start', 'verify', 'install']) expect(fwFlashStatus({ phase: ph })).not.toMatch(/fwGuide\./);
+  });
+});
+
+// docs/FIRMWARE-UPDATE.md, section 2: "14.x or older: the ladder, one USB stick
+// step at a time. Do not jump straight to 27.0.6." The guide never proposes
+// that jump, not even as the fallback when the ladder's plan did not load.
+describe('below 15, no single jump', () => {
+  const one = { required: '27.0.6', files: [{ name: 'Update_x.scm.stu', url: 'https://downloads.bose.com/x' }] };
+  const old = { model: 'Wave SoundTouch', current: '14.0.15.1234', host: '192.0.2.10' };
+
+  it('reads the version the way bosefw.DirectJumpOK does', () => {
+    for (const v of ['2.1.51', '5.2.0', '14.0.33']) expect(directJumpOK(v), v).toBe(false);
+    for (const v of ['15.0.20', '27.0.3', '', undefined]) expect(directJumpOK(v), String(v)).toBe(true);
+  });
+
+  it('offers no download, no Update now and no update page, only why and the guide', () => {
+    const plan = fwGuidePlan(old, one);
+    expect(plan.direct).toBe(false);
+    expect(plan.auto).toBe(false);
+    const html = firmwareGuideHtml(old, one);
+    expect(html).toContain(esc(en['fwGuide.tooOld']));
+    expect(html).toContain(`data-fwopen="${FIRMWARE_LADDER_URL}"`);
+    for (const bad of ['data-fwflash', 'fw-guide-download', 'fw-guide-steps', '17008', 'downloads.bose.com']) {
+      expect(html, bad).not.toContain(bad);
+    }
+  });
+
+  it('hands every model below 15 to the ladder, which plans the route', () => {
+    for (const ident of [
+      { model: 'Wave SoundTouch', current: '2.1.51' },
+      { model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11' },
+      { model: 'SoundTouch 20', moduleType: 'sm2', current: '14.0.15' },
+      { model: 'Lifestyle', current: '10.0.11' },
+    ]) {
+      expect(firmwareGuideMount(ident), ident.model).toContain('data-fwladder=');
+    }
+    expect(firmwareGuideMount({ model: 'Wave SoundTouch', current: '15.0.20' })).toContain('data-fwguide=');
   });
 });

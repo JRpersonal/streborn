@@ -79,16 +79,27 @@ func firmwareGuideFor(ctx context.Context, model, moduleType, variant, current s
 // works, points at the step-by-step guide the setup screen renders under the
 // message, and carries the direct Bose link so the copied failure report is
 // useful on its own.
+//
+// Below 15 the note never tells the owner to put Bose's last file on in one go:
+// from there it stalls on an empty progress bar (docs/FIRMWARE-UPDATE.md,
+// section 2). Bose's link is then named as the LAST step only.
 func firmwareTooOldNote(short string, files []bosefw.File) string {
 	note := " The speaker firmware is " + short + ", older than Bose's last firmware " + latestBoseFirmware +
 		", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app cannot deliver it any more, " +
 		"so the update file is downloaded from Bose and uploaded to the speaker's own update page: " +
 		"the firmware update guide below walks you through it step by step."
+	one, two := "this speaker", "this model"
+	if !bosefw.DirectJumpOK(short) {
+		note = " The speaker firmware is " + short + ", older than Bose's last firmware " + latestBoseFirmware +
+			", and STR needs it updated first. Firmware this old cannot take Bose's last file in one go: the update usually stalls on an empty progress bar. " +
+			"It needs in-between updates first, one after the other, and the firmware update guide below shows what is known for this model."
+		one, two = "the last step", "the last step"
+	}
 	switch len(files) {
 	case 1:
-		note += " Bose's download for this speaker: " + files[0].URL
+		note += " Bose's download for " + one + ": " + files[0].URL
 	case 2:
-		note += " Bose's downloads for this model: " + files[0].URL + " (older hardware) or " + files[1].URL +
+		note += " Bose's downloads for " + two + ": " + files[0].URL + " (older hardware) or " + files[1].URL +
 			" (newer hardware). If the speaker's update page refuses the first file, use the second."
 	}
 	return note

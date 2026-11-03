@@ -195,3 +195,31 @@ func TestUploadReplyLost(t *testing.T) {
 		t.Fatal("a refused connection is a real failure")
 	}
 }
+
+// Below 15 the one-click update must refuse Bose's last file whatever the
+// screen offered: from there it stalls on an empty progress bar or ends in a
+// restart loop (docs/FIRMWARE-UPDATE.md, section 2; issue #854 on 14.0.15).
+// Nothing is downloaded: the catalogue is never even asked.
+func TestFlashRefusesTheOneJumpBelow15(t *testing.T) {
+	saved := boseCatalogue
+	defer func() { boseCatalogue = saved }()
+	asked := false
+	boseCatalogue = &bosefw.Catalogue{Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		asked = true
+		return nil, errors.New("no catalogue in this test")
+	})}}
+	for _, v := range []string{"5.2.0.11111.222", "14.0.15.1234.5678"} {
+		info := `<info deviceID="device-id-here"><type>Wave SoundTouch</type><moduleType>scm</moduleType>` +
+			`<components><component><componentCategory>SCM</componentCategory><softwareVersion>` + v + ` epdbuild</softwareVersion></component></components></info>`
+		a := &App{httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(info)), Header: http.Header{}}, nil
+		})}}
+		_, err := a.flashBoseFirmware(context.Background(), "192.0.2.10", false)
+		if err == nil || !strings.Contains(err.Error(), "too old to take Bose's last firmware in one go") {
+			t.Errorf("%s: %v", v, err)
+		}
+	}
+	if asked {
+		t.Error("the catalogue was asked: a download had started")
+	}
+}

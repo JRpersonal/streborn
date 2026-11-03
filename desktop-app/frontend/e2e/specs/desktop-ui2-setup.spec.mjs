@@ -387,14 +387,19 @@ test.describe('UI 2.0 setup wizard', () => {
     });
   });
 
-  test.describe('the check in the wizard: 10.x, the guide\'s own Update now', () => {
+  // Below 15 no guide offers the one jump to Bose's last file (it stalls,
+  // docs/FIRMWARE-UPDATE.md, section 2). The guide's own Update now inside the
+  // step is the ladder's last step: the speaker has meanwhile reached 16.x by
+  // stick, the ladder reads that and hands over to the normal guide.
+  test.describe('the check in the wizard: the ladder\'s last step, the guide\'s own Update now', () => {
     test.use({
       scenario: {
         boxes: ['livingRoom', 'bedroom', 'kitchen'],
         installFlow: true,
         bindings: {
-          GetBoxFirmware: { sequence: [{ value: { ...SETUP_CHECK.guide, model: KITCHEN.model } }, { value: SETUP_CHECK.current }] },
-          GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: KITCHEN.model, current: '10.0.11' } },
+          GetBoxFirmware: { sequence: [{ value: SETUP_CHECK.ladder }, { value: SETUP_CHECK.current }] },
+          GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, current: '16.0.9' } },
+          GetFirmwareLadder: { value: { ...LADDER_PLAN, status: 'final', current: '16.0.9', steps: [LADDER_PLAN.steps[LADDER_PLAN.steps.length - 1]] } },
           FlashBoseFirmware: { never: true },
         },
       },
@@ -407,7 +412,7 @@ test.describe('UI 2.0 setup wizard', () => {
       await chooseKitchen(page);
       await foot(page, 'next').click();
       const check = page.locator('#w2CheckBody .u-check');
-      await expect(check).toHaveAttribute('data-case', 'guide');
+      await expect(check).toHaveAttribute('data-case', 'ladder');
       await expect(foot(page, 'back')).not.toHaveAttribute('aria-disabled', 'true');
       await check.locator('.u-check-fw [data-fwflash]').click();
       await page.locator('#warnConfirm').click();

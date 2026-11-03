@@ -2880,14 +2880,14 @@ html.a11y-light .fw-update-banner b { color: #6b4700; }
   white-space: nowrap;
 }
 .fw-ladder .fw-ladder-tested { color: var(--signal-green); }
-.fw-ladder .fw-ladder-warn {
+.fw-guide .fw-ladder-warn {
   margin: 6px 0;
   padding: 6px 8px;
   border-inline-start: 3px solid #f8c66c;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 3px;
 }
-html.a11y-light .fw-ladder .fw-ladder-warn { background: rgba(255, 255, 255, 0.6); border-inline-start-color: #b07a00; }
+html.a11y-light .fw-guide .fw-ladder-warn { background: rgba(255, 255, 255, 0.6); border-inline-start-color: #b07a00; }
 .fw-ladder .fw-ladder-note { margin: 4px 0; font-style: italic; }
 .fw-ladder .fw-ladder-ok { color: var(--signal-green); }
 .fw-ladder .fw-ladder-ack { display: flex; align-items: center; gap: 6px; margin: 6px 0; cursor: pointer; }

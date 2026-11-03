@@ -374,10 +374,22 @@ func TestFirmwareLadderNote(t *testing.T) {
 	if n := firmwareLadderNote("SoundTouch 20", "", "", "10.0.11"); !strings.Contains(n, "one question") {
 		t.Errorf("10.x ST20 without moduleType: %q", n)
 	}
-	for _, c := range [][2]string{{"SoundTouch 20", "27.0.3"}, {"Wave SoundTouch", "2.1.51"}, {"SoundTouch 30", "15.0.20"}} {
+	for _, c := range [][2]string{{"SoundTouch 20", "27.0.3"}, {"Wave SoundTouch", "15.0.20"}, {"SoundTouch 30", "15.0.20"}} {
 		if n := firmwareLadderNote(c[0], "", "", c[1]); n != "" {
 			t.Errorf("%v: no ladder, no note, got %q", c, n)
 		}
+	}
+	// The Wave on 2.1.51 (2026-10-22) and every other family the firmware guide
+	// covers: the probable route, never "no note" (which read as "one update
+	// is enough").
+	if n := firmwareLadderNote("Wave SoundTouch", "", "", "2.1.51"); !strings.Contains(n, "probably needs 5 updates") || !strings.Contains(n, "not checked") {
+		t.Errorf("2.x Wave: %q", n)
+	}
+	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "probably needs 2 updates") {
+		t.Errorf("10.x ST10: %q", n)
+	}
+	if n := firmwareLadderNote("Lifestyle", "sm2", "", "10.0.11"); !strings.Contains(n, "no known step-by-step path") {
+		t.Errorf("Lifestyle: %q", n)
 	}
 }
 
@@ -389,7 +401,7 @@ func TestGetFirmwareLadderManual(t *testing.T) {
 	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "no"); p.Status != bosefw.StatusLadder || p.VersionFrom != "manual" {
 		t.Fatalf("%+v", p)
 	}
-	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "yes"); p.Status != bosefw.StatusUnsupported {
+	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "yes"); p.Status != bosefw.StatusRoute || p.Family != bosefw.FamilyBTSm2 {
 		t.Fatalf("%+v", p)
 	}
 }
