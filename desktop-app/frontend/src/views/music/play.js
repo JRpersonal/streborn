@@ -5,7 +5,7 @@
 import { PlaySlot } from '../../api.js';
 import { parsePlayRejection, resolveBoxByRef } from '../../groups.js';
 import { t } from '../../i18n/index.js';
-import { libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
+import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
 import { isNativeServicePreset } from '../../nativeservice.js';
 import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
@@ -171,7 +171,13 @@ export async function play(slot) {
     state.nowPlayState = '';
     state.nowLocation = '';
     state.optimisticUntil = 0;
-    state.presetErrors[slot] = friendlyPlayError(errStr, (state.currentBox && state.currentBox.host) || "");
+    // A library key whose music server answers but no longer has the music
+    // (#919) is labelled ahead of friendlyPlayError, for the reason it gives
+    // for the server-off refusal: the raw body holds the preset's name.
+    const goneServer = libraryFileGoneName(errStr);
+    state.presetErrors[slot] = goneServer !== null
+      ? t('play.errMusicFileGone')
+      : friendlyPlayError(errStr, (state.currentBox && state.currentBox.host) || "");
     renderPresets();
     // The tile label is too small for the multi-step Spotify Connect how-to, so
     // also show it as a (localized) toast. Use the i18n help text, not the raw
@@ -188,6 +194,9 @@ export async function play(slot) {
     // names the server and what to do (#1339).
     const offServer = libraryServerOffName(errStr);
     if (offServer !== null) showToast(libraryServerOffNotice(offServer, t));
+    // One whose server answers but no longer has the music: the toast says
+    // why that usually happens and how to get the key playing again (#919).
+    if (goneServer !== null) showToast(libraryFileGoneNotice(goneServer, t));
     // Half of an old stereo pair: the whole sentence, with where to fix it.
     // "Not ready" on every key, for an hour, is what this replaces (2026-10-04).
     const stale = deps.stereoStaleForError(errStr, (state.currentBox && state.currentBox.host) || '');

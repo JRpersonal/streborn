@@ -54,6 +54,15 @@ func TestFriendlyErrorPassesLibraryServerOfflineThroughRaw(t *testing.T) {
 	}
 }
 
+// A library key whose music server answers but no longer has the music
+// (#919): the frontend names the server from the server field too.
+func TestFriendlyErrorPassesLibraryFileGoneThroughRaw(t *testing.T) {
+	const body = `{"code":"library-file-gone","error":"The music server PC: Media answers, but no longer has the music on this key.","gone":true,"name":"Song","server":"PC: Media","slot":3}`
+	if got := friendlyError(respWithBody(body)); got != body {
+		t.Errorf("library-file-gone body reduced to %q, want the raw JSON passed through", got)
+	}
+}
+
 // Every other error keeps the existing friendly reduction so UI toasts stay
 // readable and the frontend can still branch on "code: message".
 func TestFriendlyErrorKeepsReductionForOtherCodes(t *testing.T) {
