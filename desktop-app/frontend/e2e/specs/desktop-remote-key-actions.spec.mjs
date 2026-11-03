@@ -41,7 +41,7 @@ async function checkPicker(page, mock, shot) {
   await expect(page.locator('.rc-pmark[data-pmark="thumbsUp"]')).toHaveText('S');
   await expect(page.locator('.rc-pmark[data-pmark="thumbsUp"]')).toBeVisible();
   await expect(page.locator('#sleepKeyNote')).toContainText('Spotify playlist');
-  for (const v of ['shuffle', 'repeat', 'sleep15', 'sleep30', 'sleep60']) {
+  for (const v of ['shuffle', 'repeat', 'sleep15', 'sleep30', 'sleep60', 'sleep90']) {
     await expect(select.locator(`option[value="${v}"]`)).toBeEnabled();
   }
   // Thumbs down carries a fixed 30-minute sleep timer: the moon marks it.
