@@ -330,16 +330,48 @@ func probeStockDetail(ctx context.Context, ip string) (BoxInfo, bool, error) {
 	model := extractTag(s, "type")
 	serial := extractPackagedProductSerial(s)
 	return BoxInfo{
-		Name:         "stock-" + discovery.LastN(deviceID, 6),
-		Host:         ip,
-		Port:         8090,
-		DeviceID:     deviceID,
-		BoxDeviceID:  deviceID, // straight from the firmware: by definition the box id
-		FriendlyName: name,
-		Model:        model,
-		SerialNumber: serial,
-		Kind:         "stock",
+		Name:          "stock-" + discovery.LastN(deviceID, 6),
+		Host:          ip,
+		Port:          8090,
+		DeviceID:      deviceID,
+		BoxDeviceID:   deviceID, // straight from the firmware: by definition the box id
+		FriendlyName:  name,
+		Model:         model,
+		SerialNumber:  serial,
+		RivalCloudURL: rivalCloudURL(extractTag(s, "margeURL")),
+		Kind:          "stock",
 	}, true, nil
+}
+
+// rivalCloudURL returns a stock speaker's cloud address when it points at
+// another cloud replacement, or "". Seen in a field bundle (2026-11-03): two
+// Waves still on AfterTouch reported margeURL http://<NAS>:8880 while a third
+// the owner had cleaned reported Bose's. Not a rival: an empty value, Bose's own
+// host, and STR's own stick-free unlock, which sets the address to its
+// placeholder host or to a command injection for the duration of the unlock.
+func rivalCloudURL(margeURL string) string {
+	u := strings.TrimSpace(margeURL)
+	if u == "" {
+		return ""
+	}
+	l := strings.ToLower(u)
+	if strings.Contains(l, "str-setup.invalid") || strings.ContainsAny(l, "; ") {
+		return ""
+	}
+	host := l
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
+	}
+	if i := strings.IndexAny(host, "/?#"); i >= 0 {
+		host = host[:i]
+	}
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	if host == "streaming.bose.com" || strings.HasSuffix(host, ".bose.com") || strings.HasSuffix(host, ".bose.io") {
+		return ""
+	}
+	return u
 }
 
 // extractPackagedProductSerial pulls the human-readable Bose serial

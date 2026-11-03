@@ -1299,6 +1299,7 @@
   "setup.wifiWriteFailed": "STR kuruldu, ancak Wi-Fi'nin hoparlöre kaydedilmesi başarısız oldu. Ağ kablosunu bağlı tutun ve Wi-Fi'yi daha sonra Hoparlör ayarları bölümünde ekleyin.",
   "setup.installFirewallHint": "Hoparlör bu bilgisayara henüz ulaşamıyor (0 geri arama). ST Reborn'a güvenlik duvarınızda izin verin, ardından işlem devam etmelidir.",
   "setup.limitedNote": "Bu modelde 1'den 6'ya donanımsal ön ayar düğmeleri yok, bu yüzden çalışmazlar. STR yine de internet radyosu, uygulama ön ayarları ve streaming ekler.",
+  "setup.rivalCloudNote": "Bu hoparlör hâlâ AfterTouch gibi başka bir bulut yerine geçen araca ayarlı (sunucu {{url}}). STR'yi kurmak onu STR'ye geçirir.",
   "setup.targetHeading": "Hangi hoparlör?",
   "setup.netInstallBtn": "STR'yi şimdi kur",
   "setup.useStickInstead": "Bunun yerine bir USB bellek hazırla",

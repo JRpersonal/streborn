@@ -1299,6 +1299,7 @@
   "setup.wifiWriteFailed": "STR ir instalēts, bet Wi-Fi saglabāšana skaļrunī neizdevās. Atstājiet tīkla kabeli pievienotu un pievienojiet Wi-Fi vēlāk sadaļā Skaļruņa iestatījumi.",
   "setup.installFirewallHint": "Skaļrunis vēl nevar sasniegt šo datoru (0 atbilžu). Atļaujiet ST Reborn savā ugunsmūrī, un tad instalēšanai vajadzētu turpināties.",
   "setup.limitedNote": "Šim modelim nav aparatūras iepriekšiestatījumu pogu no 1 līdz 6, tāpēc tās nedarbosies. STR tik un tā pievieno interneta radio, lietotnes iepriekšiestatījumus un straumēšanu.",
+  "setup.rivalCloudNote": "Šis skaļrunis joprojām ir iestatīts citam mākoņa aizstājējam, piemēram, AfterTouch (serveris {{url}}). Instalējot STR, tas tiek pārslēgts uz STR.",
   "setup.targetHeading": "Kurš skaļrunis?",
   "setup.netInstallBtn": "Instalēt STR tagad",
   "setup.useStickInstead": "Tā vietā sagatavot USB zibatmiņu",

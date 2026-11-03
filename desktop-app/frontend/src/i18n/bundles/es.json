@@ -1299,6 +1299,7 @@
   "setup.wifiWriteFailed": "STR está instalado, pero no se pudo guardar el Wi-Fi en el altavoz. Mantén el cable de red conectado y añade el Wi-Fi más tarde en Ajustes del altavoz.",
   "setup.installFirewallHint": "El altavoz todavía no puede alcanzar este ordenador (0 respuestas). Permite ST Reborn en tu cortafuegos y entonces debería continuar.",
   "setup.limitedNote": "Este modelo no tiene botones físicos de presintonía del 1 al 6, así que no funcionarán. STR añade igualmente radio por Internet, presintonías en la aplicación y streaming.",
+  "setup.rivalCloudNote": "Este altavoz sigue configurado para otro sustituto de la nube, como AfterTouch (servidor {{url}}). Al instalar STR pasa a usar STR.",
   "setup.targetHeading": "¿Qué altavoz?",
   "setup.netInstallBtn": "Instalar STR ahora",
   "setup.useStickInstead": "Preparar una memoria USB en su lugar",
