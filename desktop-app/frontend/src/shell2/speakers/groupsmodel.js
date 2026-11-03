@@ -222,3 +222,25 @@ export function liveLeaderOf(boxes, zoneLive, pickedID = '') {
   if (picked && leads(picked)) return picked;
   return list.find(leads) || null;
 }
+
+// scrollPositionsOf records how far every scrolled ancestor of el is scrolled,
+// and restoreScroll puts them back. The classic view rebuilds its markup on
+// every 5 s live poll and the preview then rearranges it, so the page under
+// the reader is replaced wholesale. Nothing promised that a replaced page
+// keeps its place: on Linux the window jumped back to the top on every poll,
+// so the fixed-group editor further down could not be used (support mail,
+// v1.4.0 on Linux Mint, 2026-11-03). Recorded before the repaint, restored
+// once the page has its final shape, so the height is back when it is set.
+export function scrollPositionsOf(el) {
+  const saved = [];
+  for (let p = el && el.parentElement; p; p = p.parentElement) {
+    if (p.scrollTop > 0) saved.push([p, p.scrollTop]);
+  }
+  return saved;
+}
+
+export function restoreScroll(saved) {
+  for (const [p, top] of saved || []) {
+    if (p.scrollTop !== top) p.scrollTop = top;
+  }
+}

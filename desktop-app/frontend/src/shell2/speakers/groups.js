@@ -57,7 +57,7 @@ import { groupMembersOf, masterBoxForKey, pairMemberBoxes, stereoPairKey, stereo
 import { pairDisplayName } from '../../stereoNames.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { renderMultiroom, setMultiroomRenderHooks } from '../../views/multiroom.js';
-import { ACTIONS, ACTION_SELECTOR, actionOf, expectationMet, focusKeyOf, liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase } from './groupsmodel.js';
+import { ACTIONS, ACTION_SELECTOR, actionOf, expectationMet, focusKeyOf, liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase, restoreScroll, scrollPositionsOf } from './groupsmodel.js';
 import './groups.css';
 
 let wiredRoot = null;
@@ -106,18 +106,23 @@ export function mountGroups(ctx = {}) {
       return;
     }
   }
-  afterPaint(root, '');
+  afterPaint(root, null);
 }
 
 // ---- the paint hooks ------------------------------------------------------
 
+// beforePaint records what a repaint must not lose: the control with the
+// keyboard focus and how far the page is scrolled.
 function beforePaint(root) {
-  if (!isOn(root)) return '';
+  if (!isOn(root)) return null;
   const a = document.activeElement;
-  return a && a !== root && root.contains(a) ? focusKeyOf(a) : '';
+  return {
+    focus: a && a !== root && root.contains(a) ? focusKeyOf(a) : '',
+    scroll: scrollPositionsOf(root),
+  };
 }
 
-function afterPaint(root, focusKey) {
+function afterPaint(root, ctx) {
   if (!isOn(root)) return;
   if (root.querySelector(':scope > .ui2-grp')) return;
   const lastSec = pending ? pending.section : lastZoneSec;
@@ -130,7 +135,10 @@ function afterPaint(root, focusKey) {
     renderMultiroom(false);
     return;
   }
-  const key = wantFocus || focusKey;
+  // Back to where the reader was, before the focus below: a focus that is
+  // meant to scroll (Change on a pair card opens the editor) still does.
+  restoreScroll(ctx && ctx.scroll);
+  const key = wantFocus || (ctx && ctx.focus) || '';
   wantFocus = '';
   if (key) {
     const el = root.querySelector(key);
