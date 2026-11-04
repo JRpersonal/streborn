@@ -1516,13 +1516,20 @@ async function api(path, method, body) {
 // calls here that only need to know whether it worked. It is the wrong shape
 // when the agent refuses with a reason: the reason is in the body it throws
 // away. Kept as a separate function so no existing caller changes behaviour.
-async function apiDetail(path, method, body) {
-  let r;
+// ms, when given, gives up on the call after that long (status 0): a speaker
+// gone with the whole network otherwise holds the fetch for as long as the
+// browser likes (#1339).
+async function apiDetail(path, method, body, ms) {
+  let r, t = 0;
+  const ctl = ms ? new AbortController() : null;
+  if (ctl) t = setTimeout(function(){ ctl.abort(); }, ms);
   try {
-    r = await fetch(path, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    r = await fetch(path, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined });
   } catch (e) {
     console.error(path, e);
     return { ok: false, status: 0, data: null };
+  } finally {
+    if (t) clearTimeout(t);
   }
   let data = null;
   const ct = r.headers.get('content-type') || '';
@@ -6338,13 +6345,22 @@ async function saveDisplay(kind, enabled) {
      is not there yet, a timeout, a download the outage cut off. Same list as
      networkErrorText in selfupdate_netretry.go. Those are retried, and shown
      in plain words instead of the Go error. */
-  var NET_RE = /lookup |dial tcp|i\/o timeout|server misbehaving|no such host|network is unreachable|no route to host|connection reset|connection refused|context canceled|deadline exceeded|tls handshake timeout|download stalled|download ended after|unexpected eof|could not reach the internet/i;
+  var NET_RE = /lookup |dial tcp|i\/o timeout|server misbehaving|no such host|network is unreachable|no route to host|connection reset|connection refused|context canceled|deadline exceeded|tls handshake timeout|download stalled|download ended after|unexpected eof|could not reach the internet|no network answer/i;
   var NOT_NET_RE = /does not match|signature|already runs/i;
   function netErr(msg) { msg = String(msg || ''); return NET_RE.test(msg) && !NOT_NET_RE.test(msg); }
   function humanErr(msg) { return netErr(msg) ? T.sfNetErr : String(msg || ''); }
+  /* The reason a row fails with after waiting out the network in vain. A
+     phone that could not reach the speaker at all ("no answer") is the same
+     outage as a speaker that could not reach the internet, and must read
+     like one: the card then says "try again when your network is back" and
+     the run stops for the speakers after it (#1339 4c). */
+  function netReason(msg) { msg = String(msg || ''); return netErr(msg) ? msg : 'no network answer: ' + (msg || 'the speaker did not answer'); }
   /* How often a speaker is started over after a network failure, and how
      long the phone waits for the network to come back each time. */
   var NET_TRIES = 2, NET_MS = 15 * 60 * 1000, NET_POLL_MS = 15000;
+  /* waitBack: wall-clock silence in the middle of a download that counts as
+     a network failure, and how much of it the page must have seen itself. */
+  var SILENT_MS = 12 * 60 * 1000, SILENT_SEEN_MS = 3 * 60 * 1000;
   /* A single speaker silent in the middle of its download: after its own
      retries (selfupdate_netretry.go, about eleven minutes) it has given up
      and keeps its version, so past SU_STOP_MS the card says so. The same
@@ -6395,7 +6411,7 @@ async function saveDisplay(kind, enabled) {
     var away = Date.now() - hiddenAt;
     if (run && run.mode === 'running') {
       var row = run.rows[run.idx];
-      if (row) { if (row.deadline) row.deadline += away; if (row.backAt) row.backAt += away; }
+      if (row) { if (row.deadline) row.deadline += away; if (row.backAt) row.backAt += away; row.silentSeenAt = 0; }
       saveRun();
     }
     var w = wakers; wakers = [];
@@ -6800,7 +6816,7 @@ async function saveDisplay(kind, enabled) {
      run. */
   async function beat(force) {
     if (!force && Date.now() - lastBeat < BEAT_MS) return true;
-    var r = await apiDetail(SU, 'POST', { action: 'run-claim', token: run.token });
+    var r = await apiDetail(SU, 'POST', { action: 'run-claim', token: run.token }, 10000);
     if (r.status === 409) {
       run.lost = true; run.mode = 'finished'; run.finishedAt = Date.now();
       saveRun(); render();
@@ -6822,18 +6838,37 @@ async function saveDisplay(kind, enabled) {
      after that, its Spotify engine fetch. getStatus answers null while the
      speaker is gone. Ends with nothing when the row is settled, or with
      { fail, net } for the caller to retry or report. */
+  /* The deadline above moves with the time the page was hidden, so a phone
+     that stays locked never runs it out: a run went on for two and a half
+     hours through a router outage (#1339 4c). Silence in the middle of a
+     download is therefore also measured on the wall clock, from the last
+     answer: SILENT_MS of it ends the wait as a network failure. The page has
+     to have seen the silence itself for SILENT_SEEN_MS first, so a phone that
+     comes back while the speaker happens to be restarting does not call
+     that an outage. */
   async function waitBack(row, getStatus) {
     if (!row.deadline) row.deadline = Date.now() + PEER_MS;
+    if (!row.heardAt) row.heardAt = Date.now();
     for (;;) {
       await gate();
       if (!row.backAt && Date.now() > row.deadline) {
-        return { fail: 'not back on ' + row.target + ' within ' + Math.round(PEER_MS / 60000) + ' minutes', net: row.phase === 'offline' || row.phase === 'network' };
+        if (row.phase === 'offline' || row.phase === 'network') return { fail: netReason('not back on ' + row.target + ' within ' + Math.round(PEER_MS / 60000) + ' minutes'), net: true };
+        return { fail: 'not back on ' + row.target + ' within ' + Math.round(PEER_MS / 60000) + ' minutes' };
       }
       await sleep(POLL_MS);
       await gate();
       if (!(await beat())) return;
       var now = await getStatus();
-      if (!now || !now.state) { setRow(row, { phase: goneWord(row), pct: 0 }); continue; }
+      if (!now || !now.state) {
+        var word = goneWord(row), t = Date.now();
+        if (!row.silentSeenAt) row.silentSeenAt = t;
+        if (word === 'offline' && t - row.heardAt >= SILENT_MS && t - row.silentSeenAt >= SILENT_SEEN_MS) {
+          return { fail: 'no network answer for ' + Math.round((t - row.heardAt) / 60000) + ' minutes in the middle of the download', net: true };
+        }
+        setRow(row, { phase: word, pct: 0 });
+        continue;
+      }
+      row.heardAt = Date.now(); row.silentSeenAt = 0;
       var onTarget = !!now.current && !vless(now.current, row.target);
       if (now.state === 'failed' && onTarget) { doneRow(row, now.current, now.error); return; }
       if (now.state === 'failed') return { fail: now.error };
@@ -6861,9 +6896,10 @@ async function saveDisplay(kind, enabled) {
   async function retryAfterNet(row, res, getStatus, check) {
     var now = await getStatus();
     if (now && now.current && row.target && !vless(now.current, row.target)) { doneRow(row, now.current); return false; }
-    if (!(res.net || netErr(res.fail)) || (row.tries || 0) >= NET_TRIES) { failRow(row, res.fail); return false; }
+    if (!(res.net || netErr(res.fail))) { failRow(row, res.fail); return false; }
+    if ((row.tries || 0) >= NET_TRIES) { failRow(row, netReason(res.fail)); return false; }
     row.tries = (row.tries || 0) + 1;
-    setRow(row, { state: 'updating', phase: 'network', pct: 0, step: 'netwait', reason: '', deadline: 0, backAt: 0 });
+    setRow(row, { state: 'updating', phase: 'network', pct: 0, step: 'netwait', reason: '', deadline: 0, backAt: 0, heardAt: 0, silentSeenAt: 0 });
     var until = Date.now() + NET_MS;
     while (Date.now() < until) {
       await sleep(NET_POLL_MS);
@@ -6877,7 +6913,7 @@ async function saveDisplay(kind, enabled) {
       failRow(row, (d && d.error) || ('the speaker refused (HTTP ' + c.status + ')'));
       return false;
     }
-    failRow(row, res.fail);
+    failRow(row, netReason(res.fail));
     return false;
   }
   /* One peer, straight from the phone. Answers 'unreachable' when the phone
@@ -6992,6 +7028,7 @@ async function saveDisplay(kind, enabled) {
     driving = true; render();
     try {
       if (!(await beat(true))) return;
+      var netStop = '';
       for (var i = 0; i < run.rows.length; i++) {
         var row = run.rows[i];
         if (row.self || (row.state !== 'waiting' && row.state !== 'updating')) continue;
@@ -7003,9 +7040,21 @@ async function saveDisplay(kind, enabled) {
         }
         if (row.via === 'speaker') await updateViaSpeaker(row);
         if (!runActive()) return;
+        /* A speaker that failed only for want of a network, after its
+           retries, is the network's answer for every speaker still to come:
+           they share it. The run ends here with one plain "try again when
+           your network is back" instead of walking each of them into the
+           same wait (#1339 4c). */
+        if (row.state === 'failed' && netErr(row.reason)) { netStop = row.reason; break; }
+      }
+      if (netStop) {
+        run.rows.forEach(function(r){
+          if (r.state === 'waiting' || r.state === 'updating') { r.state = 'failed'; r.phase = ''; r.pct = 0; r.step = ''; r.reason = netStop; }
+        });
+        saveRun(); render();
       }
       var self = run.rows.filter(function(r){ return r.self; })[0];
-      if (self && (self.state === 'waiting' || self.state === 'updating')) {
+      if (!netStop && self && (self.state === 'waiting' || self.state === 'updating')) {
         run.idx = run.rows.indexOf(self); saveRun();
         await gate();
         if (!(await beat(true))) return;
@@ -7017,7 +7066,7 @@ async function saveDisplay(kind, enabled) {
       checked = false; probes = {};
       // Release the claim before reloading: a load that still sees it would
       // tell this very phone that another phone is updating.
-      await apiDetail(SU, 'POST', { action: 'run-end', token: run.token });
+      await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 10000);
       await load();
     } finally {
       driving = false;
