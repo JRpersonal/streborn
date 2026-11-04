@@ -8,6 +8,7 @@ import { setLocale } from './i18n/index.js';
 import {
   activeSteps,
   currentStep,
+  floorVersion,
   fallbacksFor,
   firmwareLadderMount,
   formatBytes,
@@ -447,7 +448,7 @@ describe('resume per speaker', () => {
     const store = memStore();
     saveLadderState('dev1', { started: true, ack: true, stepId: s0700.id, screen: 'C', busy: true, drives: [1] }, store);
     const back = loadLadderState('dev1', store);
-    expect(back).toEqual({ started: true, ack: true, stepId: s0700.id, screen: 'C', fallbackFor: '', finalByStick: false });
+    expect(back).toEqual({ started: true, ack: true, stepId: s0700.id, screen: 'C', fallbackFor: '', finalByStick: false, seen: '' });
     expect(persistable({ screen: 'X' }).screen).toBe('B');
     const st = resumeState(plan5x, back);
     expect(ladderView(plan5x, st)).toBe('C');
@@ -480,5 +481,32 @@ describe('every bundle has every ladder string', () => {
         expect(b[`fwLadder.${k}`], `${loc} ${k}`).not.toBe(en[`fwLadder.${k}`]);
       }
     }
+  });
+});
+
+// Field case 2026-11-04: a SoundTouch 20 read as 9.0.41 dropped off the
+// network after a stick attempt. The recheck asked for the version, the picker
+// stood on "2.x", one click planned 06.02.01, and the app wrote that downgrade
+// to the stick.
+describe('a picked version never goes below the one the speaker reported', () => {
+  it('floors a lower pick at the reported version', () => {
+    expect(floorVersion('2.0.0', '9.0.41')).toBe('9.0.41');
+    expect(floorVersion('7.0.37', '9.0.41')).toBe('9.0.41');
+  });
+  it('keeps a pick at or above it, and any pick when nothing was reported', () => {
+    expect(floorVersion('14.0.33', '9.0.41')).toBe('14.0.33');
+    expect(floorVersion('9.0.41', '9.0.41')).toBe('9.0.41');
+    expect(floorVersion('5.0.0', '')).toBe('5.0.0');
+    expect(floorVersion('', '9.0.41')).toBe('');
+  });
+  it('the picker has no version preselected', () => {
+    const html = ladderHtml(ident, { status: 'needs-version', steps: [] }, {});
+    const first = html.match(/<select data-ladder-field="version"[^>]*>\s*<option value="([^"]*)"[^>]*>/);
+    expect(first, 'version picker missing').toBeTruthy();
+    expect(first[1]).toBe('');
+    expect(html).toContain(en['fwLadder.manualPick']);
+  });
+  it('the reported version survives a restart', () => {
+    expect(persistable({ seen: '9.0.41' }).seen).toBe('9.0.41');
   });
 });

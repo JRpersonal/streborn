@@ -1366,6 +1366,7 @@
   "fwLadder.manualVersion": "Firmware version",
   "fwLadder.manualOther": "Another model",
   "fwLadder.manualGo": "Show the steps",
+  "fwLadder.manualPick": "Pick a version",
   "fwLadder.v7to13": "7 to 13",
   "fwLadder.v15": "15 or newer",
   "fwLadder.btQuestion": "Does your speaker have a Bluetooth button?",

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -136,5 +138,65 @@ func TestPreflightStopsOldFirmwareBeforeTheUnlock(t *testing.T) {
 	// The log must not claim an unlock ran when :17000 was closed.
 	if strings.Contains(block, "stick-free :17000 unlock did not open SSH)") {
 		t.Error("install-window-closed log still claims the unlock ran unconditionally")
+	}
+}
+
+// Field case 2026-11-04: a SoundTouch 20 on 9.0.41, back from a USB update
+// attempt, answered /info with neither a model nor a firmware while it booted.
+// The install took that as "not too old" and ran the unlock, which restarted
+// it twice for nothing.
+func TestSettledFirmwareWaitsOutABootingSpeaker(t *testing.T) {
+	ctx := context.Background()
+	booting := FirmwareInfo{Reachable: true}
+	ready := FirmwareInfo{Reachable: true, Model: "SoundTouch 20", Firmware: "9.0.41.23338.1383271", Short: "9.0.41", Outdated: true}
+
+	calls := 0
+	fw, err, still := settledFirmware(ctx, func() (FirmwareInfo, error) {
+		calls++
+		if calls < 3 {
+			return booting, nil
+		}
+		return ready, nil
+	}, time.Second, time.Millisecond)
+	if err != nil || still || fw.Short != "9.0.41" || calls != 3 {
+		t.Fatalf("a speaker that names itself on the third read: fw=%+v err=%v booting=%v calls=%d", fw, err, still, calls)
+	}
+
+	_, _, still = settledFirmware(ctx, func() (FirmwareInfo, error) { return booting, nil }, 20*time.Millisecond, 5*time.Millisecond)
+	if !still {
+		t.Fatal("a speaker that never names itself must come back as booting")
+	}
+
+	calls = 0
+	_, err, still = settledFirmware(ctx, func() (FirmwareInfo, error) {
+		calls++
+		return FirmwareInfo{}, errors.New("connection refused")
+	}, time.Second, time.Millisecond)
+	if err == nil || still || calls != 1 {
+		t.Fatalf("a failed read is a network case, returned at once: err=%v booting=%v calls=%d", err, still, calls)
+	}
+
+	calls = 0
+	fw, _, still = settledFirmware(ctx, func() (FirmwareInfo, error) { calls++; return ready, nil }, time.Second, time.Millisecond)
+	if still || calls != 1 || fw.Model == "" {
+		t.Fatal("a speaker that names itself at once is read once")
+	}
+}
+
+func TestPreflightStopsABootingSpeakerBeforeTheUnlock(t *testing.T) {
+	code := readInstallSrc(t)
+	start := strings.Index(code, `res.Step = "preflight"`)
+	end := strings.Index(code, `res.Step = "ssh-handshake"`)
+	if start < 0 || end <= start {
+		t.Fatal("could not locate the preflight block")
+	}
+	block := code[start:end]
+	booting := strings.Index(block, "if r.fwBooting {")
+	unlock := strings.Index(block, "a.ensureSSHOpen(host, model,")
+	if booting < 0 || unlock < 0 || booting > unlock {
+		t.Error("the still-starting stop must come before the unlock")
+	}
+	if !strings.Contains(block, `res.Code = "speaker-starting"`) {
+		t.Error("the still-starting stop must carry the speaker-starting code")
 	}
 }

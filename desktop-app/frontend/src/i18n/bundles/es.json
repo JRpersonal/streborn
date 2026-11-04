@@ -1231,6 +1231,7 @@
   "fwLadder.manualVersion": "Versión del firmware",
   "fwLadder.manualOther": "Otro modelo",
   "fwLadder.manualGo": "Mostrar los pasos",
+  "fwLadder.manualPick": "Elige una versión",
   "fwLadder.v7to13": "7 a 13",
   "fwLadder.v15": "15 o posterior",
   "fwLadder.btQuestion": "¿Tu altavoz tiene un botón de Bluetooth?",

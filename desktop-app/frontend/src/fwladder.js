@@ -91,6 +91,18 @@ export function versionReached(have, target) {
   return true;
 }
 
+// floorVersion keeps a picked version from going below one the speaker itself
+// reported. A USB step that did not start leaves the speaker where it was, so
+// a pick under the version it last named can only be a slip, and a ladder
+// planned from it starts with a downgrade. Field case 2026-11-04: a SoundTouch
+// 20 read as 9.0.41 was off the network after a stick attempt, the picker
+// stood on its first entry "2.x", and one click on the button planned
+// 06.02.01, which the app then wrote to the stick.
+export function floorVersion(picked, seen) {
+  if (!picked || !seen || !tuple(seen)) return picked;
+  return versionReached(seen, picked) && !sameVersion(seen, picked) ? seen : picked;
+}
+
 // sameVersion: both name the same major.minor.patch.
 function sameVersion(a, b) {
   return versionReached(a, b) && versionReached(b, a);
@@ -348,6 +360,7 @@ export function persistable(st) {
     screen: s.screen === 'C' ? 'C' : 'B',
     fallbackFor: s.fallbackFor || '',
     finalByStick: !!s.finalByStick,
+    seen: s.seen || '',
   };
 }
 
@@ -554,7 +567,10 @@ function screenC(plan, st, step, ident) {
 }
 
 function versionPicker(act) {
-  const opts = MANUAL_VERSIONS.map(v => `<option value="${esc(v.id)}">${esc(v.labelKey ? t(v.labelKey) : v.label)}</option>`).join('');
+  // No version stands preselected: the first entry is the oldest, and a
+  // click on the button without a choice must not plan from it.
+  const opts = `<option value="" selected>${esc(t('fwLadder.manualPick'))}</option>`
+    + MANUAL_VERSIONS.map(v => `<option value="${esc(v.id)}">${esc(v.labelKey ? t(v.labelKey) : v.label)}</option>`).join('');
   return `<div class="fw-guide-dl"><select data-ladder-field="version" aria-label="${esc(t('fwLadder.manualVersion'))}">${opts}</select>`
     + ` <button type="button" class="btn btn-mini btn-primary" data-ladder="${act}">${esc(t('fwLadder.manualGo'))}</button></div>`;
 }
@@ -792,6 +808,12 @@ class LadderController {
     } else {
       this.sess.st = { ...this.st, ...resumeState(plan, persistable(this.st)), manual: false };
     }
+    // A version read off the speaker (home or setup network) is the floor for
+    // any version picked by hand later (floorVersion).
+    if (plan.current && (plan.versionFrom === 'lan' || plan.versionFrom === 'setup-ap')) {
+      this.sess.st.seen = plan.current;
+      for (const k of ladderKeys(plan, this.id)) saveLadderState(k, this.sess.st);
+    }
     this.render();
   }
 
@@ -826,7 +848,12 @@ class LadderController {
         // unsupported case (or, from 15 on, the normal guide), never the
         // detected model's ladder.
         const m = this.field('model');
-        const v = MANUAL_BY_ID[this.field('version')] || '';
+        const v = floorVersion(MANUAL_BY_ID[this.field('version')] || '', this.st.seen);
+        if (!v) {
+          this.set({ manualError: t('fwLadder.manualPick') });
+          break;
+        }
+        this.set({ manualError: '' });
         this.load(() => this.L.getLadderManual(m, '', v, ''));
         break;
       }
@@ -960,6 +987,7 @@ class LadderController {
       this.set({ recheck: { state: 'unknown' } });
       return;
     }
+    this.st.seen = r.version;
     this.applyVersion(r.version, 'recheck');
   }
 
@@ -968,6 +996,7 @@ class LadderController {
   async applyVersion(version, from) {
     const plan = this.sess.plan;
     const step = currentStep(plan, this.st);
+    if (from === 'manual') version = floorVersion(version, this.st.seen);
     if (!step || !version) return;
     const model = plan.model || this.id.model;
     const moduleType = plan.moduleType || this.id.moduleType;

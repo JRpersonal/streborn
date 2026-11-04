@@ -1231,6 +1231,7 @@
   "fwLadder.manualVersion": "ファームウェアのバージョン",
   "fwLadder.manualOther": "その他のモデル",
   "fwLadder.manualGo": "手順を表示",
+  "fwLadder.manualPick": "バージョンを選択",
   "fwLadder.v7to13": "7 から 13",
   "fwLadder.v15": "15 以降",
   "fwLadder.btQuestion": "スピーカーに Bluetooth ボタンはありますか?",
