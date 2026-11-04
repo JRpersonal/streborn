@@ -531,7 +531,7 @@ func TestPhoneCardOffersUpdateAllByDefault(t *testing.T) {
 	for _, want := range []string{
 		"action: 'run-claim', token: run.token",
 		// Awaited, or the reload sees this phone's own claim as another phone's.
-		"await apiDetail(SU, 'POST', { action: 'run-end', token: run.token });",
+		"await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 10000);",
 		"peerCall(base, 'POST', { action: 'check' }",
 		"peerCall(base, 'POST', { action: 'install' }",
 		"=== 'unreachable') setRow(row, { via: 'speaker'",
