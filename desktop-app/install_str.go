@@ -236,8 +236,12 @@ type installRun struct {
 	// USB stick for the models that never read one at boot.
 	fwNote            string
 	fwTooOldForUnlock bool
-	noStick           bool
-	stickPath         string
+	// fwBooting: /info answered, but with neither model nor firmware, for the
+	// whole settle wait. The speaker is still starting up, and what it runs is
+	// unknown, so the unlock (which restarts it twice) must not run.
+	fwBooting bool
+	noStick   bool
+	stickPath string
 }
 
 // Every message this function can end on gets the firmware note, and that
@@ -276,7 +280,14 @@ func (a *App) installReadFirmware(r *installRun) {
 	// variant at all (the 2.1.51 Wave of 2026-10-22 reported neither).
 	fwTooOldForUnlock := false
 	noStick := neverReadsStickAtBoot(model, "")
-	if fw, ferr := a.GetBoxFirmware(host); ferr == nil && fw.Reachable {
+	fw, ferr, booting := settledFirmware(a.appCtx(), func() (FirmwareInfo, error) { return a.GetBoxFirmware(host) },
+		installFirmwareSettle, installFirmwarePoll)
+	if booting {
+		a.logger.Warn("install_str: the speaker answers /info but names neither its model nor its firmware, it is still starting up",
+			"host", host, "waited", installFirmwareSettle)
+	}
+	r.fwBooting = booting
+	if ferr == nil && fw.Reachable {
 		fwTooOldForUnlock = fw.Outdated && unlockNeedsNewerFirmware(fw.Short)
 		noStick = noStick || neverReadsStickAtBoot(fw.Model, fw.Variant)
 		res.Firmware = fw.Short
@@ -359,6 +370,20 @@ func (a *App) installPreflight(r *installRun) bool {
 				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice + firmwareLadderNote(res.Model, res.ModuleType, res.Variant, res.Firmware)
 			a.logger.Warn("install_str: preflight, firmware too old for the stick-free :17000 unlock; not touching the speaker",
 				"host", host, "firmware", res.Firmware, "model", res.Model)
+			return true
+		}
+		// A speaker that answers /info with neither a model nor a firmware is
+		// still starting up, and nothing says its firmware is new enough for
+		// the unlock. A SoundTouch 20 on 9.0.41 (2015), freshly back from a
+		// USB update attempt, answered exactly that at the moment its owner
+		// pressed Install (2026-11-04); the unlock ran on it, restarted it
+		// twice and could not open it, while the attempt before, a few
+		// minutes earlier, had read 9.0.41 and stopped at firmware-too-old.
+		if r.fwBooting {
+			res.Code = "speaker-starting"
+			res.Message = withFW("The speaker at "+host+" is still starting up: it answers, but does not say yet which model it is or which firmware it runs.") +
+				"\n\n" + speakerStartingAdvice
+			a.logger.Warn("install_str: preflight, speaker still starting up and its firmware unknown; not unlocking", "host", host)
 			return true
 		}
 		// Our own unlock attempt restarted this speaker moments ago (an earlier
@@ -1764,6 +1789,40 @@ func neverReadsStickAtBoot(model, variant string) bool {
 // failures instead of at 27: a firmware in that unknown range still gets its
 // try, and is told about the firmware update either way.
 const unlockMinFirmwareMajor = 15
+
+// The settle wait for a speaker whose /info names neither its model nor its
+// firmware. Variables so the tests need not wait.
+var (
+	installFirmwareSettle = 45 * time.Second
+	installFirmwarePoll   = 5 * time.Second
+)
+
+// speakerStartingAdvice is what the install says when it stops at
+// speaker-starting.
+const speakerStartingAdvice = "Give it two minutes, until its display or lights show it is ready, then refresh the speaker list and press Install again."
+
+// settledFirmware reads the speaker's firmware and, while it answers with
+// neither a model nor a firmware (a speaker in the middle of its boot does),
+// reads again every `every` until `budget` is used up. booting reports that
+// it never named either. A read that fails outright is returned as it is:
+// that is a network case, which the preflight tells apart on its own.
+func settledFirmware(ctx context.Context, read func() (FirmwareInfo, error), budget, every time.Duration) (FirmwareInfo, error, bool) {
+	deadline := time.Now().Add(budget)
+	for {
+		fw, err := read()
+		if err != nil || !fw.Reachable || fw.Model != "" || fw.Firmware != "" {
+			return fw, err, false
+		}
+		if !time.Now().Add(every).Before(deadline) {
+			return fw, nil, true
+		}
+		select {
+		case <-ctx.Done():
+			return fw, nil, true
+		case <-time.After(every):
+		}
+	}
+}
 
 // unlockNeedsNewerFirmware reports whether a short firmware version ("2.1.51")
 // is clearly too old for the stick-free unlock. An unparsable version returns

@@ -1231,6 +1231,7 @@
   "fwLadder.manualVersion": "Yazılım sürümü",
   "fwLadder.manualOther": "Başka bir model",
   "fwLadder.manualGo": "Adımları göster",
+  "fwLadder.manualPick": "Bir sürüm seçin",
   "fwLadder.v7to13": "7 ile 13 arası",
   "fwLadder.v15": "15 veya daha yeni",
   "fwLadder.btQuestion": "Hoparlöründe Bluetooth tuşu var mı?",

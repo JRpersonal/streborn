@@ -1366,6 +1366,7 @@
   "fwLadder.manualVersion": "Firmware-Version",
   "fwLadder.manualOther": "Anderes Modell",
   "fwLadder.manualGo": "Schritte anzeigen",
+  "fwLadder.manualPick": "Version wählen",
   "fwLadder.v7to13": "7 bis 13",
   "fwLadder.v15": "15 oder neuer",
   "fwLadder.btQuestion": "Hat dein Lautsprecher eine Bluetooth-Taste?",

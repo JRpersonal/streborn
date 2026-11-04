@@ -1231,6 +1231,7 @@
   "fwLadder.manualVersion": "Version du firmware",
   "fwLadder.manualOther": "Autre modèle",
   "fwLadder.manualGo": "Afficher les étapes",
+  "fwLadder.manualPick": "Choisir une version",
   "fwLadder.v7to13": "7 à 13",
   "fwLadder.v15": "15 ou plus récent",
   "fwLadder.btQuestion": "Ton enceinte a-t-elle un bouton Bluetooth ?",
