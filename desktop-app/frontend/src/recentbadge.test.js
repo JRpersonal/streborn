@@ -94,6 +94,18 @@ describe('cardIsPlaying folder cards follow the active queue', () => {
     expect(cardIsPlaying(folder)).toBe(true);
   });
 
+  // #1744: a key-started folder files its rows under recent_card, while card
+  // keeps naming the key. Two playlists played from key 6 are two cards.
+  it('matches a key-started folder on recent_card, not on the key card', () => {
+    const rush = { boxKey: 'DEV-A', source: 'upnp', cardKey: 'queue:slot:6:bbbb2222', name: 'Rush favorites', url: 'http://192.0.2.5/r1.flac' };
+    const scott = { boxKey: 'DEV-A', source: 'upnp', cardKey: 'queue:slot:6:aaaa1111', name: 'Scott Stapp Collection', url: 'http://192.0.2.5/s1.flac' };
+    state.nowName = 'Bravest Face';
+    state.nowLocation = 'http://192.0.2.5/r2.flac';
+    state.queue = { active: true, card: 'queue:slot:6', recent_card: 'queue:slot:6:bbbb2222' };
+    expect(cardIsPlaying(rush)).toBe(true);
+    expect(cardIsPlaying(scott)).toBe(false);
+  });
+
   it('ignores a finished queue', () => {
     state.nowName = 'Track two';
     state.nowLocation = 'http://192.0.2.5/t2.flac';

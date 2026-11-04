@@ -1093,6 +1093,13 @@ type BoxPreset struct {
 // saved from the live queue says "from <server>" like a star-button save.
 type recentCardCtx struct {
 	key, name, art, url, account, homepage, mime, source string
+	// recentKey is the Recently-played card the folder's rows are filed under
+	// when it differs from key. A folder started from a key keeps
+	// "queue:slot:N" as its queue identity, which lights the key and replays
+	// it, but its rows also name the folder ("queue:slot:N:<tag>"), so two
+	// folders played from the same key one after the other are two cards
+	// (#1744). Empty means key.
+	recentKey string
 	// durationSec is the length of url when it is a library file, 0 otherwise.
 	durationSec int
 	// spotifyCtx is the normalised Spotify context (playlist/album URI) the

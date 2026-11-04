@@ -16,7 +16,7 @@ func TestRecentQueueCardRecordsFolderAndTracks(t *testing.T) {
 
 	// startQueue notes the folder card, then the first push records the first
 	// track (which folds into the card placeholder), then auto-advance records more.
-	s.recentNoteQueueCard("queue:srv:42", "Jazz", "art.png", "http://nas/1.mp3", "audio/flac", 0)
+	s.recentNoteQueueCard(recentCardCtx{key: "queue:srv:42", name: "Jazz", art: "art.png", url: "http://nas/1.mp3"}, "audio/flac", 0)
 	s.recentNoteQueueTrack("Song A", "")
 	s.recentNoteQueueTrack("Song B", "")
 
@@ -60,7 +60,7 @@ func TestRecentQueueCardRecordsFolderAndTracks(t *testing.T) {
 // playlist too. A track without an artist keeps the bare title.
 func TestRecentQueueTrackFilesArtistFirst(t *testing.T) {
 	s := &Server{recent: recent.New()}
-	s.recentNoteQueueCard("queue:srv:7", "Classic Rock Collection", "", "http://nas/1.mp3", "audio/mpeg", 0)
+	s.recentNoteQueueCard(recentCardCtx{key: "queue:srv:7", name: "Classic Rock Collection", art: "", url: "http://nas/1.mp3"}, "audio/mpeg", 0)
 	s.recentNoteQueueTrack("Synchronicity I", "The Police")
 	s.recentNoteQueueTrack("Untitled", "")
 
@@ -91,7 +91,7 @@ func TestQueueItemsCarryArtist(t *testing.T) {
 // recent store (dev builds), never panicking.
 func TestRecentQueueCardNilStore(t *testing.T) {
 	s := &Server{}
-	s.recentNoteQueueCard("k", "n", "a", "u", "", 0)
+	s.recentNoteQueueCard(recentCardCtx{key: "k", name: "n", art: "a", url: "u"}, "", 0)
 	s.recentNoteQueueTrack("t", "")
 	s.recentClearQueueCard()
 }
@@ -107,7 +107,7 @@ func TestRecentLibraryCardKeepsLength(t *testing.T) {
 	}
 
 	q := &Server{recent: recent.New()}
-	q.recentNoteQueueCard("queue:srv:9", "Jazz", "", "http://nas/1.mp3", "audio/mpeg", 180)
+	q.recentNoteQueueCard(recentCardCtx{key: "queue:srv:9", name: "Jazz", art: "", url: "http://nas/1.mp3"}, "audio/mpeg", 180)
 	q.recentNoteQueueTrack("Song A", "")
 	q.recentNoteQueueTrack("Song B", "")
 	all := q.recent.All()

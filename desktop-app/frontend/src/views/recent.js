@@ -340,8 +340,10 @@ export function cardIsPlaying(c) {
   // queue wrapped (#1065). While a queue plays, the speaker names the card it
   // belongs to; match on that. An older agent without the field falls through.
   const q = state.queue;
-  if (String(c.cardKey || '').startsWith('queue:') && q && q.active && q.card) {
-    return q.card === c.cardKey;
+  // A folder a key started files its rows under recent_card, which names the
+  // folder too; card keeps naming the key (#1744). An older agent sends card only.
+  if (String(c.cardKey || '').startsWith('queue:') && q && q.active && (q.recent_card || q.card)) {
+    return (q.recent_card || q.card) === c.cardKey;
   }
   if (state.nowName && c.name && state.nowName === c.name) return true;
   return !!(c.url && loc && loc === c.url);

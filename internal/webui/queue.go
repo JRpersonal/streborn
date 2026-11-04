@@ -353,6 +353,12 @@ type queueSnapshot struct {
 	// carries the folder's first track, so a name or URL match lost the "now
 	// playing" mark from the second track on (#1065).
 	Card string `json:"card,omitempty"`
+	// RecentCard is the Recently-played card the playing folder's rows are
+	// filed under when it is not Card: a folder started from a key keeps
+	// "queue:slot:N" as Card (it lights the key) and files its rows under
+	// "queue:slot:N:<tag>", which names the folder too (#1744). The app's
+	// "now playing" mark on a folder card matches on this one first.
+	RecentCard string `json:"recent_card,omitempty"`
 	// Slot is the key the playing folder was saved on while it played (a hold
 	// on a key, or the app's hold-to-save), 0 when none. The card keeps naming
 	// the folder the queue was started from, because Library and
