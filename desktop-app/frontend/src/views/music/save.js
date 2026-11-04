@@ -545,6 +545,23 @@ export async function saveSpotifyToSlot(slot, report = toastSpotifyReport(slot),
       slot, sname, ctxUri, acct
     );
     report.saved(sname);
+    // A plan the speaker had not read yet is usually only a moment away: when
+    // a different account has just picked the speaker in Spotify, the engine
+    // reads that account's plan a few hundred milliseconds after the switch,
+    // and the read above can land in between (#1339: plan=premium remembered
+    // 47 ms before the save, the hint shown anyway). The save itself takes
+    // long enough for the plan to arrive, so ask once more before saying it
+    // could not be checked. A failed re-read keeps the first answer.
+    if (planKnown === false) {
+      try {
+        const again = await SpotifyNowPlaying(box.host, box.port);
+        if (again) {
+          if (again.canRecall !== null && again.canRecall !== undefined) canRecall = !!again.canRecall;
+          if (again.premiumRequired !== null && again.premiumRequired !== undefined) premiumRequired = !!again.premiumRequired;
+          planKnown = !!again.product;
+        }
+      } catch {}
+    }
     // The speaker already knows this key will be refused when it is pressed:
     // both recall paths gate on the same question, and only the SAVE side had
     // no gate, so the app reported success for a key that cannot play (#976).

@@ -62,9 +62,11 @@ describe('fixed-group editor and offline speakers (source)', () => {
   });
 
   it('marks an offline card disabled with the reason and offers no "make main"', () => {
-    expect(render).toMatch(/const offline = !isMaster && !!b\.offline;/);
+    // Offline here is everything the app knows it cannot reach (#1741).
+    expect(render).toMatch(/const unreachable = boxUnreachable\(b\);/);
+    expect(render).toMatch(/const offline = !isMaster && unreachable;/);
     expect(render).toMatch(/const selected = !isMaster && !offline && /);
-    expect(render).toContain("t('multiroom.offlineNotSelectable')");
+    expect(render).toContain("t(b.offline ? 'multiroom.offlineNotSelectable' : 'multiroom.notReachableNotSelectable')");
     expect(render).toContain('aria-disabled="true"');
   });
 
@@ -73,7 +75,7 @@ describe('fixed-group editor and offline speakers (source)', () => {
   });
 
   it('doFormZone never sends an offline member', () => {
-    expect(fnSrc('async function doFormZone(')).toMatch(/sel\[b\.deviceID\] && !b\.offline\)/);
+    expect(fnSrc('async function doFormZone(')).toMatch(/sel\[b\.deviceID\] && !boxUnreachable\(b\)\)/);
   });
 });
 

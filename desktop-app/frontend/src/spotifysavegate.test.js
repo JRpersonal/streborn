@@ -126,6 +126,22 @@ describe('saving a Spotify key that cannot play', () => {
     expect(warned).toBeGreaterThan(saved);
     expect(save.slice(saved, warned)).not.toMatch(/\breturn\b/);
   });
+
+  it('asks for the plan once more before saying it could not be checked (#1339)', () => {
+    // A different account had just picked the speaker; its plan arrived 47 ms
+    // before the save and the hint was shown anyway. The re-read sits between
+    // the save and the gate, only runs when the plan was missing, and only
+    // the hint depends on it.
+    const saved = save.indexOf('report.saved(');
+    const reread = save.indexOf('if (planKnown === false)');
+    const gated = save.indexOf('// Same order the speaker applies when the key is pressed');
+    expect(reread).toBeGreaterThan(saved);
+    expect(gated).toBeGreaterThan(reread);
+    const block = save.slice(reread, gated);
+    expect(block).toContain('SpotifyNowPlaying(box.host, box.port)');
+    expect(block).toContain('planKnown = !!again.product');
+    expect(block).not.toMatch(/\breturn\b/);
+  });
 });
 
 describe('the wording claims only what STR can see', () => {
