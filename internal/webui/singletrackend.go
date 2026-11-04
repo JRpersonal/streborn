@@ -426,7 +426,11 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		in := s.trackEndSnapshot(sawPlay, ps, start, tr.dur, obsTotal, lastPos, lastPosAt)
 		in.ranAhead = ranAhead
 		in.echoedTotal = tr.claimedLength && obsTotal > 0 && absDur(obsTotal-tr.dur) <= qt.ownEndSlack
-		if net := trackEndNet(in); net != endNetNone {
+		net := trackEndNet(in)
+		if net != endNetFrozen {
+			staleHeld = false
+		}
+		if net != endNetNone {
 			if net == endNetFrozen {
 				if sp := s.frozenButPlaying(lastPosAt); sp.ok {
 					if !staleHeld {
@@ -437,7 +441,6 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 					}
 					continue
 				}
-				staleHeld = false
 			}
 			if net == endNetFrozen && end == 0 && resumeUnmoved {
 				// A whole freeze timeout on the paused second after the
