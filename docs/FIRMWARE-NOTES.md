@@ -1022,6 +1022,29 @@ the app's resume), so the next bundle that covers a resume settles which
 clock froze. Not yet measured either: whether the offset keeps counting during
 the real freeze; until it is, a stale-URL line overrides a moving offset.
 
+**Settled for one case (2026-11-03, ST10, FW 27.0.6, #830):** a bundle that
+covers the whole window. A NAS MP3 paused and resumed with the speaker's own
+PLAY_PAUSE key: the listener heard it play on from the pause at once, and
+about thirteen seconds later STR restarted it at the paused position, so the
+same stretch came twice. Both clocks froze: `relTime1=relTime2=14m27s`, the
+newest offset line 14 s old, and the stale-URL lines were there. What the
+syslog had instead of the offset line, once a second from the re-open until
+the restart, was
+
+    STSCertified: [(..):UpnpState:INFO]CommonHandleAudioStatus: Audio Path state 'PLAYING error #0 for stale UrlID 1
+
+with no `ReadyToWrite Interrupted` line (the buffer writer's stall, which comes
+twice a second while paused). That is the audio path still reporting its play
+under the URL id the UPnP account has just retired, so the account counts
+none of it. The restart is still needed (the account stays on the paused
+second, the app shows the file paused), but the end watch now restarts such a
+resume at the paused position plus the length of that run (`StalePlayRun` in
+`internal/boxlog`, `stalePlayedOn` in `internal/webui/resumefile.go`): at
+least three lines over two seconds, still going, no buffer stall in it. Any
+other run keeps the paused position, and the log names which. Whether the
+silent freeze of 2026-10-22 logged such a run is not measured; if it did, the
+cost is skipping its silent seconds instead of hearing seconds twice.
+
 The end watch also no longer counts a pause on its wall clock. Before, every
 pause on these speakers ended in a restart that re-anchored it; a resume that
 needs none would otherwise have cut the file short by the pause's length once

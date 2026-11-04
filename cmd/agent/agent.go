@@ -1605,6 +1605,10 @@ func (a *agent) buildBoxLink() error {
 	// measured) and the real freeze's own lines, so a paused file is not
 	// restarted over a healthy play (#830).
 	webuiSrv.SetBoxLogPlayClockFns(keyTrace.AudioPathOffset, keyTrace.StaleURLIDSince)
+	// The audio path's per-second status under a stale URL id: a resume the
+	// speaker plays on while its clocks stand still is restarted where the
+	// listener is, not thrown back to the pause (#830, 2026-11-03).
+	webuiSrv.SetBoxLogStalePlayRunFn(keyTrace.StalePlayRun)
 	wsHandler.strSourceRecently = wsClient.UPnPActiveRecently
 	// While the socket is up the bus's own standby frame is what acts (it
 	// arrives with the key stamp the standby classifier reads); the ring's

@@ -119,3 +119,25 @@ func (r *Reader) StaleURLIDSince(t time.Time) bool {
 	}
 	return r.forensics.staleURLIDSince(t)
 }
+
+// StalePlayRun returns the current run of the audio path's once-a-second
+// "Audio Path state 'PLAYING error #0 for stale UrlID N" lines: when the run
+// began, when its newest line was read, how many lines it has, and whether the
+// speaker's buffer writer was interrupted during it ("ReadyToWrite
+// Interrupted", which a pause brings). lines is 0 when no run is going; an
+// "Audio path offset" line or a non-PLAYING stale status ends a run.
+//
+// Measured on an ST10 (FW 27.0.6, 2026-11-03, #830): after the speaker's own
+// resume of a directly played file these lines came once a second, RelTime and
+// the offset line stood on the paused second, and the listener heard the file
+// play on from the pause. The run is how long the audio path has played on
+// while the account counted nothing, which is where a restart has to continue.
+// Whether the silent freeze of 2026-10-22 logged such a run is not measured.
+// Safe for concurrent use; a nil reader reports no run.
+func (r *Reader) StalePlayRun() (first, last time.Time, lines int, stalled bool) {
+	if r == nil || r.forensics == nil {
+		return time.Time{}, time.Time{}, 0, false
+	}
+	run := r.forensics.stalePlayRunNow()
+	return run.first, run.last, run.lines, run.stalled
+}

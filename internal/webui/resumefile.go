@@ -249,6 +249,111 @@ func (s *Server) SetBoxLogPlayClockFns(offset func() (int, time.Time, bool), sta
 	s.staleURLIDSinceFn = staleSince
 }
 
+// SetBoxLogStalePlayRunFn wires the speaker syslog's run of PLAYING status
+// lines under a stale URL id (boxlog.Reader.StalePlayRun) for the end watch's
+// repair (stalePlayedOn). Set before serving; nil restarts a frozen resume at
+// its paused position.
+func (s *Server) SetBoxLogStalePlayRunFn(fn func() (first, last time.Time, lines int, stalled bool)) {
+	s.stalePlayRunFn = fn
+}
+
+// A resume that plays on while the speaker's clocks stand still (#830,
+// jungundeck, ST10 FW 27.0.6, 2026-11-03, agent v1.5.0). A custom-URL preset
+// playing an 80 MB MP3 from a NAS, paused and resumed with the speaker's own
+// PLAY_PAUSE key. The listener heard the file continue from the pause at once;
+// about thirteen seconds later STR restarted it at the paused position and the
+// same stretch came twice. The bundle's syslog through that window:
+//
+//	20:55:38.388  PLAY_PAUSE (pause); "ReadyToWrite Interrupted" twice a second
+//	20:55:40.429  Select(url) again, "IsCurrentUrlId(urlId:1) - urlId mismatch. m_urlId:2"
+//	20:55:40-53   "Audio Path state 'PLAYING error #0 for stale UrlID 1", once a second,
+//	              no "Audio path offset" line and no "ReadyToWrite Interrupted"
+//	20:55:53.033  the repair: relTime1=relTime2=14m27s, offset 14m27s age 14.1 s,
+//	              staleURL=true -> Stop, Play, Seek 14m27s
+//
+// So both clocks stood on the paused second and the stale-URL line was there,
+// every piece of evidence the repair has for the real freeze, while the audio
+// path played on: the once-a-second PLAYING status is that audio path still
+// reporting its play, under the URL id the account has just retired, which is
+// why the account counts none of it. The restart cannot be skipped (the
+// account stays on the paused second, the app shows the file paused, and the
+// end watch has no clock), but it must continue where the listener is: the
+// paused position plus how long that run has gone on. A run in which the
+// buffer writer stalled is a pause again and gets no credit. Whether the silent
+// freeze of 2026-10-22 logged such a run is not measured; if it did, the cost
+// is skipping the seconds it stood silent, never hearing them twice.
+
+// staleRunMinLines and staleRunMinSpan are what makes a run of stale-id
+// PLAYING lines a play that goes on rather than the one or two lines a restart
+// or a re-open logs: three lines over at least two seconds.
+const (
+	staleRunMinLines = 3
+	staleRunMinSpan  = 2 * time.Second
+)
+
+// stalePlay is stalePlayedOn's answer: whether the audio path has been playing
+// on under a stale URL id since the resume, for how long, and the run's raw
+// shape for the log.
+type stalePlay struct {
+	ok     bool
+	played time.Duration
+	why    string
+}
+
+// stalePlayedOn reports whether the speaker's audio path has played on since
+// since under a stale URL id, and for how long: a run of its once-a-second
+// PLAYING status that began at or after since, has at least staleRunMinLines
+// lines over staleRunMinSpan, is still going (newest line at most
+// audioOffsetFresh old) and saw no buffer stall. played counts from the run's
+// first line to now. why names the deciding signal either way.
+func (s *Server) stalePlayedOn(since time.Time) stalePlay {
+	if s.stalePlayRunFn == nil {
+		return stalePlay{why: "no syslog run reader"}
+	}
+	first, last, lines, stalled := s.stalePlayRunFn()
+	now := time.Now()
+	shape := strconv.Itoa(lines) + " lines over " + last.Sub(first).Round(100*time.Millisecond).String() +
+		", newest " + now.Sub(last).Round(100*time.Millisecond).String() + " ago"
+	switch {
+	case lines == 0:
+		return stalePlay{why: "no stale-id PLAYING run"}
+	case !since.IsZero() && first.Before(since):
+		return stalePlay{why: "the stale-id PLAYING run began before this resume (" + shape + ")"}
+	case lines < staleRunMinLines || last.Sub(first) < staleRunMinSpan:
+		return stalePlay{why: "the stale-id PLAYING run is too short to be a play (" + shape + ")"}
+	case now.Sub(last) > audioOffsetFresh:
+		return stalePlay{why: "the stale-id PLAYING run has stopped (" + shape + ")"}
+	case stalled:
+		return stalePlay{why: "the buffer writer stalled during the stale-id PLAYING run (" + shape + ")"}
+	}
+	return stalePlay{ok: true, played: now.Sub(first),
+		why: "the audio path played on under a stale URL id (" + shape + ")"}
+}
+
+// staleHoldLead lets a stale-id PLAYING run that began a little before the
+// end watch last saw the position move still count for that freeze: the watch
+// polls every few seconds, so its lastPosAt can trail the resume.
+const staleHoldLead = 5 * time.Second
+
+// frozenButPlaying reports whether a position the frozen-position end net
+// reads as an end is a speaker still playing under a stale URL id.
+//
+// Live, ST10 on FW 27.0.6 (2026-11-04): a 20 minute MP3 with no known length,
+// paused at 68 s with the speaker's PLAY_PAUSE key and resumed 2.5 s later.
+// The pause fell between two polls of the end watch, so resumeFreezeClock never
+// ran; the audio path then reported "PLAYING error #0 for stale UrlID 1" once a
+// second while the position stayed on 68 s, and 19 s after the resume the net
+// "learned" a 68 s length and stopped a speaker that was playing. While that
+// run is alive the freeze is not an end; once the audio stops, the run goes
+// stale and the net decides as before.
+func (s *Server) frozenButPlaying(lastPosAt time.Time) stalePlay {
+	since := lastPosAt
+	if !since.IsZero() {
+		since = since.Add(-staleHoldLead)
+	}
+	return s.stalePlayedOn(since)
+}
+
 // audioPathOffset is the speaker's syslog play clock as a position, and when
 // the line was read; ok=false without the reader or before its first line.
 func (s *Server) audioPathOffset() (time.Duration, time.Time, bool) {
@@ -624,6 +729,25 @@ func (s *Server) repairFrozenFileResume(tr singleTrack, gen uint64, at time.Dura
 	}
 	if s.userStoppedRecently() && !s.pausedNotStopped() {
 		return
+	}
+	// Read under the lock, right before the restart silences the speaker: the
+	// time the audio path has played on is counted up to that moment, so the
+	// file continues where the listener last heard it (see stalePlayedOn).
+	if v.stale {
+		sp := s.stalePlayedOn(since)
+		attrs = append(attrs, "staleRun", sp.why)
+		if sp.ok {
+			to := at + sp.played
+			attrs = append(attrs, "playedOn", sp.played.Round(100*time.Millisecond).String(), "restartAt", to.String())
+			eps := productionQueueTiming.endEpsilon
+			if tr.dur > 0 && to >= tr.dur-eps {
+				s.logger.Info("resume of a file: the speaker played on under a stale URL id to the end of the file, no restart", attrs...)
+				return
+			}
+			s.logger.Warn("resume of a file: the speaker plays on under a stale URL id, restarting it where it is now, not at the paused position", attrs...)
+			s.restartFileAtLocked(s.queueCtx(), tr, to, "frozen resume that played on")
+			return
+		}
 	}
 	s.logger.Warn("resume of a file froze on the speaker, restarting it at the paused position", attrs...)
 	s.restartFileAtLocked(s.queueCtx(), tr, at, "frozen resume")
