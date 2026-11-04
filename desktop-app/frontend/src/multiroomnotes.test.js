@@ -66,7 +66,9 @@ describe('group master default', () => {
     const pairs = fn.indexOf('const groupablePairIDs');
     // The default (stored group's main speaker, else the first card) is drawn
     // from zoneBoxes, the pair-free set.
-    const def = fn.indexOf('defaultZoneMasterID(state.zoneLive, strBoxes, zoneBoxes)');
+    // From the reachable ones among them when any answers (#1741).
+    const def = fn.indexOf('defaultZoneMasterID(state.zoneLive, strBoxes, starPool.length ? starPool : zoneBoxes)');
+    expect(fn).toContain('const starPool = zoneBoxes.filter(b => !boxUnreachable(b));');
     expect(pairs).toBeGreaterThan(-1);
     expect(def).toBeGreaterThan(pairs);
     expect(fn).not.toContain('strBoxes[0].deviceID');

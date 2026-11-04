@@ -95,7 +95,7 @@ func TestBoxFieldPolicyCoversEveryField(t *testing.T) {
 func TestMergeWithSelfIsIdentity(t *testing.T) {
 	full := BoxInfo{Name: "n", Host: "h", Port: 17008, DeviceID: "d", BoxDeviceID: "bd", FriendlyName: "Küche",
 		Model: "SoundTouch 10", Version: "v1", Build: "b", AgentBinarySha256: "s1", AgentRunningSha256: "s2", PresetRows: "2",
-		Offline: true, OfflineSinceSec: 1, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
+		Offline: true, OfflineSinceSec: 1, Unreachable: true, STRNotRunning: false, STRSilent: true, OTAPending: true, BoxHealth: "ok",
 		Internet: "ok", InternetReason: "r", ArcadeAt: "1", ConflictingMod: "c", ForeignCloudURL: "f",
 		GroupKeyError: "g", GroupKeyErrorKind: "other", WeakWifiDropout: "POOR_SIGNAL", WeakWifiDropoutAgeSec: 4, HoldRefusedSource: "SPOTIFY", HoldRefusedSlot: "3", StaleFolderKeySlot: "1", Storm1036: true, Storm1036SinceSec: 2,
 		RecallRefusal: true, RecallRefusalSinceSec: 3, WLANCredsMissing: true, LANAddrs: "a,b", WiredAddrs: "a", SerialNumber: "sn", Kind: "str", PortVerified: true}
@@ -152,6 +152,7 @@ func TestMergeBoxInfoFieldPins(t *testing.T) {
 
 		{"Offline", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), false, "a cached offline marker never survives a sighting"},
 		{"OfflineSinceSec", str(BoxInfo{Offline: true, OfflineSinceSec: 90}), str(BoxInfo{}), 0, "nor does its age"},
+		{"Unreachable", str(BoxInfo{Unreachable: true}), str(BoxInfo{}), false, "a missed cycle is never carried into the next sighting (#1741)"},
 		{"STRSilent", str(BoxInfo{STRSilent: true}), str(BoxInfo{}), false, "STRSilent is per cycle, never carried"},
 		{"OTAPending", str(BoxInfo{OTAPending: true}), str(BoxInfo{}), false, "OTAPending is per cycle, never carried"},
 
@@ -258,6 +259,7 @@ func TestMergeSameKindFieldPins(t *testing.T) {
 
 		{"Offline", m(BoxInfo{Offline: true}), v(BoxInfo{}), true, "per-cycle annotation: the first"},
 		{"OfflineSinceSec", m(BoxInfo{OfflineSinceSec: 9}), v(BoxInfo{}), 9, "the first"},
+		{"Unreachable", m(BoxInfo{Unreachable: true}), v(BoxInfo{}), true, "the first"},
 		{"STRNotRunning", m(BoxInfo{STRNotRunning: true}), v(BoxInfo{}), true, "the first"},
 		{"STRSilent", m(BoxInfo{STRSilent: true}), v(BoxInfo{}), true, "the first"},
 		{"OTAPending", m(BoxInfo{OTAPending: true}), v(BoxInfo{}), true, "the first"},

@@ -70,6 +70,14 @@ func differentDevices(a, b BoxInfo) bool {
 	return !boxIsDevice(b, a.DeviceID) && (a.BoxDeviceID == "" || !boxIsDevice(b, a.BoxDeviceID))
 }
 
+// servedUnreachable is the copy of a cached record that is served for a
+// speaker this cycle did not reach: unchanged, except that it says so (#1741).
+// The cached record itself stays clean, like the Offline annotation.
+func servedUnreachable(b BoxInfo) BoxInfo {
+	b.Unreachable = true
+	return b
+}
+
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
 // cycle, then re-adds any cached box this cycle missed but which was
 // seen within discoveryStickyTTL (keeping its last-known record, NOT
@@ -127,6 +135,7 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		// merge carried over from the cached record.
 		b.Offline = false
 		b.OfflineSinceSec = 0
+		b.Unreachable = false
 		e := discEntry{box: b, seen: now}
 		// Agent-silence streak: the box counts as STR (cached, or promoted by
 		// the merge) but only its stock :8090 answered this cycle. A confirmed
@@ -221,15 +230,15 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			// box got deselected, and nothing ever brought it back).
 			e.firstMiss = now
 			a.discCache[key] = e
-			seen[key] = e.box
+			seen[key] = servedUnreachable(e.box)
 		} else if now.Sub(e.firstMiss) <= ttl {
-			seen[key] = e.box
+			seen[key] = servedUnreachable(e.box)
 		} else if now.Sub(e.firstMiss) <= discoveryOfflineRetention {
 			// Missed every probe past the reboot grace: keep the tile, greyed
 			// out, instead of dropping it (sticky list, 2026-07-26). The box
 			// record is annotated on the fly; the cached record stays clean so
 			// a comeback restores it verbatim.
-			b := e.box
+			b := servedUnreachable(e.box)
 			b.Offline = true
 			b.OfflineSinceSec = int(now.Sub(e.firstMiss).Seconds())
 			seen[key] = b
@@ -318,7 +327,9 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		// once cached, it could not be tied to its speaker again, so nothing
 		// evicted it when the speaker turned up at another address.
 		if !synthesized || b.DeviceID != "" {
-			a.discCache[host] = discEntry{box: b, seen: now}
+			cached := b
+			cached.Unreachable = false
+			a.discCache[host] = discEntry{box: cached, seen: now}
 		}
 		b.OTAPending = true
 		seen[host] = b
@@ -362,6 +373,7 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		seen[host] = b
 		e := a.discCache[host]
 		e.box = b
+		e.box.Unreachable = false
 		e.seen = now
 		a.discCache[host] = e
 	}
@@ -865,7 +877,7 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	for h, b := range offline {
 		if _, ok := seen[h]; !ok {
-			out = append(out, b)
+			out = append(out, servedUnreachable(b))
 		}
 	}
 	a.logger.Info("refresh known boxes done",

@@ -111,3 +111,55 @@ func TestPresenceOnlyDoesNotRefreshSTRIdentity(t *testing.T) {
 		t.Fatalf("confirmed STR sighting must refresh the identity memory")
 	}
 }
+
+// A speaker that did not answer this cycle keeps its tile as it was inside the
+// reboot grace, but the served copy says it was not reached, so the group
+// editor can stop offering it (#1741: ten minutes into a Wi-Fi outage three
+// speakers were still offered for a group, and the create failed with
+// "box_not_ready: master"). The cached record stays clean, and the first
+// answer clears the mark.
+func TestMissedCycleMarksServedCopyUnreachable(t *testing.T) {
+	a := testApp()
+	host := "192.0.2.13"
+	a.discCache = map[string]discEntry{
+		host: {box: BoxInfo{Host: host, Kind: "str", DeviceID: "DEV13"}, seen: time.Now()},
+	}
+
+	// First miss: listed, not offline, but not reached.
+	seen := map[string]BoxInfo{}
+	a.mergeDiscoveryCacheWith(seen, nil)
+	if b := seen[host]; !b.Unreachable || b.Offline {
+		t.Fatalf("first miss must serve unreachable=true offline=false, got %+v", b)
+	}
+	if a.discCache[host].box.Unreachable {
+		t.Fatalf("the cached record must stay clean")
+	}
+
+	// Still inside the grace window.
+	e := a.discCache[host]
+	e.firstMiss = time.Now().Add(-discoverySTRStickyTTL + 30*time.Second)
+	a.discCache[host] = e
+	seen = map[string]BoxInfo{}
+	a.mergeDiscoveryCacheWith(seen, nil)
+	if b := seen[host]; !b.Unreachable || b.Offline {
+		t.Fatalf("inside the grace window: unreachable=true offline=false, got %+v", b)
+	}
+
+	// Past the grace window: offline AND unreachable.
+	e = a.discCache[host]
+	e.firstMiss = time.Now().Add(-discoverySTRStickyTTL - time.Minute)
+	a.discCache[host] = e
+	seen = map[string]BoxInfo{}
+	a.mergeDiscoveryCacheWith(seen, nil)
+	if b := seen[host]; !b.Unreachable || !b.Offline {
+		t.Fatalf("past the grace window: unreachable=true offline=true, got %+v", b)
+	}
+
+	// The speaker answers again: the mark is gone, even if the sighting
+	// arrived carrying it.
+	seen = map[string]BoxInfo{host: {Host: host, Kind: "str", DeviceID: "DEV13", Unreachable: true}}
+	a.mergeDiscoveryCacheWith(seen, nil)
+	if b := seen[host]; b.Unreachable || b.Offline {
+		t.Fatalf("a genuine sighting must clear both marks, got %+v", b)
+	}
+}
