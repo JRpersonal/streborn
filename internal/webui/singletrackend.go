@@ -186,6 +186,10 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// ranAhead: the position was once further than the box can have
 		// played since the push (positionRunsAhead); logged once per play.
 		ranAhead bool
+		// staleHeld: the frozen-position net is being held because the
+		// speaker still plays under a stale URL id (frozenButPlaying); logged
+		// once per hold.
+		staleHeld bool
 		// resume: recognises a resume the firmware froze (resumefile.go).
 		resume = fileResumeWatch{endEpsilon: qt.endEpsilon, freezeAfter: s.fileResumeTimes().freezeAfter}
 		// logPausedAt is this pause's position from the speaker's syslog
@@ -423,6 +427,18 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		in.ranAhead = ranAhead
 		in.echoedTotal = tr.claimedLength && obsTotal > 0 && absDur(obsTotal-tr.dur) <= qt.ownEndSlack
 		if net := trackEndNet(in); net != endNetNone {
+			if net == endNetFrozen {
+				if sp := s.frozenButPlaying(lastPosAt); sp.ok {
+					if !staleHeld {
+						staleHeld = true
+						s.logger.Info("single track: the position is frozen but the speaker still plays it, not an end",
+							"title", title, "posSec", int(lastPos.Seconds()), "trackSec", int(end.Seconds()),
+							"staleRun", sp.why)
+					}
+					continue
+				}
+				staleHeld = false
+			}
 			if net == endNetFrozen && end == 0 && resumeUnmoved {
 				// A whole freeze timeout on the paused second after the
 				// resume, with no length to say the file ended there: the

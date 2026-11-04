@@ -330,6 +330,30 @@ func (s *Server) stalePlayedOn(since time.Time) stalePlay {
 		why: "the audio path played on under a stale URL id (" + shape + ")"}
 }
 
+// staleHoldLead lets a stale-id PLAYING run that began a little before the
+// end watch last saw the position move still count for that freeze: the watch
+// polls every few seconds, so its lastPosAt can trail the resume.
+const staleHoldLead = 5 * time.Second
+
+// frozenButPlaying reports whether a position the frozen-position end net
+// reads as an end is a speaker still playing under a stale URL id.
+//
+// Live, ST10 on FW 27.0.6 (2026-11-04): a 20 minute MP3 with no known length,
+// paused at 68 s with the speaker's PLAY_PAUSE key and resumed 2.5 s later.
+// The pause fell between two polls of the end watch, so resumeFreezeClock never
+// ran; the audio path then reported "PLAYING error #0 for stale UrlID 1" once a
+// second while the position stayed on 68 s, and 19 s after the resume the net
+// "learned" a 68 s length and stopped a speaker that was playing. While that
+// run is alive the freeze is not an end; once the audio stops, the run goes
+// stale and the net decides as before.
+func (s *Server) frozenButPlaying(lastPosAt time.Time) stalePlay {
+	since := lastPosAt
+	if !since.IsZero() {
+		since = since.Add(-staleHoldLead)
+	}
+	return s.stalePlayedOn(since)
+}
+
 // audioPathOffset is the speaker's syslog play clock as a position, and when
 // the line was read; ok=false without the reader or before its first line.
 func (s *Server) audioPathOffset() (time.Duration, time.Time, bool) {

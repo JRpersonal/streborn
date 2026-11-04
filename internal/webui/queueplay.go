@@ -1200,6 +1200,15 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 				"climbing", climbing, "atOwnEnd", atOwnEnd, "inZone", inZone,
 				"pollSec", interval.Seconds(), "decision", net.String())
 		}
+		if net == endNetFrozen {
+			// A resume that froze the position while the audio path plays on
+			// under a stale URL id is not the end of the track (frozenButPlaying).
+			if sp := s.frozenButPlaying(lastPosAt); sp.ok {
+				s.logger.Debug("queue watcher: the position is frozen but the speaker still plays it, not an end",
+					"title", s.queueCurrentTitle(), "posSec", int(lastPos.Seconds()), "staleRun", sp.why)
+				net = endNetNone
+			}
+		}
 		if net != endNetNone {
 			s.advanceAndPlayEnded(true, curGen, net.why(), in.report(net))
 			continue
