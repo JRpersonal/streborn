@@ -8,7 +8,7 @@
 // the green badge while B was actually playing "101 SMOOTH JAZZ".
 import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from './state.js';
-import { cardIsPlaying } from './views/recent.js';
+import { cardIsPlaying, cardOwnTime } from './views/recent.js';
 
 const boxA = { deviceID: 'DEV-A', host: '192.0.2.10', port: 8888 };
 const boxB = { deviceID: 'DEV-B', host: '192.0.2.11', port: 8888 };
@@ -94,10 +94,37 @@ describe('cardIsPlaying folder cards follow the active queue', () => {
     expect(cardIsPlaying(folder)).toBe(true);
   });
 
+  // #1744: a key-started folder files its rows under recent_card, while card
+  // keeps naming the key. Two playlists played from key 6 are two cards.
+  it('matches a key-started folder on recent_card, not on the key card', () => {
+    const rush = { boxKey: 'DEV-A', source: 'upnp', cardKey: 'queue:slot:6:bbbb2222', name: 'Rush favorites', url: 'http://192.0.2.5/r1.flac' };
+    const scott = { boxKey: 'DEV-A', source: 'upnp', cardKey: 'queue:slot:6:aaaa1111', name: 'Scott Stapp Collection', url: 'http://192.0.2.5/s1.flac' };
+    state.nowName = 'Bravest Face';
+    state.nowLocation = 'http://192.0.2.5/r2.flac';
+    state.queue = { active: true, card: 'queue:slot:6', recent_card: 'queue:slot:6:bbbb2222' };
+    expect(cardIsPlaying(rush)).toBe(true);
+    expect(cardIsPlaying(scott)).toBe(false);
+  });
+
   it('ignores a finished queue', () => {
     state.nowName = 'Track two';
     state.nowLocation = 'http://192.0.2.5/t2.flac';
     state.queue = { active: false, card: 'queue:uuid:server-1:64$1' };
     expect(cardIsPlaying(folder)).toBe(false);
+  });
+});
+
+// #1592: a card without song rows (a single library file, a station that never
+// named a song) shows its own time; a card with rows leaves it to the rows.
+describe('cardOwnTime', () => {
+  const ts = '2026-11-04T21:16:00Z';
+  it('gives a card without song rows its time', () => {
+    expect(cardOwnTime({ ts, tracks: [] })).toContain('rc-card-time');
+  });
+  it('leaves the time to the song rows', () => {
+    expect(cardOwnTime({ ts, tracks: [{ track: 'A - B', ts }] })).toBe('');
+  });
+  it('stays empty without a valid time', () => {
+    expect(cardOwnTime({ ts: 'nope', tracks: [] })).toBe('');
   });
 });

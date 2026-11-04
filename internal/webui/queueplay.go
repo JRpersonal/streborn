@@ -140,7 +140,8 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
-	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source}
+	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source,
+		recentKey: slotFolderRecentKey(slot, p)}
 	// -1 = the user recalled the whole preset without picking a track, so with
 	// shuffle on the queue may start anywhere (#490).
 	if err := s.startQueue(ctx, items, -1, shuffle, rep, card); err != nil {
@@ -590,7 +591,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		if card.url == it.URL {
 			cardDur = int(it.Duration / time.Second)
 		}
-		s.recentNoteQueueCard(card.key, card.name, card.art, card.url, it.Mime, cardDur)
+		s.recentNoteQueueCard(card, it.Mime, cardDur)
 	} else {
 		s.recentClearQueueCard()
 	}
@@ -2239,6 +2240,9 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 	if snap.Active {
 		s.recentMu.Lock()
 		snap.Card = s.recentQueueCard.key
+		if rk := s.recentQueueCard.rowKey(); rk != snap.Card {
+			snap.RecentCard = rk
+		}
 		s.recentMu.Unlock()
 		// A queue started from a key already names it in its card; matching the
 		// tracks as well would light a second key that holds the same folder.

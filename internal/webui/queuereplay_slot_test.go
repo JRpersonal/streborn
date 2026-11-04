@@ -20,7 +20,7 @@ func TestSlotFolderCardSlot(t *testing.T) {
 		"queue:slot:3":   3,
 		" queue:slot:12": 12,
 	} {
-		got, ok := slotFolderCardSlot(key)
+		got, _, ok := slotFolderCardSlot(key)
 		if !ok || got != want {
 			t.Errorf("slotFolderCardSlot(%q) = %d, %v; want %d, true", key, got, ok, want)
 		}
@@ -33,7 +33,7 @@ func TestSlotFolderCardSlot(t *testing.T) {
 		"spotify:playlist:37i9dQ",
 		"",
 	} {
-		if _, ok := slotFolderCardSlot(key); ok {
+		if _, _, ok := slotFolderCardSlot(key); ok {
 			t.Errorf("slotFolderCardSlot(%q) read a slot card", key)
 		}
 	}
@@ -57,7 +57,7 @@ func TestSlotStillHoldsFolder(t *testing.T) {
 		{"empty key", presets.Preset{}, false, "Power Windows", false},
 	}
 	for _, c := range cases {
-		if got := slotStillHoldsFolder(c.p, c.found, c.card); got != c.want {
+		if got := slotStillHoldsFolder(c.p, c.found, c.card, ""); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}

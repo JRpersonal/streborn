@@ -490,7 +490,8 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// fetch racing this app-initiated recall can hold for the first track
 		// (mirrors the hardware RecallSlot path).
 		s.armQueueRecall(slot)
-		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source}
+		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source,
+			recentKey: slotFolderRecentKey(slot, p)}
 		// -1 = the whole preset, no track picked: with shuffle on the queue
 		// starts on a random song, as the hardware key does (#490). Passing 0
 		// here pinned the folder's first song to the front of every shuffled
@@ -1012,11 +1013,22 @@ func (s *Server) recentNoteEntry(e recent.Entry) {
 // durationSec is the length of that first track (0 = unknown). When the app
 // cannot replay the whole folder it falls back to playing the one stored URL,
 // which then still gets its progress bar (#845).
-func (s *Server) recentNoteQueueCard(key, name, art, url, mime string, durationSec int) {
+//
+// card.key is the queue's own identity (GET /api/queue names it); the rows go
+// under card.recentKey when it is set (a folder started from a key, #1744).
+func (s *Server) recentNoteQueueCard(card recentCardCtx, mime string, durationSec int) {
 	s.recentMu.Lock()
-	s.recentQueueCard = recentCardCtx{key: key, name: name, art: art, url: url, mime: mime, durationSec: durationSec}
+	s.recentQueueCard = recentCardCtx{key: card.key, recentKey: card.recentKey, name: card.name, art: card.art, url: card.url, mime: mime, durationSec: durationSec}
 	s.recentMu.Unlock()
-	s.recentNoteLibraryCard(key, name, art, url, mime, durationSec)
+	s.recentNoteLibraryCard(card.rowKey(), card.name, card.art, card.url, mime, durationSec)
+}
+
+// rowKey is the Recently-played card this context files its rows under.
+func (c recentCardCtx) rowKey() string {
+	if c.recentKey != "" {
+		return c.recentKey
+	}
+	return c.key
 }
 
 // recentNoteQueueTrack hangs the track the play-queue just started under the
@@ -1039,7 +1051,7 @@ func (s *Server) recentNoteQueueTrack(track, artist string) {
 	if c.key == "" {
 		return
 	}
-	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Mime: c.mime, DurationSec: c.durationSec})
+	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.rowKey(), CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Mime: c.mime, DurationSec: c.durationSec})
 }
 
 // recentClearQueueCard forgets the active folder card so later tracks (a single

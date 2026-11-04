@@ -24,6 +24,8 @@ package webui
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"net/http"
 	"strconv"
 	"strings"
@@ -160,8 +162,8 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 	// A folder started from a preset key is recorded as "queue:slot:N"
 	// (playSlot), not under its server and container, so the split below has
 	// nothing to work with. Replay it the way the key itself plays it.
-	if slot, isSlotCard := slotFolderCardSlot(req.Key); isSlotCard {
-		s.replaySlotFolderCard(w, r, slot, req.Name)
+	if slot, tag, isSlotCard := slotFolderCardSlot(req.Key); isSlotCard {
+		s.replaySlotFolderCard(w, r, slot, req.Name, tag)
 		return
 	}
 	// An old phone folder card is replayed under the canonical key, so the queue
@@ -243,24 +245,62 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 // it as server "slot", container "N", answered 404, and the app fell back to
 // playing the folder's first file alone: one song, then silence, under a new
 // card without a song row and so without a time (#1592, 2026-11-03).
-func slotFolderCardSlot(key string) (int, bool) {
-	rest, ok := strings.CutPrefix(strings.TrimSpace(key), queueCardKeyPrefix+"slot:")
-	if !ok {
-		return 0, false
+//
+// The Recently-played form carries the folder's tag as well,
+// "queue:slot:N:<tag>" (slotFolderRecentKey); tag is "" for the bare form.
+func slotFolderCardSlot(key string) (slot int, tag string, ok bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(key), queueCardKeyPrefix+"slot:")
+	if !found {
+		return 0, "", false
 	}
-	slot, err := strconv.Atoi(rest)
+	num, tag, _ := strings.Cut(rest, ":")
+	slot, err := strconv.Atoi(num)
 	if err != nil || slot < 1 {
-		return 0, false
+		return 0, "", false
 	}
-	return slot, true
+	return slot, tag, true
+}
+
+// slotFolderRecentKey is the Recently-played card of a folder started from key
+// slot: "queue:slot:N:<tag>", where the tag names the folder the key holds.
+//
+// The bare "queue:slot:N" named only the key, so every folder that was ever on
+// that key fell into one card: play one playlist from key 6, save another on
+// key 6, press it, and the second playlist's songs were filed under the first
+// one's card, whose cover then turned into the second one's (#1744,
+// 2026-11-04). The queue itself keeps the bare form, which lights the key.
+func slotFolderRecentKey(slot int, p presets.Preset) string {
+	return fmt.Sprintf("%sslot:%d:%s", queueCardKeyPrefix, slot, slotFolderTag(p))
+}
+
+// slotFolderTag is a short stable name for the folder a key holds: the media
+// server's folder when the key knows it (a renamed key stays the same card),
+// otherwise the key's name, otherwise its first track.
+func slotFolderTag(p presets.Preset) string {
+	id := ""
+	switch {
+	case p.Folder != nil && p.Folder.ContainerID != "":
+		id = "f\n" + udnKey(p.Folder.ServerUDN) + "\n" + p.Folder.ContainerID
+	case strings.TrimSpace(p.Name) != "":
+		id = "n\n" + strings.ToLower(strings.TrimSpace(p.Name))
+	case len(p.Items) > 0:
+		id = "u\n" + p.Items[0].URL
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	return fmt.Sprintf("%08x", h.Sum32())
 }
 
 // slotStillHoldsFolder reports whether the key a card was played from still
-// holds that folder: a folder preset under the card's name. A key given
-// something else since is not the album the user tapped.
-func slotStillHoldsFolder(p presets.Preset, found bool, cardName string) bool {
+// holds that folder: a folder preset under the card's name, and with the
+// card's folder tag when the card carries one. A key given something else
+// since is not the album the user tapped.
+func slotStillHoldsFolder(p presets.Preset, found bool, cardName, tag string) bool {
 	if !found || p.Type != "queue" || len(p.Items) == 0 {
 		return false
+	}
+	if tag != "" {
+		return slotFolderTag(p) == tag
 	}
 	want := strings.TrimSpace(cardName)
 	return want == "" || strings.EqualFold(strings.TrimSpace(p.Name), want)
@@ -270,13 +310,13 @@ func slotStillHoldsFolder(p presets.Preset, found bool, cardName string) bool {
 // the same path as pressing it (shuffle as the key was saved). When the key no
 // longer holds that folder it answers 404, which keeps the app's older
 // fallback (the card's own first track) rather than playing a different key.
-func (s *Server) replaySlotFolderCard(w http.ResponseWriter, r *http.Request, slot int, cardName string) {
+func (s *Server) replaySlotFolderCard(w http.ResponseWriter, r *http.Request, slot int, cardName, tag string) {
 	var p presets.Preset
 	found := false
 	if s.presets != nil {
 		p, found = s.presets.Get(slot)
 	}
-	if !slotStillHoldsFolder(p, found, cardName) {
+	if !slotStillHoldsFolder(p, found, cardName, tag) {
 		s.logger.Info("folder card replay: the key no longer holds this folder", "slot", slot, "card", cardName, "keyHolds", p.Name)
 		http.Error(w, "the key no longer holds this folder", http.StatusNotFound)
 		return
