@@ -878,8 +878,8 @@ html.ui2 .tabbar button .ti { display:none; }
 <div class="card">
 <div class="label" id="lblInput">Input</div>
 <div class="row c2" id="inputs">
-<button class="btn" id="btnSrcBt" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
-<button class="btn" id="btnSrcAux" onclick="setSource('AUX',this)">AUX</button>
+<button class="btn" id="btnSrcBt" data-src="BLUETOOTH" data-acct="" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
+<button class="btn" id="btnSrcAux" data-src="AUX" data-acct="AUX" onclick="setSource('AUX',this)">AUX</button>
 </div>
 <!-- Radio, Spotify and the music library are not physical inputs, so they live
      on the Find tab. From the Play page they were easy to miss next to AUX and
@@ -1944,8 +1944,40 @@ async function togglePower() {
   await api('/api/box/power', 'POST', { on: target });
   setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
 }
-// setSource selects an input and keeps that button highlighted until another is chosen.
+// The input the speaker itself reports, read by every status poll. The buttons
+// used to be lit only by a tap on this page, so an input chosen in the desktop
+// app, on another phone or with the speaker's own remote left every button
+// grey while the status line said "AUX" (#1739).
+var liveInput = { src: '', acct: '' };
+// A tap lights its button at once; the speaker takes a moment to report the
+// switch, and a poll landing in that moment must not put the old input back.
+var inputTapAt = 0;
+var INPUT_TAP_HOLD_MS = 4000;
+
+// inputIsLive says whether a button stands for the input now playing. The
+// source must match; the account only separates sockets that share a source
+// (a soundbar's PRODUCT inputs carry TV or HDMI_1 there), so an empty account
+// on either side does not count against it: Bluetooth reports none.
+function inputIsLive(bSrc, bAcct, src, acct) {
+  bSrc = String(bSrc || '').toUpperCase();
+  src = String(src || '').toUpperCase();
+  if (!bSrc || bSrc !== src) return false;
+  bAcct = String(bAcct || '').toUpperCase();
+  acct = String(acct || '').toUpperCase();
+  return !bAcct || !acct || bAcct === acct;
+}
+
+function paintActiveInput(force) {
+  if (!force && Date.now() - inputTapAt < INPUT_TAP_HOLD_MS) return;
+  document.querySelectorAll('#inputs .btn').forEach(function(b) {
+    b.classList.toggle('active', inputIsLive(b.dataset.src, b.dataset.acct, liveInput.src, liveInput.acct));
+  });
+}
+
+// setSource selects an input and lights its button; the status poll keeps the
+// light on whichever input the speaker reports from then on.
 async function setSource(s, btn, account) {
+  inputTapAt = Date.now();
   var prevActive = document.querySelector('#inputs .btn.active');
   document.querySelectorAll('#inputs .btn').forEach(function(e){ e.classList.remove('active'); });
   if (btn) btn.classList.add('active');
@@ -1955,6 +1987,7 @@ async function setSource(s, btn, account) {
     // ST20 variant with no Bluetooth answers 409 source_unavailable) or is
     // unreachable: api() returns null for both. Restore the prior highlight and
     // say so, rather than leaving a button lit for an input that never engaged.
+    inputTapAt = 0;
     if (btn) btn.classList.remove('active');
     if (prevActive) prevActive.classList.add('active');
     flashInputNote(T.musicLibFailed);
@@ -2038,9 +2071,13 @@ function renderInputs(sources) {
     b.className = 'btn';
     b.type = 'button';
     b.textContent = inputLabel(x);
+    b.dataset.src = x.source;
+    b.dataset.acct = x.sourceAccount || '';
     b.addEventListener('click', function(){ setSource(x.source, b, x.sourceAccount); });
     card.appendChild(b);
   });
+  // Rebuilt buttons start grey; light the one the speaker last reported.
+  paintActiveInput(true);
   // Two per row reads well up to four inputs; a soundbar with five or six
   // needs the narrower grid or the labels wrap to two lines each.
   card.className = inputs.length > 4 ? 'row c3' : 'row c2';
@@ -3560,6 +3597,8 @@ async function refreshStatus() {
   if (sc0) sc0.classList.remove('offline');
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
+  liveInput = { src: src, acct: (t.match(/sourceAccount="([^"]*)"/) || [])[1] || '' };
+  paintActiveInput(false);
   const nowLoc = (t.match(/location="([^"]*)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   // The station name wins when the speaker (or the agent, #1170) reports one:
