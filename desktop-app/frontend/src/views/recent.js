@@ -255,6 +255,16 @@ function recentClock(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// cardOwnTime is the time of a card that has no song rows to carry one: a
+// single file from the Library or from a key is the card itself, and so is a
+// station that never named a song. Those cards showed no time at all while
+// every song row did (#1592, 2026-11-04).
+export function cardOwnTime(c) {
+  if (!c || (c.tracks && c.tracks.length)) return '';
+  const clock = recentClock(c.ts);
+  return clock ? ` &middot; <span class="rc-card-time">${escapeHtml(clock)}</span>` : '';
+}
+
 // formatTrack splits an ICY title into artist + track, shows the artist
 // emphasised (lead) and the track in dark grey (sub). The StreamTitle never
 // labels which part is which, but the separator is a reliable tell across
@@ -368,7 +378,8 @@ function recentCardHTML(c, i, nowPlaying) {
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
     + (accountLabel ? ` &middot; ${escapeHtml(accountLabel)}` : '')
     + (boxNames.length ? ` &middot; <span class="rc-box">${escapeHtml(boxNames.join(', '))}</span>` : '')
-    + (webUrl ? ` &middot; <a href="#" class="rc-site" id="recSite${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : '');
+    + (webUrl ? ` &middot; <a href="#" class="rc-site" id="recSite${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : '')
+    + cardOwnTime(c);
   const tracks = c.tracks.length
     ? `<div class="rc-tracks">` + c.tracks.map((tr) =>
         `<div class="rc-track"><span class="rc-tr-main">${formatTrack(tr.track)}</span>`
