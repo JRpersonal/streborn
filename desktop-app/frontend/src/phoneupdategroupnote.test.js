@@ -78,6 +78,7 @@ function load({ panels = {} } = {}) {
      function applyScopeUI() {}
      function renderMembers() {}
      function renderGroupAdd() {}
+     function renderGrpEach() {}
      function api() { return env.answers.shift(); }
      ${src}
      return { loadZone, groupNoteDue, zonePollDue, zone: function(){ return zone; },
