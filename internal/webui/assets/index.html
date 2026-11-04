@@ -4279,8 +4279,8 @@ function ui2MemberOf(p) {
     return !m.isSelf && ((id && String(m.deviceID || '').toUpperCase() === id) || (ip && m.ip === ip));
   })[0] || null;
 }
-// A speaker that plays along keeps its minus, the same one the group card
-// has; one that could join keeps its plus (peerRow).
+// A speaker that plays along keeps its minus (the group card shows a cross
+// there, beside the volume steppers); one that could join keeps its plus (peerRow).
 function ui2PeerRow(p) {
   var el = peerRow(p);
   var m = ui2MemberOf(p);
@@ -4550,7 +4550,9 @@ function renderMembers() {
       // no meaning the firmware would accept.
       if (zone.master && !m.isSelf && !zone.stereo) {
         var rm = document.createElement('button');
-        rm.type = 'button'; rm.className = 'btn leavebtn'; rm.textContent = '−';
+        // A cross, not a minus: the member's volume stepper below is a minus
+        // too, and two minuses stacked read as the same control.
+        rm.type = 'button'; rm.className = 'btn leavebtn'; rm.textContent = '✕';
         rm.setAttribute('aria-label', fmt(T.leaveAria || 'Remove {{name}} from the group', { name: m.name || m.ip }));
         rm.addEventListener('click', function(){ leavePeer(m, rm); });
         top.appendChild(rm);
