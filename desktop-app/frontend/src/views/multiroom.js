@@ -16,7 +16,9 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, playModeOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers, boxUnreachable } from '../groups.js';
+// What the editors do and say about a speaker the app cannot reach (#1741).
+import { groupCreateBlock, zoneFormFailure, stereoReachBlock, stereoFormFailure } from '../zonereach.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
 import { pairDisplayName, setPairName, storedPairName } from '../stereoNames.js';
 import { rememberPairName, rememberedPairName } from '../pairnamememory.js';
@@ -204,6 +206,31 @@ export function stopMultiroomLive() {
   if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
 }
 
+// multiroomStrBoxes is the speakers the editors work on: STR speakers with an
+// address and an id (the live-zone map is keyed by deviceID). The press
+// handlers read it at the moment of the press, not from the paint: the minute
+// refresh replaces state.boxes without repainting this view, so a list kept
+// from the paint can be a whole outage old (#1741).
+export function multiroomStrBoxes() {
+  return (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
+}
+
+// zoneFormBusy is true while a group create is on its way. The Create button
+// is disabled for that time, and a second press is ignored.
+let zoneFormBusy = false;
+
+// clearZoneNoteOnEdit drops the last group note when the user changes the
+// selection: whatever it said was about the selection before. Left standing,
+// a "Tap at least one other speaker" from a press during the outage (the
+// ticks had just been dropped as offline) was still on screen after three
+// speakers were ticked, and read as the answer to the next press, which went
+// on to create the group (#1741). Not while a create is on its way: its
+// "loading" note is the current one.
+export function clearZoneNoteOnEdit() {
+  if (zoneFormBusy || !state.zoneMsg) return;
+  setZoneMsg('', { transient: false });
+}
+
 // renderMultiroom paints the Multi-Room view. fetchLive triggers a non-blocking
 // parallel poll of every speaker's live zone after paint (skipped on repaints).
 export function renderMultiroom(fetchLive) {
@@ -212,7 +239,7 @@ export function renderMultiroom(fetchLive) {
   // Require deviceID too: the live-zone map is keyed by deviceID, so a box
   // without one (very early discovery) would key an entry under undefined and
   // collide with the music-tab group frames that share state.zoneLive.
-  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
+  const strBoxes = multiroomStrBoxes();
   const enough = strBoxes.length >= 2;
   if (!state.zoneLive) state.zoneLive = {};
   if (!state.zoneSlaves) state.zoneSlaves = {};
@@ -264,7 +291,12 @@ export function renderMultiroom(fetchLive) {
     // doFormZone looks it up). Assigning the object (v0.9.48) made every
     // comparison false: no card ever showed MAIN and forming silently
     // no-oped on fleets with a live zone answer.
-    state.zoneMaster = (liveNow && !inPair(liveNow) && liveNow.deviceID) || defaultZoneMasterID(state.zoneLive, strBoxes, zoneBoxes);
+    //
+    // A default never lands on a speaker the app cannot reach while another
+    // one answers: it would carry the star into a create that fails for sure
+    // (#1741). A hand-pick is left alone; the Create button says why it waits.
+    const starPool = zoneBoxes.filter(b => !boxUnreachable(b));
+    state.zoneMaster = (liveNow && !inPair(liveNow) && liveNow.deviceID) || defaultZoneMasterID(state.zoneLive, strBoxes, starPool.length ? starPool : zoneBoxes);
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
@@ -420,14 +452,22 @@ export function renderMultiroom(fetchLive) {
         // grid matches the speaker list, but it is not a member or main
         // candidate: it is marked disabled with the reason in place of the
         // "make main" control, and a click on it does nothing.
-        const offline = !isMaster && !!b.offline;
+        //
+        // "Offline" here is everything the app knows it cannot reach: the
+        // grey offline tile, and a speaker that missed the latest refresh but
+        // keeps its tile through the reboot grace (#1741). The main speaker
+        // keeps its star but carries the same note, so the disabled Create
+        // button below has its reason in place.
+        const unreachable = boxUnreachable(b);
+        const offline = !isMaster && unreachable;
         const selected = !isMaster && !offline && !!state.zoneSlaves[b.deviceID];
         const outdated = deps.boxNeedsUpdate(b);
         const model = (b.model && b.model !== 'SoundTouch')
           ? `<span class="box-model">${escapeHtml(b.model)}</span>` : '';
-        const offlineWhy = offline ? t('multiroom.offlineNotSelectable') : '';
+        const offlineWhy = unreachable ? t(b.offline ? 'multiroom.offlineNotSelectable' : 'multiroom.notReachableNotSelectable') : '';
         const foot = isMaster
           ? `<span class="zone-badge">${escapeHtml(t('multiroom.mainBadge'))}</span>`
+            + (unreachable ? ` <span class="zone-offline-note">${escapeHtml(offlineWhy)}</span>` : '')
           : offline
             ? `<span class="zone-offline-note">${escapeHtml(offlineWhy)}</span>`
             : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
@@ -449,6 +489,15 @@ export function renderMultiroom(fetchLive) {
     : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`
       + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '');
   const dis = enough ? '' : ' disabled';
+  // Create group waits, with its reason beside it, while the speakers it
+  // would need cannot be reached, and while a create is already on its way
+  // (a second press would send the same group twice, #1741).
+  const zoneMasterBox = zoneBoxes.find(b => b.deviceID === state.zoneMaster) || null;
+  const createBlock = enough ? groupCreateBlock(zoneMasterBox, zoneBoxes, zoneLabel) : null;
+  const createDis = (!enough || createBlock || zoneFormBusy) ? ' disabled' : '';
+  const createWhy = createBlock
+    ? `<div class="setup-warn small zone-create-why">${escapeHtml(t(createBlock.key, createBlock.params))}</div>`
+    : '';
 
   // Summary line: the group that is LIVE on the speakers, not the group the
   // card selection would make. It used to read state.zoneMaster only, which is
@@ -650,9 +699,10 @@ export function renderMultiroom(fetchLive) {
        </label>
        <div class="zone-name-note muted small">${escapeHtml(t('multiroom.groupNameNote'))}</div>
        <div class="zone-actions">
-         <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t(state.zonePermanent ? 'multiroom.createPermanentBtn' : 'multiroom.createBtn'))}</button>
+         <button id="zoneCreate" class="btn"${createDis}>${escapeHtml(t(state.zonePermanent ? 'multiroom.createPermanentBtn' : 'multiroom.createBtn'))}</button>
          <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
        </div>
+       ${createWhy}
        <div id="zoneResult">${state.zoneMsg || ''}</div>
        <div id="zoneCurrent" class="muted small" style="margin-top:10px">${currentHtml}</div>
      </div>
@@ -791,12 +841,14 @@ export function renderMultiroom(fetchLive) {
         // star is otherwise re-derived (stored group's main speaker first).
         state.zoneMasterHandPick = mk.dataset.id;
         delete state.zoneSlaves[state.zoneMaster];
+        clearZoneNoteOnEdit();
         renderMultiroom();
         return;
       }
       const id = card.dataset.id;
       if (!enough || id === state.zoneMaster || card.getAttribute('aria-disabled') === 'true') return;
       state.zoneSlaves[id] = !state.zoneSlaves[id];
+      clearZoneNoteOnEdit();
       renderMultiroom();
     };
   });
@@ -814,7 +866,7 @@ export function renderMultiroom(fetchLive) {
       const create = $('zoneCreate');
       if (create) create.textContent = t(perm.checked ? 'multiroom.createPermanentBtn' : 'multiroom.createBtn');
     };
-    $('zoneCreate').onclick = () => doFormZone(strBoxes);
+    $('zoneCreate').onclick = () => doFormZone(multiroomStrBoxes());
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
   }
   if (canPair) {
@@ -842,7 +894,7 @@ export function renderMultiroom(fetchLive) {
     };
     if (left) left.onchange = () => { state.stereoLeft = left.value; snapPair(left.value); delete state.stereoName; renderMultiroom(false); };
     if (right) right.onchange = () => { state.stereoRight = right.value; snapPair(right.value); delete state.stereoName; renderMultiroom(false); };
-    $('stereoCreate').onclick = () => doFormStereo(pairCands, strBoxes);
+    $('stereoCreate').onclick = () => doFormStereo(pairCands, multiroomStrBoxes());
     // Keep the typed name across the automatic live-poll repaints (which rebuild
     // this markup wholesale), the same way the L/R selects persist to state.
     const nm = $('stereoName');
@@ -1186,7 +1238,21 @@ async function doFormStereo(pairCands, allBoxes) {
     renderMultiroom(false);
     return;
   }
-  $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  // A half the app already knows it cannot reach is said in plain words
+  // instead of being sent, which came back as "box_not_ready: master" (#1741).
+  // Read from the list as it is now: the dropdowns were painted earlier.
+  const nowRec = (b) => (allBoxes || []).find(x => x.deviceID === b.deviceID) || b;
+  const unreach = stereoReachBlock(nowRec(left), nowRec(right), zoneLabel);
+  if (unreach) {
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t(unreach.key, unreach.params))}</div>`;
+    renderMultiroom(false);
+    return;
+  }
+  // The "loading" note goes through state, like every other note: written to
+  // the DOM only, the next live repaint put the previous note back while the
+  // pairing was still on its way.
+  state.stereoMsg = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  renderMultiroom(false);
   try {
     // An empty field still means "the name these two already have". Sent
     // empty, the agent writes its default "Stereo pair" into the speakers'
@@ -1233,12 +1299,16 @@ async function doFormStereo(pairCands, allBoxes) {
       delete state.stereoName;
     }
   } catch (e) {
-    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    const f = stereoFormFailure(e, zoneLabel(left), zoneLabel(right));
+    state.stereoMsg = `<div class="setup-err">${escapeHtml(t(f.key, f.params))}</div>`;
   }
   finishAction();
 }
 
 async function doFormZone(strBoxes) {
+  // One create at a time: the button is disabled while one is on its way,
+  // and a press that still reaches here (a stale handler) is dropped.
+  if (zoneFormBusy) return;
   // Only speakers that are NOT half of a live stereo pair can be grouped
   // (#792). The grid hides the halves, so the submit must not see them
   // either: a hidden half used to slip in as the default master, and the
@@ -1249,14 +1319,23 @@ async function doFormZone(strBoxes) {
   const groupable = strBoxes.filter(b => !pairs.has(String(b.deviceID || '').toUpperCase()));
   const master = groupable.find(b => b.deviceID === state.zoneMaster);
   const sel = state.zoneSlaves || {};
-  // Never an offline member, even from a tick that predates the offline mark.
-  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID] && !b.offline);
+  // Never an unreachable member, even from a tick that predates the mark.
+  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID] && !boxUnreachable(b));
   if (!master || (!slaveBoxes.length && groupable.length < 2)) {
     setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
   }
   const slaves = slaveBoxes.map(b => ({ deviceID: b.deviceID, ip: b.host }));
+  // The speakers this needs cannot be reached: say that, not "tap a speaker"
+  // (the ticks of unreachable speakers were just dropped) and not the code
+  // the create would come back with (#1741).
+  const block = groupCreateBlock(master, groupable, zoneLabel);
+  if (block) {
+    setZoneMsg(`<div class="setup-warn">${escapeHtml(t(block.key, block.params))}</div>`, { transient: false });
+    renderMultiroom(false);
+    return;
+  }
   if (!slaves.length) {
     setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`, { transient: false });
     renderMultiroom(false);
@@ -1266,7 +1345,14 @@ async function doFormZone(strBoxes) {
   // speaker pulling the same stream) stayed a beta switch nobody used once
   // native worked, so the choice is gone from the page (Jens 2026-09-06).
   const mode = 'native';
-  $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  // The "loading" note goes through the one writer, so the 5 s live repaint
+  // that lands while the speakers wake keeps showing it. Written to the DOM
+  // only, that repaint put the PREVIOUS note back for the seconds the create
+  // took: a stale "Tap at least one other speaker" stood there, then the
+  // green "Group active" replaced it (#1741).
+  zoneFormBusy = true;
+  setZoneMsg(`<div class="muted">${escapeHtml(t('common.loading'))}</div>`, { transient: false });
+  renderMultiroom(false);
   try {
     // Wake the master and every selected member before enrolling them (#70): a box
     // switched off at the speaker still answers STR but would join the zone silent.
@@ -1296,9 +1382,17 @@ async function doFormZone(strBoxes) {
       // verified/missing fields the fallback assumed slaves.length joined and
       // showed a green "Group active" for a group that was never formed (#775).
       const inPair = Array.isArray(res.inPair) && res.inPair.length;
+      // No member answered the readiness probe: the app answers ok:false
+      // with only notReady. Name them; "the main speaker reports no members,
+      // try Mirror mode" was about another failure.
+      const notReadyOnly = !inPair && !res.error && Array.isArray(res.notReady) && res.notReady.length
+        ? res.notReady.map(ip => { const b = strBoxes.find(x => x.host === ip); return b ? zoneLabel(b) : ip; }).join(', ')
+        : '';
       const msg = inPair
         ? t('multiroom.pairNotGroupable')
-        : ((res.error && String(res.error)) || t('multiroom.formedNone'));
+        : notReadyOnly
+          ? t('multiroom.notReady', { names: notReadyOnly })
+          : ((res.error && String(res.error)) || t('multiroom.formedNone'));
       setZoneMsg(`<div class="setup-err">${escapeHtml(msg)}</div>`, { transient: false });
     } else if (res && (res.deferred || res.defined)) {
       // The box only STORED the permanent group: its master was idle, so it was
@@ -1341,7 +1435,10 @@ async function doFormZone(strBoxes) {
       deps.selectBox(master);
     }
   } catch (e) {
-    setZoneMsg(`<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`, { transient: false });
+    const f = zoneFormFailure(e, zoneLabel(master));
+    setZoneMsg(`<div class="setup-err">${escapeHtml(t(f.key, f.params))}</div>`, { transient: false });
+  } finally {
+    zoneFormBusy = false;
   }
   finishAction();
 }

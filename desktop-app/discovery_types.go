@@ -140,6 +140,15 @@ type BoxInfo struct {
 	// started, for the "last seen ..." tooltip; only meaningful while Offline.
 	Offline         bool `json:"offline,omitempty"`
 	OfflineSinceSec int  `json:"offlineSinceSec,omitempty"`
+	// Unreachable marks a speaker that did not answer on THIS refresh but is
+	// still kept on the list as it was, inside the reboot grace above (or past
+	// it, where Offline is set as well). The tile does not grey out for it, on
+	// purpose: a speaker that restarts must not flicker. It is for the places
+	// that would SEND something to the speaker now and fail, such as the group
+	// editor: a Wi-Fi outage of ten minutes still offered all three speakers
+	// for a group and the create failed with "box_not_ready: master" (#1741).
+	// A per-cycle annotation on the served copy, never cached.
+	Unreachable bool `json:"unreachable,omitempty"`
 	// STRNotRunning marks a speaker STR once ran on whose agent has stopped
 	// answering for good while the stock Bose firmware still does (the box
 	// answers :8090, the agent port stays silent across several refreshes:

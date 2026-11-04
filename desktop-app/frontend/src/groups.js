@@ -447,14 +447,25 @@ export function livePairFor(livePairs, leftId, rightId) {
   return (livePairs || []).find((p) => stereoPairKey(p) === want) || null;
 }
 
-// dropOfflineMembers removes every speaker the list marks offline from the
-// group editor's member ticks (a { deviceID: true } map, edited in place). An
-// offline speaker cannot join a group, so a tick made while it still answered
+// boxUnreachable reports whether the app knows a speaker cannot be reached
+// right now: the list marks it offline (silent past its reboot grace), or it
+// did not answer the latest refresh (`unreachable`, set by the backend while
+// the tile stays as it was inside that grace). The second half is what a
+// Wi-Fi outage looks like for its first minutes, and longer on a Mac whose
+// sleep pauses the grace clock: all three speakers were still offered for a
+// group and the create failed with "box_not_ready: master" (#1741).
+export function boxUnreachable(b) {
+  return !!(b && (b.offline || b.unreachable));
+}
+
+// dropOfflineMembers removes every speaker the app knows is unreachable from
+// the group editor's member ticks (a { deviceID: true } map, edited in place).
+// Such a speaker cannot join a group, so a tick made while it still answered
 // must not be sent or named. Returns the map for convenience.
 export function dropOfflineMembers(slaves, boxes) {
   if (!slaves) return slaves;
   for (const b of boxes || []) {
-    if (b && b.offline && b.deviceID && slaves[b.deviceID]) delete slaves[b.deviceID];
+    if (boxUnreachable(b) && b.deviceID && slaves[b.deviceID]) delete slaves[b.deviceID];
   }
   return slaves;
 }

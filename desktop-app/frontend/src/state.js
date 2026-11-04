@@ -191,7 +191,7 @@ function isRoutableHost(h) {
 // fills it in a moment later anyway.
 const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
   'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'foreignCloudURL', 'updateAvailable',
-  'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'otaPending', 'internet', 'internetReason',
+  'noWifi', 'wedged', 'offline', 'offlineSinceSec', 'unreachable', 'otaPending', 'internet', 'internetReason',
   'speakerNameUnsafe', 'weakWifiDropout', 'weakWifiDropoutAgeSec'];
 
 function withoutTransientState(b) {

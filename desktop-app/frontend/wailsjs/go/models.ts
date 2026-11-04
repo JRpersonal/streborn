@@ -166,6 +166,7 @@ export namespace main {
 	    presetRows?: string;
 	    offline?: boolean;
 	    offlineSinceSec?: number;
+	    unreachable?: boolean;
 	    strNotRunning?: boolean;
 	    strSilent?: boolean;
 	    otaPending?: boolean;
@@ -215,6 +216,7 @@ export namespace main {
 	        this.presetRows = source["presetRows"];
 	        this.offline = source["offline"];
 	        this.offlineSinceSec = source["offlineSinceSec"];
+	        this.unreachable = source["unreachable"];
 	        this.strNotRunning = source["strNotRunning"];
 	        this.strSilent = source["strSilent"];
 	        this.otaPending = source["otaPending"];

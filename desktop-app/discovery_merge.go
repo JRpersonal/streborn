@@ -244,6 +244,7 @@ var boxFieldPolicy = []fieldPolicy{
 	// merge never carries them from one record to the other.
 	{"Offline", keepBase, keepBase},
 	{"OfflineSinceSec", keepBase, keepBase},
+	{"Unreachable", keepBase, keepBase},
 	// STRNotRunning is remembered across stock sightings by mergeBoxInfo's
 	// post-step (it rewrites the whole record), not by a field rule.
 	{"STRNotRunning", keepBase, keepBase},
