@@ -597,8 +597,12 @@ type forensics struct {
 	// lastStaleURL is when the firmware last discarded a re-opened file as
 	// belonging to a stale URL id (ClassPlayStaleURL).
 	lastStaleURL time.Time
-	dropped      uint64
-	classified   uint64
+	// stalePlay is the current run of the audio path's once-a-second PLAYING
+	// status that the UPnP account refuses as a stale URL id's (see
+	// Reader.StalePlayRun).
+	stalePlay  stalePlayRun
+	dropped    uint64
+	classified uint64
 	// lastPower is the first line of the newest standby/wake transition; the
 	// other daemon's line about the same transition is folded into it (see
 	// power.go).
@@ -663,19 +667,26 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	// The play clock and the stale-URL stamp are read as "now" by the file
 	// resume, so a line logread -f replays from the ring at its (re)start
 	// must not land there as if it had just been logged (see lineIsBacklog).
-	backlog := (isOffset || class == ClassPlayStaleURL) && lineIsBacklog(l.Stamp, now)
+	backlog := (isOffset || class == ClassPlayStaleURL || class == ClassPlayUnderrun) && lineIsBacklog(l.Stamp, now)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
 	f.feedSetupTailLocked(tailLine)
 	if isOffset && !backlog {
 		f.audioOffset, f.audioOffsetAt = offset, now
+		// The account counts the play again: whatever ran under a stale id
+		// is over.
+		f.stalePlay = stalePlayRun{}
 	}
 	if !classified {
 		return ev, false, false
 	}
 	if class == ClassPlayStaleURL && !backlog {
 		f.lastStaleURL = now
+		f.stalePlay.observeStaleLocked(l.Message, now)
+	}
+	if class == ClassPlayUnderrun && !backlog {
+		f.stalePlay.observeStallLocked(now)
 	}
 	if class == ClassSetupAP {
 		f.freezeSetupTailLocked(class, now)
@@ -786,6 +797,61 @@ func parseSyslogStamp(stamp string, now time.Time) (time.Time, bool) {
 // "Audio Path state 'PLAYING error #0 for stale UrlID 12".
 func isStaleURLLine(m string) bool {
 	return strings.Contains(m, "urlId mismatch") || strings.Contains(m, "for stale UrlID")
+}
+
+// stalePlayRunGap is the longest pause between two stale-id PLAYING status
+// lines that still belongs to one run. The audio path reports once a second;
+// three seconds leave room for a busy speaker without joining two resumes.
+const stalePlayRunGap = 3 * time.Second
+
+// stalePlayingMarker is the audio path's per-second status the UPnP account
+// refuses under a stale URL id while the audio path says it plays. Measured on
+// an ST10 (FW 27.0.6, 2026-11-03, #830): after a resume of a directly played
+// file the line came once a second for thirteen seconds, in place of the
+// "Audio path offset N" a counted play logs, while the listener heard the file
+// play on from the pause.
+const stalePlayingMarker = "Audio Path state 'PLAYING error"
+
+// stalePlayRun is one run of stalePlayingMarker lines: when it began, when its
+// newest line was read, how many lines, and whether the speaker's buffer
+// writer stalled ("ReadyToWrite Interrupted", the line a pause brings) during
+// it. Lines is 0 when no run is going.
+type stalePlayRun struct {
+	first, last time.Time
+	lines       int
+	stalled     bool
+}
+
+// observeStaleLocked feeds one stale-URL-id line: a PLAYING status starts or
+// extends the run, any other audio path state ("STOPPED error #0 for stale
+// UrlID", the Stop of a restart) ends it, and the "urlId mismatch" line beside
+// each status changes nothing. The caller holds f.mu.
+func (r *stalePlayRun) observeStaleLocked(msg string, now time.Time) {
+	switch {
+	case strings.Contains(msg, stalePlayingMarker):
+		if r.lines == 0 || now.Sub(r.last) > stalePlayRunGap {
+			*r = stalePlayRun{first: now}
+		}
+		r.last = now
+		r.lines++
+	case strings.Contains(msg, "Audio Path state '"):
+		*r = stalePlayRun{}
+	}
+}
+
+// observeStallLocked marks a going run as stalled when the buffer writer was
+// interrupted while it ran. The caller holds f.mu.
+func (r *stalePlayRun) observeStallLocked(now time.Time) {
+	if r.lines > 0 && now.Sub(r.last) <= stalePlayRunGap {
+		r.stalled = true
+	}
+}
+
+// stalePlayRunNow returns the current stale-id PLAYING run.
+func (f *forensics) stalePlayRunNow() stalePlayRun {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.stalePlay
 }
 
 // audioPathOffset returns the newest audio-path offset and when it was read.

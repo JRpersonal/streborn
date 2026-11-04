@@ -840,6 +840,12 @@ type Server struct {
 	// host without the reader, falls back to the renderer's position alone.
 	audioPathOffsetFn func() (int, time.Time, bool)
 	staleURLIDSinceFn func(time.Time) bool
+	// stalePlayRunFn is the audio path's once-a-second PLAYING status under a
+	// stale URL id (boxlog.Reader.StalePlayRun): how long the speaker has
+	// played on while RelTime and the offset stood still, which is where a
+	// restart of that resume continues (resumefile.go). nil restarts at the
+	// paused position, as before.
+	stalePlayRunFn func() (first, last time.Time, lines int, stalled bool)
 	// queueInZoneFn overrides the queue watcher's zone check for tests (the real
 	// one, boxInZone, reads the persisted zone document and the speaker's
 	// /getZone).
