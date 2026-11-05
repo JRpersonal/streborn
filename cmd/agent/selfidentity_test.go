@@ -15,9 +15,22 @@ import (
 // list has to survive being asked before it exists - and it must still name this
 // speaker, because the boot id is announced from the very first record.
 func TestSelfDeviceIDsBeforeTheAnnouncerExists(t *testing.T) {
-	got := announcerSelfDeviceIDs(nil, "AABBCCDDEEFF")
+	got := announcerSelfDeviceIDs(nil, "AABBCCDDEEFF", "")
 	if len(got) != 1 || got[0] != "AABBCCDDEEFF" {
 		t.Fatalf("self ids = %v, want just the boot id", got)
+	}
+}
+
+// The id the box confirmed on an earlier boot is one of this speaker's own ids
+// from the first second, before the announcer exists and before the firmware
+// answers (field case 2026-11-05: the firmware never came up).
+func TestSelfDeviceIDsIncludeTheConfirmedID(t *testing.T) {
+	got := announcerSelfDeviceIDs(nil, "AABBCCDDEEFF", "0000000001A1")
+	if len(got) != 2 || got[0] != "0000000001A1" || got[1] != "AABBCCDDEEFF" {
+		t.Fatalf("self ids = %v, want the confirmed id and the boot id", got)
+	}
+	if got := announcerSelfDeviceIDs(nil, "AABBCCDDEEFF", "aabbccddeeff"); len(got) != 1 {
+		t.Fatalf("a confirmed id equal to the boot id must not be listed twice, got %v", got)
 	}
 }
 

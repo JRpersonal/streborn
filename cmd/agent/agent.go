@@ -88,6 +88,10 @@ type agent struct {
 
 	// bootstrap
 	deviceID string
+	// confirmedDeviceID is the id the box confirmed for itself on an earlier
+	// boot (stored by marge), empty when none is stored. Stated as the
+	// firmware id until the box answers /info (startupIdentity).
+	confirmedDeviceID string
 	// boxLog is the syslog reader once buildBoxLink made it; the start-up
 	// splash, which runs from bootstrap, asks it whether the firmware's
 	// display controller has finished booting.
@@ -248,6 +252,15 @@ func (a *agent) bootstrap() error {
 	} else {
 		logger.Info("DeviceID detected", "deviceID", deviceID)
 	}
+	// The id the box confirmed on an earlier boot. Stated next to the guess
+	// everywhere the agent says who it is, so a speaker whose Bose firmware is
+	// slow to start (or does not start) is still recognised by the app.
+	guess := deviceID
+	deviceID, a.confirmedDeviceID = startupIdentity(guess, marge.ReadConfirmedDeviceID(confirmedDeviceIDPath))
+	if a.confirmedDeviceID != "" && !strings.EqualFold(a.confirmedDeviceID, guess) {
+		logger.Info("DeviceID: stating the id the box confirmed previously as its firmware id until it answers",
+			"confirmed", a.confirmedDeviceID, "guess", guess, "deviceID", deviceID)
+	}
 
 	// Reclaim regenerable NAND junk once at startup. The writable NAND is tiny
 	// (~31 MB, shared with the Bose firmware); an interrupted OTA can leave a
@@ -270,6 +283,7 @@ func (a *agent) bootstrap() error {
 func (a *agent) buildStores() error {
 	// Local names, so the body reads as it did in run().
 	logger, deviceID := a.logger, a.deviceID
+	confirmedID := a.confirmedDeviceID
 
 	// Load presets. On error do not crash but continue with an empty list, so
 	// the agent at least stays alive on its listeners and remains correctable.
@@ -326,7 +340,7 @@ func (a *agent) buildStores() error {
 	}
 	groupKeysStore.SetClient(groupkeys.NewHTTPClient(groupkeys.HTTPOptions{
 		IsSelf: func(m groupkeys.Member) bool {
-			if m.DeviceID != "" && deviceID != "" && strings.EqualFold(m.DeviceID, deviceID) {
+			if isOwnDeviceID(m.DeviceID, deviceID, confirmedID) {
 				return true
 			}
 			return m.IP != "" && ownIPv4s()[m.IP]
@@ -340,7 +354,7 @@ func (a *agent) buildStores() error {
 		// for this box itself (a member's stored address may be stale too,
 		// and the main speaker enrols whoever answers at it).
 		PeerIP: func(id string) string {
-			if deviceID != "" && strings.EqualFold(id, deviceID) {
+			if isOwnDeviceID(id, deviceID, confirmedID) {
 				return ownLANIPv4()
 			}
 			return peerIPByDeviceID(id)
@@ -458,7 +472,7 @@ func (a *agent) buildMarge() error {
 		// and adopts a healthy pair instead of answering it away (a pair formed
 		// in the Bose app survives the first STR boot this way).
 		marge.WithFirmwareGroupProbe(firmwareGroupProbe(a.flags.boxHost)),
-		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
+		marge.WithDeviceIDPath(confirmedDeviceIDPath),
 		// The firmware's own Pandora and iHeartRadio (#243): on for a US
 		// speaker, elsewhere only with the opt-in marker. The stand-in then
 		// reports them available and keeps the source the firmware's own
@@ -1977,7 +1991,7 @@ func (a *agent) wireLate() error {
 		a.mdnsMu.Lock()
 		ann := a.mdnsAnnouncer
 		a.mdnsMu.Unlock()
-		return announcerSelfDeviceIDs(ann, deviceID)
+		return announcerSelfDeviceIDs(ann, deviceID, a.confirmedDeviceID)
 	})
 	// Post-switch network refresh (#697): fired by the webui after a CONFIRMED
 	// live Wi-Fi switch. Runs on its own goroutine (the webui hook spawns it)
@@ -2008,17 +2022,16 @@ func (a *agent) wireLate() error {
 	})
 	// Let the version endpoint say which speaker answers, so the desktop app
 	// can tell this speaker from another that got its address while both
-	// restarted. The startup id stands in until the announcer is up, so the
-	// very first answer after a boot already carries it.
+	// restarted. The startup ids stand in until the announcer is up, so the
+	// very first answer after a boot already carries them, and the id the box
+	// confirmed on an earlier boot stands in for the firmware id until the box
+	// answers (a firmware that never starts must not make this speaker look
+	// like another one, see startupIdentity).
 	webui.SetAgentIdentityFn(func() (string, string) {
 		a.mdnsMu.Lock()
 		ann := a.mdnsAnnouncer
 		a.mdnsMu.Unlock()
-		id := ann.DeviceID()
-		if id == "" {
-			id = deviceID
-		}
-		return id, ann.BoxDeviceID()
+		return agentIdentity(ann.DeviceID(), ann.BoxDeviceID(), deviceID, a.confirmedDeviceID)
 	})
 	webuiSrv.SetBoxNameFn(func() (string, string) {
 		a.mdnsMu.Lock()
@@ -2070,14 +2083,24 @@ func (a *agent) startDeferred() error {
 		// the box picker's model column stayed empty forever
 		// (observed live 2026-05-24 on ST10 .66 v0.5.12). pollBoxInfo
 		// below replaces the fallback once /info responds for real.
+		//
+		// The name and model the firmware reported on an earlier boot stand in
+		// for the placeholders until it answers, so a speaker whose firmware is
+		// slow to start (or does not start) keeps its name and model in the app.
+		label := boxsnapshot.OpenLabel(boxsnapshot.LabelPath())
+		friendlyName, model := startupLabel(deviceID, label.Get())
 		ann, err := discovery.Announce(
 			logger.With("comp", "discovery"),
 			discovery.Config{
-				HostName:     mdnsHostLabel,
-				Port:         8888,
-				DeviceID:     deviceID,
-				FriendlyName: "Bose SoundTouch " + discovery.LastN(deviceID, 6),
-				Model:        "SoundTouch",
+				HostName: mdnsHostLabel,
+				Port:     8888,
+				DeviceID: deviceID,
+				// The id the box confirmed on an earlier boot, so the app
+				// recognises this speaker before (or without) the firmware
+				// answering; pollBoxInfo replaces it with the live answer.
+				BoxDeviceID:  a.confirmedDeviceID,
+				FriendlyName: friendlyName,
+				Model:        model,
 				Version:      version,
 				Build:        buildStamp,
 			},
@@ -2093,7 +2116,7 @@ func (a *agent) startDeferred() error {
 		// Background poll: refresh name AND model in mDNS TXT as
 		// soon as /info on :8090 responds, then continue watching
 		// for renames the user might do via the BoseApp HTTP API.
-		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, a.webuiSrv.NoteBoxName, logger)
+		go pollBoxInfo(ctx, a.flags.boxHost, region, regionRes, ann, a.webuiSrv.NoteBoxName, label, logger)
 
 		// Register again whenever the LAN address moves, the first lease after
 		// a boot above all: the agent is often up before it, and until then

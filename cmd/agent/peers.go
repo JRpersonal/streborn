@@ -369,8 +369,12 @@ func selfDeviceIDs(bootID string, announced ...func() string) []string {
 // of a copy of it (the seam tests below set the list themselves and therefore
 // only prove the comparison). Nil-safe: the announcer is created seconds after
 // the seam is wired.
-func announcerSelfDeviceIDs(ann *discovery.Announcer, bootID string) []string {
-	return selfDeviceIDs(bootID, ann.DeviceID, ann.BoxDeviceID)
+//
+// confirmedID is the id the box confirmed on an earlier boot (see
+// startupIdentity): the announcer carries it as the firmware id until the box
+// answers, and it stays in the list as one more of this speaker's own ids.
+func announcerSelfDeviceIDs(ann *discovery.Announcer, bootID, confirmedID string) []string {
+	return selfDeviceIDs(bootID, ann.DeviceID, ann.BoxDeviceID, func() string { return confirmedID })
 }
 
 func peerSelfDeviceIDs() []string {

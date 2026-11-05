@@ -154,3 +154,32 @@ func TestAccountPayloadUsesCorrectedDeviceID(t *testing.T) {
 		t.Fatalf("account payload lost the radio source:\n%s", body)
 	}
 }
+
+// The agent reads the stored id before marge exists, to state it in the mDNS
+// announcement and the version endpoint while the firmware is still down.
+// It must agree with what marge itself would load.
+func TestReadConfirmedDeviceID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deviceid")
+
+	if got := ReadConfirmedDeviceID(""); got != "" {
+		t.Fatalf("no path must read nothing, got %q", got)
+	}
+	if got := ReadConfirmedDeviceID(path); got != "" {
+		t.Fatalf("a missing file must read nothing, got %q", got)
+	}
+
+	// What SetDeviceID writes is what the reader returns.
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithDeviceID("0000000001B2"), WithDeviceIDPath(path))
+	s.SetDeviceID("0000000001a1")
+	if got := ReadConfirmedDeviceID(path); got != "0000000001A1" {
+		t.Fatalf("ReadConfirmedDeviceID() = %q, want the confirmed id", got)
+	}
+
+	if err := os.WriteFile(path, []byte("nonsense\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadConfirmedDeviceID(path); got != "" {
+		t.Fatalf("an unusable stored id must read nothing, got %q", got)
+	}
+}
