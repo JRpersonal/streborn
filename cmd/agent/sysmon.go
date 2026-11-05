@@ -17,6 +17,7 @@ import (
 
 	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/JRpersonal/streborn/internal/oled"
 	strregion "github.com/JRpersonal/streborn/internal/region"
@@ -100,7 +101,11 @@ func clockStatusSnapshot() any {
 //
 // First round after a short delay, then with a short ticker until the model
 // is detected (race recovery), after which the ticker drops back to 30s.
-func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregion.Resolver, ann *discovery.Announcer, onName func(name string, notUTF8 bool), logger *slog.Logger) {
+//
+// label keeps the last name and model the firmware reported on NAND, so the
+// next boot can announce them before the firmware answers (nil: not kept). It
+// writes only when one of them changes.
+func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregion.Resolver, ann *discovery.Announcer, onName func(name string, notUTF8 bool), label *boxsnapshot.LabelStore, logger *slog.Logger) {
 	if boxHost == "" || ann == nil {
 		return
 	}
@@ -160,6 +165,12 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, regionRes *strregi
 		// after every rename, including one made with the Bose app.
 		if name != "" && onName != nil {
 			onName(name, s.Info.NameNotUTF8)
+		}
+		// In-memory compare first: this touches NAND only on a real change.
+		if changed, err := label.Note(name, model); err != nil {
+			logger.Warn("could not store the speaker's name and model for the next boot", "err", err)
+		} else if changed {
+			logger.Info("stored the speaker's name and model for the next boot", "name", name, "model", model)
 		}
 		newModel, newBoxID, newName := "", "", ""
 		if model != "" && model != lastModel {
