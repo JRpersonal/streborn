@@ -515,8 +515,21 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 //	    <groupRole><deviceId>..</deviceId><role>RIGHT</role><ipAddress>..</ipAddress></groupRole>
 //	  </roles></group>
 func groupXML(name, masterDeviceID string, members []ZoneMember) string {
+	return groupDocXML("", name, masterDeviceID, members)
+}
+
+// groupDocXML is groupXML with the pair's id as an attribute, which
+// /updateGroup needs to know which pair it is changing. An empty id renders the
+// bare <group> that /addGroup takes.
+func groupDocXML(id, name, masterDeviceID string, members []ZoneMember) string {
 	var b strings.Builder
-	b.WriteString(`<group><name>`)
+	if id == "" {
+		b.WriteString(`<group><name>`)
+	} else {
+		b.WriteString(`<group id="`)
+		b.WriteString(xmlEscape(id))
+		b.WriteString(`"><name>`)
+	}
 	b.WriteString(xmlEscape(name))
 	b.WriteString(`</name><masterDeviceId>`)
 	b.WriteString(xmlEscape(masterDeviceID))
@@ -541,6 +554,19 @@ func groupXML(name, masterDeviceID string, members []ZoneMember) string {
 // the firmware responds with an error, which the caller passes through to the app.
 func (c *Client) AddGroup(ctx context.Context, name, masterDeviceID string, members []ZoneMember) error {
 	return c.postXML(ctx, "/addGroup", groupXML(name, masterDeviceID, members))
+}
+
+// UpdateGroup changes an existing stereo pair, in practice its name (POST
+// /updateGroup to the master). The firmware wants the whole document, id and
+// roles included, not just the changed field, so callers read /getGroup, change
+// the name and send it back.
+//
+// This is the firmware's own rename path, the one the Bose app used, and it is
+// what moves the speaker's native Spotify entry ("<pair name> (L+R)") to the
+// new name. Writing the name into the marge record alone leaves that entry on
+// the old name (#1752, measured on two SoundTouch 10s on 2026-11-05).
+func (c *Client) UpdateGroup(ctx context.Context, g Group) error {
+	return c.postXML(ctx, "/updateGroup", groupDocXML(g.ID, g.Name, g.MasterDeviceID, g.Members))
 }
 
 // RemoveGroup dissolves the stereo pair of this box. The firmware documents

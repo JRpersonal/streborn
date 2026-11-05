@@ -72,7 +72,16 @@ func (s *Server) handleStereoName(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	// The marge record moves STR's own Spotify entry; the speaker's native
+	// "(L+R)" entry only moves when the firmware is told (#1752). After the
+	// marge write, never before: the firmware answers /updateGroup with a
+	// round trip to marge, and a canonical record still carrying the old name
+	// would be echoed straight back to it.
+	// Detached from the request: a client that stops waiting must not abort
+	// the firmware half of a rename whose marge half already happened. The
+	// calls carry their own budgets.
+	fw := s.renamePairOnBoxFirmware(context.WithoutCancel(r.Context()), req.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "firmware": fw})
 }
 
 func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {

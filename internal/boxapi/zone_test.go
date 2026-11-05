@@ -383,3 +383,42 @@ func TestGetZoneTrimsWhitespace(t *testing.T) {
 		t.Errorf("member DeviceID not trimmed: %q", z.Members[0].DeviceID)
 	}
 }
+
+// UpdateGroup is how a pair rename reaches the firmware, and through it the
+// speaker's native Spotify entry (#1752). The firmware wants the whole pair
+// document back with its id, so the id attribute, the new name and both roles
+// all have to be in the body; a body with only the name renames nothing.
+func TestUpdateGroupPostsTheWholePairWithItsID(t *testing.T) {
+	var gotPath, gotBody, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	c := &Client{Host: "ignored", HTTP: &http.Client{Timeout: 2 * time.Second, Transport: &rewriteTransport{to: u}}}
+
+	err := c.UpdateGroup(context.Background(), Group{
+		ID: "str-grp-AAAA", Name: "Kitchen & pair", MasterDeviceID: "AAAA",
+		Members: []ZoneMember{
+			{DeviceID: "AAAA", IP: "192.0.2.11", Role: "LEFT"},
+			{DeviceID: "BBBB", IP: "192.0.2.12", Role: "RIGHT"},
+		},
+		Status: "GROUP_OK",
+	})
+	if err != nil {
+		t.Fatalf("UpdateGroup error: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/updateGroup" {
+		t.Errorf("expected POST /updateGroup, got %s %s", gotMethod, gotPath)
+	}
+	want := `<group id="str-grp-AAAA"><name>Kitchen &amp; pair</name><masterDeviceId>AAAA</masterDeviceId><roles>` +
+		`<groupRole><deviceId>AAAA</deviceId><role>LEFT</role><ipAddress>192.0.2.11</ipAddress></groupRole>` +
+		`<groupRole><deviceId>BBBB</deviceId><role>RIGHT</role><ipAddress>192.0.2.12</ipAddress></groupRole>` +
+		`</roles></group>`
+	if gotBody != want {
+		t.Errorf("updateGroup body:\n got %q\nwant %q", gotBody, want)
+	}
+}
