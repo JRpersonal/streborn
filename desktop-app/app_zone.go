@@ -450,7 +450,10 @@ func (a *App) relayStereoPairClear(out map[string]any) {
 // own copy of the pair document.
 func (a *App) PushStereoPairNameToBox(host string, port int, name string) error {
 	body, _ := json.Marshal(map[string]string{"name": name})
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/zone/stereo-name", "application/json", string(body))
+	// Longer than the shared 6 s: since #1752 the agent also tells the
+	// firmware (group read, /info read, /updateGroup, up to 7 s) so the
+	// speaker's own Spotify entry follows the rename.
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/box/zone/stereo-name", "application/json", string(body), 15*time.Second)
 	if err != nil {
 		return err
 	}
