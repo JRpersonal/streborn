@@ -782,7 +782,7 @@ html.ui2 .tabbar button .ti { display:none; }
 <button type="button" data-scope="pair" aria-pressed="false" id="scopePair" hidden>Pair</button>
 </div>
 <div class="volrock">
-<button class="btn volstep" id="volMute" onclick="toggleMute()" aria-label="Mute" title="Mute">&#128266;</button>
+<button class="btn volstep" id="volMute" onclick="toggleMute()" aria-label="Mute" aria-pressed="false" title="Mute">&#128266;</button>
 <button class="btn volstep" id="volDown" aria-label="Quieter">&minus;</button>
 <button class="btn volstep" id="volUp" aria-label="Louder">+</button>
 </div>
@@ -1547,7 +1547,7 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 // safe against injection.
 function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
-var volTimer = null, volLast = -1, muteSaved = -1, volSentAt = 0;
+var volTimer = null, volLast = -1, volSentAt = 0;
 
 /* ---- Sliders that survive a scrolling thumb -------------------------------
 A range input changes its value the instant a finger touches it, and on a group
@@ -1725,11 +1725,7 @@ function onVol(v) {
   // guard releases the value once the gesture is a slide or a tap.
   if (sliderBlocked(document.getElementById('vol'))) return;
   document.getElementById('volval').textContent = v;
-  // Any move to an audible level ends a mute (#385): the saved level is stale.
-  if (+v > 0 && muteSaved >= 0) {
-    muteSaved = -1;
-    var mb = document.getElementById('volMute'); if (mb) mb.innerHTML = '&#128266;';
-  }
+  liftMuteForVolume();
   if (volTimer) clearTimeout(volTimer);
   // Leading send every ~300 ms: a held stepper repeats faster than the 250 ms
   // trailing debounce, which would postpone the PUT until release and make the
@@ -1798,22 +1794,40 @@ scrollSafeSlider(document.getElementById('bass'), function(v){ onBass(v); },
 ['gesturestart', 'gesturechange', 'gestureend'].forEach(function(ev) {
   document.addEventListener(ev, function(e) { e.preventDefault(); }, { passive: false });
 });
-// Mute toggle on the speaker glyph (#385): volume 0 and back, via the same
-// debounced volume PUT, so it works on every agent version.
-function toggleMute() {
-  var el = document.getElementById('vol');
+// Mute on the speaker glyph is the speaker's own MUTE (#1748), the flag its
+// remote, its buttons and the desktop app all set. It used to be volume 0 and
+// back (#385), which nothing else could see: muting in the app left this
+// button showing "on", and muting here left the app showing "on".
+//
+// muteUntil holds the settings poll off for a moment after a press, because
+// the speaker needs a round trip before it reports the new state and a poll
+// landing in that gap would flip the glyph back.
+var muteUntil = 0;
+function renderMute(muted) {
   var mb = document.getElementById('volMute');
-  if (muteSaved < 0) {
-    muteSaved = parseInt(el.value, 10) || 0;
-    el.value = 0;
-    onVol('0');
-    if (mb) mb.innerHTML = '&#128263;';
-  } else {
-    var v = muteSaved;
-    el.value = v;
-    onVol(String(v));
-  }
+  if (!mb) return;
+  mb.innerHTML = muted ? '&#128263;' : '&#128266;';
+  mb.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  mb.classList.toggle('is-muted', !!muted);
 }
+function shownMuted() {
+  var mb = document.getElementById('volMute');
+  return !!mb && mb.getAttribute('aria-pressed') === 'true';
+}
+// setMute asks for a definite state, never a toggle: two clients toggling at
+// once would cancel out. The speaker's answer has the last word, and no answer
+// puts the glyph back where it was rather than claim a mute that did not land.
+async function setMute(want) {
+  renderMute(want);
+  muteUntil = Date.now() + 1500;
+  var res = await api('/api/box/mute', 'POST', { muted: want });
+  muteUntil = Date.now() + 1500;
+  renderMute(res && typeof res.muted === 'boolean' ? res.muted : !want);
+}
+function toggleMute() { setMute(!shownMuted()); }
+// Moving the volume while muted means "I want to hear this". The firmware
+// keeps the mute through a volume change, so lift it here, once per gesture.
+function liftMuteForVolume() { if (shownMuted()) setMute(false); }
 // Bass mirrors the volume slider pattern (debounced PUT). The row only shows
 // once /api/box/settings reports bass.available, so models without a bass
 // stage never render a dead control.
@@ -2187,6 +2201,9 @@ async function loadSettings() {
     lastBoxName = s.info.name;
     updateTopName();
   }
+  // The mute glyph follows this speaker's own flag in every scope (#1748), so a
+  // mute set in the app, on the remote or on the speaker shows here too.
+  if (s.volume && typeof s.volume.muted === 'boolean' && Date.now() >= muteUntil) renderMute(s.volume.muted);
   if (s.volume && typeof s.volume.actual === 'number' && (volScope === 'one' || !zone.grouped)) {
     // Do not let a status poll snap the slider back to a stale reading in the
     // moment right after the user changed it. The box may not have applied the
