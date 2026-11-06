@@ -19,6 +19,15 @@ added during the transition lands in both layouts. When the preview covers
 everything, it becomes the default and the old layout is removed one or two
 releases later.
 
+Status: phases 1 to 5 shipped in v1.3.0 as the opt-in preview. Phase 6 makes
+UI 2.0 the default on the desktop and on the phone remote. "Aa" > Layout
+offers Classic and New. Anybody who stored a choice keeps it: the exact value
+`'0'` under `str.ui2Preview` (somebody who picked the classic layout) stays
+classic, and everything else, a missing key included, gets the new layout. On
+the phone a link to another speaker carries the layout along as `#ui2` or
+`#classic`, because every speaker is its own origin with its own storage. The
+classic layout and its code go in a later release.
+
 ## Four rules for every view
 
 1. **The speaker is always named.** Every action says which speaker it acts
