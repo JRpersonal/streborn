@@ -3,6 +3,8 @@ package boxapi
 import (
 	"context"
 	"errors"
+	"math"
+	"time"
 )
 
 // ClockConfig is the firmware's standby clock configuration, the one element
@@ -42,6 +44,49 @@ func (c *Client) GetClockConfig(ctx context.Context) (ClockConfig, error) {
 		return ClockConfig{}, ErrNoClockConfig
 	}
 	return *doc.Config, nil
+}
+
+// ClockTime is GET /clockTime: the firmware's UTC clock and the local wall
+// time it derives from the configured zone, which is what the display shows.
+//
+//	<clockTime utcTime="1793942709" timeFormat="TIME_FORMAT_24HOUR_ID" ...>
+//	  <localTime year="2026" month="10" dayOfMonth="6" dayOfWeek="5"
+//	    hour="6" minute="25" second="9" /></clockTime>
+//
+// The month is zero-based (that answer was taken on 6 November), so only the
+// time of day is used.
+type ClockTime struct {
+	UTCTime int64 `xml:"utcTime,attr"`
+	Local   *struct {
+		Hour   int `xml:"hour,attr"`
+		Minute int `xml:"minute,attr"`
+		Second int `xml:"second,attr"`
+	} `xml:"localTime"`
+}
+
+// OffsetMinutes is how far the firmware's local time is from UTC, east
+// positive, read from the time of day alone. ok is false when the answer has
+// no usable times.
+func (t ClockTime) OffsetMinutes() (int, bool) {
+	if t.UTCTime <= 0 || t.Local == nil {
+		return 0, false
+	}
+	u := time.Unix(t.UTCTime, 0).UTC()
+	d := (t.Local.Hour*3600 + t.Local.Minute*60 + t.Local.Second) - (u.Hour()*3600 + u.Minute()*60 + u.Second())
+	d = ((d % 86400) + 86400) % 86400
+	if d > 14*3600 {
+		d -= 86400
+	}
+	return int(math.Round(float64(d) / 60)), true
+}
+
+// GetClockTime reads the firmware's clock as the display shows it.
+func (c *Client) GetClockTime(ctx context.Context) (ClockTime, error) {
+	var t ClockTime
+	if err := c.getXML(ctx, "/clockTime", &t); err != nil {
+		return ClockTime{}, err
+	}
+	return t, nil
 }
 
 // SetClockConfigXML POSTs a complete <clockDisplay><clockConfig .../></clockDisplay>

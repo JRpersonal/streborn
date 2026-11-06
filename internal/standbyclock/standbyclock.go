@@ -23,6 +23,17 @@
 // the keeper reads the clock back once and remembers whether the speaker took
 // it. A speaker that rejects the attribute outright (a 4xx) is written again
 // without it, so the on/off and the format are never lost to it.
+//
+// The firmware turns the zone into local time with its own time zone data,
+// which predates 2020 and is never updated. A zone whose rules changed since
+// then shows the wrong hour: British Columbia's permanent UTC-7 from November
+// 2026 still falls back to -8, and Yukon, Jordan and Kazakhstan are off the
+// same way (all measured on FW 27.0.6, 2026-11-06). So after writing a zone
+// the keeper reads the time the display shows (/clockTime) and compares it
+// with the agent's own, current zone data. When they disagree it writes the
+// correct offset as a fixed one (NOT_SET plus userOffsetMinute) and keeps the
+// owner's zone in the stored choice, so the next check sees the stand-in as
+// matching for as long as the offset is right, and re-measures when it is not.
 package standbyclock
 
 import (
@@ -38,6 +49,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	// The zone rules the firmware's are checked against. The speaker has no
+	// zone data of its own to read; internal/alarm embeds the same database,
+	// so this costs nothing extra in the agent and keeps the tests hermetic.
+	_ "time/tzdata"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 )
@@ -204,12 +219,43 @@ type Box interface {
 	SetClockConfigXML(ctx context.Context, body string) error
 }
 
+// clockTimer is the optional part of Box that reads the time the display
+// shows. A Box without it gets no zone check.
+type clockTimer interface {
+	GetClockTime(ctx context.Context) (boxapi.ClockTime, error)
+}
+
+// zoneOffsetMinutes is the zone's offset from UTC at t, east positive, from
+// the agent's own zone data. ok is false for a zone it does not know.
+func zoneOffsetMinutes(zone string, t time.Time) (int, bool) {
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return 0, false
+	}
+	_, off := t.In(loc).Zone()
+	return off / 60, true
+}
+
+// fixedOffsetHolds reports whether fw is the fixed-offset stand-in for the
+// stored zone and still shows that zone's correct time at now.
+func fixedOffsetHolds(stored, fw Config, now time.Time) bool {
+	if stored.Timezone == "" || fw.Timezone != "" {
+		return false
+	}
+	want, ok := zoneOffsetMinutes(stored.Timezone, now)
+	return ok && fw.OffsetMinutes == want
+}
+
 // Result is what a write left on the speaker.
 type Result struct {
 	Stored   Config `json:"stored"`
 	Firmware Config `json:"firmware"`
 	// FirmwareRead is false when the read-back failed; Firmware is then empty.
 	FirmwareRead bool `json:"firmwareRead"`
+	// FixedOffset is set when the firmware's own rules for the zone were
+	// outdated and the clock got this fixed offset (minutes east of UTC)
+	// instead.
+	FixedOffset *int `json:"fixedOffset,omitempty"`
 	// BrightnessHonoured is nil when nothing was said about the brightness
 	// (none set, or no read-back), else whether the speaker reports the
 	// written level.
@@ -365,10 +411,62 @@ func (k *Keeper) writeLocked(ctx context.Context, c Config, why string) (Result,
 			k.brightnessTaken = took
 		}
 	}
+	if fixed, ok := k.correctZoneLocked(ctx, c, withBrightness, why); ok {
+		off := fixed.OffsetMinutes
+		res.FixedOffset = &off
+		if fw, rerr := k.Firmware(ctx); rerr == nil {
+			res.Firmware, res.FirmwareRead = fw, true
+		}
+	}
 	if c.Brightness != nil && k.onBrightness != nil {
 		k.onBrightness(*c.Brightness)
 	}
 	return res, nil
+}
+
+// correctZoneLocked measures the offset the display shows for c's zone and,
+// when the firmware's own rules for it are outdated, writes the correct offset
+// as a fixed one. ok is true when it wrote. A switched-off clock, a config
+// without a zone, a zone the agent does not know and an unreadable /clockTime
+// are all left alone. k.mu is held.
+func (k *Keeper) correctZoneLocked(ctx context.Context, c Config, withBrightness bool, why string) (Config, bool) {
+	ct, isTimer := k.box.(clockTimer)
+	if !isTimer || !c.Enabled || c.Timezone == "" {
+		return Config{}, false
+	}
+	// The firmware applies a write at once on FW 27.0.6, but a read that beat
+	// it would measure the previous setting and keep a wrong hour.
+	if !k.sleep(ctx, time.Second) {
+		return Config{}, false
+	}
+	t, err := ct.GetClockTime(ctx)
+	if err != nil {
+		k.logger.Debug("standby clock: could not read the time the speaker shows", "why", why, "err", err)
+		return Config{}, false
+	}
+	got, ok := t.OffsetMinutes()
+	if !ok {
+		return Config{}, false
+	}
+	want, ok := zoneOffsetMinutes(c.Timezone, time.Unix(t.UTCTime, 0))
+	if !ok || got == want {
+		return Config{}, false
+	}
+	fixed := c
+	fixed.Timezone, fixed.OffsetMinutes = "", want
+	err = k.box.SetClockConfigXML(ctx, fixed.XML(withBrightness))
+	var be *boxapi.BoxError
+	if err != nil && withBrightness && errors.As(err, &be) && be.Status >= 400 && be.Status < 500 {
+		err = k.box.SetClockConfigXML(ctx, fixed.XML(false))
+	}
+	if err != nil {
+		k.logger.Warn("standby clock: the speaker shows the wrong time for its zone and the fixed offset could not be written",
+			"why", why, "timezone", c.Timezone, "shownOffsetMin", got, "correctOffsetMin", want, "err", err)
+		return Config{}, false
+	}
+	k.logger.Info("standby clock: the speaker's own time zone rules are outdated for this zone, it shows a fixed offset instead",
+		"why", why, "timezone", c.Timezone, "shownOffsetMin", got, "correctOffsetMin", want)
+	return fixed, true
 }
 
 // Start re-applies the stored choice once per agent start: as soon as :8090
@@ -445,10 +543,24 @@ func (k *Keeper) check(ctx context.Context, reason string, force bool) (done boo
 		if fw.Brightness != nil && k.onBrightness != nil {
 			k.onBrightness(*fw.Brightness)
 		}
+		k.correctZoneLocked(ctx, fw, fw.Brightness != nil, reason)
 		return true, nil
+	}
+	// A fixed offset standing in for the stored zone matches it for as long
+	// as the offset is still right; once it is not (a zone with daylight
+	// saving the firmware gets wrong), the zone is written and measured again.
+	standIn := fixedOffsetHolds(stored, fw, k.now())
+	if standIn {
+		fw.Timezone, fw.OffsetMinutes = stored.Timezone, 0
 	}
 	diff := Differs(stored, fw, k.brightnessTaken)
 	if diff == "" && !force {
+		if !standIn {
+			// The zone matches by name, but the firmware may still turn it into
+			// the wrong hour (a zone set through the Bose app, or put back by a
+			// reset). One /clockTime read; a write only when it is off.
+			k.correctZoneLocked(ctx, stored, stored.Brightness != nil, reason)
+		}
 		k.logger.Debug("standby clock: the speaker's clock matches the stored setting", "reason", reason)
 		return true, nil
 	}
