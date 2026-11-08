@@ -128,6 +128,8 @@ describe('nativeServiceDown', () => {
     const { nativeServiceDown } = await import('./play.js');
     expect(nativeServiceDown('{"code":"native-service-unavailable","source":"IHEART"}')).toBe('play.errNativeServiceUnavailable');
     expect(nativeServiceDown('{"code":"native-service-unavailable"}')).toBe('play.errPandoraUnavailable');
+    // the agent's real body (playback.go): the service in "source", the key's name beside it
+    expect(nativeServiceDown('status 503: {"code":"native-service-unavailable","detail":"the speaker lists this service as unavailable (PANDORA)","error":"The speaker\'s own login for this service is not working","name":"iHeart hits","slot":2,"source":"PANDORA"}')).toBe('play.errPandoraUnavailable');
     expect(nativeServiceDown('{"code":"native-select-refused","detail":"GENERAL_PANDORA_ERROR"}')).toBe('play.errPandoraUnavailable');
     expect(nativeServiceDown('{"code":"native-select-refused","detail":"error 1008"}')).toBe('play.errPandoraUnavailable');
     expect(nativeServiceDown('{"code":"native-select-refused","detail":"10080"}')).toBe('');

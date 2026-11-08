@@ -257,7 +257,9 @@ export async function play(slot) {
 export function nativeServiceDown(l) {
   const s = String(l || '').toLowerCase();
   if (s.includes('native-service-unavailable')) {
-    return s.includes('iheart') ? 'play.errNativeServiceUnavailable' : 'play.errPandoraUnavailable';
+    // The agent names the service in "source" (internal/webui playback.go);
+    // read that field, not any "iheart" in the preset's name.
+    return /"source"\s*:\s*"iheart/.test(s) ? 'play.errNativeServiceUnavailable' : 'play.errPandoraUnavailable';
   }
   if (s.includes('native-select-refused') && (s.includes('general_pandora_error') || /\b1008\b/.test(s))) {
     return 'play.errPandoraUnavailable';
