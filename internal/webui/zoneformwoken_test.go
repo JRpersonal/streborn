@@ -96,6 +96,56 @@ func TestMasterTheUserWasListeningToKeepsPlaying(t *testing.T) {
 	}
 }
 
+// #1339 issue 17: a stereo pair formed out of standby, then the app started
+// preset 4. The app recall recorded the play, and 13 ms later the firmware
+// announced the same selection, which was taken for the box's own resume and
+// marked fromBox; the late group-wake check then stopped the user's station.
+func TestTheSpeakersEchoOfAnAppRecallIsNotItsOwnResume(t *testing.T) {
+	t.Parallel()
+	const slot4 = "http://127.0.0.1:8888/stream/4"
+	playing := nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+	s, stops := selfResumeTestServer(t, playing)
+	s.noteQuietWakeEpisode()
+	time.Sleep(5 * time.Millisecond)
+	appGen := s.setLastPlay(slot4, "Station", "", "audio/mpeg")
+	if gen := s.NoteNativeLastPlay(slot4, "Station", "", "audio/mpeg"); gen != appGen {
+		t.Fatalf("the echo changed the recall generation %d -> %d", appGen, gen)
+	}
+	if s.stopGroupWakeSelfResume(context.Background(), "late check") || *stops != 0 {
+		t.Fatalf("stops=%d, the station the user just started was stopped as a self-resume", *stops)
+	}
+}
+
+// The echo rule is narrow: a DIFFERENT station the firmware activates after
+// the user's play, or the same one long after it, is still the box's own.
+func TestANativeActivationThatIsNoEchoStillCountsAsTheBoxs(t *testing.T) {
+	t.Parallel()
+	playing := nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+
+	s, stops := selfResumeTestServer(t, playing)
+	s.queue = newPlayQueue()
+	s.noteQuietWakeEpisode()
+	time.Sleep(5 * time.Millisecond)
+	s.setLastPlay("http://127.0.0.1:8888/stream/4", "Station", "", "")
+	s.NoteNativeLastPlay("http://127.0.0.1:8888/stream/2", "Other", "", "")
+	if !s.stopGroupWakeSelfResume(context.Background(), "late check") || *stops != 1 {
+		t.Fatalf("stops=%d, a different station the box started itself was taken for the user's", *stops)
+	}
+
+	s, stops = selfResumeTestServer(t, playing)
+	s.queue = newPlayQueue()
+	s.noteQuietWakeEpisode()
+	time.Sleep(5 * time.Millisecond)
+	s.setLastPlay("http://127.0.0.1:8888/stream/4", "Station", "", "")
+	s.play.mu.Lock()
+	s.play.last.ts = time.Now().Add(-nativeSelectEchoWindow - time.Second)
+	s.play.mu.Unlock()
+	s.NoteNativeLastPlay("http://127.0.0.1:8888/stream/4", "Station", "", "")
+	if !s.stopGroupWakeSelfResume(context.Background(), "late check") || *stops != 1 {
+		t.Fatalf("stops=%d, an activation long after the user's play was taken for its echo", *stops)
+	}
+}
+
 // The form path has to ask before it captures anything to restart, once more
 // after its own wake, and once after forming; and it hands memberResumeForZone
 // only the members that were not just woken. handleZoneForm is split into

@@ -883,11 +883,31 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 // doing. The firmware's power-on resume of a native station arrives as exactly
 // this frame, and counting it as the user's play is what made the zone form
 // carry a group wake's self-resume into every room (fleet run 2026-10-04).
+//
+// The same frame is also the speaker's echo of STR's own /select. An app
+// recall of a native station records its play and hands the speaker the
+// item; milliseconds later the firmware announces that selection like a key
+// press. Taken for the box's own doing, the user's play turned into a
+// self-resume and the group-wake guard stopped the station the user had just
+// started (#1339, a preset started right after a stereo pair formed out of
+// standby, stopped 4 s later). So when the record already holds this very
+// station as STR's own play from a moment ago, the frame changes nothing.
 func (s *Server) NoteNativeLastPlay(boxURL, title, art, mime string) uint64 {
+	if gen, ok := s.play.ownPlayOfWithin(boxURL, nativeSelectEchoWindow); ok {
+		s.logger.Info("native preset selection: the speaker echoing STR's own play of this station, kept as the user's play",
+			"title", title, "boxURL", boxURL)
+		return gen
+	}
 	gen := s.NoteLastPlay(boxURL, title, art, mime)
 	s.play.markFromBoxIfGen(gen)
 	return gen
 }
+
+// nativeSelectEchoWindow is how recent STR's own play of a station must be for
+// the speaker's announcement of that same station to count as its echo. The
+// echo measured in #1339 came 13 ms after the record; a person pressing the
+// same key again within this time asks for the station that already plays.
+const nativeSelectEchoWindow = 3 * time.Second
 
 // RecallGeneration returns the current recall generation (bumped by every
 // stream push recorded via setLastPlay, hardware and app alike). The hardware

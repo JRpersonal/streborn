@@ -112,6 +112,15 @@ func SlotNotedWithin(kind string, slot int, d time.Duration) bool {
 	return ok && time.Since(t) < d
 }
 
+// OwnSelectionWithin reports whether a preset selection of key the speaker
+// announces now is the echo of STR's own command in the last d: a key STR
+// pressed over the CLI ("presetkey" for that key) or any item it handed to
+// the speaker's /select ("select", slot 0). The firmware announces both
+// exactly like a person at the keys.
+func OwnSelectionWithin(key int, d time.Duration) bool {
+	return SlotNotedWithin("presetkey", key, d) || SlotNotedWithin("select", 0, d)
+}
+
 // SnapshotReset returns the writes since the last call and starts a fresh
 // window. Empty map = a write-free window (the healthy overnight state).
 func SnapshotReset() map[string]int {

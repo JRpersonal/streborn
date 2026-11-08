@@ -165,6 +165,18 @@ func (p *playSession) markFromBoxIfGen(gen uint64) {
 	}
 }
 
+// ownPlayOfWithin reports whether the play on record is one STR itself
+// started (not the firmware's own) of boxURL, recorded less than d ago, and
+// hands back the recall generation it holds.
+func (p *playSession) ownPlayOfWithin(boxURL string, d time.Duration) (gen uint64, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.last == nil || p.last.fromBox || p.last.boxURL != boxURL || time.Since(p.last.ts) >= d {
+		return 0, false
+	}
+	return p.recallGen, true
+}
+
 // userPlayedSince reports whether a play STR itself pushed (not one the
 // firmware activated) is on record with a timestamp after t.
 func (p *playSession) userPlayedSince(t time.Time) bool {
