@@ -214,6 +214,14 @@ func (h *presetWsHandler) OnVolumeLevel(_ context.Context, level int) {
 	}
 }
 
+// OnVolumeMute is the boxws hook carrying the mute flag of a volume frame that
+// had one: the phone remote's mute glyph follows it (#1748). Non-blocking.
+func (h *presetWsHandler) OnVolumeMute(_ context.Context, muted bool) {
+	if h.onBoxMute != nil {
+		h.onBoxMute(muted)
+	}
+}
+
 // OnPlayingChanged is the boxws hook for the speaker's play status: the
 // playing symbol on the track screen moves only while music runs.
 func (h *presetWsHandler) OnPlayingChanged(_ context.Context, playing bool) {

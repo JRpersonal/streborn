@@ -350,6 +350,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if h, ok := c.handler.(interface{ OnVolumeLevel(context.Context, int) }); ok {
 			h.OnVolumeLevel(ctx, f.VolumeUpdated.level())
 		}
+		// Optional: the mute flag, when the frame carried one, so the phone
+		// remote's mute glyph follows a mute set anywhere (#1748). Must not
+		// block.
+		if h, ok := c.handler.(interface{ OnVolumeMute(context.Context, bool) }); ok {
+			if muted, ok := f.VolumeUpdated.muted(); ok {
+				h.OnVolumeMute(ctx, muted)
+			}
+		}
 	case f.UserActivity != nil:
 		// The remote thumbs keys surface ONLY as this generic ping (no up/down
 		// identity). Treat a lone one as a thumb press; noteUserActivity

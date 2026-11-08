@@ -310,6 +310,7 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
+		s.NoteBoxMute(v.Muted)
 		writeJSON(w, http.StatusOK, map[string]any{"value": v.Actual, "target": v.Target, "muted": v.Muted})
 		return
 	}

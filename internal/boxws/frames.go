@@ -60,6 +60,23 @@ type wsNowPlaying struct {
 type wsVolume struct {
 	Target *int `xml:"volume>targetvolume"`
 	Actual *int `xml:"volume>actualvolume"`
+	// Mute is the speaker's mute flag ("true"/"false"); nil when the frame
+	// did not carry one, which must not read as "not muted".
+	Mute *string `xml:"volume>muteenabled"`
+}
+
+// muted returns the frame's mute flag and whether it carried one.
+func (v wsVolume) muted() (muted, ok bool) {
+	if v.Mute == nil {
+		return false, false
+	}
+	switch strings.ToLower(strings.TrimSpace(*v.Mute)) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }
 
 // level returns the level the box is heading to (target, else actual), or -1

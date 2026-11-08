@@ -128,6 +128,10 @@ type presetWsHandler struct {
 	// block. nil-safe.
 	onBoxSource func(from, to string)
 	onBoxVolume func(level int)
+	// onBoxMute hands the mute flag of a volume frame to the webui, which
+	// serves it to the phone remote on /api/status (webui.NoteBoxMute,
+	// #1748). Must not block. nil-safe.
+	onBoxMute func(muted bool)
 	// keyTrace follows the speaker's own key trace (internal/boxlog). When it
 	// runs, the per-key webhooks fire from its decoded events (OnKeyEvent) and
 	// the bare-frame thumb heuristic stands down. nil-safe.

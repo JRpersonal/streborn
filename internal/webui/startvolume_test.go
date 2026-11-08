@@ -203,3 +203,78 @@ func TestStartVolumeOncePerPowerOn(t *testing.T) {
 		t.Fatalf("one power-on must set the level once, got %d", calls.Load())
 	}
 }
+
+// #1774: a preset picked in the app for a speaker in standby makes STR wake it
+// itself, and the wake's standby exit is the very edge the power-on watch
+// listens on. The play is the user's and the wake puts their level back, so
+// the start level must never land on top of it.
+func TestStartVolumeStandsDownForAWokenPresetRecall(t *testing.T) {
+	t.Parallel()
+	box := &fakeWakingBox{level: 12}
+	s := newWakingServer(t, box)
+	s.startVolumePath = filepath.Join(t.TempDir(), "start-volume")
+	if err := os.WriteFile(s.startVolumePath, []byte("71"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var startWrites atomic.Int32
+	s.setVolumeFn = func(context.Context, int) error {
+		startWrites.Add(1)
+		return nil
+	}
+	s.playStateFn = func() (bool, bool) {
+		np := box.state()
+		return np.Source == "STANDBY", np.Source != "STANDBY"
+	}
+	s.startVolumeTiming = &startVolumeTiming{watchFor: 400 * time.Millisecond, watchPoll: 20 * time.Millisecond}
+	wake := s.newPlayWakeFn
+	s.newPlayWakeFn = func(ctx context.Context) error {
+		err := wake(ctx)
+		// the gabbo standby exit arrives while the wake is still waiting
+		s.RunDeferredResume()
+		return err
+	}
+
+	playSent := s.ensureBoxReadyForNewPlay(context.Background(), nowPlayingSnapshot{Source: "STANDBY"}, radioTarget)
+	box.play(nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", ItemName: "Preset 2", Location: "new-loc", PlayStatus: "PLAY_STATE"})
+	playSent(true)
+	waitForLevel(t, box, 12)
+	time.Sleep(s.startVolumeTimes().watchFor + startVolumeApplyDelay + 300*time.Millisecond)
+	if n := startWrites.Load(); n != 0 {
+		t.Fatalf("the start level was written %d times over a woken preset recall, want never", n)
+	}
+	box.mu.Lock()
+	lvl := box.level
+	box.mu.Unlock()
+	if lvl != 12 {
+		t.Fatalf("level %d after the recall, want the user's 12", lvl)
+	}
+}
+
+// A wake for a play that starts while the watch already runs stands it down
+// too: the next look sees the wake's episode and leaves the level alone.
+func TestStartVolumeWatchStandsDownWhenAWakeForAPlayStarts(t *testing.T) {
+	t.Parallel()
+	var playing atomic.Bool
+	s, calls, _ := powerOnServer(t, &playing)
+	s.applyStartVolumeAfterPowerOn()
+	s.groupWake.noteEpisode(time.Minute)
+	playing.Store(true)
+	time.Sleep(s.startVolumeTimes().watchFor + startVolumeApplyDelay + 300*time.Millisecond)
+	if calls.Load() != 0 {
+		t.Fatalf("a wake for a play must keep the start level away, got %d writes", calls.Load())
+	}
+}
+
+// The genuine power-on still gets its start level: a standby exit with no
+// wake of STR's in flight, and the speaker resuming by itself.
+func TestStartVolumeStillAppliesOnAPlainPowerOn(t *testing.T) {
+	t.Parallel()
+	var playing atomic.Bool
+	s, calls, last := powerOnServer(t, &playing)
+	s.RunDeferredResume()
+	time.Sleep(60 * time.Millisecond)
+	playing.Store(true)
+	if !waitForStartVol(func() bool { return calls.Load() == 1 }, startVolumeApplyDelay+2*time.Second) || last.Load() != 20 {
+		t.Fatalf("start level set %d times, last %d; want once, 20", calls.Load(), last.Load())
+	}
+}

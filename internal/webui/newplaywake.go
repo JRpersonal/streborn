@@ -192,6 +192,15 @@ func (l *newPlayLevelState) stopMuting() {
 	l.mu.Unlock()
 }
 
+// inEpisode reports whether a muted wake for a new play has not finished its
+// restore yet: STR itself is bringing the speaker out of standby for a play
+// the user started, and the level is STR's to put back.
+func (l *newPlayLevelState) inEpisode() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.episodes > 0
+}
+
 func (l *newPlayLevelState) episodeDone() {
 	l.mu.Lock()
 	if l.episodes > 0 {
@@ -305,7 +314,8 @@ func (s *Server) newPlayRestoreTimes() newPlayRestoreTiming {
 // It first waits (bounded) for the speaker to report something other than what
 // the firmware resumed, so the level does not come back over the tail of the
 // old station. A level that is no longer 0 was set by someone else meanwhile
-// (the user's volume key, the start volume) and is left as it is.
+// (the user's volume key) and is left as it is. The start volume is not one of
+// them: it stands down for a wake like this one (startvolume.go, #1774).
 func (s *Server) restoreAfterNewPlay(prevVol int, resumed nowPlayingSnapshot) {
 	defer s.newPlayLevel.episodeDone()
 	if prevVol < 0 {

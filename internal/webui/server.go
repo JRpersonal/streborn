@@ -529,6 +529,9 @@ type Server struct {
 	newPlayRestoreT *newPlayRestoreTiming
 	// newPlayLevel follows the level around a muted wake for a new play.
 	newPlayLevel newPlayLevelState
+	// boxMute is the speaker's mute flag as its own frames last reported it,
+	// handed to the phone remote on /api/status (mute.go, #1748).
+	boxMute boxMuteState
 	// holdSaveTestFn is the agent's test-only switch that lets keys sent over
 	// :8090/key count for the hold-to-save (POST /api/debug/hold-save-test).
 	holdSaveTestFn func(on bool, d time.Duration) time.Time

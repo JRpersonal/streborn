@@ -124,10 +124,22 @@ func (s *Server) startVolumeTimes() *startVolumeTiming {
 }
 
 // applyStartVolumeAfterPowerOn watches the first seconds after the speaker
-// was switched on and sets the start level once it plays, whoever started
-// the playback. A speaker that stays silent gets nothing.
+// was switched on and sets the start level once it plays. A speaker that
+// stays silent gets nothing.
+//
+// "Switched on" means by the user: the power key, the remote, the app's power
+// button. A standby exit that is STR's own wake for a play the user just
+// started (a preset, a station, a Spotify hand-over, a group join) is not one.
+// That play is the user's, and the wake already puts their level back after
+// it. Writing the start level on top undid it a second later: an ST10 woken
+// for a preset picked in the app came back at 12 and then jumped to 71
+// (#1774).
 func (s *Server) applyStartVolumeAfterPowerOn() {
 	if _, ok := s.startVolume(); !ok {
+		return
+	}
+	if why := s.ownWakeForPlay(); why != "" {
+		s.logger.Info("start volume: STR woke the speaker for a play, keeping the user's level", "wake", why)
 		return
 	}
 	go func() {
@@ -135,6 +147,13 @@ func (s *Server) applyStartVolumeAfterPowerOn() {
 		deadline := time.Now().Add(times.watchFor)
 		for time.Now().Before(deadline) {
 			time.Sleep(times.watchPoll)
+			// A play started while the watch runs can still have taken the
+			// standby wake (the speaker answered STANDBY to it while already
+			// coming up), so look again before each decision.
+			if why := s.ownWakeForPlay(); why != "" {
+				s.logger.Info("start volume: STR woke the speaker for a play, keeping the user's level", "wake", why)
+				return
+			}
 			if standby, busy := s.boxPlayState(); busy && !standby {
 				s.applyStartVolume("power-on")
 				return
@@ -142,6 +161,23 @@ func (s *Server) applyStartVolumeAfterPowerOn() {
 		}
 		s.logger.Info("start volume: the speaker did not start playing after the power-on, nothing to set")
 	}()
+}
+
+// ownWakeForPlay names the wake when the speaker is coming out of standby
+// because STR woke it for something the user started, "" when it is not:
+//
+//   - a muted wake for a new play (newplaywake.go) whose level restore has not
+//     finished: a preset, a station, a library item picked in the app;
+//   - the settling window of a quiet wake for a group join or a silent wake
+//     for a play (a Spotify hand-over), which both stamp groupWake's episode.
+func (s *Server) ownWakeForPlay() string {
+	if s.newPlayLevel.inEpisode() {
+		return "new play"
+	}
+	if s.groupWake.episodeActive() {
+		return "group or silent wake"
+	}
+	return ""
 }
 
 // handleStartVolume reads or sets the per-box start level.

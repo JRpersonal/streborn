@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -79,6 +80,7 @@ func (s *Server) handleBoxMute(w http.ResponseWriter, r *http.Request) {
 
 	want, press := muteDecision(before.Muted, req.Muted)
 	if !press {
+		s.NoteBoxMute(want)
 		// Already where the caller wants it. Pressing the key anyway would
 		// move it the other way, which is the one thing a "set" must never do.
 		writeJSON(w, http.StatusOK, map[string]any{"muted": want, "changed": false})
@@ -89,6 +91,63 @@ func (s *Server) handleBoxMute(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	s.NoteBoxMute(want)
 	s.logger.Info("box mute", "want", want, "was", before.Muted, "volume", before.Actual)
 	writeJSON(w, http.StatusOK, map[string]any{"muted": want, "changed": true})
+}
+
+// The phone remote's mute glyph follows a mute set anywhere else (#1748).
+//
+// The page polls /api/status every five seconds and nothing else, and the mute
+// flag lived only in /api/box/settings, which it reads on load and on a return
+// to the page. So a mute set in the desktop app or with the speaker's remote
+// never reached the glyph while the page stayed open. Reading /volume on every
+// status poll would cost the speaker a request per poll per open phone; the
+// speaker already announces every volume and mute change on its gabbo bus, so
+// the agent keeps the flag from those frames and hands it out with the status,
+// in a header for the same reason the playing key is one: the body stays the
+// speaker's own XML, which every client regex-parses.
+
+// mutedHeader carries the speaker's mute flag on /api/status: "1" muted, "0"
+// not, absent while the agent does not know it (no frame since it started, or
+// since the bus last reconnected and may have missed one).
+const mutedHeader = "X-STR-Muted"
+
+// boxMuteState is the last mute flag the speaker reported.
+type boxMuteState struct {
+	mu    sync.Mutex
+	known bool
+	muted bool
+}
+
+// NoteBoxMute records the speaker's mute flag, from a gabbo volume frame or a
+// read STR made anyway. Called on the gabbo read loop: never blocks.
+func (s *Server) NoteBoxMute(muted bool) {
+	s.boxMute.mu.Lock()
+	s.boxMute.known, s.boxMute.muted = true, muted
+	s.boxMute.mu.Unlock()
+}
+
+// ForgetBoxMute drops the recorded flag: after a bus reconnect a change made
+// while the socket was down never arrived, and claiming the old state would be
+// worse than not saying anything (the page then keeps what it last read).
+func (s *Server) ForgetBoxMute() {
+	s.boxMute.mu.Lock()
+	s.boxMute.known = false
+	s.boxMute.mu.Unlock()
+}
+
+// setMutedHeader puts the recorded flag on a status response, if there is one.
+func (s *Server) setMutedHeader(w http.ResponseWriter) {
+	s.boxMute.mu.Lock()
+	known, muted := s.boxMute.known, s.boxMute.muted
+	s.boxMute.mu.Unlock()
+	if !known {
+		return
+	}
+	v := "0"
+	if muted {
+		v = "1"
+	}
+	w.Header().Set(mutedHeader, v)
 }

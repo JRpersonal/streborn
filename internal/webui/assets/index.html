@@ -1804,9 +1804,12 @@ scrollSafeSlider(document.getElementById('bass'), function(v){ onBass(v); },
 // back (#385), which nothing else could see: muting in the app left this
 // button showing "on", and muting here left the app showing "on".
 //
-// muteUntil holds the settings poll off for a moment after a press, because
-// the speaker needs a round trip before it reports the new state and a poll
-// landing in that gap would flip the glyph back.
+// The glyph is repainted from two reads: the 5 s status poll, which carries the
+// flag the agent keeps from the speaker's own frames (X-STR-Muted, see
+// statusMute), and loadSettings, which runs on load, on a return to the page
+// and on a scope change. muteUntil holds both off for a moment after a press,
+// because the speaker needs a round trip before it reports the new state and a
+// read landing in that gap would flip the glyph back.
 var muteUntil = 0;
 function renderMute(muted) {
   var mb = document.getElementById('volMute');
@@ -1828,6 +1831,14 @@ async function setMute(want) {
   var res = await api('/api/box/mute', 'POST', { muted: want });
   muteUntil = Date.now() + 1500;
   renderMute(res && typeof res.muted === 'boolean' ? res.muted : !want);
+}
+// statusMute paints the flag /api/status hands out ("1" muted, "0" not), so a
+// mute set in the desktop app or with the speaker's remote shows here within a
+// poll (#1748). No header means the agent does not know right now: the glyph
+// keeps what it shows.
+function statusMute(h) {
+  if ((h !== '1' && h !== '0') || Date.now() < muteUntil) return;
+  if ((h === '1') !== shownMuted()) renderMute(h === '1');
 }
 function toggleMute() { setMute(!shownMuted()); }
 // Moving the volume while muted means "I want to hear this". The firmware
@@ -3595,11 +3606,12 @@ var netFails = 0;
 var NET_FAIL_QUIET = 2;
 
 async function refreshStatus() {
-  var r, t, spKey = 0;
+  var r, t, spKey = 0, muteHdr = null;
   try {
     r = await fetch('/api/status');
     t = await r.text();
     spKey = parseInt(r.headers.get('X-STR-Playing-Key') || '', 10) || 0;
+    muteHdr = r.headers.get('X-STR-Muted');
   } catch (e) {
     netFails++;
     // Not while a fleet update is in flight: the update card already says
@@ -3619,6 +3631,7 @@ async function refreshStatus() {
     return;
   }
   netFails = 0;
+  statusMute(muteHdr);
   /* The speaker answers again: a single-speaker update the card stopped
      asking about mid-outage is asked about again (#1339). */
   if (window.suResume) window.suResume();
