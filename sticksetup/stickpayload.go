@@ -77,10 +77,19 @@ func payloadNameSet() map[string]bool {
 }
 
 // IsSTRPayloadStick reports whether the root of the stick carries a file only
-// STR's install wizard writes.
+// STR's install wizard writes. Names match without regard to case, as on FAT32,
+// so the answer is the same on a case-sensitive host file system.
 func IsSTRPayloadStick(stickPath string) bool {
+	entries, err := os.ReadDir(stickPath)
+	if err != nil {
+		return false
+	}
+	markers := map[string]bool{}
 	for _, m := range strStickMarkers {
-		if st, err := os.Lstat(filepath.Join(stickPath, m)); err == nil && st.Mode().IsRegular() {
+		markers[strings.ToLower(m)] = true
+	}
+	for _, e := range entries {
+		if e.Type().IsRegular() && markers[strings.ToLower(e.Name())] {
 			return true
 		}
 	}
