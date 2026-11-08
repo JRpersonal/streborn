@@ -93,8 +93,8 @@ func TestTheZoneStampOutlivesTheQuietWake(t *testing.T) {
 	// No box host: the join's level restore is a write to the speaker, and
 	// this test is about the two stamps around it, not the write.
 	s := quietServer("")
-	s.armQuietWakeRestore(30)        // group operation begins, level muted
-	s.NoteBoxZoneState("DEV-MASTER") // the join: restores the level AND stamps
+	s.armQuietWakeRestore(wakeLevelInputs{remembered: 30}) // group operation begins, level muted
+	s.NoteBoxZoneState("DEV-MASTER")                       // the join: restores the level AND stamps
 
 	if s.quietWakeActive() {
 		t.Fatal("the quiet wake should be over once the zone is joined; that is the race")

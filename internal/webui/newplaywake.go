@@ -72,7 +72,7 @@ func (s *Server) ensureBoxReadyForNewPlay(ctx context.Context, before nowPlaying
 	if gate != nil {
 		gen = gate.ArmNewPlayGate(target, newPlayGateMaxHold)
 	}
-	prevVol := s.levelBeforeStandby(ctx)
+	in := s.wakeLevelInputsNow(ctx)
 	s.newPlayLevel.arm()
 	// Same budget as ensureBoxReady, so a play out of standby takes no longer
 	// than it did. The polling watcher is the backstop for a gabbo frame that
@@ -94,8 +94,9 @@ func (s *Server) ensureBoxReadyForNewPlay(ctx context.Context, before nowPlaying
 	readCtx, readCancel := quietWakeStepCtx()
 	resumed := s.quietWakeNowPlaying(readCtx, s.boxHost)
 	readCancel()
-	s.logger.Info("wake: muted the speaker's own resume for a new play", "restoreTo", prevVol,
-		"resumedSource", resumed.Source, "resumedItem", resumed.ItemName)
+	restoreTo, restoreFrom := s.wakeRestoreTarget(in, s.newPlayLevel.powerOnLevel())
+	s.logger.Info("wake: muted the speaker's own resume for a new play", "restoreTo", restoreTo,
+		"from", restoreFrom, "resumedSource", resumed.Source, "resumedItem", resumed.ItemName)
 	var once sync.Once
 	return func(delivered bool) {
 		once.Do(func() {
@@ -112,7 +113,7 @@ func (s *Server) ensureBoxReadyForNewPlay(ctx context.Context, before nowPlaying
 					gate.NewPlaySent(gen, newPlayGateFetchGrace)
 				}
 			}
-			go s.restoreAfterNewPlay(prevVol, resumed)
+			go s.restoreAfterNewPlay(in, resumed)
 		})
 	}
 }
@@ -171,7 +172,12 @@ type newPlayLevelState struct {
 	// episodes counts muted wakes whose restore has not finished; while one
 	// runs, the frames of STR's own writes are not taken for the user's level.
 	episodes int
-	// last is the newest level a frame reported outside such an episode.
+	// powerOn is the first non-zero level a frame reported while muting: the
+	// firmware's own power-on level, which the restore falls back to when the
+	// level from before standby is not known (wakelevel.go).
+	powerOn int
+	// last is the newest non-zero level a frame reported outside such an
+	// episode and outside STR's other muted wakes (rememberedAwakeLevel).
 	last   int
 	lastAt time.Time
 }
@@ -182,8 +188,16 @@ func (l *newPlayLevelState) arm() {
 	l.mu.Lock()
 	l.muting = true
 	l.remutes = 0
+	l.powerOn = 0
 	l.episodes++
 	l.mu.Unlock()
+}
+
+// powerOnLevel returns the power-on level seen while muting, 0 when none.
+func (l *newPlayLevelState) powerOnLevel() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.powerOn
 }
 
 func (l *newPlayLevelState) stopMuting() {
@@ -227,20 +241,36 @@ func (s *Server) NoteBoxSourceChanged(from, to string) {
 }
 
 // NoteBoxVolumeLevel is the gabbo volume frame (-1 when it carried no level).
-// Outside a muted wake it records the speaker's level, which is what a muted
-// wake later puts back: the level read from a speaker in standby is not the
-// one it plays at (live ST10: read 5, resumed at 10). During the mute, a level
-// the firmware raises is muted again. Called on the gabbo read loop.
+// Outside STR's own muted wakes it records the speaker's level, which is what
+// a muted wake later puts back: the level read from a speaker in standby is
+// not the one it plays at (live ST10: read 5, resumed at 10). A 0 is never
+// recorded (noteAwakeLevel).
+//
+// While STR holds the level down (a muted wake for a new play until its
+// restore finished, a quiet wake for a group from before its mute to its
+// release, a silent wake for a play) nothing is recorded: the frames are STR's
+// own mute, the firmware's power-on level, or a level set for the operation
+// (the group volume of a pair being formed). Recording them is how the 0 of a
+// quiet wake's mute and of the restore after it became "the level before
+// standby" for the next preset (#1774 follow-up). The first non-zero one is
+// kept as the power-on level instead (wakelevel.go). During the mute for a new
+// play, a level the firmware raises is muted again. Called on the gabbo read
+// loop.
 func (s *Server) NoteBoxVolumeLevel(level int) {
 	if level < 0 {
 		return
 	}
 	// The volume ceiling sees every change, whoever made it (maxvolume.go).
 	s.enforceMaxVolume(level)
+	// Its own mutex, taken before the new-play state's and never inside it.
+	groupHeld := s.groupWake.noteLevel(level)
 	l := &s.newPlayLevel
 	l.mu.Lock()
 	switch {
 	case l.muting:
+		if level > 0 && l.powerOn == 0 {
+			l.powerOn = level
+		}
 		if level == 0 || l.remutes >= newPlayMaxRemutes || s.boxHost == "" {
 			l.mu.Unlock()
 			return
@@ -249,7 +279,7 @@ func (s *Server) NoteBoxVolumeLevel(level int) {
 		l.mu.Unlock()
 		go s.muteForNewPlay("the firmware raised the level during the wake", "")
 		return
-	case l.episodes == 0:
+	case l.episodes == 0 && !groupHeld && level > 0:
 		l.last = level
 		l.lastAt = time.Now()
 	}
@@ -264,30 +294,6 @@ func (s *Server) muteForNewPlay(why, source string) {
 		return
 	}
 	s.logger.Info("wake: muted the speaker's own resume", "why", why, "source", source)
-}
-
-// levelBeforeStandby is the level a muted wake puts back: the last one the
-// speaker reported while awake, else what it answers now (its target level
-// first: the actual level of a speaker in standby can be lower than the one it
-// plays at). -1 when nothing is known.
-func (s *Server) levelBeforeStandby(ctx context.Context) int {
-	l := &s.newPlayLevel
-	l.mu.Lock()
-	last, at := l.last, l.lastAt
-	l.mu.Unlock()
-	if !at.IsZero() {
-		return last
-	}
-	volCtx, volCancel := context.WithTimeout(ctx, quietWakeStepBudget)
-	defer volCancel()
-	v, err := s.ownVolume(volCtx)
-	if err != nil {
-		return -1
-	}
-	if v.Target > 0 {
-		return v.Target
-	}
-	return v.Actual
 }
 
 // newPlayRestoreTiming bounds the wait for the speaker to leave what it
@@ -316,11 +322,15 @@ func (s *Server) newPlayRestoreTimes() newPlayRestoreTiming {
 // old station. A level that is no longer 0 was set by someone else meanwhile
 // (the user's volume key) and is left as it is. The start volume is not one of
 // them: it stands down for a wake like this one (startvolume.go, #1774).
-func (s *Server) restoreAfterNewPlay(prevVol int, resumed nowPlayingSnapshot) {
+//
+// The level put back is never 0 (wakeRestoreTarget): when the level from
+// before standby is unknown it is the speaker's own power-on level, and a
+// speaker STR muted is never left at 0 because nothing was known. It used to
+// be: an unknown level returned without a write and left the speaker muted,
+// and a known 0 (STR's own earlier mute, recorded as the user's level) was
+// written back.
+func (s *Server) restoreAfterNewPlay(in wakeLevelInputs, resumed nowPlayingSnapshot) {
 	defer s.newPlayLevel.episodeDone()
-	if prevVol < 0 {
-		return
-	}
 	t := s.newPlayRestoreTimes()
 	deadline := time.Now().Add(t.wait)
 	for {
@@ -335,17 +345,20 @@ func (s *Server) restoreAfterNewPlay(prevVol int, resumed nowPlayingSnapshot) {
 		}
 		time.Sleep(t.poll)
 	}
+	vol, from := s.wakeRestoreTarget(in, s.newPlayLevel.powerOnLevel())
 	ctx, cancel := quietWakeStepCtx()
 	defer cancel()
 	if v, err := s.ownVolume(ctx); err == nil && v.Actual != 0 {
-		s.logger.Info("wake: the level was changed during the new play, leaving it", "vol", v.Actual, "restoreTo", prevVol)
+		s.noteAwakeLevel(v.Actual)
+		s.logger.Info("wake: the level was changed during the new play, leaving it", "vol", v.Actual, "restoreTo", vol)
 		return
 	}
-	if err := s.setOwnLevel(ctx, prevVol); err != nil {
-		s.logger.Warn("wake: could not restore the level after the new play", "vol", prevVol, "err", err)
+	if err := s.setOwnLevel(ctx, vol); err != nil {
+		s.logger.Warn("wake: could not restore the level after the new play", "vol", vol, "from", from, "err", err)
 		return
 	}
-	s.logger.Info("wake: level restored after the new play", "vol", prevVol)
+	s.noteAwakeLevel(vol)
+	s.logger.Info("wake: level restored after the new play", "vol", vol, "from", from)
 }
 
 // movedOnFrom reports whether np shows something other than resumed. Only what

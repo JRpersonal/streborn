@@ -11,7 +11,7 @@ import (
 // asks whether it may write. A window derived from the mute is therefore
 // already gone at the only moment it is read.
 func TestQuietWakeEpisodeOutlivesTheMute(t *testing.T) {
-	s := &Server{}
+	s := quietWakeTestServer()
 
 	if s.QuietWakeEpisodeActive() {
 		t.Fatal("a speaker nobody woke reports a group wake in progress")
@@ -23,7 +23,7 @@ func TestQuietWakeEpisodeOutlivesTheMute(t *testing.T) {
 	}
 
 	// What the zone join does: arm, then restore. Both touch quietWakeUntil.
-	s.armQuietWakeRestore(26)
+	s.armQuietWakeRestore(wakeLevelInputs{remembered: 26})
 	s.groupWake.mu.Lock()
 	s.groupWake.until = time.Time{}
 	s.groupWake.mu.Unlock()

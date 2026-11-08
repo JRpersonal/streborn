@@ -29,7 +29,7 @@ func TestQuietWakeMarksTheWakeAsSTRsOwn(t *testing.T) {
 	}
 
 	s.groupWake.mu.Lock()
-	s.groupWake.vol = 32
+	s.groupWake.in = wakeLevelInputs{remembered: 32}
 	s.groupWake.until = time.Now().Add(quietWakeRestoreAfter)
 	s.groupWake.mu.Unlock()
 
@@ -54,7 +54,7 @@ func TestQuietWakeMarksTheWakeAsSTRsOwn(t *testing.T) {
 func TestQuietWakeWindowIsBounded(t *testing.T) {
 	s := &Server{}
 	s.groupWake.mu.Lock()
-	s.groupWake.vol = 20
+	s.groupWake.in = wakeLevelInputs{remembered: 20}
 	s.groupWake.until = time.Now().Add(quietWakeRestoreAfter)
 	until := s.groupWake.until
 	s.groupWake.mu.Unlock()

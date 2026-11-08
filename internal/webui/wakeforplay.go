@@ -2,10 +2,8 @@ package webui
 
 import (
 	"context"
+	"sync"
 	"time"
-
-	"github.com/JRpersonal/streborn/internal/boxapi"
-	"github.com/JRpersonal/streborn/internal/boxcli"
 )
 
 // WakeSilentlyForPlay wakes a sleeping speaker for audio STR is about to send
@@ -53,37 +51,33 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 		return noop
 	}
 	s.noteQuietWakeEpisode()
-	prevVol := -1
-	volCtx, volCancel := context.WithTimeout(ctx, quietWakeStepBudget)
-	if v, err := boxapi.New(s.boxHost).GetVolume(volCtx); err == nil {
-		prevVol = v.Actual
-	}
-	volCancel()
+	// The level comes back from what the speaker reported while awake, its
+	// power-on level during this wake or a non-zero read now, never from the 0
+	// a sleeping speaker reports after STR's own earlier mute; and the frames
+	// until the restore are not taken for its level (wakelevel.go).
+	in := s.wakeLevelInputsNow(ctx)
+	s.groupWake.begin()
 	wakeCtx, wakeCancel := context.WithTimeout(ctx, quietWakeWakeBudget)
 	muteDone := s.setVolumeOnFirstLife(wakeCtx, 0)
-	err := boxcli.WakeAndWait(wakeCtx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
+	err := s.quietWakeWake(wakeCtx)
 	wakeCancel()
 	<-muteDone
 	if err == nil {
 		// The watcher may have raced the firmware's own level restore.
 		stepCtx, stepCancel := quietWakeStepCtx()
-		_ = boxapi.New(s.boxHost).SetVolume(stepCtx, 0)
+		_ = s.setOwnLevel(stepCtx, 0)
 		stepCancel()
 	} else {
 		s.logger.Warn("wake: the speaker did not come out of standby for the play", "err", err)
 	}
-	s.logger.Info("wake: silent wake for a play", "mutedFrom", prevVol)
-	if prevVol < 0 {
-		return noop
-	}
+	restoreTo, from := s.wakeRestoreTarget(in, s.groupWake.heldPowerOn())
+	s.logger.Info("wake: silent wake for a play, level held", "restoreTo", restoreTo, "from", from)
+	var once sync.Once
 	return func() {
-		stepCtx, stepCancel := quietWakeStepCtx()
-		defer stepCancel()
-		if err := boxapi.New(s.boxHost).SetVolume(stepCtx, prevVol); err != nil {
-			s.logger.Warn("wake: could not restore the level after a silent wake", "vol", prevVol, "err", err)
-			return
-		}
-		s.logger.Info("wake: level restored after a silent wake", "vol", prevVol)
+		once.Do(func() {
+			defer s.groupWake.end()
+			s.restoreWokenLevel("silent wake", "the play was handed over", in, s.groupWake.heldPowerOn())
+		})
 	}
 }
 

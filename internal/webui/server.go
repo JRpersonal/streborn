@@ -509,7 +509,10 @@ type Server struct {
 	// production (quietWakeNowPlaying, quietWakeStop, wakeForPlayRetry).
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
-	wakeForPlayReadRetry  time.Duration
+	// quietWakeWakeFn is the standby wake of a quiet wake (quietWakeWake);
+	// nil = boxcli.WakeAndWait.
+	quietWakeWakeFn      func(ctx context.Context) error
+	wakeForPlayReadRetry time.Duration
 	// wokenStop is set when a quiet wake left the speaker paused instead of
 	// stopped (a Pandora station, #1629); /api/status then reports it stopped.
 	wokenStop wokenStop
@@ -1315,10 +1318,15 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// leaves a speaker that was pulled out of standby, and the preset write
 	// would start music on that one just the same.
 	s.noteQuietWakeEpisode()
-	var prevVol = -1
-	if v, err := boxapi.New(s.boxHost).GetVolume(ctx); err == nil {
-		prevVol = v.Actual
-	}
+	// What the level comes back to is decided at the release, from the level
+	// the speaker reported while awake, its power-on level during this wake,
+	// or a non-zero read now; never from a 0 the speaker reports while asleep,
+	// which is usually STR's own earlier mute (wakelevel.go). From here until
+	// the release, the speaker's volume frames are STR's own business and are
+	// not taken for its level (NoteBoxVolumeLevel).
+	in := s.wakeLevelInputsNow(ctx)
+	s.groupWake.begin()
+	defer s.groupWake.end()
 	// The mute has to land AFTER the power-on, not before it: a level
 	// written while the speaker sleeps is accepted by its API and then
 	// overwritten by the firmware's own remembered level the moment it
@@ -1333,30 +1341,37 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// moment the zone join lifted the mute (fleet run 2026-10-04).
 	wakeCtx, wakeCancel := context.WithTimeout(ctx, quietWakeWakeBudget)
 	muteDone := s.setVolumeOnFirstLife(wakeCtx, 0)
-	err := boxcli.WakeAndWait(wakeCtx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
+	err := s.quietWakeWake(wakeCtx)
 	wakeCancel()
 	<-muteDone
 	if err != nil {
-		if prevVol >= 0 {
-			stepCtx, stepCancel := quietWakeStepCtx()
-			_ = boxapi.New(s.boxHost).SetVolume(stepCtx, prevVol)
-			stepCancel()
-		}
+		// The watcher may have muted a speaker that came up only half way.
+		// Released at once: the restore leaves a level that is not 0 alone,
+		// so a speaker that never woke is not touched.
+		s.groupWake.arm(in, quietWakeRestoreAfter)
+		s.restoreQuietWakeVolume("the wake failed")
 		return err
 	}
 	// Belt and braces: the watcher may have raced the firmware's level
 	// restore, so the mute is written once more now that the box is up.
 	stepCtx, stepCancel := quietWakeStepCtx()
-	_ = boxapi.New(s.boxHost).SetVolume(stepCtx, 0)
+	_ = s.setOwnLevel(stepCtx, 0)
 	stepCancel()
 	// Whatever the firmware resumed on power-on is stopped, so the zone
 	// join meets an idle speaker instead of a station still spinning up.
 	s.stopQuietWakeResume()
-	if prevVol >= 0 {
-		s.armQuietWakeRestore(prevVol)
-	}
-	s.logger.Info("wake: quiet wake for a group operation", "mutedFrom", prevVol)
+	// Always armed, whatever is known: the speaker was muted above, and a
+	// hold that is not armed is one nothing ever releases.
+	s.armQuietWakeRestore(in)
 	return nil
+}
+
+// quietWakeWake is the standby wake of a quiet wake, seamed for the tests.
+func (s *Server) quietWakeWake(ctx context.Context) error {
+	if s.quietWakeWakeFn != nil {
+		return s.quietWakeWakeFn(ctx)
+	}
+	return boxcli.WakeAndWait(ctx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
 }
 
 // quietWakeBudget bounds a whole quiet wake: the wake itself plus the mute and
@@ -1561,30 +1576,32 @@ func (s *Server) wokenForGroup() bool {
 // wake when no zone join arrives.
 const quietWakeRestoreAfter = 20 * time.Second
 
-// armQuietWakeRestore remembers the level a quiet wake muted from and starts
-// the bounded fallback that restores it if no zone join does.
-func (s *Server) armQuietWakeRestore(vol int) {
-	// A repeat arming inside the window keeps the level already armed and
+// armQuietWakeRestore remembers what is known about the level a quiet wake
+// muted from and starts the bounded fallback that restores it if no zone join
+// does.
+func (s *Server) armQuietWakeRestore(in wakeLevelInputs) {
+	// A repeat arming inside the window keeps what the first one knew and
 	// only pushes the deadline out (see quietWakeState.arm).
-	s.groupWake.arm(vol, quietWakeRestoreAfter)
+	s.groupWake.arm(in, quietWakeRestoreAfter)
+	held, powerOn, _ := s.groupWake.armed()
+	vol, from := s.wakeRestoreTarget(held, powerOn)
+	s.logger.Info("wake: quiet wake for a group operation, level held", "restoreTo", vol, "from", from,
+		"remembered", held.remembered, "powerOn", powerOn, "standbyRead", held.standby,
+		"holdFor", quietWakeRestoreAfter)
 	time.AfterFunc(quietWakeRestoreAfter, func() { s.restoreQuietWakeVolume("timeout") })
 }
 
 // restoreQuietWakeVolume puts the level back that a quiet wake muted, once.
 // The timer of an earlier wake stands down while a later one still holds
-// the speaker (see quietWakeState.release); a zone join always restores.
+// the speaker (see quietWakeState.release); a zone join always restores. A
+// level set since the mute (the group volume of the pair being formed) is
+// left as it is, and a 0 is never put back (restoreWokenLevel).
 func (s *Server) restoreQuietWakeVolume(why string) {
-	vol, restore := s.groupWake.release(why == "timeout")
-	if !restore || vol < 0 || s.boxHost == "" {
+	in, powerOn, restore := s.groupWake.release(why == "timeout")
+	if !restore || s.boxHost == "" {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := boxapi.New(s.boxHost).SetVolume(ctx, vol); err != nil {
-		s.logger.Warn("wake: could not restore the level after a quiet wake", "vol", vol, "why", why, "err", err)
-		return
-	}
-	s.logger.Info("wake: level restored after a quiet wake", "vol", vol, "why", why)
+	s.restoreWokenLevel("quiet wake", why, in, powerOn)
 }
 
 func (s *Server) ensureBoxReady(ctx context.Context) { _ = s.ensureBoxReadyErr(ctx) }
