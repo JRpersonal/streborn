@@ -130,13 +130,7 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// re-pushing its old URL over this queue start.
 	s.bumpRecallGen()
 	s.ensureBoxReady(ctx)
-	// A key press carries no mode choice of its own, so the sticky play mode
-	// applies when one was ever chosen; the slot's stored shuffle and repeat-off
-	// stay the defaults on a box whose owner never touched the toggles.
-	shuffle, rep := p.Shuffle, repeatOff
-	if ps, pr, ok := s.loadPlayMode(); ok {
-		shuffle, rep = ps, pr
-	}
+	shuffle, rep := s.folderKeyPlayMode(p)
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
@@ -148,6 +142,22 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true
+}
+
+// folderKeyPlayMode is the shuffle and repeat a folder key starts with. A
+// recall carries no mode choice of its own, so the sticky play mode applies
+// when one was ever chosen (playmode.go); the key's stored shuffle and repeat
+// off stay the defaults on a box whose owner never touched the toggles.
+//
+// The hardware key and the app's recall of the same key both ask here, so the
+// two start the folder the same way. The app's recall used to start every
+// folder with repeat off, whatever the owner had chosen (#1765).
+func (s *Server) folderKeyPlayMode(p presets.Preset) (shuffle bool, rep repeatMode) {
+	shuffle, rep = p.Shuffle, repeatOff
+	if ps, pr, ok := s.loadPlayMode(); ok {
+		shuffle, rep = ps, pr
+	}
+	return shuffle, rep
 }
 
 // queuePlaysSlot reports whether the active queue is the folder saved on slot:

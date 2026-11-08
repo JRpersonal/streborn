@@ -473,7 +473,7 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	}
 	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
 	// instead of the single-URL play below: reload its ordered tracks with the
-	// saved shuffle flag, starting on a random song when shuffled and on the
+	// key's play mode, starting on a random song when shuffled and on the
 	// first otherwise. We already hold boxCmdMu, so use the *Locked variant
 	// (startQueue would re-lock and deadlock).
 	if p.Type == "queue" {
@@ -485,7 +485,10 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 			return playResult{}, s.libraryKeyRefusal(slot, p.Name, dead)
 		}
 		items := presetItemsToQueue(p.Items)
-		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+		// The same shuffle and repeat the hardware key starts this folder
+		// with: the sticky play mode when one was chosen (#1765).
+		shuffle, rep := s.folderKeyPlayMode(p)
+		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 		// Bind the slot before the queue starts so a box-native /stream/<slot>
 		// fetch racing this app-initiated recall can hold for the first track
 		// (mirrors the hardware RecallSlot path).
@@ -496,7 +499,7 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// starts on a random song, as the hardware key does (#490). Passing 0
 		// here pinned the folder's first song to the front of every shuffled
 		// start from the app and the phone (#1701).
-		if err := s.startQueueLocked(playCtx, items, -1, p.Shuffle, repeatOff, card); err != nil {
+		if err := s.startQueueLocked(playCtx, items, -1, shuffle, rep, card); err != nil {
 			return playResult{}, playFailed("Folder could not be played", err)
 		}
 		recallDelivered = true
