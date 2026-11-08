@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "スピーカーが応答しません",
   "play.errBoxStarting": "スピーカーがまだ応答していません。すぐに押し直さず、少し待ってください。繰り返し押すと再び電源が切れることがあります。それでも変わらないときは、スピーカー本体で電源を入れてください。",
   "play.errSpeakerRefused": "スピーカーが拒否しました",
+  "play.errPandoraUnavailable": "このスピーカーでは現在 Pandora が応答していません。後でもう一度お試しください。",
+  "play.errNativeServiceUnavailable": "このスピーカーでは現在このサービスが応答していません。後でもう一度お試しください。",
   "play.errNotPlayable": "放送局を再生できません",
   "play.errServer500": "放送局のエラー",
   "play.errUnreachable": "放送局に接続できません",

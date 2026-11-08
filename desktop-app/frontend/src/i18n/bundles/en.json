@@ -543,6 +543,8 @@
   "play.errSpeakerTimeout": "speaker not responding",
   "play.errBoxStarting": "The speaker is not responding yet. Give it a moment rather than pressing again: repeated presses can switch it back off. If that does not help, switch it on at the speaker itself.",
   "play.errSpeakerRefused": "speaker refused",
+  "play.errPandoraUnavailable": "Pandora isn't answering on this speaker right now. Try again later.",
+  "play.errNativeServiceUnavailable": "This service isn't answering on this speaker right now. Try again later.",
   "play.errNotPlayable": "station not playable",
   "play.errSpotifyPremium": "Needs Spotify Premium",
   "play.errSpotifyPremiumHelp": "The Spotify account on this speaker is a free account, and Spotify presets only play with Spotify Premium. If you upgrade this account to Premium, restart the speaker afterwards. To use another Premium account instead, open Spotify with that account on a device on the same Wi-Fi, tap the devices icon, choose this speaker's entry ending in (STR), play any track, and save your Spotify presets again.",

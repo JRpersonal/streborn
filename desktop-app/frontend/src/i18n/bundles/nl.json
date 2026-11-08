@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "speaker reageert niet",
   "play.errBoxStarting": "De speaker reageert nog niet. Geef hem even de tijd in plaats van opnieuw te drukken: herhaald drukken kan hem weer uitschakelen. Helpt dat niet, zet hem dan aan op de speaker zelf.",
   "play.errSpeakerRefused": "speaker geweigerd",
+  "play.errPandoraUnavailable": "Pandora reageert op deze speaker nu niet. Probeer het later opnieuw.",
+  "play.errNativeServiceUnavailable": "Deze dienst reageert op deze speaker nu niet. Probeer het later opnieuw.",
   "play.errNotPlayable": "zender niet afspeelbaar",
   "play.errServer500": "zenderfout",
   "play.errUnreachable": "zender onbereikbaar",

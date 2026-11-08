@@ -543,6 +543,8 @@
   "play.errSpeakerTimeout": "喇叭沒有回應",
   "play.errBoxStarting": "揚聲器還沒有回應。請稍候，不要馬上再按一次：重複按可能會讓它再次關閉。若仍無效，請直接在揚聲器上開機。",
   "play.errSpeakerRefused": "喇叭拒絕了",
+  "play.errPandoraUnavailable": "這台喇叭上的 Pandora 目前沒有回應，請稍後再試。",
+  "play.errNativeServiceUnavailable": "這台喇叭上的此服務目前沒有回應，請稍後再試。",
   "play.errNotPlayable": "電台無法播放",
   "play.errSpotifyPremium": "需要 Spotify Premium",
   "play.errSpotifyPremiumHelp": "這台喇叭上的 Spotify 帳號是免費帳號，而 Spotify 預設只有在 Spotify Premium 下才會播放。如果你把這個帳號升級成 Premium，之後請重新啟動喇叭。若要改用另一個 Premium 帳號，請在同一個 Wi-Fi 的裝置上用那個帳號開啟 Spotify，點裝置圖示，選結尾是 (STR) 的這台喇叭項目，隨便播一首歌，然後重新儲存你的 Spotify 預設。",

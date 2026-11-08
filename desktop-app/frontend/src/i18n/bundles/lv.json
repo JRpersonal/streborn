@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "skaļrunis neatbild",
   "play.errBoxStarting": "Skaļrunis vēl neatbild. Dod tam mirkli, nevis spied vēlreiz: atkārtota spiešana var to atkal izslēgt. Ja tas nelīdz, ieslēdz to uz paša skaļruņa.",
   "play.errSpeakerRefused": "skaļrunis noraidīja",
+  "play.errPandoraUnavailable": "Pandora šajā skaļrunī pašlaik neatbild. Mēģiniet vēlāk vēlreiz.",
+  "play.errNativeServiceUnavailable": "Šis pakalpojums šajā skaļrunī pašlaik neatbild. Mēģiniet vēlāk vēlreiz.",
   "play.errNotPlayable": "staciju nevar atskaņot",
   "play.errServer500": "stacijas kļūda",
   "play.errUnreachable": "stacija nav sasniedzama",

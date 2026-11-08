@@ -246,6 +246,25 @@ export async function play(slot) {
   }
 }
 
+// nativeServiceDown names the label for a native-service key the speaker
+// cannot start right now, or '' when l (the lowercased error) is not one
+// (#1763). Two refusals mean that:
+//   - native-service-unavailable: the agent saw the speaker list the service
+//     as UNAVAILABLE and did not even try;
+//   - native-select-refused carrying the firmware's GENERAL_PANDORA_ERROR
+//     (code 1008): the speaker tried and its Pandora client did not answer.
+// Any other native-select-refused keeps the plain "speaker refused".
+export function nativeServiceDown(l) {
+  const s = String(l || '').toLowerCase();
+  if (s.includes('native-service-unavailable')) {
+    return s.includes('iheart') ? 'play.errNativeServiceUnavailable' : 'play.errPandoraUnavailable';
+  }
+  if (s.includes('native-select-refused') && (s.includes('general_pandora_error') || /\b1008\b/.test(s))) {
+    return 'play.errPandoraUnavailable';
+  }
+  return '';
+}
+
 // queuePressReturned ends the in-flight hold of library key press gen and
 // gives the status poll QUEUE_PRESS_REARM_MS more to see the queue's first
 // track before the optimistic card is let go (#1767). A newer press owns the
@@ -273,6 +292,11 @@ function friendlyPlayError(s, host) {
   // pull the plug and mail logs, neither of which helps.
   if (deps.stereoStaleForError(s, host)) return t('play.errStereoStale');
   if (l.includes('box_not_ready')) return t(escalationForCount(noteNotReady(host)));
+  // A Pandora or iHeartRadio key the speaker's own client cannot start right
+  // now (#1763). Ahead of the "refused" check below, which the code itself
+  // would match.
+  const native = nativeServiceDown(l);
+  if (native) return t(native);
   // Spotify recall refused because the speaker was never picked as the Spotify
   // Connect device (no go-librespot credential). Key off the stable backend code,
   // not the English message, so rewording the backend never breaks this (#45).

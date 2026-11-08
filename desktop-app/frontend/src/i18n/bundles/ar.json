@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "السمّاعة لا تستجيب",
   "play.errBoxStarting": "لا يستجيب المكبر بعد. امنحه لحظة بدلاً من الضغط مرة أخرى: الضغط المتكرر قد يعيد إطفاءه. إن لم ينفع ذلك، شغّله من المكبر نفسه.",
   "play.errSpeakerRefused": "رفضت السمّاعة",
+  "play.errPandoraUnavailable": "لا تستجيب Pandora على مكبر الصوت هذا حاليًا. حاول مرة أخرى لاحقًا.",
+  "play.errNativeServiceUnavailable": "لا تستجيب هذه الخدمة على مكبر الصوت هذا حاليًا. حاول مرة أخرى لاحقًا.",
   "play.errNotPlayable": "المحطة غير قابلة للتشغيل",
   "play.errServer500": "خطأ في المحطة",
   "play.errUnreachable": "تعذّر الوصول إلى المحطة",

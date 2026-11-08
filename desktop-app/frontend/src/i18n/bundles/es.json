@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "el altavoz no responde",
   "play.errBoxStarting": "El altavoz aún no responde. Dale un momento en vez de volver a pulsar: pulsar repetidamente puede apagarlo de nuevo. Si eso no ayuda, enciéndelo en el propio altavoz.",
   "play.errSpeakerRefused": "el altavoz rechazó la conexión",
+  "play.errPandoraUnavailable": "Pandora no responde en este altavoz ahora mismo. Inténtalo más tarde.",
+  "play.errNativeServiceUnavailable": "Este servicio no responde en este altavoz ahora mismo. Inténtalo más tarde.",
   "play.errNotPlayable": "emisora no reproducible",
   "play.errServer500": "error de la emisora",
   "play.errUnreachable": "emisora inaccesible",

@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "l'enceinte ne répond pas",
   "play.errBoxStarting": "L'enceinte ne répond pas encore. Laissez-lui un instant plutôt que d'appuyer à nouveau : des appuis répétés peuvent la rééteindre. Si cela ne suffit pas, allumez-la directement sur l'enceinte.",
   "play.errSpeakerRefused": "l'enceinte a refusé",
+  "play.errPandoraUnavailable": "Pandora ne répond pas sur cette enceinte pour le moment. Réessaie plus tard.",
+  "play.errNativeServiceUnavailable": "Ce service ne répond pas sur cette enceinte pour le moment. Réessaie plus tard.",
   "play.errNotPlayable": "station non lisible",
   "play.errServer500": "erreur de la station",
   "play.errUnreachable": "station injoignable",

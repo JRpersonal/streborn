@@ -96,3 +96,42 @@ describe('a library key pressed on a sleeping speaker', () => {
     await b;
   });
 });
+
+// #1763: a Pandora key the speaker's Pandora client cannot start right now.
+describe('a native-service key the speaker cannot start', () => {
+  const refused = (detail) => `status 502: {"code":"native-select-refused","detail":${JSON.stringify(detail)},"error":"The speaker could not start this station","name":"Jazz","slot":1}`;
+
+  it('says Pandora is not answering, not "speaker refused"', async () => {
+    state.presets = [{ slot: 1, type: 'native', name: 'Jazz', native: { source: 'PANDORA', location: '111' } }];
+    api.PlaySlot.mockRejectedValue(refused('select: <error value="1008" name="GENERAL_PANDORA_ERROR" severity="Unknown">'));
+    await play(1);
+    expect(state.presetErrors[1]).toBe("Pandora isn't answering on this speaker right now. Try again later.");
+  });
+
+  it('the agent refusing up front because the speaker lists the service UNAVAILABLE', async () => {
+    state.presets = [{ slot: 1, type: 'native', name: 'Jazz', native: { source: 'PANDORA', location: '111' } }];
+    api.PlaySlot.mockRejectedValue('status 503: {"code":"native-service-unavailable","source":"PANDORA","slot":1}');
+    await play(1);
+    expect(state.presetErrors[1]).toBe("Pandora isn't answering on this speaker right now. Try again later.");
+  });
+
+  it('any other refusal of a native item keeps the plain label', async () => {
+    state.presets = [{ slot: 1, type: 'native', name: 'Jazz', native: { source: 'IHEART', location: '222' } }];
+    api.PlaySlot.mockRejectedValue(refused('select: <error value="1005" name="INVALID_SOURCE">'));
+    await play(1);
+    expect(state.presetErrors[1]).toBe('speaker refused');
+  });
+});
+
+describe('nativeServiceDown', () => {
+  it('names the label for each refusal', async () => {
+    const { nativeServiceDown } = await import('./play.js');
+    expect(nativeServiceDown('{"code":"native-service-unavailable","source":"IHEART"}')).toBe('play.errNativeServiceUnavailable');
+    expect(nativeServiceDown('{"code":"native-service-unavailable"}')).toBe('play.errPandoraUnavailable');
+    expect(nativeServiceDown('{"code":"native-select-refused","detail":"GENERAL_PANDORA_ERROR"}')).toBe('play.errPandoraUnavailable');
+    expect(nativeServiceDown('{"code":"native-select-refused","detail":"error 1008"}')).toBe('play.errPandoraUnavailable');
+    expect(nativeServiceDown('{"code":"native-select-refused","detail":"10080"}')).toBe('');
+    expect(nativeServiceDown('status 503: box_not_ready')).toBe('');
+    expect(nativeServiceDown('')).toBe('');
+  });
+});

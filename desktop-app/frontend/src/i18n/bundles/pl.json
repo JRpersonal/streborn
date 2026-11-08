@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "głośnik nie odpowiada",
   "play.errBoxStarting": "Głośnik jeszcze nie reaguje. Daj mu chwilę zamiast naciskać ponownie: wielokrotne naciśnięcie może go znowu wyłączyć. Jeśli to nie pomoże, włącz go na samym głośniku.",
   "play.errSpeakerRefused": "głośnik odrzucił połączenie",
+  "play.errPandoraUnavailable": "Pandora na tym głośniku teraz nie odpowiada. Spróbuj ponownie później.",
+  "play.errNativeServiceUnavailable": "Ta usługa na tym głośniku teraz nie odpowiada. Spróbuj ponownie później.",
   "play.errNotPlayable": "stacji nie można odtworzyć",
   "play.errServer500": "błąd stacji",
   "play.errUnreachable": "stacja nieosiągalna",

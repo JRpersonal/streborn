@@ -505,6 +505,8 @@
   "play.errSpeakerTimeout": "garsiakalbis neatsako",
   "play.errBoxStarting": "Kolonėlė dar neatsako. Duok jai valandėlę, užuot spaudęs dar kartą: pakartotiniai paspaudimai gali ją vėl išjungti. Jei tai nepadeda, įjunk ją ant pačios kolonėlės.",
   "play.errSpeakerRefused": "garsiakalbis atmetė",
+  "play.errPandoraUnavailable": "Pandora šioje kolonėlėje šiuo metu neatsako. Bandykite vėliau.",
+  "play.errNativeServiceUnavailable": "Ši paslauga šioje kolonėlėje šiuo metu neatsako. Bandykite vėliau.",
   "play.errNotPlayable": "stoties negalima groti",
   "play.errServer500": "stoties klaida",
   "play.errUnreachable": "stotis nepasiekiama",
