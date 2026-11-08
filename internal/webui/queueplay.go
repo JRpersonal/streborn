@@ -79,7 +79,21 @@ func (s *Server) QueueLiveURL(slot int) (url string, recalling bool) {
 // Otherwise it returns false and the caller falls back to the existing
 // single-track recall. This keeps the queue logic in webui (it owns the queue)
 // without entangling the gabbo handler in cmd/agent.
+//
+// RecallSlot knows nothing about the press behind the call; the agent's
+// hardware key path calls RecallSlotPress with what the speaker's key trace
+// says about it.
 func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
+	return s.RecallSlotPress(ctx, slot, SlotPress{At: time.Now()})
+}
+
+// RecallSlotPress is RecallSlot for a selection frame whose press the caller
+// can describe (folderkeypress.go): when it arrived, and the key trace that
+// tells a person pressing the key from the speaker selecting it by itself.
+func (s *Server) RecallSlotPress(ctx context.Context, slot int, press SlotPress) (handled bool) {
+	if press.At.IsZero() {
+		press.At = time.Now()
+	}
 	if s.presets == nil {
 		return false
 	}
@@ -100,15 +114,16 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// track, the way a listener expects a playlist key to behave (Jens,
 	// 2026-10-16). Restarting the folder instead cut the song off and began it
 	// again. Past the last track (no repeat) the folder starts over below.
+	//
+	// Only a person pressing the key again skips. The speaker selects the key
+	// by itself too (on power-on, while it wakes for the folder's own start,
+	// as an echo), and each of those used to skip a track (folderkeypress.go).
 	if s.queuePlaysSlot(slot) {
-		if it, ok, err := s.queueSkip(true); err == nil && ok {
-			s.logger.Info("preset slot recall (hardware): the key's folder already plays, next track",
-				"slot", slot, "title", it.Title)
+		if s.repressFolderKey(slot, press) {
 			return true
-		} else if err != nil {
-			s.logger.Warn("preset slot recall (hardware): next track failed, starting the folder again",
-				"slot", slot, "err", err)
 		}
+	} else if s.resumeFolderKeyReselected(ctx, slot, press) {
+		return true
 	}
 	// A hardware press has no screen to name a music server that is off
 	// (#1339), or one that answers without the folder's music (#919), so that
@@ -586,7 +601,16 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	s.queueMu.Lock()
 	s.queueFolder = card
 	s.queueSavedSlot = 0 // a new folder is on no key until it is saved on one
+	// Until the first track is handed over, a selection of this folder's key
+	// is this very start, not a press asking for the next track
+	// (folderkeypress.go).
+	s.queueStarting = true
+	s.queueResumedAt = time.Time{}
+	if spec.resume != nil {
+		s.queueResumedAt = time.Now()
+	}
 	s.queueMu.Unlock()
+	defer s.endQueueStarting()
 	s.resetBadURLRun(card)
 	it, ok := s.queue.current()
 	if !ok {
@@ -648,13 +672,14 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	} else {
 		s.recentClearQueueCard()
 	}
-	s.noteQueueStart(len(items), start, shuffle, rep, it.Title, it.Duration)
+	s.noteQueueStart(len(items), start, shuffle, rep, it.Title, it.Duration, "resumed", spec.resume != nil)
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
 	}
 	delivered = true
 	s.setQueueTiming(it.Duration)
+	s.endQueueStarting()
 	s.ensureWatcher()
 	s.prearmNextLength()
 	// A folder started from the Library names its server and carries the
@@ -947,6 +972,11 @@ func (s *Server) queueCurrentTitle() string {
 func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	return s.queueSkipLocked(forward)
+}
+
+// queueSkipLocked is queueSkip for a caller that holds boxCmdMu.
+func (s *Server) queueSkipLocked(forward bool) (queueItem, bool, error) {
 	if !s.queue.isActive() {
 		return queueItem{}, false, nil
 	}
@@ -969,6 +999,19 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
+	}
+	if !s.queue.isActive() {
+		// A standby (or anything else) ended the folder while the speaker was
+		// being handed this track: the push is out, but there is no queue to
+		// advance any more. Said as such, so the log does not show an advance
+		// of a folder that had already ended (field 2026-11-08: "queue advance"
+		// 1.4 s after "queue end").
+		s.queueMu.Lock()
+		why := s.queueStopWhy
+		s.queueMu.Unlock()
+		s.logger.Info("queue skip: the folder ended while its next track was handed to the speaker",
+			"endedBy", why, "endedTitle", endedTitle, "title", it.Title)
+		return it, true, nil
 	}
 	s.noteQueueAdvance(false, "next/previous pressed", it.Title, it.Duration, endedTitle, trackEndReport{net: "manual"})
 	s.setQueueTiming(it.Duration)

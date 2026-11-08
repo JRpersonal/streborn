@@ -269,8 +269,11 @@ type presetWsHandler struct {
 	// (a saved DLNA folder): it returns true and starts the play-queue when the
 	// slot is a queue preset, false otherwise so the single-track recall below
 	// still runs. The queue lives in webui, so the queue start happens there.
-	// Wired to webui.Server.RecallSlot. nil-safe.
-	recallSlot func(ctx context.Context, slot int) bool
+	// press carries when the selection arrived and the key trace that tells a
+	// person pressing the key from the speaker selecting it by itself, which
+	// decides whether a press on the key of the folder that plays skips a
+	// track. Wired to webui.Server.RecallSlotPress. nil-safe.
+	recallSlot func(ctx context.Context, slot int, press webui.SlotPress) bool
 	// noteUserPlay records a hardware preset press as an explicit user play in
 	// the webui: it clears the deliberate-stop latches (a press outranks any
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
@@ -804,6 +807,17 @@ func (h *presetWsHandler) presetOutcomeStandDown(ctx context.Context, pressAt ti
 	return ""
 }
 
+// slotPress describes a selection frame of slot for the webui's folder-key
+// recall: when it arrived, and the key trace's word on whether a person
+// pressed the key behind it.
+func (h *presetWsHandler) slotPress(slot int, pressAt time.Time) webui.SlotPress {
+	press := webui.SlotPress{At: pressAt}
+	if h.keyTrace != nil && presets.IsBoxSlot(slot) {
+		press.KeyTrace = folderKeyPress(h.keyTrace, slot, keyTraceWait)
+	}
+	return press
+}
+
 // recallPreset is the slow half of a hardware preset press: the queue-preset
 // claim, the Spotify branch, URL selection, the UPnP push, wake, pairing and
 // the background verify. Runs OFF the gabbo read loop; seq/pressAt come from
@@ -824,7 +838,7 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	// not the single-track UPnP play below. Let it claim the press; it returns
 	// true (and starts the queue) only for a queue preset, so every other preset
 	// type falls through to the existing behaviour unchanged.
-	if h.recallSlot != nil && h.recallSlot(ctx, slot) {
+	if h.recallSlot != nil && h.recallSlot(ctx, slot, h.slotPress(slot, pressAt)) {
 		if h.noteRecentPreset != nil {
 			if p, ok := h.store.Get(slot); ok {
 				h.noteRecentPreset(p)

@@ -1034,6 +1034,17 @@ type Server struct {
 	// queueFolder.key, which Library and Recently-played match on (#1217).
 	// Guarded by queueMu.
 	queueSavedSlot int
+	// queueStarting is true while a queue start runs, from the moment the
+	// folder is loaded until its first track was handed to the speaker (or the
+	// start gave up). A selection of the folder's key in that time is the same
+	// request, never a second press (folderkeypress.go). queueResumedAt is
+	// when the running queue was started by a power-on resume, zero for a
+	// queue started any other way. queueSkipPressAt is the key trace press the
+	// last folder-key skip was taken for, so one press skips one track.
+	// Guarded by queueMu.
+	queueStarting    bool
+	queueResumedAt   time.Time
+	queueSkipPressAt time.Time
 	// queueResume is the folder a standby ended, kept so the power-on resume
 	// can start it again where it stopped instead of replaying its one track
 	// (#1765, queueresume.go). queueResumeOnNAND: a copy of it is on NAND.
