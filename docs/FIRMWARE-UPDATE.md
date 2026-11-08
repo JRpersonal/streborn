@@ -169,11 +169,14 @@ Open the zip and copy only the `Update.stu` inside it to the stick.
 
 - SoundTouch 20 and 30 of Series II and III have a normal USB-A port
   on the back.
+- SoundTouch 20 of Series I (no Bluetooth button) has two sockets on
+  the back: **SETUP A** (micro-USB) and **SETUP B** (USB-A). Use
+  **SETUP B**, the normal USB-A socket; Bose's own USB update
+  instructions use it too. No OTG adapter needed. A first generation
+  SoundTouch 30 with the same two sockets: the same rule.
 - SoundTouch 10 and Portable have a small micro-USB port. You need an
   OTG adapter (micro-USB to USB-A) or an OTG stick. A plain micro-USB
   cable will not do.
-- The oldest Series I units may also need the OTG route. Reported once,
-  not confirmed.
 
 ### Step by step
 

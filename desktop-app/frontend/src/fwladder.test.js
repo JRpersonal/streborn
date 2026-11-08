@@ -27,7 +27,7 @@ import {
   noPathKey,
   notStartedStartKey,
   persistable,
-  portMaybeOtg,
+  portSetupB,
   powerOffKey,
   resumeState,
   saveLadderState,
@@ -314,15 +314,19 @@ describe('screen C: on the speaker', () => {
     expect(html).toContain(esc(en['fwLadder.nsKeysBattery']));
     expect(html).not.toContain(esc(en['fwLadder.nsKeys']));
   });
-  it('the port hint adds the OTG "may" for an ST20/30 of the older hardware only', () => {
-    expect(portMaybeOtg('SoundTouch 20', 'scm')).toBe(true);
-    expect(portMaybeOtg('SoundTouch 30', 'SCM')).toBe(true);
-    expect(portMaybeOtg('SoundTouch 20', 'sm2')).toBe(false);
-    expect(portMaybeOtg('SoundTouch 20', '')).toBe(false);
-    expect(portMaybeOtg('SoundTouch Portable', 'scm')).toBe(false);
+  it('the port hint names the USB-A socket (SETUP B) for an ST20/30 of the older hardware only', () => {
+    expect(portSetupB('SoundTouch 20', 'scm')).toBe(true);
+    expect(portSetupB('SoundTouch 30', 'SCM')).toBe(true);
+    expect(portSetupB('SoundTouch 20', 'sm2')).toBe(false);
+    expect(portSetupB('SoundTouch 20', '')).toBe(false);
+    expect(portSetupB('SoundTouch Portable', 'scm')).toBe(false);
     const scm = ladderHtml(ident, plan7x, { started: true, screen: 'C' });
     expect(scm).toContain(esc(en['fwLadder.w4']));
     expect(scm).toContain(esc(en['fwLadder.w4Scm']));
+    // Bose's instructions use SETUP B, the USB-A socket; no OTG detour.
+    expect(en['fwLadder.w4Scm']).toMatch(/SETUP B/);
+    expect(en['fwLadder.w4Scm']).toMatch(/USB-A/);
+    expect(en['fwLadder.w4Scm']).not.toMatch(/OTG/);
     const sm2 = ladderHtml(ident, { ...plan7x, moduleType: 'sm2' }, { started: true, screen: 'C' });
     expect(sm2).toContain(esc(en['fwLadder.w4']));
     expect(sm2).not.toContain(esc(en['fwLadder.w4Scm']));
