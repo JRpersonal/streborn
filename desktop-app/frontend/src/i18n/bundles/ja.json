@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "スピーカーがアカウントを削除しませんでした: {{err}}",
   "usServices.disconnectStillLinked": "スピーカーにアカウントがまだ残っているため、接続されたままです。",
   "pandora.btnTitle": "あなたの Pandora ステーション",
+  "pandora.unavailableHint": "現在このスピーカーでは Pandora を利用できません",
   "pandora.loading": "Pandora ステーションを読み込み中…",
   "pandora.notLinked": "このスピーカーには Pandora アカウントが接続されていません。スピーカー設定で接続してください。",
   "pandora.loadFailed": "スピーカーが Pandora ステーションを一覧できませんでした: {{err}}",

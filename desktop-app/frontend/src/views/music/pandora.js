@@ -3,7 +3,7 @@
 import { PandoraStations, PlayPandoraStation, SavePandoraStationPreset, USServicesStatus } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
-import { agentErrorCode, agentErrorText, pandoraFindVisible, pandoraStationRows } from '../../usservices.js';
+import { agentErrorCode, agentErrorText, pandoraFindMode, pandoraStationRows } from '../../usservices.js';
 import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
 import { keyNum } from '../../presetrows.js';
 import { pandoraFavFromRow } from '../../pandorafav.js';
@@ -17,13 +17,15 @@ import { refreshStatus } from './status.js';
 // A speaker with a linked Pandora account plays its stations itself; the agent
 // reads the station list from the speaker and hands a station back to it
 // (docs/streaming/us-services.md). The entry sits next to Top/Search/Favorites
-// and only appears while the speaker lists Pandora as READY (pandoraFindVisible).
+// and opens the stations while the speaker lists Pandora as READY. With an
+// account on the speaker that it lists UNAVAILABLE the entry stays, greyed, and
+// says so when pressed instead of vanishing (pandoraFindMode, #1763).
 
 // How long one speaker's Pandora state is trusted before the speaker is asked
 // again. Short enough that a fresh link shows up on the next visit, long enough
 // that the status poll and tab switches do not keep asking.
 const PANDORA_STATE_TTL_MS = 60 * 1000;
-let pandoraState = { host: '', at: 0, visible: false };
+let pandoraState = { host: '', at: 0, mode: 'hidden' };
 let pandoraRows = [];
 
 export async function updatePandoraModeBtn(force) {
@@ -31,35 +33,47 @@ export async function updatePandoraModeBtn(force) {
   if (!b) return;
   const box = state.currentBox;
   if (!box || !box.host || box.kind === 'stock') {
-    b.classList.add('hidden');
+    applyPandoraMode(b, 'hidden');
     return;
   }
   const fresh = pandoraState.host === box.host && Date.now() - pandoraState.at < PANDORA_STATE_TTL_MS;
   if (!force && fresh) {
-    b.classList.toggle('hidden', !pandoraState.visible);
+    applyPandoraMode(b, pandoraState.mode);
     return;
   }
-  let visible = false;
+  let mode = 'hidden';
   let answered = true;
   try {
-    visible = pandoraFindVisible(await USServicesStatus(box.host, box.port));
+    mode = pandoraFindMode(await USServicesStatus(box.host, box.port));
   } catch {
     // An older agent or app build has no such call, or the speaker did not
     // answer: no Pandora entry for now. Not cached, so the next view switch
     // or discovery cycle asks again instead of trusting a timeout (#1388).
-    visible = false;
+    mode = 'hidden';
     answered = false;
   }
   // Another speaker was picked while the answer was on its way.
   if (!state.currentBox || state.currentBox.host !== box.host) return;
-  pandoraState = { host: box.host, at: answered ? Date.now() : 0, visible };
-  b.classList.toggle('hidden', !visible);
-  if (!visible && state.searchLastMode === 'pandora') {
+  pandoraState = { host: box.host, at: answered ? Date.now() : 0, mode };
+  applyPandoraMode(b, mode);
+  if (mode !== 'ready' && state.searchLastMode === 'pandora') {
     state.searchLastMode = 'top';
     state.searchListOpen = false;
     syncSearchModeButtons();
     $('searchResults').innerHTML = '';
   }
+}
+
+// applyPandoraMode draws the entry for one pandoraFindMode answer. The greyed
+// form keeps the button focusable (aria-disabled, not disabled) so its hint
+// can be read and is said when it is pressed.
+export function applyPandoraMode(b, mode) {
+  const unavailable = mode === 'unavailable';
+  b.classList.toggle('hidden', mode !== 'ready' && !unavailable);
+  b.classList.toggle('is-unavailable', unavailable);
+  if (unavailable) b.setAttribute('aria-disabled', 'true');
+  else b.removeAttribute('aria-disabled');
+  b.title = unavailable ? t('pandora.unavailableHint') : t('pandora.btnTitle');
 }
 
 async function loadPandora() {
@@ -190,7 +204,17 @@ export function openPandoraPick(s) {
 // mountPandora attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountPandora() {
-  $('pandoraModeBtn').onclick = listButtonClick('pandoraModeBtn', () => loadPandora());
+  const open = listButtonClick('pandoraModeBtn', () => loadPandora());
+  $('pandoraModeBtn').onclick = () => {
+    // Greyed while the speaker lists Pandora UNAVAILABLE: say why, and ask the
+    // speaker again so the entry opens again the moment Pandora is back (#1763).
+    if ($('pandoraModeBtn').classList.contains('is-unavailable')) {
+      showToast(t('pandora.unavailableHint'));
+      updatePandoraModeBtn(true);
+      return undefined;
+    }
+    return open();
+  };
   // The settings card links or unlinks an account (or flips the opt-in): ask the
   // speaker again instead of waiting for the cache to run out.
   document.addEventListener('str:usservices-changed', () => { updatePandoraModeBtn(true); });

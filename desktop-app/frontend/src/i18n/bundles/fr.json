@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "L'enceinte n'a pas supprimé le compte : {{err}}",
   "usServices.disconnectStillLinked": "L'enceinte affiche toujours le compte, il est donc encore connecté.",
   "pandora.btnTitle": "Tes stations Pandora",
+  "pandora.unavailableHint": "Pandora n'est pas disponible sur l'enceinte pour le moment",
   "pandora.loading": "Chargement de tes stations Pandora…",
   "pandora.notLinked": "Aucun compte Pandora n'est connecté à cette enceinte. Connecte-le dans les réglages de l'enceinte.",
   "pandora.loadFailed": "L'enceinte n'a pas pu lister tes stations Pandora : {{err}}",

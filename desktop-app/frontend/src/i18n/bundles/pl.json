@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "Głośnik nie usunął konta: {{err}}",
   "usServices.disconnectStillLinked": "Głośnik nadal pokazuje konto, więc jest ono wciąż połączone.",
   "pandora.btnTitle": "Twoje stacje Pandora",
+  "pandora.unavailableHint": "Pandora jest teraz niedostępna na głośniku",
   "pandora.loading": "Wczytywanie stacji Pandora…",
   "pandora.notLinked": "Z tym głośnikiem nie jest połączone żadne konto Pandora. Połącz je w ustawieniach głośnika.",
   "pandora.loadFailed": "Głośnik nie mógł pobrać listy stacji Pandora: {{err}}",

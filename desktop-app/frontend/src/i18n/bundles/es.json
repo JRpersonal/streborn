@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "El altavoz no eliminó la cuenta: {{err}}",
   "usServices.disconnectStillLinked": "El altavoz sigue mostrando la cuenta, así que sigue conectada.",
   "pandora.btnTitle": "Tus emisoras de Pandora",
+  "pandora.unavailableHint": "Pandora no está disponible en el altavoz ahora mismo",
   "pandora.loading": "Cargando tus emisoras de Pandora…",
   "pandora.notLinked": "No hay ninguna cuenta de Pandora conectada a este altavoz. Conéctala en los ajustes del altavoz.",
   "pandora.loadFailed": "El altavoz no pudo listar tus emisoras de Pandora: {{err}}",

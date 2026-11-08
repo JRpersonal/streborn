@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "Hoparlör hesabı kaldırmadı: {{err}}",
   "usServices.disconnectStillLinked": "Hoparlör hesabı hâlâ listeliyor, yani hesap hâlâ bağlı.",
   "pandora.btnTitle": "Pandora istasyonların",
+  "pandora.unavailableHint": "Pandora şu anda hoparlörde kullanılamıyor",
   "pandora.loading": "Pandora istasyonların yükleniyor…",
   "pandora.notLinked": "Bu hoparlöre bağlı bir Pandora hesabı yok. Hoparlör ayarlarından bağla.",
   "pandora.loadFailed": "Hoparlör Pandora istasyonlarını listeleyemedi: {{err}}",

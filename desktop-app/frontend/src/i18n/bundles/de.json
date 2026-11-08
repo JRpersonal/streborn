@@ -1217,6 +1217,7 @@
   "usServices.disconnectFailed": "Der Lautsprecher hat das Konto nicht entfernt: {{err}}",
   "usServices.disconnectStillLinked": "Der Lautsprecher führt das Konto noch, es ist also weiter verbunden.",
   "pandora.btnTitle": "Deine Pandora-Sender",
+  "pandora.unavailableHint": "Pandora ist auf dem Lautsprecher gerade nicht verfügbar",
   "pandora.loading": "Deine Pandora-Sender werden geladen…",
   "pandora.notLinked": "Mit diesem Lautsprecher ist kein Pandora-Konto verbunden. Verbinde es in den Lautsprecher-Einstellungen.",
   "pandora.loadFailed": "Der Lautsprecher konnte deine Pandora-Sender nicht auflisten: {{err}}",

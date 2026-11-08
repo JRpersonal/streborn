@@ -1217,6 +1217,7 @@
   "usServices.disconnectFailed": "The speaker did not remove the account: {{err}}",
   "usServices.disconnectStillLinked": "The speaker still lists the account, so it is still connected.",
   "pandora.btnTitle": "Your Pandora stations",
+  "pandora.unavailableHint": "Pandora is not available on the speaker right now",
   "pandora.loading": "Loading your Pandora stations…",
   "pandora.notLinked": "No Pandora account is connected to this speaker. Connect it in Speaker settings.",
   "pandora.loadFailed": "The speaker could not list your Pandora stations: {{err}}",

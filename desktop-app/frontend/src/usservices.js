@@ -91,6 +91,24 @@ export function pandoraFindVisible(status) {
   return usServiceState(status, 'PANDORA').state === 'ready';
 }
 
+// pandoraFindMode says how the Find tab draws its Pandora entry:
+//   'ready'        listed READY with an account: the entry opens the stations
+//   'unavailable'  an account is on the speaker (or STR registered one) but the
+//                  speaker lists Pandora UNAVAILABLE: the entry stays, greyed,
+//                  with a hint. Hiding it silently read as "Pandora is gone"
+//                  while the speaker's own Pandora client was just not
+//                  answering (#1763)
+//   'hidden'       anything else (no account, the service off, no answer, or a
+//                  'stale' account from before STR, which needs a new sign-in
+//                  in Speaker settings rather than patience)
+export function pandoraFindMode(status) {
+  const st = usServiceState(status, 'PANDORA').state;
+  if (st === 'ready') return 'ready';
+  if (st !== 'linked') return 'hidden';
+  const box = (status && status.boxSources && status.boxSources.PANDORA) || {};
+  return String(box.status || '').toUpperCase() === 'UNAVAILABLE' ? 'unavailable' : 'hidden';
+}
+
 // pandoraStationRows turns the agent's station list into the rows the Find
 // tab draws. A station without a location cannot be played and is dropped.
 export function pandoraStationRows(list) {

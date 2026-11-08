@@ -123,3 +123,27 @@ test.describe('UI 2.0', () => {
     await expect(page.locator('#searchResults [data-act="move"]')).toHaveCount(0);
   });
 });
+
+// #1763: an account on the speaker that lists Pandora UNAVAILABLE. The entry
+// used to vanish without a word; it stays, greyed, and says why when pressed.
+test.describe('classic layout, Pandora unavailable on the speaker', () => {
+  const PANDORA_UNAVAILABLE = {
+    standIn: { services: [{ type: 'PANDORA', mode: 'us', registered: true }] },
+    boxSources: { PANDORA: { hasAccount: 'true', status: 'UNAVAILABLE' } },
+  };
+  test.use({ ui2: false, scenario: { ...SEED, bindings: { USServicesStatus: { value: PANDORA_UNAVAILABLE }, PandoraStations: { value: PANDORA_STATIONS } } } });
+
+  test('the Pandora entry stays visible with a hint and does not open the list', async ({ app, mock }) => {
+    const { page } = app;
+    const pandora = page.locator('#pandoraModeBtn');
+    await expect(pandora).toBeVisible();
+    await expect(pandora).toHaveAttribute('aria-disabled', 'true');
+    await expect(pandora).toHaveAttribute('title', 'Pandora is not available on the speaker right now');
+    await mock.resetCalls();
+    // aria-disabled, not disabled: a press still lands and says why.
+    await pandora.click({ force: true });
+    await expect(page.locator('#toast')).toHaveText('Pandora is not available on the speaker right now');
+    await expect(page.locator('#searchResults .pandora-play')).toHaveCount(0);
+    expect(await mock.count('PandoraStations')).toBe(0);
+  });
+});

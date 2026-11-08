@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "De speaker heeft het account niet verwijderd: {{err}}",
   "usServices.disconnectStillLinked": "De speaker toont het account nog, het is dus nog verbonden.",
   "pandora.btnTitle": "Je Pandora-zenders",
+  "pandora.unavailableHint": "Pandora is op de speaker nu niet beschikbaar",
   "pandora.loading": "Je Pandora-zenders worden geladen…",
   "pandora.notLinked": "Er is geen Pandora-account met deze speaker verbonden. Verbind het in de speakerinstellingen.",
   "pandora.loadFailed": "De speaker kon je Pandora-zenders niet ophalen: {{err}}",

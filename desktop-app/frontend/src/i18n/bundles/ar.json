@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "لم تحذف السمّاعة الحساب: {{err}}",
   "usServices.disconnectStillLinked": "ما زالت السمّاعة تعرض الحساب، لذا فهو ما زال متصلاً.",
   "pandora.btnTitle": "محطات Pandora الخاصة بك",
+  "pandora.unavailableHint": "Pandora غير متاحة على مكبر الصوت حاليًا",
   "pandora.loading": "جارٍ تحميل محطات Pandora…",
   "pandora.notLinked": "لا يوجد حساب Pandora متصل بهذه السمّاعة. اربطه من إعدادات السمّاعة.",
   "pandora.loadFailed": "تعذّر على السمّاعة عرض محطات Pandora: {{err}}",

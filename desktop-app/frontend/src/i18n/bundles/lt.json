@@ -1099,6 +1099,7 @@
   "usServices.disconnectFailed": "Garsiakalbis nepašalino paskyros: {{err}}",
   "usServices.disconnectStillLinked": "Garsiakalbis vis dar rodo paskyrą, todėl ji tebėra prijungta.",
   "pandora.btnTitle": "Jūsų Pandora stotys",
+  "pandora.unavailableHint": "Pandora šiuo metu kolonėlėje nepasiekiama",
   "pandora.loading": "Įkeliamos Pandora stotys…",
   "pandora.notLinked": "Prie šio garsiakalbio neprijungta jokia Pandora paskyra. Prijunkite ją garsiakalbio nustatymuose.",
   "pandora.loadFailed": "Garsiakalbis negalėjo pateikti Pandora stočių sąrašo: {{err}}",
