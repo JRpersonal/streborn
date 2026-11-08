@@ -26,6 +26,7 @@ import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml, holdRefusedBannerKey } from '../utils.js';
 import { state } from '../state.js';
 import { groupKeyErrorBanners } from '../groupkeys.js';
+import { restarts } from '../restartwait.js';
 
 // The order the items show in, the classic banner's own order (the wedge
 // banner sits above the issue banner).
@@ -117,7 +118,12 @@ export function itemActions(item) {
       { act: 'saveWifi', label: t('speaker.wifiSaveBtn') },
       { act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'nowifi' },
     ];
-    case 'storm': return [{ act: 'stormRestart', label: t('speaker.stormRestartBtn'), primary: true }];
+    // While a restart the app asked for is still running, the button says so
+    // and cannot be pressed: a second press lands on a speaker in the middle
+    // of its boot (#1768).
+    case 'storm': return restarts.isPending(item.host)
+      ? [{ act: 'stormRestart', label: t('speaker.restartingBtn'), primary: true, disabled: true }]
+      : [{ act: 'stormRestart', label: t('speaker.stormRestartBtn'), primary: true }];
     case 'weakWifi': return [{ act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'weakwifi' }];
     case 'badName': return [{ act: 'badNameFix', label: t('speaker.badNameFixBtn'), primary: true }];
     default: return [];
@@ -141,7 +147,7 @@ export function speakerAttention(host, issues = state.speakerIssues) {
 function itemHTML(item, cls) {
   const tx = itemText(item);
   const acts = itemActions(item).map((a) => `<button type="button" class="u-btn ${a.primary ? 'u-btn--primary' : 'u-btn--secondary'} attn-act"`
-    + ` data-attn="${escapeAttr(a.act)}" data-host="${escapeAttr(item.host)}"${a.dismiss ? ` data-dismiss="${escapeAttr(a.dismiss)}"` : ''}>`
+    + ` data-attn="${escapeAttr(a.act)}" data-host="${escapeAttr(item.host)}"${a.dismiss ? ` data-dismiss="${escapeAttr(a.dismiss)}"` : ''}${a.disabled ? ' disabled' : ''}>`
     + `${escapeHtml(a.label)}</button>`).join('');
   return `<li class="${cls}-item" data-kind="${escapeAttr(item.kind)}">`
     + `<p class="${cls}-text">${tx.title ? `<strong>${escapeHtml(tx.title)}</strong> ` : ''}${escapeHtml(tx.text)}</p>`
@@ -171,7 +177,8 @@ export function attentionCardHTML(items, name) {
 // attentionSig: a short signature of every item, so the list and the page
 // repaint when the issues change and only then.
 export function attentionSig(issues = state.speakerIssues) {
-  return JSON.stringify(issues || {});
+  // A restart that ends changes the storm item's button, not the issues.
+  return JSON.stringify(issues || {}) + '|' + restarts.sig();
 }
 
 // The runner main.js registers: (host, act, button, dismissKind) => void.

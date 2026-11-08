@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "{{name}} に変更しました。スピーカーを再起動しています。1 分ほどかかります。",
   "speaker.stormRestartBtn": "スピーカーを再起動",
   "speaker.stormRestarting": "{{name}} を再起動しています。約1分かかります。",
+  "speaker.restartingBtn": "再起動中…",
+  "speaker.stillRestarting": "{{name}} はまだ再起動中です。数分お待ちください。",
   "speaker.wifiSaveBtn": "Wi-Fi を保存",
   "speaker.issueDismiss": "非表示",
   "presets.transferBtn": "転送",

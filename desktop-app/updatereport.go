@@ -164,6 +164,7 @@ func adviceParagraphs() []string {
 		// all, which is the one report that needs one least ambiguously.
 		noNetworkAdvice,
 		notReachableAdvice,
+		stillRestartingAdvice,
 		installWindowClosedAdvice,
 		controlUnresponsiveAdvice,
 		restartingAfterUnlockAdvice,

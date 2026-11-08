@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Перейменовано на {{name}}. Динамік перезапускається, це триває близько хвилини.",
   "speaker.stormRestartBtn": "Перезапустити колонку",
   "speaker.stormRestarting": "Перезапуск {{name}}, це займе близько хвилини.",
+  "speaker.restartingBtn": "Перезапуск…",
+  "speaker.stillRestarting": "{{name}} ще перезапускається, зачекайте кілька хвилин.",
   "speaker.wifiSaveBtn": "Зберегти Wi-Fi",
   "speaker.issueDismiss": "Приховати",
   "presets.transferBtn": "Перенести",

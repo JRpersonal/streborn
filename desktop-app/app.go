@@ -96,6 +96,12 @@ type App struct {
 	// 14:33:43, engine delivered 14:33:53, STR removed 14:34:06).
 	uninstalling sync.Map
 
+	// restartRequested holds, per host, when that speaker last accepted a
+	// restart request (host -> time.Time), so a failed connection right after
+	// it reads as "still restarting" instead of firewall advice
+	// (app_restarting.go, #1768).
+	restartRequested sync.Map
+
 	// firewall caches the Windows Firewall check (firewall.go): it runs once
 	// at start-up and again only when the UI asks for it.
 	firewall firewallState

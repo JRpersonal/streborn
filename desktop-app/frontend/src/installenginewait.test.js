@@ -5,7 +5,7 @@
 // and to one settled retry after a space refusal, without making an install
 // that fits wait for anything.
 import { describe, it, expect } from 'vitest';
-import { verifyInstalledLoop, waitForStableAgent, installAgentOnTarget } from './agentsettle.js';
+import { verifyInstalledLoop, waitForStableAgent, installAgentOnTarget, SPACE_REFUSAL } from './agentsettle.js';
 
 const SHA = 'a'.repeat(64);
 const OLD = 'b'.repeat(64);
@@ -115,6 +115,14 @@ describe('the install engine delivery', () => {
     expect(r.engineMissing).toBe(true);
     expect(r.engineReason).toBe('insufficient nand');
     expect(h.calls.push).toBe(1);
+  });
+
+  it('does not read a port number with 507 in it as a space refusal (#1768)', () => {
+    const drop = 'Post "http://192.0.2.31:17008/api/agent/sidecar": readfrom tcp 192.0.2.182:50734->192.0.2.31:17008: write tcp 192.0.2.182:50734->192.0.2.31:17008: use of closed network connection';
+    expect(SPACE_REFUSAL.test(drop)).toBe(false);
+    expect(SPACE_REFUSAL.test('status 507: insufficient NAND space')).toBe(true);
+    expect(SPACE_REFUSAL.test('status 507: ')).toBe(true);
+    expect(SPACE_REFUSAL.test('HTTP 507')).toBe(true);
   });
 
   it('does not settle-wait after an error that is not about space', async () => {

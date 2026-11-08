@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Renommée en {{name}}. L'enceinte redémarre, cela prend environ une minute.",
   "speaker.stormRestartBtn": "Redémarrer l’enceinte",
   "speaker.stormRestarting": "Redémarrage de {{name}}, cela prend environ une minute.",
+  "speaker.restartingBtn": "Redémarrage…",
+  "speaker.stillRestarting": "{{name}} est encore en train de redémarrer, laissez-lui quelques minutes.",
   "speaker.wifiSaveBtn": "Enregistrer le Wi-Fi",
   "speaker.issueDismiss": "Masquer",
   "presets.transferBtn": "Transférer",

@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Pārdēvēts par {{name}}. Skaļrunis restartējas, tas aizņem apmēram minūti.",
   "speaker.stormRestartBtn": "Pārstartēt skaļruni",
   "speaker.stormRestarting": "{{name}} tiek pārstartēts, tas aizņem apmēram minūti.",
+  "speaker.restartingBtn": "Pārstartē…",
+  "speaker.stillRestarting": "{{name}} vēl pārstartējas, pagaidi dažas minūtes.",
   "speaker.wifiSaveBtn": "Saglabāt Wi-Fi",
   "speaker.issueDismiss": "Paslēpt",
   "presets.transferBtn": "Pārnest",

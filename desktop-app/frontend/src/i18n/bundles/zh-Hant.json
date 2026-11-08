@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "已重新命名為 {{name}}。喇叭正在重新啟動，大約需要一分鐘。",
   "speaker.stormRestartBtn": "重新啟動喇叭",
   "speaker.stormRestarting": "正在重新啟動 {{name}}，大約要一分鐘。",
+  "speaker.restartingBtn": "正在重新啟動…",
+  "speaker.stillRestarting": "{{name}} 還在重新啟動，請再等幾分鐘。",
   "speaker.wifiSaveBtn": "儲存 Wi-Fi",
   "speaker.issueDismiss": "隱藏",
   "presets.transferBtn": "轉移",

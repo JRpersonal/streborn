@@ -125,6 +125,7 @@ func hasReachabilityAdvice(advice []string) bool {
 			firewallAdvice, notReachableAdvice, isolationAdvice, noNetworkAdvice,
 			noLocalRouteAdvice, answeredNotSTRAdvice, agentNotUpAdvice,
 			repairBoxRestartedAdvice, boxInSetupAdvice, offNetworkLead, otherNetworkLead,
+			stillRestartingAdvice,
 		} {
 			if strings.HasPrefix(p, k) {
 				return true

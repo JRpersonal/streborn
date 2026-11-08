@@ -357,13 +357,58 @@ var lostReplyErr = regexp.MustCompile(`(?i)deadline exceeded|client\.timeout|whi
 
 // spaceRefusal is the engine push refused for lack of room. The agent says
 // "insufficient nand", the transport says "no space" or carries the 507 status.
-var spaceRefusal = regexp.MustCompile(`(?i)insufficient nand|no space|507`)
+//
+// The status has to stand as a status ("status 507: ..."), never as three
+// digits anywhere in the text: a connection drop names both ends of the
+// socket, and the app's own ephemeral port 50734 read as a full speaker. That
+// one match turned a plain dropped upload into "no room for Spotify", which
+// ends the engine step without a retry and clears the record that would have
+// finished the job (#1768, an ST20 left without Spotify for 18 hours).
+var spaceRefusal = regexp.MustCompile(`(?i)insufficient nand|no space|insufficient storage|\b(?:status|http) 507\b`)
 
 // engineStreamDrop matches errors that mean the ~16 MB engine push was cut
 // mid-stream (box rebooting or its network stack folding under the write):
 // re-streaming immediately races the next reboot with the very payload that
 // cut the last one (deqw's ST20 died exactly this way, 2026-07-12).
-var engineStreamDrop = regexp.MustCompile(`(?i)broken pipe|connection reset|deadline exceeded|forcibly closed|host is down|unexpected eof|wsarecv`)
+//
+// "use of closed network connection" is the same drop seen from the other
+// side: the transport closes the socket once the speaker's end went away, and
+// the write still in progress reports that (#1768). Windows words a reset as
+// wsarecv/wsasend "forcibly closed" or "was aborted", and a reply cut short
+// is a bare EOF.
+var engineStreamDrop = regexp.MustCompile(`(?i)broken pipe|connection reset|deadline exceeded|forcibly closed|host is down|unexpected eof|\beof\b|wsarecv|wsasend|use of closed network connection|connection (?:was )?aborted|econnreset|epipe`)
+
+// engineFailure is what a failed engine push means for the next step.
+type engineFailure int
+
+const (
+	// engineFailRetry: an answer that may change (agent busy, a 5xx), so the
+	// push is tried again after a backoff.
+	engineFailRetry engineFailure = iota
+	// engineFailDropped: the upload was cut mid-stream. Tried again as soon
+	// as the speaker has settled; the settle gate does the waiting.
+	engineFailDropped
+	// engineFailNoRoom: the speaker refused for lack of space. Retrying cannot
+	// help, only freeing space can.
+	engineFailNoRoom
+)
+
+// classifyEngineFailure decides what a failed engine push means. The typed
+// space verdict wins, then the speaker's words about space, then a
+// connection drop; anything else is retried after a backoff. Only
+// engineFailNoRoom ends the engine step early.
+func classifyEngineFailure(err error) engineFailure {
+	switch {
+	case err == nil:
+		return engineFailRetry
+	case errors.Is(err, errInsufficientNAND), spaceRefusal.MatchString(err.Error()):
+		return engineFailNoRoom
+	case engineStreamDrop.MatchString(err.Error()):
+		return engineFailDropped
+	default:
+		return engineFailRetry
+	}
+}
 
 // noEmbeddedEngine is EnsureSpotifyEngine's answer on a build that carries
 // only the engine stub.
@@ -1041,7 +1086,7 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 			m := engErr.Error()
 			u.log().Warn("speaker update: engine re-delivery after the incomplete update failed",
 				"host", u.host, "attempt", attempt-1, "err", engErr)
-			if spaceRefusal.MatchString(m) {
+			if classifyEngineFailure(engErr) == engineFailNoRoom {
 				base.EngineTooFull = true
 				u.record("engine re-delivery after the incomplete update refused for lack of room: " + m)
 				return base
@@ -1205,7 +1250,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			}
 			continue // delivered but not visible yet: stay in the loop
 		}
-		m := engErr.Error()
+		verdict := classifyEngineFailure(engErr)
 		// Too full even counting the reclaimable old engine: retrying cannot
 		// help, only freeing space can. The agent update itself succeeded, so the
 		// intent is CLEARED: keeping it "so the app finishes the job next time"
@@ -1214,16 +1259,22 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		// "unvollständig" window on every update, 2026-08-25). This run's own
 		// result already names what to free, and once space exists the next
 		// update run delivers the engine anyway.
-		if spaceRefusal.MatchString(m) {
+		if verdict == engineFailNoRoom {
+			// Logged and journalled: a bundle that shows only the failed push
+			// and nothing after it cannot tell this verdict from a hang (#1768).
+			u.log().Warn("spotify engine delivery refused for lack of room on the speaker (not retrying)",
+				"host", u.host, "attempt", attempt, "err", engErr)
+			u.record("engine delivery refused for lack of room, not retrying: " + engErr.Error())
 			engineTooFull = true
 			u.clearIntent()
 			break
 		}
-		u.log().Warn("spotify engine delivery attempt failed (will retry)", "host", u.host, "attempt", attempt, "err", engErr)
+		u.log().Warn("spotify engine delivery attempt failed (will retry)", "host", u.host, "attempt", attempt,
+			"streamDrop", verdict == engineFailDropped, "err", engErr)
 		// Mid-stream drop: the box rebooted or reset the stream. Loop straight
 		// back: the top-of-loop settle gate does the waiting (reachable, uptime
 		// past the settling window, stable for 30 s).
-		if engineStreamDrop.MatchString(m) {
+		if verdict == engineFailDropped {
 			continue
 		}
 		u.sleep(u.policy.engineBackoff(attempt))
@@ -1526,7 +1577,7 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 		// A full NAND is not something to retry blindly, so it gets its own row
 		// text instead of a bare "failed"; the speaker's own screen names the
 		// other SoundTouch software eating the space.
-		if spaceRefusal.MatchString(out.Err) {
+		if classifyEngineFailure(err) == engineFailNoRoom {
 			out.EngineTooFull = true
 		}
 		u.log().Warn("update all: engine repair failed", "host", u.host, "err", err)

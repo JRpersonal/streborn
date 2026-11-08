@@ -361,6 +361,7 @@ import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
 // UI 2.0 phase 5: what one speaker needs is said on that speaker (the wedge
 // and box issue banners, the update failure report); preview only.
 import { speakerIssuesFrom, setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
+import { localizeStillRestarting, restarts } from './restartwait.js';
 import { openSpeakers } from './shell2/speakers/index.js';
 import { speakerReportSlot } from './shell2/speakers/speaker.js';
 import { sectionReport } from './shell2/state.js';
@@ -2522,10 +2523,20 @@ function warnDismissKey(box, type) {
 function warnDismissed(box, type) {
   try { return !!localStorage.getItem(warnDismissKey(box, type)); } catch { return false; }
 }
+// noteRestartRequested records a restart the speaker accepted, and repaints
+// the warning once the wait can last no longer, so a speaker that never shows
+// as gone in a refresh still gets its button back.
+function noteRestartRequested(host) {
+  restarts.requested(host);
+  setTimeout(checkBoxIssueBanner, restarts.remainingMs(host) + 1000);
+}
 function checkBoxIssueBanner() {
   const el = $('boxIssueBanner');
   if (!el) return;
   const boxes = state.boxes || [];
+  // Every refresh lands here: it is where a speaker the app restarted is seen
+  // going away and coming back, which ends its "Restarting…" button.
+  restarts.observe(boxes);
   const conflict = boxes.filter(b => b && b.conflictingMod && !warnDismissed(b, 'conflict'));
   // A speaker asking a non-standard Bose cloud address (#986). NOT dismissible
   // and not folded into the conflict line: the marker files may be long gone
@@ -2647,8 +2658,12 @@ function checkBoxIssueBanner() {
     : '';
   // The soft restart, offered right where the problem is stated. The speaker
   // comes back in about a minute and the state is gone.
+  // Until a restart the app asked for has visibly happened, the button says
+  // "Restarting…" and stays off: the warning outlives the request by a
+  // minute or more, and a second press landed on a speaker mid-boot (#1768).
+  const stormRestarting = storm.length && restarts.isPending(storm[0].host);
   const stormBtn = storm.length
-    ? `<button class="btn btn-primary btn-mini" id="boxIssueStormBtn">${escapeHtml(t('speaker.stormRestartBtn'))}</button>`
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueStormBtn"${stormRestarting ? ' disabled' : ''}>${escapeHtml(t(stormRestarting ? 'speaker.restartingBtn' : 'speaker.stormRestartBtn'))}</button>`
     : '';
   // One press puts STR back on every hijacked speaker at once.
   //
@@ -2672,14 +2687,19 @@ function checkBoxIssueBanner() {
   const sb = $('boxIssueStormBtn');
   if (sb) sb.onclick = async () => {
     const box = storm[0];
+    if (restarts.isPending(box.host)) {
+      showToast(t('speaker.stillRestarting', { name: getBoxLabel(box) }));
+      return;
+    }
     sb.disabled = true;
     showToast(t('speaker.stormRestarting', { name: getBoxLabel(box) }));
     try {
       await RebootBox(box.host, box.port);
+      noteRestartRequested(box.host);
+      sb.textContent = t('speaker.restartingBtn');
     } catch (e) {
-      showError(String(e));
-    } finally {
       sb.disabled = false;
+      showError(localizeStillRestarting(String(e), t('speaker.stillRestarting', { name: getBoxLabel(box) })));
     }
   };
   const bnb = $('boxIssueBadNameBtn');
@@ -2793,13 +2813,22 @@ async function runSpeakerAttention(host, act, btn, dismissKind) {
       // In the attention item the button sits in (sectionReport; the classic
       // toast and dialog without the preview): "Restarting" only once the
       // speaker took the restart, a refusal right there.
+      if (restarts.isPending(box.host)) {
+        sectionReport(btn, { tone: 'busy', text: t('speaker.stillRestarting', { name: getBoxLabel(box) }) });
+        break;
+      }
       btn.disabled = true;
       try {
         await RebootBox(box.host, box.port);
+        noteRestartRequested(box.host);
+        btn.textContent = t('speaker.restartingBtn');
         sectionReport(btn, { tone: 'busy', text: t('speaker.stormRestarting', { name: getBoxLabel(box) }) });
       } catch (e) {
-        sectionReport(btn, { tone: 'error', text: String(e) });
-      } finally { btn.disabled = false; }
+        // Off until the speaker is back on success; on a failure the
+        // button is the way to try again.
+        btn.disabled = false;
+        sectionReport(btn, { tone: 'error', text: localizeStillRestarting(String(e), t('speaker.stillRestarting', { name: getBoxLabel(box) })) });
+      }
       break;
     case 'badNameFix':
       btn.disabled = true;

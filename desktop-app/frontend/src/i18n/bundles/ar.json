@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "تمت إعادة التسمية إلى {{name}}. السماعة تعيد التشغيل، يستغرق ذلك نحو دقيقة.",
   "speaker.stormRestartBtn": "إعادة تشغيل مكبر الصوت",
   "speaker.stormRestarting": "جارٍ إعادة تشغيل {{name}}، وهذا يستغرق حوالي دقيقة.",
+  "speaker.restartingBtn": "جارٍ إعادة التشغيل…",
+  "speaker.stillRestarting": "لا يزال {{name}} قيد إعادة التشغيل، امنحه بضع دقائق.",
   "speaker.wifiSaveBtn": "حفظ Wi-Fi",
   "speaker.issueDismiss": "إخفاء",
   "presets.transferBtn": "نقل",

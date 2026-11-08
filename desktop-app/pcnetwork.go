@@ -498,6 +498,12 @@ func (a *App) speakerSightedFresh(host string) bool {
 // lets it check this PC for a VPN in the way and, on a Mac, for the Local
 // Network permission before falling back to the generic verdicts.
 func (a *App) reachabilityHintFor(host string, err error) error {
+	// A speaker that accepted a restart a moment ago is booting: refusing,
+	// silent, or answering through the firmware before the agent is up. Saying
+	// so beats every verdict below, the firewall one most of all (#1768).
+	if hinted := a.stillRestartingHint(host, err); hinted != nil {
+		return hinted
+	}
 	if err == nil || host == "" || answeredNotSTR(err) || errors.Is(err, context.Canceled) {
 		return reachabilityHint(err)
 	}

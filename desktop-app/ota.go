@@ -62,6 +62,7 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+	a.noteSpeakerUptime(host, out["uptimeSec"])
 	return out, nil
 }
 
@@ -306,7 +307,8 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 // ask errors.Is(err, errInsufficientNAND) instead of matching "507",
 // "insufficient nand" or "no space" in the text. Error() keeps the texts
 // those matches used to see: the frontend still matches them
-// (/insufficient nand|no space|507/ in main.js), and a 507 reply keeps its
+// (SPACE_REFUSAL in agentsettle.js, which wants "status 507" as a status, not
+// three digits inside a port number: #1768), and a 507 reply keeps its
 // "status 507: <body>" form, which the retry and connection-drop classifiers
 // key on ("status ").
 type nandFullError struct {

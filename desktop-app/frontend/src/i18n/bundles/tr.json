@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Yeni ad: {{name}}. Hoparlör yeniden başlatılıyor, bu yaklaşık bir dakika sürer.",
   "speaker.stormRestartBtn": "Hoparlörü yeniden başlat",
   "speaker.stormRestarting": "{{name}} yeniden başlatılıyor, bu yaklaşık bir dakika sürer.",
+  "speaker.restartingBtn": "Yeniden başlatılıyor…",
+  "speaker.stillRestarting": "{{name}} hâlâ yeniden başlatılıyor, birkaç dakika bekleyin.",
   "speaker.wifiSaveBtn": "Wi-Fi'yi kaydet",
   "speaker.issueDismiss": "Gizle",
   "presets.transferBtn": "Aktar",

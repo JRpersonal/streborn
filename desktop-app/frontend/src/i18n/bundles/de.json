@@ -2055,6 +2055,8 @@
   "speaker.badNameFixing": "Umbenannt in {{name}}. Der Lautsprecher startet neu, das dauert etwa eine Minute.",
   "speaker.stormRestartBtn": "Lautsprecher neu starten",
   "speaker.stormRestarting": "{{name}} wird neu gestartet, das dauert etwa eine Minute.",
+  "speaker.restartingBtn": "Startet neu…",
+  "speaker.stillRestarting": "{{name}} startet noch neu, gib ihm ein paar Minuten.",
   "speaker.issueDismiss": "Ausblenden",
   "presets.transferBtn": "Übertragen",
   "presets.transferNoTargets": "Kein anderer Lautsprecher zum Übertragen gefunden",
