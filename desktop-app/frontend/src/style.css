@@ -1102,6 +1102,57 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   color: var(--c-muted);
 }
 
+/* An update from this app runs on the speaker (#1764). It was a small grey
+   line people missed, and they kept pressing the remote of a speaker that
+   was restarting. Now: bold, the accent colour, a turning ring, on the
+   speaker's tile and over the update's progress line. */
+.box-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+/* The finishing badge of a stock-looking tile keeps its badge shape. */
+.box-stock-badge.box-updating { text-transform: none; letter-spacing: 0; }
+.update-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--brand);
+  border-inline-start-width: 4px;
+  border-radius: 6px;
+  background: var(--brand-bg);
+  color: var(--brand-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.update-running-spin {
+  flex: 0 0 auto;
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+/* Without motion the ring stands still, still a ring that says "busy". */
+@media (prefers-reduced-motion: reduce) {
+  .update-running-spin { animation: none; border-right-color: currentcolor; border-style: dotted; }
+}
+
 /* Announcement expert command: a wrappable, selectable monospace block. */
 .announce-curl {
   flex: 1;

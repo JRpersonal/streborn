@@ -40,6 +40,8 @@ html.ui2 #ui2SpkPage .sps-state {
   font-size: 14px;
 }
 html.ui2 #ui2SpkPage .sps-now { color: var(--u-muted); overflow-wrap: anywhere; }
+/* What a running update means for the speaker, next to its pill (#1764). */
+html.ui2 #ui2SpkPage .sps-updating { color: var(--u-accent); font-weight: 700; }
 /* The classic list refresh, moved into the head: a 40px target with a
    visible focus ring. Its name comes from its title (aria-label). */
 html.ui2 #ui2SpkPage #settingsRefreshBtn {

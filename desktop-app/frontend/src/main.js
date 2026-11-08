@@ -17,6 +17,7 @@ import { weakWifiDropoutBoxes } from './weakwifi.js';
 import { unsafeNameBoxes } from './speakername.js';
 import { groupKeyErrorBanners } from './groupkeys.js';
 import { speakerTileState } from './speakertile.js';
+import { clearUpdateRunning, onUpdateRunningChange, setUpdateRunning, updateRunningChipHTML, updateRunningNoticeHTML } from './updaterunning.js';
 import { holdsByHost, holdFor } from './installhold.js';
 import { allowsInstallAgain, checkResultHTML, checkTargets, failingSpeakers, needsAttention, precheckHTML, runSpeakerChecks } from './speakercheck.js';
 import { wantsFastPoll } from './trackprogress.js';
@@ -446,6 +447,9 @@ initSetupView({
   // speaker enters or leaves one.
   installHoldsChanged: () => { renderBoxSelect(); renderShellSpeakers(); },
 });
+// A speaker an update starts or stops running on is marked or unmarked in
+// both speaker lists at once (updaterunning.js, #1764).
+onUpdateRunningChange(() => { renderBoxSelect(); renderShellSpeakers(); });
 initStreamSourceView({
   playStation: (station, playback) => playStation({
     url: playback.streamURL,
@@ -3133,7 +3137,9 @@ function renderBoxSelect() {
     // disconnect mark and a "last seen ..." tooltip, until it answers again.
     const off = tile.offline;
     const offCls = off ? ' offline' : '';
-    const offTitle = off ? offlineTitle(b) : '';
+    // A speaker restarting into its update drops off the network for a
+    // while: its tooltip says why, not "last seen" (#1764).
+    const offTitle = off ? (tile.updateRunning ? t('speaker.updateRunningHint') : offlineTitle(b)) : '';
     const offAttr = off ? ` data-offline="1" title="${escapeAttr(offTitle)}"` : '';
     const offMark = off
       ? `<span class="box-offline-mark" aria-label="${escapeAttr(offTitle)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>`
@@ -3173,9 +3179,15 @@ function renderBoxSelect() {
       const gone = tile.strNotRunning;
       const finishing = tile.updateFinishing;
       const badgeKey = finishing ? 'speaker.updateFinishingBadge' : gone ? 'speaker.strNotRunningBadge' : 'speaker.needsInstallBadge';
-      const badge = `<span class="box-stock-badge${gone || finishing ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(badgeKey))}</span>`;
+      // A speaker an update is running or finishing on is marked so nobody
+      // uses it meanwhile: bold, the accent colour, a turning ring (#1764).
+      // While the update runs its agent is silent, so it looks stock here.
+      const badge = tile.updateRunning ? updateRunningChipHTML()
+        : finishing ? `<span class="box-stock-badge box-updating"><span class="update-running-spin" aria-hidden="true"></span>${escapeHtml(t(badgeKey))}</span>`
+          : `<span class="box-stock-badge${gone ? ' box-stock-badge-gone' : ''}">${escapeHtml(t(badgeKey))}</span>`;
       const stockTitle = off ? offTitle
-        : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
+        : tile.updateRunning ? t('speaker.updateRunningHint')
+          : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
       return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
@@ -3186,7 +3198,10 @@ function renderBoxSelect() {
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
-    const showUpd = tile.needsUpdate;
+    // Not while its update runs: the chip would invite a second one, and the
+    // running update has its own mark (#1764).
+    const showUpd = tile.needsUpdate && !tile.updateRunning;
+    const updRunning = tile.updateRunning ? updateRunningChipHTML() : '';
     const updCls = showUpd ? ' needs-update' : '';
     // A WORD, not a dot: the blue dot that used to sit here reads as decoration
     // to non-technical users. A screenshot from a user whose speaker had been
@@ -3208,7 +3223,7 @@ function renderBoxSelect() {
     const noNetChip = tile.noInternet
       ? `<span class="box-nointernet-chip" title="${escapeAttr(noInternetText(t))}">${escapeHtml(t('speaker.noInternetChip'))}</span>`
       : '';
-    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updRunning}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   };
   // "Add by IP" tile, always available once at least one speaker is listed.
   // On a routed network mDNS and the local /24 scan find only the speakers on
@@ -4117,6 +4132,12 @@ const BOX_BUSY_TOKEN = 'STR_BUSY:';
 // learned this in August, see updateAllBusy; this one had not.
 let boxUpdateBusy = false;
 
+// dropRunningNotices removes the "update running" notices over the progress
+// lines once the update is over (#1764).
+function dropRunningNotices() {
+  document.querySelectorAll('.update-running').forEach((n) => n.remove());
+}
+
 async function doBoxUpdate(targetBox) {
   // Both latches, not just this one. The whole-house run calls RunFleetUpdate
   // directly so it does not contend here, but it holds the single-box global
@@ -4269,6 +4290,11 @@ async function runSingleBoxUpdate(targetBox) {
       if (!b.disabled) b.disabled = true;
     });
     statusLines().forEach(el => {
+      // Over the progress line, the notice that the speaker restarts and is
+      // not to be used meanwhile (#1764). The settings card draws it too when
+      // it renders during an update; this adds it to a card drawn before.
+      const prev = el.previousElementSibling;
+      if (!prev || !prev.classList.contains('update-running')) el.insertAdjacentHTML('beforebegin', updateRunningNoticeHTML());
       if (el.textContent !== text) el.textContent = text;
       // The full sentence stays reachable on hover for anything the two
       // reserved lines cannot hold.
@@ -4279,6 +4305,7 @@ async function runSingleBoxUpdate(targetBox) {
     if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
     buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtnSpeaker'); });
     statusLines().forEach(el => { el.textContent = ''; el.title = ''; });
+    dropRunningNotices();
   };
   // Mark this box as the OTA target AND flip the global in-flight
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
@@ -4291,6 +4318,7 @@ async function runSingleBoxUpdate(targetBox) {
   // here any more; the Go side owns both for the headless harness too.
   state.otaTargetHost = targetBox.host;
   state.otaTargetName = getBoxLabel(targetBox);
+  setUpdateRunning(targetBox.host, true);
   // Suppress the SSH "remove stick and reboot" banner for the whole
   // OTA window. The agent restarts mid-OTA and SSH is briefly open
   // during that restart; the banner's "Reboot now" button would
@@ -4533,6 +4561,8 @@ async function runSingleBoxUpdate(targetBox) {
     // come back if it still applies, even if we threw mid-poll.
     state.otaInProgress = false;
     syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
+    setUpdateRunning(state.otaTargetHost, false);
+    dropRunningNotices();
     state.otaTargetHost = null;
     state.otaTargetName = null;
     checkSshBanner();
@@ -4779,6 +4809,9 @@ async function runUpdateAllBoxes(onStart) {
     // current agent swaps the engine in place and does NOT restart. Its row
     // therefore only follows the bar and never claims a restart it will not make.
     if (engineOnly.has(p.host)) { setRow(p.host, { pct: p.pct }); return; }
+    // Its first byte is where the update starts touching this speaker: from
+    // here until its row has an outcome it is marked as updating (#1764).
+    setUpdateRunning(p.host, true);
     // At 100% the binary is on the box and it reboots; its reply is often lost
     // in that reboot, so the sequence's own 'rebooting' phase does not fire for
     // another ~minute. Flip the row to "restarting" on upload completion so it
@@ -4887,6 +4920,7 @@ async function runUpdateAllBoxes(onStart) {
     else if (d.unmet === 'address-changed') setRow(b.host, { phaseText: t('updateAll.phase.addressChanged'), pct: 100, barClass: 'ua-defer' });
     else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     const r = rowState.get(b.host); if (r) r.outcome = outcome;
+    setUpdateRunning(b.host, false);
     renderSummary();
   };
   const FINAL_PHASES = new Set(['done', 'partial', 'timeout', 'agentGone', 'boxInSetup', 'failed']);
@@ -4901,6 +4935,9 @@ async function runUpdateAllBoxes(onStart) {
       else if (d.phase === 'engineUploading') setRow(d.host, { phaseText: t('updateAll.phase.engineOnly'), busy: true });
       return;
     }
+    // A speaker that restarts or is being confirmed is in its update even if
+    // its progress event was missed (#1764).
+    if (['rebooting', 'verifying', 'retrying', 'settling', 'spotify'].includes(d.phase)) setUpdateRunning(d.host, true);
     switch (d.phase) {
       // 'uploading' fires before the batch gate: the row keeps waiting
       // until its first progress byte arrives (the progress handler above).
@@ -4974,6 +5011,7 @@ async function runUpdateAllBoxes(onStart) {
   if (mini) mini.classList.add('hidden');
   state.otaInProgress = false;
   syncShellPlayer(); // UI 2.0: volume and transport follow the OTA gate
+  clearUpdateRunning();
   state.otaTargetHost = null;
   state.otaTargetName = null;
   renderSummary();

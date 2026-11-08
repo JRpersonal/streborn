@@ -11,11 +11,11 @@ import { setLocale } from '../../i18n/index.js';
 setLocale('en');
 
 const ALL = {
-  offline: true, startingUp: true, strNotRunning: true, stock: true, playing: true,
+  updateRunning: true, updateFinishing: true, offline: true, startingUp: true, strNotRunning: true, stock: true, playing: true,
   standby: true, updateReady: true, stereoPair: true, fixedGroup: true,
 };
 const FLAG = {
-  notReachable: 'offline', startingUp: 'startingUp', strNotRunning: 'strNotRunning', boseOriginal: 'stock',
+  updateRunning: 'updateRunning', updateFinishing: 'updateFinishing', notReachable: 'offline', startingUp: 'startingUp', strNotRunning: 'strNotRunning', boseOriginal: 'stock',
   playing: 'playing', standby: 'standby', updateReady: 'updateReady', stereoPair: 'stereoPair', fixedGroup: 'fixedGroup',
 };
 
@@ -31,8 +31,8 @@ describe('listPillKind', () => {
     expect(listPillKind(null)).toBe('');
   });
 
-  it('keeps the precedence: not reachable, starting up, kind, doing, needs, belongs', () => {
-    expect(LIST_PILL_ORDER).toEqual(['notReachable', 'startingUp', 'strNotRunning', 'boseOriginal',
+  it('keeps the precedence: an update running, not reachable, starting up, kind, doing, needs, belongs', () => {
+    expect(LIST_PILL_ORDER).toEqual(['updateRunning', 'updateFinishing', 'notReachable', 'startingUp', 'strNotRunning', 'boseOriginal',
       'playing', 'standby', 'updateReady', 'stereoPair', 'fixedGroup']);
     // Take the winner away one by one: the next in line shows.
     const f = { ...ALL };

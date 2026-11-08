@@ -9,6 +9,7 @@ import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
 import { deps, confirmFor, reportError, reportDone } from './shared.js';
 import { inLiveGroup, anyInLiveGroup } from '../../groups.js';
+import { isUpdateRunning, updateRunningNoticeHTML } from '../../updaterunning.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
 export function renderStatusSection() {
@@ -167,8 +168,12 @@ export function wireStatusSections(ctx) {
       // and invites a second press (Jens, 2026-08-22).
       const otaHere = state.otaInProgress && state.otaTargetHost === box.host;
       const otaElsewhere = state.otaInProgress && state.otaTargetHost && !otaHere;
+      // An update running on THIS speaker (alone or in Update all) says so
+      // over its progress line, bold and with an indicator: it restarts and
+      // is not to be used meanwhile (#1764).
+      const runsHere = otaHere || isUpdateRunning(box.host);
       const otaBtn = () => (otaHere || otaElsewhere)
-        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus">${escapeHtml(otaHere ? t('update.uploading') : t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`
+        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button>${runsHere ? updateRunningNoticeHTML() : ''}<div class="op-status" id="stickInfoUpdateStatus">${escapeHtml(otaHere ? t('update.uploading') : t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`
         : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus"></div>`;
       if (cmp === 0) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';

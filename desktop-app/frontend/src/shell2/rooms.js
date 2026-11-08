@@ -55,6 +55,7 @@ export function roomItems(boxes, ctx = {}) {
         isCurrent: tiles.some((x) => x.isCurrent),
         standby: tiles.some((x) => x.standby),
         needsUpdate: tiles.some((x) => x.needsUpdate),
+        updateRunning: tiles.some((x) => x.updateRunning),
         noInternet: tiles.some((x) => x.noInternet),
         offline: tiles.every((x) => x.offline),
         inStereoPair: true,
@@ -89,7 +90,8 @@ function rowOf(box, tile, name, ctx, hosts) {
     pill: speakerPillKind(tile),
     chips: speakerChipKinds(tile),
     isCurrent: tile.isCurrent && !tile.stock,
-    title: tile.offline && typeof ctx.offlineTitle === 'function' ? ctx.offlineTitle(box)
-      : tile.updateFinishing ? t('speaker.updateFinishingTooltip') : '',
+    title: tile.updateRunning ? t('speaker.updateRunningHint')
+      : tile.offline && typeof ctx.offlineTitle === 'function' ? ctx.offlineTitle(box)
+        : tile.updateFinishing ? t('speaker.updateFinishingTooltip') : '',
   };
 }

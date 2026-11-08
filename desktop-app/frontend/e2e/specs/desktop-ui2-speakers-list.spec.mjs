@@ -123,6 +123,37 @@ test.describe('UI 2.0 Speakers list', () => {
     await expect(page.locator('#ui2SpkPageName')).toHaveText(R.office.friendlyName);
   });
 
+  test.describe('an update that is still running', () => {
+    // The speaker takes its time: the update stays on for the whole test.
+    test.use({ scenario: mergeScenario(speakersScenario(), { bindings: { RunSpeakerUpdate: { delayMs: 60_000 } } }) });
+
+    test('3b. the speaker says so, bold and busy, everywhere it is drawn (#1764)', async ({ app, mock }) => {
+      const { page } = app;
+      const hint = "Update running, the speaker restarts shortly. Please don't use it until then.";
+      await openList(page);
+      await act(page, 'update', R.oldAgent.host).click();
+      await mock.expectCalled('RunSpeakerUpdate', { pred: onHost(R.oldAgent.host), times: 1 });
+      // Its page: the busy pill and what it means.
+      const head = page.locator('#ui2SpkPageState');
+      await expect(head.locator('.u-pill')).toHaveText('Update running');
+      await expect(head.locator('.u-pill')).toHaveClass(/u-pill--busy/);
+      await expect(head.locator('.sps-updating')).toHaveText(hint);
+      expect(Number((await head.locator('.sps-updating').evaluate((e) => getComputedStyle(e).fontWeight)))).toBeGreaterThanOrEqual(700);
+      // The sidebar row.
+      const side = page.locator(`#ui2SpkLists [data-host="${R.oldAgent.host}"] .u-pill`).first();
+      await expect(side).toHaveText('Update running');
+      // Its card in the list: no Update to press, the notice instead.
+      await openList(page);
+      await expect(pill(page, R.oldAgent.host)).toHaveText('Update running');
+      await expect(act(page, 'update', R.oldAgent.host)).toHaveCount(0);
+      const busy = card(page, R.oldAgent.host).locator('.spl-updating');
+      await expect(busy).toHaveText(hint);
+      await expect(busy.locator('.update-running-spin')).toBeVisible();
+      // Any other speaker is untouched.
+      await expect(pill(page, R.livingRoom.host)).toHaveText('Playing');
+    });
+  });
+
   test.describe('a Bose original that is not reachable', () => {
     test.use({ scenario: mergeScenario(speakersScenario(), { boxPatches: { kitchen: { offline: true } } }) });
 
