@@ -23,6 +23,12 @@ func hold(func([]byte), <-chan struct{}, <-chan struct{}, func() time.Duration) 
 	return errors.New("no panel on this platform")
 }
 
+// panelFrameDark and flipThreadInfo read the framebuffer and /proc; nothing
+// to read here.
+func panelFrameDark() (dark, ok bool) { return false, false }
+
+func flipThreadInfo() []any { return nil }
+
 // ProcessCPUms and SelfCPUms read /proc; nothing to read here.
 func ProcessCPUms(string) int64 { return -1 }
 

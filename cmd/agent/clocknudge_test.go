@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 type nudgeCase struct {
@@ -86,5 +88,39 @@ func TestClockNudgeRetriesASlowStateRead(t *testing.T) {
 	}
 	if !n.run(context.Background()) || reads != 3 || calls != 1 {
 		t.Fatalf("slow state read: reads=%d standby calls=%d, want 3 reads and one standby", reads, calls)
+	}
+}
+
+// The dark-panel check (#841) only nudges when the firmware should be drawing
+// its clock: in standby with the clock switched on. A clock the owner turned
+// off, or a speaker without one, is black in standby by design.
+func TestClockExpected(t *testing.T) {
+	cfg := func(enable string, err error) func(context.Context) (boxapi.ClockConfig, error) {
+		return func(context.Context) (boxapi.ClockConfig, error) {
+			return boxapi.ClockConfig{UserEnable: enable}, err
+		}
+	}
+	standby := func(s bool, err error) func(context.Context) (bool, error) {
+		return func(context.Context) (bool, error) { return s, err }
+	}
+	cases := []struct {
+		name    string
+		standby func(context.Context) (bool, error)
+		cfg     func(context.Context) (boxapi.ClockConfig, error)
+		want    bool
+		wantErr bool
+	}{
+		{"standby, clock on", standby(true, nil), cfg("true", nil), true, false},
+		{"standby, clock off", standby(true, nil), cfg("false", nil), false, false},
+		{"standby, no clock on this speaker", standby(true, nil), cfg("", boxapi.ErrNoClockConfig), false, false},
+		{"standby, clock unreadable", standby(true, nil), cfg("", errors.New("timeout")), false, true},
+		{"playing", standby(false, nil), cfg("true", nil), false, false},
+		{"state unreadable", standby(false, errors.New("timeout")), cfg("true", nil), false, true},
+	}
+	for _, tc := range cases {
+		got, err := clockExpected(context.Background(), tc.standby, tc.cfg)
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("%s: got %v, err %v", tc.name, got, err)
+		}
 	}
 }

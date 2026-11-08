@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -174,8 +175,16 @@ func ptrace(req, tid int) error {
 type panelHold struct {
 	mem   []byte
 	out   []byte // the frame last written, as panel bytes
-	tid   int
-	shown bool // a first frame was written whole
+	pid   int    // BoseApp
+	tid   int    // its flip thread
+	shown bool   // a first frame was written whole
+}
+
+// lastFlip is the BoseApp flip thread the newest release let go of, for the
+// dark-panel check (darkwatch.go).
+var lastFlip struct {
+	sync.Mutex
+	pid, tid int
 }
 
 // takePanel holds BoseApp's flip thread (PTRACE_SEIZE + PTRACE_INTERRUPT, no
@@ -221,7 +230,7 @@ func takePanel() (*panelHold, error) {
 	if _, err := syscall.Wait4(tid, &ws, waitAll, nil); err != nil {
 		return fail(fmt.Errorf("wait: %w", err))
 	}
-	return &panelHold{mem: mem, out: make([]byte, FrameSize), tid: tid}, nil
+	return &panelHold{mem: mem, out: make([]byte, FrameSize), pid: pid, tid: tid}, nil
 }
 
 // show puts a frame of grey levels 0..15 on the panel. Only the rows that
@@ -248,10 +257,75 @@ func (p *panelHold) show(buf []byte) {
 
 // release leaves a black frame (BoseApp repaints its own screen right after
 // the detach), lets the flip thread go and unmaps the framebuffer.
+//
+// A failed detach used to be dropped without a word. A flip thread STR does
+// not let go of never paints again, and the standby clock that stayed blank
+// after the track overlay (#841) left nothing in the log to rule that out. So
+// the error is logged and the detach tried once more; the kernel still lets
+// the thread go when the agent exits.
 func (p *panelHold) release() {
 	clear(p.mem)
-	_ = ptrace(ptraceDetach, p.tid)
-	_ = syscall.Munmap(p.mem)
+	if err := ptrace(ptraceDetach, p.tid); err != nil {
+		time.Sleep(20 * time.Millisecond)
+		retryErr := ptrace(ptraceDetach, p.tid)
+		args := []any{"tid", p.tid, "err", err, "retried", retryErr == nil}
+		if retryErr != nil {
+			args = append(args, "retryErr", retryErr)
+		}
+		args = append(args, flipThreadAttrs(p.pid, p.tid)...)
+		noticeLogger().Warn("display: letting go of BoseApp's flip thread failed", args...)
+	}
+	if err := syscall.Munmap(p.mem); err != nil {
+		noticeLogger().Warn("display: unmapping the framebuffer failed", "err", err)
+	}
+	lastFlip.Lock()
+	lastFlip.pid, lastFlip.tid = p.pid, p.tid
+	lastFlip.Unlock()
+}
+
+// panelFrameDark reports whether the framebuffer is all black, read through
+// a read-only mapping: no copy, nothing written. ok is false when it cannot
+// be read.
+func panelFrameDark() (dark, ok bool) {
+	f, err := os.Open(fbDevice)
+	if err != nil {
+		return false, false
+	}
+	mem, err := syscall.Mmap(int(f.Fd()), 0, FrameSize, syscall.PROT_READ, syscall.MAP_SHARED)
+	_ = f.Close()
+	if err != nil {
+		return false, false
+	}
+	defer func() { _ = syscall.Munmap(mem) }()
+	return frameIsDark(mem), true
+}
+
+// flipThreadInfo describes the flip thread the newest release let go of.
+func flipThreadInfo() []any {
+	lastFlip.Lock()
+	pid, tid := lastFlip.pid, lastFlip.tid
+	lastFlip.Unlock()
+	return flipThreadAttrs(pid, tid)
+}
+
+// flipThreadAttrs reads the flip thread's scheduler state, its tracer and
+// where it sleeps from /proc, plus the flip thread BoseApp runs now (a
+// different tid means BoseApp restarted it or itself). Only read when
+// something went wrong.
+func flipThreadAttrs(pid, tid int) []any {
+	if pid == 0 || tid == 0 {
+		return []any{"flipThread", "unknown"}
+	}
+	dir := fmt.Sprintf("/proc/%d/task/%d/", pid, tid)
+	status, _ := os.ReadFile(dir + "status")
+	wchan, _ := os.ReadFile(dir + "wchan")
+	state, tracer := procStatusFields(string(status))
+	now := 0
+	if p := findProcess("BoseApp"); p != 0 {
+		now = findThread(p, flipThread)
+	}
+	return []any{"flipTid", tid, "state", state, "tracerPid", tracer,
+		"wchan", strings.TrimSpace(string(wchan)), "flipTidNow", now}
 }
 
 // play holds BoseApp's flip thread, renders frames until frame returns false,

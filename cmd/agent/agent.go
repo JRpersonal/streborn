@@ -654,6 +654,9 @@ func (a *agent) buildMarge() error {
 	// log under the same component; a box boot arms the "keys restored
 	// after reboot" notice, shown once per speaker (displaynotices.go).
 	oled.SetNoticeLogger(logger.With("comp", "oled"))
+	// A standby clock that stays black after the track overlay let go of the
+	// panel is logged and nudged once (#841, clocknudge.go).
+	oled.SetDarkPanelHooks(darkPanelHooks(boxapi.New(a.flags.boxHost), logger.With("comp", "standbyclock")))
 	if strings.HasPrefix(bootReason, "box-boot") {
 		armRestoreNotice(time.Now())
 	}
