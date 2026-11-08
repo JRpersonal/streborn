@@ -243,7 +243,7 @@ func TestNewPlayEntryPointsUseTheMutedWake(t *testing.T) {
 	for _, c := range []struct{ file, fn string }{
 		{"playback.go", "func (s *Server) handlePlay("},
 		{"playback.go", "func (s *Server) playSlot("},
-		{"queueplay.go", "func (s *Server) startQueueLocked("},
+		{"queueplay.go", "func (s *Server) runQueueStartLocked("},
 	} {
 		src, err := readSourceFile(c.file)
 		if err != nil {

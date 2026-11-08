@@ -333,6 +333,26 @@ func (p *playSession) noteAutoResumeAttempt() (attempts int, at time.Time, lp *l
 	return p.resumeAttempts, p.lastResumeAt, p.last
 }
 
+// resumeGuard reads the auto-resume crash-loop guard state (#381).
+func (p *playSession) resumeGuard() (attempts int, at time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.resumeAttempts, p.lastResumeAt
+}
+
+// keepResumeGuard puts the guard state back after an automatic resume that
+// recorded its push as a fresh play: a folder the power-on resume starts again
+// goes through setLastPlay, whose fresh-play reset would otherwise disarm the
+// guard on every boot of a crash loop. It returns the record to persist the
+// state with.
+func (p *playSession) keepResumeGuard(attempts int, at time.Time) *lastPlayInfo {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.resumeAttempts = attempts
+	p.lastResumeAt = at
+	return p.last
+}
+
 // clearResumeAttemptsIfQuiet resets the attempt count when the newest
 // attempt is still the one stamped at `at` and there is a count to clear.
 // cleared is false otherwise (a newer attempt means a reboot DID happen in

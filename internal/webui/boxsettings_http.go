@@ -449,8 +449,13 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 	// re-push the last station from under the lock.
 	s.NoteUserPlay()
 	var boxURL, title, art, mime string
+	// folder is the music folder the power-off ended, when the last station is
+	// still its track: it plays on from there instead of that one track
+	// (#1765). Taken before the re-push mark below changes the record's time.
+	var folder *queueResume
 	if lp, _, ok := s.play.rearmForResume(0); ok {
 		boxURL, title, art, mime = lp.boxURL, lp.title, lp.art, lp.mime
+		folder = s.takeQueueResume(lp.boxURL, lp.ts)
 	}
 	// This push is an explicit "play it again", so it counts as STR's play
 	// from the moment it starts, not only once it has landed. A group key on a
@@ -463,6 +468,19 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 		undo = s.play.noteRepushed(boxURL)
 	}
 	s.ensureBoxReady(r.Context())
+	if folder != nil {
+		// Detached like every queue start (#252): the folder's first push must
+		// reach the speaker also when the caller gave up waiting.
+		playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
+		err := s.resumeQueue(playCtx, "power on", folder)
+		playCancel()
+		if err == nil {
+			s.logger.Info("power on: continued the folder the speaker was playing", "url", boxURL, "title", title)
+			writeJSON(w, http.StatusOK, map[string]bool{"on": true})
+			return
+		}
+		s.logger.Warn("power on: the folder could not be started again, playing its last track alone", "err", err)
+	}
 	if boxURL != "" {
 		if err := s.renderer.PlayURLMime(r.Context(), boxURL, title, art, mime); err != nil {
 			s.logger.Warn("power on: resume of last station failed", "err", err)
