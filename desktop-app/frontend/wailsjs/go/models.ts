@@ -1391,6 +1391,28 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class StickFirmwareGate {
+	    blocked: boolean;
+	    firmware: string;
+	    model: string;
+	    moduleType: string;
+	    variant: string;
+	    source?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StickFirmwareGate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.blocked = source["blocked"];
+	        this.firmware = source["firmware"];
+	        this.model = source["model"];
+	        this.moduleType = source["moduleType"];
+	        this.variant = source["variant"];
+	        this.source = source["source"];
+	    }
+	}
 	export class StoragePreflight {
 	    tight: boolean;
 	    freeBytes: number;
@@ -1854,6 +1876,7 @@ export namespace sticksetup {
 	    clusterTooBig: boolean;
 	    existingFirmwareBytes: number;
 	    otherFiles: boolean;
+	    strPayloadBytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
@@ -1876,6 +1899,7 @@ export namespace sticksetup {
 	        this.clusterTooBig = source["clusterTooBig"];
 	        this.existingFirmwareBytes = source["existingFirmwareBytes"];
 	        this.otherFiles = source["otherFiles"];
+	        this.strPayloadBytes = source["strPayloadBytes"];
 	    }
 	}
 	export class StickConfigs {

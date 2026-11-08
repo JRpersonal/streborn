@@ -169,11 +169,14 @@ Open the zip and copy only the `Update.stu` inside it to the stick.
 
 - SoundTouch 20 and 30 of Series II and III have a normal USB-A port
   on the back.
+- SoundTouch 20 of Series I (no Bluetooth button) has two sockets on
+  the back: **SETUP A** (micro-USB) and **SETUP B** (USB-A). Use
+  **SETUP B**, the normal USB-A socket; Bose's own USB update
+  instructions use it too. No OTG adapter needed. A first generation
+  SoundTouch 30 with the same two sockets: the same rule.
 - SoundTouch 10 and Portable have a small micro-USB port. You need an
   OTG adapter (micro-USB to USB-A) or an OTG stick. A plain micro-USB
   cable will not do.
-- The oldest Series I units may also need the OTG route. Reported once,
-  not confirmed.
 
 ### Step by step
 
@@ -250,8 +253,13 @@ each step the app:
 2. checks the zip against the size and sha1 the Internet Archive
    publishes, and the `Update.stu` inside against its size and CRC-32
    (a file that does not match is never written);
-3. copies only `Update.stu` to the root of the stick you picked, reads
-   it back, checks it again and ejects the stick;
+3. takes ST Reborn's own install files off the stick, if the setup
+   wizard put them there, together with the `setup.log` the speaker
+   writes back to such a stick (only files ST Reborn writes itself,
+   never yours; for anything else the log notes only how many files,
+   their size and their extensions, never their names, and the app
+   suggests an empty stick), then copies only `Update.stu` to the root of the stick you
+   picked, reads it back, checks it again and ejects the stick;
 4. shows the button steps for your speaker and, after **Done, check
    again**, reads the version and moves on to the next step.
 

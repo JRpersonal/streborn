@@ -798,6 +798,10 @@ export function StickConfigs(arg1) {
   return window['go']['main']['App']['StickConfigs'](arg1);
 }
 
+export function StickInstallFirmwareGate(arg1) {
+  return window['go']['main']['App']['StickInstallFirmwareGate'](arg1);
+}
+
 export function StickVersion(arg1) {
   return window['go']['main']['App']['StickVersion'](arg1);
 }

@@ -44,7 +44,9 @@ import { firmwareGuideMount, firmwareGuideNeeded, wireFirmwareGuides } from '../
 import { firmwareLadderDeps } from '../fwladderdeps.js';
 import { darkChecklistApplies, darkChecklistHtml, wireDarkChecklist } from '../darkafterupdate.js';
 import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
+import { stickGateHost, stickFirmwareGate, stickFwTooOldHtml } from '../stickfwgate.js';
 import {
+  StickInstallFirmwareGate,
   ListDrives,
   WriteStickFiles,
   FormatStick,
@@ -1530,6 +1532,19 @@ async function updateDrivePanels() {
 async function doSetup() {
   const drive = state.drives[state.selectedDrive];
   if (!drive) return;
+  // Firmware first: a speaker the install over the network stopped at
+  // "firmware-too-old" (or that reports such a firmware now) gets the firmware
+  // update guide, not STR's install files. Those files on the stick were what
+  // Bose's Update.stu later sat beside when the speaker never started its
+  // update (support case 2026-11). Checked before anything touches the stick.
+  const fwGate = await stickFirmwareGate(StickInstallFirmwareGate, stickGateHost(state.setupTarget));
+  if (fwGate) {
+    const result = $('setupResult');
+    result.innerHTML = stickFwTooOldHtml(fwGate, state.setupTarget && state.setupTarget.box);
+    wireOutdatedFirmwareLinks();
+    try { result.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
+    return;
+  }
   // Hard technical gate: a too-small or write-protected stick cannot be
   // rescued by formatting, so refuse before doing anything (even if the
   // format checkbox is ticked). This is the same verdict the panel shows;

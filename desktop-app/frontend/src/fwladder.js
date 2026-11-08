@@ -179,11 +179,13 @@ export function notStartedStartKey(model) {
   return isBatteryModel(model) ? 'fwLadder.nsKeysBattery' : 'fwLadder.nsKeys';
 }
 
-// portMaybeOtg: a SoundTouch 20 or 30 of the older hardware (moduleType scm,
-// no Bluetooth button) may have a micro-USB port that needs an OTG adapter,
-// like the 10 and the Portable. Reported once, not confirmed
-// (docs/FIRMWARE-UPDATE.md, "The port"), so the hint says "may".
-export function portMaybeOtg(model, moduleType) {
+// portSetupB: a SoundTouch 20 or 30 of the older hardware (moduleType scm,
+// no Bluetooth button) gets the socket named. A Series I SoundTouch 20 has two
+// on the back, SETUP A (micro-USB) and SETUP B (USB-A), and Bose's own USB
+// update instructions use SETUP B; the hint used to say the port "may be
+// micro-USB" and need an OTG adapter, which sent owners to the wrong socket
+// (docs/FIRMWARE-UPDATE.md, "The port").
+export function portSetupB(model, moduleType) {
   const m = String(model || '').trim().toLowerCase();
   const mt = String(moduleType || '').trim().toLowerCase();
   return mt === 'scm' && (m === 'soundtouch 20' || m === 'soundtouch 30');
@@ -261,17 +263,19 @@ export function ladderMinutes(plan) {
 
 // stickVerdict mirrors sticksetup.FirmwareStickProblem for the screen: the
 // backend checks again before it writes anything. An Update.stu already on the
-// stick is replaced by the write, so its space counts as free, as there.
+// stick is replaced by the write, and STR's own install files come off the
+// stick before it, so the space of both counts as free, as there.
 //   check: the CheckStick answer; need: the file size in bytes
 export function stickVerdict(check, need) {
   const c = check || {};
   const warnLarge = !!c.tooLarge;
-  // warnOther: the stick holds files besides Update.stu. A hint only, never a
-  // block: the Bose updater is most reliable on an otherwise empty stick.
+  // warnOther: the stick holds files besides Update.stu (STR's own install
+  // files do not count, the backend removes them). A hint only, never a block:
+  // the Bose updater is most reliable on an otherwise empty stick.
   const warnOther = !!c.otherFiles;
   if (!c.ok) return { ok: false, problem: c.reason || 'not-writable', warnLarge, warnOther };
   if (c.clusterTooBig) return { ok: false, problem: 'cluster-too-big', warnLarge, warnOther };
-  const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0);
+  const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0) + (c.strPayloadBytes || 0);
   if (free < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge, warnOther };
   return { ok: true, problem: '', warnLarge, warnOther };
 }
@@ -550,7 +554,7 @@ function screenC(plan, st, step, ident) {
     + '<ol class="fw-guide-steps">'
     + `<li>${esc(t(powerOffKey(model)))}</li>`
     + `<li>${esc(t('fwLadder.c2'))}<div class="muted small">${esc(t('fwLadder.w4'))}`
-    + (portMaybeOtg(model, plan.moduleType || (ident && ident.moduleType)) ? ` ${esc(t('fwLadder.w4Scm'))}` : '')
+    + (portSetupB(model, plan.moduleType || (ident && ident.moduleType)) ? ` ${esc(t('fwLadder.w4Scm'))}` : '')
     + '</div></li>'
     + `<li>${esc(t(usbUpdateKey(model)))}`
     + (usbUpdateUnconfirmed(model) ? `<div class="muted small">${esc(t('fwLadder.c3Unconfirmed'))}</div>` : '')
