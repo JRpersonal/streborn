@@ -164,7 +164,7 @@ func TestNewPlayRemutesALevelTheFirmwareRaises(t *testing.T) {
 	}
 	s.newPlayLevel.episodeDone()
 	s.NoteBoxVolumeLevel(15)
-	if got := s.levelBeforeStandby(context.Background()); got != 15 {
+	if got := s.rememberedAwakeLevel(); got != 15 {
 		t.Fatalf("level after the episode %d, want 15", got)
 	}
 }
@@ -183,12 +183,16 @@ func TestNewPlayRestoresTheLevelFromBeforeStandby(t *testing.T) {
 }
 
 // Without a level seen while awake, the speaker's target level is preferred
-// over its actual one.
-func TestLevelBeforeStandbyPrefersTheTargetLevel(t *testing.T) {
+// over its actual one, and a 0 read from a sleeping speaker counts as unknown.
+func TestWakeLevelInputsPreferTheTargetLevel(t *testing.T) {
 	t.Parallel()
 	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
 	s.ownVolumeFn = func(context.Context) (boxapi.Volume, error) { return boxapi.Volume{Target: 10, Actual: 5}, nil }
-	if got := s.levelBeforeStandby(context.Background()); got != 10 {
-		t.Fatalf("level %d, want the target 10", got)
+	if got := s.wakeLevelInputsNow(context.Background()); got.standby != 10 || got.remembered != 0 {
+		t.Fatalf("inputs %+v, want the target 10 as the standby read", got)
+	}
+	s.ownVolumeFn = func(context.Context) (boxapi.Volume, error) { return boxapi.Volume{}, nil }
+	if got := s.wakeLevelInputsNow(context.Background()); got.standby != 0 {
+		t.Fatalf("inputs %+v, a 0 read in standby taken for a level", got)
 	}
 }
