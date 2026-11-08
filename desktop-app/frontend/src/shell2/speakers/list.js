@@ -382,7 +382,7 @@ function cardHTML(row) {
     + `<span class="spl-name">${escapeHtml(row.name)}</span>`
     + (row.meta ? `<span class="spl-meta">${escapeHtml(row.meta)}</span>` : '')
     + (row.group ? `<span class="spl-meta spl-group">${escapeHtml(row.group)}</span>` : '')
-    + (row.now ? `<span class="spl-now">${escapeHtml(t('ui2.speakers.list.nowPlaying', { title: row.now }))}</span>` : '')
+    + (row.now ? `<span class="spl-now clamp-2" title="${escapeAttr(row.now)}">${escapeHtml(t('ui2.speakers.list.nowPlaying', { title: row.now }))}</span>` : '')
     + (row.updateLine ? `<span class="spl-meta spl-update">${escapeHtml(row.updateLine)}</span>` : '')
     + '</span>'
     + (badges ? `<span class="spl-badges">${badges}</span>` : '')

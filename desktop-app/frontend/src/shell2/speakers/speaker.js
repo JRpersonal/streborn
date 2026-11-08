@@ -174,7 +174,7 @@ export function speakerStateHTML(box, tile, playing) {
   if (!box) return '';
   const kind = speakerStateKind(box, tile);
   const chips = speakerChipKinds(tile).map(chipHTML).join('');
-  const what = playing ? `<span class="sps-now">${escapeHtml(t('ui2.speakers.speaker.nowPlaying', { what: playing }))}</span>` : '';
+  const what = playing ? `<span class="sps-now clamp-2" title="${escapeAttr(playing)}">${escapeHtml(t('ui2.speakers.speaker.nowPlaying', { what: playing }))}</span>` : '';
   return statusPillHTML(kind) + chips + what;
 }
 

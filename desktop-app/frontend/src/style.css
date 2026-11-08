@@ -784,6 +784,18 @@ body {
 .tab-badge[hidden] { display: none; }
 .view.hidden { display: none; }
 .hidden { display: none !important; }
+/* A long station or track name stops after two lines with "…" instead of
+   stretching its tile or line (#1783); the element's title holds the full
+   name. overflow-wrap breaks a name with no spaces, which line-clamp alone
+   would let run out sideways. */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 
 /* ---------- Topbar ---------- */
 .topbar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
