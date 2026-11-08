@@ -203,6 +203,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
 		return
 	}
+	// The mute flag comes from the bus, not from this body, so it is as fresh
+	// on a cached or stale body as on a new read (mute.go, #1748).
+	s.setMutedHeader(w)
 
 	// Serve from cache if a recent good body exists.
 	s.statusMu.Lock()

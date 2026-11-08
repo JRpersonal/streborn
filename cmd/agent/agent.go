@@ -1287,6 +1287,7 @@ func (a *agent) buildBoxLink() error {
 		onAlarmSource:  webuiSrv.AlarmSourceChanged,
 		onBoxSource:    webuiSrv.NoteBoxSourceChanged,
 		onBoxVolume:    webuiSrv.NoteBoxVolumeLevel,
+		onBoxMute:      webuiSrv.NoteBoxMute,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.
@@ -1330,7 +1331,12 @@ func (a *agent) buildBoxLink() error {
 		// Recover a lost first press after a deep-standby wake (#183): when the box
 		// reappears awake-but-idle on a gabbo reconnect, re-push the last stream.
 		// Reuses the power-on resume guards (opt-out, zone, user-stop).
-		onBoxReconnect: webuiSrv.RecoverAfterReconnect,
+		// A reconnect also drops the recorded mute flag: a change made while
+		// the socket was down never arrived (#1748).
+		onBoxReconnect: func() {
+			webuiSrv.ForgetBoxMute()
+			webuiSrv.RecoverAfterReconnect()
+		},
 		// Clear the transport when the box powers off STR's UPnP source, so ST20
 		// (scm) firmware that bounces UPNP<->STANDBY does not turn itself back on
 		// (#197). Zone-guarded and debounced in the webui.
