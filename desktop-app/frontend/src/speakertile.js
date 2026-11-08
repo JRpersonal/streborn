@@ -18,8 +18,12 @@
 //   ctx.stereoPairs         live pairs (groups.js stereoPairsOf)
 //   ctx.installHolds        { host: hold } of speakers an update from this app
 //                           is still finishing on (installhold.js)
+//
+// Whether an update from this app runs on a speaker right now comes from
+// updaterunning.js, which main.js keeps (#1764).
 
 import { inStereoPair } from './groups.js';
+import { isUpdateRunning } from './updaterunning.js';
 
 function isPlayState(ps) {
   return ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE';
@@ -54,6 +58,9 @@ export function speakerTileState(b, ctx = {}) {
     // finishing on it, which is neither.
     strNotRunning: stock && !updateFinishing && !!box.strNotRunning,
     updateFinishing,
+    // An update from this app runs on it right now: it uploads and restarts,
+    // so it may look offline or stock for a while, and must not be used.
+    updateRunning: isUpdateRunning(box.host),
     playing,
     // Stock speakers have no agent to update and no agent to ask about the
     // internet, so both chips are STR-only.

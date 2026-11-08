@@ -311,7 +311,7 @@ export function renderPresets() {
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
-            <div class="name">${escapeHtml(p.name || label)}</div>
+            <div class="name clamp-2" title="${escapeAttr(p.name || label)}">${escapeHtml(p.name || label)}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
             ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
@@ -339,7 +339,7 @@ export function renderPresets() {
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
-            <div class="name">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
+            <div class="name clamp-2" title="${escapeAttr(bp.name || srcLabel || t('preset.onSpeaker'))}">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
             ${srcLabel ? `<div class="preset-source" title="${escapeAttr(srcLabel)}">${escapeHtml(t('preset.sourceBadge', { source: srcLabel }))}</div>` : ''}
             <div class="preset-box-hint">${escapeHtml(t('preset.lostOnSpeaker'))}</div>
           </div>
@@ -358,7 +358,7 @@ export function renderPresets() {
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
-            <div class="name">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
+            <div class="name clamp-2" title="${escapeAttr(bp.name || srcLabel || t('preset.onSpeaker'))}">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
             ${srcLabel ? `<div class="preset-source" title="${escapeAttr(srcLabel)}">${escapeHtml(t('preset.sourceBadge', { source: srcLabel }))}</div>` : ''}
             <div class="preset-box-hint">${escapeHtml(t('preset.boxNativeHint'))}</div>
           </div>

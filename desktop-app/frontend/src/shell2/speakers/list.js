@@ -53,8 +53,10 @@ import './list.css';
 // then starting up (the agent is not there yet to ask), then what kind of
 // speaker it is (a Bose original, or one whose STR stopped), then what it
 // does, then what it needs, then what it belongs to.
+// An update from this app running on the speaker comes before all of them:
+// it restarts, so it looks offline or stock for a while (#1764).
 export const LIST_PILL_ORDER = Object.freeze([
-  'notReachable', 'startingUp', 'strNotRunning', 'boseOriginal',
+  'updateRunning', 'updateFinishing', 'notReachable', 'startingUp', 'strNotRunning', 'boseOriginal',
   'playing', 'standby', 'updateReady', 'stereoPair', 'fixedGroup',
 ]);
 
@@ -65,6 +67,8 @@ const LIST_PILLS = Object.freeze({
 });
 
 const FLAG_OF = Object.freeze({
+  updateRunning: 'updateRunning',
+  updateFinishing: 'updateFinishing',
   notReachable: 'offline',
   startingUp: 'startingUp',
   strNotRunning: 'strNotRunning',
@@ -181,7 +185,11 @@ export function speakerListModel(boxes, ctx = {}) {
     const chips = r.chips || [];
     const updateReady = chips.includes('update');
     const role = pair ? null : roles.get(r.host) || null;
+    const updateRunning = r.pill === 'updateRunning';
+    const updateFinishing = r.pill === 'updateFinishing';
     const kind = listPillKind({
+      updateRunning,
+      updateFinishing,
       offline,
       startingUp,
       stock,
@@ -220,7 +228,10 @@ export function speakerListModel(boxes, ctx = {}) {
     // card offers the search (noteHTML), as the sidebar does for that row.
     // One whose STR stopped is checked first; the setup comes back when the
     // check finds STR gone from a speaker that otherwise answers.
-    if (stock && !offline && kind === 'strNotRunning') action = allowsInstallAgain(check) ? 'setup' : 'check';
+    // A speaker an update runs or finishes on says so where its button would
+    // be, and offers nothing to press (#1764).
+    if (updateRunning || updateFinishing) action = 'updating';
+    else if (stock && !offline && kind === 'strNotRunning') action = allowsInstallAgain(check) ? 'setup' : 'check';
     else if (stock && !offline) action = 'setup';
     else if (r.kind === 'str' && updateReady && !offline && !startingUp) {
       action = ctx.otaHost && r.hosts.includes(ctx.otaHost) ? 'updating' : 'update';
@@ -303,7 +314,9 @@ function actionHTML(row) {
       + `${escapeHtml(t('ui2.speakers.list.update'))}</button>`;
   }
   if (row.action === 'updating') {
-    return `<span class="spl-busy">${escapeHtml(t('ui2.speakers.list.updating', { name: row.name }))}</span>`;
+    return '<span class="spl-busy spl-updating" role="status">'
+      + '<span class="update-running-spin" aria-hidden="true"></span>'
+      + `<span class="spl-updating-text">${escapeHtml(t('speaker.updateRunningHint'))}</span></span>`;
   }
   return '';
 }
@@ -382,7 +395,7 @@ function cardHTML(row) {
     + `<span class="spl-name">${escapeHtml(row.name)}</span>`
     + (row.meta ? `<span class="spl-meta">${escapeHtml(row.meta)}</span>` : '')
     + (row.group ? `<span class="spl-meta spl-group">${escapeHtml(row.group)}</span>` : '')
-    + (row.now ? `<span class="spl-now">${escapeHtml(t('ui2.speakers.list.nowPlaying', { title: row.now }))}</span>` : '')
+    + (row.now ? `<span class="spl-now clamp-2" title="${escapeAttr(row.now)}">${escapeHtml(t('ui2.speakers.list.nowPlaying', { title: row.now }))}</span>` : '')
     + (row.updateLine ? `<span class="spl-meta spl-update">${escapeHtml(row.updateLine)}</span>` : '')
     + '</span>'
     + (badges ? `<span class="spl-badges">${badges}</span>` : '')

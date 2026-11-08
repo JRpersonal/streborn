@@ -180,6 +180,16 @@ html.ui2 .u-pill--warn { color: var(--u-warn); }
 html.ui2 .u-pill--danger { color: var(--u-danger); }
 html.ui2 .u-pill--muted { color: var(--u-muted); }
 html.ui2 .u-pill--accent { color: var(--u-accent); }
+/* A speaker busy with an update (#1764): bolder, and the dot pulses. */
+html.ui2 .u-pill--busy { font-weight: 700; border-width: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  /* pulse is style.css's keyframes: this file holds rules only. */
+  html.ui2 .u-pill--busy .u-pill-dot { animation: pulse 1.2s ease-in-out infinite; }
+}
+/* The notice over a running update's progress line, in the preview's own
+   colours (style.css draws its shape). */
+html.ui2 .update-running { border-color: var(--u-accent); background: var(--u-surface); color: var(--u-accent); }
+html.ui2 .box-updating { border-color: var(--u-accent); background: var(--u-surface); color: var(--u-accent); }
 
 /* Chips for facts that hold next to the state: "Update", "No internet". */
 html.ui2 .u-chip {

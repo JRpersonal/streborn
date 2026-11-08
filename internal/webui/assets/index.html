@@ -156,6 +156,11 @@ header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; pa
 .phone-str-badge:empty { display:none; }
 .nowcard { padding:14px 16px; background:linear-gradient(180deg,var(--nowgrad1),var(--nowgrad2)); }
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
+/* A long station or track name stops after two lines with "…" instead of
+   stretching its card or tile (#1783); the element's title holds the full
+   name. overflow-wrap breaks a name with no spaces, which line-clamp alone
+   would let run out sideways. */
+.clamp2, .nowcard .now.clamp2 { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
 .nowcard .st { font-size:13px; color:var(--muted); margin-top:3px; }
 .nowcard.loading { opacity:.6; }
 .trackprog { display:flex; align-items:center; gap:8px; margin-top:8px; font-variant-numeric:tabular-nums; }
@@ -1856,7 +1861,7 @@ function onBass(v) {
 }
 // setNow renders the now-playing card and clears its loading state.
 function setNow(name, state) {
-  document.getElementById('status').innerHTML = '<span class="now">' + escapeHtml(name) + '</span>' + (state ? '<div class="st">' + escapeHtml(state) + '</div>' : '');
+  document.getElementById('status').innerHTML = '<span class="now clamp2" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' + (state ? '<div class="st">' + escapeHtml(state) + '</div>' : '');
   document.getElementById('statusCard').classList.remove('loading');
 }
 // press gives a momentary tap highlight on a control button.
@@ -2685,7 +2690,7 @@ function renderPresetGrid() {
       div.setAttribute('role','button'); div.tabIndex = 0;
       div.onclick = () => { if (consumeHold(div)) return; playSlot(i, div, nm); };
       div.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playSlot(i, div, nm); } };
-      div.innerHTML = '<div class="txt"><div class="num">' + keyNumHTML(i) + '</div><div class="name">' + escapeHtml(nm) + '</div>' +
+      div.innerHTML = '<div class="txt"><div class="num">' + keyNumHTML(i) + '</div><div class="name clamp2" title="' + escapeHtml(nm) + '">' + escapeHtml(nm) + '</div>' +
         // A Pandora or iHeartRadio key names its service (a brand name, the
         // same in every language): the speaker's own client plays it.
         (p.type === 'native' && p.source ? '<div class="num">' + escapeHtml(p.source) + '</div>' : '') + '</div>';
@@ -7422,7 +7427,11 @@ async function loadRecent() {
   cards.forEach(function(e, idx){
     var row = document.createElement('div'); row.className = 'station'; row.dataset.idx = String(idx);
     var nm = document.createElement('div'); nm.className = 'sname';
-    nm.textContent = e.cardName || e.cardURL || '';
+    // The name stops after two lines (#1783); the line under it stays whole.
+    var nmT = document.createElement('span'); nmT.className = 'clamp2';
+    nmT.textContent = e.cardName || e.cardURL || '';
+    nmT.title = nmT.textContent;
+    nm.appendChild(nmT);
     var sub = document.createElement('small');
     var acct = e.source === 'spotify' ? spotifyAccountName(e.account, spotifyAccountNames) : '';
     sub.textContent = [e.track, acct].filter(Boolean).join(' \u00b7 ');

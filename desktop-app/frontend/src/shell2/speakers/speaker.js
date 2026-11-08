@@ -164,6 +164,8 @@ export function speakerConfirmTitle(title, name) {
 // the tile does not derive.
 export function speakerStateKind(box, tile) {
   if (!box) return '';
+  // A running update first: its restart is what makes the agent silent.
+  if (tile && tile.updateRunning) return 'updateRunning';
   if (!box.offline && box.kind !== 'stock' && box.strSilent) return 'startingUp';
   return speakerPillKind(tile);
 }
@@ -174,8 +176,13 @@ export function speakerStateHTML(box, tile, playing) {
   if (!box) return '';
   const kind = speakerStateKind(box, tile);
   const chips = speakerChipKinds(tile).map(chipHTML).join('');
-  const what = playing ? `<span class="sps-now">${escapeHtml(t('ui2.speakers.speaker.nowPlaying', { what: playing }))}</span>` : '';
-  return statusPillHTML(kind) + chips + what;
+  const what = playing ? `<span class="sps-now clamp-2" title="${escapeAttr(playing)}">${escapeHtml(t('ui2.speakers.speaker.nowPlaying', { what: playing }))}</span>` : '';
+  // A running update says what it means for the speaker, next to its pill
+  // (#1764): it restarts, leave it alone until then.
+  const busy = kind === 'updateRunning' || kind === 'updateFinishing'
+    ? `<span class="sps-updating">${escapeHtml(t('speaker.updateRunningHint'))}</span>`
+    : '';
+  return statusPillHTML(kind) + busy + chips + what;
 }
 
 const SIGNAL_KEYS = Object.freeze({

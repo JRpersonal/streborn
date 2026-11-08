@@ -80,6 +80,16 @@ html.ui2 #view-speakers .spl-busy {
   font-size: 13px;
   font-weight: 600;
 }
+/* An update running on this speaker (#1764): bold, the accent colour, the
+   turning ring, and what it means for the speaker. */
+html.ui2 #view-speakers .spl-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--u-accent);
+  font-size: 14px;
+  font-weight: 700;
+}
 html.ui2 #view-speakers .spl-note {
   display: flex;
   flex-wrap: wrap;

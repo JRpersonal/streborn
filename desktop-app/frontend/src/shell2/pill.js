@@ -16,7 +16,7 @@ import { escapeHtml } from '../utils.js';
 // only in phase 1: nothing in the app derives them yet (the install flow keeps
 // its own wording until the setup wizard of phase 4).
 export const PILL_KINDS = Object.freeze([
-  'playing', 'standby', 'updateFinishing', 'strNotRunning', 'boseOriginal',
+  'playing', 'standby', 'updateRunning', 'updateFinishing', 'strNotRunning', 'boseOriginal',
   'notReachable', 'stereoPair', 'startingUp', 'installFailed',
 ]);
 
@@ -25,6 +25,7 @@ export const PILL_KINDS = Object.freeze([
 export const PILL_LABEL_KEYS = Object.freeze({
   playing: 'ui2.pill.playing',
   standby: 'ui2.pill.standby',
+  updateRunning: 'speaker.updateRunningBadge',
   updateFinishing: 'speaker.updateFinishingBadge',
   strNotRunning: 'speaker.strNotRunningBadge',
   boseOriginal: 'speaker.needsInstallBadge',
@@ -38,7 +39,10 @@ export const PILL_LABEL_KEYS = Object.freeze({
 const PILL_TONE = Object.freeze({
   playing: 'ok',
   standby: 'muted',
-  updateFinishing: 'muted',
+  // A running update is shown so nobody uses the speaker meanwhile (#1764):
+  // the accent colour, and a dot that pulses (BUSY_PILLS).
+  updateRunning: 'accent',
+  updateFinishing: 'accent',
   strNotRunning: 'warn',
   boseOriginal: 'accent',
   notReachable: 'danger',
@@ -46,6 +50,9 @@ const PILL_TONE = Object.freeze({
   startingUp: 'muted',
   installFailed: 'danger',
 });
+
+// The pills of a speaker that is busy with an update: their dot pulses.
+const BUSY_PILLS = new Set(['updateRunning', 'updateFinishing']);
 
 export const CHIP_LABEL_KEYS = Object.freeze({
   update: 'speaker.updateChip',
@@ -58,6 +65,9 @@ export const CHIP_LABEL_KEYS = Object.freeze({
 // a repair; then what the speaker is doing. '' means no pill.
 export function speakerPillKind(tile) {
   if (!tile) return '';
+  // An update from this app runs on it: it goes offline and comes back while
+  // it restarts, so this comes before "not reachable" (#1764).
+  if (tile.updateRunning) return 'updateRunning';
   if (tile.offline) return 'notReachable';
   if (tile.stock) {
     // An update from this app still finishing on it comes first: it is neither
@@ -76,7 +86,8 @@ export function speakerPillKind(tile) {
 export function speakerChipKinds(tile) {
   if (!tile) return [];
   const out = [];
-  if (tile.needsUpdate) out.push('update');
+  // Not while the update runs: the chip would invite a second one.
+  if (tile.needsUpdate && !tile.updateRunning) out.push('update');
   if (tile.noInternet) out.push('noInternet');
   return out;
 }
@@ -90,7 +101,7 @@ export function pillLabel(kind) {
 
 export function statusPillHTML(kind) {
   if (!PILL_LABEL_KEYS[kind]) return '';
-  return `<span class="u-pill u-pill--${PILL_TONE[kind]}" data-kind="${kind}">`
+  return `<span class="u-pill u-pill--${PILL_TONE[kind]}${BUSY_PILLS.has(kind) ? ' u-pill--busy' : ''}" data-kind="${kind}">`
     + '<span class="u-pill-dot" aria-hidden="true"></span>'
     + `<span class="u-pill-text">${escapeHtml(pillLabel(kind))}</span></span>`;
 }

@@ -29,6 +29,7 @@ import { keyButtonHTML } from '../shell2/keybtn.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { loadingHTML } from '../shell2/library.js';
 import { keyHolds, keySavingVerdict, keyVerdict, startingVerdict, verdictFromPlayState } from '../shell2/feedback.js';
+import { claimPlay, onPlayClaim, ownsPlay, playLine, playLinesToDrop } from '../shell2/playclaim.js';
 import { nowPlayingSig, waitForPlayState } from './library.js';
 import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
@@ -536,6 +537,29 @@ function setCardStatus(c, st) {
   line.textContent = (st && st.text) || '';
 }
 
+// cardOwner is a card's name in the play claims (shell2/playclaim.js).
+const cardOwner = (cardKey) => `recent:${cardKey || ''}`;
+
+// A play on a speaker (from a card here or a station row in Radio) ends the
+// play line of every other card about that speaker: only one card says
+// "Playing on Kitchen".
+onPlayClaim((host, owner) => {
+  const keep = String(owner || '').startsWith('recent:') ? owner.slice(7) : null;
+  for (const cardKey of playLinesToDrop(cardStatus, host, keep)) setCardStatus({ cardKey }, null);
+});
+
+// dropOutdatedPlayLines keeps the "Playing" line on the card the speaker
+// plays: when the current speaker plays a card of the list (playing, the
+// card cardIsPlaying picked), a confirmed play line about that speaker on
+// any other card is dropped.
+function dropOutdatedPlayLines(playing) {
+  const host = state.currentBox ? state.currentBox.host : '';
+  if (!host || !playing) return;
+  for (const [cardKey, st] of [...cardStatus]) {
+    if (cardKey !== playing.cardKey && st && st.kind === 'ok' && st.playHost === host) cardStatus.delete(cardKey);
+  }
+}
+
 // cardStatusReport is the report hook a card hands to a play or key action in
 // the preview: report(text, kind) lands in the card's line.
 function cardStatusReport(c) {
@@ -651,8 +675,11 @@ function wireCard(c, i) {
       // then "Playing on Kitchen" only once the speaker reports it (rule 2).
       const box = cardPlayBox(c);
       const speaker = box ? recentBoxDisplayLabel(box) : '';
+      const host = box ? box.host : '';
+      const what = { url: c.url || '', name: c.name || '' };
+      const owner = cardOwner(c.cardKey);
       let took = false;
-      if (busy) setCardStatus(c, startingVerdict(speaker));
+      if (busy) { setCardStatus(c, playLine(startingVerdict(speaker), host, what)); claimPlay(host, owner); }
       // What the speaker plays before the press: "Playing on X" is said only
       // once it plays this card, not because it plays on (waitForPlayState).
       const before = busy && box ? await nowPlayingSig(box) : '';
@@ -681,7 +708,9 @@ function wireCard(c, i) {
           let failed = false;
           const opts = busy ? {
             report: (msg, kind) => {
-              if (kind === 'info') { setCardStatus(c, { kind: 'busy', text: msg }); return; }
+              // Another card or row took the speaker over meanwhile.
+              if (!ownsPlay(host, owner)) return;
+              if (kind === 'info') { setCardStatus(c, playLine({ kind: 'busy', text: msg }, host, what)); return; }
               failed = true;
               setCardStatus(c, { kind: 'error', text: t('ui2.radio.playFailed', { speaker, reason: msg }) });
             },
@@ -696,7 +725,8 @@ function wireCard(c, i) {
       }
       if (busy && took && box) {
         const verdict = await waitForPlayState(box, Date.now() + 26000, { before, url: c.url || '', name: c.name || '' });
-        setCardStatus(c, verdictFromPlayState(speaker, verdict));
+        // A later play on the same speaker owns its line now: this card says nothing.
+        setCardStatus(c, ownsPlay(host, owner) ? playLine(verdictFromPlayState(speaker, verdict), host, what) : null);
       }
     };
   }
@@ -912,6 +942,7 @@ export async function refreshRecentList() {
   // several times lit up every one of its cards (#761). Cards are newest-first,
   // so the first match is the running session.
   const playingIdx = cards.findIndex(cardIsPlaying);
+  if (shell2Mounted()) dropOutdatedPlayLines(cards[playingIdx]);
   paintedCards = cards;
   listEl.innerHTML = shell2Mounted()
     ? note + ui2DaysHTML(cards, playingIdx)
