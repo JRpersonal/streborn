@@ -39,11 +39,13 @@ func TestPhoneRemoteKeepsAStoppedSpeakersKeyDark(t *testing.T) {
 	if !strings.HasPrefix(mp, "function markPlaying(loc, queue, spKey, state)") {
 		t.Fatal("markPlaying no longer takes the play state")
 	}
-	gate := strings.Index(mp, "if (state === 'STOP_STATE') n = 0;")
+	// An allow-list since #1763: a missing playStatus (a Pandora key the
+	// speaker could not start) is stopped too, not "anything but STOP_STATE".
+	gate := strings.Index(mp, "if (state !== 'PLAY_STATE' && state !== 'BUFFERING_STATE' && state !== 'PAUSE_STATE') n = 0;")
 	if gate < 0 {
-		t.Fatal("markPlaying lights a key on a stopped speaker")
+		t.Fatal("markPlaying lights a key on a speaker that is not playing, starting or paused")
 	}
 	if pend := strings.Index(mp, "if (pendingStart.slot)"); pend < 0 || pend < gate {
-		t.Error("the STOP_STATE gate must come before the pending-press branch")
+		t.Error("the play-state gate must come before the pending-press branch")
 	}
 }

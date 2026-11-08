@@ -3576,13 +3576,18 @@ function nativeSlot(loc, list) {
 // station's location, but the key is not playing, so it stays dark: the same
 // rule as the desktop app's presetMayLight (#1526, #1629). A key just pressed
 // still lights at once through pendingStart below.
+//
+// Only playing, starting and paused light a key; a missing playStatus counts
+// as stopped (#1763). A Pandora key the speaker could not start leaves
+// now_playing on the Pandora item with no playStatus at all, and the old
+// "dark only on STOP_STATE" rule kept that key lit as if it played.
 function markPlaying(loc, queue, spKey, state) {
   var grid = document.getElementById('presets');
   if (!grid) return;
   // Keys 7..12 are the second row (#1110); an agent without it never names them.
   var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
     (spKey >= 1 && spKey <= 12 ? spKey : 0) || queueSlot(queue, lastPresetList);
-  if (state === 'STOP_STATE') n = 0;
+  if (state !== 'PLAY_STATE' && state !== 'BUFFERING_STATE' && state !== 'PAUSE_STATE') n = 0;
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
