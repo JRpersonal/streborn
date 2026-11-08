@@ -333,6 +333,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		writePlayRefusal(w, s.invalidSlotRefusal())
 		return
 	}
+	// Name the client: the in-process recalls (alarms, rescues, the double
+	// press) share playSlot and log the same lines, so without this a preset
+	// nobody remembered starting could not be tied to an app or a phone (#1339).
+	s.logger.Info("preset slot recall (app): request", "slot", slot,
+		"from", r.RemoteAddr, "ua", r.UserAgent())
 	res, ref := s.playSlot(r.Context(), slot)
 	if ref != nil {
 		writePlayRefusal(w, ref)
