@@ -11,7 +11,9 @@ import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
 import { isRadioPreset, stationDnsKey, watchStationDns } from '../../stationdns.js';
-import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../utils.js';
+import {
+  optimisticQueue, optimisticSpotifyLocation, QUEUE_PRESS_HOLD_MS, QUEUE_PRESS_REARM_MS, showToast,
+} from '../../utils.js';
 import { escalationForCount, noteNotReady, noteWakeSucceeded } from '../../wakeescalation.js';
 import { throttledSetVolume } from '../settings.js';
 import { deps } from './deps.js';
@@ -118,8 +120,11 @@ export async function play(slot) {
       state.queue = optimisticQueue(state.queue, slot);
       state.optimisticQueueSlot = slot;
       state.optimisticQueuePrevLoc = state.nowLocation || '';
+      // Held until the press returns (#1767): see queueRecallConfirmed.
+      state.optimisticQueueInFlight = gen;
     } else {
       state.optimisticQueueSlot = null;
+      state.optimisticQueueInFlight = 0;
     }
     // Spotify presets carry no stream_url (they recall by URI), so without
     // this the optimistic location is empty: the tile would not light up and
@@ -151,7 +156,11 @@ export async function play(slot) {
     scheduleLiveBitrate();
     scheduleLiveTitle();
     state.nowUUID = '';
-    state.optimisticUntil = Date.now() + 6000;
+    // A library key holds its card for as long as the press is in flight,
+    // which on a sleeping speaker is about 8 s: the 6 s every other key uses
+    // ran out first and showed the station the firmware resumes while it
+    // wakes (#1767). queuePressReturned re-arms it once the press is back.
+    state.optimisticUntil = Date.now() + (p.type === 'queue' ? QUEUE_PRESS_HOLD_MS : 6000);
     delete state.presetErrors[slot];
     state.stuckBuf = null;
     renderPresets();
@@ -164,6 +173,7 @@ export async function play(slot) {
   }
   try {
     await PlaySlot(state.currentBox.host, state.currentBox.port, slot);
+    queuePressReturned(gen);
     // The speaker took the command, so it is awake: any run of wake failures
     // it had is over, and the next one starts counting from the beginning.
     noteWakeSucceeded(state.currentBox.host);
@@ -184,6 +194,7 @@ export async function play(slot) {
       if (mb && state.currentBox && mb.host !== state.currentBox.host) {
         try {
           await PlaySlot(mb.host, mb.port, slot);
+          queuePressReturned(gen);
           noteWakeSucceeded(mb.host);
           delete state.presetErrors[slot];
           if (wasIdle) reapplyDesiredVolume();
@@ -200,6 +211,7 @@ export async function play(slot) {
     state.nowPlayState = '';
     state.nowLocation = '';
     state.optimisticUntil = 0;
+    if (state.optimisticQueueInFlight === gen) state.optimisticQueueInFlight = 0;
     // A library key whose music server answers but no longer has the music
     // (#919) is labelled ahead of friendlyPlayError, for the reason it gives
     // for the server-off refusal: the raw body holds the preset's name.
@@ -232,6 +244,16 @@ export async function play(slot) {
     if (stale) showToast(staleNoticeText(stale, t));
     setTimeout(() => refreshStatus(), 2000);
   }
+}
+
+// queuePressReturned ends the in-flight hold of library key press gen and
+// gives the status poll QUEUE_PRESS_REARM_MS more to see the queue's first
+// track before the optimistic card is let go (#1767). A newer press owns the
+// state, so a stale return changes nothing.
+function queuePressReturned(gen) {
+  if (state.optimisticQueueInFlight !== gen || gen !== presetPlayGen) return;
+  state.optimisticQueueInFlight = 0;
+  if (state.optimisticQueueSlot != null) state.optimisticUntil = Date.now() + QUEUE_PRESS_REARM_MS;
 }
 
 // friendlyPlayError turns a technical error string into a short

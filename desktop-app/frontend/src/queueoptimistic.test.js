@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  optimisticQueue, queueRecallConfirmed, queueReplyMerge, queueSlotActive, queueSlotCard, queueTrackMeta,
+  optimisticQueue, queueRecallConfirmed, queueReplyMerge, queueSlotActive, queueSlotCard, queueTrackLocation,
+  queueTrackMeta,
 } from './utils.js';
 
 // #978: a library folder key (type=queue, no stream URL) lit about ten seconds
@@ -20,15 +21,49 @@ describe('optimistic library key recall', () => {
   });
 
   it('ends the optimistic window once the speaker reports a new location', () => {
-    const q = optimisticQueue(oldQueue, 3);
+    // The agent's queue for key 3, with its tracks.
+    const q = { active: true, card: 'queue:slot:3', card_slot: 3, items: [{ title: 'T1' }], pos: 0 };
     const prev = 'http://192.0.2.1:8888/stream/1';
-    expect(queueRecallConfirmed(3, q, 'http://192.0.2.10:8200/MediaItems/7.mp3', prev)).toBe(true);
+    const upnp = { source: 'UPNP' };
+    expect(queueRecallConfirmed(3, q, 'http://192.0.2.10:8200/MediaItems/7.mp3', prev, upnp)).toBe(true);
+    // a library file the agent wraps is a queue track too
+    expect(queueRecallConfirmed(3, q, 'http://127.0.0.1:8888/stream/raw?u=aHR0cHM6Ly94', prev, upnp)).toBe(true);
     // the old stream, or nothing yet: keep waiting
-    expect(queueRecallConfirmed(3, q, prev, prev)).toBe(false);
-    expect(queueRecallConfirmed(3, q, '', prev)).toBe(false);
+    expect(queueRecallConfirmed(3, q, prev, prev, upnp)).toBe(false);
+    expect(queueRecallConfirmed(3, q, '', prev, upnp)).toBe(false);
     // the queue names another key, or no click pending
-    expect(queueRecallConfirmed(3, optimisticQueue(null, 4), 'http://x/y.mp3', prev)).toBe(false);
-    expect(queueRecallConfirmed(null, q, 'http://x/y.mp3', prev)).toBe(false);
+    expect(queueRecallConfirmed(3, { ...q, card: 'queue:slot:4', card_slot: 4 }, 'http://x/y.mp3', prev, upnp)).toBe(false);
+    expect(queueRecallConfirmed(null, q, 'http://x/y.mp3', prev, upnp)).toBe(false);
+    // only the app's optimistic card so far, no tracks from the agent
+    expect(queueRecallConfirmed(3, optimisticQueue(oldQueue, 3), 'http://x/y.mp3', prev, upnp)).toBe(false);
+  });
+
+  // #1767: key 3 pressed on a sleeping speaker. Before the click the speaker
+  // reported nothing; while it wakes the firmware resumes the station it played
+  // last for a few seconds, then the agent's queue takes over on UPNP.
+  it('does not take the station a waking speaker resumes for the queue', () => {
+    const q = { active: true, card: 'queue:slot:3', card_slot: 3, items: [{ title: 'T1' }], pos: 0 };
+    const file = 'http://192.0.2.10:8200/MediaItems/7.mp3';
+    // the press has not returned yet: nothing counts
+    expect(queueRecallConfirmed(3, q, file, '', { source: 'UPNP', inFlight: true })).toBe(false);
+    // the firmware's own resume: a radio key's proxy slot, a native station,
+    // a radio source, Spotify
+    expect(queueRecallConfirmed(3, q, 'http://127.0.0.1:8888/stream/2', '', { source: 'UPNP' })).toBe(false);
+    expect(queueRecallConfirmed(3, q, 'http://127.0.0.1:8888/stream/2', '', { source: 'LOCAL_INTERNET_RADIO' })).toBe(false);
+    expect(queueRecallConfirmed(3, q, file, '', { source: 'TUNEIN' })).toBe(false);
+    expect(queueRecallConfirmed(3, q, file, '', {})).toBe(false);
+    expect(queueRecallConfirmed(3, q, 'http://127.0.0.1:8888/spotify/stream-3.ogg', '', { source: 'UPNP' })).toBe(false);
+    // the queue's first track, after the press returned
+    expect(queueRecallConfirmed(3, q, file, '', { source: 'UPNP' })).toBe(true);
+  });
+
+  it('knows which locations a queue track can have', () => {
+    expect(queueTrackLocation('http://192.0.2.10:8200/MediaItems/7.mp3')).toBe(true);
+    expect(queueTrackLocation('http://127.0.0.1:8888/stream/raw?u=aHR0cHM6Ly94')).toBe(true);
+    expect(queueTrackLocation('http://127.0.0.1:8888/stream/4')).toBe(false);
+    expect(queueTrackLocation('http://127.0.0.1:8888/stream/4?x=1')).toBe(false);
+    expect(queueTrackLocation('http://127.0.0.1:8888/spotify/stream-1.ogg')).toBe(false);
+    expect(queueTrackLocation('')).toBe(false);
   });
 
   it('keeps the optimistic card against a reply that predates the queue start', () => {

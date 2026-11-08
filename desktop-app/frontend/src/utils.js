@@ -925,10 +925,49 @@ export function optimisticQueue(queue, slot) {
 // key pendingSlot: the queue names that key and the speaker reports a location
 // other than the one it had before the click (prevLoc). The new location alone
 // is not enough, nor is the card alone (it is the app's own optimistic one).
-export function queueRecallConfirmed(pendingSlot, queue, loc, prevLoc) {
-  if (pendingSlot == null || !loc || loc === (prevLoc || '')) return false;
+//
+// A new location is not proof either (#1767). A key pressed on a sleeping
+// speaker found prevLoc empty, and the firmware's own resume of the station it
+// played last (about 3.6 s while it wakes, before the agent's queue takes over)
+// was a new location, so the app released its optimistic card and showed that
+// station buffering. It counts now only when:
+//   - the press has returned (opts.inFlight false): the agent answers once the
+//     queue's first track was handed to the speaker, so nothing the speaker
+//     reports before that can be the queue's;
+//   - the speaker plays source UPNP, the source the queue pushes on;
+//   - the location is one a queue track can have (queueTrackLocation), never a
+//     radio key's proxy slot, a native station or Spotify;
+//   - the queue is the agent's real one, with tracks, not the optimistic card.
+export function queueRecallConfirmed(pendingSlot, queue, loc, prevLoc, opts = {}) {
+  if (pendingSlot == null || opts.inFlight || !loc || loc === (prevLoc || '')) return false;
+  if (opts.source !== 'UPNP' || !queueTrackLocation(loc)) return false;
+  if (!queue || !Array.isArray(queue.items) || queue.items.length === 0) return false;
   return queueSlotCard(queue) === 'queue:slot:' + pendingSlot;
 }
+
+// queueTrackLocation reports whether loc can be a music-library queue track as
+// the speaker reports it: the music server's own file address, or the agent's
+// /stream/raw wrapper for a file it cannot hand over directly. A preset key's
+// proxy slot (/stream/<n>), an ORION station descriptor and Spotify's streams
+// are what the firmware resumes on its own while it wakes, never a queue track.
+export function queueTrackLocation(loc) {
+  if (!loc) return false;
+  if (/\/stream\/\d+(?:[/?#]|$)/.test(loc)) return false;
+  if (/\/spotify\/|\/playback\/container/.test(loc)) return false;
+  if (orionStationPayload(loc)) return false;
+  return true;
+}
+
+// QUEUE_PRESS_HOLD_MS bounds the optimistic card of a library key while its
+// press is in flight. The app's play call gives up after 20 s (playCallTimeout
+// in app_playback.go); a little more, so the card never outlives it by much.
+export const QUEUE_PRESS_HOLD_MS = 22000;
+
+// QUEUE_PRESS_REARM_MS is how long the optimistic card stays after the press
+// returned, for the status poll to see the queue's first track (#1767). The
+// 6 s window every key uses ran out on a sleeping speaker while the press was
+// still waking it (about 8 s), which showed the firmware's resumed station.
+export const QUEUE_PRESS_REARM_MS = 2000;
 
 // queueReplyMerge folds an agent queue reply into the current queue state.
 // While a click on library key pendingSlot is still unconfirmed, a reply that
