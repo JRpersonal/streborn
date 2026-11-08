@@ -261,17 +261,19 @@ export function ladderMinutes(plan) {
 
 // stickVerdict mirrors sticksetup.FirmwareStickProblem for the screen: the
 // backend checks again before it writes anything. An Update.stu already on the
-// stick is replaced by the write, so its space counts as free, as there.
+// stick is replaced by the write, and STR's own install files come off the
+// stick before it, so the space of both counts as free, as there.
 //   check: the CheckStick answer; need: the file size in bytes
 export function stickVerdict(check, need) {
   const c = check || {};
   const warnLarge = !!c.tooLarge;
-  // warnOther: the stick holds files besides Update.stu. A hint only, never a
-  // block: the Bose updater is most reliable on an otherwise empty stick.
+  // warnOther: the stick holds files besides Update.stu (STR's own install
+  // files do not count, the backend removes them). A hint only, never a block:
+  // the Bose updater is most reliable on an otherwise empty stick.
   const warnOther = !!c.otherFiles;
   if (!c.ok) return { ok: false, problem: c.reason || 'not-writable', warnLarge, warnOther };
   if (c.clusterTooBig) return { ok: false, problem: 'cluster-too-big', warnLarge, warnOther };
-  const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0);
+  const free = (c.freeBytes || 0) + (c.existingFirmwareBytes || 0) + (c.strPayloadBytes || 0);
   if (free < (need || 0) + 10 * 1000 * 1000) return { ok: false, problem: 'no-space', warnLarge, warnOther };
   return { ok: true, problem: '', warnLarge, warnOther };
 }

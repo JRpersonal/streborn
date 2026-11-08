@@ -12,7 +12,9 @@ package main
 // sha1 where known), and writes it to the stick the user picked, through the
 // same drive checks the install stick uses. STR never mirrors or redistributes
 // a firmware image: the zip stays in the user's cache folder, the extracted file
-// is deleted once it is on the stick. The user can also download the zip in the
+// is deleted once it is on the stick. Before the write, STR's own install files
+// come off the stick (clearFirmwareStick): Bose's updater wants Update.stu
+// alone on it. The user can also download the zip in the
 // browser and hand it to the app ("I already downloaded the file"); the same
 // checks run on it.
 //
@@ -285,7 +287,7 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 		return FirmwareStickResult{Code: "stick", Detail: "gone"}
 	}
 	first := fwStickCheck(drivePath)
-	if p := sticksetup.FirmwareStickProblem(first, step.InnerSize, sticksetup.ExistingFirmwareBytes(drivePath)); p != "" {
+	if p := sticksetup.FirmwareStickProblem(first, step.InnerSize, fwStickReclaimable(drivePath)); p != "" {
 		return FirmwareStickResult{Code: "stick", Detail: p}
 	}
 
@@ -343,7 +345,7 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 	// never written to (the write replaces any Update.stu on it). A stick of
 	// another size or file system under the same drive path counts as gone.
 	again := fwStickCheck(drivePath)
-	if p := sticksetup.FirmwareStickProblem(again, step.InnerSize, sticksetup.ExistingFirmwareBytes(drivePath)); p != "" {
+	if p := sticksetup.FirmwareStickProblem(again, step.InnerSize, fwStickReclaimable(drivePath)); p != "" {
 		return FirmwareStickResult{Code: "stick", Detail: p}
 	}
 	if again.TotalBytes != first.TotalBytes || !strings.EqualFold(again.Filesystem, first.Filesystem) {
@@ -351,6 +353,8 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 			"drive", drivePath, "before", first.TotalBytes, "now", again.TotalBytes)
 		return FirmwareStickResult{Code: "stick", Detail: "gone"}
 	}
+
+	a.clearFirmwareStick(step.ID, drivePath)
 
 	a.emitLadder(step.ID, fwPhaseWrite, 0, step.InnerSize)
 	prog := a.ladderProgress(step.ID, fwPhaseWrite, step.InnerSize)
@@ -366,6 +370,52 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 	}
 	a.emitLadder(step.ID, fwPhaseDone, 0, 0)
 	return res
+}
+
+// fwStickReclaimable is the space on the stick the firmware write frees on
+// its way: an Update.stu from an earlier step, which it replaces, and STR's
+// own install files, which clearFirmwareStick removes first.
+func fwStickReclaimable(drivePath string) int64 {
+	return sticksetup.ExistingFirmwareBytes(drivePath) + sticksetup.STRPayloadBytes(drivePath)
+}
+
+// fwLogNameCap bounds the file names one log line lists.
+const fwLogNameCap = 20
+
+// capNames returns at most fwLogNameCap names, the last one saying how many
+// more there are.
+func capNames(names []string) []string {
+	if len(names) <= fwLogNameCap {
+		return names
+	}
+	out := append([]string{}, names[:fwLogNameCap-1]...)
+	return append(out, fmt.Sprintf("... and %d more", len(names)-fwLogNameCap+1))
+}
+
+// clearFirmwareStick takes STR's own install files off the stick before
+// Update.stu goes on it. Bose's USB updater wants the file alone on the
+// stick: a SoundTouch 20 Series I showed the hand after 4 + Volume minus, but
+// never a progress bar, again and again, while Update.stu sat beside the 14
+// install files the setup wizard had written to the same stick minutes
+// earlier (support case, 2026-11). Only files the wizard writes are removed,
+// and only from a stick STR prepared (sticksetup.RemoveSTRPayload); anything
+// else stays, is logged, and the screen's "other files" hint covers it. A
+// failed removal is logged and the write goes ahead: the file is still the
+// right one, and the hint stays honest.
+func (a *App) clearFirmwareStick(stepID, drivePath string) {
+	removed, err := sticksetup.RemoveSTRPayload(drivePath)
+	if len(removed) > 0 {
+		a.fwLog().Info("firmware ladder: removed STR's install files from the stick, so it holds only the Bose update",
+			"step", stepID, "drive", drivePath, "count", len(removed), "files", capNames(removed))
+	}
+	if err != nil {
+		a.fwLog().Warn("firmware ladder: could not remove all of STR's install files from the stick",
+			"step", stepID, "drive", drivePath, "err", err)
+	}
+	if other := sticksetup.OtherFiles(drivePath); len(other) > 0 {
+		a.fwLog().Info("firmware ladder: the stick holds other files besides the Bose update; left alone, the screen suggests an empty stick",
+			"step", stepID, "drive", drivePath, "count", len(other), "files", capNames(other))
+	}
 }
 
 // extractToCache takes Update.stu out of zipPath into the cache folder and

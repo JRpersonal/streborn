@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"hash/crc32"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -250,6 +251,69 @@ func stickEnv(t *testing.T) string {
 	fwStickEject = func(string) error { return nil }
 	t.Cleanup(func() { fwStickCheck, fwStickEject = oldCheck, oldEject })
 	return stick
+}
+
+// The support case: the wizard had put its 14 install files on the stick, the
+// ladder wrote Update.stu beside them, and the speaker never started the
+// update. Now STR's own files come off first; the user's stay, and both are
+// logged.
+func TestPrepareStickRemovesSTRPayload(t *testing.T) {
+	inner := fakeStu(50_000)
+	z := fakeZip(t, map[string][]byte{"Update.stu": inner}, "Update.stu")
+	step, _, _ := ladderEnv(t, z, inner)
+	stick := stickEnv(t)
+	if _, err := sticksetup.WriteStickFiles(stick, []byte("agent"), []byte("engine"), "1.5.3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sticksetup.WriteRegionConfig(stick, sticksetup.RegionConfig{Country: "DE"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stick, "holiday.jpg"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logBuf bytes.Buffer
+	a := &App{logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
+	res := a.runPrepareStick(context.Background(), step, stick, "")
+	if !res.OK {
+		t.Fatalf("result %+v", res)
+	}
+	entries, _ := os.ReadDir(stick)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if strings.Join(names, ",") != "Update.stu,holiday.jpg" {
+		t.Errorf("the stick holds %v, want only Update.stu and the user's own file", names)
+	}
+	log := logBuf.String()
+	for _, want := range []string{"removed STR's install files", "streborn-armv7l", "region.conf",
+		"holds other files", "holiday.jpg", "count=1"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("the log lacks %q:\n%s", want, log)
+		}
+	}
+}
+
+// A stick the wizard filled can be too full for the update until STR's files
+// are gone; their space counts as free.
+func TestPrepareStickCountsPayloadAsFree(t *testing.T) {
+	inner := fakeStu(50_000)
+	z := fakeZip(t, map[string][]byte{"Update.stu": inner}, "Update.stu")
+	step, _, _ := ladderEnv(t, z, inner)
+	stick := stickEnv(t)
+	big := make([]byte, 11*1000*1000)
+	if err := os.WriteFile(filepath.Join(stick, "streborn-armv7l"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fwStickCheck = func(p string) sticksetup.StickCheck {
+		return sticksetup.StickCheck{OK: true, Path: p, IsFAT32: true, FreeBytes: 1000}
+	}
+	if res := (&App{}).runPrepareStick(context.Background(), step, stick, ""); !res.OK {
+		t.Fatalf("the agent's 11 MB make room for the file: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(stick, "streborn-armv7l")); !os.IsNotExist(err) {
+		t.Error("the agent must be gone from the firmware stick")
+	}
 }
 
 func TestPrepareStickFromArchive(t *testing.T) {

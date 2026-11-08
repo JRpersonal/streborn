@@ -9,7 +9,8 @@ package sticksetup
 // the lazy write cache and a pulled stick loses it), renamed, and then read back
 // from the stick and checked against the expected size and CRC-32. A stick that
 // silently drops or corrupts data fails here, on the PC, and not later on the
-// speaker. The STR payload files on the stick are left alone.
+// speaker. The write itself leaves every other file alone; the firmware ladder
+// takes STR's own install files off the stick first (RemoveSTRPayload).
 
 import (
 	"errors"
@@ -18,7 +19,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // FirmwareFileName is the name the speaker looks for at the root of the stick.
@@ -194,19 +194,23 @@ var osStickEntries = map[string]bool{
 // HasOtherFiles reports whether the root of the stick holds anything besides
 // Update.stu and the entries the PC's operating system creates by itself. The
 // Bose USB updater is most reliable on a stick that holds only Update.stu, so
-// the firmware ladder shows a gentle hint. Nothing is ever deleted. An
-// unreadable root reports false: the hint is advice, not a check.
+// the firmware ladder shows a gentle hint. STR's own install files do not
+// count: the ladder removes them before it writes (RemoveSTRPayload). Nothing
+// else is ever deleted. An unreadable root reports false: the hint is advice,
+// not a check.
 func HasOtherFiles(stickPath string) bool {
-	entries, err := os.ReadDir(stickPath)
-	if err != nil {
+	others := OtherFiles(stickPath)
+	if len(others) == 0 {
 		return false
 	}
-	for _, e := range entries {
-		name := strings.ToLower(e.Name())
-		if name == strings.ToLower(FirmwareFileName) || osStickEntries[name] || strings.HasPrefix(name, "._") {
-			continue
+	payload := map[string]bool{}
+	for _, e := range strPayloadEntries(stickPath) {
+		payload[e.Name()] = true
+	}
+	for _, n := range others {
+		if !payload[n] {
+			return true
 		}
-		return true
 	}
 	return false
 }

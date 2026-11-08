@@ -1854,6 +1854,7 @@ export namespace sticksetup {
 	    clusterTooBig: boolean;
 	    existingFirmwareBytes: number;
 	    otherFiles: boolean;
+	    strPayloadBytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new StickCheck(source);
@@ -1876,6 +1877,7 @@ export namespace sticksetup {
 	        this.clusterTooBig = source["clusterTooBig"];
 	        this.existingFirmwareBytes = source["existingFirmwareBytes"];
 	        this.otherFiles = source["otherFiles"];
+	        this.strPayloadBytes = source["strPayloadBytes"];
 	    }
 	}
 	export class StickConfigs {

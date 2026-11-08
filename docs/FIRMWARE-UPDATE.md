@@ -250,8 +250,11 @@ each step the app:
 2. checks the zip against the size and sha1 the Internet Archive
    publishes, and the `Update.stu` inside against its size and CRC-32
    (a file that does not match is never written);
-3. copies only `Update.stu` to the root of the stick you picked, reads
-   it back, checks it again and ejects the stick;
+3. takes ST Reborn's own install files off the stick, if the setup
+   wizard put them there (only the files it writes itself, never yours;
+   anything else is listed in the log and the app suggests an empty
+   stick), then copies only `Update.stu` to the root of the stick you
+   picked, reads it back, checks it again and ejects the stick;
 4. shows the button steps for your speaker and, after **Done, check
    again**, reads the version and moves on to the next step.
 

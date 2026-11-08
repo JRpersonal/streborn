@@ -188,6 +188,8 @@ describe('screen B: the stick', () => {
     // An Update.stu already on the stick is replaced, so its space counts, as
     // in the backend's FirmwareStickProblem.
     expect(stickVerdict({ ...ok, freeBytes: 95e6, existingFirmwareBytes: 93e6 }, 93e6).ok).toBe(true);
+    // STR's own install files come off the stick before the write, too.
+    expect(stickVerdict({ ...ok, freeBytes: 75e6, strPayloadBytes: 35e6 }, 93e6).ok).toBe(true);
     expect(stickVerdict({ ok: false, reason: 'not-fat32' }, 93e6).problem).toBe('not-fat32');
     expect(stickVerdict(null, 1).problem).toBe('not-writable');
   });
