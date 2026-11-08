@@ -1481,6 +1481,7 @@
   "setup.installBoxBusy": "El altavoz es accesible, pero todavía está terminando de arrancar (carga del sistema {{load}}). Espero a que tenga capacidad libre y luego instalo. En todo caso, lo intento en {{secs}} s.",
   "setup.stickTooSmall": "Esta memoria es demasiado pequeña ({{gb}} GB). Casi cualquier otra memoria USB sirve, incluso una pequeña o antigua.",
   "setup.stickNotWritable": "No se puede escribir en esta memoria. Puede estar protegida contra escritura (comprueba el pequeño interruptor) o estar defectuosa. Prueba con otra memoria USB.",
+  "setup.stickFwTooOld": "Este altavoz tiene el firmware de Bose {{firmware}}, demasiado antiguo para STR, así que no se escribió nada en la memoria. Actualiza primero el firmware con la guía de abajo: en cada paso solo va a la memoria el archivo de actualización de Bose. Después instala STR.",
   "setup.helpTitle": "Algunas cosas que puedes probar:",
   "setup.help.freshBoot": "Arranca el altavoz desde cero: apágalo, inserta la memoria, enciéndelo y espera de 2 a 3 minutos (el ST30, el Portable y los modelos más antiguos tardan un poco más) antes de pulsar Instalar.",
   "setup.help.powerCycle": "Reinicia el altavoz: desenchúfalo 10 segundos, vuelve a enchufarlo con la memoria puesta, espera de 2 a 3 minutos y luego actualiza la lista de altavoces.",

@@ -1481,6 +1481,7 @@
   "setup.installBoxBusy": "L'enceinte est joignable, mais elle termine encore son démarrage (charge système {{load}}). J'attends qu'elle ait des ressources libres, puis j'installe. Sinon, lancement dans {{secs}} s.",
   "setup.stickTooSmall": "Cette clé est trop petite ({{gb}} Go). Presque n'importe quelle autre clé USB convient, même petite ou ancienne.",
   "setup.stickNotWritable": "Impossible d'écrire sur cette clé. Elle est peut-être protégée en écriture (vérifie le petit loquet) ou défectueuse. Essaie une autre clé USB.",
+  "setup.stickFwTooOld": "Cette enceinte utilise le firmware Bose {{firmware}}, trop ancien pour STR, donc rien n'a été écrit sur la clé. Mets d'abord le firmware à jour avec le guide ci-dessous : à chaque étape, seul le fichier de mise à jour de Bose va sur la clé. Ensuite, installe STR.",
   "setup.helpTitle": "Quelques pistes à essayer :",
   "setup.help.freshBoot": "Démarre l'enceinte à neuf : éteins-la, insère la clé, rallume-la, puis attends 2 à 3 minutes (la ST30, la Portable et les modèles plus anciens mettent un peu plus de temps) avant d'appuyer sur Installer.",
   "setup.help.powerCycle": "Redémarre l'enceinte : débranche-la 10 secondes, rebranche-la avec la clé toujours insérée, attends 2 à 3 minutes, puis actualise la liste des enceintes.",

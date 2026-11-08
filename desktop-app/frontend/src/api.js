@@ -270,6 +270,13 @@ export function CancelFirmwareStick() {
 export function RecheckFirmware(host) {
   return callOptionalBinding('RecheckFirmware', [host || '']);
 }
+// StickInstallFirmwareGate says whether the setup wizard may write STR's
+// install stick for the speaker at host: { blocked, firmware, model,
+// moduleType, variant, source }. Blocked when the speaker needs the firmware
+// update first. Optional binding, per the note above.
+export function StickInstallFirmwareGate(host) {
+  return callOptionalBinding('StickInstallFirmwareGate', [host || '']);
+}
 export function AllowThroughFirewall(includePublic) {
   return callOptionalBinding('AllowThroughFirewall', [!!includePublic]);
 }

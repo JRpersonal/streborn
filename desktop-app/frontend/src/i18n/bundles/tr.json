@@ -1481,6 +1481,7 @@
   "setup.installBoxBusy": "Hoparlöre ulaşılabiliyor ama hâlâ açılışını tamamlıyor (sistem yükü {{load}}). Boş kapasite oluşana kadar bekleyip kuracağım. Her hâlükârda {{secs}} sn içinde başlayacağım.",
   "setup.stickTooSmall": "Bu bellek çok küçük ({{gb}} GB). Neredeyse her başka USB bellek çalışır, küçük veya eski olsa bile.",
   "setup.stickNotWritable": "Bu belleğe yazılamıyor. Yazma korumalı (küçük kilit anahtarını kontrol et) veya arızalı olabilir. Lütfen başka bir USB bellek dene.",
+  "setup.stickFwTooOld": "Bu hoparlörde STR için fazla eski olan Bose yazılımı {{firmware}} var, bu yüzden belleğe hiçbir şey yazılmadı. Önce aşağıdaki kılavuzla yazılımı güncelle: her adımda belleğe yalnızca Bose'un güncelleme dosyası gider. Sonra STR'yi kur.",
   "setup.helpTitle": "Deneyebileceğin birkaç şey:",
   "setup.help.freshBoot": "Hoparlörü sıfırdan başlat: kapat, belleği tak, aç ve Kur'a basmadan önce 2 ila 3 dakika bekle (ST30, Portable ve eski modeller biraz daha uzun sürer).",
   "setup.help.powerCycle": "Hoparlörü yeniden başlat: 10 saniye fişten çek, bellek takılıyken tekrar tak, 2 ila 3 dakika bekle, sonra hoparlör listesini yenile.",

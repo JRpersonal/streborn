@@ -1616,6 +1616,7 @@
   "setup.installBoxBusy": "Speaker is reachable, but still finishing its start-up routine (system load {{load}}). Waiting until it has free capacity, then installing. Trying anyway in {{secs}} s.",
   "setup.stickTooSmall": "This stick is too small ({{gb}} GB). Almost any other USB stick works, even a small or old one.",
   "setup.stickNotWritable": "This stick cannot be written to. It may be write-protected (check the small lock switch) or faulty. Please try a different USB stick.",
+  "setup.stickFwTooOld": "This speaker runs Bose firmware {{firmware}}, which is too old for STR, so nothing was written to the stick. Update the firmware first with the guide below: each step puts only Bose's update file on the stick. Then install STR.",
   "setup.helpTitle": "A few things to try:",
   "setup.help.freshBoot": "Start the speaker fresh: switch it off, insert the stick, switch it on, then wait 2 to 3 minutes (ST30, Portable and older models need a little longer) before you press Install.",
   "setup.help.powerCycle": "Power-cycle the speaker: unplug it for 10 seconds, plug it back in with the stick still inserted, wait 2 to 3 minutes, then refresh the speaker list.",

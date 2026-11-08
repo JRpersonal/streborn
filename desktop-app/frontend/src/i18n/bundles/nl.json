@@ -1481,6 +1481,7 @@
   "setup.installBoxBusy": "De speaker is bereikbaar, maar is nog aan het opstarten (systeembelasting {{load}}). Ik wacht tot er capaciteit vrij is en installeer dan. Anders start ik over {{secs}} s.",
   "setup.stickTooSmall": "Deze stick is te klein ({{gb}} GB). Bijna elke andere USB-stick werkt, ook een kleine of oude.",
   "setup.stickNotWritable": "Deze stick kan niet worden beschreven. Mogelijk is hij schrijfbeveiligd (controleer het kleine schuifje) of defect. Probeer een andere USB-stick.",
+  "setup.stickFwTooOld": "Deze speaker draait Bose-firmware {{firmware}}, die te oud is voor STR, dus er is niets op de stick gezet. Werk eerst de firmware bij met de handleiding hieronder: bij elke stap komt alleen het updatebestand van Bose op de stick. Installeer daarna STR.",
   "setup.helpTitle": "Een paar dingen om te proberen:",
   "setup.help.freshBoot": "Start de speaker vers op: zet hem uit, plaats de stick, zet hem aan en wacht 2 tot 3 minuten (de ST30, Portable en oudere modellen hebben iets meer tijd nodig) voordat je op Installeren drukt.",
   "setup.help.powerCycle": "Herstart de speaker: haal hem 10 seconden van de stroom, sluit hem weer aan met de stick erin, wacht 2 tot 3 minuten en ververs daarna de speakerlijst.",

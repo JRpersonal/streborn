@@ -288,7 +288,12 @@ func (a *App) installReadFirmware(r *installRun) {
 	}
 	r.fwBooting = booting
 	if ferr == nil && fw.Reachable {
-		fwTooOldForUnlock = fw.Outdated && unlockNeedsNewerFirmware(fw.Short)
+		fwTooOldForUnlock = firmwareTooOldForInstall(fw)
+		if !fwTooOldForUnlock && fw.Short != "" {
+			// Updated since an earlier attempt stopped at firmware-too-old:
+			// the USB stick section may write STR's files again.
+			forgetFirmwareTooOld(host)
+		}
 		noStick = noStick || neverReadsStickAtBoot(fw.Model, fw.Variant)
 		res.Firmware = fw.Short
 		res.Model, res.ModuleType, res.Variant = fw.Model, fw.ModuleType, fw.Variant
@@ -370,6 +375,9 @@ func (a *App) installPreflight(r *installRun) bool {
 				", which is too old for the install over the network.") + "\n\n" + firmwareFirstAdvice + firmwareLadderNote(res.Model, res.ModuleType, res.Variant, res.Firmware)
 			a.logger.Warn("install_str: preflight, firmware too old for the stick-free :17000 unlock; not touching the speaker",
 				"host", host, "firmware", res.Firmware, "model", res.Model)
+			// The USB stick section of the same wizard must not write STR's
+			// files for this speaker next (StickInstallFirmwareGate).
+			rememberFirmwareTooOld(host, fwTooOldVerdict{firmware: res.Firmware, model: res.Model, moduleType: res.ModuleType, variant: res.Variant})
 			return true
 		}
 		// A speaker that answers /info with neither a model nor a firmware is

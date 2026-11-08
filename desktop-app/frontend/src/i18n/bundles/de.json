@@ -1561,6 +1561,7 @@
   "setup.noSticksFound": "Keine USB-Sticks gefunden. Stecke einen ein (fast jeder USB-Stick funktioniert) und klicke auf „Neu suchen\".",
   "setup.stickTooSmall": "Dieser Stick ist zu klein ({{gb}} GB). Fast jeder andere USB-Stick funktioniert, auch ein kleiner oder alter.",
   "setup.stickNotWritable": "Dieser Stick lässt sich nicht beschreiben. Vielleicht ist er schreibgeschützt (prüfe den kleinen Schiebeschalter) oder defekt. Bitte nimm einen anderen USB-Stick.",
+  "setup.stickFwTooOld": "Dieser Lautsprecher läuft mit der Bose-Firmware {{firmware}}, die für STR zu alt ist, deshalb wurde nichts auf den Stick geschrieben. Aktualisiere zuerst die Firmware mit der Anleitung unten: Bei jedem Schritt kommt nur die Update-Datei von Bose auf den Stick. Danach installierst du STR.",
   "setup.helpTitle": "Ein paar Dinge zum Ausprobieren:",
   "setup.help.freshBoot": "Starte den Lautsprecher frisch: ausschalten, Stick einstecken, einschalten, dann 2 bis 3 Minuten warten (ST30, Portable und ältere Modelle brauchen etwas länger), bevor du auf Installieren drückst.",
   "setup.help.powerCycle": "Lautsprecher neu starten: 10 Sekunden vom Strom trennen, mit eingestecktem Stick wieder anschließen, 2 bis 3 Minuten warten, dann die Lautsprecherliste aktualisieren.",

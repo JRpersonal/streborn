@@ -46,8 +46,10 @@ describe('the firmware route is rendered where a stock speaker can reach it', ()
     // the plain failure, the wait, and the give-up after the watcher's ceiling
     expect(all).toContain('outdatedFirmwareHtml(foundBox, result && result.firmware, result)');
     expect(all.match(/\+ \(fwBlock \|\| ''\)/g) || []).toHaveLength(2);
-    // 1 definition + 3 install screens + the stick wait
-    expect(all.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(5);
+    // 1 definition + 3 install screens + the stick wait + the stick's
+    // firmware gate in doSetup (stickfwgate.js), which shows the guide instead of
+    // preparing the stick for a speaker whose firmware is too old
+    expect(all.match(/wireOutdatedFirmwareLinks\(\)/g) || []).toHaveLength(6);
   });
 
   it('renders nothing for a speaker whose firmware is current', () => {

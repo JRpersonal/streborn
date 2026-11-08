@@ -1616,6 +1616,7 @@
   "setup.installBoxBusy": "喇叭連得上，但還在跑開機程序（系統負載 {{load}}）。等它空出資源後就會開始安裝，最晚 {{secs}} 秒後仍會試一次。",
   "setup.stickTooSmall": "這支隨身碟太小了（{{gb}} GB）。幾乎任何其他 USB 隨身碟都可以，小的或舊的也行。",
   "setup.stickNotWritable": "這支隨身碟無法寫入。可能是防寫（看看側邊的小開關）或是壞了。請換一支 USB 隨身碟試試。",
+  "setup.stickFwTooOld": "這台喇叭的 Bose 韌體 {{firmware}} 對 STR 來說太舊了，所以沒有寫入任何檔案到隨身碟。請先依照下方的指南更新韌體：每個步驟只會把 Bose 的更新檔放到隨身碟上。之後再安裝 STR。",
   "setup.helpTitle": "可以試試這幾件事：",
   "setup.help.freshBoot": "讓喇叭重新開機：先關機，插上隨身碟，再開機，然後等 2 到 3 分鐘（ST30、Portable 和更舊的型號要久一點），再按安裝。",
   "setup.help.powerCycle": "重新通電：拔掉電源 10 秒，隨身碟留著再插回去，等 2 到 3 分鐘，然後重新整理喇叭清單。",

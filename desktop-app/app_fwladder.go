@@ -206,6 +206,11 @@ func (a *App) RecheckFirmware(host string) FirmwareRecheck {
 	if !ok {
 		return FirmwareRecheck{Via: "unknown"}
 	}
+	if via == "lan" && fi.Short != "" && !firmwareTooOldForInstall(fi) {
+		// The ladder has brought the speaker far enough: the setup wizard may
+		// write the STR install stick for it again.
+		forgetFirmwareTooOld(host)
+	}
 	return FirmwareRecheck{Found: true, Version: fi.Short, Via: via, Model: fi.Model, ModuleType: fi.ModuleType, DeviceID: fi.DeviceID}
 }
 

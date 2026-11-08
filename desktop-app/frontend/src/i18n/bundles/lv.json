@@ -1481,6 +1481,7 @@
   "setup.installBoxBusy": "Skaļrunis ir sasniedzams, bet vēl pabeidz startēšanu (sistēmas slodze {{load}}). Pagaidīšu, līdz atbrīvosies resursi, tad instalēšu. Jebkurā gadījumā sākšu pēc {{secs}} s.",
   "setup.stickTooSmall": "Šī zibatmiņa ir pārāk maza ({{gb}} GB). Derēs gandrīz jebkura cita USB zibatmiņa, pat maza vai veca.",
   "setup.stickNotWritable": "Šajā zibatmiņā nevar ierakstīt. Tā var būt aizsargāta pret ierakstīšanu (pārbaudiet mazo slēdzi) vai bojāta. Lūdzu, izmēģiniet citu USB zibatmiņu.",
+  "setup.stickFwTooOld": "Šim skaļrunim ir Bose programmaparatūra {{firmware}}, kas STR ir par vecu, tāpēc zibatmiņā nekas netika ierakstīts. Vispirms atjaunini programmaparatūru pēc tālāk sniegtās pamācības: katrā solī zibatmiņā nonāk tikai Bose atjauninājuma fails. Pēc tam instalē STR.",
   "setup.helpTitle": "Dažas lietas, ko pamēģināt:",
   "setup.help.freshBoot": "Palaidiet skaļruni no jauna: izslēdziet to, ievietojiet zibatmiņu, ieslēdziet un nogaidiet no 2 līdz 3 minūtēm (ST30, Portable un vecākiem modeļiem vajag mazliet ilgāk), pirms nospiežat Instalēt.",
   "setup.help.powerCycle": "Pārstartējiet skaļruni: atvienojiet to no strāvas uz 10 sekundēm, pievienojiet atpakaļ ar ievietotu zibatmiņu, nogaidiet no 2 līdz 3 minūtēm un pēc tam atsvaidziniet skaļruņu sarakstu.",

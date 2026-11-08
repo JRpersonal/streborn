@@ -404,6 +404,8 @@ export function Status(arg1:string,arg2:number):Promise<string>;
 
 export function StickConfigs(arg1:string):Promise<sticksetup.StickConfigs>;
 
+export function StickInstallFirmwareGate(arg1:string):Promise<main.StickFirmwareGate>;
+
 export function StickVersion(arg1:string):Promise<string>;
 
 export function Stop(arg1:string,arg2:number):Promise<void>;
