@@ -205,6 +205,28 @@ test.describe('UI 2.0 Radio states', () => {
       await expect(page.locator('#view-box')).toBeHidden();
     });
   });
+
+  test.describe('switching stations', () => {
+    test.use({ fakeClock: true });
+
+    test('9b. only the new station says "Playing on", never the old one too', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      const playing = en('ui2.radio.playing', { speaker: LR.friendlyName });
+      const jazz = row(page, JAZZ.name);
+      const fip = row(page, STATIONS[4].name);
+      await jazz.locator('[data-act="play"]').click();
+      await waitForRowStatus(page, jazz, /^Playing on /);
+
+      await fip.locator('[data-act="play"]').click();
+      // The old row's line is gone the moment the switch starts.
+      await expect(jazz.locator('.ui2-st-status')).toHaveText('');
+      await waitForRowStatus(page, fip, /^Playing on /);
+      await expect(fip.locator('.ui2-st-status')).toHaveText(playing);
+      await expect(jazz.locator('.ui2-st-status')).toHaveText('');
+      await expect(rows(page).locator('.ui2-st-status', { hasText: playing })).toHaveCount(1);
+    });
+  });
 });
 
 test.describe('current layout', () => {

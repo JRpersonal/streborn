@@ -25,6 +25,7 @@ import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
+import { claimPlay, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop } from '../../shell2/playclaim.js';
 import { isFav, loadFavorites, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
 import { isPandoraFav, pandoraRowFromFav } from '../../pandorafav.js';
 import { openPandoraPick, playPandoraRow } from './pandora.js';
@@ -71,6 +72,12 @@ export function ensureUi2Radio() {
   const results = $('searchResults');
   if (!view || !presets || !search || !head || !results) return;
   built = true;
+  // A play on a speaker (from a row here or a Recently played card) ends the
+  // play line of every other row about that speaker.
+  onPlayClaim((host, owner) => {
+    const keep = String(owner || '').startsWith('radio:') ? owner.slice(6) : null;
+    for (const key of playLinesToDrop(status, host, keep)) setStatus(key, null);
+  });
 
   const title = document.createElement('h1');
   title.className = 'ui2-radio-title';
@@ -428,6 +435,9 @@ function wireTabs(list) {
 // renderUi2Stations draws the station list of the preview into the results
 // box (search.js renderSearchResults hands over here when the shell is on).
 export function renderUi2Stations(res, list, hintHtml) {
+  // The same station twice (the same entry, or a list that holds it twice)
+  // is one row: two rows would share one status line and both say "Playing".
+  list = uniqueStations(list);
   rows = list;
   const speaker = speakerName();
   rowsSpeaker = speaker;
@@ -440,6 +450,22 @@ export function renderUi2Stations(res, list, hintHtml) {
   }).join('')}</ul>`;
   res.querySelectorAll('.ui2-st').forEach((li) => rowFix(li, status.get(li.dataset.key) || null));
 }
+
+// uniqueStations drops every later row of a station already in the list
+// (same stationKey), keeping the order.
+export function uniqueStations(list) {
+  const seen = new Set();
+  return (list || []).filter((s) => {
+    const key = stationKey(s);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// rowOwner is a row's name in the play claims (shell2/playclaim.js).
+const rowOwner = (key) => `radio:${key}`;
 
 // setStatus records what a station's row reports and repaints only that line,
 // so focus and the open details stay where they are.
@@ -481,13 +507,21 @@ function rowFix(li, st) {
 // upgradeSentRows turns a row that says "Sent to Kitchen. It has not started
 // yet." into "Playing on Kitchen" once the speaker reports that it plays that
 // station, and only then (rule 2).
+// A "Playing" line whose station the speaker no longer plays (another
+// controller or a key switched it) is dropped on the same poll, so only the
+// row of what the speaker plays says "Playing".
 function upgradeSentRows() {
   const box = state.currentBox;
   if (!box || state.nowPlayState !== 'PLAY_STATE' || !state.nowLocation) return;
-  for (const [key, st] of status) {
+  const now = { host: box.host, playState: state.nowPlayState, location: state.nowLocation, name: state.nowName };
+  for (const [key, st] of [...status]) {
+    if (playLineOutdated(st, now)) { setStatus(key, null); continue; }
     const p = st && st.pending;
     if (!p || p.host !== box.host) continue;
-    if (state.nowLocation === p.url || state.nowName === p.name) setStatus(key, playVerdict(p.speaker, true));
+    if (state.nowLocation === p.url || state.nowName === p.name) {
+      if (!ownsPlay(p.host, rowOwner(key))) { setStatus(key, null); continue; }
+      setStatus(key, playLine(playVerdict(p.speaker, true), p.host, p));
+    }
   }
 }
 
@@ -522,11 +556,17 @@ async function playRow(s) {
   const speaker = speakerName();
   if (isPandoraFav(s)) { playPandoraFavRow(s, key, box, speaker); return; }
   const url = s.url_resolved || s.url;
-  setStatus(key, startingVerdict(speaker));
+  const host = box ? box.host : '';
+  const what = { url, name: s.name };
+  const owner = rowOwner(key);
+  setStatus(key, playLine(startingVerdict(speaker), host, what));
+  claimPlay(host, owner);
   let failed = false;
   const ok = await playStation(s, {
     report: (msg, kind, onBox) => {
-      if (kind === 'info') { setStatus(key, { kind: 'busy', text: msg }); return; }
+      // Another row took the speaker over meanwhile: its line is the one.
+      if (!ownsPlay(host, owner)) return;
+      if (kind === 'info') { setStatus(key, playLine({ kind: 'busy', text: msg }, host, what)); return; }
       failed = true;
       // The speaker has no internet: the row says so, with its Wi-Fi as the
       // way out (no modal, rule 3).
@@ -535,13 +575,14 @@ async function playRow(s) {
     },
   });
   if (failed) return;
-  // Not ok without a report: the speaker was switched meanwhile, nothing to say.
-  if (!ok) { setStatus(key, null); return; }
+  // Not ok without a report: the speaker was switched meanwhile, nothing to
+  // say. Nor when another row started a play on this speaker meanwhile.
+  if (!ok || !ownsPlay(host, owner)) { setStatus(key, null); return; }
   const playing = state.nowPlayState === 'PLAY_STATE' && !!state.nowLocation
     && (state.nowLocation === url || state.nowName === s.name);
   // Sent is not playing: the speaker took the station but does not report it
   // yet. The status poll upgrades the line once it does (upgradeSentRows).
-  const verdict = playVerdict(speaker, playing);
+  const verdict = playLine(playVerdict(speaker, playing), host, what);
   if (!playing && box) verdict.pending = { host: box.host, url, name: s.name, speaker };
   setStatus(key, verdict);
 }
@@ -549,15 +590,20 @@ async function playRow(s) {
 // playPandoraFavRow starts a Pandora favourite (#1663) the way the Pandora list
 // does, on the speaker's own Pandora client, and tells the row what came of it.
 async function playPandoraFavRow(s, key, box, speaker) {
-  setStatus(key, startingVerdict(speaker));
+  const host = box ? box.host : '';
+  const what = { url: '', name: s.name };
+  const owner = rowOwner(key);
+  setStatus(key, playLine(startingVerdict(speaker), host, what));
+  claimPlay(host, owner);
   let failed = false;
   const ok = await playPandoraRow(pandoraRowFromFav(s), (msg) => {
+    if (!ownsPlay(host, owner)) return;
     failed = true;
     setStatus(key, { kind: 'error', text: t('ui2.radio.playFailed', { speaker, reason: msg }) });
   });
   if (failed) return;
-  if (!ok) { setStatus(key, null); return; }
-  const verdict = playVerdict(speaker, false);
+  if (!ok || !ownsPlay(host, owner)) { setStatus(key, null); return; }
+  const verdict = playLine(playVerdict(speaker, false), host, what);
   if (box) verdict.pending = { host: box.host, url: '', name: s.name, speaker };
   setStatus(key, verdict);
 }
