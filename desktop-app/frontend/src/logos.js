@@ -28,6 +28,35 @@ export function rootDomain(host) {
   return parts.slice(1).join('.');
 }
 
+// SHARED_HOST_DOMAINS and SHARED_HOST_APEX_LABELS mirror the Go package
+// stationhost (stationhost.SharedDomains, SharedApexLabels), the rule the
+// agent and the desktop's ResolveStationLogo apply; stationhost_test.go fails
+// when this copy drifts. Under a shared or dynamic-DNS domain neither the host
+// nor its root domain is the station's, so no logo is looked up by it: a
+// station streaming from a *.ddns.net host got ddns.net's favicon (#1773).
+export const SHARED_HOST_DOMAINS = [
+  'ddns.net', 'no-ip.com', 'no-ip.org', 'no-ip.biz', 'no-ip.info', 'noip.me',
+  'hopto.org', 'zapto.org', 'sytes.net', 'myftp.org', 'myftp.biz',
+  'servemp3.com', 'serveftp.com', 'redirectme.net',
+  'homeip.net',
+  'duckdns.org', 'freeddns.org', 'myddns.me', 'dynu.net', 'ddnsfree.com',
+  'mooo.com', 'afraid.org', 'chickenkiller.com',
+  'ngrok.io', 'trycloudflare.com',
+];
+export const SHARED_HOST_APEX_LABELS = ['dyndns', 'dnsalias'];
+
+// sharedLogoHost reports whether a station host is an IP literal or sits
+// under a shared or dynamic-DNS domain, so it must not be used, nor its root
+// domain, to look up a logo. Same rule as stationhost.Shared.
+export function sharedLogoHost(host) {
+  const h = String(host || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (!h) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.includes(':')) return true;
+  if (SHARED_HOST_DOMAINS.some((d) => h === d || h.endsWith('.' + d))) return true;
+  const labels = h.split('.');
+  return labels.length >= 2 && SHARED_HOST_APEX_LABELS.includes(labels[labels.length - 2]);
+}
+
 // iconServicesFor yields favicon-service URLs for a host. We only
 // query DuckDuckGo's privacy-friendly icon service. The Google
 // equivalent (www.google.com/s2/favicons) used to live in this list
@@ -106,6 +135,8 @@ export function stationLogoCandidates(s) {
   const hosts = [];
   for (const u of [s.homepage, s.url, s.url_resolved]) {
     const h = extractHost(u);
+    // Not by a shared or dynamic-DNS host, nor its root domain (#1773).
+    if (sharedLogoHost(h)) continue;
     if (h && !hosts.includes(h)) hosts.push(h);
     const r = rootDomain(h);
     if (r && !hosts.includes(r)) hosts.push(r);
@@ -137,7 +168,8 @@ export function logoHostsFor(s) {
   const push = (h) => { if (h && !hosts.includes(h)) hosts.push(h); };
   for (const u of [s.homepage, s.url, s.url_resolved]) {
     const h = extractHost(u);
-    if (!h) continue;
+    // Not by a shared or dynamic-DNS host, nor its root domain (#1773).
+    if (!h || sharedLogoHost(h)) continue;
     push(h);
     push(rootDomain(h));
     // Try the www. and apex variants too: DuckDuckGo's icon service knows some

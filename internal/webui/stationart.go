@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/JRpersonal/streborn/stationhost"
 )
 
 // Station logo chains on saved keys (#1467).
@@ -28,13 +30,25 @@ const ddgIconPrefix = "https://icons.duckduckgo.com/ip3/"
 // original order. A chain that already carries a DuckDuckGo entry was built by
 // a client that knows the rule and comes back as it was, as does a station
 // with no public host to look up.
+//
+// A DuckDuckGo entry for a shared or dynamic-DNS host (stationhost.Shared) is
+// dropped from the chain first, whoever built it: an older app saved one, and
+// it shows the provider's icon instead of the station's (#1773).
 func completeStationArt(art, homepage, stream string) string {
 	var cands []string
+	dropped := false
 	for _, c := range strings.Split(art, "|") {
 		c = strings.TrimSpace(c)
+		if ddgSharedHostIcon(c) {
+			dropped = true
+			continue
+		}
 		if c != "" && !containsString(cands, c) {
 			cands = append(cands, c)
 		}
+	}
+	if dropped {
+		art = strings.Join(cands, "|")
 	}
 	for _, c := range cands {
 		if strings.HasPrefix(c, ddgIconPrefix) {
@@ -69,7 +83,9 @@ func completeStationArt(art, homepage, stream string) string {
 // host, then its root domain (logos.js extractHost + rootDomain). A LAN host
 // (an IP literal, a single label, .local and the other home suffixes) is left
 // out: it has no public icon, and asking a third party about it would hand
-// over a private address for nothing.
+// over a private address for nothing. So is a host under a shared or
+// dynamic-DNS domain, with its root domain (stationhost.Shared, #1773): its
+// icon is the provider's, never the station's.
 func stationLogoHosts(urls ...string) []string {
 	var hosts []string
 	push := func(h string) {
@@ -83,13 +99,25 @@ func stationLogoHosts(urls ...string) []string {
 			continue
 		}
 		h := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
-		if !publicLogoHost(h) {
+		if !publicLogoHost(h) || stationhost.Shared(h) {
 			continue
 		}
 		push(h)
 		push(logoRootDomain(h))
 	}
 	return hosts
+}
+
+// ddgSharedHostIcon reports whether u is a DuckDuckGo icon URL for a host
+// stationhost.Shared rules out. The /art proxy refuses those as well, so a
+// chain saved before the rule (or the phone page's own candidates) cannot
+// bring the provider's icon back.
+func ddgSharedHostIcon(u string) bool {
+	if !strings.HasPrefix(u, ddgIconPrefix) {
+		return false
+	}
+	host := strings.TrimSuffix(strings.TrimPrefix(u, ddgIconPrefix), ".ico")
+	return stationhost.Shared(host)
 }
 
 // publicLogoHost reports whether h names a public host worth an icon lookup.
