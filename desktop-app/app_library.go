@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
+	"github.com/JRpersonal/streborn/stationhost"
 	"github.com/JRpersonal/streborn/sticksetup"
 )
 
@@ -64,11 +65,14 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 		}
 	}
 	// 2. DuckDuckGo per host. 200 = real icon; 404 = grey placeholder, so
-	//    only a 200 counts.
+	//    only a 200 counts. Never for a shared or dynamic-DNS host, nor an IP
+	//    literal (stationhost.Shared): its icon is the provider's, so a
+	//    station on a *.ddns.net stream host wore ddns.net's favicon (#1773).
+	//    The frontend leaves them out already; this holds for any caller.
 	if best == "" {
 		for _, h := range hosts {
 			h = strings.TrimSpace(h)
-			if h == "" {
+			if h == "" || stationhost.Shared(h) {
 				continue
 			}
 			u := "https://icons.duckduckgo.com/ip3/" + h + ".ico"

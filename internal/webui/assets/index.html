@@ -3576,13 +3576,18 @@ function nativeSlot(loc, list) {
 // station's location, but the key is not playing, so it stays dark: the same
 // rule as the desktop app's presetMayLight (#1526, #1629). A key just pressed
 // still lights at once through pendingStart below.
+//
+// Only playing, starting and paused light a key; a missing playStatus counts
+// as stopped (#1763). A Pandora key the speaker could not start leaves
+// now_playing on the Pandora item with no playStatus at all, and the old
+// "dark only on STOP_STATE" rule kept that key lit as if it played.
 function markPlaying(loc, queue, spKey, state) {
   var grid = document.getElementById('presets');
   if (!grid) return;
   // Keys 7..12 are the second row (#1110); an agent without it never names them.
   var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
     (spKey >= 1 && spKey <= 12 ? spKey : 0) || queueSlot(queue, lastPresetList);
-  if (state === 'STOP_STATE') n = 0;
+  if (state !== 'PLAY_STATE' && state !== 'BUFFERING_STATE' && state !== 'PAUSE_STATE') n = 0;
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
       clearPendingStart(); // the speaker got there
@@ -6393,6 +6398,21 @@ async function saveDisplay(kind, enabled) {
   /* How often a speaker is started over after a network failure, and how
      long the phone waits for the network to come back each time. */
   var NET_TRIES = 2, NET_MS = 15 * 60 * 1000, NET_POLL_MS = 15000;
+  /* The run's network budget (#1339 4c). Each wait above was bounded on its
+     own, and the speaker's "no internet" answers pushed a row's deadline out
+     by three minutes every time without a cap, so two tries, their waits and
+     the time the phone was locked added up to about an hour through one
+     outage, while a single-speaker update says it has stopped after
+     SU_STOP_MS. run.netSince is the wall-clock time of the first network
+     failure, kept across retries, speakers, a hidden page and a reload; it is
+     cleared by the first answer that shows the network working. Past
+     RUN_NET_MS of it the row fails as a network failure and drive() stops the
+     run with netStop for every speaker still to come. */
+  var RUN_NET_MS = 15 * 60 * 1000;
+  function netBegin(at) { if (run && !run.netSince) { run.netSince = at || Date.now(); saveRun(); } }
+  function netOk() { if (run && run.netSince) { run.netSince = 0; saveRun(); } }
+  function netLeft() { return run && run.netSince ? run.netSince + RUN_NET_MS - Date.now() : RUN_NET_MS; }
+  function netGone() { return 'no network for ' + Math.round((Date.now() - ((run && run.netSince) || Date.now())) / 60000) + ' minutes'; }
   /* waitBack: wall-clock silence in the middle of a download that counts as
      a network failure, and how much of it the page must have seen itself. */
   var SILENT_MS = 12 * 60 * 1000, SILENT_SEEN_MS = 3 * 60 * 1000;
@@ -6898,12 +6918,14 @@ async function saveDisplay(kind, enabled) {
         var word = goneWord(row), t = Date.now();
         if (!row.silentSeenAt) row.silentSeenAt = t;
         if (word === 'offline' && t - row.heardAt >= SILENT_MS && t - row.silentSeenAt >= SILENT_SEEN_MS) {
-          return { fail: 'no network answer for ' + Math.round((t - row.heardAt) / 60000) + ' minutes in the middle of the download', net: true };
+          return { fail: 'no network answer for ' + Math.round((t - row.heardAt) / 60000) + ' minutes in the middle of the download', net: true, since: row.heardAt };
         }
         setRow(row, { phase: word, pct: 0 });
         continue;
       }
       row.heardAt = Date.now(); row.silentSeenAt = 0;
+      /* An answer that shows the network working ends the outage. */
+      if (now.phase !== 'network' && now.state !== 'failed') netOk();
       var onTarget = !!now.current && !vless(now.current, row.target);
       if (now.state === 'failed' && onTarget) { doneRow(row, now.current, now.error); return; }
       if (now.state === 'failed') return { fail: now.error };
@@ -6914,8 +6936,10 @@ async function saveDisplay(kind, enabled) {
       if (onTarget) { doneRow(row, now.current); return; }
       if (now.phase === 'network') {
         /* The speaker waits for its own network and tries again by itself:
-           give it the time. */
-        row.deadline = Math.max(row.deadline, Date.now() + 3 * 60 * 1000);
+           give it the time, but never past the run's network budget. */
+        netBegin();
+        if (netLeft() <= 0) return { fail: netReason(netGone()), net: true };
+        row.deadline = Math.max(row.deadline, Math.min(Date.now() + 3 * 60 * 1000, run.netSince + RUN_NET_MS));
         setRow(row, { phase: 'network', pct: 0 });
       } else if (now.state === 'downloading' || now.state === 'installing') {
         setRow(row, { phase: 'downloading', pct: now.total ? Math.floor(100 * (now.done || 0) / now.total) : 0 });
@@ -6932,10 +6956,15 @@ async function saveDisplay(kind, enabled) {
     var now = await getStatus();
     if (now && now.current && row.target && !vless(now.current, row.target)) { doneRow(row, now.current); return false; }
     if (!(res.net || netErr(res.fail))) { failRow(row, res.fail); return false; }
+    /* The outage started at the last answer for a silence, else now. */
+    netBegin(res.since);
     if ((row.tries || 0) >= NET_TRIES) { failRow(row, netReason(res.fail)); return false; }
+    if (netLeft() <= 0) { failRow(row, netReason(netGone())); return false; }
     row.tries = (row.tries || 0) + 1;
     setRow(row, { state: 'updating', phase: 'network', pct: 0, step: 'netwait', reason: '', deadline: 0, backAt: 0, heardAt: 0, silentSeenAt: 0 });
-    var until = Date.now() + NET_MS;
+    /* On the wall clock and never past the run's budget, so the time the
+       phone was locked counts too. */
+    var until = Math.min(Date.now() + NET_MS, run.netSince + RUN_NET_MS);
     while (Date.now() < until) {
       await sleep(NET_POLL_MS);
       await gate();
@@ -6943,7 +6972,7 @@ async function saveDisplay(kind, enabled) {
       var c = await check();
       if (!c || c.status === 0 || c.status === 409) continue;
       var d = c.data;
-      if (c.ok && d && d.state && d.state !== 'failed') { setRow(row, { step: 'check' }); return true; }
+      if (c.ok && d && d.state && d.state !== 'failed') { netOk(); setRow(row, { step: 'check' }); return true; }
       if (d && d.state === 'failed' && netErr(d.error)) continue;
       failRow(row, (d && d.error) || ('the speaker refused (HTTP ' + c.status + ')'));
       return false;
@@ -7075,6 +7104,9 @@ async function saveDisplay(kind, enabled) {
         }
         if (row.via === 'speaker') await updateViaSpeaker(row);
         if (!runActive()) return;
+        /* A speaker that got the update had a network: the next one's outage
+           counts from its own first failure. */
+        if (row.state === 'done') netOk();
         /* A speaker that failed only for want of a network, after its
            retries, is the network's answer for every speaker still to come:
            they share it. The run ends here with one plain "try again when

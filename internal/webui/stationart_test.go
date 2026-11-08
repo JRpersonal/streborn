@@ -2,7 +2,10 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -36,6 +39,18 @@ func TestCompleteStationArt(t *testing.T) {
 			"http://192.0.2.60:8200/a.jpg"},
 		{"local names are never looked up", "", "http://nas.local/", "http://nas:8000/live",
 			""},
+		// #1773: "Radio Eure du Blues" streams from a *.ddns.net host and got
+		// ddns.net's favicon. Neither the host nor its root domain is looked up.
+		{"a dynamic-DNS stream host is never looked up", "", "https://www.radio-eure.example/", "http://radioeure.ddns.net:8000/stream",
+			ddg("www.radio-eure.example") + "|" + ddg("radio-eure.example")},
+		{"only dynamic-DNS hosts: nothing to look up", "", "", "http://blues.duckdns.org/live",
+			""},
+		{"the dyndns family under any top-level domain", "", "http://radio.dyndns.info/", "http://x.dnsalias.net/live",
+			""},
+		{"a chain an older app saved loses the provider's icon", "https://cdn.example/jl.png|" + ddg("radioeure.ddns.net") + "|" + ddg("ddns.net"), "", "http://radioeure.ddns.net:8000/stream",
+			"https://cdn.example/jl.png"},
+		{"a tunnel host is never looked up", "", "", "https://abc123.trycloudflare.com/live",
+			""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -45,6 +60,38 @@ func TestCompleteStationArt(t *testing.T) {
 		})
 	}
 }
+
+// #1773: the art proxy refuses the icon service's picture of a shared or
+// dynamic-DNS host without fetching it, so a key saved before the rule and the
+// phone page's own candidates fall through to the letter tile.
+func TestArtProxyRefusesTheIconOfASharedHost(t *testing.T) {
+	fetched := false
+	saved := artFetchClient
+	artFetchClient = &http.Client{Transport: sharedHostArtTrip(func(*http.Request) (*http.Response, error) {
+		fetched = true
+		return nil, http.ErrHandlerTimeout
+	})}
+	defer func() { artFetchClient = saved }()
+	s := &Server{logger: slog.New(slog.DiscardHandler)}
+	for _, host := range []string{"ddns.net", "radioeure.ddns.net", "x.dyndns.org", "192.0.2.7"} {
+		enc := base64.RawURLEncoding.EncodeToString([]byte(ddgIconPrefix + host + ".ico"))
+		rec := httptest.NewRecorder()
+		s.handleArt(rec, httptest.NewRequest(http.MethodGet, "/art?u="+enc+"&to=browser", nil))
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", host, rec.Code)
+		}
+	}
+	if fetched {
+		t.Error("the icon of a shared host was fetched")
+	}
+	if ddgSharedHostIcon(ddgIconPrefix + "www.radio-eure.example.ico") {
+		t.Error("a station's own host must still be looked up")
+	}
+}
+
+type sharedHostArtTrip func(*http.Request) (*http.Response, error)
+
+func (f sharedHostArtTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // The phone page's own save (Find tab Save, hold on a station it started):
 // the same station must come out with the desktop app's chain.

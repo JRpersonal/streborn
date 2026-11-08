@@ -2002,6 +2002,9 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
+/* Pandora with an account the speaker lists UNAVAILABLE (#1763): greyed, still
+   focusable, and a press says why (views/music/pandora.js). */
+#pandoraModeBtn.is-unavailable { opacity: .5; cursor: help; }
 /* The Top list / Favorites / Pandora button of the list on screen looks pressed
    (#1521), in the same brand tint as an active chip so it reads in every theme. */
 .btn.mode-pressed,

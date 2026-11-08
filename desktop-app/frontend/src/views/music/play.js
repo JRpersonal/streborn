@@ -11,7 +11,9 @@ import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
 import { isRadioPreset, stationDnsKey, watchStationDns } from '../../stationdns.js';
-import { optimisticQueue, optimisticSpotifyLocation, showToast } from '../../utils.js';
+import {
+  optimisticQueue, optimisticSpotifyLocation, QUEUE_PRESS_HOLD_MS, QUEUE_PRESS_REARM_MS, showToast,
+} from '../../utils.js';
 import { escalationForCount, noteNotReady, noteWakeSucceeded } from '../../wakeescalation.js';
 import { throttledSetVolume } from '../settings.js';
 import { deps } from './deps.js';
@@ -118,8 +120,11 @@ export async function play(slot) {
       state.queue = optimisticQueue(state.queue, slot);
       state.optimisticQueueSlot = slot;
       state.optimisticQueuePrevLoc = state.nowLocation || '';
+      // Held until the press returns (#1767): see queueRecallConfirmed.
+      state.optimisticQueueInFlight = gen;
     } else {
       state.optimisticQueueSlot = null;
+      state.optimisticQueueInFlight = 0;
     }
     // Spotify presets carry no stream_url (they recall by URI), so without
     // this the optimistic location is empty: the tile would not light up and
@@ -151,7 +156,11 @@ export async function play(slot) {
     scheduleLiveBitrate();
     scheduleLiveTitle();
     state.nowUUID = '';
-    state.optimisticUntil = Date.now() + 6000;
+    // A library key holds its card for as long as the press is in flight,
+    // which on a sleeping speaker is about 8 s: the 6 s every other key uses
+    // ran out first and showed the station the firmware resumes while it
+    // wakes (#1767). queuePressReturned re-arms it once the press is back.
+    state.optimisticUntil = Date.now() + (p.type === 'queue' ? QUEUE_PRESS_HOLD_MS : 6000);
     delete state.presetErrors[slot];
     state.stuckBuf = null;
     renderPresets();
@@ -164,6 +173,7 @@ export async function play(slot) {
   }
   try {
     await PlaySlot(state.currentBox.host, state.currentBox.port, slot);
+    queuePressReturned(gen);
     // The speaker took the command, so it is awake: any run of wake failures
     // it had is over, and the next one starts counting from the beginning.
     noteWakeSucceeded(state.currentBox.host);
@@ -184,6 +194,7 @@ export async function play(slot) {
       if (mb && state.currentBox && mb.host !== state.currentBox.host) {
         try {
           await PlaySlot(mb.host, mb.port, slot);
+          queuePressReturned(gen);
           noteWakeSucceeded(mb.host);
           delete state.presetErrors[slot];
           if (wasIdle) reapplyDesiredVolume();
@@ -200,6 +211,7 @@ export async function play(slot) {
     state.nowPlayState = '';
     state.nowLocation = '';
     state.optimisticUntil = 0;
+    if (state.optimisticQueueInFlight === gen) state.optimisticQueueInFlight = 0;
     // A library key whose music server answers but no longer has the music
     // (#919) is labelled ahead of friendlyPlayError, for the reason it gives
     // for the server-off refusal: the raw body holds the preset's name.
@@ -234,6 +246,37 @@ export async function play(slot) {
   }
 }
 
+// nativeServiceDown names the label for a native-service key the speaker
+// cannot start right now, or '' when l (the lowercased error) is not one
+// (#1763). Two refusals mean that:
+//   - native-service-unavailable: the agent saw the speaker list the service
+//     as UNAVAILABLE and did not even try;
+//   - native-select-refused carrying the firmware's GENERAL_PANDORA_ERROR
+//     (code 1008): the speaker tried and its Pandora client did not answer.
+// Any other native-select-refused keeps the plain "speaker refused".
+export function nativeServiceDown(l) {
+  const s = String(l || '').toLowerCase();
+  if (s.includes('native-service-unavailable')) {
+    // The agent names the service in "source" (internal/webui playback.go);
+    // read that field, not any "iheart" in the preset's name.
+    return /"source"\s*:\s*"iheart/.test(s) ? 'play.errNativeServiceUnavailable' : 'play.errPandoraUnavailable';
+  }
+  if (s.includes('native-select-refused') && (s.includes('general_pandora_error') || /\b1008\b/.test(s))) {
+    return 'play.errPandoraUnavailable';
+  }
+  return '';
+}
+
+// queuePressReturned ends the in-flight hold of library key press gen and
+// gives the status poll QUEUE_PRESS_REARM_MS more to see the queue's first
+// track before the optimistic card is let go (#1767). A newer press owns the
+// state, so a stale return changes nothing.
+function queuePressReturned(gen) {
+  if (state.optimisticQueueInFlight !== gen || gen !== presetPlayGen) return;
+  state.optimisticQueueInFlight = 0;
+  if (state.optimisticQueueSlot != null) state.optimisticUntil = Date.now() + QUEUE_PRESS_REARM_MS;
+}
+
 // friendlyPlayError turns a technical error string into a short
 // user-facing hint shown on the preset label.
 //
@@ -251,6 +294,11 @@ function friendlyPlayError(s, host) {
   // pull the plug and mail logs, neither of which helps.
   if (deps.stereoStaleForError(s, host)) return t('play.errStereoStale');
   if (l.includes('box_not_ready')) return t(escalationForCount(noteNotReady(host)));
+  // A Pandora or iHeartRadio key the speaker's own client cannot start right
+  // now (#1763). Ahead of the "refused" check below, which the code itself
+  // would match.
+  const native = nativeServiceDown(l);
+  if (native) return t(native);
   // Spotify recall refused because the speaker was never picked as the Spotify
   // Connect device (no go-librespot credential). Key off the stable backend code,
   // not the English message, so rewording the backend never breaks this (#45).

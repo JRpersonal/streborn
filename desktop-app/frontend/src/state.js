@@ -54,6 +54,7 @@ export const state = {
   lastLibraryPlay: null,
   queue: null,         // current box play queue: {active, pos, shuffle, repeat, items[]} or null
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
+  optimisticQueueInFlight: 0, // play() generation of a library key press still waiting for PlaySlot (#1767)
   presetErrors: {},    // slot → last error message (rendered red)
   searchOrder: 'votes',
   // searchCountry is the user's pinned country filter on the Music

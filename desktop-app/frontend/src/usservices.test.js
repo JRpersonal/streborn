@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   usServiceState, usServicesRegionIsUS, usServicesOptIn, usServiceStatusKey,
-  usServiceCanDisconnect, usServiceNeedsLogin, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
+  usServiceCanDisconnect, usServiceNeedsLogin, pandoraFindMode, pandoraFindVisible, pandoraStationRows, agentErrorCode, agentErrorText,
   usDisconnectError, usConnectError,
 } from './usservices.js';
 
@@ -118,6 +118,25 @@ describe('pandoraFindVisible', () => {
     expect(pandoraFindVisible(status({ box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } }))).toBe(false);
     expect(pandoraFindVisible(status({ country: 'DE', us: false, box: { PANDORA: { status: 'READY', hasAccount: 'true' } } }))).toBe(false);
     expect(pandoraFindVisible(null)).toBe(false);
+  });
+});
+
+// #1763: an account on the speaker that lists Pandora UNAVAILABLE hid the
+// entry without a word.
+describe('pandoraFindMode', () => {
+  it('opens the stations when READY, greys the entry when UNAVAILABLE with an account', () => {
+    expect(pandoraFindMode(status({ box: { PANDORA: { status: 'READY', hasAccount: 'true' } } }))).toBe('ready');
+    expect(pandoraFindMode(status({ box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } }))).toBe('unavailable');
+    expect(pandoraFindMode(status({ pandora: { registered: true }, box: { PANDORA: { status: 'UNAVAILABLE' } } }))).toBe('unavailable');
+  });
+  it('stays hidden without an account, with the service off, without an answer, or for a stale account', () => {
+    expect(pandoraFindMode(status({ box: { PANDORA: { status: 'UNAVAILABLE' } } }))).toBe('hidden');
+    expect(pandoraFindMode(status({ country: 'DE', us: false, box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } }))).toBe('hidden');
+    expect(pandoraFindMode(null)).toBe('hidden');
+    expect(pandoraFindMode(status({ pandora: { carriedOver: 'ol***@example.com' },
+      box: { PANDORA: { status: 'UNAVAILABLE', hasAccount: 'true' } } }))).toBe('hidden');
+    // linked but the speaker reports something other than UNAVAILABLE (still logging in)
+    expect(pandoraFindMode(status({ pandora: { registered: true }, box: { PANDORA: { status: 'absent' } } }))).toBe('hidden');
   });
 });
 

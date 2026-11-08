@@ -62,6 +62,14 @@ export function keepsLiveTitle(ps) {
 // is selected. A stopped speaker still reports the station's location, but the
 // key is not playing. A key click's optimistic window still lights it at once,
 // before the speaker has left STOP_STATE.
+//
+// An allow-list, not "anything but STOP_STATE" (#1763): after a Pandora key the
+// speaker could not start, the firmware keeps now_playing on the Pandora item
+// with no playStatus at all, and the key stayed lit with its station name as
+// if it played. Only playing, starting and paused light a key; a missing state
+// counts as stopped.
+const LIT_STATES = new Set(['PLAY_STATE', 'BUFFERING_STATE', 'PAUSE_STATE']);
+
 export function presetMayLight(ps, optimisticUntil, now) {
-  return ps !== 'STOP_STATE' || now < (optimisticUntil || 0);
+  return LIT_STATES.has(ps) || now < (optimisticUntil || 0);
 }

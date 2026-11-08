@@ -214,8 +214,11 @@ export async function refreshStatus() {
     }
     // A library album or folder key has no location to compare: the recall is
     // confirmed once the queue names the clicked key and the speaker reports a
-    // location other than the one it had before the click (#978).
-    if (optimistic && queueRecallConfirmed(state.optimisticQueueSlot, state.queue, loc, state.optimisticQueuePrevLoc)) {
+    // location other than the one it had before the click (#978), from the
+    // queue itself and not the station a sleeping speaker resumes while it
+    // wakes (#1767).
+    const queueOpts = { source: src, inFlight: !!state.optimisticQueueInFlight };
+    if (optimistic && queueRecallConfirmed(state.optimisticQueueSlot, state.queue, loc, state.optimisticQueuePrevLoc, queueOpts)) {
       state.optimisticUntil = 0;
       state.optimisticQueueSlot = null;
     }

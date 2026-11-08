@@ -94,9 +94,18 @@ describe('presetMayLight', () => {
     expect(presetMayLight('STOP_STATE', 7000, 1000)).toBe(true);
   });
 
-  it('changes nothing for any other state', () => {
-    for (const ps of ['PLAY_STATE', 'BUFFERING_STATE', 'PAUSE_STATE', '']) {
+  it('lights a key while playing, starting or paused', () => {
+    for (const ps of ['PLAY_STATE', 'BUFFERING_STATE', 'PAUSE_STATE']) {
       expect(presetMayLight(ps, 0, 1000), ps).toBe(true);
+    }
+  });
+
+  // #1763: a Pandora key the speaker could not start leaves now_playing on the
+  // Pandora item with no playStatus. That is not playing.
+  it('a missing or unknown state counts as stopped, outside the click window', () => {
+    for (const ps of ['', undefined, null, 'INVALID_PLAY_STATUS', 'STANDBY_STATE']) {
+      expect(presetMayLight(ps, 0, 1000), String(ps)).toBe(false);
+      expect(presetMayLight(ps, 7000, 1000), String(ps)).toBe(true);
     }
   });
 });

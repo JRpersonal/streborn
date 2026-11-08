@@ -906,7 +906,8 @@ export function renderMultiroom(fetchLive) {
     const ns = $('stereoNameSave');
     if (ns) ns.onclick = async () => {
       const newName = $('stereoName').value;
-      try { await setPairName(formingPair, newName); } catch {}
+      let saved = false;
+      try { await setPairName(formingPair, newName); saved = true; } catch {}
       rememberPairName(formingPair, newName);
       // Push the name into BOTH members' firmware pair records too: that is
       // the record the Bose app reads and edits, so the rename shows up there
@@ -914,9 +915,13 @@ export function renderMultiroom(fetchLive) {
       // app-side store above already carries the STR display.
       try {
         const members = pairMemberBoxes(formingPair, strBoxes).map(x => x.box).filter(Boolean);
-        await Promise.allSettled(members.map(b => PushStereoPairNameToBox(b.host, b.port, newName.trim())));
+        const pushed = await Promise.allSettled(members.map(b => PushStereoPairNameToBox(b.host, b.port, newName.trim())));
+        if (pushed.some(r => r.status === 'fulfilled')) saved = true;
       } catch {}
       delete state.stereoName;
+      // Confirm the rename the way Create and Undo confirm theirs (#1766):
+      // without it the click gave no sign that anything was stored.
+      if (saved) flashStereoMsg(`<div class="setup-ok">${escapeHtml(t('multiroom.stereoRenamed'))}</div>`);
       renderMultiroom(false);
     };
     // A pair could be created but never undone: the button to make one sat

@@ -66,6 +66,14 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "only http(s) images", http.StatusBadRequest)
 		return
 	}
+	// The icon service's picture for a shared or dynamic-DNS host is the
+	// provider's logo, never the station's (#1773). Refused without asking,
+	// so a key saved before the rule, or the phone page's own candidates,
+	// fall through to the next candidate and in the end the letter tile.
+	if ddgSharedHostIcon(target) {
+		http.Error(w, "no station logo for a shared host", http.StatusNotFound)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
