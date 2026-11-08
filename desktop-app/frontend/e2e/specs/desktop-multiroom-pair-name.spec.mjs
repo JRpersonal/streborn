@@ -102,9 +102,21 @@ for (const layout of ['classic', 'ui2']) {
         const { page } = app;
         await open(page);
         await pick(page, TL, TR);
-        // Save name is only offered for a pair the speakers report.
+        // Rename is only offered for a pair the speakers report.
         await expect(page.locator('#stereoNameSave')).toBeVisible();
+        await expect(page.locator('#stereoNameSave')).toHaveText('Rename');
         await expect(page.locator('#stereoName')).toHaveValue(SPEAKERS3.zones.terraceLeft.stereo.name);
+      });
+
+      test('Rename confirms the new name in green (#1766)', async ({ app, mock }) => {
+        const { page } = app;
+        await open(page);
+        await pick(page, TL, TR);
+        await page.locator('#stereoName').fill('Patio');
+        await mock.resetCalls();
+        await page.locator('#stereoNameSave').click();
+        await mock.expectCalled('SetStereoPairName', { pred: (c) => c.args[1] === 'Patio' });
+        await expect(page.locator('#stereoResult .setup-ok')).toHaveText('Stereo pair renamed.');
       });
     });
   });
