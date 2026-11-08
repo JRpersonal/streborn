@@ -3,7 +3,6 @@ package webui
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"regexp"
@@ -134,8 +133,7 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
-	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: queueKeyCover(p), source: p.Source,
-		recentKey: slotFolderRecentKey(slot, p)}
+	card := slotQueueCard(slot, p)
 	// -1 = the user recalled the whole preset without picking a track, so with
 	// shuffle on the queue may start anywhere (#490).
 	if err := s.startQueue(ctx, items, -1, shuffle, rep, card); err != nil {
@@ -477,11 +475,8 @@ func (s *Server) queueBoxInZone() bool {
 // exactly like handlePlay, and records it as the last play. The caller must
 // hold boxCmdMu.
 func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist string, dur time.Duration) error {
-	playDirect := mime != "" && isPlainHTTPURL(url)
-	playURL := boxurl.RawStream(url)
-	if playDirect {
-		playURL = url
-	}
+	playDirect := queuePlaysDirect(url, mime)
+	playURL := queueBoxURL(url, mime)
 	// A folder started while the speaker plays a native station must stop
 	// that station first, or the firmware swallows the push (#1065).
 	err := s.pushOverNativeStation(ctx, title, func() error {
@@ -518,6 +513,22 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	return nil
 }
 
+// queuePlaysDirect reports whether a queue track goes to the box as the file
+// itself (a plain-HTTP library file the box can range-read) rather than
+// through the loopback proxy.
+func queuePlaysDirect(url, mime string) bool {
+	return mime != "" && isPlainHTTPURL(url)
+}
+
+// queueBoxURL is the address pushStream hands the box for a queue track, and
+// so the URL the play record (setLastPlay) holds while that track plays.
+func queueBoxURL(url, mime string) string {
+	if queuePlaysDirect(url, mime) {
+		return url
+	}
+	return boxurl.RawStream(url)
+}
+
 func (s *Server) queueCtx() context.Context {
 	if s.baseCtx != nil {
 		return s.baseCtx
@@ -536,13 +547,42 @@ func (s *Server) startQueue(ctx context.Context, items []queueItem, start int, s
 // startQueueLocked is startQueue for callers that already hold boxCmdMu (e.g. a
 // preset slot recall, which takes the lock for the whole handler).
 func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode, card recentCardCtx) error {
+	return s.runQueueStartLocked(ctx, queueStartSpec{items: items, start: start, shuffle: shuffle, rep: rep, card: card, userPlay: true})
+}
+
+// queueStartSpec is everything one queue start needs. resume, when set, is
+// the play order and position of a folder a standby ended (queueresume.go):
+// the queue is put back exactly as it was, the same shuffled order included,
+// instead of being loaded afresh. userPlay=false is an automatic resume, which
+// is not the user asking for playback and so leaves the stop latches alone.
+type queueStartSpec struct {
+	items    []queueItem
+	start    int
+	shuffle  bool
+	rep      repeatMode
+	card     recentCardCtx
+	resume   *playQueueState
+	userPlay bool
+}
+
+// runQueueStartLocked loads the queue and plays its first track. The caller
+// holds boxCmdMu.
+func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) error {
+	items, start, shuffle, rep, card := spec.items, spec.start, spec.shuffle, spec.rep, spec.card
 	if s.renderer == nil {
 		return errors.New("renderer not configured")
 	}
 	if len(items) == 0 {
 		return errors.New("empty queue")
 	}
-	s.queue.load(items, start, shuffle, rep)
+	if spec.resume != nil {
+		s.queue.restore(*spec.resume)
+	} else {
+		// A new folder replaces the one a standby ended: the next power-on
+		// resumes this one.
+		s.dropQueueResume("a new folder was started")
+		s.queue.load(items, start, shuffle, rep)
+	}
 	s.queueMu.Lock()
 	s.queueFolder = card
 	s.queueSavedSlot = 0 // a new folder is on no key until it is saved on one
@@ -583,8 +623,11 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		g.AddNewPlayTarget(it.URL)
 	}
 	// A queue start is an explicit user play: clear the stop latches and anchor
-	// the standby-flip discriminator (#419).
-	s.NoteUserPlay()
+	// the standby-flip discriminator (#419). An automatic power-on resume is
+	// not; its own guards already decided it may play.
+	if spec.userPlay {
+		s.NoteUserPlay()
+	}
 	// Record the folder as a Recently-played card before the first push, so that
 	// push (and every auto-advance after it) is hung under it. The replay target
 	// and cover fall back to the first track when the caller left them empty.
@@ -703,7 +746,24 @@ func (s *Server) cancelWatcher() {
 // somebody pressed stop, because the box went into standby, because a station
 // was started instead and because a hardware key was pressed all left exactly
 // the same trace before #960, which was nothing at all.
+//
+// A folder ended this way is gone for good: the power-on resume no longer
+// starts it again (queueresume.go). A standby ends it through
+// stopQueueForStandby instead.
 func (s *Server) stopQueue(why string) {
+	s.dropQueueResume(why)
+	s.endQueue(why)
+}
+
+// stopQueueForStandby ends the queue because the speaker was switched off, and
+// keeps the folder so switching the speaker on again continues it (#1765).
+func (s *Server) stopQueueForStandby(why string) {
+	s.keepQueueForResume(why)
+	s.endQueue(why)
+}
+
+// endQueue deactivates the queue and stops the watcher.
+func (s *Server) endQueue(why string) {
 	s.queueMu.Lock()
 	s.queueStopWhy = why
 	s.queueMu.Unlock()
@@ -724,6 +784,8 @@ func (s *Server) stopQueue(why string) {
 // (#1301: "queue advance ... net=wall-clock" right after the Spotify stream
 // dropped, with the queue's card still active).
 func (s *Server) StopQueueForSpotify() {
+	// The folder a standby ended is not what plays next either.
+	s.dropQueueResume("the Spotify app took over the speaker")
 	if s.queue == nil || !s.queue.isActive() {
 		return
 	}
@@ -740,6 +802,9 @@ func (s *Server) StopQueueForSpotify() {
 // library track over it once the old track's length had passed, and the
 // queue's folder key stayed highlighted (#1366).
 func (s *Server) stopQueueIfActive(why string) {
+	// Also with no queue running: the folder a standby ended is not what the
+	// next power-on should bring back once the user has moved on.
+	s.dropQueueResume(why)
 	if s.queue == nil || !s.queue.isActive() {
 		return
 	}
@@ -1055,7 +1120,7 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 				"lastPosSec", int(lastPos.Seconds()), "boxTotalSec", int(obsTotal.Seconds()),
 				"trackSec", int(standbyEnd.Seconds()), "elapsedSec", int(time.Since(start).Seconds()),
 				"pollSec", interval.Seconds())
-			s.stopQueue("the box went into standby")
+			s.stopQueueForStandby("the box went into standby")
 			return
 		}
 		// The box dropped the source while we believed it was playing. That is the

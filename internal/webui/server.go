@@ -1027,6 +1027,13 @@ type Server struct {
 	// queueFolder.key, which Library and Recently-played match on (#1217).
 	// Guarded by queueMu.
 	queueSavedSlot int
+	// queueResume is the folder a standby ended, kept so the power-on resume
+	// can start it again where it stopped instead of replaying its one track
+	// (#1765, queueresume.go). queueResumeOnNAND: a copy of it is on NAND.
+	// Guarded by queueResumeMu, which is taken alone.
+	queueResumeMu     sync.Mutex
+	queueResume       *queueResume
+	queueResumeOnNAND bool
 	// badURL is the evidence that the queue track pushed last cannot be
 	// fetched (the stream proxy's 404/410, the box's AUDIO_ERROR_BAD_URL), the
 	// addresses a media server just answered 404/410 for, and the last folder
@@ -1613,6 +1620,8 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 		o(s)
 	}
 	s.loadLastPlay()
+	// The folder a standby ended comes back with the track it played (#1765).
+	s.loadQueueResume()
 	// If STR itself rebooted the box for an update, stand the automatic power-on
 	// resume down briefly so it does not blast the room right after the update
 	// (a genuine power outage leaves no marker and resumes as before).

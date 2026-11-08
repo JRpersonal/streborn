@@ -258,17 +258,17 @@ func (s *Server) ResumeLastPlay() {
 		s.noteAutoResumeAttempt()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		var err error
-		if mime != "" {
-			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
-		} else {
-			err = s.renderer.PlayURL(ctx, boxURL, title, art)
-		}
+		// A folder the power-off ended plays on from its track (#1765).
+		folder, err := s.resumePushLocked(ctx, "wake resume", true, boxURL, title, art, mime, capturedTS)
 		if err != nil {
 			s.logger.Warn("wake resume: play failed", "err", err, "url", boxURL)
 			return
 		}
-		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
+		if folder {
+			s.logger.Info("wake resume: continued the folder after power-on", "url", boxURL, "title", title)
+		} else {
+			s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
+		}
 		// The per-box start level, when the owner set one. Only here, on the
 		// automatic resume: a level the user chose while the music plays is
 		// theirs and is never overwritten.
@@ -408,12 +408,7 @@ func (s *Server) RecoverAfterReconnect() {
 		s.noteAutoResumeAttempt()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		var err error
-		if mime != "" {
-			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
-		} else {
-			err = s.renderer.PlayURL(ctx, boxURL, title, art)
-		}
+		_, err := s.resumePushLocked(ctx, "reconnect recovery", true, boxURL, title, art, mime, capturedTS)
 		if err != nil {
 			s.logger.Warn("reconnect recovery: play failed", "err", err, "url", boxURL)
 			return
@@ -1484,7 +1479,7 @@ func (s *Server) HandleEnterStandby() {
 	// down, and the ClearURI then wiped the transport the new recall had just
 	// armed. A user play newer than this clear means the clear no longer
 	// represents current intent, so it stands down.
-	s.stopQueue("the box was powered off")
+	s.stopQueueForStandby("the box was powered off")
 	s.logger.Info("standby bounce: box powered off STR's UPnP source, stopping + clearing the transport URI so it stays off (#197)")
 	clearArmedAt := time.Now()
 	go func() {
@@ -1623,12 +1618,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		var err error
-		if mime != "" {
-			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
-		} else {
-			err = s.renderer.PlayURL(ctx, boxURL, title, art)
-		}
+		_, err := s.resumePushLocked(ctx, "spontaneous-off recovery", true, boxURL, title, art, mime, capturedTS)
 		if err != nil {
 			s.logger.Warn("spontaneous-off recovery: re-push failed", "err", err, "url", boxURL)
 			return
@@ -1768,12 +1758,7 @@ func (s *Server) RunDeferredResume() {
 	// Ledger: the one autonomous UPnP push the agent performs (all other
 	// pushes are user actions). Source is by definition just-out-of-standby.
 	boxwrites.Note("upnp-resume", "standby-exit")
-	var err error
-	if d.mime != "" {
-		err = s.renderer.PlayURLMime(ctx, d.boxURL, d.title, d.art, d.mime)
-	} else {
-		err = s.renderer.PlayURL(ctx, d.boxURL, d.title, d.art)
-	}
+	_, err := s.resumePushLocked(ctx, "deferred resume", true, d.boxURL, d.title, d.art, d.mime, d.capturedTS)
 	if err != nil {
 		s.logger.Warn("deferred resume: re-push failed", "err", err, "url", d.boxURL)
 		return
