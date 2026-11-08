@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Nuevo nombre: {{name}}. El altavoz se está reiniciando, tarda alrededor de un minuto.",
   "speaker.stormRestartBtn": "Reiniciar altavoz",
   "speaker.stormRestarting": "Reiniciando {{name}}, tarda alrededor de un minuto.",
+  "speaker.restartingBtn": "Reiniciando…",
+  "speaker.stillRestarting": "{{name}} todavía se está reiniciando, dale unos minutos.",
   "speaker.wifiSaveBtn": "Guardar Wi-Fi",
   "speaker.issueDismiss": "Ocultar",
   "presets.transferBtn": "Transferir",

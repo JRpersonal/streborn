@@ -92,6 +92,9 @@ func (a *App) rebootBoxFor(host string, port int, reason string) error {
 		return rerr
 	}
 	a.recordOTA(host, "reboot: STR asked the speaker to restart ("+reason+")")
+	// For the next few minutes a failed connection to it is the restart, not
+	// a firewall (app_restarting.go).
+	a.noteRestartRequested(host)
 	// The box is going down: drop any cached SSH connection to it so the next
 	// SSH command after the reboot dials fresh instead of failing once first.
 	boxSSHClients.invalidateHost(host)

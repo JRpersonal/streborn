@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Pervadinta į {{name}}. Garsiakalbis paleidžiamas iš naujo, tai užtrunka apie minutę.",
   "speaker.stormRestartBtn": "Paleisti kolonėlę iš naujo",
   "speaker.stormRestarting": "{{name}} paleidžiama iš naujo, tai užtruks apie minutę.",
+  "speaker.restartingBtn": "Paleidžiama iš naujo…",
+  "speaker.stillRestarting": "{{name}} vis dar paleidžiama iš naujo, palaukite kelias minutes.",
   "speaker.wifiSaveBtn": "Išsaugoti Wi-Fi",
   "speaker.issueDismiss": "Slėpti",
   "presets.transferBtn": "Perkelti",

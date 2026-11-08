@@ -62,6 +62,7 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+	a.noteSpeakerUptime(host, out["uptimeSec"])
 	return out, nil
 }
 

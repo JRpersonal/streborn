@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Nowa nazwa: {{name}}. Głośnik uruchamia się ponownie, to potrwa około minuty.",
   "speaker.stormRestartBtn": "Uruchom głośnik ponownie",
   "speaker.stormRestarting": "Ponowne uruchamianie {{name}}, to potrwa około minuty.",
+  "speaker.restartingBtn": "Uruchamianie ponownie…",
+  "speaker.stillRestarting": "{{name}} wciąż uruchamia się ponownie, daj mu kilka minut.",
   "speaker.wifiSaveBtn": "Zapisz Wi-Fi",
   "speaker.issueDismiss": "Ukryj",
   "presets.transferBtn": "Przenieś",

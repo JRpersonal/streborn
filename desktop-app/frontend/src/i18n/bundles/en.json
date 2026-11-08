@@ -2054,6 +2054,8 @@
   "speaker.badNameFixing": "Renamed to {{name}}. The speaker is restarting, this takes about a minute.",
   "speaker.stormRestartBtn": "Restart speaker",
   "speaker.stormRestarting": "Restarting {{name}}, this takes about a minute.",
+  "speaker.restartingBtn": "Restarting…",
+  "speaker.stillRestarting": "{{name}} is still restarting, give it a few minutes.",
   "speaker.wifiSaveBtn": "Save Wi-Fi",
   "speaker.issueDismiss": "Dismiss",
   "presets.transferBtn": "Transfer",

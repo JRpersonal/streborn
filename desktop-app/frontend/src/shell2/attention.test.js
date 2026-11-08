@@ -11,6 +11,7 @@ import {
   ATTENTION_KINDS, attentionCardHTML, attentionChip, attentionItems, attentionNoteHTML, itemActions,
   runAttentionAction, setSpeakerAttentionRunner, speakerAttention, speakerIssuesFrom,
 } from './attention.js';
+import { restarts } from '../restartwait.js';
 
 setLocale('en');
 afterEach(() => { state.speakerIssues = undefined; setSpeakerAttentionRunner(null); });
@@ -82,6 +83,17 @@ describe('words and buttons', () => {
     expect(itemActions({ kind: 'foreignCloud' })[0].label).toBe('Put STR back');
     expect(itemActions({ kind: 'storm' }).map((a) => a.act)).toEqual(['stormRestart']);
     expect(itemActions({ kind: 'wedged' })).toEqual([]);
+  });
+
+  it('keeps the storm restart off and says Restarting while a restart runs (#1768)', () => {
+    const host = '192.0.2.77';
+    restarts.requested(host);
+    const [a] = itemActions({ kind: 'storm', host });
+    expect(a.disabled).toBe(true);
+    expect(a.label).toBe(t('speaker.restartingBtn'));
+    const html = attentionNoteHTML([{ kind: 'storm', host, name: 'Kitchen' }]);
+    expect(html).toMatch(/data-attn="stormRestart"[^>]* disabled>/);
+    expect(itemActions({ kind: 'storm', host: '192.0.2.78' })[0].disabled).toBeUndefined();
   });
 
   it('heads the Overview card with the speaker\'s name', () => {
