@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// carloDrop is the engine push failure from #1768, verbatim apart from the
+// errEngineDrop1768 is the engine push failure from #1768, verbatim apart from the
 // addresses: the app's own ephemeral port 50734 carries "507", which the old
 // space classifier read as a full speaker.
-var carloDrop = errors.New(`sidecar upload failed: Post "http://192.0.2.31:17008/api/agent/sidecar": readfrom tcp 192.0.2.182:50734->192.0.2.31:17008: write tcp 192.0.2.182:50734->192.0.2.31:17008: use of closed network connection`)
+var errEngineDrop1768 = errors.New(`sidecar upload failed: Post "http://192.0.2.31:17008/api/agent/sidecar": readfrom tcp 192.0.2.182:50734->192.0.2.31:17008: write tcp 192.0.2.182:50734->192.0.2.31:17008: use of closed network connection`)
 
 func TestClassifyEngineFailure(t *testing.T) {
 	cases := []struct {
@@ -18,7 +18,7 @@ func TestClassifyEngineFailure(t *testing.T) {
 		err  error
 		want engineFailure
 	}{
-		{"#1768: closed connection, port 50734", carloDrop, engineFailDropped},
+		{"#1768: closed connection, port 50734", errEngineDrop1768, engineFailDropped},
 		{"forcibly closed", errors.New("write tcp 192.0.2.182:50734->192.0.2.31:17008: wsasend: An existing connection was forcibly closed by the remote host."), engineFailDropped},
 		{"windows abort", errors.New("write tcp 192.0.2.182:65070->192.0.2.31:17008: wsasend: An established connection was aborted by the software in your host machine."), engineFailDropped},
 		{"wsarecv", errors.New("read tcp 192.0.2.182:50712->192.0.2.31:17008: wsarecv: An existing connection was forcibly closed by the remote host."), engineFailDropped},
@@ -49,7 +49,7 @@ func TestClassifyEngineFailure(t *testing.T) {
 // must not call the speaker too full for Spotify.
 func TestSpeakerUpdateRetriesTheEngineAfterAClosedConnection(t *testing.T) {
 	fb := newOtaFakeBox()
-	fb.engineReplies = []engineReply{{err: carloDrop}, {res: "ok"}}
+	fb.engineReplies = []engineReply{{err: errEngineDrop1768}, {res: "ok"}}
 	presentAfterSecondEngine(fb)
 	out, err := runSingle(t, fb)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestSpeakerUpdateRetriesTheEngineAfterAClosedConnection(t *testing.T) {
 func TestSpeakerUpdateEngineDropsUntilTheWindowEnds(t *testing.T) {
 	fb := newOtaFakeBox()
 	fb.rebootsTo(60*time.Second, func(time.Time) map[string]string { return newVersion("missing") })
-	fb.engineReplies = []engineReply{{err: carloDrop}}
+	fb.engineReplies = []engineReply{{err: errEngineDrop1768}}
 	out, err := runSingle(t, fb)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestEngineOnlyDropIsNotTooFull(t *testing.T) {
 	ff := newFleetFake()
 	b := ff.add("e", "missing")
 	b.version = newVersion("missing")
-	b.engine = []engineReply{{err: carloDrop}}
+	b.engine = []engineReply{{err: errEngineDrop1768}}
 	out, err := orchestrateFleet(ff.seams(), fleetPolicy, []FleetTarget{{Host: "e", Port: 1, Name: "E", EngineOnly: true}}, nil)
 	if err != nil {
 		t.Fatal(err)
