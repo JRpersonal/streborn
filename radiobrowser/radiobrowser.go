@@ -411,15 +411,19 @@ func (c *Client) SearchSmart(ctx context.Context, opts SearchOpts) ([]Station, e
 		}
 	}
 	add(nameRes.stations)
-	add(tagStations)
 
-	// Still nothing, and the user typed more than one word? Then the station
-	// they mean may simply spell itself with punctuation. See punctFallback.
-	if len(merged) == 0 && len(tokens) >= 2 {
+	// The name search found nothing, and the user typed more than one word?
+	// Then the station they mean may spell itself with different punctuation
+	// ("Gold 90.5" is listed as "Gold 905"). See punctFallback. This runs even
+	// when the tag search found something: words like "gold" or "rock" are tags
+	// on hundreds of stations, and those hits used to hide the one station the
+	// user typed the name of. Its matches go first for that reason.
+	if len(nameRes.stations) == 0 && len(tokens) >= 2 {
 		if st, err := c.punctFallback(ctx, opts, tokens); err == nil {
 			add(st)
 		}
 	}
+	add(tagStations)
 
 	if len(merged) > opts.Limit {
 		merged = merged[:opts.Limit]
