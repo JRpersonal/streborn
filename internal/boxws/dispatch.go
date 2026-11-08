@@ -10,7 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
+
+// ownSelectionEchoWindow is how long after STR's own /select or key press a
+// preset selection frame is logged as that command's echo. The same 2 s the
+// double-press detector in cmd/agent uses for the same question.
+const ownSelectionEchoWindow = 2 * time.Second
 
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
@@ -741,7 +748,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	// the room did it. That misreading cost a round trip on a report where
 	// stations kept switching by themselves (#510, 2026-08-11), and the honest
 	// line is the one that keeps the question open.
-	c.logger.Info("preset selected on the speaker (keys, remote or another app)",
+	//
+	// STR's own /select (an app recall of a native station or service) and its
+	// own CLI key presses arrive as this very frame too. Saying "on the speaker"
+	// for those sent the analysis of #1339 looking for a person at the keys
+	// when the app had started the preset 13 ms earlier.
+	msg := "preset selected on the speaker (keys, remote or another app)"
+	if boxwrites.OwnSelectionWithin(slot, ownSelectionEchoWindow) {
+		msg = "preset selected by STR's own command (the speaker echoing it)"
+	}
+	c.logger.Info(msg,
 		"slot", slot,
 		"location", pe.ContentItem.Location,
 		"source", pe.ContentItem.Source,

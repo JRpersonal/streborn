@@ -236,6 +236,31 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+// OwnSelectionWithin takes a key STR pressed for that key only, and any item
+// STR handed to /select for every key (the speaker announces the select under
+// whatever slot holds the item).
+func TestOwnSelectionWithin(t *testing.T) {
+	resetLedger()
+	if OwnSelectionWithin(4, time.Minute) {
+		t.Fatal("nothing noted, yet a selection was taken for STR's own")
+	}
+	NoteSlot("presetkey", 2)
+	if !OwnSelectionWithin(2, time.Minute) || OwnSelectionWithin(4, time.Minute) {
+		t.Fatal("a key press must mark that key only")
+	}
+	NoteSlot("select", 0)
+	if !OwnSelectionWithin(4, time.Minute) {
+		t.Fatal("an own /select must mark any key")
+	}
+	mu.Lock()
+	slotAt[slotKey{"select", 0}] = time.Now().Add(-time.Hour)
+	slotAt[slotKey{"presetkey", 2}] = time.Now().Add(-time.Hour)
+	mu.Unlock()
+	if OwnSelectionWithin(2, time.Minute) || OwnSelectionWithin(4, time.Minute) {
+		t.Fatal("hour-old own commands still taken for an echo")
+	}
+}
+
 // SlotWrittenWithin is per slot: a write on one key must not mask another,
 // and an old write must have expired.
 func TestSlotWrittenWithin(t *testing.T) {

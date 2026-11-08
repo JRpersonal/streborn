@@ -333,6 +333,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		writePlayRefusal(w, s.invalidSlotRefusal())
 		return
 	}
+	// Name the client: the in-process recalls (alarms, rescues, the double
+	// press) share playSlot and log the same lines, so without this a preset
+	// nobody remembered starting could not be tied to an app or a phone (#1339).
+	s.logger.Info("preset slot recall (app): request", "slot", slot,
+		"from", r.RemoteAddr, "ua", r.UserAgent())
 	res, ref := s.playSlot(r.Context(), slot)
 	if ref != nil {
 		writePlayRefusal(w, ref)
@@ -528,11 +533,26 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// the stored item to the speaker's /select, the same item its key holds.
 	// There is no UPnP fallback: STR has no stream for these.
 	if p.IsNative() {
+		// The key press supersedes the previous play's verify, whether the
+		// speaker takes the item or not. This branch records no last play
+		// (STR has no stream to resume for a service the speaker plays
+		// itself), so the generation never moved: a library track played
+		// before it kept being re-pushed by its own verify, three retries over
+		// the Pandora key and then a false "box wedge suspected" strike
+		// (#1763). The same claim the queue and the library-key recalls make.
+		s.bumpRecallGen()
 		if s.spotifySwitchedAway != nil {
 			s.spotifySwitchedAway(playCtx)
 		}
 		s.logger.Info("preset slot recall (app): native service", "slot", slot, "source", p.Native.Source, "name", p.Name)
-		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); err != nil {
+		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); errors.Is(err, errNativeServiceUnavailable) {
+			s.logger.Warn("preset slot recall (app): the speaker lists this service as unavailable, not selecting it",
+				"slot", slot, "source", p.Native.Source, "code", nativeServiceUnavailableCode)
+			return playResult{}, jsonRefusal(http.StatusServiceUnavailable, map[string]any{
+				"error": "The speaker's own login for this service is not working", "detail": err.Error(),
+				"code": nativeServiceUnavailableCode, "slot": slot, "name": p.Name, "source": p.Native.Source,
+			})
+		} else if err != nil {
 			s.logger.Warn("preset slot recall (app): the speaker refused the native service item",
 				"slot", slot, "source", p.Native.Source, "err", err)
 			// Not through playFailed: the detail is the raw error, the body
@@ -880,11 +900,31 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 // doing. The firmware's power-on resume of a native station arrives as exactly
 // this frame, and counting it as the user's play is what made the zone form
 // carry a group wake's self-resume into every room (fleet run 2026-10-04).
+//
+// The same frame is also the speaker's echo of STR's own /select. An app
+// recall of a native station records its play and hands the speaker the
+// item; milliseconds later the firmware announces that selection like a key
+// press. Taken for the box's own doing, the user's play turned into a
+// self-resume and the group-wake guard stopped the station the user had just
+// started (#1339, a preset started right after a stereo pair formed out of
+// standby, stopped 4 s later). So when the record already holds this very
+// station as STR's own play from a moment ago, the frame changes nothing.
 func (s *Server) NoteNativeLastPlay(boxURL, title, art, mime string) uint64 {
+	if gen, ok := s.play.ownPlayOfWithin(boxURL, nativeSelectEchoWindow); ok {
+		s.logger.Info("native preset selection: the speaker echoing STR's own play of this station, kept as the user's play",
+			"title", title, "boxURL", boxURL)
+		return gen
+	}
 	gen := s.NoteLastPlay(boxURL, title, art, mime)
 	s.play.markFromBoxIfGen(gen)
 	return gen
 }
+
+// nativeSelectEchoWindow is how recent STR's own play of a station must be for
+// the speaker's announcement of that same station to count as its echo. The
+// echo measured in #1339 came 13 ms after the record; a person pressing the
+// same key again within this time asks for the station that already plays.
+const nativeSelectEchoWindow = 3 * time.Second
 
 // RecallGeneration returns the current recall generation (bumped by every
 // stream push recorded via setLastPlay, hardware and app alike). The hardware

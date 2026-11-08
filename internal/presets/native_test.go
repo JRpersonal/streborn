@@ -131,3 +131,31 @@ func TestResolveNativeAccount(t *testing.T) {
 		t.Fatal("garbage must read as no accounts")
 	}
 }
+
+// #1763: the speaker's own Pandora was UNAVAILABLE and every select of it
+// failed with 1008. Only a listed, non-READY service is reported; unknown and
+// one READY account among stale ones are not.
+func TestNativeSourceUnavailable(t *testing.T) {
+	doc := func(items string) []byte {
+		return []byte(`<sources deviceID="device-id-here">` + items + `</sources>`)
+	}
+	cases := []struct {
+		name   string
+		xml    []byte
+		source string
+		want   bool
+	}{
+		{"pandora unavailable", doc(`<sourceItem source="PANDORA" sourceAccount="listener@example.com" status="UNAVAILABLE">x</sourceItem>`), "PANDORA", true},
+		{"one ready account among stale ones", doc(`<sourceItem source="PANDORA" sourceAccount="old@example.com" status="UNAVAILABLE">x</sourceItem>` +
+			`<sourceItem source="PANDORA" sourceAccount="listener@example.com" status="READY">x</sourceItem>`), "PANDORA", false},
+		{"folded source name", doc(`<sourceItem source="IHEARTRADIO" sourceAccount="12345" status="UNAVAILABLE">x</sourceItem>`), "IHEART", true},
+		{"service not listed", doc(`<sourceItem source="LOCAL_INTERNET_RADIO" status="READY">x</sourceItem>`), "PANDORA", false},
+		{"other service unavailable", doc(`<sourceItem source="IHEARTRADIO" status="UNAVAILABLE">x</sourceItem>`), "PANDORA", false},
+		{"garbage", []byte("not xml"), "PANDORA", false},
+	}
+	for _, c := range cases {
+		if got := NativeSourceUnavailable(c.xml, c.source); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

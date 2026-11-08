@@ -512,6 +512,11 @@ type zoneFormReq struct {
 	// resume, not music the group should take over (zoneformwoken.go). Older
 	// apps do not send it and get the previous behaviour.
 	WokenFromStandby []string `json:"wokenFromStandby,omitempty"`
+	// from and ua name the client that sent the form (remote address and
+	// User-Agent), for the "zone: forming" line. Not part of the wire body: a
+	// group formed out of standby followed by a preset the user did not
+	// remember starting could not be tied to any app (#1339).
+	from, ua string
 }
 
 // sameMasterZone reports whether two zone records are led by the same speaker.
@@ -557,6 +562,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	req.from, req.ua = r.RemoteAddr, r.UserAgent()
 	run, ans := s.zoneFormStart(req)
 	if ans != nil {
 		writeZoneFormAnswer(w, ans)
@@ -692,7 +698,8 @@ func (s *Server) zoneFormStart(req zoneFormReq) (*zoneFormRun, *zoneFormAnswer) 
 		slaveIDs = append(slaveIDs, m.DeviceID+"@"+m.IP)
 	}
 	s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
-		"slaves", len(slaves), "slaveList", strings.Join(slaveIDs, ","), "stereo", req.Stereo, "name", req.Name)
+		"slaves", len(slaves), "slaveList", strings.Join(slaveIDs, ","), "stereo", req.Stereo, "name", req.Name,
+		"from", req.from, "ua", req.ua)
 	return &zoneFormRun{req: req, mode: mode, master: master, slaves: slaves}, nil
 }
 

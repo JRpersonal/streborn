@@ -22,8 +22,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/oled"
 )
 
 // clockNudge is what the nudge needs from the speaker. Fields, so the rules
@@ -42,6 +47,9 @@ type clockNudge struct {
 	// stateTries and readRetry bound the standby read (default 1, no pause).
 	stateTries int
 	readRetry  time.Duration
+	// why names the occasion in the log when it is not an update (the
+	// dark-panel check after a track overlay release, #841).
+	why string
 }
 
 func (n clockNudge) readTries() int {
@@ -97,8 +105,64 @@ func (n clockNudge) run(ctx context.Context) bool {
 		n.logger.Info("standby clock nudge: the standby request failed", "err", err)
 		return false
 	}
+	if n.why != "" {
+		n.logger.Info("standby clock nudge: sent the sleeping speaker one standby, so it draws its clock again", "why", n.why)
+		return true
+	}
 	n.logger.Info("standby clock nudge: sent the sleeping speaker one standby after the update, so it draws its clock again")
 	return true
+}
+
+// darkPanelHooks wires the look at the panel after the track overlay let go
+// of it (oled/darkwatch.go). A standby clock that is still black a minute
+// later gets the same single standby the update nudge sends: the firmware
+// draws its clock when it enters the clock state, and a standby request on a
+// sleeping speaker is what makes it enter that state again without waking it
+// (#841). The box is only asked when the panel is black, never on a timer.
+func darkPanelHooks(bc *boxapi.Client, logger *slog.Logger) oled.DarkPanelHooks {
+	inStandby := func(ctx context.Context) (bool, error) {
+		np, err := bc.NowPlaying(ctx)
+		if err != nil {
+			return false, err
+		}
+		return np.IsStandby(), nil
+	}
+	return oled.DarkPanelHooks{
+		ClockExpected: func(ctx context.Context) (bool, error) {
+			return clockExpected(ctx, inStandby, bc.GetClockConfig)
+		},
+		Recover: func(ctx context.Context) bool {
+			return clockNudge{
+				displayReady: oled.DisplayReady,
+				hasDisplay:   bc.HasDisplay,
+				inStandby:    inStandby,
+				standby:      bc.Standby,
+				sleep:        sleepCtx,
+				logger:       logger,
+				why:          "the panel stayed black after the track overlay let go of it",
+			}.run(ctx)
+		},
+	}
+}
+
+// clockExpected reports whether the firmware should be drawing its standby
+// clock: the speaker is in standby and its clock is switched on. A clock the
+// owner switched off, or a speaker without one, keeps a black panel in
+// standby, which is right.
+func clockExpected(ctx context.Context, inStandby func(context.Context) (bool, error),
+	clockConfig func(context.Context) (boxapi.ClockConfig, error)) (bool, error) {
+	standby, err := inStandby(ctx)
+	if err != nil || !standby {
+		return false, err
+	}
+	cfg, err := clockConfig(ctx)
+	if errors.Is(err, boxapi.ErrNoClockConfig) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(cfg.UserEnable), "true"), nil
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {

@@ -139,8 +139,7 @@ func membership(in bool) int32 {
 // box-preset play) or an item it handed to the speaker's /select (a native
 // station or service recall).
 func ownSelection(key int) bool {
-	return boxwrites.SlotNotedWithin("presetkey", key, ownSelectionWindow) ||
-		boxwrites.SlotNotedWithin("select", 0, ownSelectionWindow)
+	return boxwrites.OwnSelectionWithin(key, ownSelectionWindow)
 }
 
 // doublePressPlan is what OnPresetSelected does with a frame.

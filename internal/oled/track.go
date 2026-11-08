@@ -160,6 +160,9 @@ type trackScreen struct {
 	retry      time.Duration
 	shiftEvery time.Duration
 	log        func() *slog.Logger
+	// afterRelease runs once the overlay let go of the panel for good (not
+	// for a step aside): the dark-panel check (darkwatch.go, #841).
+	afterRelease func(reason string)
 }
 
 func newTrackScreen() *trackScreen {
@@ -176,6 +179,8 @@ func newTrackScreen() *trackScreen {
 		retry:      trackRetry,
 		shiftEvery: trackShiftEvery,
 		log:        noticeLogger,
+
+		afterRelease: watchAfterRelease,
 	}
 }
 
@@ -533,6 +538,9 @@ func (s *trackScreen) tryHold() {
 			args = append(args, "err", err)
 		}
 		s.log().Info("display track overlay off", args...)
+		if s.afterRelease != nil {
+			s.afterRelease(why)
+		}
 	case failures == 1:
 		s.log().Info("display track overlay could not take the panel", "err", err)
 	case failures > 1:
