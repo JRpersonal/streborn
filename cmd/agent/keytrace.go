@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -210,6 +211,49 @@ func (h *presetWsHandler) keyTraceExplainsBareFrame() bool {
 		return false
 	}
 	return webhooks.KeyTriggerID(ev.Name) != ""
+}
+
+// presetPressTrace is the part of the key trace a folder key's press check
+// reads; *boxlog.Reader in the agent, a fake in the tests.
+type presetPressTrace interface {
+	Healthy() bool
+	PresetKeysTraced() bool
+	LastPhysicalPressSince(name string, since time.Time) (time.Time, bool)
+}
+
+// folderKeyTracePoll is how often folderKeyPress looks at the trace while it
+// waits for a trailing line. A var so the tests can shorten it.
+var folderKeyTracePoll = 100 * time.Millisecond
+
+// folderKeyPress is the key trace's answer for a selection frame of key
+// (webui.SlotPress.KeyTrace): the newest press of PRESET_<key> a person made
+// at or after since. Not known while the trace is not running, or before it
+// has read any preset key press on this speaker: a speaker whose trace does
+// not report its preset keys must not have every press read as "nobody
+// pressed". The trace line can trail the frame by about a second on the
+// Portable (keyTraceWait), so a trace that shows no press yet is waited for,
+// up to wait. Only asked when the answer changes what a press does (the key
+// of the folder that plays), so no other recall waits for it.
+func folderKeyPress(tr presetPressTrace, key int, wait time.Duration) func(since time.Time) (time.Time, bool, bool) {
+	if tr == nil {
+		return nil
+	}
+	name := "PRESET_" + strconv.Itoa(key)
+	return func(since time.Time) (time.Time, bool, bool) {
+		if !tr.Healthy() || !tr.PresetKeysTraced() {
+			return time.Time{}, false, false
+		}
+		deadline := time.Now().Add(wait)
+		for {
+			if at, ok := tr.LastPhysicalPressSince(name, since); ok {
+				return at, true, true
+			}
+			if !time.Now().Before(deadline) {
+				return time.Time{}, false, true
+			}
+			time.Sleep(folderKeyTracePoll)
+		}
+	}
 }
 
 // waitForKeyTrace waits, bounded by keyTraceWait, for the key trace to name a

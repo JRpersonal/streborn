@@ -122,9 +122,23 @@ func (s *Server) keepQueueForResume(why string) {
 	}
 	cur := st.items[st.order[st.pos]]
 	lp, ok := s.play.snapshot()
+	if ok && lp.boxURL != queueBoxURL(cur.URL, cur.Mime) {
+		// The folder moved on and the speaker has not been handed that track
+		// yet: a skip or an advance whose push was still under way when the
+		// speaker went off (the play record follows the push). What played is
+		// the track on record, so that is where the folder is kept.
+		if pos, found := queuePosOfBoxURL(st, lp.boxURL); found {
+			s.logger.Info("queue resume: the folder had moved on to a track the speaker never got, keeping it at the track that played",
+				"queuePos", st.pos, "keptPos", pos)
+			st.pos = pos
+			cur = st.items[st.order[pos]]
+		}
+	}
 	if !ok || lp.boxURL != queueBoxURL(cur.URL, cur.Mime) {
 		// The play on record is not the folder's track, so a power-on resume
 		// would not be about this folder either.
+		s.logger.Info("queue resume: not keeping the folder, the play on record is not one of its tracks",
+			"why", why, "tracks", len(st.items), "pos", st.pos)
 		s.dropQueueResume("the play on record is not the folder's track")
 		return
 	}
@@ -148,6 +162,29 @@ func (s *Server) keepQueueForResume(why string) {
 	s.logger.Info("queue resume: kept the folder for the next power-on",
 		"why", why, "tracks", len(st.items), "pos", st.pos, "shuffle", st.shuffle,
 		"repeat", st.repeat.String(), "slot", slot, "onNAND", onNAND, "title", cur.Title)
+}
+
+// queuePosOfBoxURL finds the position in the play order of the track the
+// speaker was handed as boxURL, nearest before the queue's own position first
+// (the track it just left), then after it.
+func queuePosOfBoxURL(st playQueueState, boxURL string) (int, bool) {
+	match := func(p int) bool {
+		i := st.order[p]
+		return i >= 0 && i < len(st.items) && queueBoxURL(st.items[i].URL, st.items[i].Mime) == boxURL
+	}
+	for p := st.pos - 1; p >= 0; p-- {
+		if match(p) {
+			return p, true
+		}
+	}
+	for p := len(st.order) - 1; p > st.pos; p-- {
+		// Past the end with repeat on, the track that played sits at the end
+		// of the order.
+		if match(p) {
+			return p, true
+		}
+	}
+	return 0, false
 }
 
 // persistQueueResume writes a key's kept folder to NAND and reports whether

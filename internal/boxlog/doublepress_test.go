@@ -32,6 +32,38 @@ func TestPhysicalPressesSinceCountsOnlyAPersonsPressesOfThatKey(t *testing.T) {
 	}
 }
 
+// LastPhysicalPressSince and PresetKeysTraced answer the folder key's "did a
+// person press it" question (#1765 follow-up): the newest press of one key,
+// and whether this speaker's trace reports preset presses at all.
+func TestLastPhysicalPressSinceAndPresetKeysTraced(t *testing.T) {
+	r := New(nil, nil, nil)
+	base := time.Now()
+	inject := func(name string, p Producer, s State, at time.Duration) {
+		r.Inject(KeyEvent{Key: KeyNumber(name), Name: name, Producer: p, State: s, Origin: OriginTrace, At: base.Add(at)})
+	}
+	inject("POWER", ProducerConsole, StatePressed, 0)
+	inject("PRESET_5", ProducerGabbo, StatePressed, 50*time.Millisecond) // STR's own /key
+	if r.PresetKeysTraced() {
+		t.Fatal("a power press and a network preset key must not count as a traced preset press")
+	}
+	if _, ok := r.LastPhysicalPressSince("PRESET_5", base.Add(-time.Second)); ok {
+		t.Fatal("a network key press is not a person pressing the key")
+	}
+	inject("PRESET_5", ProducerConsole, StatePressed, 100*time.Millisecond)
+	inject("PRESET_5", ProducerConsole, StateReleased, 200*time.Millisecond)
+	inject("PRESET_5", ProducerIRRemote, StatePressed, 300*time.Millisecond)
+	inject("PRESET_2", ProducerConsole, StatePressed, 400*time.Millisecond)
+	if !r.PresetKeysTraced() {
+		t.Fatal("a person's preset press was read, the trace reports preset keys")
+	}
+	if at, ok := r.LastPhysicalPressSince("PRESET_5", base.Add(-time.Second)); !ok || !at.Equal(base.Add(300*time.Millisecond)) {
+		t.Fatalf("newest press of key 5: %v %v, want the remote's at 300 ms", at, ok)
+	}
+	if _, ok := r.LastPhysicalPressSince("PRESET_5", base.Add(350*time.Millisecond)); ok {
+		t.Fatal("no press of key 5 after 350 ms")
+	}
+}
+
 // The sm2 chassis reports a press only through the analytics line, one per
 // press; two quick presses are two lines, both counted.
 func TestPhysicalPressesSinceCountsTheAnalyticsLine(t *testing.T) {

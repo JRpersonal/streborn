@@ -88,6 +88,9 @@ type Reader struct {
 	eventsSeen   uint64
 	lastPress    map[int]KeyEvent
 	history      []KeyEvent
+	// presetTraced: the trace has read a person pressing a preset key since
+	// the agent started, so on this speaker it reports preset presses.
+	presetTraced bool
 
 	// forensics keeps the classified firmware events and the redacted tail
 	// for the diagnostic bundle (see forensics.go). Own lock.
@@ -302,6 +305,9 @@ func (r *Reader) accept(ev KeyEvent) bool {
 			return false
 		}
 		r.lastPress[ev.Key] = ev
+		if ev.Producer.Physical() && strings.HasPrefix(ev.Name, "PRESET_") {
+			r.presetTraced = true
+		}
 	}
 	r.history = append(r.history, ev)
 	if len(r.history) > historyLen {
@@ -422,6 +428,33 @@ func (r *Reader) PhysicalPressesSince(name string, since time.Time) int {
 		}
 	}
 	return n
+}
+
+// LastPhysicalPressSince returns the newest press of the named key a person
+// made on the speaker or its remote, read at or after since.
+func (r *Reader) LastPhysicalPressSince(name string, since time.Time) (time.Time, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := len(r.history) - 1; i >= 0; i-- {
+		e := r.history[i]
+		if e.At.Before(since) {
+			break
+		}
+		if e.Name == name && e.Pressed() && e.Producer.Physical() {
+			return e.At, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// PresetKeysTraced reports whether the trace has read a person pressing a
+// preset key since the agent started: only then does "no press in the trace"
+// mean nobody pressed one, rather than a speaker whose trace does not report
+// its preset keys.
+func (r *Reader) PresetKeysTraced() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.presetTraced
 }
 
 // Snapshot is the diagnostic-bundle view: liveness, whether the DEBUG trace

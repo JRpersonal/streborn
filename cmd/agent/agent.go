@@ -1401,7 +1401,7 @@ func (a *agent) buildBoxLink() error {
 		},
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
-		recallSlot: webuiSrv.RecallSlot,
+		recallSlot: webuiSrv.RecallSlotPress,
 		// A key pressed twice plays its second-row preset (slots 7..12, #1110)
 		// through the app's own recall path; the speaker never holds those.
 		playSlotFn: webuiSrv.PlaySlotForKey,

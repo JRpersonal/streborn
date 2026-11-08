@@ -51,7 +51,7 @@ type queueEpisode struct {
 //
 // firstTitle and firstDur are the first track's, for the log line only: a
 // track cut short (#1065) is judged against the length the server claimed.
-func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode, firstTitle string, firstDur time.Duration) {
+func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode, firstTitle string, firstDur time.Duration, extra ...any) {
 	s.queueLogMu.Lock()
 	if s.queueEp != nil {
 		s.closeEpisodeLocked("replaced by a new queue")
@@ -66,9 +66,9 @@ func (s *Server) noteQueueStart(tracks, start int, shuffle bool, rep repeatMode,
 		startedAt:  now,
 	}
 	s.queueLogMu.Unlock()
-	s.logger.Info("queue start", "tracks", tracks, "startIndex", start,
+	s.logger.Info("queue start", append([]any{"tracks", tracks, "startIndex", start,
 		"shuffle", shuffle, "repeat", rep.String(),
-		"title", firstTitle, "lengthSec", int(firstDur.Seconds()))
+		"title", firstTitle, "lengthSec", int(firstDur.Seconds())}, extra...)...)
 }
 
 // noteQueueAdvance records a move to the next track. why names which detector
