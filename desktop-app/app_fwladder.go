@@ -406,7 +406,8 @@ func capNames(names []string) []string {
 // install files the setup wizard had written to the same stick minutes
 // earlier (support case, 2026-11). Only files the wizard writes are removed,
 // and only from a stick STR prepared (sticksetup.RemoveSTRPayload); anything
-// else stays, is logged, and the screen's "other files" hint covers it. A
+// else stays, is logged by count, size and extensions only (never by name),
+// and the screen's "other files" hint covers it. A
 // failed removal is logged and the write goes ahead: the file is still the
 // right one, and the hint stays honest.
 func (a *App) clearFirmwareStick(stepID, drivePath string) {
@@ -419,9 +420,11 @@ func (a *App) clearFirmwareStick(stepID, drivePath string) {
 		a.fwLog().Warn("firmware ladder: could not remove all of STR's install files from the stick",
 			"step", stepID, "drive", drivePath, "err", err)
 	}
-	if other := sticksetup.OtherFiles(drivePath); len(other) > 0 {
+	// The user's own files are described, never named: their names can be
+	// personal, and diagnostic bundles get posted in public.
+	if n, size, exts := sticksetup.OtherFilesSummary(drivePath); n > 0 {
 		a.fwLog().Info("firmware ladder: the stick holds other files besides the Bose update; left alone, the screen suggests an empty stick",
-			"step", stepID, "drive", drivePath, "count", len(other), "files", capNames(other))
+			"step", stepID, "drive", drivePath, "count", n, "bytes", size, "extensions", capNames(exts))
 	}
 }
 

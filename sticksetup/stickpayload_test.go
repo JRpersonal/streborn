@@ -68,9 +68,10 @@ func TestPayloadFileNamesCoverEveryWriter(t *testing.T) {
 func TestRemoveSTRPayloadKeepsUserFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFullPayload(t, dir)
-	// A half-written payload file, an older Update.stu, the user's own files
-	// and a folder that happens to carry a payload name.
-	for _, n := range []string{"version.txt.new", FirmwareFileName, "holiday.jpg", "notes.txt"} {
+	// A half-written payload file, what the speaker's run.sh writes back
+	// (setup.log, cap*.ogg), an older Update.stu, the user's own files and a
+	// folder that happens to carry a payload name.
+	for _, n := range []string{"version.txt.new", "setup.log", "cap0001.ogg", "CAP2.OGG", FirmwareFileName, "holiday.jpg", "notes.txt", "capture.mp3"} {
 		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -98,12 +99,16 @@ func TestRemoveSTRPayloadKeepsUserFiles(t *testing.T) {
 	if len(removed) < 15 {
 		t.Errorf("removed only %v", removed)
 	}
-	want := []string{FirmwareFileName, "holiday.jpg", "music", "notes.txt", "run.sh.d"}
+	want := []string{FirmwareFileName, "capture.mp3", "holiday.jpg", "music", "notes.txt", "run.sh.d"}
 	if got := rootNames(t, dir); !reflect.DeepEqual(got, want) {
 		t.Errorf("after the cleanup the stick holds %v, want %v", got, want)
 	}
-	if got, want := OtherFiles(dir), []string{"holiday.jpg", "music/", "notes.txt", "run.sh.d/"}; !reflect.DeepEqual(got, want) {
+	if got, want := OtherFiles(dir), []string{"capture.mp3", "holiday.jpg", "music/", "notes.txt", "run.sh.d/"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("OtherFiles = %v, want %v", got, want)
+	}
+	n, size, exts := OtherFilesSummary(dir)
+	if n != 5 || size != 3 || !reflect.DeepEqual(exts, []string{"(folder)", ".jpg", ".mp3", ".txt"}) {
+		t.Errorf("OtherFilesSummary = %d, %d, %v", n, size, exts)
 	}
 	if STRPayloadBytes(dir) != 0 {
 		t.Error("nothing of STR's is left")
@@ -114,7 +119,7 @@ func TestRemoveSTRPayloadKeepsUserFiles(t *testing.T) {
 // that also carries a file nobody else writes.
 func TestRemoveSTRPayloadLeavesForeignSticks(t *testing.T) {
 	dir := t.TempDir()
-	for _, n := range []string{"install.sh", "run.sh", "version.txt", "presets.json", "wlan.conf"} {
+	for _, n := range []string{"install.sh", "run.sh", "version.txt", "presets.json", "wlan.conf", "setup.log", "cap1.ogg"} {
 		if err := os.WriteFile(filepath.Join(dir, n), []byte("mine"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -126,7 +131,7 @@ func TestRemoveSTRPayloadLeavesForeignSticks(t *testing.T) {
 	if err != nil || len(removed) != 0 {
 		t.Fatalf("removed %v (err %v) from a stick STR did not prepare", removed, err)
 	}
-	if len(rootNames(t, dir)) != 5 {
+	if len(rootNames(t, dir)) != 7 {
 		t.Error("every file must still be there")
 	}
 	if !HasOtherFiles(dir) || STRPayloadBytes(dir) != 0 {
@@ -158,5 +163,23 @@ func TestRemoveSTRPayloadIgnoresCase(t *testing.T) {
 	removed, err := RemoveSTRPayload(dir)
 	if err != nil || len(removed) != 2 {
 		t.Fatalf("removed %v, err %v", removed, err)
+	}
+}
+
+// OtherFilesSummary names nothing: only the count, the size and the
+// extensions, because the user's file names can be personal.
+func TestOtherFilesSummaryNamesNothing(t *testing.T) {
+	dir := t.TempDir()
+	for n, size := range map[string]int{"private letter.pdf": 10, "README": 5, ".hidden": 2, FirmwareFileName: 99} {
+		if err := os.WriteFile(filepath.Join(dir, n), make([]byte, size), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, size, exts := OtherFilesSummary(dir)
+	if n != 3 || size != 17 || !reflect.DeepEqual(exts, []string{"(none)", ".pdf"}) {
+		t.Errorf("OtherFilesSummary = %d, %d, %v", n, size, exts)
+	}
+	if n, size, exts := OtherFilesSummary(filepath.Join(dir, "missing")); n != 0 || size != 0 || len(exts) != 0 {
+		t.Errorf("an unreadable root: %d, %d, %v", n, size, exts)
 	}
 }

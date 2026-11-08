@@ -9,8 +9,9 @@ package sticksetup
 // never a progress bar, again and again, with Update.stu sitting beside those
 // files (support case, 2026-11). So before the ladder writes Update.stu it
 // takes STR's own files off the stick. Only names STR itself writes there are
-// removed, and only on a stick that carries a file no other software writes;
-// anything else stays where it is and is reported instead.
+// removed (the wizard's payload, plus the setup.log and cap*.ogg the speaker's
+// run.sh writes back), and only on a stick that carries a file no other
+// software writes; anything else stays where it is and is reported instead.
 
 import (
 	"errors"
@@ -100,11 +101,52 @@ func strPayloadEntries(stickPath string) []os.DirEntry {
 	set := payloadNameSet()
 	var out []os.DirEntry
 	for _, e := range entries {
-		if e.Type().IsRegular() && set[strings.ToLower(e.Name())] {
+		if e.Type().IsRegular() && (set[strings.ToLower(e.Name())] || speakerWrittenName(e.Name())) {
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+// speakerWrittenName reports whether name is one of the files the speaker's
+// STR run.sh writes back to the stick it booted from: setup.log, and the
+// cap*.ogg audio captures it clears again (usb-stick/run.sh). They exist only
+// on an STR stick, so they go with the payload.
+func speakerWrittenName(name string) bool {
+	l := strings.ToLower(name)
+	if l == "setup.log" {
+		return true
+	}
+	return strings.HasPrefix(l, "cap") && strings.HasSuffix(l, ".ogg")
+}
+
+// OtherFilesSummary describes what OtherFiles lists without naming anything:
+// the count, the total size of the files, and the sorted set of extensions
+// (lower case, "(none)" for a file without one, "(folder)" for a folder). The
+// firmware ladder logs this instead of the names, because the user's own file
+// names can be personal and diagnostic bundles are posted in public.
+func OtherFilesSummary(stickPath string) (count int, totalBytes int64, exts []string) {
+	set := map[string]bool{}
+	for _, n := range OtherFiles(stickPath) {
+		count++
+		if strings.HasSuffix(n, "/") {
+			set["(folder)"] = true
+			continue
+		}
+		if fi, err := os.Lstat(filepath.Join(stickPath, n)); err == nil {
+			totalBytes += fi.Size()
+		}
+		ext := strings.ToLower(filepath.Ext(n))
+		if ext == "" || ext == strings.ToLower(n) {
+			ext = "(none)"
+		}
+		set[ext] = true
+	}
+	for e := range set {
+		exts = append(exts, e)
+	}
+	sort.Strings(exts)
+	return count, totalBytes, exts
 }
 
 // STRPayloadBytes is the space STR's payload files take on the stick, 0 on a

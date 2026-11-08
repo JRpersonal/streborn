@@ -269,8 +269,12 @@ func TestPrepareStickRemovesSTRPayload(t *testing.T) {
 	if err := sticksetup.WriteRegionConfig(stick, sticksetup.RegionConfig{Country: "DE"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stick, "holiday.jpg"), []byte("mine"), 0o644); err != nil {
-		t.Fatal(err)
+	// setup.log and cap1.ogg are what the speaker's run.sh writes back to an
+	// STR stick it booted from; holiday.jpg is the user's own.
+	for _, n := range []string{"setup.log", "cap1.ogg", "holiday.jpg"} {
+		if err := os.WriteFile(filepath.Join(stick, n), []byte("mine"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var logBuf bytes.Buffer
 	a := &App{logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
@@ -287,11 +291,16 @@ func TestPrepareStickRemovesSTRPayload(t *testing.T) {
 		t.Errorf("the stick holds %v, want only Update.stu and the user's own file", names)
 	}
 	log := logBuf.String()
-	for _, want := range []string{"removed STR's install files", "streborn-armv7l", "region.conf",
-		"holds other files", "holiday.jpg", "count=1", "partitionStyle=MBR", "clusterBytes=", "totalBytes="} {
+	for _, want := range []string{"removed STR's install files", "streborn-armv7l", "region.conf", "setup.log", "cap1.ogg",
+		"holds other files", "count=1", "bytes=4", ".jpg", "partitionStyle=MBR", "clusterBytes=", "totalBytes="} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log lacks %q:\n%s", want, log)
 		}
+	}
+	// Diagnostic bundles get posted in public: the user's own file names
+	// never reach the log.
+	if strings.Contains(log, "holiday") {
+		t.Errorf("the log names the user's own file:\n%s", log)
 	}
 }
 
