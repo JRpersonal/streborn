@@ -11,6 +11,7 @@ package webui
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -53,9 +54,28 @@ func nativeContentItemXML(item presets.NativeItem, name string) string {
 
 // selectNativeItem asks the speaker to play a native-service item, the same
 // item its own key holds.
+//
+// A service the speaker itself lists as UNAVAILABLE is refused before the
+// /select with errNativeServiceUnavailable: the speaker answers such a select
+// with 500 1008 GENERAL_PANDORA_ERROR anyway (#1763), and the refusal can then
+// say what is actually wrong (the speaker's own login for the service) instead
+// of passing on a firmware error code.
 func (s *Server) selectNativeItem(ctx context.Context, item presets.NativeItem, name string) error {
-	return s.postSelect(ctx, nativeContentItemXML(s.withSpeakerAccount(ctx, item), name))
+	item, unavailable := s.speakerNativeItem(ctx, item)
+	if unavailable {
+		return fmt.Errorf("%w (%s)", errNativeServiceUnavailable, item.Source)
+	}
+	return s.postSelect(ctx, nativeContentItemXML(item, name))
 }
+
+// errNativeServiceUnavailable is selectNativeItem's refusal of a service the
+// speaker lists as UNAVAILABLE in its own /sources.
+var errNativeServiceUnavailable = errors.New("the speaker lists this service as unavailable")
+
+// nativeServiceUnavailableCode is the refusal code of a native-service key
+// whose service the speaker lists as UNAVAILABLE. The apps show their own
+// text for it.
+const nativeServiceUnavailableCode = "native-service-unavailable"
 
 // withSpeakerAccount returns item with the sourceAccount the speaker itself
 // lists for the item's service (presets.ResolveNativeAccount). The stored
@@ -64,21 +84,40 @@ func (s *Server) selectNativeItem(ctx context.Context, item presets.NativeItem, 
 // whose account it does not know. An unreadable source list keeps the item
 // as stored.
 func (s *Server) withSpeakerAccount(ctx context.Context, item presets.NativeItem) presets.NativeItem {
-	if s.boxHost == "" {
-		return item
-	}
-	c, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	body, err := boxapi.New(s.boxHost).GetRaw(c, "/sources")
-	if err != nil {
-		return item
+	item, _ = s.speakerNativeItem(ctx, item)
+	return item
+}
+
+// speakerNativeItem is withSpeakerAccount that also reports whether the same
+// /sources read lists the item's service as UNAVAILABLE
+// (presets.NativeSourceUnavailable). An unreadable source list reports it
+// available: unknown is not proven dead, and the speaker's own answer to the
+// /select still decides.
+func (s *Server) speakerNativeItem(ctx context.Context, item presets.NativeItem) (presets.NativeItem, bool) {
+	body, err := s.speakerSources(ctx)
+	if err != nil || body == nil {
+		return item, false
 	}
 	if acct := presets.ResolveNativeAccount(item, presets.NativeSourceAccounts(body)); acct != item.SourceAccount {
 		s.logger.Info("native service item: using the account the speaker lists for this service",
 			"source", item.Source, "storedAccountSet", item.SourceAccount != "")
 		item.SourceAccount = acct
 	}
-	return item
+	return item, presets.NativeSourceUnavailable(body, item.Source)
+}
+
+// speakerSources reads the speaker's GET :8090/sources; nil without a box
+// host.
+func (s *Server) speakerSources(ctx context.Context) ([]byte, error) {
+	if s.speakerSourcesFn != nil {
+		return s.speakerSourcesFn(ctx)
+	}
+	if s.boxHost == "" {
+		return nil, nil
+	}
+	c, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	return boxapi.New(s.boxHost).GetRaw(c, "/sources")
 }
 
 // validNativeItem checks an item a client sent before it is stored: a service

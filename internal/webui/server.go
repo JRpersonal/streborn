@@ -548,6 +548,10 @@ type Server struct {
 	// selectFn seams the speaker's own /select (postSelect), for the tests.
 	// It gets the ContentItem body. nil = the real :8090 call.
 	selectFn func(ctx context.Context, body string) error
+	// speakerSourcesFn seams the speaker's GET :8090/sources the native
+	// service items read (speakerNativeItem), for the tests. nil = the real
+	// call, which needs a box host.
+	speakerSourcesFn func(ctx context.Context) ([]byte, error)
 	// announceVolumeFn and announceSetVolumeFn seam the volume read and the
 	// volume write of an announcement (announce.go), for the tests. nil =
 	// the real box. The now_playing read goes through boxNowReadFn.

@@ -531,11 +531,26 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	// the stored item to the speaker's /select, the same item its key holds.
 	// There is no UPnP fallback: STR has no stream for these.
 	if p.IsNative() {
+		// The key press supersedes the previous play's verify, whether the
+		// speaker takes the item or not. This branch records no last play
+		// (STR has no stream to resume for a service the speaker plays
+		// itself), so the generation never moved: a library track played
+		// before it kept being re-pushed by its own verify, three retries over
+		// the Pandora key and then a false "box wedge suspected" strike
+		// (#1763). The same claim the queue and the library-key recalls make.
+		s.bumpRecallGen()
 		if s.spotifySwitchedAway != nil {
 			s.spotifySwitchedAway(playCtx)
 		}
 		s.logger.Info("preset slot recall (app): native service", "slot", slot, "source", p.Native.Source, "name", p.Name)
-		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); err != nil {
+		if err := s.selectNativeItem(playCtx, *p.Native, p.Name); errors.Is(err, errNativeServiceUnavailable) {
+			s.logger.Warn("preset slot recall (app): the speaker lists this service as unavailable, not selecting it",
+				"slot", slot, "source", p.Native.Source, "code", nativeServiceUnavailableCode)
+			return playResult{}, jsonRefusal(http.StatusServiceUnavailable, map[string]any{
+				"error": "The speaker's own login for this service is not working", "detail": err.Error(),
+				"code": nativeServiceUnavailableCode, "slot": slot, "name": p.Name, "source": p.Native.Source,
+			})
+		} else if err != nil {
 			s.logger.Warn("preset slot recall (app): the speaker refused the native service item",
 				"slot", slot, "source", p.Native.Source, "err", err)
 			// Not through playFailed: the detail is the raw error, the body
