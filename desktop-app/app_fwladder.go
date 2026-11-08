@@ -82,8 +82,9 @@ var fwArchiveCacheDir = func() (string, error) {
 // The stick side, as vars so a test can use a temp folder as the stick. The
 // real ones only accept a volume ListDrives offers as removable.
 var (
-	fwStickCheck = sticksetup.CheckStick
-	fwStickEject = sticksetup.Eject
+	fwStickCheck          = sticksetup.CheckStick
+	fwStickEject          = sticksetup.Eject
+	fwStickPartitionStyle = sticksetup.PartitionStyle
 )
 
 // fwLadderRead reads a speaker's /info; a var for tests.
@@ -354,6 +355,7 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 		return FirmwareStickResult{Code: "stick", Detail: "gone"}
 	}
 
+	a.logFirmwareStickLayout(step.ID, drivePath, again)
 	a.clearFirmwareStick(step.ID, drivePath)
 
 	a.emitLadder(step.ID, fwPhaseWrite, 0, step.InnerSize)
@@ -416,6 +418,20 @@ func (a *App) clearFirmwareStick(stepID, drivePath string) {
 		a.fwLog().Info("firmware ladder: the stick holds other files besides the Bose update; left alone, the screen suggests an empty stick",
 			"step", stepID, "drive", drivePath, "count", len(other), "files", capNames(other))
 	}
+}
+
+// logFirmwareStickLayout records what the Bose USB updater is picky about:
+// file system, cluster size, size and partition style. Without it a speaker
+// that never starts the update leaves no trace of whether the stick was the
+// reason.
+func (a *App) logFirmwareStickLayout(stepID, drivePath string, c sticksetup.StickCheck) {
+	style, parts, err := fwStickPartitionStyle(drivePath)
+	attrs := []any{"step", stepID, "drive", drivePath, "fs", c.Filesystem, "clusterBytes", c.ClusterBytes,
+		"totalBytes", c.TotalBytes, "freeBytes", c.FreeBytes, "partitionStyle", style, "partitions", parts}
+	if err != nil {
+		attrs = append(attrs, "partitionErr", err.Error())
+	}
+	a.fwLog().Info("firmware ladder: writing to the stick", attrs...)
 }
 
 // extractToCache takes Update.stu out of zipPath into the cache folder and

@@ -244,19 +244,20 @@ func TestExtractUpdateStu(t *testing.T) {
 func stickEnv(t *testing.T) string {
 	t.Helper()
 	stick := t.TempDir()
-	oldCheck, oldEject := fwStickCheck, fwStickEject
+	oldCheck, oldEject, oldStyle := fwStickCheck, fwStickEject, fwStickPartitionStyle
 	fwStickCheck = func(p string) sticksetup.StickCheck {
 		return sticksetup.StickCheck{OK: true, Path: p, IsFAT32: true, FreeBytes: 1 << 30}
 	}
 	fwStickEject = func(string) error { return nil }
-	t.Cleanup(func() { fwStickCheck, fwStickEject = oldCheck, oldEject })
+	fwStickPartitionStyle = func(string) (string, int, error) { return "MBR", 1, nil }
+	t.Cleanup(func() { fwStickCheck, fwStickEject, fwStickPartitionStyle = oldCheck, oldEject, oldStyle })
 	return stick
 }
 
 // The support case: the wizard had put its 14 install files on the stick, the
 // ladder wrote Update.stu beside them, and the speaker never started the
 // update. Now STR's own files come off first; the user's stay, and both are
-// logged.
+// logged, with the stick's layout.
 func TestPrepareStickRemovesSTRPayload(t *testing.T) {
 	inner := fakeStu(50_000)
 	z := fakeZip(t, map[string][]byte{"Update.stu": inner}, "Update.stu")
@@ -287,7 +288,7 @@ func TestPrepareStickRemovesSTRPayload(t *testing.T) {
 	}
 	log := logBuf.String()
 	for _, want := range []string{"removed STR's install files", "streborn-armv7l", "region.conf",
-		"holds other files", "holiday.jpg", "count=1"} {
+		"holds other files", "holiday.jpg", "count=1", "partitionStyle=MBR", "clusterBytes=", "totalBytes="} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log lacks %q:\n%s", want, log)
 		}
