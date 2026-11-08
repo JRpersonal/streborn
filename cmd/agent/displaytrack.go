@@ -22,6 +22,11 @@ var (
 	// so the clock can stand in for the firmware's picture on Bluetooth and
 	// AUX (webui.PanelSourceChanged); wired in main, nil until then.
 	notePanelSource func(source string)
+	// watchStandbyPanel looks at the panel a minute after the speaker went
+	// to standby, so a standby clock that BoseApp no longer draws is found
+	// even when STR did not hold the panel before (#1784). Without the
+	// dark-panel hooks (tests, a speaker without a panel) it does nothing.
+	watchStandbyPanel = oled.WatchStandbyPanel
 )
 
 // trackSourceKeeps reports whether a source switch to to can still be STR's
@@ -102,6 +107,11 @@ func trackOnSourceChanged(from, to string, wake *wakeCheck) {
 	k := currentTrackHooks()
 	ours := trackSourceKeeps(to)
 	verify := ours && wake != nil
+	if to == "STANDBY" {
+		// Before the track lets go: while it still holds the panel, its own
+		// release starts the look instead, with the overlay's reason.
+		watchStandbyPanel("standby")
+	}
 	trackMu.Lock()
 	trackGen++
 	gen := trackGen
@@ -148,6 +158,7 @@ func trackAfterWakeCheck(k trackHooks, gen uint64, to string, w *wakeCheck) {
 // track leaves the panel whatever the gabbo stream last said. Non-blocking.
 func trackOnBoxStandby() {
 	k := currentTrackHooks()
+	watchStandbyPanel("standby (syslog)")
 	trackMu.Lock()
 	defer trackMu.Unlock()
 	trackGen++

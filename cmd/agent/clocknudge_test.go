@@ -97,8 +97,11 @@ func TestClockNudgeRetriesASlowStateRead(t *testing.T) {
 func TestClockExpected(t *testing.T) {
 	cfg := func(enable string, err error) func(context.Context) (boxapi.ClockConfig, error) {
 		return func(context.Context) (boxapi.ClockConfig, error) {
-			return boxapi.ClockConfig{UserEnable: enable}, err
+			return boxapi.ClockConfig{UserEnable: enable, BrightnessLevel: "70"}, err
 		}
+	}
+	dimmed := func(context.Context) (boxapi.ClockConfig, error) {
+		return boxapi.ClockConfig{UserEnable: "true", BrightnessLevel: "0"}, nil
 	}
 	standby := func(s bool, err error) func(context.Context) (bool, error) {
 		return func(context.Context) (bool, error) { return s, err }
@@ -112,6 +115,7 @@ func TestClockExpected(t *testing.T) {
 	}{
 		{"standby, clock on", standby(true, nil), cfg("true", nil), true, false},
 		{"standby, clock off", standby(true, nil), cfg("false", nil), false, false},
+		{"standby, clock on at brightness 0", standby(true, nil), dimmed, false, false},
 		{"standby, no clock on this speaker", standby(true, nil), cfg("", boxapi.ErrNoClockConfig), false, false},
 		{"standby, clock unreadable", standby(true, nil), cfg("", errors.New("timeout")), false, true},
 		{"playing", standby(false, nil), cfg("true", nil), false, false},

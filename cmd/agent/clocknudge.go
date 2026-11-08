@@ -114,11 +114,14 @@ func (n clockNudge) run(ctx context.Context) bool {
 }
 
 // darkPanelHooks wires the look at the panel after the track overlay let go
-// of it (oled/darkwatch.go). A standby clock that is still black a minute
-// later gets the same single standby the update nudge sends: the firmware
-// draws its clock when it enters the clock state, and a standby request on a
-// sleeping speaker is what makes it enter that state again without waking it
-// (#841). The box is only asked when the panel is black, never on a timer.
+// of it and after the speaker went to standby (oled/darkwatch.go). A standby
+// clock that is still black or frozen a minute later gets the same single
+// standby the update nudge sends: the firmware draws its clock when it enters
+// the clock state, and a standby request on a sleeping speaker is what makes
+// it enter that state again without waking it (#841). When that does not
+// bring it back, BoseApp's display is stuck and the speaker gets one restart
+// while it sleeps (stuckdisplay.go). The box is only asked when the panel is
+// stuck, never on a timer.
 func darkPanelHooks(bc *boxapi.Client, logger *slog.Logger) oled.DarkPanelHooks {
 	inStandby := func(ctx context.Context) (bool, error) {
 		np, err := bc.NowPlaying(ctx)
@@ -139,16 +142,27 @@ func darkPanelHooks(bc *boxapi.Client, logger *slog.Logger) oled.DarkPanelHooks 
 				standby:      bc.Standby,
 				sleep:        sleepCtx,
 				logger:       logger,
-				why:          "the panel stayed black after the track overlay let go of it",
+				why:          "the standby clock was not drawn a minute after a release or a standby",
+			}.run(ctx)
+		},
+		Restart: func(ctx context.Context) bool {
+			return stuckDisplayRestart{
+				uptime:    uptimeDuration,
+				inStandby: inStandby,
+				lastAt:    func() (time.Time, bool) { return readStuckDisplayStamp(stuckDisplayStamp) },
+				stamp:     func(at time.Time) error { return writeStuckDisplayStamp(stuckDisplayStamp, at) },
+				reboot:    rebootSpeaker,
+				now:       time.Now,
+				logger:    logger,
 			}.run(ctx)
 		},
 	}
 }
 
 // clockExpected reports whether the firmware should be drawing its standby
-// clock: the speaker is in standby and its clock is switched on. A clock the
-// owner switched off, or a speaker without one, keeps a black panel in
-// standby, which is right.
+// clock: the speaker is in standby and its clock is switched on and not
+// dimmed to nothing. A clock the owner switched off, one at brightness 0, or
+// a speaker without one keeps a black panel in standby, which is right.
 func clockExpected(ctx context.Context, inStandby func(context.Context) (bool, error),
 	clockConfig func(context.Context) (boxapi.ClockConfig, error)) (bool, error) {
 	standby, err := inStandby(ctx)
@@ -161,6 +175,9 @@ func clockExpected(ctx context.Context, inStandby func(context.Context) (bool, e
 	}
 	if err != nil {
 		return false, err
+	}
+	if strings.TrimSpace(cfg.BrightnessLevel) == "0" {
+		return false, nil
 	}
 	return strings.EqualFold(strings.TrimSpace(cfg.UserEnable), "true"), nil
 }

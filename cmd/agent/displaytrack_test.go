@@ -91,3 +91,22 @@ func TestVolumeChangeHandsThePanelBackBriefly(t *testing.T) {
 		t.Fatal("no pause")
 	}
 }
+
+// #1784: every switch to standby asks for a look at the panel, before the
+// track lets go of it (so a running overlay's own release takes over), and
+// the syslog's standby does too; no other source does.
+func TestStandbyAsksForAPanelLook(t *testing.T) {
+	oldSet, oldWatch := setTrackSource, watchStandbyPanel
+	t.Cleanup(func() { setTrackSource, watchStandbyPanel = oldSet, oldWatch })
+	var order []string
+	setTrackSource = func(name string, _ bool) { order = append(order, "source "+name) }
+	watchStandbyPanel = func(reason string) { order = append(order, "watch "+reason) }
+
+	trackOnSourceChanged("UPNP", "AUX", nil)
+	trackOnSourceChanged("UPNP", "STANDBY", nil)
+	trackOnBoxStandby()
+	want := []string{"source AUX", "watch standby", "source STANDBY", "watch standby (syslog)", "source STANDBY"}
+	if strings.Join(order, "|") != strings.Join(want, "|") {
+		t.Fatalf("calls %q, want %q", order, want)
+	}
+}
