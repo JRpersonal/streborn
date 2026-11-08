@@ -744,6 +744,25 @@ freezer, and holding the wrong thread is not harmless either: holding
 `DevHelperThread` (key handling, it also serves internal eventfds and a
 timer) rebooted the speaker after about 25 seconds.
 
+**BoseApp's display can stop drawing for good (#841, #1784).** On SoundTouch
+20 speakers the standby clock sometimes stays dark after a power-off, until
+the speaker restarts. A stuck ST20 read out after a day in that state: the
+flip thread free (`TracerPid` 0), asleep in `poll_schedule_timeout`, its CPU
+time unchanged over a minute, and `/dev/fb0` uniformly `0x01`. STR's release
+paints `0x00`, so BoseApp flipped one blank frame of its own after the
+release and then nothing more, while the HSM kept logging
+`EVT_DISPLAY_STANDBY_CLOCK ... Standby(START)` on every later power-off, a
+`/clockDisplay` off/on and STR's standby nudge alike. The original report
+(v0.9.7) is a clock that froze, before STR drew on the panel at all; with the
+track screen it shows up right after STR let go of the panel at a power-off,
+mostly after long holds that end with BoseApp's flip thread logging
+`Dispatched N>=200 before pend - getting swamped?`. Only a restart clears it.
+STR therefore samples the framebuffer a minute after every release and every
+standby (`internal/oled/darkwatch.go`): a dark (uniform, at most `0x11`) or
+unchanged picture while the clock should show gets the nudge, and if that
+does not help either, one restart while the speaker sleeps, at most once a
+day (`cmd/agent/stuckdisplay.go`, stamp `/mnt/nv/streborn/display-restart-at`).
+
 **Every SoundTouch display is recognised.** `internal/oled` checks the driver
 name and geometry in `/sys/class/graphics/fb0/` and does nothing on any other
 panel. The SoundTouch 20 and 30 carry the same panel as the Portable and

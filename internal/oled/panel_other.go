@@ -23,9 +23,9 @@ func hold(func([]byte), <-chan struct{}, <-chan struct{}, func() time.Duration) 
 	return errors.New("no panel on this platform")
 }
 
-// panelFrameDark and flipThreadInfo read the framebuffer and /proc; nothing
-// to read here.
-func panelFrameDark() (dark, ok bool) { return false, false }
+// panelFrameSample and flipThreadInfo read the framebuffer and /proc;
+// nothing to read here.
+func panelFrameSample() (s panelSample, ok bool) { return s, false }
 
 func flipThreadInfo() []any { return nil }
 

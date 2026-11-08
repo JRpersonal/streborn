@@ -255,8 +255,16 @@ func (p *panelHold) show(buf []byte) {
 	p.shown = true
 }
 
-// release leaves a black frame (BoseApp repaints its own screen right after
-// the detach), lets the flip thread go and unmaps the framebuffer.
+// release leaves a black frame (0x00; BoseApp repaints its own screen right
+// after the detach), lets the flip thread go and unmaps the framebuffer.
+//
+// The black frame stays. Putting back the picture BoseApp had before the
+// hold was considered for the dark standby clock (#841, #1784) and would not
+// help: that picture is the screen from when playback started, so a stuck
+// display would show a stale track instead of nothing. And the black frame is
+// how a reading of the panel tells a BoseApp that never drew again (0x00)
+// from one that drew one blank screen of its own (0x01) and then stopped,
+// which is what a stuck ST20 showed.
 //
 // A failed detach used to be dropped without a word. A flip thread STR does
 // not let go of never paints again, and the standby clock that stayed blank
@@ -283,28 +291,35 @@ func (p *panelHold) release() {
 	lastFlip.Unlock()
 }
 
-// panelFrameDark reports whether the framebuffer is all black, read through
-// a read-only mapping: no copy, nothing written. ok is false when it cannot
-// be read.
-func panelFrameDark() (dark, ok bool) {
+// panelFrameSample samples the framebuffer (darkwatch.go) through a
+// read-only mapping: no copy, nothing written. ok is false when it cannot be
+// read.
+func panelFrameSample() (s panelSample, ok bool) {
 	f, err := os.Open(fbDevice)
 	if err != nil {
-		return false, false
+		return s, false
 	}
 	mem, err := syscall.Mmap(int(f.Fd()), 0, FrameSize, syscall.PROT_READ, syscall.MAP_SHARED)
 	_ = f.Close()
 	if err != nil {
-		return false, false
+		return s, false
 	}
 	defer func() { _ = syscall.Munmap(mem) }()
-	return frameIsDark(mem), true
+	return samplePanelFrame(mem), true
 }
 
-// flipThreadInfo describes the flip thread the newest release let go of.
+// flipThreadInfo describes the flip thread the newest release let go of, or
+// BoseApp's current one when STR has not held the panel since the agent
+// started (a standby watch).
 func flipThreadInfo() []any {
 	lastFlip.Lock()
 	pid, tid := lastFlip.pid, lastFlip.tid
 	lastFlip.Unlock()
+	if pid == 0 || tid == 0 {
+		if pid = findProcess("BoseApp"); pid != 0 {
+			tid = findThread(pid, flipThread)
+		}
+	}
 	return flipThreadAttrs(pid, tid)
 }
 
@@ -324,8 +339,10 @@ func flipThreadAttrs(pid, tid int) []any {
 	if p := findProcess("BoseApp"); p != 0 {
 		now = findThread(p, flipThread)
 	}
+	// The flip thread's CPU time: standing still across the looks of one
+	// watch means it has not flipped a frame in between (#841).
 	return []any{"flipTid", tid, "state", state, "tracerPid", tracer,
-		"wchan", strings.TrimSpace(string(wchan)), "flipTidNow", now}
+		"wchan", strings.TrimSpace(string(wchan)), "flipCPUms", statCPUms(dir + "stat"), "flipTidNow", now}
 }
 
 // play holds BoseApp's flip thread, renders frames until frame returns false,
