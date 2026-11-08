@@ -10,8 +10,11 @@
 import { sleep as realSleep } from './utils.js';
 
 // The engine push refused for lack of room. The agent says "insufficient
-// nand", the transport says "no space" or carries the 507 status.
-export const SPACE_REFUSAL = /insufficient nand|no space|507/i;
+// nand", the transport says "no space" or carries the 507 status. The status
+// must stand as a status: a dropped connection names both socket ends, and an
+// ephemeral port such as 50734 read as a full speaker (#1768). Mirrors
+// spaceRefusal in otaorchestrate.go.
+export const SPACE_REFUSAL = /insufficient nand|no space|insufficient storage|\b(?:status|http) 507\b/i;
 
 // speakerReachedTarget answers the only question that matters at the end of an
 // install or an update: is this speaker actually where it was meant to be.
