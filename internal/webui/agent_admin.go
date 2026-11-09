@@ -419,9 +419,19 @@ var agentBinShaCache struct {
 // agentBinaryStamp returns the hex SHA256 of the agent binary on NAND, or ""
 // when it cannot be read.
 // runningBinaryStamp is the hash of the executable this process was started
-// from. Computed once: the file cannot change underneath a running process in
-// a way that matters here, and the agent runs on a NAND that is worth sparing.
+// from, computed once (PrimeRunningBinaryStamp starts it at agent start).
+//
+// It reads /proc/self/exe, which is the file this process runs even after an
+// update renamed a new binary over its path or a swap deleted it. The path
+// os.Executable reports is the wrong thing to hash: after such an update it
+// names the NEW file, and a lazily computed hash then reported the new build's
+// hash next to the old build's version, which is exactly the rollback
+// (landed-not-running, #381) this field exists to expose. os.Executable is
+// only the fallback where /proc is missing (tests on other systems).
 var runningShaOnce = sync.OnceValue(func() string {
+	if sha, err := fileSHA256(selfExeProcPath); err == nil {
+		return sha
+	}
 	path, err := os.Executable()
 	if err != nil {
 		return ""
@@ -432,6 +442,15 @@ var runningShaOnce = sync.OnceValue(func() string {
 	}
 	return sha
 })
+
+// selfExeProcPath is the kernel's handle on this process's executable.
+const selfExeProcPath = "/proc/self/exe"
+
+// PrimeRunningBinaryStamp hashes the running executable now, at agent start,
+// instead of on the first version poll. Call it once, early, in a goroutine:
+// the hash streams through a 32 KB buffer and takes a few seconds of CPU on
+// the speaker, and a poll that arrives first simply waits for the same result.
+func PrimeRunningBinaryStamp() { _ = runningShaOnce() }
 
 // fileSHA256 hashes a file by streaming it through a small buffer.
 //

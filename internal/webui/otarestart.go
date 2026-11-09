@@ -147,11 +147,17 @@ func shutdownForRestart() {
 // that is the binary run.sh's watchdog starts again later, so the restarted
 // agent and any later respawn agree. An agent run.sh started from a RAM copy
 // or the stick reboots as before, so the next boot picks its binary afresh.
+//
+// The rescue agent a failed RAM-staged swap left running from RAM
+// (ota_rescue.go) counts as running from dst as well: it is the build that
+// could not be written there, run.sh's watchdog would start dst after it, and
+// rebooting this chassis to get there is exactly what the restart avoids.
 func selfRestartAfterOTA(wlanMode, running, dst string) bool {
 	if wlanMode != otaRestartOnlyWLANMode || running == "" {
 		return false
 	}
-	return filepath.Clean(running) == filepath.Clean(dst)
+	running = filepath.Clean(running)
+	return running == filepath.Clean(dst) || running == filepath.Clean(ramRescueBin)
 }
 
 // otaRestartOnly decides the hand-over for this speaker and logs why.
@@ -212,14 +218,22 @@ func shQuote(a string) string {
 // An empty or missing file starts the agent regardless, because the slow
 // watchdog stops for good once the file is gone.
 func superviseNewAgentLines(bin string, args []string) string {
+	return fmt.Sprintf(`cur=$(cat %q 2>/dev/null)
+if [ -n "$cur" ] && [ "$cur" != "$$" ]; then exit 0; fi
+`, agentPIDFile) + superviseAgentLines(shQuote(bin), args)
+}
+
+// superviseAgentLines starts the agent named by binWord (a word already quoted
+// for sh, so a caller can pass a variable such as "$run") with args, writes its
+// PID into run.sh's PID file and waits for it, recording an exit that is not a
+// hand-over as superviseNewAgentLines describes. It has no guard of its own.
+func superviseAgentLines(binWord string, args []string) string {
 	words := make([]string, 0, len(args)+1)
-	words = append(words, shQuote(bin))
+	words = append(words, binWord)
 	for _, a := range args {
 		words = append(words, shQuote(a))
 	}
-	return fmt.Sprintf(`cur=$(cat %[1]q 2>/dev/null)
-if [ -n "$cur" ] && [ "$cur" != "$$" ]; then exit 0; fi
-rm -f %[2]q
+	return fmt.Sprintf(`rm -f %[2]q
 %[3]s >> %[4]q 2>&1 &
 bpid=$!
 echo "$bpid" > %[1]q

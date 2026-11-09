@@ -179,6 +179,10 @@ func run() error {
 	// of bundles across the fleet, so it has to land where bundles look.
 	slog.SetDefault(logger)
 	logger.Info("streborn starting", "version", version)
+	// The running binary's hash, taken now rather than on the first version
+	// poll (agentRunningSha256). In the background: it costs a few seconds of
+	// CPU on the speaker and nothing below waits for it.
+	go webui.PrimeRunningBinaryStamp()
 
 	// The one root context, created before the first goroutine starts: every
 	// background loop below derives from it, so a SIGTERM (or a listener

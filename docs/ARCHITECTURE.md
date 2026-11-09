@@ -1021,6 +1021,11 @@ cut.
                               came up with no usable nameserver
 /tmp/streborn-agent-heartbeat.json, per-boot guard flags, trust-store overlays
 /dev/shm/streborn-ota.stage   OTA staging when NAND cannot hold two agent copies
+/dev/shm/streborn-rescue/streborn-armv7l
+                              the staged agent, moved here and run from RAM when
+                              that swap could not write it to NAND; it retries
+                              the write once and blocks its own reboots until
+                              the NAND copy verifies (internal/webui/ota_rescue.go)
 ```
 
 Held in memory only, never on disk: the marge stub responses, the box

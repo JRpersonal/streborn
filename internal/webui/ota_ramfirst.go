@@ -213,6 +213,8 @@ func swapHelperRunning(stage string) bool {
 // receive of this new process owns one yet. The shared swap stage goes only
 // when no swap helper is reading it: the helper waits for the old agent to
 // exit, and a watchdog respawn can start this agent while it still copies.
+// The rescue agent's binary (ota_rescue.go) goes the same way, once neither
+// this process nor any other runs or supervises it.
 func CleanStaleRAMStages(logger *slog.Logger) {
 	dir := filepath.Dir(ramStageTarget)
 	n := removeStaleRAMFirstStages(dir)
@@ -220,9 +222,14 @@ func CleanStaleRAMStages(logger *slog.Logger) {
 	if _, err := os.Stat(ramStageTarget); err == nil && !swapHelperRunning(ramStageTarget) {
 		swapStage = os.Remove(ramStageTarget) == nil
 	}
-	if n > 0 || swapStage {
+	rescue := false
+	if _, err := os.Stat(ramRescueBin); err == nil && !RunningAsRescue() && !swapHelperRunning(ramRescueBin) {
+		rescue = os.Remove(ramRescueBin) == nil
+		_ = os.Remove(filepath.Dir(ramRescueBin))
+	}
+	if n > 0 || swapStage || rescue {
 		logger.Info("removed RAM stages left behind by an earlier agent",
-			"ramFirstStages", n, "swapStage", swapStage, "dir", dir)
+			"ramFirstStages", n, "swapStage", swapStage, "rescueBinary", rescue, "dir", dir)
 	}
 }
 
