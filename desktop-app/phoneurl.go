@@ -140,6 +140,15 @@ func pickPhoneAddress(host string, port int, candidates []string, p phoneNamePro
 		if name == "" || name == host {
 			continue
 		}
+		// A single-label name ("SoundTouch-Kitchen", as a Netgear serves it)
+		// resolves on this PC through its DNS suffix search, LLMNR or NetBIOS,
+		// and the checks below then pass. A phone has none of that: Android
+		// Chrome answers DNS_PROBE_FINISHED_NXDOMAIN (#1769). Only a name with
+		// a domain is one the phone resolves the same way this PC does.
+		if !strings.Contains(name, ".") {
+			notes = append(notes, name+" has no domain, so a phone cannot resolve it")
+			continue
+		}
 		// It must point HERE. A stale lease in the router's table resolves
 		// perfectly and answers a different speaker, which would put one
 		// speaker's QR code on another's panel.

@@ -443,6 +443,26 @@ test.describe('UI 2.0 shell', () => {
       await expect(player.locator('.ui2-player-empty')).toBeHidden();
     });
 
+    // #1796: switching off is a basic function with its own key on the
+    // speaker and the remote, so Power sits next to Pause and Stop and no
+    // longer under More. It is the input row's toggle, moved: same call.
+    test('16b. Power sits in the transport right after Stop and switches the speaker', async ({ app, mock }) => {
+      const { page } = app;
+      const power = page.locator('#ui2Player .ui2-player-transport #stopBtn + #powerBtn');
+      await expect(power).toBeVisible();
+      await expect(power).toHaveAttribute('aria-label', en('controls.powerTitle'));
+      await expect(power).toHaveAttribute('title', en('controls.powerTitle'));
+      await expect(page.locator('#ui2MoreBody #powerBtn')).toHaveCount(0);
+      await expect(power).toHaveClass(/\bon\b/);
+      await mock.resetCalls();
+      await power.click();
+      await mock.expectCalled('SetBoxPower', { times: 1 });
+      const call = await mock.last('SetBoxPower');
+      expect(call.args.slice(0, 3)).toEqual([LR.host, LR.port, false]);
+      await expect(power).not.toHaveClass(/\bon\b/);
+      await expect(power).toHaveAttribute('aria-pressed', 'false');
+    });
+
     test.describe('without speakers', () => {
       test.use({ fakeClock: true, scenario: { boxes: [], current: null, seed: { cachedBoxes: false } } });
 
@@ -562,7 +582,9 @@ test.describe('UI 2.0 shell', () => {
       await expect(page.locator('#ui2MoreBtn')).toHaveAttribute('aria-expanded', 'true');
       const pop = page.locator('#ui2MorePop');
       await expect(pop).toBeVisible();
-      await expect(pop.locator('#ui2MoreBody #sourceButtons')).toBeVisible();
+      // The input row stays here; its Power button moved to the transport
+      // (#1796), so without inputs the row is empty and only attached.
+      await expect(pop.locator('#ui2MoreBody #sourceButtons')).toHaveCount(1);
       await expect(pop.locator('#ui2MoreBody #queueControls')).toHaveCount(1);
     });
 

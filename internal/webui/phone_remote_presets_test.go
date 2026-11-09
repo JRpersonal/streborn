@@ -38,13 +38,13 @@ func TestPhoneRemoteLocalesCarryNoPresets(t *testing.T) {
 
 // The phone remote's keys show their cover (#1312): lazily loaded, healed of
 // box-form art the phone cannot reach, never DuckDuckGo's grey "no icon"
-// chevron, and a key whose image fails is the plain text tile again.
+// chevron, and a key whose image fails keeps the stand-in (#1799).
 // DuckDuckGo entries go through the agent's /art proxy, which fails a miss
 // instead of passing the chevron on (#1467: dropping them left keys bare).
 func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 	for _, want := range []string{
 		// The tile builds the image from the key's art and marks itself.
-		"var art = presetArtImg(presetArtCands(p));",
+		"var art = presetArtImg(presetArtCands(p), p.name, p.type === 'spotify');",
 		"div.classList.add('has-art');",
 		// Library album or folder keys fall back to the first track's cover.
 		"p.type === 'queue' && Array.isArray(p.items)",
@@ -57,9 +57,6 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 		// ...asking for the browser form, so a bitmap .ico is not swapped for
 		// STR's logo the way it is for the display (#1467).
 		"'&to=browser'",
-		// Lazy, and the failure path restores the text-only tile.
-		"img.loading = 'lazy';",
-		"tile.classList.remove('has-art'); tile.removeChild(img);",
 		// The number and name stay visible beside the image.
 		".preset.has-art {",
 		".preset .art {",
@@ -83,6 +80,50 @@ func TestPhoneRemotePresetKeysShowCover(t *testing.T) {
 	// No inline onerror attribute: the handler is assigned in script.
 	if strings.Contains(indexHTML, `onerror="`) {
 		t.Error("phone remote uses an inline onerror attribute")
+	}
+}
+
+// A key without a cover wears one stand-in, steadily (#1799). The candidates
+// used to go straight into the tile, so a key showed whatever the walk was on
+// (a blank square while a slow host was asked, Safari's question mark between
+// candidates, nothing once all had failed), and the once-a-minute retry
+// rebuilt the grid and walked every chain again, so the keys flickered.
+func TestPhoneRemotePresetKeyStandInIsSteady(t *testing.T) {
+	img := pageSection(t, "function presetArtImg(", "function presetArtWalk(")
+	for _, want := range []string{
+		// The stand-in first, or the cover a walk already found.
+		"var ph = spotify ? SPOTIFY_GLYPH : presetMonogram(name);",
+		"img.src = st && st.src ? st.src : ph;",
+		// A cover that dies later falls back to the stand-in, never to nothing.
+		"img.src = ph;",
+	} {
+		if !strings.Contains(img, want) {
+			t.Errorf("presetArtImg lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"removeChild(img)", "img.src = cands[", "return null;"} {
+		if strings.Contains(img, bad) {
+			t.Errorf("presetArtImg still has %q: a tile shows the walk or loses its image", bad)
+		}
+	}
+	walk := pageSection(t, "function presetArtWalk(", "function presetArtMissed(")
+	for _, want := range []string{
+		// The walk runs in a detached image; tiles only get a loaded cover.
+		"var probe = new Image();",
+		"probe.onload = function () {",
+		"st.imgs.forEach(function (i) { i.src = st.src; });",
+	} {
+		if !strings.Contains(walk, want) {
+			t.Errorf("presetArtWalk lacks %q", want)
+		}
+	}
+	load := pageSection(t, "async function loadPresets(", "/* The second row of keys")
+	if !strings.Contains(load, "presetArtRetry();") {
+		t.Error("loadPresets does not retry a missing cover off-screen")
+	}
+	// An unchanged list never repaints the grid, not even for the retry.
+	if strings.Contains(load, "!presetArtRetryDue(") {
+		t.Error("loadPresets still repaints the whole grid to retry a missing cover")
 	}
 }
 
