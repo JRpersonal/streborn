@@ -210,7 +210,13 @@ func (a *agent) bootstrap() error {
 	// run.sh and rc.local via usbstick.Files() and writes them out on
 	// startup whenever the disk copies differ from the embedded ones.
 	// Best-effort: any write failure is logged and the agent continues.
-	if syncBootstrapFromEmbedded(logger) {
+	if webui.RunningAsRescue() {
+		// Started from RAM by an update swap that could not write this build
+		// to the NAND (internal/webui/ota_rescue.go). The boot files can wait
+		// until the build that matches them is on the NAND, and the reboot
+		// below would end the only agent this speaker has.
+		logger.Warn("bootstrap: running from RAM as the rescue agent, leaving the boot files and the speaker alone until this build is on storage")
+	} else if syncBootstrapFromEmbedded(logger) {
 		// The on-NAND boot path (run-override.sh / rc.local) was stale
 		// relative to this binary and has just been refreshed. Those
 		// scripts only take effect on the NEXT boot, so the rest of THIS
@@ -1008,6 +1014,9 @@ func (a *agent) buildWebui() error {
 	// An agent killed mid-update leaves its RAM stage in tmpfs, where it
 	// would hold ~18 MB of unswappable memory until the next update.
 	webui.CleanStaleRAMStages(logger.With("comp", "webui"))
+	// The rescue agent a failed update swap started from RAM tries the write
+	// to the NAND once more itself (a no-op for any other agent).
+	webui.StartRescueRetry(ctx, logger.With("comp", "webui"))
 
 	webuiSrv := webui.New(a.flags.webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),

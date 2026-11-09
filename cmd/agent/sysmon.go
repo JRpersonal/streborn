@@ -22,6 +22,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/oled"
 	strregion "github.com/JRpersonal/streborn/internal/region"
 	"github.com/JRpersonal/streborn/internal/spotify"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // clockForensicsState records the boot-time clock verdict. A plug-pulled
@@ -418,6 +419,10 @@ func memoryGuardCheck(logger *slog.Logger, sp *spotify.Manager, boxHost string) 
 		// runaway, where a controlled reboot + auto-resume beats the uncontrolled
 		// firmware OOM (garbled audio then crash).
 		logger.Warn("memory guard: low memAvail but playing and above critical, holding off", "memAvailKB", avail, "criticalKB", memGuardCriticalKB)
+		return
+	}
+	if why := webui.RebootUnsafe(); why != "" {
+		logger.Warn("memory guard: memAvail critically low, but not rebooting: "+why, "memAvailKB", avail, "playing", playing)
 		return
 	}
 	logger.Warn("memory guard: memAvail critically low, rebooting box to clear firmware leak", "memAvailKB", avail, "playing", playing)

@@ -24,10 +24,17 @@ package webui
 //     sized at half the box RAM), spawn a detached helper, exit the agent
 //     (releasing ETXTBSY and its pinned blocks), and let the helper copy
 //     RAM -> NAND, verify, sync and reboot. Peak NAND need drops to a single
-//     copy. run.sh starts the swapped binary at the next boot, so even a
-//     helper that dies leaves the box recoverable by a power-cycle. On a
+//     copy. run.sh starts the swapped binary at the next boot. On a
 //     coprocessor Wi-Fi ST20 the helper starts the new agent instead of
 //     rebooting (otarestart.go).
+//
+//     The in-place copy is the one step that can leave the NAND without a
+//     runnable agent: from its first byte the old binary is gone and only the
+//     RAM stage holds a good one. So a copy that does not verify never ends
+//     the swap: the helper starts the staged build from RAM (the rescue
+//     agent, ota_rescue.go), which keeps the speaker on STR, reports
+//     otaSwapFailed so the app can retry, and itself tries the write once
+//     more two minutes later.
 
 import (
 	"errors"
@@ -35,6 +42,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"syscall"
 )
@@ -90,9 +98,11 @@ var errNANDReadOnly = errors.New(
 	"the speaker's storage is in a write-protected state and could not be re-enabled; " +
 		"unplug the speaker from power for a minute and run the update again")
 
-// swapHelperScript builds the BusyBox-sh script the detached helper runs:
-// wait for this agent process to exit (releasing the old binary), copy the
-// staged binary over it, flash-verify, sync and reboot.
+// swapHelper describes one tier-3 swap: the detached BusyBox-sh helper waits
+// for this agent process to exit (releasing the old binary), places the staged
+// binary on the NAND, flash-verifies it and runs finish. When the binary
+// cannot be placed it keeps the speaker on STR instead: it starts the staged
+// build from RAM (the rescue agent, ota_rescue.go) and never runs finish.
 //
 // Hardened for v0.9.7 (#381 class): the old script copied even when the agent
 // was STILL ALIVE after the 90 s wait — cp then failed with ETXTBSY leaving
@@ -101,77 +111,164 @@ var errNANDReadOnly = errors.New(
 // 12517538 bytes). It then rebooted a box that had already answered 200 OK,
 // so the app saw a "successful" update that never happened. Now:
 //   - the agent gets kill -9 escalation after the wait; if it STILL will not
-//     die, the helper ABORTS without rebooting (run.sh's watchdog respawns
-//     the old agent, the box stays usable, the app's version poll reports
-//     the truth) and leaves a marker for diagnostics.
+//     die, the helper ABORTS without touching the NAND (run.sh's watchdog
+//     respawns the old agent, the box stays usable, the app's version poll
+//     reports the truth) and leaves a marker for diagnostics.
 //   - verification is content-based: sha256sum when present, else cmp
 //     against the still-present RAM stage; the size check is only the
 //     last-resort fallback. The re-read goes through a sync + page-cache
 //     drop so it proves flash, not RAM (#302 lesson).
-//   - one retry (after killing any watchdog-respawned agent that re-pinned
-//     the binary); on a second failure it aborts without rebooting and
-//     leaves the marker instead of rebooting into a silently-old binary.
+//   - one retry, after killing any watchdog-respawned agent that re-pinned
+//     the binary and dropping the page cache.
 //
-// waitSec is how long the helper waits for the agent before kill -9
-// (swapHelperWaitSec, longer when the agent first waits out run.sh's boot
-// watchdog). finish is the last step after a passing verify: "reboot", or on
-// a speaker that restarts only the agent after an update (otarestart.go), the
-// lines that start and supervise the new binary.
-func swapHelperScript(agentPID, waitSec int, stage, dst string, size int, sha, finish string) string {
+// Until v1.5.2 a second failed verify wrote the marker, DELETED the stage and
+// exited. The copy had already gone over the live NAND binary by then, so the
+// stage was the only good copy left: the NAND held a partial or corrupt agent,
+// run.sh's watchdog kept respawning that broken binary, :8888 refused, and a
+// speaker without a USB stick had lost STR (field report 2026-11-09, an ST10
+// with a tight NAND). The cp exit status was not checked either. The copy is
+// now placeBinaryLines' and a failure ends in rescueLines.
+type swapHelper struct {
+	agentPID int
+	// waitSec is how long the helper waits for the agent before kill -9
+	// (swapHelperWaitSec, longer when the agent first waits out run.sh's boot
+	// watchdog).
+	waitSec int
+	stage   string
+	dst     string
+	size    int64
+	sha     string
+	// finish is the last step after a passing verify: "reboot", or on a
+	// speaker that restarts only the agent after an update (otarestart.go),
+	// the lines that start and supervise the new binary. A failed swap never
+	// reaches it.
+	finish string
+	// rescueBin is where a failed swap moves the stage and starts it from;
+	// args are the flags it gets (run.sh's, as for the restarted agent).
+	rescueBin string
+	args      []string
+}
+
+// swapFailedWhy is the marker text of a swap whose binary could not be placed.
+const swapFailedWhy = "swap failed: the new agent could not be written to the speaker's storage (flash verify failed twice); STR keeps running from RAM until a retry writes it"
+
+// script builds the helper.
+func (h swapHelper) script() string {
 	return fmt.Sprintf(`i=0
-while [ -d /proc/%d ] && [ "$i" -lt %d ]; do sleep 1; i=$((i+1)); done
-if [ -d /proc/%d ]; then kill -9 %d 2>/dev/null; sleep 3; fi
-if [ -d /proc/%d ]; then
-  echo "swap aborted: agent PID %d still alive after kill -9" > %q; sync
-  rm -f %q
+while [ -d /proc/%[1]d ] && [ "$i" -lt %[2]d ]; do sleep 1; i=$((i+1)); done
+if [ -d /proc/%[1]d ]; then kill -9 %[1]d 2>/dev/null; sleep 3; fi
+if [ -d /proc/%[1]d ]; then
+  echo "swap aborted: agent PID %[1]d still alive after kill -9" > %[3]q; sync
+  rm -f %[4]q
   exit 1
 fi
-verify_flash() {
-  sync
-  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
-  if command -v sha256sum >/dev/null 2>&1; then
-    [ "$(sha256sum %q | cut -d' ' -f1)" = "%s" ]
-  elif command -v cmp >/dev/null 2>&1; then
-    cmp -s %q %q
-  else
-    [ "$(wc -c < %q 2>/dev/null | tr -d ' ')" = "%d" ]
-  fi
-}
-cp %q %q; sync
-if ! verify_flash; then
+%[5]s
+killall -9 streborn-armv7l 2>/dev/null
+ok=0
+if place_binary; then
+  ok=1
+else
   killall -9 streborn-armv7l 2>/dev/null
+  sync
+  { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null
   sleep 2
-  cp %q %q; sync
-  if ! verify_flash; then
-    echo "swap failed: flash verify mismatch after retry" > %q; sync
-    rm -f %q
-    exit 1
-  fi
+  if place_binary; then ok=1; fi
 fi
-rm -f %q %q
+if [ "$ok" != 1 ]; then
+%[6]s
+  exit 1
+fi
+rm -f %[4]q %[3]q
 sync
 sleep 1
-%s`,
-		agentPID, waitSec,
-		agentPID, agentPID,
-		agentPID,
-		agentPID, swapFailMarker,
-		stage,
-		dst, sha,
-		stage, dst,
-		dst, size,
-		stage, dst,
-		stage, dst,
-		swapFailMarker,
-		stage,
-		stage, swapFailMarker,
-		finish)
+%[7]s`,
+		h.agentPID, h.waitSec, swapFailMarker, h.stage,
+		placeBinaryLines(h.stage, h.dst, h.size, h.sha),
+		rescueLines(h.stage, h.dst, h.rescueBin, h.args, swapFailedWhy),
+		h.finish)
+}
+
+// placeBinaryLines defines the two sh functions every copy of a RAM-staged
+// agent onto the NAND goes through, the helper's and the rescue agent's own
+// retry alike: verify_flash FILE, and place_binary, which returns 0 only once
+// dst holds the staged binary as proven by a read past the page cache.
+//
+// place_binary prefers a copy that cannot leave a half-written dst: when df
+// reports room for the whole binary plus 1 MB next to the old one, it writes
+// dst.new, verifies it and renames it over dst. Tier 3 exists because that
+// room is usually missing, so the fallback writes in place, freeing first:
+// rm dst and sync (the sync commits the deletion, so UBIFS counts the old
+// blocks as free before the copy asks for them), then cp with its exit status
+// checked, then the verify. A failed in-place copy leaves dst partial; what
+// happens to it is the caller's decision. It never kills a process, so the
+// rescue agent can run it against its own NAND path.
+func placeBinaryLines(stage, dst string, size int64, sha string) string {
+	needKB := (size+1023)/1024 + 1024
+	return fmt.Sprintf(`verify_flash() {
+  sync
+  { echo 3 > /proc/sys/vm/drop_caches; } 2>/dev/null
+  if command -v sha256sum >/dev/null 2>&1; then
+    [ "$(sha256sum "$1" 2>/dev/null | cut -d' ' -f1)" = "%[4]s" ]
+  elif command -v cmp >/dev/null 2>&1; then
+    cmp -s %[1]q "$1"
+  else
+    [ "$(wc -c < "$1" 2>/dev/null | tr -d ' ')" = "%[5]d" ]
+  fi
+}
+place_binary() {
+  rm -f %[3]q
+  avail=$(df -k %[6]q 2>/dev/null | awk 'NR>1 && NF>=4 {a=$(NF-2)} END {print a+0}')
+  if [ "${avail:-0}" -ge %[7]d ] 2>/dev/null; then
+    if cp %[1]q %[3]q && chmod 755 %[3]q && verify_flash %[3]q && mv -f %[3]q %[2]q; then
+      if verify_flash %[2]q; then return 0; fi
+    fi
+    rm -f %[3]q
+    sync
+  fi
+  rm -f %[2]q
+  sync
+  cp %[1]q %[2]q || return 1
+  chmod 755 %[2]q 2>/dev/null
+  verify_flash %[2]q
+}`, stage, dst, dst+".new", sha, size, path.Dir(dst), needKB)
+}
+
+// rescueLines is the end of a swap whose binary could not be placed: record
+// why, remove the unverified dst, and start the staged build from RAM as the
+// rescue agent under the helper's supervision. Never a reboot, never finish.
+//
+// The stage is moved (same tmpfs, no copy) to rescueBin, so the shared stage
+// path is free for the next update and the process keeps the agent's name:
+// run.sh's and the desktop app's process-name stops (killall/pidof
+// streborn-armv7l) find it like any agent. Should the move fail it starts from
+// the stage path itself. The stage is never deleted here.
+//
+// The unverified dst goes because it is a partial or corrupt agent (the copy
+// over the old one has already happened, so it is never the old binary) and
+// run.sh would otherwise keep starting it: with dst absent a watchdog respawn
+// fails at exec instead of running a corrupt agent next to the rescue one, and
+// the NAND gets the room back for the PID file and the rescue agent's retry.
+// The helper then claims run.sh's PID file (on a rebooting speaker the old
+// agent did not hand it over) and the supervise lines put the rescue agent's
+// PID in it, so the watchdog sees a live agent and starts nothing.
+func rescueLines(stage, dst, rescueBin string, args []string, why string) string {
+	return fmt.Sprintf(`  { echo %[1]q > %[2]q; } 2>/dev/null
+  killall -9 streborn-armv7l 2>/dev/null
+  rm -f %[3]q %[4]q
+  sync
+  run=%[5]q
+  if mkdir -p %[6]q 2>/dev/null && mv -f %[5]q %[7]q 2>/dev/null; then run=%[7]q; fi
+  { echo "$$" > %[8]q; } 2>/dev/null
+  sync
+%[9]s`, why, swapFailMarker, dst, dst+".new", stage, path.Dir(rescueBin), rescueBin, agentPIDFile,
+		superviseAgentLines(`"$run"`, args))
 }
 
 // swapFailMarker is where the swap helper records an aborted/failed tier-3
 // swap so the next agent start (and /api/agent/version) can surface it
-// instead of the failure staying invisible on a stickless box.
-const swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
+// instead of the failure staying invisible on a stickless box. A variable so
+// the shell tests can point it at a temp dir.
+var swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
 
 // swapHelperWaitSec is how long the swap helper waits for the agent to exit
 // before it escalates to kill -9.
@@ -205,7 +302,12 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID
 		// (waitOutBootWatchdog); the helper must not kill it for that.
 		waitSec += int(handOverDelay().Seconds()) + 1
 	}
-	script := swapHelperScript(os.Getpid(), waitSec, ramStageTarget, dst, int(size), sum, finish)
+	script := swapHelper{
+		agentPID: os.Getpid(), waitSec: waitSec,
+		stage: ramStageTarget, dst: dst, size: size, sha: sum,
+		finish:    finish,
+		rescueBin: ramRescueBin, args: agentArgs(),
+	}.script()
 	// Own session: the helper must survive this agent's exit and any process-
 	// group teardown on the way down. Deliberately not Wait()ed: the helper
 	// outlives us by design.

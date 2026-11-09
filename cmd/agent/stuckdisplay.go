@@ -21,12 +21,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 const (
@@ -122,7 +125,12 @@ func writeStuckDisplayStamp(path string, at time.Time) error {
 }
 
 // rebootSpeaker restarts the speaker the way the memory guard does.
+// Not while the rescue agent runs from RAM without a verified copy on the
+// NAND: the restart would leave the speaker without STR.
 func rebootSpeaker() error {
+	if why := webui.RebootUnsafe(); why != "" {
+		return errors.New(why)
+	}
 	_ = exec.Command("sync").Run()
 	return exec.Command("reboot").Run()
 }

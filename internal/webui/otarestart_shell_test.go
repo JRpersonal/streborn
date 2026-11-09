@@ -198,8 +198,12 @@ func TestSwapHelperScriptRestartOnlyRunsInShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(body)
-	script := swapHelperScript(goneAgentPID(t), 5, stage, r.bin, len(body), hex.EncodeToString(sum[:]),
-		superviseNewAgentLines(r.bin, []string{"--tls=true"}))
+	script := swapHelper{
+		agentPID: goneAgentPID(t), waitSec: 5,
+		stage: stage, dst: r.bin, size: int64(len(body)), sha: hex.EncodeToString(sum[:]),
+		finish:    superviseNewAgentLines(r.bin, []string{"--tls=true"}),
+		rescueBin: filepath.Join(r.dir, "rescue", "streborn-armv7l"), args: []string{"--tls=true"},
+	}.script()
 	r.run(t, script, true)
 	pid, args := r.agentRan(t)
 	if args != "--tls=true" {

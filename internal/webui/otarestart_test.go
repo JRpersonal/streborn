@@ -24,6 +24,10 @@ func TestSelfRestartAfterOTA(t *testing.T) {
 		{"bco", testAgentBin, true},
 		{"bco", "/mnt/nv/streborn/bin/../bin/streborn-armv7l", true},
 		{"bco", "/dev/shm/streborn-armv7l", false},
+		// The rescue agent a failed swap started from RAM restarts onto the
+		// NAND copy like the agent it stands in for.
+		{"bco", "/dev/shm/streborn-rescue/streborn-armv7l", true},
+		{"wlan0", "/dev/shm/streborn-rescue/streborn-armv7l", false},
 		{"bco", "/media/sda1/streborn-armv7l", false},
 		{"bco", "", false},
 		{"taigan-bco", testAgentBin, false},
