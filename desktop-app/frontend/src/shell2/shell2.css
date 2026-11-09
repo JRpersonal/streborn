@@ -843,6 +843,16 @@ html.ui2 .ui2-player .controls {
   margin-bottom: 0;
 }
 html.ui2 .ui2-player .btn { min-width: var(--u-target); min-height: var(--u-target); }
+/* Power in the transport (#1796): the input row's toggle, sized like its
+   neighbours Pause and Stop (their padding and corners; a larger glyph, as it
+   has no word). Its colours, lit while the speaker is on, stay the classic
+   .btn-power ones from style.css. */
+html.ui2 .ui2-player .controls #powerBtn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 16px;
+  line-height: 1;
+}
 html.ui2 .ui2-player #pauseBtn {
   min-width: 48px;
   min-height: 48px;

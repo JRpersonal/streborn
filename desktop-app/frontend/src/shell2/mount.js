@@ -143,6 +143,7 @@ function collect(frame) {
     queueControls: byId('queueControls'),
     spotifyRefusedRow: byId('spotifyRefusedRow'),
     sourceButtons: byId('sourceButtons'),
+    power: byId('powerBtn'),
     tagline: byId('appTagline'),
     supported: byId('appSupported'),
     appUpdateBanner: byId('appUpdateBanner'),
@@ -192,6 +193,13 @@ export function mountShell2(d) {
     move(n.volume, n.fVolume);
     move(n.queueControls, n.fMoreBody);
     move(n.sourceButtons, n.fMoreBody);
+    // Power sits in the transport, right after Stop (#1796): switching the
+    // speaker off is a basic function with its own key on the speaker and the
+    // remote, not something to look for under More. It is the classic input
+    // row's own toggle (sources.js), so its state, its hold while the speaker
+    // wakes and its call are the same; queue, inputs and the volume have left
+    // the row by now, so it lands right after Stop.
+    move(n.power, n.controls);
     move(n.groupControl, n.fLevelsBody);
     move(n.a11y, n.fAppSettings);
     move(n.locale, n.fAppSettings);
