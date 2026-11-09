@@ -29,6 +29,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/tzrules"
 )
 
 // Limits on the document, so a malformed save cannot grow the NAND file. Eight
@@ -165,7 +166,7 @@ func (d Document) Location() (*time.Location, error) {
 	if strings.TrimSpace(d.Zone) == "" {
 		return time.UTC, nil
 	}
-	return time.LoadLocation(d.Zone)
+	return tzrules.Load(d.Zone)
 }
 
 // Validate checks the document an editor saved and normalises it in place

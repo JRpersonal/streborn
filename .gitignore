@@ -5,6 +5,8 @@
 *.dmg
 *.tar.gz
 *.zip
+# The agent's own IANA zone data (internal/tzrules): source data, not a build output.
+!internal/tzrules/zoneinfo.zip
 
 # Wails App Build Output. Ignore everything under build/ EXCEPT
 # appicon.png: that is the icon source Wails rasterises into the window /
