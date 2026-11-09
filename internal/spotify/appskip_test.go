@@ -81,6 +81,40 @@ func TestNoteTrackBoundaryCutFiresOnForeignSkip(t *testing.T) {
 	}
 }
 
+// A podcast episode skipped in the Spotify app re-points the box like a song
+// does (#1797). go-librespot logs an episode load as "loaded episode" with the
+// same duration field; reading only "loaded track" left every episode with an
+// unknown duration, and an unknown duration never fires.
+func TestNoteTrackBoundaryCutFiresOnForeignEpisodeSkip(t *testing.T) {
+	m := newAppSkipTestManager()
+	fired := make(chan struct{}, 2)
+	m.SetOnActivate(func(context.Context) { fired <- struct{}{} })
+	m.sink = io.Discard // a box is attached
+
+	// Episode A (31 min) loads and starts.
+	m.noteLibrespotLine(`time="2026-11-09T10:12:00+01:00" level=info msg="loaded episode \"Episode 12\" (paused: false, position: 0ms, duration: 1860000ms, prefetched: false)" uri="spotify:episode:a"`)
+	m.noteTrackBoundaryCut(0, 0)
+	// The listener skips to the next episode 4 min in. Logged as prefetched
+	// here so the late-load pairing (which only looks two seconds behind a
+	// boundary, minutes in real life) does not claim it in this fast test.
+	m.noteLibrespotLine(`time="2026-11-09T10:16:00+01:00" level=info msg="loaded episode \"Episode 13\" (paused: false, position: 0ms, duration: 1740000ms, prefetched: true)" uri="spotify:episode:b"`)
+	m.noteTrackBoundaryCut(240*vorbisRate, 4096)
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("an episode cut mid-play with no STR cut armed must re-point the box")
+	}
+
+	// Episode B plays to its end: natural, nothing fires.
+	m.noteLibrespotLine(`level=info msg="loaded episode \"c\" (paused: false, position: 0ms, duration: 1500000ms, prefetched: true)" uri="spotify:episode:c"`)
+	m.noteTrackBoundaryCut(1740000*vorbisRate/1000+512, 4096)
+	select {
+	case <-fired:
+		t.Fatal("an episode that played to its full length must not read as an app skip")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestNoteTrackBoundaryCutStandsDown(t *testing.T) {
 	t.Run("STR skip armed the cut", func(t *testing.T) {
 		m := newAppSkipTestManager()

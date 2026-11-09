@@ -545,22 +545,27 @@ func (m *Manager) noteLibrespotLine(line string) {
 	// Spotify refusing the saved login is handled by the supervisor once the
 	// run has exited (credreject.go).
 	m.noteCredentialLine(lc)
-	// "loaded track" carries the duration the app-skip detector needs (see
-	// loadedTrackDurMs). The prefetch line names a duration too, but
-	// describes a track that may never play, so it is ignored here.
-	//
-	// The newest load simply overwrites the slot. A load that never reaches a
-	// boundary is then forgotten at the next one instead of shifting every
-	// later pairing by one.
 	// A committed load (track or episode). The recall waits for one before it
 	// resumes, and resumes again when one lands paused afterwards.
-	if strings.Contains(lc, `msg="loaded track`) || strings.Contains(lc, `msg="loaded episode`) {
+	loaded := strings.Contains(lc, `msg="loaded track`) || strings.Contains(lc, `msg="loaded episode`)
+	if loaded {
 		m.mu.Lock()
 		m.lastLoadCommitAt = time.Now()
 		m.lastLoadCommitPaused = strings.Contains(lc, "paused: true")
 		m.mu.Unlock()
 	}
-	if strings.Contains(lc, `msg="loaded track`) {
+	// "loaded track" and "loaded episode" carry the duration the app-skip
+	// detector needs (see loadedTrackDurMs); go-librespot logs both from the
+	// same format string, only the media type differs. The prefetch line
+	// names a duration too, but describes a track that may never play, so it
+	// is ignored here. Episodes used to be left out, so a podcast skipped in
+	// the Spotify app never re-pointed the box and its buffered tail of the
+	// old episode played on for seconds (#1797).
+	//
+	// The newest load simply overwrites the slot. A load that never reaches a
+	// boundary is then forgotten at the next one instead of shifting every
+	// later pairing by one.
+	if loaded {
 		if ms := parseLoadedTrackDurMs(lc); ms > 0 {
 			m.mu.Lock()
 			// A non-prefetched load right behind a boundary, with no other
