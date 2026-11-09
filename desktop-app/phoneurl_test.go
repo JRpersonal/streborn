@@ -48,6 +48,21 @@ func TestTheQRCodeOnlyCarriesANameThatWasProven(t *testing.T) {
 		}
 	}
 
+	t.Run("a name without a domain stays off the QR even when this PC resolves it", func(t *testing.T) {
+		// #1769: a Netgear serves "SoundTouch-Kitchen". Windows resolves it, a
+		// phone gets NXDOMAIN.
+		got := pickPhoneAddress(here, 17008, []string{"SoundTouch-Kitchen"}, probe(
+			map[string][]string{"SoundTouch-Kitchen": {here}},
+			map[string]string{here + ":17008": me, "SoundTouch-Kitchen:17008": me},
+		))
+		if got.URL != "http://"+here+":17008/" || got.Source != "address" {
+			t.Fatalf("got %+v, want the IP", got)
+		}
+		if !strings.Contains(got.Note, "no domain") {
+			t.Errorf("Note = %q, want the reason", got.Note)
+		}
+	})
+
 	t.Run("the router's name wins when it resolves here and answers", func(t *testing.T) {
 		got := pickPhoneAddress(here, 17008, []string{"Wohnzimmer.fritz.box"}, probe(
 			map[string][]string{"Wohnzimmer.fritz.box": {here}},
