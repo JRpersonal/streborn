@@ -259,7 +259,8 @@ button.btn:active { background:var(--press); }
 .preset .name { font-size:15px; font-weight:600; margin-top:4px; }
 /* A key with a cover (#1312): the image sits left of the number and name, so
    both stay readable on a two-column phone grid; the name wraps rather than
-   being cut. Without a cover (or when it fails) the tile is unchanged. */
+   being cut. Without a cover (or when it fails) the image is the stand-in
+   (#1799), so every filled key has one. */
 .preset.has-art { flex-direction:row; align-items:center; justify-content:flex-start; gap:10px; }
 .preset .art { width:40px; height:40px; flex:none; border-radius:6px; object-fit:cover; background:var(--card); }
 .preset .txt { min-width:0; overflow-wrap:anywhere; }
@@ -2344,7 +2345,7 @@ async function repairSpeakerName() {
    miss with a 404 that still carries a grey chevron IMAGE, which never fires
    onerror, so a key with no real logo would wear the chevron. They go through
    the agent's own /art proxy instead, which turns that 404 into a real error,
-   so a miss is the plain text tile and a hit shows the logo the desktop app
+   so a miss is the stand-in and a hit shows the logo the desktop app
    shows (#1467: dropping them outright left those keys bare on the phone).
    to=browser keeps the proxy from swapping a bitmap .ico, which a browser
    draws fine, for STR's own logo the way it must for the speaker's display
@@ -2449,32 +2450,102 @@ function presetStoredArt(art) {
   });
   return out;
 }
-// presetArtImg builds the lazy cover image for a key, or null when it has none.
-// A candidate that fails moves on to the next; when none loads, the image is
-// removed and the key is the plain number-and-name tile it always was.
-function presetArtImg(cands) {
-  if (!cands.length) return null;
+/* The stand-in a key wears while its cover loads, and for good when it has
+   none or none loads (#1799): the desktop app's monogram (logos.js
+   monogramDataUri), the name's first letter on a colour derived from the name,
+   or the Spotify glyph on a Spotify key. It is a data: image, drawn at once
+   with no request. The phone used to put the cover candidates straight into
+   the tile, so a key showed whatever the walk was on: a blank square in the
+   tile colour while a slow host was asked (white in the light theme), Safari's
+   blue question mark between a failed candidate and the next, and nothing once
+   every candidate had failed and the image was removed. The once-a-minute
+   repaint for #1233 then rebuilt the grid and walked every chain again, so the
+   keys flickered through those states. */
+function presetMonogram(name) {
+  var raw = String(name || '?').trim();
+  var ch = (raw.charAt(0) || '?').toUpperCase().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  var h = 0;
+  var seed = raw || '?';
+  for (var i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">' +
+    '<rect width="160" height="160" rx="14" fill="hsl(' + (h % 360) + ' 40% 38%)"/>' +
+    '<text x="80" y="108" font-family="Segoe UI,Arial,sans-serif" font-size="84" ' +
+    'font-weight="700" fill="#ffffff" text-anchor="middle">' + ch + '</text></svg>';
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+var SPOTIFY_GLYPH = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
+
+// presetArtState holds one entry per candidate chain: the cover that loaded
+// (src), whether a walk is under way, when the chain last failed, and the
+// images that show it. The candidates are walked OFF-SCREEN in a detached
+// image and a tile only ever gets an image that has loaded, so a rebuild of
+// the grid draws a found cover or the stand-in at once and asks nobody again.
+var presetArtState = {};
+// presetArtImg builds a key's image: the found cover, else the stand-in with
+// the walk for the cover behind it.
+function presetArtImg(cands, name, spotify) {
+  var ph = spotify ? SPOTIFY_GLYPH : presetMonogram(name);
+  var key = cands.join('|');
+  var st = null;
+  if (key) {
+    st = presetArtState[key] || (presetArtState[key] = { cands: cands.slice(), src: '', walking: false, failedAt: 0, imgs: [] });
+    st.imgs = st.imgs.filter(function (i) { return i.isConnected; });
+  }
   var img = document.createElement('img');
   img.className = 'art';
   img.alt = '';
   img.width = 40; img.height = 40;
-  img.loading = 'lazy';
   img.decoding = 'async';
   img.referrerPolicy = 'no-referrer';
-  var k = 0;
+  // A cover that loaded once and is gone now: the stand-in again, and the
+  // chain counts as missing until the retry finds it.
   img.onerror = function () {
-    k++;
-    if (k < cands.length) { img.src = cands[k]; return; }
-    img.onerror = null;
-    var tile = img.parentNode;
-    if (tile) { tile.classList.remove('has-art'); tile.removeChild(img); }
-    // Remember the loss: the 15 s re-read only repaints on a changed list, so a
-    // cover lost while its music server was off stayed gone until a reload
-    // (#1233). presetArtRetryDue lets the next re-reads try again.
-    if (!presetArtMissingAt) presetArtMissingAt = Date.now();
+    if (img.getAttribute('src') === ph) return;
+    if (st && st.src) { st.src = ''; presetArtMissed(st); }
+    img.src = ph;
   };
-  img.src = cands[0];
+  img.src = st && st.src ? st.src : ph;
+  if (st) {
+    st.imgs.push(img);
+    if (!st.src && !st.walking && !st.failedAt) presetArtWalk(st);
+  }
   return img;
+}
+// presetArtWalk tries the chain in order and hands the first cover that loads
+// to every image showing the chain.
+function presetArtWalk(st) {
+  st.walking = true;
+  st.failedAt = 0;
+  var k = 0;
+  var probe = new Image();
+  probe.referrerPolicy = 'no-referrer';
+  probe.onload = function () {
+    st.walking = false;
+    st.src = st.cands[k];
+    st.imgs.forEach(function (i) { i.src = st.src; });
+  };
+  probe.onerror = function () {
+    k++;
+    if (k < st.cands.length) { probe.src = st.cands[k]; return; }
+    st.walking = false;
+    presetArtMissed(st);
+  };
+  probe.src = st.cands[0];
+}
+// Remember the loss: a cover lost while its music server was off stayed gone
+// until a reload (#1233). presetArtRetryDue lets a later re-read try again.
+function presetArtMissed(st) {
+  st.failedAt = Date.now();
+  if (!presetArtMissingAt) presetArtMissingAt = st.failedAt;
+}
+// presetArtRetry walks again every failed chain that is on screen. The keys
+// keep their stand-in meanwhile, so a retry that finds nothing changes nothing.
+function presetArtRetry() {
+  Object.keys(presetArtState).forEach(function (key) {
+    var st = presetArtState[key];
+    if (!st.failedAt || st.walking) return;
+    if (st.imgs.some(function (i) { return i.isConnected; })) presetArtWalk(st);
+  });
 }
 
 // presetSig reduces the list to what a tile shows, so a re-read that returns
@@ -2494,9 +2565,9 @@ function presetSig(list) {
 var lastPresetSig = null;
 var lastPresetList = [];
 // presetArtMissingAt is when a key's cover last failed to load (0 = none
-// missing). While one is missing the grid is repainted at most once a minute,
-// which asks for the covers again: a music server that was off and is back
-// shows its keys' covers without a page reload (#1233).
+// missing). While one is missing the failed covers are asked for again at most
+// once a minute, off-screen (presetArtRetry): a music server that was off and
+// is back shows its keys' covers without a page reload (#1233).
 var presetArtMissingAt = 0;
 var PRESET_ART_RETRY_MS = 60000;
 function presetArtRetryDue(missingAt, now) {
@@ -2529,11 +2600,14 @@ async function loadPresets() {
   }
   const list = Array.isArray(raw) ? raw : [];
   const sig = presetSig(list);
-  if (sig === lastPresetSig && painted && !presetArtRetryDue(presetArtMissingAt, Date.now())) return;
+  if (sig === lastPresetSig && painted) {
+    // Nothing changed: the tiles stay as they are. A missing cover is asked
+    // for again behind its stand-in; one that still fails sets this anew.
+    if (presetArtRetryDue(presetArtMissingAt, Date.now())) { presetArtMissingAt = 0; presetArtRetry(); }
+    return;
+  }
   lastPresetSig = sig;
   lastPresetList = list;
-  // A repaint asks for every cover again; one that still fails sets this anew.
-  presetArtMissingAt = 0;
   renderPresetGrid();
 }
 
@@ -2694,8 +2768,8 @@ function renderPresetGrid() {
         // A Pandora or iHeartRadio key names its service (a brand name, the
         // same in every language): the speaker's own client plays it.
         (p.type === 'native' && p.source ? '<div class="num">' + escapeHtml(p.source) + '</div>' : '') + '</div>';
-      var art = presetArtImg(presetArtCands(p));
-      if (art) { div.classList.add('has-art'); div.insertBefore(art, div.firstChild); }
+      var art = presetArtImg(presetArtCands(p), p.name, p.type === 'spotify');
+      div.classList.add('has-art'); div.insertBefore(art, div.firstChild);
       div.appendChild(renameButton(div, i, nm));
     }
     else {
@@ -5358,15 +5432,14 @@ var pandoraStations = [];
 
 // renderPandora paints the Pandora list: each station with its cover (#1409,
 // the speaker lists one; drawn like a key's cover, and a cover that does not
-// load simply goes), its play button and its star (#1663).
+// load keeps the stand-in), its play button and its star (#1663).
 function renderPandora() {
   var box = document.getElementById('pandoraResults');
   if (!box) return;
   box.innerHTML = '';
   pandoraStations.forEach(function (st, idx) {
     var row = document.createElement('div'); row.className = 'station';
-    var art = presetArtImg(presetArtCands({ art: st.art || '' }));
-    if (art) row.appendChild(art);
+    row.appendChild(presetArtImg(presetArtCands({ art: st.art || '' }), st.name || st.itemName));
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = st.name || st.itemName || st.location;
     var sub = document.createElement('small');

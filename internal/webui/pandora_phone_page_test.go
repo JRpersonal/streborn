@@ -11,7 +11,7 @@ import (
 func TestPhoneRemotePandoraCoverAndStar(t *testing.T) {
 	list := pageSection(t, "function renderPandora(", "async function loadPandora(")
 	for _, want := range []string{
-		"presetArtImg(presetArtCands({ art: st.art || '' }))",
+		"presetArtImg(presetArtCands({ art: st.art || '' }), st.name || st.itemName)",
 		"btns.appendChild(pandoraStar(st, row))",
 		"var key = 'pandora:' + st.location;",
 		"source: 'pandora'",
