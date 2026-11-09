@@ -686,7 +686,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	if len(agentbin.Bytes()) > 0 {
 		embedded = hex.EncodeToString(sum[:])
 	}
-	verdict, line := classifyAgentVersion(ver, embedded, appBuild)
+	verdict, line := classifyAgentVersion(ver, embedded, appBuild, appVersion)
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
@@ -720,9 +720,14 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 // disarm the loop breaker written to stop it repeating forever, so the running
 // hash confirms and the on-disk hash is only ever the evidence for
 // landed-not-running.
-func classifyAgentVersion(ver map[string]string, embedded, wantBuild string) (verdict, journal string) {
+//
+// wantVersion guards the checksum arm: an agent that reports a version older
+// than this app's is not this app's agent, whatever checksum it reports (the
+// agent hashes its executable lazily by path, see updateConfirms).
+func classifyAgentVersion(ver map[string]string, embedded, wantBuild, wantVersion string) (verdict, journal string) {
 	running, onDisk := ver["agentRunningSha256"], ver["agentBinarySha256"]
-	if embedded != "" && running == embedded && ver["otaSwapFailed"] == "" {
+	older := readingOlderThanTarget(ver, wantVersion, "")
+	if embedded != "" && running == embedded && ver["otaSwapFailed"] == "" && !older {
 		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
 	}
 	if wantBuild != "" && ver["build"] == wantBuild {

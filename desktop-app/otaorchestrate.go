@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/versioncmp"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -488,8 +489,19 @@ func speakerReachedTarget(live map[string]string, preVersion string, wantEngine 
 // After the hash: the app's own build stamp, then "no longer the pre-OTA build",
 // then "no longer the pre-OTA version", which survive app/agent stamp drift
 // and an agent too old to report a hash.
-func updateConfirms(v map[string]string, appSha, appBuild, preBuild, preVersion string) bool {
+//
+// None of them may accept a speaker that is provably on OLDER software than
+// this app carries (readingOlderThanTarget). "No longer the pre-OTA build"
+// read a step BACKWARDS as success: a SoundTouch 10 whose reading before the
+// push already named the app's build came back on the build it had before that,
+// and the journal said "confirmed: box is on build <the old one>" (2026-11-09).
+// The checksum is held to the same rule, because the agent hashes its own
+// executable lazily by path and a path can hold another binary by then.
+func updateConfirms(v map[string]string, appSha, appBuild, appVersion, preBuild, preVersion string) bool {
 	if v == nil {
+		return false
+	}
+	if readingOlderThanTarget(v, appVersion, preBuild) {
 		return false
 	}
 	if appSha != "" && v["agentRunningSha256"] == appSha {
@@ -505,6 +517,44 @@ func updateConfirms(v map[string]string, appSha, appBuild, preBuild, preVersion 
 		return true
 	}
 	return false
+}
+
+// describeAgentReading names a version reading for a journal line.
+func describeAgentReading(v map[string]string) string {
+	f := func(k string) string {
+		if x := strings.TrimSpace(v[k]); x != "" {
+			return x
+		}
+		return "?"
+	}
+	sha := f("agentRunningSha256")
+	if len(sha) > 12 {
+		sha = sha[:12]
+	}
+	return "version " + f("version") + " build " + f("build") + " running " + sha
+}
+
+// buildStampRe is the agent's build stamp, which sorts as text in time order.
+var buildStampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d{4}$`)
+
+// readingOlderThanTarget reports whether a version reading is provably older
+// software than the update was meant to install: its version is below this
+// app's, or its build stamp is earlier than the one the speaker reported before
+// the push. Unknown or unstamped values (an app that reports the default
+// "1.0.0", an agent without a build) prove nothing and never refuse.
+func readingOlderThanTarget(v map[string]string, appVersion, preBuild string) bool {
+	if v == nil {
+		return false
+	}
+	have := strings.TrimSpace(v["version"])
+	want := strings.TrimSpace(appVersion)
+	if have != "" && want != "" && strings.TrimPrefix(want, "v") != "1.0.0" &&
+		len(versioncmp.Parts(have)) > 0 && len(versioncmp.Parts(want)) > 0 &&
+		versioncmp.Less(have, want) {
+		return true
+	}
+	b := strings.TrimSpace(v["build"])
+	return buildStampRe.MatchString(b) && buildStampRe.MatchString(preBuild) && b < preBuild
 }
 
 // engineBackoff is the wait between engine passes: exponential (2s -> 30s
@@ -792,6 +842,9 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	}
 	if perr == nil && pv != nil {
 		preBuild, preVersion = pv["build"], pv["version"]
+		// What the verify is held against. Without this line a journal that
+		// later says "confirmed" cannot show what the speaker ran before.
+		u.record("before the push the speaker reports " + describeAgentReading(pv))
 	} else {
 		pv = nil
 	}
@@ -840,6 +893,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// bootstrap reboot is one-time and loop-guarded on the agent side).
 	var stableSince time.Time
 	sawSecondDrop := false
+	notedOlder := false
 	for u.seams.now().Before(deadline) {
 		// Only while we are still waiting for the box to come back. Once it has
 		// and we are merely holding it for the stability window, 'settling'
@@ -851,7 +905,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		u.sleep(u.policy.verifyPoll)
 		v, err := u.read()
 		switch {
-		case err == nil && updateConfirms(v, appSha, appBuild, preBuild, preVersion):
+		case err == nil && updateConfirms(v, appSha, appBuild, appVersion, preBuild, preVersion):
 			now := u.seams.now()
 			if stableSince.IsZero() {
 				stableSince = now
@@ -869,6 +923,10 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			}
 		case err == nil:
 			stableSince = time.Time{}
+			if !notedOlder && readingOlderThanTarget(v, appVersion, preBuild) {
+				notedOlder = true
+				u.record("the speaker answers on older software than this update installs (" + describeAgentReading(v) + "); not taken as the update")
+			}
 		default:
 			// Unreachable: either still mid-first-reboot, or the bootstrap reboot
 			// just took the box down again after we already saw the new version.
