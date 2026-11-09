@@ -352,7 +352,9 @@ trace) and STR answers it, depending on what plays:
   the speaker, so on the remote it could only ever restart. STR subtracts
   the measured buffer lag (the newest `buffer lag measured` reading, else the
   10 s lead cap) and, to go back, seeks the engine to 0 before its prev. The
-  app's own Back keeps Spotify's rule.
+  Previous button in the desktop app and on the phone page does the same
+  (#1797): read off the engine's position, Spotify's rule restarted the song
+  there too.
 - **The music library:** the next or previous song of the folder, as before.
 
 ## Alarm clock (a preset, but timed)

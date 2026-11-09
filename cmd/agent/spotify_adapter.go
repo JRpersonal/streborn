@@ -100,7 +100,7 @@ func (e *spotifyEngine) Reload() bool { return e.m.ReloadBinary() }
 func (e *spotifyEngine) Stop() bool   { return e.m.StopEngine() }
 
 // webui.SpotifyRemoteKeys
-func (e *spotifyEngine) RemotePrev(ctx context.Context) (bool, error) { return e.m.RemotePrev(ctx) }
+func (e *spotifyEngine) HeardPrev(ctx context.Context) (bool, error) { return e.m.HeardPrev(ctx) }
 func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
 	return e.m.ToggleShuffle(ctx)
 }

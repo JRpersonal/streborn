@@ -327,10 +327,11 @@ type Server struct {
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
 	spotifySkipCh   chan spotifySkipReq
 	spotifySkipOnce sync.Once
-	// spotifyRemotePrev is the remote's Back key on a Spotify playlist: the
-	// song before inside the first seconds heard, a restart later (#1678,
-	// spotify RemotePrev). nil falls back to spotifySkip.
-	spotifyRemotePrev func(ctx context.Context) (back bool, err error)
+	// spotifyHeardPrev is Back on a Spotify playlist, from the remote and
+	// the apps alike: the song before inside the first seconds heard, a
+	// restart later (#1678, #1797, spotify HeardPrev). nil falls back to
+	// spotifySkip.
+	spotifyHeardPrev func(ctx context.Context) (back bool, err error)
 	// spotifyToggleShuffle and spotifyCycleRepeat are the shuffle and repeat
 	// key actions (#1679, playmodekey.go). nil when the engine has no such
 	// switches; the keys then do nothing.

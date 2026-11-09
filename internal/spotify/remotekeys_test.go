@@ -66,7 +66,7 @@ func newFakePlayModeManager(t *testing.T, f *fakePlayModeEngine) *Manager {
 	return m
 }
 
-func TestRemotePrevGoesBackOnWhatTheRoomHears(t *testing.T) {
+func TestHeardPrevGoesBackOnWhatTheRoomHears(t *testing.T) {
 	for _, c := range []struct {
 		pos, lag time.Duration
 		back     bool
@@ -81,7 +81,7 @@ func TestRemotePrevGoesBackOnWhatTheRoomHears(t *testing.T) {
 		{9 * time.Second, 0, true},
 		{11 * time.Second, 0, false},
 	} {
-		if got := remotePrevGoesBack(c.pos, c.lag); got != c.back {
+		if got := heardPrevGoesBack(c.pos, c.lag); got != c.back {
 			t.Errorf("pos %v lag %v: back = %v, want %v", c.pos, c.lag, got, c.back)
 		}
 	}
@@ -89,7 +89,7 @@ func TestRemotePrevGoesBackOnWhatTheRoomHears(t *testing.T) {
 
 func TestHeardLagFallsBackToTheLeadCap(t *testing.T) {
 	m := newTestManagerAt(t, "http://127.0.0.1:1")
-	if lag, measured := m.heardLag(); measured || lag != remotePrevDefaultLag {
+	if lag, measured := m.heardLag(); measured || lag != heardPrevDefaultLag {
 		t.Fatalf("no reading: lag %v measured %v, want the lead cap", lag, measured)
 	}
 	m.mu.Lock()
@@ -101,15 +101,15 @@ func TestHeardLagFallsBackToTheLeadCap(t *testing.T) {
 	m.mu.Lock()
 	m.lastLag = boxLagMeasurement{At: time.Now(), DiffSec: 400}
 	m.mu.Unlock()
-	if lag, measured := m.heardLag(); measured || lag != remotePrevDefaultLag {
+	if lag, measured := m.heardLag(); measured || lag != heardPrevDefaultLag {
 		t.Fatalf("an unbelievable reading must not be used: lag %v measured %v", lag, measured)
 	}
 }
 
-func TestRemotePrevEarlyGoesToTheSongBefore(t *testing.T) {
+func TestHeardPrevEarlyGoesToTheSongBefore(t *testing.T) {
 	f := &fakePlayModeEngine{posMs: 14000} // 4 s heard behind the 10 s lead
 	m := newFakePlayModeManager(t, f)
-	back, err := m.RemotePrev(context.Background())
+	back, err := m.HeardPrev(context.Background())
 	if err != nil || !back {
 		t.Fatalf("back=%v err=%v, want the song before", back, err)
 	}
@@ -119,10 +119,10 @@ func TestRemotePrevEarlyGoesToTheSongBefore(t *testing.T) {
 	}
 }
 
-func TestRemotePrevLateRestartsTheSong(t *testing.T) {
+func TestHeardPrevLateRestartsTheSong(t *testing.T) {
 	f := &fakePlayModeEngine{posMs: 95000}
 	m := newFakePlayModeManager(t, f)
-	back, err := m.RemotePrev(context.Background())
+	back, err := m.HeardPrev(context.Background())
 	if err != nil || back {
 		t.Fatalf("back=%v err=%v, want a restart", back, err)
 	}
@@ -131,10 +131,10 @@ func TestRemotePrevLateRestartsTheSong(t *testing.T) {
 	}
 }
 
-func TestRemotePrevWithoutPositionLeavesItToTheEngine(t *testing.T) {
+func TestHeardPrevWithoutPositionLeavesItToTheEngine(t *testing.T) {
 	f := &fakePlayModeEngine{noPos: true}
 	m := newFakePlayModeManager(t, f)
-	if back, _ := m.RemotePrev(context.Background()); back {
+	if back, _ := m.HeardPrev(context.Background()); back {
 		t.Fatal("an unknown position must not seek")
 	}
 	if got := f.calls(); len(got) != 1 || !strings.HasPrefix(got[0], "/player/prev") {
