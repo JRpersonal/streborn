@@ -279,7 +279,7 @@ func TestUpdateConfirms(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := updateConfirms(c.v, c.appSha, c.appBuild, c.preBuild, c.preVersion); got != c.want {
+			if got := updateConfirms(c.v, c.appSha, c.appBuild, "", c.preBuild, c.preVersion); got != c.want {
 				t.Fatalf("updateConfirms = %v, want %v", got, c.want)
 			}
 		})
