@@ -49,12 +49,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	// The zone rules the firmware's are checked against. The speaker has no
-	// zone data of its own to read; internal/alarm embeds the same database,
-	// so this costs nothing extra in the agent and keeps the tests hermetic.
-	_ "time/tzdata"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/tzrules"
 )
 
 // DefaultPath is the NAND file that holds the owner's choice.
@@ -226,9 +223,11 @@ type clockTimer interface {
 }
 
 // zoneOffsetMinutes is the zone's offset from UTC at t, east positive, from
-// the agent's own zone data. ok is false for a zone it does not know.
+// the zone data STR ships (internal/tzrules), never the speaker's own files,
+// which are the outdated rules being checked. ok is false for a zone it does
+// not know.
 func zoneOffsetMinutes(zone string, t time.Time) (int, bool) {
-	loc, err := time.LoadLocation(zone)
+	loc, err := tzrules.Load(zone)
 	if err != nil {
 		return 0, false
 	}
