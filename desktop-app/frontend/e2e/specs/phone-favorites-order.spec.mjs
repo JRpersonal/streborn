@@ -56,9 +56,11 @@ test('the Pandora list shows covers and stars, and a Pandora favourite plays thr
   await openBrowse(page);
   const pandora = page.locator('#pandoraResults .station');
   await expect(pandora).toHaveCount(2);
-  // The cover the speaker listed, drawn like a key's cover; none listed, none drawn.
+  // The cover the speaker listed, drawn like a key's cover; none listed, the
+  // letter tile the keys use (#1799), so the row never stands without a picture.
   await expect(pandora.nth(0).locator('img.art')).toHaveAttribute('src', `${PHONE.ART_HOST}/jazz.svg`);
-  await expect(pandora.nth(1).locator('img.art')).toHaveCount(0);
+  await expect(pandora.nth(1).locator('img.art')).toHaveCount(1);
+  await expect(pandora.nth(1).locator('img.art')).toHaveAttribute('src', /^data:image\//);
   // Jazz Radio is a favourite already, Rock Radio is not.
   await expect(pandora.nth(0).locator('.fav-star')).toHaveAttribute('title', 'Remove from favourites');
   await expect(pandora.nth(1).locator('.fav-star')).toHaveAttribute('title', 'Add to favourites');
