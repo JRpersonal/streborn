@@ -11,8 +11,9 @@
 // could only ever restart: the user never got further back.
 //
 // HeardPrev decides on what the room hears instead: the engine position less
-// the measured buffer lag (the newest boxlag reading, or the lead cap when
-// nothing was measured yet). Inside the first heardPrevBackWindow of the
+// the buffer lag of the box's current attachment (a usable boxlag reading,
+// else delivered audio against the wall clock since the attachment's first
+// page, else the lead cap; see heardLag). Inside the first heardPrevBackWindow of the
 // song heard, Back goes to the song before; later it restarts the song. To go
 // back regardless of the engine's own 3-second rule the engine is first put
 // to the start of the song, then asked for prev: at position 0 its prev always
@@ -44,13 +45,13 @@ import (
 // the two Back buttons of one speaker agree.
 const heardPrevBackWindow = 10 * time.Second
 
-// heardPrevDefaultLag is the audio in flight to the speaker assumed when no
-// buffer-lag reading exists yet: the lead STR keeps on purpose.
+// heardPrevDefaultLag is the audio in flight to the speaker assumed when
+// nothing better is known and the running lead cap is not either: the lead STR
+// keeps on purpose by default.
 const heardPrevDefaultLag = oggLeadCapSec * time.Second
 
-// heardPrevMaxLag bounds a measured lag that is believed. A reading above it
-// comes from a box clock that did not restart, and would turn every Back into
-// a go-back.
+// heardPrevMaxLag bounds a lag that is believed. A reading above it comes from
+// a box clock that did not restart, and would turn every Back into a go-back.
 const heardPrevMaxLag = 30 * time.Second
 
 // heardPrevGoesBack reports whether Back goes to the song before
@@ -60,16 +61,26 @@ func heardPrevGoesBack(enginePos, lag time.Duration) bool {
 	return enginePos-lag < heardPrevBackWindow
 }
 
-// heardLag is the audio in flight between the engine and the room: the newest
-// measurement when there is a believable one (measured=true), the lead cap
-// otherwise.
-func (m *Manager) heardLag() (lag time.Duration, measured bool) {
-	l := m.LastBoxLag()
-	d := time.Duration(l.DiffSec * float64(time.Second))
-	if l.At.IsZero() || d < 0 || d > heardPrevMaxLag {
-		return heardPrevDefaultLag, false
+// heardLag is the audio in flight between the engine and the room, and where
+// that number came from: the current attachment's lag (currentAttachLag: a
+// box reading, else delivered audio against the wall clock), else the lead
+// cap the drain runs with ("lead-cap").
+//
+// The attach reading is never taken as the lag (#1797, live Portable): it is
+// the zero check with both sides at zero, and believing its 0 made an 8 s
+// lag read as none, so a Back 15 s after a skip saw the engine's 23 s as 23 s
+// heard and restarted the song.
+func (m *Manager) heardLag() (lag time.Duration, source string) {
+	if l, src, ok := m.currentAttachLag(time.Now()); ok && l <= heardPrevMaxLag {
+		return l, src
 	}
-	return d, true
+	m.mu.Lock()
+	lc := m.leadCap
+	m.mu.Unlock()
+	if lc <= 0 || lc > heardPrevMaxLag {
+		lc = heardPrevDefaultLag
+	}
+	return lc, "lead-cap"
 }
 
 // engineTrackPosition reads how far the engine is into the loaded song, from
@@ -106,14 +117,14 @@ func (m *Manager) HeardPrev(ctx context.Context) (back bool, err error) {
 		m.NoteSkip()
 		return false, m.Prev(ctx)
 	}
-	lag, measured := m.heardLag()
+	lag, lagSource := m.heardLag()
 	back = heardPrevGoesBack(pos, lag)
 	to := "start of song"
 	if back {
 		to = "previous song"
 	}
 	m.logger.Info("spotify: back",
-		"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagMeasured", measured,
+		"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagSource", lagSource,
 		"heardSec", max(0, (pos-lag).Seconds()), "to", to)
 	m.NoteSkip()
 	if !back {

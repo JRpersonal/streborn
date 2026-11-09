@@ -469,6 +469,10 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			m.logger.Info("spotify: stream lead cap overridden", "sec", n)
 		}
 	}
+	// Published for HeardPrev's fallback when no lag is known (remotekeys.go).
+	m.mu.Lock()
+	m.leadCap = time.Duration(leadCapSec * float64(time.Second))
+	m.mu.Unlock()
 
 	// Drain go-librespot's Ogg output page by page and forward whole pages to
 	// the box. While no box is attached, capture the current track's header

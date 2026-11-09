@@ -12,8 +12,8 @@
 //
 // What is NOT known is the size of the offset on real hardware, and nothing has
 // ever recorded it. Any correction applied before that number exists would be a
-// guess. This file measures it and does nothing else: no offset is applied, no
-// behaviour changes.
+// guess. This file measures it; no offset is applied to the Spotify app's
+// position. Back reads it (see the consumer note below).
 //
 // The two clocks:
 //
@@ -39,9 +39,17 @@
 // either, so its RelTime cannot contain it, and counting it would inflate every
 // later difference by that amount (see drain.go).
 //
-// Event-driven only: once per attach and once per track boundary. No ticker, no
-// standing poll - this runs on every speaker in the field and a periodic probe
-// would cost NAND and CPU for a number that only changes when something happens.
+// Event-driven only: once per attach, once more when that attachment has
+// settled (boxLagSettleDelay later, one timer per attachment), and once per
+// track boundary. No ticker, no standing poll - this runs on every speaker in
+// the field and a periodic probe would cost NAND and CPU for a number that only
+// changes when something happens.
+//
+// One consumer acts on it: the Back key (HeardPrev, remotekeys.go) subtracts
+// the lag from the engine position to tell what the room has heard. It takes
+// only readings that ARE a lag (lagUsable): the attach reading is a zero check
+// with both sides at zero by construction, and a reading at a skip's boundary
+// is taken mid-jump.
 
 package spotify
 
@@ -71,6 +79,67 @@ const boxLagReadTimeout = 4 * time.Second
 // zero: the box has just started this stream. Everywhere else a zero RelTime is
 // a box with no usable clock, not a box at the start of a track.
 const boxLagReasonAttach = "attach"
+
+// boxLagReasonAfterSkip names the reading at a track boundary a user skip
+// caused: the box is dropping its buffer there, so both clocks are mid-jump.
+const boxLagReasonAfterSkip = "track-boundary after a skip"
+
+// boxLagReasonSettled names the one reading per attachment taken once the box
+// has been playing it for boxLagSettleDelay.
+const boxLagReasonSettled = "settled"
+
+// boxLagSettleDelay is how long after an attachment's first audio its settled
+// reading is taken: past the box's own start-up buffering and the lead prefill,
+// well before the next natural track boundary.
+const boxLagSettleDelay = 15 * time.Second
+
+// scheduleSettledBoxLag arms the one settled reading of the attachment whose
+// baseline was just taken. It stands down when the box has detached or
+// re-attached by then: a newer attachment schedules its own.
+func (m *Manager) scheduleSettledBoxLag() {
+	m.mu.Lock()
+	gen := m.lagAttachGen
+	delay := m.lagSettleDelay
+	m.mu.Unlock()
+	if delay <= 0 {
+		delay = boxLagSettleDelay
+	}
+	time.AfterFunc(delay, func() {
+		m.mu.Lock()
+		same := m.lagAttachGen == gen && m.sink != nil
+		m.mu.Unlock()
+		if same {
+			m.triggerBoxLag(boxLagReasonSettled)
+		}
+	})
+}
+
+// lagUsable reports whether a stored reading is an actual buffer lag: taken
+// with audio delivered and played on both sides, not the attach zero check
+// and not mid-jump at a skip's boundary.
+func lagUsable(l boxLagMeasurement) bool {
+	return !l.At.IsZero() && l.Reason != boxLagReasonAttach && l.Reason != boxLagReasonAfterSkip &&
+		l.DeliveredSec > 0 && l.BoxRelSec > 0 && l.DiffSec >= 0
+}
+
+// currentAttachLag is the buffer lag of the attachment the box is on right
+// now, best source first: a usable box reading taken during this attachment
+// ("box"), else the delivered audio since its first page less the wall clock
+// since then ("wall-clock"; it misses the box's own start-up delay, so it
+// errs a second or two short). ok is false with no box attached or no
+// baseline yet.
+func (m *Manager) currentAttachLag(now time.Time) (lag time.Duration, source string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sink == nil || m.lagRebase || m.lagBaseAt.IsZero() {
+		return 0, "", false
+	}
+	if l := m.lastLag; lagUsable(l) && m.lastLagSeq > m.lagBaseSeq {
+		return time.Duration(l.DiffSec * float64(time.Second)), "box", true
+	}
+	delivered := time.Duration(float64(m.deliveredGran-m.lagBaseGran) / vorbisRate * float64(time.Second))
+	return max(0, delivered-now.Sub(m.lagBaseAt)), "wall-clock", true
+}
 
 // SetBoxPositionFn wires in the box's own playback clock (UPnP
 // RelPosition's RelTime). The reader must report ok=false when the box gave no
@@ -201,21 +270,27 @@ func (m *Manager) readBoxLag(fn func(context.Context) (time.Duration, bool), rea
 		m.lastLag = lag
 		m.lastLagSeq = seq
 	}
-	m.mu.Unlock()
 	// The raw inputs, not just the difference: the number is only readable
 	// against them (a box whose RelTime did not restart on a re-attach produces
 	// a nonsense difference, and the two sides are what show that).
 	// The number is the point of the exercise, but a line per track boundary
-	// on every box in the field is a NAND append every three minutes for a
-	// measurement nothing acts on yet. The first one of a session is logged
-	// at INFO so a bundle always carries one, the rest at Debug; the debug
-	// section keeps the newest reading either way.
-	if m.loggedBoxLag {
+	// on every box in the field is a NAND append every three minutes. The
+	// first reading of a session is logged at INFO, and so is the first one
+	// that is an actual lag (lagUsable): the first is nearly always the attach
+	// zero check, which says nothing about the lag, and a bundle with only
+	// that line showed no lag at all (#1797). The rest go to Debug; the debug
+	// section keeps the newest reading either way. Decided under mu: two
+	// readings can finish at the same moment.
+	usable := lagUsable(lag)
+	info := !m.loggedBoxLag || (usable && !m.loggedUsableBoxLag)
+	m.loggedBoxLag = true
+	m.loggedUsableBoxLag = m.loggedUsableBoxLag || usable
+	m.mu.Unlock()
+	if !info {
 		m.logger.Debug("spotify: buffer lag measured (audio delivered vs audio played)",
 			"at", reason, "deliveredSec", lag.DeliveredSec, "boxRelSec", lag.BoxRelSec, "diffSec", lag.DiffSec)
 		return
 	}
-	m.loggedBoxLag = true
 	m.logger.Info("spotify: buffer lag measured (audio delivered vs audio played)",
 		"at", reason, "deliveredSec", lag.DeliveredSec, "boxRelSec", lag.BoxRelSec, "diffSec", lag.DiffSec)
 }

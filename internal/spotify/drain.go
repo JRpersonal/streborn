@@ -113,6 +113,9 @@ func (d *oggDrain) noteDelivered(advance int64) (tookBaseline bool) {
 		return false
 	}
 	m.lagBaseGran, m.lagRebase = m.deliveredGran, false
+	m.lagBaseAt = time.Now()
+	m.lagAttachGen++
+	m.lagBaseSeq = m.lagSeq
 	return true
 }
 
@@ -337,7 +340,7 @@ func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 				// Named apart for the lag measurement below: a skip makes the
 				// box drop its buffer, so the two clocks are mid-jump here and
 				// the number must not be read like a steady-state one.
-				boundary = "track-boundary after a skip"
+				boundary = boxLagReasonAfterSkip
 			} else if len(d.pending) > 0 {
 				m.forward(sink, d.pending)
 				d.pending, d.flushed = d.pending[:0], d.delivered
@@ -368,6 +371,12 @@ func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 			// rather than where the box attached, so the two sides share one
 			// instant.
 			m.triggerBoxLag(boxLagReasonAttach)
+			// The attach reading is a zero check, not a lag (both sides are at
+			// zero by construction). One more reading once the box is playing
+			// gives this attachment a real number; without it the next one
+			// came only at the next natural track boundary, minutes away, and
+			// never after a skip's re-push (#1797).
+			m.scheduleSettledBoxLag()
 		}
 		// Realtime pacing: anchor once per attachment at the first audio
 		// page, then hold each page until its position on the continuous

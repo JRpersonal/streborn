@@ -45,6 +45,27 @@ func TestMeasureBoxLagComputesTheDifference(t *testing.T) {
 	}
 }
 
+// The first reading of a run is nearly always the attach zero check, which
+// says nothing about the lag; a bundle that carried only that INFO line showed
+// no lag at all (#1797). The first USABLE reading is logged at INFO as well,
+// everything after it at Debug.
+func TestBoxLagLogsTheFirstUsableReadingAtInfoToo(t *testing.T) {
+	var buf bytes.Buffer
+	rel := time.Duration(0)
+	m := lagTestManager(&buf, func(context.Context) (time.Duration, bool) { return rel, true })
+	m.measureBoxLag(boxLagReasonAttach)
+	rel = 20 * time.Second
+	m.measureBoxLag("track-boundary")
+	rel = 21 * time.Second
+	m.measureBoxLag("track-boundary")
+	if n := strings.Count(buf.String(), "buffer lag measured"); n != 2 {
+		t.Fatalf("want the attach line and the first usable line at INFO, got %d lines:\n%s", n, buf.String())
+	}
+	if !strings.Contains(buf.String(), "boxRelSec=20 ") {
+		t.Fatalf("the usable INFO line is missing:\n%s", buf.String())
+	}
+}
+
 // A box that will not answer GetPositionInfo must leave no measurement behind.
 // A stored zero would read as "no lag at all", which is the one conclusion this
 // must never invite.

@@ -294,7 +294,7 @@ the delivered position; the lyrics follow the app.
 
 What was never known is the size of the offset on real hardware, and any
 correction applied before that number exists would be a guess. So
-`internal/spotify/boxlag.go` measures it and does nothing else: the drain
+`internal/spotify/boxlag.go` measures it and applies nothing to the Spotify app: the drain
 publishes the delivered timeline of the last page it handed to the box, the
 speaker's own clock comes from UPnP `RelPosition` (`GetPositionInfo`'s
 `RelTime`), and the difference is logged as `spotify: buffer lag measured
@@ -302,10 +302,25 @@ speaker's own clock comes from UPnP `RelPosition` (`GetPositionInfo`'s
 reading is also in the `spotify_chain` section of `/api/debug/state`, so a
 field bundle carries it after the NAND ring has rolled.
 
-Event-driven only, once per attachment and once per track boundary: no
-ticker, no standing poll, nothing on the wire while nothing happens. A
-boundary caused by a skip is labelled `track-boundary after a skip`, because
-the box drops its buffer there and both clocks are mid-jump.
+Event-driven only: once when an attachment receives its first audio
+(`attach`, a zero check: both sides are at zero by construction), once more
+15 s later while the box is still on that attachment (`settled`, the
+attachment's first real number), and once per track boundary. No ticker, no
+standing poll, nothing on the wire while nothing happens. A boundary caused
+by a skip is labelled `track-boundary after a skip`, because the box drops
+its buffer there and both clocks are mid-jump. Without the settled reading an
+attachment had only its zero check until the next natural track end, and
+after a skip's re-push nothing at all (#1797). The first reading of a run and
+the first real lag are logged at INFO, the rest at Debug.
+
+One consumer acts on the number: Back on a Spotify playlist (`HeardPrev`,
+`remotekeys.go`) subtracts the lag from the engine position to tell what the
+room has heard. It takes only readings that are a lag (`lagUsable`: not the
+zero check, not mid-jump, both sides above zero) and only from the current
+attachment; without one it estimates the attachment's lag as the audio
+delivered since its first page less the wall clock since then, and without an
+attachment it uses the lead cap. The Spotify app's position and lyrics are
+still not corrected.
 
 The two clocks only mean something against a shared base, which is most of
 what the code does:
