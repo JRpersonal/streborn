@@ -540,7 +540,7 @@ type Manager struct {
 	// for the debug section. lagRebase is set when a box attaches and consumed
 	// by the drain when it takes that baseline, so a reading that arrives in
 	// between is skipped instead of being measured against the previous
-	// attachment. Measured only, never applied. Guarded by mu.
+	// attachment. Not applied to the Spotify app; Back reads it (heardLag). Guarded by mu.
 	deliveredGran int64
 	lagBaseGran   int64
 	lagRebase     bool
@@ -553,8 +553,24 @@ type Manager struct {
 	lagSeq     uint64
 	lastLagSeq uint64
 	// loggedBoxLag keeps the buffer-lag line to one INFO per agent run; see
-	// measureBoxLag.
-	loggedBoxLag bool
+	// measureBoxLag. loggedUsableBoxLag does the same for the first reading
+	// that is an actual lag (lagUsable).
+	loggedBoxLag       bool
+	loggedUsableBoxLag bool
+	// lagBaseAt is when the current attachment's baseline was taken (its
+	// first audio page), lagAttachGen counts those baselines, so the one
+	// settled reading per attachment can tell it is still the attachment it
+	// was scheduled for. lagBaseSeq is lagSeq at that baseline: a stored
+	// reading with a higher lastLagSeq was sampled during this attachment.
+	// lagSettleDelay overrides boxLagSettleDelay (tests).
+	lagBaseAt      time.Time
+	lagAttachGen   uint64
+	lagBaseSeq     uint64
+	lagSettleDelay time.Duration
+	// leadCap is the realtime lead the running drain keeps (leadCapSec in
+	// runOnce, NAND-overridable); zero before the first run or with pacing
+	// off, where heardLag falls back to oggLeadCapSec.
+	leadCap time.Duration
 	// lowDisk is set when the configDir filesystem is below spotifyMinFreeBytes, so
 	// go-librespot is not started (it cannot persist its credential on a full NAND).
 	// Surfaced in ServeInfo so the desktop app shows "box NAND full" instead of

@@ -271,3 +271,47 @@ func TestDeliveredTimelineStaysPutWithNoBoxAttached(t *testing.T) {
 		t.Fatalf("the box was queried %d times with nothing attached", got)
 	}
 }
+
+// The attach reading is the only one an attachment got until the next natural
+// track boundary, minutes away, and after a skip's re-push none at all (#1797,
+// live Portable: Back read the attach reading's 0 as the lag). Each attachment
+// now gets one settled reading once the box plays it, and only that one.
+func TestDrainTakesOneSettledReadingPerAttachment(t *testing.T) {
+	var reads atomic.Int32
+	m, d := lagDrainHarness(t, &reads)
+	m.mu.Lock()
+	m.lagSettleDelay = 100 * time.Millisecond
+	m.mu.Unlock()
+	m.noteStreamAttached()
+
+	feed(d, synthVorbisTrack(1, 60, false))
+	lag := waitForLag(m, boxLagReasonSettled, 3*time.Second)
+	if lag.Reason != boxLagReasonSettled {
+		t.Fatalf("no settled reading after the attach, newest is %+v", lag)
+	}
+	// attach + settled, and no further timer reads while nothing happens.
+	time.Sleep(300 * time.Millisecond)
+	if got := reads.Load(); got != 2 {
+		t.Fatalf("an attach must produce the attach and one settled reading, got %d box queries", got)
+	}
+}
+
+// A settled reading armed for an attachment the box has left stands down: the
+// new attachment arms its own.
+func TestSettledReadingStandsDownAfterADetach(t *testing.T) {
+	var reads atomic.Int32
+	m, d := lagDrainHarness(t, &reads)
+	m.mu.Lock()
+	m.lagSettleDelay = 100 * time.Millisecond
+	m.mu.Unlock()
+	m.noteStreamAttached()
+	feed(d, synthVorbisTrack(1, 60, false))
+	waitForReads(&reads, 1, 3*time.Second)
+	m.mu.Lock()
+	m.sink = nil
+	m.mu.Unlock()
+	time.Sleep(300 * time.Millisecond)
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("a detached box must get no settled reading, got %d box queries", got)
+	}
+}

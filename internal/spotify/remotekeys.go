@@ -1,26 +1,32 @@
-// remotekeys.go: what the speaker's own remote does to a Spotify playlist
-// beyond Next: the Back key going to the previous song (#1678), and the
-// shuffle and repeat switches a thumbs key can carry (#1679).
+// remotekeys.go: what Back does to a Spotify playlist, on the speaker's own
+// remote (#1678) and in the apps (#1797), and the shuffle and repeat switches
+// a thumbs key can carry (#1679).
 //
 // Back. go-librespot's /player/prev follows Spotify's rule: past 3 seconds of
 // the song it restarts the song, inside them it goes to the song before. Its
 // position is the one the Spotify app shows, i.e. the audio the engine has
 // produced, and STR keeps roughly ten seconds of that in flight to the
 // speaker on purpose (leadCapSec, boxlag.go). So the engine is always more
-// than 3 seconds into a song the room has only just started hearing, and the
-// remote's Back could only ever restart: the user never got further back.
+// than 3 seconds into a song the room has only just started hearing, and Back
+// could only ever restart: the user never got further back.
 //
-// RemotePrev decides on what the room hears instead: the engine position less
-// the measured buffer lag (the newest boxlag reading, or the lead cap when
-// nothing was measured yet). Inside the first remotePrevBackWindow of the
+// HeardPrev decides on what the room hears instead: the engine position less
+// the buffer lag of the box's current attachment (a usable boxlag reading,
+// else delivered audio against the wall clock since the attachment's first
+// page, else the lead cap; see heardLag). Inside the first heardPrevBackWindow of the
 // song heard, Back goes to the song before; later it restarts the song. To go
 // back regardless of the engine's own 3-second rule the engine is first put
 // to the start of the song, then asked for prev: at position 0 its prev always
 // means the song before. The /player/prev API has no allow_seeking switch
 // that would say this directly.
 //
-// Only the remote takes this path. The app's own Back keeps Spotify's
-// behaviour (webui transportSkip -> Prev).
+// Every STR Back takes this path: the remote's key (webui HardwareSkip) and
+// the Previous button of the desktop app and the phone page (webui
+// transportSkip). The app's Back used to keep the engine's plain prev on the
+// reasoning that it is "Spotify's rule", but read off the engine's position
+// that rule only ever restarted the song there too (#1797). A Back pressed in
+// the Spotify app itself goes to the engine directly and is not STR's to
+// decide.
 package spotify
 
 import (
@@ -30,37 +36,51 @@ import (
 	"time"
 )
 
-// remotePrevBackWindow is how much of a song the room may have heard and the
-// remote's Back still goes to the song before (#1678: "pressing it in the
-// first ~10 seconds").
-const remotePrevBackWindow = 10 * time.Second
+// heardPrevBackWindow is how much of a song the room may have heard and Back
+// still goes to the song before (#1678: "pressing it in the first ~10
+// seconds"). Wider than Spotify's 3 s on purpose: the lag it is measured
+// against is read once per track boundary, in whole seconds of the box's
+// clock, and a 3 s window would sit inside that error, so an early press
+// could still read as a restart. One window for the remote and the apps, so
+// the two Back buttons of one speaker agree.
+const heardPrevBackWindow = 10 * time.Second
 
-// remotePrevDefaultLag is the audio in flight to the speaker assumed when no
-// buffer-lag reading exists yet: the lead STR keeps on purpose.
-const remotePrevDefaultLag = oggLeadCapSec * time.Second
+// heardPrevDefaultLag is the audio in flight to the speaker assumed when
+// nothing better is known and the running lead cap is not either: the lead STR
+// keeps on purpose by default.
+const heardPrevDefaultLag = oggLeadCapSec * time.Second
 
-// remotePrevMaxLag bounds a measured lag that is believed. A reading above it
-// comes from a box clock that did not restart, and would turn every Back into
-// a go-back.
-const remotePrevMaxLag = 30 * time.Second
+// heardPrevMaxLag bounds a lag that is believed. A reading above it comes from
+// a box clock that did not restart, and would turn every Back into a go-back.
+const heardPrevMaxLag = 30 * time.Second
 
-// remotePrevGoesBack reports whether the remote's Back goes to the song before
+// heardPrevGoesBack reports whether Back goes to the song before
 // (true) or restarts the current one: the engine is enginePos into the song,
 // lag of which the speaker has not played yet.
-func remotePrevGoesBack(enginePos, lag time.Duration) bool {
-	return enginePos-lag < remotePrevBackWindow
+func heardPrevGoesBack(enginePos, lag time.Duration) bool {
+	return enginePos-lag < heardPrevBackWindow
 }
 
-// heardLag is the audio in flight between the engine and the room: the newest
-// measurement when there is a believable one (measured=true), the lead cap
-// otherwise.
-func (m *Manager) heardLag() (lag time.Duration, measured bool) {
-	l := m.LastBoxLag()
-	d := time.Duration(l.DiffSec * float64(time.Second))
-	if l.At.IsZero() || d < 0 || d > remotePrevMaxLag {
-		return remotePrevDefaultLag, false
+// heardLag is the audio in flight between the engine and the room, and where
+// that number came from: the current attachment's lag (currentAttachLag: a
+// box reading, else delivered audio against the wall clock), else the lead
+// cap the drain runs with ("lead-cap").
+//
+// The attach reading is never taken as the lag (#1797, live Portable): it is
+// the zero check with both sides at zero, and believing its 0 made an 8 s
+// lag read as none, so a Back 15 s after a skip saw the engine's 23 s as 23 s
+// heard and restarted the song.
+func (m *Manager) heardLag() (lag time.Duration, source string) {
+	if l, src, ok := m.currentAttachLag(time.Now()); ok && l <= heardPrevMaxLag {
+		return l, src
 	}
-	return d, true
+	m.mu.Lock()
+	lc := m.leadCap
+	m.mu.Unlock()
+	if lc <= 0 || lc > heardPrevMaxLag {
+		lc = heardPrevDefaultLag
+	}
+	return lc, "lead-cap"
 }
 
 // engineTrackPosition reads how far the engine is into the loaded song, from
@@ -82,29 +102,29 @@ func (m *Manager) engineTrackPosition(ctx context.Context) (time.Duration, bool)
 	return time.Duration(*st.Track.Position) * time.Millisecond, true
 }
 
-// RemotePrev is the remote's Back key on a Spotify playlist. back reports
+// HeardPrev is STR's Back on a Spotify playlist. back reports
 // which way it went: true for the song before, false for a restart of the
 // current song. The skip cut is armed like for any STR skip, so the old
 // song's unsent tail is dropped. A status that cannot be read leaves the
 // decision to the engine (a plain prev, Spotify's own rule).
-func (m *Manager) RemotePrev(ctx context.Context) (back bool, err error) {
+func (m *Manager) HeardPrev(ctx context.Context) (back bool, err error) {
 	if m == nil {
 		return false, fmt.Errorf("spotify: no engine")
 	}
 	pos, ok := m.engineTrackPosition(ctx)
 	if !ok {
-		m.logger.Info("spotify: remote back, engine position unknown, leaving it to the engine")
+		m.logger.Info("spotify: back, engine position unknown, leaving it to the engine")
 		m.NoteSkip()
 		return false, m.Prev(ctx)
 	}
-	lag, measured := m.heardLag()
-	back = remotePrevGoesBack(pos, lag)
+	lag, lagSource := m.heardLag()
+	back = heardPrevGoesBack(pos, lag)
 	to := "start of song"
 	if back {
 		to = "previous song"
 	}
-	m.logger.Info("spotify: remote back",
-		"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagMeasured", measured,
+	m.logger.Info("spotify: back",
+		"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagSource", lagSource,
 		"heardSec", max(0, (pos-lag).Seconds()), "to", to)
 	m.NoteSkip()
 	if !back {
@@ -114,7 +134,7 @@ func (m *Manager) RemotePrev(ctx context.Context) (back bool, err error) {
 	// that fails leaves only the plain prev, which then restarts the song:
 	// still an answer to the press, and the log above says what was meant.
 	if err := m.apiPost(ctx, "/player/seek", `{"position":0}`); err != nil {
-		m.logger.Warn("spotify: remote back, could not go to the start of the song first, the engine decides", "err", err)
+		m.logger.Warn("spotify: back, could not go to the start of the song first, the engine decides", "err", err)
 		return false, m.Prev(ctx)
 	}
 	// Armed again right before the prev: the seek may have produced a track

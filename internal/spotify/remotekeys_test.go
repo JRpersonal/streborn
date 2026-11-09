@@ -66,7 +66,7 @@ func newFakePlayModeManager(t *testing.T, f *fakePlayModeEngine) *Manager {
 	return m
 }
 
-func TestRemotePrevGoesBackOnWhatTheRoomHears(t *testing.T) {
+func TestHeardPrevGoesBackOnWhatTheRoomHears(t *testing.T) {
 	for _, c := range []struct {
 		pos, lag time.Duration
 		back     bool
@@ -81,35 +81,138 @@ func TestRemotePrevGoesBackOnWhatTheRoomHears(t *testing.T) {
 		{9 * time.Second, 0, true},
 		{11 * time.Second, 0, false},
 	} {
-		if got := remotePrevGoesBack(c.pos, c.lag); got != c.back {
+		if got := heardPrevGoesBack(c.pos, c.lag); got != c.back {
 			t.Errorf("pos %v lag %v: back = %v, want %v", c.pos, c.lag, got, c.back)
 		}
 	}
 }
 
+// attachedLagManager is a manager whose box attached `ago` and has been handed
+// `delivered` of audio since, with the attach zero check as the newest reading,
+// exactly as the drain leaves it.
+func attachedLagManager(t *testing.T, ago, delivered time.Duration) *Manager {
+	t.Helper()
+	m := newTestManagerAt(t, "http://127.0.0.1:1")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sink = io.Discard
+	m.lagBaseGran = 500 * vorbisRate
+	m.deliveredGran = m.lagBaseGran + int64(delivered.Seconds()*vorbisRate)
+	m.lagBaseAt = time.Now().Add(-ago)
+	m.lagSeq, m.lagBaseSeq = 4, 3
+	m.lastLag = boxLagMeasurement{At: m.lagBaseAt, Reason: boxLagReasonAttach}
+	m.lastLagSeq = 4
+	return m
+}
+
 func TestHeardLagFallsBackToTheLeadCap(t *testing.T) {
 	m := newTestManagerAt(t, "http://127.0.0.1:1")
-	if lag, measured := m.heardLag(); measured || lag != remotePrevDefaultLag {
-		t.Fatalf("no reading: lag %v measured %v, want the lead cap", lag, measured)
+	if lag, src := m.heardLag(); src != "lead-cap" || lag != heardPrevDefaultLag {
+		t.Fatalf("nothing attached: lag %v from %q, want the default lead cap", lag, src)
 	}
+	// The drain's configured lead (NAND override) is the better fallback.
 	m.mu.Lock()
-	m.lastLag = boxLagMeasurement{At: time.Now(), DiffSec: 7.5}
+	m.leadCap = 6 * time.Second
 	m.mu.Unlock()
-	if lag, measured := m.heardLag(); !measured || lag != 7500*time.Millisecond {
-		t.Fatalf("a reading of 7.5 s: lag %v measured %v", lag, measured)
-	}
-	m.mu.Lock()
-	m.lastLag = boxLagMeasurement{At: time.Now(), DiffSec: 400}
-	m.mu.Unlock()
-	if lag, measured := m.heardLag(); measured || lag != remotePrevDefaultLag {
-		t.Fatalf("an unbelievable reading must not be used: lag %v measured %v", lag, measured)
+	if lag, src := m.heardLag(); src != "lead-cap" || lag != 6*time.Second {
+		t.Fatalf("lead cap 6 s: lag %v from %q", lag, src)
 	}
 }
 
-func TestRemotePrevEarlyGoesToTheSongBefore(t *testing.T) {
+// The live Portable case (#1797): the only reading was the attach zero check,
+// and HeardPrev took its 0 as the lag. Box re-attached 15.2 s before the press
+// and has been handed 23 s since: about 7.8 s are still in flight.
+func TestHeardLagIgnoresTheAttachZeroCheckAndUsesTheWallClock(t *testing.T) {
+	m := attachedLagManager(t, 15200*time.Millisecond, 23*time.Second)
+	lag, src := m.heardLag()
+	if src != "wall-clock" || lag < 7600*time.Millisecond || lag > 8*time.Second {
+		t.Fatalf("lag %v from %q, want about 7.8 s from the wall clock", lag, src)
+	}
+	// Starved box (delivered less than wall time): no negative lag.
+	m = attachedLagManager(t, 20*time.Second, 5*time.Second)
+	if lag, src := m.heardLag(); src != "wall-clock" || lag != 0 {
+		t.Fatalf("starved attachment: lag %v from %q, want 0", lag, src)
+	}
+	// An unbelievable estimate falls back to the lead cap.
+	m = attachedLagManager(t, time.Second, 200*time.Second)
+	if lag, src := m.heardLag(); src != "lead-cap" || lag != heardPrevDefaultLag {
+		t.Fatalf("200 s in flight: lag %v from %q, want the lead cap", lag, src)
+	}
+}
+
+func TestHeardLagPrefersAUsableBoxReadingOfThisAttachment(t *testing.T) {
+	m := attachedLagManager(t, 20*time.Second, 28*time.Second)
+	settled := boxLagMeasurement{At: time.Now(), Reason: boxLagReasonSettled, DeliveredSec: 25, BoxRelSec: 17.5, DiffSec: 7.5}
+	m.mu.Lock()
+	m.lastLag, m.lastLagSeq, m.lagSeq = settled, 5, 5
+	m.mu.Unlock()
+	if lag, src := m.heardLag(); src != "box" || lag != 7500*time.Millisecond {
+		t.Fatalf("settled reading 7.5 s: lag %v from %q", lag, src)
+	}
+	// The same reading sampled before this attachment's baseline is not its lag.
+	m.mu.Lock()
+	m.lagBaseSeq = 5
+	m.mu.Unlock()
+	if _, src := m.heardLag(); src != "wall-clock" {
+		t.Fatalf("a reading from an earlier attachment was used (%q)", src)
+	}
+	// A reading at a skip's boundary is mid-jump, never the lag.
+	m.mu.Lock()
+	m.lagBaseSeq = 3
+	m.lastLag.Reason = boxLagReasonAfterSkip
+	m.mu.Unlock()
+	if _, src := m.heardLag(); src != "wall-clock" {
+		t.Fatalf("a reading at a skip boundary was used (%q)", src)
+	}
+}
+
+func TestLagUsable(t *testing.T) {
+	now := time.Now()
+	for _, c := range []struct {
+		name string
+		l    boxLagMeasurement
+		want bool
+	}{
+		{"none", boxLagMeasurement{}, false},
+		{"attach zero check", boxLagMeasurement{At: now, Reason: boxLagReasonAttach}, false},
+		{"nothing delivered", boxLagMeasurement{At: now, Reason: "track-boundary", BoxRelSec: 5, DiffSec: 0}, false},
+		{"box played nothing", boxLagMeasurement{At: now, Reason: "track-boundary", DeliveredSec: 9, DiffSec: 9}, false},
+		{"mid-jump at a skip", boxLagMeasurement{At: now, Reason: boxLagReasonAfterSkip, DeliveredSec: 30, BoxRelSec: 25, DiffSec: 5}, false},
+		{"negative", boxLagMeasurement{At: now, Reason: "track-boundary", DeliveredSec: 20, BoxRelSec: 25, DiffSec: -5}, false},
+		{"track boundary", boxLagMeasurement{At: now, Reason: "track-boundary", DeliveredSec: 200, BoxRelSec: 191.5, DiffSec: 8.5}, true},
+		{"settled", boxLagMeasurement{At: now, Reason: boxLagReasonSettled, DeliveredSec: 25, BoxRelSec: 17, DiffSec: 8}, true},
+	} {
+		if got := lagUsable(c.l); got != c.want {
+			t.Errorf("%s: lagUsable = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// End to end on the live numbers: 5 s after a re-attach the engine is 13 s
+// into the song. Taking the attach reading's 0 as the lag read that as 13 s
+// heard and restarted; the room has heard about 5 s, so Back goes to the song
+// before.
+func TestHeardPrevAfterAReattachGoesBackOnTheWallClockLag(t *testing.T) {
+	f := &fakePlayModeEngine{posMs: 13000}
+	m := newFakePlayModeManager(t, f)
+	m.mu.Lock()
+	m.sink = io.Discard
+	m.lagBaseGran = 0
+	m.deliveredGran = 13 * vorbisRate
+	m.lagBaseAt = time.Now().Add(-5 * time.Second)
+	m.lastLag = boxLagMeasurement{At: m.lagBaseAt, Reason: boxLagReasonAttach}
+	m.lagSeq, m.lastLagSeq, m.lagBaseSeq = 1, 1, 0
+	m.mu.Unlock()
+	back, err := m.HeardPrev(context.Background())
+	if err != nil || !back {
+		t.Fatalf("back=%v err=%v, want the song before", back, err)
+	}
+}
+
+func TestHeardPrevEarlyGoesToTheSongBefore(t *testing.T) {
 	f := &fakePlayModeEngine{posMs: 14000} // 4 s heard behind the 10 s lead
 	m := newFakePlayModeManager(t, f)
-	back, err := m.RemotePrev(context.Background())
+	back, err := m.HeardPrev(context.Background())
 	if err != nil || !back {
 		t.Fatalf("back=%v err=%v, want the song before", back, err)
 	}
@@ -119,10 +222,10 @@ func TestRemotePrevEarlyGoesToTheSongBefore(t *testing.T) {
 	}
 }
 
-func TestRemotePrevLateRestartsTheSong(t *testing.T) {
+func TestHeardPrevLateRestartsTheSong(t *testing.T) {
 	f := &fakePlayModeEngine{posMs: 95000}
 	m := newFakePlayModeManager(t, f)
-	back, err := m.RemotePrev(context.Background())
+	back, err := m.HeardPrev(context.Background())
 	if err != nil || back {
 		t.Fatalf("back=%v err=%v, want a restart", back, err)
 	}
@@ -131,10 +234,10 @@ func TestRemotePrevLateRestartsTheSong(t *testing.T) {
 	}
 }
 
-func TestRemotePrevWithoutPositionLeavesItToTheEngine(t *testing.T) {
+func TestHeardPrevWithoutPositionLeavesItToTheEngine(t *testing.T) {
 	f := &fakePlayModeEngine{noPos: true}
 	m := newFakePlayModeManager(t, f)
-	if back, _ := m.RemotePrev(context.Background()); back {
+	if back, _ := m.HeardPrev(context.Background()); back {
 		t.Fatal("an unknown position must not seek")
 	}
 	if got := f.calls(); len(got) != 1 || !strings.HasPrefix(got[0], "/player/prev") {
