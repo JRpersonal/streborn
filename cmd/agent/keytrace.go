@@ -40,7 +40,29 @@ const boxReasonWindow = 30 * time.Second
 var (
 	keyLogMu   sync.Mutex
 	keyLogLast = map[string]time.Time{}
+	// powerReleaseAt is when the speaker last read a physical POWER key as
+	// let go (guarded by keyLogMu), for powerKeyBounced.
+	powerReleaseAt time.Time
 )
+
+// powerBounceWindow is how soon after a POWER release a new POWER press reads
+// as the same push of the key, not a second one. A person who sees the speaker
+// go dark and presses again takes longer; the #1798 trace had the second
+// press 80 to 160 ms after the release.
+const powerBounceWindow = 400 * time.Millisecond
+
+// powerKeyBounced reports whether a POWER press at pressAt follows the last
+// POWER release closely enough to be the same push read twice. The speaker
+// turns each press into a power toggle, so such a pair switches it off and
+// straight back on (#1798). Times are when the trace lines were read, so the
+// gap is approximate.
+func powerKeyBounced(lastRelease, pressAt time.Time) (time.Duration, bool) {
+	if lastRelease.IsZero() || pressAt.Before(lastRelease) {
+		return 0, false
+	}
+	gap := pressAt.Sub(lastRelease)
+	return gap, gap <= powerBounceWindow
+}
 
 // boxFailureAttrs returns the firmware's own reason for a stream that did not
 // start (a BAD_URL, no first frame, a terminal server error, an underrun) as
@@ -192,6 +214,34 @@ func (h *presetWsHandler) logKeyEvent(ev boxlog.KeyEvent) {
 		keyLogMu.Unlock()
 	}
 	h.logger.Info("box key", "key", ev.Name, "producer", ev.Producer.String(), "state", ev.State.String(), "origin", string(ev.Origin))
+	if ev.Name == "POWER" && ev.Producer.Physical() {
+		h.notePowerKey(ev)
+	}
+}
+
+// notePowerKey writes a WARN when the speaker read one push of the power key
+// as two presses: the firmware switches off on the first and straight back on
+// on the second, so the speaker "does not stay off" (#1798). Logging only;
+// the bundle then shows whether the double read still happens and what came
+// right before it.
+func (h *presetWsHandler) notePowerKey(ev boxlog.KeyEvent) {
+	at := ev.At
+	if at.IsZero() {
+		at = time.Now()
+	}
+	keyLogMu.Lock()
+	last := powerReleaseAt
+	if ev.State == boxlog.StateReleased {
+		powerReleaseAt = at
+	}
+	keyLogMu.Unlock()
+	if ev.State != boxlog.StatePressed {
+		return
+	}
+	if gap, ok := powerKeyBounced(last, at); ok {
+		h.logger.Warn("box key: the speaker read the power key as pressed again right after it was let go; it takes that as a second power press and switches straight back on (#1798)",
+			"producer", ev.Producer.String(), "gapMs", gap.Milliseconds(), "panelHeld", oled.TrackShowing())
+	}
 }
 
 // keyTraceExplainsBareFrame reports whether the key trace just named the key

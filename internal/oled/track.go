@@ -33,8 +33,9 @@ package oled
 // the panel is free again. A volume change hands the panel back to BoseApp for
 // a few seconds so its own volume bar shows (PauseTrack). Standby, a new
 // stream, a source change away from STR, a stop, the setting switched off and
-// the agent exiting all end it (ClearTrack); if the agent dies the kernel
-// releases the held thread on its own.
+// the agent exiting all end it (ClearTrack); standby darkens the panel at
+// once but lets go of it only once the power key is up (darkThroughPowerOff).
+// If the agent dies the kernel releases the held thread on its own.
 //
 // Nothing here writes to NAND.
 
@@ -102,7 +103,14 @@ const (
 	trackStopWait = 2 * time.Second
 	// trackClockLate is how far past the full minute the clock is redrawn.
 	trackClockLate = 50 * time.Millisecond
+	// trackStandbyRelease is how long the track screen keeps BoseApp's flip
+	// thread after the speaker switched to standby, with a black frame on
+	// the panel, before it hands the panel back (see setSource).
+	trackStandbyRelease = 1500 * time.Millisecond
 )
+
+// standbySource is the firmware's source name for a speaker switched off.
+const standbySource = "STANDBY"
 
 // trackScreen owns the track display: what it should show and whether it
 // holds the panel. One goroutine (loop) takes and holds the panel; every
@@ -159,7 +167,9 @@ type trackScreen struct {
 	hold       func(draw func([]byte), redraw, quit <-chan struct{}, next func() time.Duration) error
 	retry      time.Duration
 	shiftEvery time.Duration
-	log        func() *slog.Logger
+	// standbyRelease is trackStandbyRelease; the tests shorten it.
+	standbyRelease time.Duration
+	log            func() *slog.Logger
 	// afterRelease runs once the overlay let go of the panel for good (not
 	// for a step aside): the dark-panel check (darkwatch.go, #841).
 	afterRelease func(reason string)
@@ -167,18 +177,19 @@ type trackScreen struct {
 
 func newTrackScreen() *trackScreen {
 	return &trackScreen{
-		redraw:     make(chan struct{}, 1),
-		wake:       make(chan struct{}, 1),
-		now:        time.Now,
-		supported:  panelSupported,
-		ready:      panelMayHold, // flip thread and display controller up (splash.go)
-		gameActive: GameActive,
-		tryLock:    busy.TryLock,
-		unlock:     busy.Unlock,
-		hold:       hold,
-		retry:      trackRetry,
-		shiftEvery: trackShiftEvery,
-		log:        noticeLogger,
+		redraw:         make(chan struct{}, 1),
+		wake:           make(chan struct{}, 1),
+		now:            time.Now,
+		supported:      panelSupported,
+		ready:          panelMayHold, // flip thread and display controller up (splash.go)
+		gameActive:     GameActive,
+		tryLock:        busy.TryLock,
+		unlock:         busy.Unlock,
+		hold:           hold,
+		retry:          trackRetry,
+		shiftEvery:     trackShiftEvery,
+		standbyRelease: trackStandbyRelease,
+		log:            noticeLogger,
 
 		afterRelease: watchAfterRelease,
 	}
@@ -303,10 +314,52 @@ func (s *trackScreen) setSource(name string, ours bool) {
 	}
 	reason := "source " + name
 	go func() {
+		if name == standbySource && s.darkThroughPowerOff() {
+			return
+		}
 		if !s.stop(reason) {
 			s.log().Info("display track overlay off", "reason", reason, "held", false)
 		}
 	}()
+}
+
+// darkThroughPowerOff keeps a running hold for standbyRelease after the
+// speaker switched to standby, with a black frame on the panel, so the
+// panel goes dark at once but BoseApp gets its flip thread back only after
+// the power key is up (#1798). Reports true when the hold must go on: the
+// speaker came straight back on and its screen took the hold over.
+//
+// Why the wait: while STR holds the flip thread, BoseApp queues a flip about
+// every six seconds and the thread works them all off the moment it is let
+// go. After an evening's track screen that is 700 to 950 frames at once
+// ("DirectFBFlipTask: Dispatched 715>=200 before pend - getting swamped?").
+// On the #1798 SoundTouch 20, every power-off that handed the panel back
+// that way while the remote's power key was still down came out of the
+// firmware's IR trace as press, the swamped line, release, press: one push
+// read as two power presses, so the speaker went to standby and straight
+// back on to the station it had just stopped. A short press, done before
+// the flood, stayed off, and a second press, with nothing queued any more,
+// always did. Handing the panel back once the key is up keeps the flood
+// away from the key; the standby clock comes up that much later. The
+// double read itself is logged (keytrace.go, notePowerKey), so a bundle
+// shows whether it still happens.
+func (s *trackScreen) darkThroughPowerOff() bool {
+	s.mu.Lock()
+	holding, wait := s.holding, s.standbyRelease
+	s.mu.Unlock()
+	if !holding || wait <= 0 {
+		return false
+	}
+	// Nothing is wanted any more, so the redraw paints black (draw).
+	select {
+	case s.redraw <- struct{}{}:
+	default:
+	}
+	time.Sleep(wait)
+	s.mu.Lock()
+	back := s.want != nil
+	s.mu.Unlock()
+	return back
 }
 
 func (s *trackScreen) show(t TrackText) {
@@ -554,7 +607,9 @@ func (s *trackScreen) draw(buf []byte) {
 	s.mu.Lock()
 	var t TrackText
 	// wanted is false when a clear landed between the start of this hold and
-	// its first frame; the hold is about to end, so it announces nothing.
+	// its first frame, or the speaker went to standby and the hold waits for
+	// the power key; either way the hold is about to end, so it announces
+	// nothing.
 	wanted := s.want != nil
 	if wanted {
 		t = *s.want
@@ -564,6 +619,14 @@ func (s *trackScreen) draw(buf []byte) {
 	back := first && s.returning
 	if first {
 		s.returning = false
+	}
+	if !wanted {
+		// Black, as the release leaves the panel: the speaker went to
+		// standby and the hold waits for the power key (darkThroughPowerOff).
+		s.marqueeNext = time.Time{}
+		s.mu.Unlock()
+		clear(buf)
+		return
 	}
 	now := s.now()
 	step := 0
@@ -580,7 +643,7 @@ func (s *trackScreen) draw(buf []byte) {
 	switch {
 	case back:
 		s.log().Debug("display track overlay back", append([]any{"station", t.Station, "title", t.Title}, holdAttrs("track")...)...)
-	case first && wanted:
+	case first:
 		s.log().Info("display track overlay on", append([]any{"station", t.Station, "artist", t.Artist, "title", t.Title, "clock", t.Clock, "input", t.still}, holdAttrs("track")...)...)
 	}
 	dx, dy := trackShift(step)

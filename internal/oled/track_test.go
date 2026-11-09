@@ -150,6 +150,7 @@ type fakePanel struct {
 	game    atomic.Bool
 	fail    atomic.Bool
 	lastTxt atomic.Value
+	lastMax atomic.Int32 // the brightest byte of the last frame drawn
 }
 
 func newFakeTrack() (*trackScreen, *fakePanel) {
@@ -170,6 +171,7 @@ func newFakeTrack() (*trackScreen, *fakePanel) {
 	}
 	s.unlock = func() { p.mu.Lock(); p.locked = false; p.mu.Unlock() }
 	s.retry = 5 * time.Millisecond
+	s.standbyRelease = 0 // the standby wait has its own test
 	s.log = func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 	s.hold = func(draw func([]byte), redraw, quit <-chan struct{}, _ func() time.Duration) error {
 		p.holds.Add(1)
@@ -182,6 +184,7 @@ func newFakeTrack() (*trackScreen, *fakePanel) {
 		for {
 			draw(buf)
 			p.draws.Add(1)
+			p.lastMax.Store(int32(maxByte(buf)))
 			s.mu.Lock()
 			if s.want != nil {
 				p.lastTxt.Store(s.want.Title)
