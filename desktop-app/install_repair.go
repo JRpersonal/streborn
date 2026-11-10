@@ -677,10 +677,11 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 // the candidate's compression factor (repairStageCandidates), plus ~2 MB of
 // headroom for the directory and filesystem overhead.
 //
-// It is one of three app-side "how much room does this need" formulas, and
-// they do not agree: nandNeedCompressed (ota.go) credits 0.7 and adds 1 MB,
-// sshPushNeedKB (ota.go) credits nothing and adds 2 MB. nandneed_test.go pins
-// what each returns; do not change one without reading it.
+// It is one of two app-side "how much room does this need" formulas:
+// nandNeedCompressed (ota.go) credits 0.7 and adds 1 MB, and the SSH push
+// (sshPushNeedKB) is that same figure in kB. This one only orders the staging
+// targets and never refuses. nandneed_test.go pins what each returns; do not
+// change one without reading it.
 func repairStageNeed(rawNeed int64, compress float64) int64 {
 	return int64(float64(rawNeed)*compress) + (2 << 20)
 }

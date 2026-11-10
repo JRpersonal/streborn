@@ -1824,7 +1824,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; ", needKB)
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; %s fi; ", needKB, sshStopEngineCmd)
 	// sshPushFile streams to .new, reads the on-box byte count back (the
 	// session can end "successfully" while the file never landed: stream cut,
 	// ENOSPC, or a reboot racing the write; live 2026-07-31), content-verifies
@@ -1861,19 +1861,35 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 
 // sshPushNeedKB is the free space, in the kB that df -k prints, the on-box
 // space check of an SSH push asks for before it writes rawLen bytes to
-// /mnt/nv: the raw size plus 2 MB, with no compression credit. The agent
-// update over SSH drops the Spotify engine below this figure; the engine push
-// over SSH drops the old engine below it and gives up when the speaker is
-// still below it afterwards.
+// /mnt/nv. The agent update over SSH drops the Spotify engine below this
+// figure; the engine push over SSH drops the old engine below it and gives up
+// when the speaker is still below it afterwards.
 //
-// It is one of three app-side "how much room does this need" formulas, and
-// they do not agree: nandNeedCompressed credits UBIFS compression (0.7, plus
-// 1 MB) for the same file on the same volume, repairStageNeed
-// (install_repair.go) credits 0.6 plus 2 MB. nandneed_test.go pins what each
-// returns; do not change one without reading it.
+// It is nandNeedCompressed in df's unit, rounded up. The check on the speaker
+// compares against the same pessimistic UBIFS free figure the agent reports
+// as nandFreeBytes, so it must credit compression like every other app-side
+// gate. Until 2026-11-10 it asked for the raw size plus 2 MB: a speaker with
+// 13 to 18 MB free was handed the 16 MB engine over HTTP and refused it over
+// SSH, after the SSH preamble had already deleted the old one, and an agent
+// update over SSH dropped the engine on speakers that had room for both.
+// Measured on a SoundTouch Portable (TestLiveSSHEnginePushOnTightStorage):
+// the engine landed and verified with the free figure set just above this
+// need.
 func sshPushNeedKB(rawLen int64) int64 {
-	return (rawLen + 2*1024*1024) / 1024
+	return (nandNeedCompressed(rawLen) + 1023) / 1024
 }
+
+// sshStopEngineCmd ends the running Spotify engine after an SSH push deleted
+// its file to make room. A deleted file keeps its space for as long as a
+// process has it open, so without this the deletion freed nothing while the
+// engine ran: measured on a SoundTouch Portable on 2026-11-10, df read
+// 9204 kB before the rm and 9216 kB after it, and 18596 kB once the engine
+// process was gone. The engine push then gave up with STR_NO_SPACE having
+// already deleted the old engine, and the agent push ran into a full NAND.
+// The engine is being replaced or the speaker restarts right after, so
+// nothing is lost by stopping it; the agent cannot restart it without its
+// file. The sync and the pause let UBIFS report the space.
+const sshStopEngineCmd = "killall go-librespot 2>/dev/null; sleep 2; sync;"
 
 // pushSidecarViaSSH writes the embedded go-librespot sidecar to
 // /mnt/nv/streborn/bin/go-librespot over SSH (the fallback delivery for boxes
@@ -1894,9 +1910,9 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// post-OTA EnsureSpotifyEngine retries once space frees.
 	needKB := sshPushNeedKB(int64(len(bin)))
 	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; %s fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, needKB)
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, sshStopEngineCmd, needKB)
 	sum := sha256.Sum256(bin)
 	sha := hex.EncodeToString(sum[:])
 	// Content-verify (sha256sum, else md5sum, else size, same rationale as
