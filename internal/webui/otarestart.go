@@ -52,6 +52,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/updatesig"
 )
 
 // otaState is what an agent knows about its own update: whether one is in
@@ -211,6 +213,11 @@ type otaEffects struct {
 	// of the running build, taken at agent start (ota_rescue.go).
 	rescueShell func(ctx context.Context, script string) ([]byte, error)
 	rescueSum   func() string
+	// engineRestoreFn stands in for the background restore of an engine a
+	// failed self-update dropped (Server.startEngineRestore, selfupdate.go).
+	// Nil on a speaker: the restore reaches back into the update path, so it
+	// cannot be named in productionOTAEffects (initialization cycle).
+	engineRestoreFn func(base, version string, want updatesig.File, agentErr error)
 }
 
 // productionOTAEffects is the update's outside world on a real speaker.

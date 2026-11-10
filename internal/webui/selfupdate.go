@@ -677,7 +677,7 @@ func (s *Server) resumeSelfUpdate() {
 		// nearly full NAND, v1.5.4 -> v1.5.5 from the phone).
 		if present, _ := goLibrespotStamp(); !present && p.Engine != nil {
 			s.logger.Info("self-update: the failed update had dropped the Spotify engine, putting it back", "version", p.Version)
-			startEngineRestore(s, p.Base, p.Version, *p.Engine, errors.New(msg))
+			s.startEngineRestore(p.Base, p.Version, *p.Engine, errors.New(msg))
 		}
 		return
 	}
@@ -714,9 +714,13 @@ func (s *Server) resumeSelfUpdate() {
 	}()
 }
 
-// startEngineRestore hands an engine restore to the background; a variable so
-// the tests can see it was asked for without fetching anything.
-var startEngineRestore = func(s *Server, base, version string, want updatesig.File, agentErr error) {
+// startEngineRestore hands an engine restore to the background. A test sets
+// otaEffects.engineRestoreFn to see it was asked for without fetching anything.
+func (s *Server) startEngineRestore(base, version string, want updatesig.File, agentErr error) {
+	if fn := s.otaFx().engineRestoreFn; fn != nil {
+		fn(base, version, want, agentErr)
+		return
+	}
 	go s.restoreEngineWhenOnline(base, version, want, agentErr)
 }
 
