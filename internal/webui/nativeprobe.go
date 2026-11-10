@@ -3,7 +3,6 @@ package webui
 import (
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"net/http"
 	"strconv"
 	"strings"
@@ -157,31 +156,23 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) probeReadSlot(ctx context.Context, slot int) (string, bool) {
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	body, err := boxapi.New(s.boxHost).GetRaw(c, "/presets")
-	if err != nil {
+	doc, err := boxapi.New(s.boxHost).Presets(c)
+	// A list that is not well-formed XML counts as unreadable here: the probe
+	// reports what the speaker stored, and a salvaged, undecoded location
+	// would not be that.
+	if err != nil || !doc.Parsed {
 		return "", false
 	}
-	var doc struct {
-		Presets []struct {
-			ID          string `xml:"id,attr"`
-			ContentItem struct {
-				Source   string `xml:"source,attr"`
-				Type     string `xml:"type,attr"`
-				Location string `xml:"location,attr"`
-				Account  string `xml:"sourceAccount,attr"`
-			} `xml:"ContentItem"`
-		} `xml:"preset"`
-	}
-	if err := xml.Unmarshal(body, &doc); err != nil {
+	return probeSlotSummary(doc, slot)
+}
+
+// probeSlotSummary is the one-line description of what a preset list holds on
+// slot: source, type, account and the (entity-decoded) location.
+func probeSlotSummary(doc *boxapi.Presets, slot int) (string, bool) {
+	p, ok := doc.Slot(slot)
+	if !ok {
 		return "", false
 	}
-	want := strconv.Itoa(slot)
-	for _, p := range doc.Presets {
-		if p.ID != want {
-			continue
-		}
-		ci := p.ContentItem
-		return ci.Source + " " + ci.Type + " account=" + ci.Account + " " + ci.Location, true
-	}
-	return "", false
+	ci := p.ContentItem
+	return ci.Source + " " + ci.Type + " account=" + ci.SourceAccount + " " + ci.Location, true
 }

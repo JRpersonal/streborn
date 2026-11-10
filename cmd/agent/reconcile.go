@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1508,38 +1507,62 @@ type boxPresetEntry struct {
 func fetchBoxPresetsFull(boxHost string) ([]boxPresetEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
-	body, err := boxapi.New(boxHost).GetRaw(ctx, "/presets")
+	doc, err := boxapi.New(boxHost).Presets(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return boxPresetEntries(doc), nil
+}
+
+// boxPresetEntries maps a /presets read (boxapi.Presets) onto the entries the
+// reconcile, the store recovery and the webui's box-preset cache work on:
+// hardware keys 1 to 6 only, in document order.
+//
+// The escaping is deliberately NOT what the typed reader hands out. Until that
+// reader existed the list was read by regex, which left Location, Source, Type
+// and Account exactly as the document spelled them (XML-escaped, "&amp;" for
+// "&") and unescaped only Name. Everything downstream is written against that
+// form: foreignpresets.NoteBoxList and nativeslots unescape the location
+// themselves, and webui.BoxPreset carries it to the desktop as is. So the
+// decoded attribute values are escaped again here, and a document the XML
+// decoder refused (doc.Parsed false: the fields are the document's own bytes,
+// salvaged by the same regexes) is passed through untouched, with the name
+// unescaped as before.
+//
+// Follow-up: carry the decoded form in boxPresetEntry and webui.BoxPreset and
+// drop this re-escape together with the xmlEntityUnescape calls in
+// foreignpresets.go and nativeslots.go, in one change that touches all of
+// them.
+func boxPresetEntries(doc *boxapi.Presets) []boxPresetEntry {
 	var out []boxPresetEntry
-	// Bose format: <presets><preset id="1" ...><ContentItem location="..."/></preset></presets>
-	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {
-		slot := 0
-		fmt.Sscanf(blk[1], "%d", &slot)
-		if !presets.IsBoxSlot(slot) {
+	for _, p := range doc.Items {
+		if !presets.IsBoxSlot(p.ID) {
 			continue
 		}
-		e := boxPresetEntry{Slot: slot}
-		if m := presetLocationRegex.FindStringSubmatch(blk[0]); m != nil {
-			e.Location = m[1]
-		}
-		if m := presetItemNameRegex.FindStringSubmatch(blk[0]); m != nil {
-			e.Name = xmlEntityUnescape(m[1])
-		}
-		if m := presetSourceRegex.FindStringSubmatch(blk[0]); m != nil {
-			e.Source = m[1]
-		}
-		if m := presetTypeRegex.FindStringSubmatch(blk[0]); m != nil {
-			e.Type = m[1]
-		}
-		if m := presetAccountRegex.FindStringSubmatch(blk[0]); m != nil {
-			e.Account = m[1]
+		ci := p.ContentItem
+		e := boxPresetEntry{Slot: p.ID}
+		if doc.Parsed {
+			e.Location = boxPresetAttrEscape(ci.Location)
+			e.Name = ci.ItemName
+			e.Source = boxPresetAttrEscape(ci.Source)
+			e.Type = boxPresetAttrEscape(ci.Type)
+			e.Account = boxPresetAttrEscape(ci.SourceAccount)
+		} else {
+			e.Location = ci.Location
+			e.Name = xmlEntityUnescape(ci.ItemName)
+			e.Source = ci.Source
+			e.Type = ci.Type
+			e.Account = ci.SourceAccount
 		}
 		out = append(out, e)
 	}
-	return out, nil
+	return out
 }
+
+// boxPresetAttrEscape puts a decoded /presets attribute value back into the
+// escaped spelling the firmware writes it in (the five predefined entities),
+// the exact inverse of xmlEntityUnescape. See boxPresetEntries for why.
+func boxPresetAttrEscape(s string) string { return margeXMLEscape(s) }
 
 // xmlEntityUnescape reverses the five predefined XML entities in text content
 // (Bose escapes station names like "Pop & Rock" in /presets).
@@ -1720,13 +1743,3 @@ func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Sto
 		"boxSlots", len(entries), "strOriginSlots", strOrigin, "historyEntries", len(recents),
 		"recovered", recovered, "reason", verdict.Reason)
 }
-
-// presetBlockRegex captures one <preset id="N" ...> ... </preset> block; (?s)
-// lets . span the newlines Bose puts inside the block. presetLocationRegex then
-// pulls the ContentItem location out of that block.
-var presetBlockRegex = regexp.MustCompile(`(?s)<preset id="(\d+)".*?</preset>`)
-var presetLocationRegex = regexp.MustCompile(`location="([^"]*)"`)
-var presetItemNameRegex = regexp.MustCompile(`<itemName>([^<]*)</itemName>`)
-var presetSourceRegex = regexp.MustCompile(`source="([^"]*)"`)
-var presetTypeRegex = regexp.MustCompile(`type="([^"]*)"`)
-var presetAccountRegex = regexp.MustCompile(`sourceAccount="([^"]*)"`)

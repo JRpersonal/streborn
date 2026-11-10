@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -30,6 +31,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // Preset is one preset slot as the box reports it on GET /presets.
@@ -400,31 +403,29 @@ func parseSources(body []byte) (string, []Source, error) {
 	return raw.DeviceID, out, nil
 }
 
+// errPresetsNotXML is parsePresets' verdict on a body that is not well-formed
+// XML. The snapshot and the restore want the speaker's list as it decodes, so
+// the typed reader's regex salvage of such a body is not used here.
+var errPresetsNotXML = errors.New("presets: not well-formed XML")
+
+// parsePresets reads a /presets body through the typed reader
+// (boxapi.ParsePresets) and keeps every <preset> it lists, entity-decoded,
+// with the name trimmed.
 func parsePresets(body []byte) ([]Preset, error) {
-	var raw struct {
-		Presets []struct {
-			ID      int `xml:"id,attr"`
-			Content struct {
-				Source        string `xml:"source,attr"`
-				Type          string `xml:"type,attr"`
-				Location      string `xml:"location,attr"`
-				SourceAccount string `xml:"sourceAccount,attr"`
-				ItemName      string `xml:"itemName"`
-			} `xml:"ContentItem"`
-		} `xml:"preset"`
+	doc := boxapi.ParsePresets(body)
+	if !doc.Parsed {
+		return nil, errPresetsNotXML
 	}
-	if err := xml.Unmarshal(body, &raw); err != nil {
-		return nil, err
-	}
-	out := make([]Preset, 0, len(raw.Presets))
-	for _, p := range raw.Presets {
+	out := make([]Preset, 0, len(doc.Items))
+	for _, p := range doc.Items {
+		ci := p.ContentItem
 		out = append(out, Preset{
 			Slot:          p.ID,
-			Source:        p.Content.Source,
-			Type:          p.Content.Type,
-			Location:      p.Content.Location,
-			SourceAccount: p.Content.SourceAccount,
-			Name:          strings.TrimSpace(p.Content.ItemName),
+			Source:        ci.Source,
+			Type:          ci.Type,
+			Location:      ci.Location,
+			SourceAccount: ci.SourceAccount,
+			Name:          strings.TrimSpace(ci.ItemName),
 		})
 	}
 	return out, nil
