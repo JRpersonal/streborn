@@ -48,9 +48,69 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
+
+// otaState is what an agent knows about its own update: whether one is in
+// flight, and the bookkeeping of the receive routes around it. Production has
+// exactly one per process (processOTAState), because the facts are the
+// process's: one running binary, one NAND, one RAM stage directory. A Server
+// reaches it through otaSt; a test hands its Server a fresh one (Server.ota),
+// so no test sees the update another one started.
+//
+// It is not a plain field of Server because cmd/agent asks about the update
+// before and beside the Server, through package functions (RebootUnsafe,
+// StartRescueRetry, CleanStaleRAMStages); those and the Server have to read
+// the same state.
+type otaState struct {
+	// inFlight is set while an agent update is writing the new binary and
+	// heading for its restart. Only beginUpdate and endUpdate write it.
+	//
+	// It exists because the update DELETES the Spotify engine when NAND is
+	// tight: it stops the engine and reclaims its ~16 MB to make room for the
+	// new binary. An engine delivered into that window is therefore thrown away
+	// moments later, and the speaker comes back without one. That is not
+	// hypothetical, it cost a SoundTouch 30 its engine twice in one day, both
+	// times because a client pushed the engine while the update it had just
+	// started was still running.
+	//
+	// A client cannot see this from the outside: the old agent keeps answering
+	// normally right up to the restart, so every check it can make says the
+	// speaker is ready. So the agent has to say no.
+	//
+	// Atomic: it is read by requests, by the self-update's goroutines and by
+	// the rescue agent's retry while an upload's own goroutine writes it.
+	inFlight atomic.Bool
+}
+
+// processOTAState is the update state of this agent process.
+var processOTAState = &otaState{}
+
+// otaSt is the update state this server works on.
+func (s *Server) otaSt() *otaState {
+	if s.ota != nil {
+		return s.ota
+	}
+	return processOTAState
+}
+
+// beginUpdate marks an agent update as in flight. From here the engine may be
+// reclaimed at any moment and the process may exit.
+func (st *otaState) beginUpdate() { st.inFlight.Store(true) }
+
+// endUpdate takes the mark back. Every path that gives up WITHOUT restarting
+// the speaker calls it, so a failed update does not leave the speaker refusing
+// engine deliveries and updates until its next reboot: the receive that
+// failed, the RAM-staged swap that could not be armed, the flash verify that
+// did not pass (all installAgentUpload) and the hand-over nothing took
+// (abandonOTAHandOver). A path that does restart never calls it; the process
+// ends with the mark set.
+func (st *otaState) endUpdate() { st.inFlight.Store(false) }
+
+// updating reports whether an agent update is in flight.
+func (st *otaState) updating() bool { return st.inFlight.Load() }
 
 // otaRestartOnlyWLANMode is the one wlan-mode whose speakers restart the agent
 // instead of rebooting after an update.
@@ -417,8 +477,8 @@ func (s *Server) settleOTAHandOver(h otaHandOver, stopSplash func()) {
 }
 
 // abandonOTAHandOver puts this agent back into service after an update that
-// was written but could not restart the speaker. Before, updateInFlight stayed
-// set for the life of the process, so the speaker refused every Spotify engine
+// was written but could not restart the speaker. Before, the in-flight mark
+// stayed set for the life of the process, so the speaker refused every Spotify engine
 // delivery (409) and every self-update until someone pulled the plug, and the
 // Portable's display kept showing the update screen.
 //
@@ -433,5 +493,5 @@ func (s *Server) abandonOTAHandOver(stopSplash func()) {
 		stopSplash()
 	}
 	s.selfUpd.failIfRebooting("The update is on the speaker, but the speaker could not restart itself. Unplug it for ten seconds and plug it back in.")
-	updateInFlight.Store(false)
+	s.otaSt().endUpdate()
 }

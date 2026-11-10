@@ -361,7 +361,7 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, s.selfUpdateStatus())
 	case "install-all":
-		if updateInFlight.Load() || s.selfUpd.isBusy() {
+		if s.otaSt().updating() || s.selfUpd.isBusy() {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "an update is already installing on this speaker"})
 			return
 		}
@@ -387,7 +387,7 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "this speaker is updating all speakers right now"})
 			return
 		}
-		if updateInFlight.Load() {
+		if s.otaSt().updating() {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "an update is already installing on this speaker"})
 			return
 		}
@@ -754,7 +754,7 @@ func (s *Server) ensureEngine(base, version string, want updatesig.File) error {
 	if present, sha := goLibrespotStamp(); present && sha == want.SHA256 {
 		return nil
 	}
-	if updateInFlight.Load() {
+	if s.otaSt().updating() {
 		return errors.New("an update is installing on this speaker")
 	}
 	s.selfUpd.set("engine", "engine")

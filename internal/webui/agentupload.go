@@ -146,12 +146,12 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// exit. Cleared again only on the paths that give up WITHOUT restarting,
 	// so a failed update does not leave the speaker refusing engine deliveries
 	// until its next reboot.
-	updateInFlight.Store(true)
+	s.otaSt().beginUpdate()
 	const dst = agentBinNANDPath
 	got, err := receiveAgentBinary(dst, br, up.Size, maxSize)
 	memAfter, _ := uploadMemKB()
 	if err != nil {
-		updateInFlight.Store(false)
+		s.otaSt().endUpdate()
 		var rerr uploadReadError
 		switch {
 		case errors.As(err, &rerr):
@@ -192,7 +192,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	if got.ramStaged {
 		helperPID, restartOnly, serr := s.armRAMStagedSwap(dst, got.size, got.sum)
 		if serr != nil {
-			updateInFlight.Store(false)
+			s.otaSt().endUpdate()
 			_ = os.Remove(ramStageTarget)
 			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
 			return agentInstalled{}, textUploadRefusal(http.StatusInsufficientStorage, errInsufficientNAND.Error()+": "+serr.Error())
@@ -258,7 +258,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	}
 	if verr != nil {
 		s.logger.Error("agent update: flash verify failed, refusing to reboot; the app will send it again", "err", verr)
-		updateInFlight.Store(false)
+		s.otaSt().endUpdate()
 		return agentInstalled{}, textUploadRefusal(http.StatusInternalServerError, "update did not persist to flash: "+verr.Error())
 	}
 
@@ -343,7 +343,7 @@ func (e engineInstalled) body() map[string]string {
 // so the answer has to come from here. Deliver it again once the new version
 // reports itself, which is what the update flow already does.
 func (s *Server) engineBlockedByUpdate() *uploadRefusal {
-	if !updateInFlight.Load() {
+	if !s.otaSt().updating() {
 		return nil
 	}
 	s.logger.Info("sidecar refused: an agent update is in flight, the engine would be reclaimed by it")

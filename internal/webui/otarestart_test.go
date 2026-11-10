@@ -95,7 +95,7 @@ func installOTASeams(t *testing.T, mode, running string) (*otaSeams, *Server) {
 		rec.pidAtShutdown = readFileTrim(agentPIDFile)
 		rec.markerAtShutdown = readFileTrim(agentHandOverMarker)
 	}
-	s := &Server{logger: slog.New(slog.DiscardHandler)}
+	s := &Server{logger: slog.New(slog.DiscardHandler), ota: &otaState{}}
 	s.spotifyStop = func() bool { rec.engineOff++; return true }
 	return rec, s
 }
@@ -303,28 +303,25 @@ func TestSuperviseNewAgentLines(t *testing.T) {
 }
 
 // installOTAAbandonSeams points the OTA-reboot marker at a temp file and sets
-// updateInFlight the way a running update has it.
-func installOTAAbandonSeams(t *testing.T) {
+// the in-flight mark the way a running update has it.
+func installOTAAbandonSeams(t *testing.T, s *Server) {
 	t.Helper()
 	oldMarker := otaRebootMarkerPath
 	otaRebootMarkerPath = filepath.Join(t.TempDir(), "ota-reboot")
 	if err := os.WriteFile(otaRebootMarkerPath, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	updateInFlight.Store(true)
-	t.Cleanup(func() {
-		otaRebootMarkerPath = oldMarker
-		updateInFlight.Store(false)
-	})
+	s.ota.beginUpdate()
+	t.Cleanup(func() { otaRebootMarkerPath = oldMarker })
 }
 
 // A refused reboot whose self-restart cannot start either leaves this agent
-// running. It must go back into service: before, updateInFlight stayed set
+// running. It must go back into service: before, the in-flight mark stayed set
 // and the speaker refused engine deliveries and self-updates until it was
 // unplugged.
 func TestOTAHandOverThatCannotRestartPutsTheAgentBackIntoService(t *testing.T) {
 	rec, s := installOTASeams(t, "wlan0", testAgentBin)
-	installOTAAbandonSeams(t)
+	installOTAAbandonSeams(t, s)
 	rec.rebootErr = errors.New("reboot: not found")
 	rec.startErr = errors.New("fork failed")
 	s.selfUpd.set("rebooting", "")
@@ -339,8 +336,8 @@ func TestOTAHandOverThatCannotRestartPutsTheAgentBackIntoService(t *testing.T) {
 	}
 	s.settleOTAHandOver(h, func() { splashStopped++ })
 
-	if updateInFlight.Load() {
-		t.Error("updateInFlight is still set: the speaker would refuse engine deliveries and updates until a power cycle")
+	if s.ota.updating() {
+		t.Error("the update is still marked in flight: the speaker would refuse engine deliveries and updates until a power cycle")
 	}
 	if ref := s.engineBlockedByUpdate(); ref != nil {
 		t.Errorf("engine delivery still refused: %+v", ref)
@@ -367,7 +364,7 @@ func TestOTAHandOverThatCannotRestartPutsTheAgentBackIntoService(t *testing.T) {
 // because it is on its way out.
 func TestOTAHandOverRebootThatNeverComesFallsBackToSelfRestart(t *testing.T) {
 	rec, s := installOTASeams(t, "wlan0", testAgentBin)
-	installOTAAbandonSeams(t)
+	installOTAAbandonSeams(t, s)
 	h := s.finishAgentOTA(testAgentBin)
 	if h != otaHandOverRebooting {
 		t.Fatalf("hand-over = %v, want otaHandOverRebooting", h)
@@ -382,8 +379,8 @@ func TestOTAHandOverRebootThatNeverComesFallsBackToSelfRestart(t *testing.T) {
 	if len(rec.exited) != 1 {
 		t.Errorf("exits = %v, want one", rec.exited)
 	}
-	if !updateInFlight.Load() {
-		t.Error("updateInFlight cleared although the agent is exiting for the new binary")
+	if !s.ota.updating() {
+		t.Error("the in-flight mark was cleared although the agent is exiting for the new binary")
 	}
 }
 
@@ -391,21 +388,21 @@ func TestOTAHandOverRebootThatNeverComesFallsBackToSelfRestart(t *testing.T) {
 // service.
 func TestOTAHandOverRebootThatNeverComesAndNoFallback(t *testing.T) {
 	rec, s := installOTASeams(t, "wlan0", testAgentBin)
-	installOTAAbandonSeams(t)
+	installOTAAbandonSeams(t, s)
 	rec.startErr = errors.New("fork failed")
 	s.settleOTAHandOver(s.finishAgentOTA(testAgentBin), nil)
-	if updateInFlight.Load() {
-		t.Error("updateInFlight is still set")
+	if s.ota.updating() {
+		t.Error("the update is still marked in flight")
 	}
 }
 
 // A hand-over that ends the process settles nothing.
 func TestOTAHandOverExitingIsLeftAlone(t *testing.T) {
 	rec, s := installOTASeams(t, "bco", testAgentBin)
-	installOTAAbandonSeams(t)
+	installOTAAbandonSeams(t, s)
 	s.settleOTAHandOver(s.finishAgentOTA(testAgentBin), func() { t.Error("update screen handed back") })
-	if len(rec.slept) != 0 || !updateInFlight.Load() {
-		t.Errorf("slept %v, updateInFlight %v; want no wait and the flag kept", rec.slept, updateInFlight.Load())
+	if len(rec.slept) != 0 || !s.ota.updating() {
+		t.Errorf("slept %v, in flight %v; want no wait and the flag kept", rec.slept, s.ota.updating())
 	}
 }
 

@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -657,21 +656,6 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 //
 // On success the stick still returns 200 OK and then exits. The
 // rc.local bootstrap starts the new agent.
-// updateInFlight is set while an agent update is writing the new binary and
-// heading for its restart.
-//
-// It exists because the update DELETES the Spotify engine when NAND is tight:
-// it stops the engine and reclaims its ~16 MB to make room for the new binary.
-// An engine delivered into that window is therefore thrown away moments later,
-// and the speaker comes back without one. That is not hypothetical, it cost a
-// SoundTouch 30 its engine twice in one day, both times because a client
-// pushed the engine while the update it had just started was still running.
-//
-// A client cannot see this from the outside: the old agent keeps answering
-// normally right up to the restart, so every check it can make says the
-// speaker is ready. So the agent has to say no.
-var updateInFlight atomic.Bool
-
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return

@@ -109,7 +109,7 @@ func StartRescueRetry(ctx context.Context, logger *slog.Logger) {
 // rescueRetry writes the running build onto the NAND once, and reports whether
 // it is there afterwards.
 func rescueRetry(ctx context.Context, logger *slog.Logger) bool {
-	if updateInFlight.Load() || swapArmed.Load() {
+	if processOTAState.updating() || swapArmed.Load() {
 		logger.Info("rescue agent: an update is in progress, leaving the write to it")
 		return false
 	}

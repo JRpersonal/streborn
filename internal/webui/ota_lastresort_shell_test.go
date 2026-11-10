@@ -324,8 +324,8 @@ func TestRescueRetryFailsAgain(t *testing.T) {
 func TestRescueRetryStandsBackForAnUpdate(t *testing.T) {
 	r := newSwapRig(t, 0, 100)
 	rescueTestSeams(t, r)
-	updateInFlight.Store(true)
-	t.Cleanup(func() { updateInFlight.Store(false) })
+	processOTAState.beginUpdate()
+	t.Cleanup(processOTAState.endUpdate)
 	if rescueRetry(t.Context(), discardLogger()) {
 		t.Fatal("retry ran during an update")
 	}
