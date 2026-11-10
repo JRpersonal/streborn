@@ -85,6 +85,12 @@ func TestLiveStereoPairRoundTrip(t *testing.T) {
 	rightID := liveDeviceID(t, right)
 	t.Logf("left=%s (%s) right=%s (%s)", left, leftID, right, rightID)
 
+	// Start clean: a pair left behind by an earlier, aborted run would make
+	// round 1 measure the re-pair path instead of a first pairing.
+	if err := a.DissolveStereoPair(left, 8888); err != nil && !strings.Contains(err.Error(), "stereo-not-paired") {
+		t.Logf("pre-clean undo: %v", err)
+	}
+
 	for round := 1; round <= 2; round++ {
 		t.Logf("=== round %d: form pair", round)
 		out, err := a.FormZone(left, 8888, ZoneSpec{
@@ -126,16 +132,25 @@ func TestLiveStereoPairRoundTrip(t *testing.T) {
 		}
 
 		t.Logf("=== round %d: dissolve pair", round)
-		// Round 1 dissolves via the plain endpoint (persisted-store path, what
-		// older UI flows call); round 2 via the stereo-intent endpoint the
-		// undo-pair button uses (also covers the ?stereo=1 escalation wiring).
-		var derr error
+		// Round 1 first sends the plain ungroup. Since "Undo stereo pair no
+		// longer takes a group apart" a plain ungroup must leave a stereo pair
+		// alone (the agent answers stereoPairKept), so the pair has to be
+		// intact on both speakers afterwards. Then both rounds undo the pair
+		// through the stereo-intent endpoint the undo-pair button uses.
 		if round == 1 {
-			_, derr = a.DissolveZone(left, 8888)
-		} else {
-			derr = a.DissolveStereoPair(left, 8888)
+			out, perr := a.DissolveZone(left, 8888)
+			if perr != nil {
+				t.Fatalf("round 1 plain ungroup: %v", perr)
+			}
+			t.Logf("round 1 plain ungroup answered: %v", out)
+			time.Sleep(5 * time.Second)
+			stL, _, _ := liveMargeGroup(t, left)
+			stR, _, _ := liveMargeGroup(t, right)
+			if nL, nR := liveFirmwareGroupMembers(t, left), liveFirmwareGroupMembers(t, right); nL != 2 || nR != 2 || stL != http.StatusOK || stR != http.StatusOK {
+				t.Fatalf("round 1: a plain ungroup damaged the stereo pair: fwLeft=%d fwRight=%d margeLeft=%d margeRight=%d", nL, nR, stL, stR)
+			}
 		}
-		if derr != nil {
+		if derr := a.DissolveStereoPair(left, 8888); derr != nil {
 			t.Fatalf("round %d dissolve: %v", round, derr)
 		}
 		// Both firmwares and both marges must let go (poll: teardown settles
