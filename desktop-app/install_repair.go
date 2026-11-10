@@ -24,7 +24,26 @@ import (
 // pointing at that directory, bypassing the stick entirely. /mnt/nv is a
 // writable ubifs even when the USB mount is dead. Requires SSH up (Bose stock
 // root SSH) and a real embedded agent (release build, not a dev stub).
+//
+// This is the entry the window's "repair over SSH" button calls, so it takes
+// the one-writer-per-speaker claim itself (boxbusy.go): the repair stops the
+// speaker's agent, rewrites its NAND folder and restarts it, and none of that
+// may start under a running install, update, removal or firmware flash, nor
+// may one of those start under it. The install calls repairInstallViaSSH
+// directly, under the claim it already holds.
 func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
+	release, busyErr := writesInFlight.claim(host, "a repair")
+	if busyErr != nil {
+		a.logger.Info("repair_ssh: refused, the speaker is busy", "host", host, "err", busyErr)
+		return InstallResult{Step: "busy", Message: busyErr.Error()}, busyErr
+	}
+	defer release()
+	return a.repairInstallViaSSH(host, model)
+}
+
+// repairInstallViaSSH is the repair itself, for a caller that already holds
+// the speaker's write claim (repairAndAwaitAgent, inside a running install).
+func (a *App) repairInstallViaSSH(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "repair-ssh"}
 
 	if len(agentbin.Bytes()) == 0 {
@@ -599,7 +618,7 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 	var fits, tooSmall []string
 	ramRejected := false
 	for _, c := range repairStageCandidates {
-		need := int64(float64(rawNeed)*c.compress) + (2 << 20) // ~2 MB headroom for the dir + fs overhead
+		need := repairStageNeed(rawNeed, c.compress)
 		free := seams.repairFreeBytes(host, c.base)
 		a.logger.Info("repair_ssh: staging candidate space",
 			"host", host, "dir", c.base, "freeBytes", free, "needBytes", need, "rawNeed", rawNeed,
@@ -651,6 +670,19 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 		return "", stoppedSTR, &allTargetsTruncatedError{err: lastErr}
 	}
 	return "", stoppedSTR, lastErr
+}
+
+// repairStageNeed is the free space a staging candidate must report to count
+// as having room for rawNeed bytes of install files: the raw size scaled by
+// the candidate's compression factor (repairStageCandidates), plus ~2 MB of
+// headroom for the directory and filesystem overhead.
+//
+// It is one of three app-side "how much room does this need" formulas, and
+// they do not agree: nandNeedCompressed (ota.go) credits 0.7 and adds 1 MB,
+// sshPushNeedKB (ota.go) credits nothing and adds 2 MB. nandneed_test.go pins
+// what each returns; do not change one without reading it.
+func repairStageNeed(rawNeed int64, compress float64) int64 {
+	return int64(float64(rawNeed)*compress) + (2 << 20)
 }
 
 // allTargetsTruncatedError wraps the last staging error when EVERY on-box target

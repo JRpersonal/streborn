@@ -609,6 +609,7 @@
   "update.spotifyTooFullToast": "Hoparlör güncellendi. Spotify motoru için yeterli boş alan yok; hoparlörde biraz alan boşaltın, motor otomatik olarak kurulacak.",
   "update.failed": "Güncellenemedi: {{err}}\n\nHoparlör yanıt vermiyorsa, onu kısa süre güçten ayırıp tekrar takın.",
   "update.alreadyRunning": "{{name}} için bir güncelleme zaten sürüyor. Bitmesini bekle.",
+  "speaker.busyOtherTask": "{{name}} hâlâ başka bir işlemle meşgul (kurulum, güncelleme veya kaldırma). Bitmesini bekle ve sonra tekrar dene.",
   "update.failedNoChange": "Güncelleme başarısız: {{err}}\n\nHoparlörde hiçbir şey değişmedi, eskisi gibi çalışmaya devam ediyor.",
   "update.otherBoxRunning": "{{name}} güncelleniyor ...",
   "update.stickInTitle": "USB bellek hâlâ takılı",

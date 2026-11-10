@@ -609,6 +609,7 @@
   "update.spotifyTooFullToast": "Speaker bijgewerkt. Er is niet genoeg vrije ruimte voor de Spotify-engine; maak wat ruimte vrij op de speaker en deze wordt automatisch geïnstalleerd.",
   "update.failed": "Update mislukt: {{err}}\n\nAls de speaker niet meer antwoordt, haal kort de stekker eruit en steek hem weer in.",
   "update.alreadyRunning": "Er loopt al een update voor {{name}}. Wacht tot die klaar is.",
+  "speaker.busyOtherTask": "{{name}} is nog bezig met een andere taak (installatie, update of verwijdering). Wacht tot die klaar is en probeer het dan opnieuw.",
   "update.failedNoChange": "Update mislukt: {{err}}\n\nEr is niets op de luidspreker gewijzigd, hij draait gewoon door.",
   "update.otherBoxRunning": "Update bezig op {{name}} ...",
   "update.stickInTitle": "USB-stick zit er nog in",

@@ -1820,7 +1820,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// EnsureSpotifyEngine re-delivers it). Gated on a df check so a roomy box keeps
 	// its engine and does not re-fetch it every SSH update (#119). Mirrors the
 	// on-box reclaimSpotifyEngine second tier.
-	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
+	needKB := sshPushNeedKB(int64(len(bin)))
 	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
@@ -1859,6 +1859,22 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	return nil
 }
 
+// sshPushNeedKB is the free space, in the kB that df -k prints, the on-box
+// space check of an SSH push asks for before it writes rawLen bytes to
+// /mnt/nv: the raw size plus 2 MB, with no compression credit. The agent
+// update over SSH drops the Spotify engine below this figure; the engine push
+// over SSH drops the old engine below it and gives up when the speaker is
+// still below it afterwards.
+//
+// It is one of three app-side "how much room does this need" formulas, and
+// they do not agree: nandNeedCompressed credits UBIFS compression (0.7, plus
+// 1 MB) for the same file on the same volume, repairStageNeed
+// (install_repair.go) credits 0.6 plus 2 MB. nandneed_test.go pins what each
+// returns; do not change one without reading it.
+func sshPushNeedKB(rawLen int64) int64 {
+	return (rawLen + 2*1024*1024) / 1024
+}
+
 // pushSidecarViaSSH writes the embedded go-librespot sidecar to
 // /mnt/nv/streborn/bin/go-librespot over SSH (the fallback delivery for boxes
 // whose HTTP listener is Bose's, taken alongside updateAgentViaSSH). Mirrors the
@@ -1876,7 +1892,7 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// if the box still cannot hold it, skip instead of writing a truncated
 	// binary into ENOSPC (that is what happened live on a tight ST20). The
 	// post-OTA EnsureSpotifyEngine retries once space frees.
-	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
+	needKB := sshPushNeedKB(int64(len(bin)))
 	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
 		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+

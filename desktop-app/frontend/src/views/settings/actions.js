@@ -23,6 +23,7 @@ import {
   CheckSpeaker,
 } from '../../api.js';
 import { deps, helpBlock, renderSTRRemovedPanel, confirmFor, reportError, reportDone, settingsBoxLabel } from './shared.js';
+import { busyRefusalText } from '../../update/shared.js';
 
 export function renderActionSections(ctx) {
   const { box } = ctx;
@@ -342,11 +343,17 @@ export function wireActionSections(ctx) {
           return;
         } else if (r && r.stickPresent) {
           reportError(rmBtn, t('settingsView.removeSTRStickPresent'));
+        } else if (busyRefusalText(r && r.message)) {
+          // The one-write-per-speaker guard turned the removal away: an
+          // install, update or flash is still running on this speaker.
+          // Nothing failed, so the plain "still busy" sentence, not "could
+          // not remove" around a raw STR_BUSY error.
+          reportError(rmBtn, busyRefusalText(r.message, settingsBoxLabel(box)));
         } else {
           reportError(rmBtn, t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));
         }
       } catch (e) {
-        reportError(rmBtn, e);
+        reportError(rmBtn, busyRefusalText(e, settingsBoxLabel(box)) || e);
       } finally {
         rmBtn.disabled = false;
         rmBtn.textContent = t('settingsView.removeSTRBtn');

@@ -609,6 +609,7 @@
   "update.spotifyTooFullToast": "Kolonėlė atnaujinta. Joje nepakanka laisvos vietos „Spotify“ varikliui; atlaisvinkite šiek tiek vietos ir jis bus įdiegtas automatiškai.",
   "update.failed": "Atnaujinti nepavyko: {{err}}\n\nJei garsiakalbis neatsako, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",
   "update.alreadyRunning": "{{name}} atnaujinimas jau vyksta. Palauk, kol jis baigsis.",
+  "speaker.busyOtherTask": "{{name}} vis dar atlieka kitą užduotį (diegimą, atnaujinimą arba šalinimą). Palauk, kol ji baigsis, ir bandyk dar kartą.",
   "update.failedNoChange": "Atnaujinimas nepavyko: {{err}}\n\nKolonėlėje niekas nepakeista, ji veikia kaip anksčiau.",
   "update.otherBoxRunning": "Vykdomas atnaujinimas {{name}} ...",
   "update.stickInTitle": "USB atmintinė vis dar įkišta",
