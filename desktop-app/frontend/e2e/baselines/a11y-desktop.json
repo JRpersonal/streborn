@@ -93,8 +93,8 @@
   },
   "dark|old|box": {
     "color-contrast": {
-      "count": 4,
-      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer; the elapsed time #trackElapsed is #888 on #222 (4.48:1, just under 4.5)."
+      "count": 3,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; \"Check for app updates\" (#appUpdateCheckLink, #7a5300 on #1a1a1a, 2.54:1) in the dark footer."
     },
     "image-alt": {
       "count": 6,
@@ -185,8 +185,8 @@
   },
   "light|old|box": {
     "color-contrast": {
-      "count": 3,
-      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks; the elapsed time #trackElapsed is #888 on the light card (about 3.2:1)."
+      "count": 2,
+      "note": "Classic layout, known and not fixed yet (no issue filed): the footer donation buttons keep the PayPal and Ko-fi brand colours (\".pal\" #009cde on #ffc439, Ko-fi white on #ff5e5b), accepted as third-party brand marks."
     },
     "image-alt": {
       "count": 6,
@@ -232,50 +232,30 @@
     }
   },
   "light|ui2|box": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     }
   },
   "light|ui2|library": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     }
   },
   "light|ui2|pop-levels": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label-content-name-mismatch": {
       "count": 5,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen, and the grouped Bedroom."
     }
   },
   "light|ui2|pop-more": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label-content-name-mismatch": {
       "count": 4,
       "note": "Known, not fixed yet (no issue filed): #presetTransferBtn: its aria-label \"Copy presets to another speaker\" does not contain the visible button text (WCAG 2.5.3); the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
     }
   },
   "light|ui2|settings": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label": {
       "count": 2,
       "note": "Settings: the volume and bass range inputs #boxVolume and #boxBass have no label or aria-label. Known, not fixed yet (no issue filed)."
@@ -290,10 +270,6 @@
     }
   },
   "light|ui2|setup": {
-    "color-contrast": {
-      "count": 1,
-      "note": "UI 2.0 light theme (#1285): the persistent player's elapsed time #trackElapsed is #888 on #f3f3f5 (3.19:1). Known, not fixed yet (no issue filed); dark and contrast pass."
-    },
     "label-content-name-mismatch": {
       "count": 3,
       "note": "Known, not fixed yet (no issue filed): the UI 2.0 sidebar pick buttons (.ui2-spk-pick, #1285): speakerRowLabel says \"Name, State\" (Kitchen also adds \". Opens the setup\") while the visible text is the name plus the pill, so the visible text is not a substring of the accessible name; one node each for the current speaker, the offline Office, the Bose original Kitchen."
