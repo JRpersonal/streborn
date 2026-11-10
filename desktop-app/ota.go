@@ -418,7 +418,9 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// on an apparent success (#381/#119 forensics). The upload phase now
 	// journals what it actually knows, and the frontend's version poll writes
 	// the real end-to-end verdict via RecordOTAOutcome/ClassifyOTAResult.
-	outcomeNote := ""
+	// p carries the outcome note: what an exit that could not confirm the
+	// upload has to say in place of the default line (agentPush.unconfirmed).
+	p := &agentPush{a: a, host: host, port: port, bin: bin}
 	defer func() {
 		switch {
 		case err != nil:
@@ -433,8 +435,8 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// box as mid-update for the full grace window (#775).
 			a.clearPostOTA(host)
 			a.forgetOTAVerify(host)
-		case outcomeNote != "":
-			a.recordOTA(host, "outcome: "+outcomeNote)
+		case p.outcomeNote != "":
+			a.recordOTA(host, "outcome: "+p.outcomeNote)
 		default:
 			a.recordOTA(host, "outcome: upload accepted; success is decided by the version poll (a later outcome line records its verdict)")
 		}
@@ -455,31 +457,10 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// flow would know a group had ever existed (otazonerestore.go).
 	a.noteZoneBeforeOTA(host, port)
 
-	// Pre-v0.9.26 agents cannot SURVIVE the HTTP push: they collect an upload
-	// via growth-doubling ReadAll, so the ~13.6 MB agent body peaks near 27 MB
-	// of RAM and the box's watchdog reboots the SPEAKER mid-receive or
-	// mid-apply. Field case 2026-08-18: an ST20 on v0.9.14 looped forever -
-	// upload, crash, reboot, still old, app correctly re-offers, repeat. For
-	// those agents the update goes over SSH instead: ask the OLD agent to open
-	// sshd via its tiny /api/agent/enable-ssh POST (present since long before
-	// v0.9.14; costs no memory), then stream the binary to NAND over SSH with
-	// the old agent's dying upload path never involved. The sshd marker lives
-	// in tmpfs, so SSH closes itself again on the post-swap reboot. Any
-	// failure here falls through to the normal HTTP path, which is exactly
-	// today's behaviour - this detour can only improve things.
-	if verr == nil {
-		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, streamedUploadMinVersion) {
-			a.recordOTA(host, "agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+"): updating over SSH, the old agent dies receiving large HTTP bodies")
-			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
-			a.enableAgentSSH(host, port)
-			if sshErr := a.updateAgentViaSSH(host, bin); sshErr == nil {
-				a.logger.Info("update agent: SSH-OTA for old agent succeeded", "host", host, "bytes", len(bin))
-				return nil
-			} else {
-				a.recordOTA(host, "old-agent SSH update failed, falling back to the HTTP path: "+sshErr.Error())
-				a.logger.Warn("update agent: SSH-OTA for old agent failed, falling back to HTTP", "host", host, "err", sshErr)
-			}
-		}
+	// Phase one: an agent too old to survive the HTTP push gets the update
+	// over SSH. A failure there falls through to the normal path.
+	if verr == nil && p.oldAgentViaSSH(ver) {
+		return nil
 	}
 
 	// Deliver the go-librespot Spotify sidecar BEFORE the agent binary push, and
@@ -498,6 +479,80 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// never block the (more important) agent update.
 	a.stageSidecarBeforeReboot(host, port)
 
+	// Phase two: the preflight, which settles the update by itself when it
+	// fails (SSH instead, or no route at all).
+	if done, perr := p.preflightOrSSH(); done {
+		return perr
+	}
+	// Phase three: the upload, with SSH behind it.
+	return p.uploadOrSSH()
+}
+
+// agentPush is one UpdateBoxAgent call past its preamble: the speaker, the
+// binary, and the three phases that deliver it. Each phase logs and journals
+// exactly what UpdateBoxAgent did when they were one function.
+type agentPush struct {
+	a    *App
+	host string
+	port int
+	bin  []byte
+	// outcomeNote, when set, is the journal's outcome line for a call that
+	// returns nil without knowing the upload landed.
+	outcomeNote string
+}
+
+// unconfirmed is the one exit for a push that ends without an error and
+// without proof: nothing failed cleanly, so the caller's version poll decides.
+// It logs why, sets the journal's outcome line to an UNCONFIRMED one that
+// cannot be read as a success, and returns nil for UpdateBoxAgent to return.
+func (p *agentPush) unconfirmed(what, logMsg string, logArgs ...any) error {
+	p.a.logger.Info(logMsg, logArgs...)
+	p.outcomeNote = "UNCONFIRMED: " + what + " — this line is NOT a success"
+	return nil
+}
+
+// oldAgentViaSSH is the detour for an agent that predates the streamed upload
+// path. It reports whether the update was delivered over SSH; false means the
+// agent is not that old, or the detour failed and the normal path runs.
+//
+// Pre-v0.9.26 agents cannot SURVIVE the HTTP push: they collect an upload
+// via growth-doubling ReadAll, so the ~13.6 MB agent body peaks near 27 MB
+// of RAM and the box's watchdog reboots the SPEAKER mid-receive or
+// mid-apply. Field case 2026-08-18: an ST20 on v0.9.14 looped forever -
+// upload, crash, reboot, still old, app correctly re-offers, repeat. For
+// those agents the update goes over SSH instead: ask the OLD agent to open
+// sshd via its tiny /api/agent/enable-ssh POST (present since long before
+// v0.9.14; costs no memory), then stream the binary to NAND over SSH with
+// the old agent's dying upload path never involved. The sshd marker lives
+// in tmpfs, so SSH closes itself again on the post-swap reboot. Any
+// failure here falls through to the normal HTTP path, which is exactly
+// today's behaviour - this detour can only improve things.
+func (p *agentPush) oldAgentViaSSH(ver map[string]string) bool {
+	a, host, port, bin := p.a, p.host, p.port, p.bin
+	bv := strings.TrimSpace(ver["version"])
+	if bv == "" || !versioncmp.Less(bv, streamedUploadMinVersion) {
+		return false
+	}
+	a.recordOTA(host, "agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+"): updating over SSH, the old agent dies receiving large HTTP bodies")
+	a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
+	a.enableAgentSSH(host, port)
+	sshErr := a.updateAgentViaSSH(host, bin)
+	if sshErr == nil {
+		a.logger.Info("update agent: SSH-OTA for old agent succeeded", "host", host, "bytes", len(bin))
+		return true
+	}
+	a.recordOTA(host, "old-agent SSH update failed, falling back to the HTTP path: "+sshErr.Error())
+	a.logger.Warn("update agent: SSH-OTA for old agent failed, falling back to HTTP", "host", host, "err", sshErr)
+	return false
+}
+
+// preflightOrSSH asks whether STR's agent really answers on the port. When it
+// does, done is false and the upload is next. When it does not, the update is
+// settled here and done is true: delivered over SSH (nil), refused because
+// this computer has no network route (the preflight's error), deferred to the
+// version poll (nil, UNCONFIRMED), or failed on both paths.
+func (p *agentPush) preflightOrSSH() (done bool, err error) {
+	a, host, port, bin := p.a, p.host, p.port, p.bin
 	perr := a.updateAgentPreflight(host, port)
 	if perr != nil {
 		perr = a.preflightSettleRetry(host, port, perr)
@@ -509,7 +564,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		// restart a healthy speaker over a laptop's Wi-Fi dropping out.
 		a.recordOTA(host, "no network route from this computer; not escalating to SSH: "+perr.Error())
 		a.logger.Warn("update agent: no local network route, refusing the SSH escalation", "host", host, "reason", perr)
-		return perr
+		return true, perr
 	}
 	if perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
@@ -524,15 +579,21 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// updatable on a later, faster attempt). This is what two reporters
 			// hit: the agent was healthy yet the app showed "Update failed".
 			if isTimeoutLikeErr(perr) {
-				a.logger.Info("update agent: preflight timed out and SSH unavailable; deferring to the post-OTA version poll", "host", host, "preflightErr", perr, "sshErr", sshErr)
-				outcomeNote = "UNCONFIRMED: box answered neither HTTP nor SSH; nothing was uploaded, deferred to the version poll — this line is NOT a success"
-				return nil
+				return true, p.unconfirmed("box answered neither HTTP nor SSH; nothing was uploaded, deferred to the version poll",
+					"update agent: preflight timed out and SSH unavailable; deferring to the post-OTA version poll", "host", host, "preflightErr", perr, "sshErr", sshErr)
 			}
-			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %w)", port, sshErr, perr)
+			return true, fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %w)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
-		return nil
+		return true, nil
 	}
+	return false, nil
+}
+
+// uploadOrSSH sends the binary over HTTP and falls back to SSH when that
+// fails in a way SSH can still fix.
+func (p *agentPush) uploadOrSSH() error {
+	a, host, port, bin := p.a, p.host, p.port, p.bin
 	// The preflight pinned the port that actually answers; that is the port
 	// the upload goes through and the one the verify must ask first.
 	a.rememberOTAPort(host, a.agentPortInUse(host, port))
@@ -550,9 +611,8 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		// still needs the SSH fallback.
 		if bodySent && isConnDropErr(err) {
 			a.recordOTA(host, "HTTP reply lost after the full binary uploaded (agent applying + rebooting); deferring to the version poll instead of SSH")
-			a.logger.Info("update agent: full upload delivered, reply lost to the agent's reboot; skipping SSH fallback, deferring to the post-OTA version poll", "host", host, "httpErr", err)
-			outcomeNote = "UNCONFIRMED: full binary delivered, HTTP reply lost to the reboot; deferred to the version poll — this line is NOT a success"
-			return nil
+			return p.unconfirmed("full binary delivered, HTTP reply lost to the reboot; deferred to the version poll",
+				"update agent: full upload delivered, reply lost to the agent's reboot; skipping SSH fallback, deferring to the post-OTA version poll", "host", host, "httpErr", err)
 		}
 		a.recordOTA(host, "HTTP upload failed -> trying SSH: "+err.Error())
 		// The small preflight GET can pass while the 10 MB POST still fails: on
@@ -575,9 +635,8 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// (status >= 400, binary refused so it definitely did not apply) plus
 			// an SSH failure is a real, report-worthy failure.
 			if isConnDropErr(err) {
-				a.logger.Info("update agent: HTTP connection dropped (agent restarting) and SSH raced the reboot; deferring to the post-OTA version poll", "host", host, "httpErr", err, "sshErr", sshErr)
-				outcomeNote = "UNCONFIRMED: HTTP dropped mid-upload (the agent may be applying it) and SSH raced the reboot; deferred to the version poll — this line is NOT a success"
-				return nil
+				return p.unconfirmed("HTTP dropped mid-upload (the agent may be applying it) and SSH raced the reboot; deferred to the version poll",
+					"update agent: HTTP connection dropped (agent restarting) and SSH raced the reboot; deferring to the post-OTA version poll", "host", host, "httpErr", err, "sshErr", sshErr)
 			}
 			// A 507 means the speaker's storage is full and its (old) agent
 			// cannot free space by itself, and the SSH recovery could not open
