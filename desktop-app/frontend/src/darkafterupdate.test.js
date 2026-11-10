@@ -344,6 +344,8 @@ describe('where it shows', () => {
   const all = src('./update/all.js').replace(/\r\n/g, '\n');
   const otastuck = src('./update/otastuck.js').replace(/\r\n/g, '\n');
   const setup = src('./views/setup.js').replace(/\r\n/g, '\n');
+  // The checklist helper left setup.js for the install screens' help module.
+  const setupHelp = src('./views/setup/installhelp.js').replace(/\r\n/g, '\n');
 
   it('replaces the bare "took longer" toast after a single update, except on the 300', () => {
     const at = single.indexOf('darkAfterUpdate(result) && darkChecklistApplies(targetBox)');
@@ -388,9 +390,9 @@ describe('where it shows', () => {
 
   it('keeps the SoundTouch 300 on its power-cycle step on every install screen', () => {
     // The helper itself renders nothing for a 300.
-    const helper = setup.indexOf('function installDarkChecklistHtml(box) {');
+    const helper = setupHelp.indexOf('function installDarkChecklistHtml(box) {');
     expect(helper).toBeGreaterThan(0);
-    expect(setup.slice(helper, helper + 120)).toContain("if (!darkChecklistApplies(box)) return '';");
+    expect(setupHelp.slice(helper, helper + 120)).toContain("if (!darkChecklistApplies(box)) return '';");
     // Give-up: the 300 keeps its logs-only list and the red step, as before.
     const giveUp = setup.indexOf('const giveUp = () => {');
     const steps = setup.indexOf('const steps = (inSetup || !darkChecklistApplies(foundBox))', giveUp);
