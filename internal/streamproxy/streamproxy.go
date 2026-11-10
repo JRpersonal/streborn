@@ -872,6 +872,36 @@ func (s *Server) dropEdgePinByEdge(edge string) {
 	}
 }
 
+// streamAttempt is what the phases of one streamOneDepth round trip share:
+// the arguments of the call, the upstream request and its answer, and the few
+// facts an earlier phase establishes for a later one. Each field is written by
+// exactly one phase and only read after it.
+type streamAttempt struct {
+	s           *Server
+	ctx         context.Context
+	w           http.ResponseWriter
+	r           *http.Request
+	url         string
+	station     string
+	sendHeaders bool
+	depth       int
+
+	// handedOver is set by the copy loop when the station connection was
+	// parked for the box's return (held.go). Every close of the upstream, the
+	// deferred ones in streamOneDepth and the stall watchdog's, asks it first.
+	handedOver atomic.Bool
+
+	// Written by openUpstream.
+	req      *http.Request
+	resp     *http.Response
+	fr       *fileResume
+	resumeAt int64
+
+	// Written by classifyResponse.
+	rangeSent bool
+	partial   bool
+}
+
 // streamOneDepth is streamOne with a playlist-resolution recursion guard: an
 // audio/x-mpegurl response that turns out to be a plain M3U/PLS pointer file is
 // re-fetched at its first real stream URL (depth+1), capped so a playlist that
@@ -888,18 +918,115 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// until the answer is in; from then on a live stream may outlive the box's
 	// connection for a moment and be held (held.go), so the copy loop decides.
 	upCtx, upCancel := context.WithCancel(context.WithoutCancel(ctx))
+	a := &streamAttempt{s: s, ctx: ctx, w: w, r: r, url: url, station: station, sendHeaders: sendHeaders, depth: depth}
 	stopFollow := context.AfterFunc(ctx, upCancel)
-	var handedOver atomic.Bool
 	defer func() {
 		stopFollow()
-		if !handedOver.Load() {
+		if !a.handedOver.Load() {
 			upCancel()
 		}
 	}()
+	if done, boseAlive, err := a.openUpstream(upCtx); done {
+		return boseAlive, err
+	}
+	defer func() {
+		if !a.handedOver.Load() {
+			_ = a.resp.Body.Close()
+		}
+	}()
+	if done, boseAlive, err := a.classifyResponse(); done {
+		return boseAlive, err
+	}
+	resp, fr, resumeAt, partial, rangeSent := a.resp, a.fr, a.resumeAt, a.partial, a.rangeSent
+
+	// Where in the file the first byte of this body sits, and whether the
+	// upstream is a finite file at all (fileresume.go).
+	bodyStart, err := fr.align(station, resp, partial, resumeAt)
+	if err != nil {
+		s.logger.Warn("stream proxy: could not continue the file where the box is, will reconnect",
+			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode,
+			"contentRange", resp.Header.Get("Content-Range"), "err", err)
+		return true, err
+	}
+	if resumeAt > 0 {
+		s.logger.Info("stream proxy reconnect: continuing the file where the box is",
+			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode, "total", fr.totalFor(station))
+	}
+
+	// Successful reach — clear any dedup entry so a future failure
+	// for this URL produces a fresh WARN immediately, and drop any recorded
+	// stream-status failure so the app stops reporting a now-recovered station.
+	s.failMu.Lock()
+	delete(s.lastFail, url)
+	s.failMu.Unlock()
+	s.clearFailure(url)
+
+	// Capture the real stream bitrate from the icy-br header, if the
+	// station sends one (most Icecast/Shoutcast do). A single header read
+	// outside the copy loop. beginStream also reuses a value already
+	// measured for this URL, so stations without the header only fall back
+	// to the throughput measurement below on the very first play.
+	icyBr := icyBitrate(resp.Header)
+	knownBitrate := s.beginStream(url, icyBr)
+
+	// ICY metadata spacing. When set, the upstream interleaves StreamTitle
+	// blocks every metaint bytes.
+	metaint := icyMetaint(resp.Header)
+	// The title belongs to the STATION the user picked, not to the edge or
+	// media URL this fetch happens to land on. Filing it under the resolved URL
+	// meant the end-of-stream wipe, which is keyed on the station, never matched
+	// for a redirecting station or a playlist pointer, so the last radio track
+	// was still on display under whatever played next. That is #274 returning
+	// through the back door, and it covers most real stations: streamtheworld
+	// pins an edge host, and an m3u pointer like Absolut Relax resolves one
+	// level deeper still.
+	s.clearTitleForNewURL(station)
+
+	// Did the box itself ask for ICY metadata? If so it can de-interleave and
+	// display StreamTitle natively, with no stream re-fetch (the gap-free path,
+	// unlike re-issuing SetAVTransportURI which makes the box drop+reconnect).
+	// In that case pass the interleaved bytes AND the icy-metaint header
+	// through unchanged, and tee a parse so STR's /api/stream/title still
+	// updates too. If the box did NOT ask, strip the metadata so it gets clean
+	// audio (it would otherwise mistake metadata bytes for audio).
+	boxICY := r.Header.Get("Icy-MetaData")
+	boxWantsICY := boxICY != "" && boxICY != "0"
+	s.logger.Info("stream proxy ICY negotiation", "boxWantsICY", boxWantsICY, "boxIcyMetaData", boxICY, "upstreamMetaint", metaint)
+
+	a.writeHeaders(boxWantsICY)
+
+	p, cleanAudio := a.newPump(knownBitrate, metaint, boxWantsICY, bodyStart)
+	// A live stream of clean audio may outlive the box's connection by a
+	// moment and be held for its return (held.go). The station request then
+	// stops following the box's context; instead, once the box is gone, the
+	// loop has heldGrab to hand the connection over before it is closed.
+	holdable := s.heldFor > 0 && cleanAudio && !partial && !rangeSent && resp.ContentLength <= 0
+	closeUpstream := heldCloser(resp, upCancel)
+	if holdable && stopFollow() {
+		defer context.AfterFunc(ctx, func() {
+			time.AfterFunc(heldGrab, func() {
+				if !a.handedOver.Load() {
+					closeUpstream()
+				}
+			})
+		})()
+	} else {
+		holdable = false
+	}
+	p.holdable, p.closeUpstream = holdable, closeUpstream
+	return p.run()
+}
+
+// openUpstream builds the station request and gets an answer for it: from a
+// connection held for exactly this station (held.go) or from a fresh round
+// trip. done=true means the attempt ended here and boseAlive/err are
+// streamOneDepth's result; otherwise a.resp is open and the caller owns it.
+func (a *streamAttempt) openUpstream(upCtx context.Context) (done, boseAlive bool, err error) {
+	s, ctx, w, r, url, station, sendHeaders, depth := a.s, a.ctx, a.w, a.r, a.url, a.station, a.sendHeaders, a.depth
 	req, err := http.NewRequestWithContext(upCtx, http.MethodGet, url, nil)
 	if err != nil {
 		s.logger.Warn("stream proxy NewRequest fail", "err", err)
-		return false, err
+		return true, false, err
 	}
 	// Always request ICY metadata from the upstream, regardless of what the
 	// box asked for. STR owns the metadata: it de-interleaves it out of the
@@ -969,7 +1096,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				s.logger.Info("stream proxy: the speaker gave up before the station answered",
 					"url", url, "waitedMs", waited.Milliseconds(), "phase", fetchPhase(err), "err", err)
 			}
-			return false, nil
+			return true, false, nil
 		}
 		// Dedupe identical failures: Bose's UPnP player re-hits the
 		// proxy when a station is unreachable, so the same NXDOMAIN
@@ -983,17 +1110,23 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		s.dropEdgePinByEdge(url)
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
-			return false, err
+			return true, false, err
 		}
 		// Headers already sent — try a reconnect
-		return true, err
+		return true, true, err
 	}
-	defer func() {
-		if !handedOver.Load() {
-			_ = resp.Body.Close()
-		}
-	}()
+	a.req, a.resp, a.fr, a.resumeAt = req, resp, fr, resumeAt
+	return false, false, nil
+}
 
+// classifyResponse decides whether the answer is something to copy to the box:
+// an offset past the end of the file (416), any other non-200, and a playlist
+// or manifest served under a stream URL all end the attempt here (done=true,
+// with streamOneDepth's result). A plain M3U/PLS pointer is followed one level
+// deeper from here, so the outer attempt's request stays open underneath it
+// exactly as long as it always did.
+func (a *streamAttempt) classifyResponse() (done, boseAlive bool, err error) {
+	s, ctx, w, r, url, station, sendHeaders, depth, req, resp := a.s, a.ctx, a.w, a.r, a.url, a.station, a.sendHeaders, a.depth, a.req, a.resp
 	// A forwarded offset Range gets a 206 from any media server that does
 	// ranges, which is the whole point of forwarding it (#844). Rejecting every
 	// non-200 here turned that answer into a 502, so a library track saved on a
@@ -1004,6 +1137,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// box with the rest of the headers below, together with the 206 itself.
 	rangeSent := req.Header.Get("Range") != ""
 	partial := rangeSent && resp.StatusCode == http.StatusPartialContent
+	a.rangeSent, a.partial = rangeSent, partial
 	if rangeSent && resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
 		// The offset lies at or past the end of the file: there is nothing left
 		// to send. Not a station failure and nothing a retry can change, so tell
@@ -1016,7 +1150,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			}
 			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		}
-		return false, errUpstreamFileComplete
+		return true, false, errUpstreamFileComplete
 	}
 	if partial {
 		s.logger.Info("stream proxy: upstream answered the offset range with partial content",
@@ -1035,9 +1169,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		s.dropEdgePinByEdge(url)
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
-			return false, statusErr
+			return true, false, statusErr
 		}
-		return true, statusErr
+		return true, true, statusErr
 	}
 
 	// The answer is usable, so remember which edge served it. resp.Request is
@@ -1068,20 +1202,21 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			if sendHeaders {
 				http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 			}
-			return false, dashErr
+			return true, false, dashErr
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 		text := string(body)
 		if strings.Contains(text, "#EXT-X-") {
 			// A real HLS playlist reached the raw path (URL had no .m3u8 suffix).
 			// Let the caller re-serve it through serveHLS.
-			return false, errPlaylistIsHLS
+			return true, false, errPlaylistIsHLS
 		}
 		if media := firstMediaURLFromPlaylist(text, url); media != "" && media != url && depth < 2 {
 			s.logger.Info("stream proxy: resolved playlist pointer to stream URL",
 				"playlist", url, "stream", media, "depth", depth+1)
 			resp.Body.Close()
-			return s.streamOneDepth(ctx, w, r, media, station, sendHeaders, depth+1)
+			boseAlive, err = s.streamOneDepth(ctx, w, r, media, station, sendHeaders, depth+1)
+			return true, boseAlive, err
 		}
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy: playlist content-type not resolvable", "url", url, "contentType", ct)
@@ -1091,63 +1226,16 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		if sendHeaders {
 			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 		}
-		return false, plErr
+		return true, false, plErr
 	}
+	return false, false, nil
+}
 
-	// Where in the file the first byte of this body sits, and whether the
-	// upstream is a finite file at all (fileresume.go).
-	bodyStart, err := fr.align(station, resp, partial, resumeAt)
-	if err != nil {
-		s.logger.Warn("stream proxy: could not continue the file where the box is, will reconnect",
-			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode,
-			"contentRange", resp.Header.Get("Content-Range"), "err", err)
-		return true, err
-	}
-	if resumeAt > 0 {
-		s.logger.Info("stream proxy reconnect: continuing the file where the box is",
-			"url", url, "resumeAt", resumeAt, "status", resp.StatusCode, "total", fr.totalFor(station))
-	}
-
-	// Successful reach — clear any dedup entry so a future failure
-	// for this URL produces a fresh WARN immediately, and drop any recorded
-	// stream-status failure so the app stops reporting a now-recovered station.
-	s.failMu.Lock()
-	delete(s.lastFail, url)
-	s.failMu.Unlock()
-	s.clearFailure(url)
-
-	// Capture the real stream bitrate from the icy-br header, if the
-	// station sends one (most Icecast/Shoutcast do). A single header read
-	// outside the copy loop. beginStream also reuses a value already
-	// measured for this URL, so stations without the header only fall back
-	// to the throughput measurement below on the very first play.
-	icyBr := icyBitrate(resp.Header)
-	knownBitrate := s.beginStream(url, icyBr)
-
-	// ICY metadata spacing. When set, the upstream interleaves StreamTitle
-	// blocks every metaint bytes.
-	metaint := icyMetaint(resp.Header)
-	// The title belongs to the STATION the user picked, not to the edge or
-	// media URL this fetch happens to land on. Filing it under the resolved URL
-	// meant the end-of-stream wipe, which is keyed on the station, never matched
-	// for a redirecting station or a playlist pointer, so the last radio track
-	// was still on display under whatever played next. That is #274 returning
-	// through the back door, and it covers most real stations: streamtheworld
-	// pins an edge host, and an m3u pointer like Absolut Relax resolves one
-	// level deeper still.
-	s.clearTitleForNewURL(station)
-
-	// Did the box itself ask for ICY metadata? If so it can de-interleave and
-	// display StreamTitle natively, with no stream re-fetch (the gap-free path,
-	// unlike re-issuing SetAVTransportURI which makes the box drop+reconnect).
-	// In that case pass the interleaved bytes AND the icy-metaint header
-	// through unchanged, and tee a parse so STR's /api/stream/title still
-	// updates too. If the box did NOT ask, strip the metadata so it gets clean
-	// audio (it would otherwise mistake metadata bytes for audio).
-	boxICY := r.Header.Get("Icy-MetaData")
-	boxWantsICY := boxICY != "" && boxICY != "0"
-	s.logger.Info("stream proxy ICY negotiation", "boxWantsICY", boxWantsICY, "boxIcyMetaData", boxICY, "upstreamMetaint", metaint)
-
+// writeHeaders passes the upstream's response headers and status on to the box.
+// Only the first connection of a stream does: on a reconnect the box already
+// has its headers and just keeps receiving bytes.
+func (a *streamAttempt) writeHeaders(boxWantsICY bool) {
+	w, resp, sendHeaders, partial := a.w, a.resp, a.sendHeaders, a.partial
 	if sendHeaders {
 		for k, vv := range resp.Header {
 			// Do not pass hop-by-hop headers through
@@ -1172,34 +1260,117 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		w.WriteHeader(resp.StatusCode)
 	}
+}
 
+// Throughput fallback for stations that send no icy-br and have not
+// been measured before. The box fills its decode buffer fast at the
+// start, so a measurement taken immediately reads far above the real
+// bitrate (e.g. 1300 for a 192k stream). We therefore skip the first
+// brSettle of buffer-fill, then average bytes/elapsed over brWindow of
+// steady-state playback (when bytes arrive at real-time = the true
+// bitrate), snap to the nearest standard rate, store it once, and stop.
+// Bounded to this single active stream: a few counters and one division.
+const (
+	brSettle = 4 * time.Second
+	brWindow = 6 * time.Second
+)
+
+// Below the watchdog threshold, a short upstream starve (Wi-Fi hiccup,
+// CDN pause) is audible as a brief stutter but used to leave no log line
+// at all, so a diagnostic bundle could not confirm or time a reported
+// "stream stockt kurzzeitig" (#119, 2026-08-21). Log each recovered gap
+// over audioGapLogAfter, capped per connection so a flapping link cannot
+// spam the NAND log.
+const (
+	audioGapLogAfter = 2 * time.Second
+	audioGapLogMax   = 10
+)
+
+// streamPump copies one upstream body to the box. It owns everything the copy
+// loop and its stall watchdog share, so what used to be closure captures of
+// streamOneDepth's locals is spelled out here: the loop goroutine writes the
+// counters, the watchdog goroutine reads them, and mu guards the two values
+// both sides touch while the loop is running.
+type streamPump struct {
+	a *streamAttempt
+
+	src         io.Reader
+	titles      *titleGate
+	flusher     http.Flusher
+	tailStation string
+	bodyStart   int64
+	// holdable and closeUpstream are settled by streamOneDepth after newPump
+	// and before run, and never change while the loop runs.
+	holdable      bool
+	closeUpstream func()
+	buf           []byte
+
+	// Throughput measurement (brSettle, brWindow).
+	streamStart time.Time
+	winBytes    int64
+	winStart    time.Time
+	measured    bool
+
+	// Connection-scoped telemetry so a diagnostic bundle can explain a dropout
+	// without a live capture: how long this upstream connection lasted and how
+	// many bytes it delivered to the box before it ended (#185).
+	connStart time.Time
+	connBytes int64
+	gotData   bool
+	// Rolling short-window byte count: the number that decides between "the
+	// box bailed at full data rate" and "the upstream starved the box" is the
+	// delivery rate AT the drop moment, and until #510 no end-of-stream line
+	// carried it. Coarse on purpose (one window, no ring): recentBytes counts
+	// the CURRENT window, recentStart says how old it is.
+	recentBytes int64
+	recentStart time.Time
+	gapLogged   int
+
+	// Stall watchdog (#510): a silent upstream stall (no FIN, no RST, no
+	// bytes) blocked this loop in Read() forever, because streams are endless
+	// by design and the body has no read deadline. The box then starved on an
+	// open, byte-less connection: measured live 2026-08-18, an ST20 sat in
+	// BUFFERING_STATE for minutes on exactly such a connection. The watchdog
+	// closes the upstream body after upstreamStallAfter without a completed
+	// read; the Read unblocks with an error, the normal reconnect path takes
+	// over, and the box's own connection stays open throughout.
+	mu sync.Mutex
+	// readWaitStart is non-zero only while the copy loop sits inside
+	// src.Read without a productive result. The watchdog counts THIS time,
+	// never the time the loop spends blocked in w.Write on box backpressure:
+	// a finite file (a NAS recording behind a DLNA server) arrives faster
+	// than real time, the box buffers minutes ahead and then stops accepting
+	// bytes, and the old bytes-since-last-read clock read exactly that as an
+	// upstream stall. Measured live 2026-08-24 (kitbos bundle): the watchdog
+	// killed a healthy MiniDLNA transfer 9 s into a 20 minute file, every
+	// reconnect refetched it from byte 0, and once the box's ~4 minute
+	// buffer drained the decoder fell silent while now_playing kept saying
+	// PLAY.
+	readWaitStart time.Time
+	// lastWriteBlock is how long the previous w.Write spent blocked on the box.
+	// The watchdog adds it to its own threshold, because a Write that blocked
+	// is STR holding the upstream's receive window shut: when the loop starts
+	// reading again the sender is in TCP persist-timer backoff and does not
+	// resume instantly, and counting that against the upstream is blaming it
+	// for our own backpressure.
+	//
+	// This is what made #823 self-sustaining. The box swallowed a 33-second
+	// burst in three to five seconds, its input path filled, the Write blocked,
+	// the watchdog read the quiet upstream as dead and closed it, and the
+	// reconnect delivered another burst. Forty-six times in twenty-five
+	// minutes, every cycle guaranteeing the next.
+	lastWriteBlock time.Duration
+}
+
+// newPump prepares what the copy loop reads from: the upstream body, with ICY
+// metadata de-interleaved when the box did not ask for it, and on a reconnect
+// with the upstream's burst trimmed to the hole it has to fill. cleanAudio is
+// returned for the caller's decision whether this connection may be held.
+func (a *streamAttempt) newPump(knownBitrate bool, metaint int, boxWantsICY bool, bodyStart int64) (*streamPump, bool) {
+	s, w, url, station, sendHeaders, resp, resumeAt := a.s, a.w, a.url, a.station, a.sendHeaders, a.resp, a.resumeAt
 	// Flush continuously so Bose's player does not wait on a buffer
 	flusher, _ := w.(http.Flusher)
-	// Throughput fallback for stations that send no icy-br and have not
-	// been measured before. The box fills its decode buffer fast at the
-	// start, so a measurement taken immediately reads far above the real
-	// bitrate (e.g. 1300 for a 192k stream). We therefore skip the first
-	// brSettle of buffer-fill, then average bytes/elapsed over brWindow of
-	// steady-state playback (when bytes arrive at real-time = the true
-	// bitrate), snap to the nearest standard rate, store it once, and stop.
-	// Bounded to this single active stream: a few counters and one division.
-	const (
-		brSettle = 4 * time.Second
-		brWindow = 6 * time.Second
-	)
-	// Below the watchdog threshold, a short upstream starve (Wi-Fi hiccup,
-	// CDN pause) is audible as a brief stutter but used to leave no log line
-	// at all, so a diagnostic bundle could not confirm or time a reported
-	// "stream stockt kurzzeitig" (#119, 2026-08-21). Log each recovered gap
-	// over audioGapLogAfter, capped per connection so a flapping link cannot
-	// spam the NAND log.
-	const (
-		audioGapLogAfter = 2 * time.Second
-		audioGapLogMax   = 10
-	)
 	streamStart := time.Now()
-	var winBytes int64
-	var winStart time.Time
 	measured := knownBitrate
 	// De-interleave ICY metadata ONLY when the box did not ask for it: src
 	// then yields clean audio and each StreamTitle block updates STR's live
@@ -1268,241 +1439,211 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			}
 		}
 	}
-	// A live stream of clean audio may outlive the box's connection by a
-	// moment and be held for its return (held.go). The station request then
-	// stops following the box's context; instead, once the box is gone, the
-	// loop has heldGrab to hand the connection over before it is closed.
-	holdable := s.heldFor > 0 && cleanAudio && !partial && !rangeSent && resp.ContentLength <= 0
-	closeUpstream := heldCloser(resp, upCancel)
-	if holdable && stopFollow() {
-		defer context.AfterFunc(ctx, func() {
-			time.AfterFunc(heldGrab, func() {
-				if !handedOver.Load() {
-					closeUpstream()
-				}
-			})
-		})()
-	} else {
-		holdable = false
+	return &streamPump{
+		a: a, src: src, titles: titles, flusher: flusher, tailStation: tailStation,
+		bodyStart: bodyStart, streamStart: streamStart, measured: measured,
+	}, cleanAudio
+}
+
+// touchRead resets the read-wait clock after a productive read.
+func (p *streamPump) touchRead() {
+	p.mu.Lock()
+	p.readWaitStart = time.Time{}
+	p.mu.Unlock()
+}
+
+// enterRead keeps the FIRST entry time across Read calls that return
+// (0, nil), so a pathological upstream dribbling empty reads still trips
+// the watchdog; only a productive read (touchRead) resets the clock.
+func (p *streamPump) enterRead() {
+	p.mu.Lock()
+	if p.readWaitStart.IsZero() {
+		p.readWaitStart = time.Now()
 	}
-	buf := make([]byte, 16*1024)
-	// Connection-scoped telemetry so a diagnostic bundle can explain a dropout
-	// without a live capture: how long this upstream connection lasted and how
-	// many bytes it delivered to the box before it ended (#185).
-	connStart := time.Now()
-	var connBytes int64
+	p.mu.Unlock()
+}
+
+// readBlocked reports how long the current read has waited for the
+// upstream and when that wait began (zero when no read is waiting).
+func (p *streamPump) readBlocked() (time.Duration, time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.readWaitStart.IsZero() {
+		return 0, time.Time{}
+	}
+	return time.Since(p.readWaitStart), p.readWaitStart
+}
+
+// noteWriteBlock records how long the last write to the box blocked (see
+// lastWriteBlock), capped so one long backpressure cannot blind the watchdog.
+func (p *streamPump) noteWriteBlock(d time.Duration) {
+	if d > 30*time.Second {
+		d = 30 * time.Second
+	}
+	p.mu.Lock()
+	p.lastWriteBlock = d
+	p.mu.Unlock()
+}
+
+// writeBlock returns the grace noteWriteBlock recorded.
+func (p *streamPump) writeBlock() time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.lastWriteBlock
+}
+
+// watchdog is the stall watchdog's goroutine (see the mu field). It ends when
+// done is closed, which run does on every return, or after it has closed a
+// stalled upstream.
+func (p *streamPump) watchdog(done <-chan struct{}) {
+	a := p.a
+	s, url, resp := a.s, a.url, a.resp
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			// The grace is the time the last write to the box blocked: we
+			// closed the upstream's window for that long, so the silence
+			// that follows is ours, not the station's. On the #510 shape
+			// (a hungry box on a byte-less upstream) no write ever blocks,
+			// the grace is zero, and this behaves exactly as before.
+			//
+			// The limit itself follows the box's estimated buffer at the
+			// moment the wait began: a full box rides out a stall the edge
+			// would have recovered from, a nearly empty one gets the old
+			// threshold (stall.go).
+			wb := p.writeBlock()
+			blocked, since := p.readBlocked()
+			if blocked == 0 {
+				continue
+			}
+			buffered := s.boxBuf.levelAt(since)
+			limit := stallLimit(s.upstreamStallAfter, s.upstreamStallMax, buffered)
+			if blocked >= limit+wb {
+				s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
+					"url", url, "stalledSec", int(blocked.Seconds()),
+					"limitSec", int(limit.Seconds()), "boxBufferSec", int(buffered.Seconds()),
+					"writeBlockGraceSec", int(wb.Seconds()),
+					"connectedSec", int(time.Since(p.connStart).Seconds()), "bytes", p.connBytes)
+				if !a.handedOver.Load() {
+					_ = resp.Body.Close()
+				}
+				return
+			}
+		}
+	}
+}
+
+// connSummary is the end-of-connection forensic line for the paths that
+// used to discard the telemetry (the box closing, ctx cancel): duration,
+// total bytes, average rate, and the recent-window delivery.
+func (p *streamPump) connSummary(why string) {
+	s, url := p.a.s, p.a.url
+	secs := time.Since(p.connStart).Seconds()
+	kbps := 0
+	if secs > 0 {
+		kbps = int(float64(p.connBytes) * 8 / 1000 / secs)
+	}
+	s.logger.Info("stream proxy conn summary", "why", why, "url", url,
+		"connectedSec", int(secs), "bytes", p.connBytes, "avgKbps", kbps,
+		"recentBytes", p.recentBytes, "recentWindowSec", int(time.Since(p.recentStart).Seconds()))
+}
+
+// handOver keeps the station connection for the box's return; the
+// bytes just read never reached the box and lead what is kept.
+// n is how many bytes of buf that read returned.
+func (p *streamPump) handOver(why string, n int) (bool, error) {
+	a := p.a
+	s, station, resp := a.s, a.station, a.resp
+	a.handedOver.Store(true)
+	s.park(station, resp, p.src, p.titles, p.closeUpstream, s.tail.snapshot(p.tailStation), bytes.Clone(p.buf[:n]))
+	p.connSummary(why)
+	return false, nil
+}
+
+// run is the copy loop: read from the upstream, write to the box, until one of
+// them ends. Its result is streamOneDepth's.
+func (p *streamPump) run() (bool, error) {
+	a := p.a
+	s, ctx, w, url, station, resp, fr := a.s, a.ctx, a.w, a.url, a.station, a.resp, a.fr
+	p.buf = make([]byte, 16*1024)
+	p.connStart = time.Now()
 	// Report what this connection delivered so the retry loops can tell a
 	// connection that played for a while from one that failed at once. Covers
 	// every return past this point; the loops zero it before each attempt, so a
 	// failure that never reaches here correctly reads as "delivered nothing".
-	defer func() { s.noteConnResult(connBytes, time.Since(connStart)) }()
-	defer func() { fr.delivered(station, bodyStart+connBytes) }()
-	gotData := false
-	// Rolling short-window byte count: the number that decides between "the
-	// box bailed at full data rate" and "the upstream starved the box" is the
-	// delivery rate AT the drop moment, and until #510 no end-of-stream line
-	// carried it. Coarse on purpose (one window, no ring): recentBytes counts
-	// the CURRENT window, recentStart says how old it is.
-	var recentBytes int64
-	recentStart := time.Now()
-	gapLogged := 0
-	// Stall watchdog (#510): a silent upstream stall (no FIN, no RST, no
-	// bytes) blocked this loop in Read() forever, because streams are endless
-	// by design and the body has no read deadline. The box then starved on an
-	// open, byte-less connection: measured live 2026-08-18, an ST20 sat in
-	// BUFFERING_STATE for minutes on exactly such a connection. The watchdog
-	// closes the upstream body after upstreamStallAfter without a completed
-	// read; the Read unblocks with an error, the normal reconnect path takes
-	// over, and the box's own connection stays open throughout.
-	var lastReadMu sync.Mutex
-	// readWaitStart is non-zero only while the copy loop sits inside
-	// src.Read without a productive result. The watchdog counts THIS time,
-	// never the time the loop spends blocked in w.Write on box backpressure:
-	// a finite file (a NAS recording behind a DLNA server) arrives faster
-	// than real time, the box buffers minutes ahead and then stops accepting
-	// bytes, and the old bytes-since-last-read clock read exactly that as an
-	// upstream stall. Measured live 2026-08-24 (kitbos bundle): the watchdog
-	// killed a healthy MiniDLNA transfer 9 s into a 20 minute file, every
-	// reconnect refetched it from byte 0, and once the box's ~4 minute
-	// buffer drained the decoder fell silent while now_playing kept saying
-	// PLAY.
-	var readWaitStart time.Time
-	touchRead := func() {
-		lastReadMu.Lock()
-		readWaitStart = time.Time{}
-		lastReadMu.Unlock()
-	}
-	// enterRead keeps the FIRST entry time across Read calls that return
-	// (0, nil), so a pathological upstream dribbling empty reads still trips
-	// the watchdog; only a productive read (touchRead) resets the clock.
-	enterRead := func() {
-		lastReadMu.Lock()
-		if readWaitStart.IsZero() {
-			readWaitStart = time.Now()
-		}
-		lastReadMu.Unlock()
-	}
-	// readBlocked reports how long the current read has waited for the
-	// upstream and when that wait began (zero when no read is waiting).
-	readBlocked := func() (time.Duration, time.Time) {
-		lastReadMu.Lock()
-		defer lastReadMu.Unlock()
-		if readWaitStart.IsZero() {
-			return 0, time.Time{}
-		}
-		return time.Since(readWaitStart), readWaitStart
-	}
-	// lastWriteBlock is how long the previous w.Write spent blocked on the box.
-	// The watchdog adds it to its own threshold, because a Write that blocked
-	// is STR holding the upstream's receive window shut: when the loop starts
-	// reading again the sender is in TCP persist-timer backoff and does not
-	// resume instantly, and counting that against the upstream is blaming it
-	// for our own backpressure.
-	//
-	// This is what made #823 self-sustaining. The box swallowed a 33-second
-	// burst in three to five seconds, its input path filled, the Write blocked,
-	// the watchdog read the quiet upstream as dead and closed it, and the
-	// reconnect delivered another burst. Forty-six times in twenty-five
-	// minutes, every cycle guaranteeing the next.
-	var lastWriteBlock time.Duration
-	noteWriteBlock := func(d time.Duration) {
-		if d > 30*time.Second {
-			d = 30 * time.Second
-		}
-		lastReadMu.Lock()
-		lastWriteBlock = d
-		lastReadMu.Unlock()
-	}
-	writeBlock := func() time.Duration {
-		lastReadMu.Lock()
-		defer lastReadMu.Unlock()
-		return lastWriteBlock
-	}
+	defer func() { s.noteConnResult(p.connBytes, time.Since(p.connStart)) }()
+	defer func() { fr.delivered(station, p.bodyStart+p.connBytes) }()
+	p.recentStart = time.Now()
 	watchdogDone := make(chan struct{})
 	defer close(watchdogDone)
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-watchdogDone:
-				return
-			case <-ticker.C:
-				// The grace is the time the last write to the box blocked: we
-				// closed the upstream's window for that long, so the silence
-				// that follows is ours, not the station's. On the #510 shape
-				// (a hungry box on a byte-less upstream) no write ever blocks,
-				// the grace is zero, and this behaves exactly as before.
-				//
-				// The limit itself follows the box's estimated buffer at the
-				// moment the wait began: a full box rides out a stall the edge
-				// would have recovered from, a nearly empty one gets the old
-				// threshold (stall.go).
-				wb := writeBlock()
-				blocked, since := readBlocked()
-				if blocked == 0 {
-					continue
-				}
-				buffered := s.boxBuf.levelAt(since)
-				limit := stallLimit(s.upstreamStallAfter, s.upstreamStallMax, buffered)
-				if blocked >= limit+wb {
-					s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
-						"url", url, "stalledSec", int(blocked.Seconds()),
-						"limitSec", int(limit.Seconds()), "boxBufferSec", int(buffered.Seconds()),
-						"writeBlockGraceSec", int(wb.Seconds()),
-						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
-					if !handedOver.Load() {
-						_ = resp.Body.Close()
-					}
-					return
-				}
-			}
-		}
-	}()
-	// connSummary is the end-of-connection forensic line for the paths that
-	// used to discard the telemetry (the box closing, ctx cancel): duration,
-	// total bytes, average rate, and the recent-window delivery.
-	connSummary := func(why string) {
-		secs := time.Since(connStart).Seconds()
-		kbps := 0
-		if secs > 0 {
-			kbps = int(float64(connBytes) * 8 / 1000 / secs)
-		}
-		s.logger.Info("stream proxy conn summary", "why", why, "url", url,
-			"connectedSec", int(secs), "bytes", connBytes, "avgKbps", kbps,
-			"recentBytes", recentBytes, "recentWindowSec", int(time.Since(recentStart).Seconds()))
-	}
+	go p.watchdog(watchdogDone)
 	for {
-		enterRead()
-		n, readErr := src.Read(buf)
-		// handOver keeps the station connection for the box's return; the
-		// bytes just read never reached the box and lead what is kept.
-		handOver := func(why string) (bool, error) {
-			handedOver.Store(true)
-			s.park(station, resp, src, titles, closeUpstream, s.tail.snapshot(tailStation), bytes.Clone(buf[:n]))
-			connSummary(why)
-			return false, nil
-		}
-		if holdable && n > 0 && readErr == nil && ctx.Err() != nil {
-			return handOver("box gone, station held")
+		p.enterRead()
+		n, readErr := p.src.Read(p.buf)
+		if p.holdable && n > 0 && readErr == nil && ctx.Err() != nil {
+			return p.handOver("box gone, station held", n)
 		}
 		if n > 0 {
 			// gapMs is the time this read waited for the upstream, nothing
 			// else. It used to be the time since the previous read returned,
 			// which also counted the previous write blocking on a full box and
 			// overstated upstream stalls; that write time is its own field.
-			if gap, _ := readBlocked(); gap >= audioGapLogAfter && gapLogged < audioGapLogMax {
-				gapLogged++
+			if gap, _ := p.readBlocked(); gap >= audioGapLogAfter && p.gapLogged < audioGapLogMax {
+				p.gapLogged++
 				s.logger.Warn("stream proxy audio delivery gap (recovered)", "url", url,
-					"gapMs", gap.Milliseconds(), "prevWriteBlockMs", writeBlock().Milliseconds(),
-					"connectedSec", int(time.Since(connStart).Seconds()),
-					"bytes", connBytes, "gapNr", gapLogged)
+					"gapMs", gap.Milliseconds(), "prevWriteBlockMs", p.writeBlock().Milliseconds(),
+					"connectedSec", int(time.Since(p.connStart).Seconds()),
+					"bytes", p.connBytes, "gapNr", p.gapLogged)
 			}
-			touchRead()
+			p.touchRead()
 			wStart := time.Now()
-			_, writeErr := w.Write(buf[:n])
-			noteWriteBlock(time.Since(wStart))
+			_, writeErr := w.Write(p.buf[:n])
+			p.noteWriteBlock(time.Since(wStart))
 			if writeErr == nil {
-				s.tail.record(tailStation, buf[:n])
+				s.tail.record(p.tailStation, p.buf[:n])
 				s.boxBuf.add(n, s.CurrentBitrate()*1000/8, time.Now())
 			}
 			if writeErr != nil {
 				// Bose closed the connection
-				if holdable {
-					return handOver("bose closed, station held")
+				if p.holdable {
+					return p.handOver("bose closed, station held", n)
 				}
-				connSummary("bose closed")
+				p.connSummary("bose closed")
 				return false, nil
 			}
-			if flusher != nil {
-				flusher.Flush()
+			if p.flusher != nil {
+				p.flusher.Flush()
 			}
-			connBytes += int64(n)
-			recentBytes += int64(n)
-			if time.Since(recentStart) >= 10*time.Second {
-				recentBytes = 0
-				recentStart = time.Now()
+			p.connBytes += int64(n)
+			p.recentBytes += int64(n)
+			if time.Since(p.recentStart) >= 10*time.Second {
+				p.recentBytes = 0
+				p.recentStart = time.Now()
 			}
-			if !gotData {
+			if !p.gotData {
 				s.noteFirstDelivery(station)
 			}
-			gotData = true
+			p.gotData = true
 			s.markByteDelivery() // records "last byte to box" wall clock across reconnects
-			if !measured && time.Since(streamStart) >= brSettle {
-				if winStart.IsZero() {
+			if !p.measured && time.Since(p.streamStart) >= brSettle {
+				if p.winStart.IsZero() {
 					// First read past the settle point: start the window
 					// here, do not count this partial chunk.
-					winStart = time.Now()
+					p.winStart = time.Now()
 				} else {
-					winBytes += int64(n)
-					if el := time.Since(winStart); el >= brWindow {
+					p.winBytes += int64(n)
+					if el := time.Since(p.winStart); el >= brWindow {
 						if secs := el.Seconds(); secs > 0 {
-							raw := int(float64(winBytes) * 8 / 1000 / secs)
+							raw := int(float64(p.winBytes) * 8 / 1000 / secs)
 							if br := roundStandardBitrate(raw); br > 0 {
 								s.rememberBitrate(url, br)
 							}
 						}
-						measured = true
+						p.measured = true
 					}
 				}
 			}
@@ -1510,7 +1651,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		if readErr != nil {
 			// Bose has closed — NO retry, otherwise an endless loop
 			if errors.Is(readErr, context.Canceled) || ctx.Err() != nil {
-				connSummary("ctx canceled")
+				p.connSummary("ctx canceled")
 				return false, nil
 			}
 			if readErr == io.EOF {
@@ -1522,27 +1663,27 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				// decode (kitbos bundle, 2026-08-24), and the sentinel keeps
 				// the caller's onDisconnect re-push out of the ending, which
 				// would otherwise restart the finished recording.
-				if (resp.ContentLength > 0 && connBytes >= resp.ContentLength &&
+				if (resp.ContentLength > 0 && p.connBytes >= resp.ContentLength &&
 					strings.EqualFold(strings.TrimSpace(resp.Header.Get("Accept-Ranges")), "bytes")) ||
-					fr.complete(station, bodyStart+connBytes) {
+					fr.complete(station, p.bodyStart+p.connBytes) {
 					s.logger.Info("stream proxy upstream file complete, ending the stream",
-						"url", url, "connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
+						"url", url, "connectedSec", int(time.Since(p.connStart).Seconds()), "bytes", p.connBytes)
 					return false, errUpstreamFileComplete
 				}
 				// Clean EOF (typically CDN token expiry). Expected; the reconnect
 				// is gap-free if it lands fast. INFO, with timing so a bundle shows
 				// how often a station forces a reconnect.
 				s.logger.Info("stream proxy upstream EOF, will reconnect", "url", url,
-					"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-				s.noteReconnect(station, "eof", connBytes, time.Since(connStart), s.audioGap())
+					"connectedSec", int(time.Since(p.connStart).Seconds()), "bytes", p.connBytes, "delivered", p.gotData)
+				s.noteReconnect(station, "eof", p.connBytes, time.Since(p.connStart), s.audioGap())
 				return true, nil
 			}
 			// Network-level read error mid-stream: this is the dropout cause for
 			// the #185 class. WARN, with how long the connection survived and how
 			// much it delivered, so the bundle pins the drop without a capture.
 			s.logger.Warn("stream proxy upstream read fail, will reconnect", "url", url, "err", readErr,
-				"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
-			s.noteReconnect(station, "read-fail", connBytes, time.Since(connStart), s.audioGap())
+				"connectedSec", int(time.Since(p.connStart).Seconds()), "bytes", p.connBytes, "delivered", p.gotData)
+			s.noteReconnect(station, "read-fail", p.connBytes, time.Since(p.connStart), s.audioGap())
 			return true, readErr
 		}
 	}
