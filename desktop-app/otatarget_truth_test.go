@@ -88,7 +88,7 @@ func TestUpdateTargetTruthTable(t *testing.T) {
 		{"this app's build stamp next to an older version string",
 			release,
 			map[string]string{"version": old, "build": appBuild},
-			"skip=no confirms=no classify=confirmed reached=no:agent"},
+			"skip=no confirms=no classify=not-landed reached=no:agent"},
 		{"this app's agent running from RAM after a failed swap (the rescue agent)",
 			release,
 			map[string]string{"version": app, "build": appBuild, "agentRunningSha256": shaApp, "otaSwapFailed": "copy to NAND did not verify"},

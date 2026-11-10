@@ -160,3 +160,20 @@ func TestAnOlderVersionIsNeverAlreadyCurrent(t *testing.T) {
 		t.Fatalf("the pushed update took: %+v", out)
 	}
 }
+
+// And after the window: the poll refuses a reading on older software for six
+// minutes, so the classifier asked right after it must not confirm the same
+// reading on its build stamp.
+func TestClassifyDoesNotConfirmAnOlderVersionOnItsBuildStamp(t *testing.T) {
+	target := otaTarget{sha: testAppSha, build: testAppBuild, version: testAppVer}
+	v := map[string]string{"version": testOldVer, "build": testAppBuild}
+	if target.confirms(v) {
+		t.Fatal("the poll confirmed older software")
+	}
+	if verdict, _ := target.classify(v); verdict == "confirmed" {
+		t.Fatal("confirmed late on a reading the poll refused: the version is older than this app's")
+	}
+	if verdict, _ := target.classify(map[string]string{"version": testAppVer, "build": testAppBuild}); verdict != "confirmed" {
+		t.Fatalf("an agent that reports only version and build, both this app's: got %q", verdict)
+	}
+}

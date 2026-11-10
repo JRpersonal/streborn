@@ -220,9 +220,10 @@ func (t otaTarget) confirms(v map[string]string) bool {
 // hash confirms and the on-disk hash is only ever the evidence for
 // landed-not-running.
 //
-// The version guards the checksum arm: an agent that reports a version older
-// than this app's is not this app's agent, whatever checksum it reports (the
-// agent hashes its executable lazily by path, see confirms).
+// The version guards the checksum arm and the build arm: an agent that reports
+// a version older than this app's is not this app's agent, whatever checksum
+// or build stamp it reports (the agent hashes its executable lazily by path,
+// see confirms).
 //
 // It is asked without a reading from before the push (ClassifyOTAResult is
 // also the window's own call), so "no longer the pre-OTA build" is not one of
@@ -235,8 +236,10 @@ func (t otaTarget) classify(ver map[string]string) (verdict, journal string) {
 		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
 	}
 	// A failed swap outranks the build stamp exactly as it outranks the
-	// checksum: the rescue agent carries this app's stamp.
-	if t.build != "" && ver["build"] == t.build && failedSwap == "" {
+	// checksum: the rescue agent carries this app's stamp. So does an older
+	// version: the poll that ran before this refused that reading for its
+	// whole window, and a late look at the same reading proves nothing more.
+	if t.build != "" && ver["build"] == t.build && failedSwap == "" && !older {
 		return "confirmed", "outcome: confirmed late - box is on build " + ver["build"]
 	}
 	if msg := ver["otaSwapFailed"]; msg != "" {
