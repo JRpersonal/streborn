@@ -10,7 +10,7 @@ html.ui2 #view-speakers {
 html.ui2 #view-speakers .spl-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -31,7 +31,7 @@ html.ui2 #view-speakers .spl-card {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-speakers .spl-open {
   flex: 1 1 280px;
@@ -40,8 +40,8 @@ html.ui2 #view-speakers .spl-open {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  padding: 8px 16px;
+  gap: var(--u-space-2) var(--u-space-4);
+  padding: var(--u-space-2) var(--u-space-4);
 }
 html.ui2 #view-speakers .spl-text {
   display: flex;
@@ -50,74 +50,74 @@ html.ui2 #view-speakers .spl-text {
   gap: 2px;
   min-width: 0;
 }
-html.ui2 #view-speakers .spl-name { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+html.ui2 #view-speakers .spl-name { font-size: var(--u-fs-md-plus); font-weight: var(--u-fw-semibold); overflow-wrap: anywhere; }
 html.ui2 #view-speakers .spl-meta,
 html.ui2 #view-speakers .spl-now {
   color: var(--u-muted);
-  font-size: 13px;
+  font-size: var(--u-fs-sm);
   overflow-wrap: anywhere;
 }
 html.ui2 #view-speakers .spl-now { color: var(--u-text); }
 html.ui2 #view-speakers .spl-badges {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--u-space-1);
   align-items: center;
 }
 html.ui2 #view-speakers .spl-actions {
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  padding: var(--u-space-2) var(--u-space-4);
 }
 html.ui2 #view-speakers .spl-halves {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 16px 16px;
+  gap: var(--u-space-2);
+  padding: 0 var(--u-space-4) var(--u-space-4);
 }
 html.ui2 #view-speakers .spl-busy {
   color: var(--u-muted);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-semibold);
 }
 /* An update running on this speaker (#1764): bold, the accent colour, the
    turning ring, and what it means for the speaker. */
 html.ui2 #view-speakers .spl-updating {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   color: var(--u-accent);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 #view-speakers .spl-note {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
-  padding: 0 16px 16px;
+  gap: var(--u-space-2) var(--u-space-4);
+  padding: 0 var(--u-space-4) var(--u-space-4);
 }
 html.ui2 #view-speakers .spl-note-text,
 html.ui2 #view-speakers .spl-note-result {
   flex: 1 1 260px;
   margin: 0;
   color: var(--u-text);
-  font-size: 13px;
+  font-size: var(--u-fs-sm);
   line-height: 1.45;
 }
-html.ui2 #view-speakers .spl-note-result { flex-basis: 100%; color: var(--u-warn); font-weight: 600; }
+html.ui2 #view-speakers .spl-note-result { flex-basis: 100%; color: var(--u-warn); font-weight: var(--u-fw-semibold); }
 /* The speaker check's result: plain text with numbered steps, not the
    one-line warning above. */
-html.ui2 #view-speakers .spl-note-result.spk-check { color: var(--u-text); font-weight: 400; }
-html.ui2 #view-speakers .spk-check .spk-check-lead { margin: 0 0 4px 0; font-weight: 600; }
+html.ui2 #view-speakers .spl-note-result.spk-check { color: var(--u-text); font-weight: var(--u-fw-regular); }
+html.ui2 #view-speakers .spk-check .spk-check-lead { margin: 0 0 var(--u-space-1) 0; font-weight: var(--u-fw-semibold); }
 html.ui2 #view-speakers .spk-check .spk-check-steps { margin: 0; padding-inline-start: 20px; }
 html.ui2 #view-speakers .spk-check .spk-check-steps li { margin-bottom: 2px; }
 html.ui2 #view-speakers .spl-foot {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
+  gap: var(--u-space-2);
+  margin-top: var(--u-space-4);
+  padding-top: var(--u-space-4);
   border-top: 1px solid var(--u-border);
 }
 html.ui2 #view-speakers .spl-foot-row {
@@ -125,7 +125,7 @@ html.ui2 #view-speakers .spl-foot-row {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
+  gap: var(--u-space-2) var(--u-space-4);
 }
-html.ui2 #view-speakers .spl-foot-text { color: var(--u-muted); font-size: 14px; }
+html.ui2 #view-speakers .spl-foot-text { color: var(--u-muted); font-size: var(--u-fs-md); }
 html.ui2 #view-speakers .spl-empty { margin: 0; }

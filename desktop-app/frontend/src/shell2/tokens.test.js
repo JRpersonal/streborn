@@ -111,6 +111,41 @@ describe('UI 2.0 tokens', () => {
     expect(base['u-font']).toMatch(/^system-ui/);
   });
 
+  it('defines the spacing scale, the type scale, the weights, the pill radius and the focus ring', () => {
+    expect(['1', '2', '3', '4', '5', '6'].map((n) => base[`u-space-${n}`])).toEqual(['4px', '8px', '12px', '16px', '24px', '32px']);
+    expect(base['u-space-2']).toBe(base['u-space']);
+    expect(['xs', 'sm', 'md', 'md-plus', 'lg', 'lg-plus', 'xl', '2xl', '2xl-plus', '3xl'].map((n) => base[`u-fs-${n}`]))
+      .toEqual(['12px', '13px', '14px', '15px', '16px', '17px', '18px', '20px', '22px', '24px']);
+    expect([base['u-fw-regular'], base['u-fw-semibold'], base['u-fw-bold']]).toEqual(['400', '600', '700']);
+    expect(base['u-radius-pill']).toBe('12px');
+    expect(base['u-focus-ring']).toBe('2px solid var(--u-focus)');
+    expect(base['u-focus-offset']).toBe('2px');
+  });
+
+  // The UI 2.0 stylesheets take their sizes from the scales above, so a later
+  // redesign changes a size in one place. A literal that equals a step would
+  // quietly stay behind when the step moves.
+  const UI2_SHEETS = ['./shell2.css', './banners.css', './library.css', './recent.css', './state.css', './help/help.css',
+    './setup/check.css', './setup/setup.css', './speakers/groups.css', './speakers/list.css', './speakers/speaker.css',
+    './speakers/speakers.css', '../views/music/ui2radio.css'];
+  const SPACE_STEPS = new Set(['4px', '8px', '12px', '16px', '24px', '32px']);
+  const SPACING = /^(?:padding|margin|inset)(?:-[a-z-]+)?$|^(?:row-|column-)?gap$/;
+
+  it('every UI 2.0 stylesheet reads sizes from the tokens and only tokens that exist', () => {
+    for (const name of UI2_SHEETS) {
+      const body = readFileSync(new URL(name, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      for (const m of body.matchAll(/var\(--(u-[a-z0-9-]+)\)/g)) expect(DEFINED.has(m[1]), `${name}: --${m[1]}`).toBe(true);
+      for (const m of body.matchAll(/(?:^|[{;\s])([a-z-]+)\s*:\s*([^;{}]+)(?=[;}])/g)) {
+        const [prop, value] = [m[1], m[2].trim()];
+        if (prop === 'font-size') expect(value, `${name}: font-size`).toMatch(/^(?:var\(--u-fs-[a-z0-9-]+\)|0)$/);
+        if (prop === 'outline') expect(value, `${name}: outline`).not.toMatch(/^2px solid var\(--u-focus\)/);
+        if (SPACING.test(prop)) {
+          for (const part of value.split(/\s+/)) expect(SPACE_STEPS.has(part), `${name}: ${prop}: ${value}`).toBe(false);
+        }
+      }
+    }
+  });
+
   it('lives in shell2.css alone, and reads none of the current tokens', () => {
     expect(styleCss).not.toMatch(/--u-[a-z]/);
     expect(css).not.toMatch(/var\(--c-/);

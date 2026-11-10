@@ -26,9 +26,38 @@ html.ui2 {
   --u-danger-fill: #CC3328;
   --u-on-danger: #FFFFFF;
   --u-focus: #66BBDD;
+  /* Sizes, the same in every theme. Spacing (padding, margin, gap, inset) on a
+     4px base; --u-space is the 8px grid unit itself, the same as --u-space-2.
+     One-off values (2px, 6px, borders, widths) stay literal in the rules. */
   --u-space: 8px;
+  --u-space-1: 4px;
+  --u-space-2: 8px;
+  --u-space-3: 12px;
+  --u-space-4: 16px;
+  --u-space-5: 24px;
+  --u-space-6: 32px;
+  /* The type scale covers exactly the sizes in use, so introducing it changed
+     no pixel. The -plus steps sit between two main steps and are the ones a
+     later pass can fold into a neighbour. */
+  --u-fs-xs: 12px;
+  --u-fs-sm: 13px;
+  --u-fs-md: 14px;
+  --u-fs-md-plus: 15px;
+  --u-fs-lg: 16px;
+  --u-fs-lg-plus: 17px;
+  --u-fs-xl: 18px;
+  --u-fs-2xl: 20px;
+  --u-fs-2xl-plus: 22px;
+  --u-fs-3xl: 24px;
+  --u-fw-regular: 400;
+  --u-fw-semibold: 600;
+  --u-fw-bold: 700;
   --u-target: 40px;
   --u-radius: 8px;
+  --u-radius-pill: 12px;
+  /* The keyboard focus outline and its distance from the control. */
+  --u-focus-ring: 2px solid var(--u-focus);
+  --u-focus-offset: 2px;
   --u-sidebar-w: 264px;
   --u-player-min: 80px;
   /* The sidebar speaker list: one row's height and how many rows of a pinned
@@ -85,14 +114,14 @@ html.ui2 .u-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: var(--u-target);
-  padding: 0 16px;
+  padding: 0 var(--u-space-4);
   border: 1px solid transparent;
   border-radius: var(--u-radius);
   font-family: var(--u-font);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   line-height: 1.2;
   cursor: pointer;
 }
@@ -108,7 +137,7 @@ html.ui2 .u-btn--icon {
   padding: 0;
   background: transparent;
   color: var(--u-text);
-  font-size: 20px;
+  font-size: var(--u-fs-2xl);
 }
 /* Disabled: no opacity, which took a filled button's words below 4.5:1 (white
    on a half-faded action blue). The words stay in the muted colour on the
@@ -128,7 +157,7 @@ html.ui2 .u-btn[aria-disabled="true"] {
    less room (a larger text size), only the icon shows; the name stays. */
 html.ui2 .u-keybtn {
   flex: 0 0 auto;
-  padding-inline: 12px 16px;
+  padding-inline: var(--u-space-3) var(--u-space-4);
   white-space: nowrap;
 }
 html.ui2 .u-keybtn svg { flex: 0 0 auto; }
@@ -142,8 +171,8 @@ html.ui2 .u-keybtn svg { flex: 0 0 auto; }
    the views inside keep the focus style they have today. */
 html.ui2 :is(.ui2-sidebar, .ui2-tabs, .ui2-player, .u-popover, .u-skip) :focus-visible,
 html.ui2 .u-skip:focus-visible {
-  outline: 2px solid var(--u-focus) !important;
-  outline-offset: 2px !important;
+  outline: var(--u-focus-ring) !important;
+  outline-offset: var(--u-focus-offset) !important;
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
 /* A tab draws its ring inside its own box (the page colour, then the focus
@@ -157,14 +186,14 @@ html.ui2 .ui2-tabs .ui2-nav-item:focus-visible {
 html.ui2 .u-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--u-space-1);
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--u-space-2);
   border: 1px solid currentcolor;
-  border-radius: 12px;
+  border-radius: var(--u-radius-pill);
   font-family: var(--u-font);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-semibold);
   line-height: 1;
   white-space: nowrap;
 }
@@ -181,7 +210,7 @@ html.ui2 .u-pill--danger { color: var(--u-danger); }
 html.ui2 .u-pill--muted { color: var(--u-muted); }
 html.ui2 .u-pill--accent { color: var(--u-accent); }
 /* A speaker busy with an update (#1764): bolder, and the dot pulses. */
-html.ui2 .u-pill--busy { font-weight: 700; border-width: 2px; }
+html.ui2 .u-pill--busy { font-weight: var(--u-fw-bold); border-width: 2px; }
 @media (prefers-reduced-motion: no-preference) {
   /* pulse is style.css's keyframes: this file holds rules only. */
   html.ui2 .u-pill--busy .u-pill-dot { animation: pulse 1.2s ease-in-out infinite; }
@@ -196,12 +225,12 @@ html.ui2 .u-chip {
   display: inline-flex;
   align-items: center;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 var(--u-space-2);
   border: 1px solid transparent;
   border-radius: 4px;
   font-family: var(--u-font);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-semibold);
   white-space: nowrap;
 }
 html.ui2 .u-chip--action { background: var(--u-action); color: var(--u-on-action); }
@@ -215,12 +244,12 @@ html.ui2 .u-badge {
   min-width: 24px;
   height: 24px;
   margin-inline-start: auto;
-  padding: 0 8px;
-  border-radius: 12px;
+  padding: 0 var(--u-space-2);
+  border-radius: var(--u-radius-pill);
   background: var(--u-action);
   color: var(--u-on-action);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 .u-badge[hidden] { display: none; }
 html.ui2 .u-badge--muted { background: transparent; color: var(--u-muted); border: 1px solid var(--u-border); }
@@ -231,16 +260,16 @@ html.ui2 .u-row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   width: 100%;
   min-height: 48px;
-  padding: 4px 16px;
+  padding: var(--u-space-1) var(--u-space-4);
   border: 0;
   border-radius: var(--u-radius);
   background: transparent;
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   text-align: start;
   cursor: pointer;
 }
@@ -249,7 +278,7 @@ html.ui2 .u-row.is-selected { background: var(--u-selected); }
 html.ui2 .u-row.is-selected::before {
   content: '';
   position: absolute;
-  inset-block: 8px;
+  inset-block: var(--u-space-2);
   inset-inline-start: 0;
   width: 4px;
   border-radius: 2px;
@@ -258,7 +287,7 @@ html.ui2 .u-row.is-selected::before {
 
 /* Cards. The empty / offline / error variants are components only in phase 1. */
 html.ui2 .u-card {
-  padding: 16px;
+  padding: var(--u-space-4);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -277,7 +306,7 @@ html.ui2 .u-popover {
   min-width: 240px;
   max-height: min(60vh, 480px);
   overflow: auto;
-  padding: 8px;
+  padding: var(--u-space-2);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -289,11 +318,11 @@ html.ui2 .u-pop-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding-inline-start: 8px;
-  margin-bottom: 8px;
+  gap: var(--u-space-2);
+  padding-inline-start: var(--u-space-2);
+  margin-bottom: var(--u-space-2);
 }
-html.ui2 .u-pop-title { font-size: 14px; font-weight: 700; }
+html.ui2 .u-pop-title { font-size: var(--u-fs-md); font-weight: var(--u-fw-bold); }
 
 @media (prefers-reduced-motion: no-preference) {
   html.ui2 .u-popover { transition: opacity 120ms ease; }
@@ -349,18 +378,18 @@ html.ui2 .donate-side { display: none !important; }
 
 html.ui2 .u-skip {
   position: absolute;
-  inset-inline-start: 8px;
+  inset-inline-start: var(--u-space-2);
   top: -200px;
   z-index: 1000;
   min-height: var(--u-target);
-  padding: 0 16px;
+  padding: 0 var(--u-space-4);
   border: 2px solid var(--u-focus);
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 html.ui2 .u-skip:focus { top: 8px; }
@@ -404,8 +433,8 @@ html.ui2 .ui2-sidebar {
 html.ui2 .ui2-side-top {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 8px 8px 2px;
+  gap: var(--u-space-4);
+  padding: var(--u-space-2) var(--u-space-2) 2px;
 }
 
 /* The sidebar is the speakers' (2026-11-02): the logo, the speaker section
@@ -417,19 +446,19 @@ html.ui2 .ui2-side-top {
    here they are narrower so all three fit side by side. */
 html.ui2 .ui2-support {
   flex: 0 0 auto;
-  padding: 8px 8px 6px;
+  padding: var(--u-space-2) var(--u-space-2) 6px;
   border-top: 1px solid var(--u-border);
 }
 /* The same words as the classic donate rail (footer.donateSlogan, with the
    cup): Jens, 2026-11-02, "the same text as before, that matters". */
 html.ui2 .ui2-support-head {
-  margin: 0 4px 6px;
+  margin: 0 var(--u-space-1) 6px;
   color: var(--u-text);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-semibold);
   line-height: 1.35;
 }
-html.ui2 .ui2-support-cup { font-size: 16px; }
+html.ui2 .ui2-support-cup { font-size: var(--u-fs-lg); }
 html.ui2 #ui2Sidebar .ui2-donate {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -438,19 +467,19 @@ html.ui2 #ui2Sidebar .ui2-donate {
 /* #ui2Support in the selector: help.css's shared rule (min-width 140px) has
    the same specificity otherwise and loads later. */
 html.ui2 #ui2Sidebar #ui2Support .donate-btn {
-  gap: 4px;
+  gap: var(--u-space-1);
   min-width: 0;
-  padding: 0 4px;
-  font-size: 12px;
+  padding: 0 var(--u-space-1);
+  font-size: var(--u-fs-xs);
   white-space: nowrap;
 }
-html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: 14px; }
+html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: var(--u-fs-md); }
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
+  padding: 6px var(--u-space-2);
   border-top: 1px solid var(--u-border);
 }
 
@@ -458,11 +487,11 @@ html.ui2 .ui2-brand {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  column-gap: 8px;
-  padding-inline: 8px;
+  column-gap: var(--u-space-2);
+  padding-inline: var(--u-space-2);
 }
 html.ui2 .ui2-brand .app-logo { color: var(--u-text); }
-html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: 18px; }
+html.ui2 .ui2-brand .app-brand { color: var(--u-text); font-family: var(--u-font); font-size: var(--u-fs-xl); }
 html.ui2 .ui2-brand .app-brand-accent { color: var(--u-accent); }
 /* The tagline lines stay in the page (the current layout shows them) but not
    in the frame: the sidebar's height belongs to the speakers. */
@@ -472,7 +501,7 @@ html.ui2 .ui2-brand .app-supported { display: none; }
 html.ui2 .ui2-room-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--u-space-1);
 }
 
 /* The speaker list (#1284, speakers.js): every speaker on the network, the
@@ -488,7 +517,7 @@ html.ui2 .ui2-spk {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  padding: 2px 4px;
+  padding: 2px var(--u-space-1);
 }
 html.ui2 .ui2-spk-lists {
   display: flex;
@@ -501,15 +530,15 @@ html.ui2 .ui2-spk-pinned {
   flex: 0 1 auto;
   flex-direction: column;
   min-height: 0;
-  margin-bottom: 4px;
-  padding-bottom: 4px;
+  margin-bottom: var(--u-space-1);
+  padding-bottom: var(--u-space-1);
   border-bottom: 1px solid var(--u-border);
 }
 html.ui2 .ui2-spk-subhead {
-  padding: 0 12px 4px;
+  padding: 0 var(--u-space-3) var(--u-space-1);
   color: var(--u-muted);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-semibold);
 }
 html.ui2 .ui2-spk-list {
   display: flex;
@@ -526,7 +555,7 @@ html.ui2 .ui2-spk-list {
 html.ui2 .ui2-spk-pinned .ui2-spk-list,
 html.ui2 .ui2-spk-scroll {
   box-sizing: content-box;
-  padding: 4px;
+  padding: var(--u-space-1);
   scroll-padding-block: 4px;
 }
 html.ui2 .ui2-spk-pinned .ui2-spk-list {
@@ -572,7 +601,7 @@ html.ui2 .u-sr-only {
 html.ui2 .ui2-spk-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--u-space-1);
 }
 html.ui2 .ui2-spk-pick {
   position: relative;
@@ -580,16 +609,16 @@ html.ui2 .ui2-spk-pick {
   flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 8px;
+  gap: 2px var(--u-space-2);
   min-width: 0;
   min-height: var(--u-target);
-  padding: 2px 8px 2px 16px;
+  padding: 2px var(--u-space-2) 2px var(--u-space-4);
   border: 0;
   border-radius: var(--u-radius);
   background: transparent;
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   text-align: start;
   cursor: pointer;
 }
@@ -598,7 +627,7 @@ html.ui2 .ui2-spk-row.is-current .ui2-spk-pick { background: var(--u-selected); 
 html.ui2 .ui2-spk-row.is-current .ui2-spk-pick::before {
   content: '';
   position: absolute;
-  inset-block: 8px;
+  inset-block: var(--u-space-2);
   inset-inline-start: 0;
   width: 4px;
   border-radius: 2px;
@@ -610,24 +639,24 @@ html.ui2 .ui2-spk-name {
   flex: 1 1 6em;
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-weight: var(--u-fw-semibold);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 html.ui2 .ui2-spk-pick .ui2-room-badges { flex: 0 1 auto; }
 /* Offline: greyed by colour, never by opacity, so the words keep their 4.5:1;
    the pill says "Offline" in words. */
-html.ui2 .ui2-spk-row.is-offline .ui2-spk-name { color: var(--u-muted); font-weight: 400; }
+html.ui2 .ui2-spk-row.is-offline .ui2-spk-name { color: var(--u-muted); font-weight: var(--u-fw-regular); }
 html.ui2 .ui2-spk-act {
   flex: 0 0 auto;
   border: 1px solid var(--u-border);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--u-fs-xl);
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 .ui2-spk-act:hover { background: var(--u-surface); }
 html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
 html.ui2 .ui2-spk-note,
-html.ui2 .ui2-spk-empty { margin: 4px 12px; color: var(--u-muted); font-size: 12px; }
+html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
 
 /* A short window or a larger text size: fewer pinned rows before that list
    scrolls, so the other speakers keep room. */
@@ -679,13 +708,13 @@ html.ui2 .ui2-nav-item {
   background: transparent;
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   white-space: nowrap;
   cursor: pointer;
 }
 html.ui2 .ui2-nav-item:hover { background: var(--u-surface); }
-html.ui2 .ui2-nav-item.is-active { font-weight: 700; }
+html.ui2 .ui2-nav-item.is-active { font-weight: var(--u-fw-bold); }
 /* The open tab: a 3px accent line along its foot, on the row's edge. */
 html.ui2 .ui2-nav-item.is-active::after {
   content: '';
@@ -697,8 +726,8 @@ html.ui2 .ui2-nav-item.is-active::after {
   background: var(--u-accent);
 }
 html.ui2 .ui2-nav-text { line-height: 1.3; }
-html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: 13px; font-weight: 400; }
-html.ui2 .ui2-nav-item--small.is-active { color: var(--u-text); font-weight: 700; }
+html.ui2 .ui2-nav-item--small { color: var(--u-muted); font-size: var(--u-fs-sm); font-weight: var(--u-fw-regular); }
+html.ui2 .ui2-nav-item--small.is-active { color: var(--u-text); font-weight: var(--u-fw-bold); }
 html.ui2 .ui2-nav-item .nav-newdot { flex: 0 0 auto; margin: 0; }
 
 /* App settings ("Aa" and the language) in one row at the foot of the
@@ -707,18 +736,18 @@ html.ui2 .ui2-nav-item .nav-newdot { flex: 0 0 auto; margin: 0; }
 html.ui2 .ui2-app-settings {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 .ui2-app-settings .app-a11y,
 html.ui2 .ui2-app-settings .app-locale { margin: 0; }
 html.ui2 .ui2-app-settings .a11y-dd-trigger,
-html.ui2 .ui2-app-settings .locale-dd-trigger { min-height: var(--u-target); padding-inline: 12px; }
+html.ui2 .ui2-app-settings .locale-dd-trigger { min-height: var(--u-target); padding-inline: var(--u-space-3); }
 html.ui2 .ui2-app-settings .a11y-dd-menu,
 html.ui2 .ui2-app-settings .locale-dd-menu {
   inset: auto auto 100% auto;
   inset-inline-start: 0;
   max-height: min(60vh, 480px);
-  margin-bottom: 8px;
+  margin-bottom: var(--u-space-2);
   overflow: auto;
 }
 
@@ -740,7 +769,7 @@ html.ui2 .ui2-main-inner {
   min-height: 100%;
   max-width: 960px;
   margin-inline: 0;
-  padding: 16px 24px;
+  padding: var(--u-space-4) var(--u-space-5);
 }
 html.ui2 .ui2-main-inner > .view { flex: 1 0 auto; }
 /* Every view ends with its own content: the classic footer (version, donate,
@@ -759,21 +788,21 @@ html.ui2 #appFooter { display: none; }
 html.ui2 :is(.ui2-radio-title, #view-library .lib2-title, #view-recent .recent-title, #view-spotify .spotify-hero h2) {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: var(--u-target);
   margin: 0;
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 24px;
-  font-weight: 700;
+  font-size: var(--u-fs-3xl);
+  font-weight: var(--u-fw-bold);
   line-height: 1.2;
 }
 html.ui2 :is(#view-library .lib2-target, #view-recent .recent-sub, #view-spotify .spotify-lead) {
-  margin: 4px 0 0;
+  margin: var(--u-space-1) 0 0;
   padding: 0;
   color: var(--u-muted);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   line-height: 1.45;
 }
 html.ui2 #view-spotify .spotify-page {
@@ -789,9 +818,9 @@ html.ui2 .ui2-player {
   display: grid;
   grid-template-columns: minmax(0, 2fr) auto auto minmax(240px, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: var(--u-player-min);
-  padding: 8px 16px;
+  padding: var(--u-space-2) var(--u-space-4);
   border-top: 1px solid var(--u-border);
   background: var(--u-sidebar);
   color: var(--u-text);
@@ -804,7 +833,7 @@ html.ui2 .ui2-player > * { min-width: 0; }
 html.ui2 .ui2-player-now {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--u-space-1);
 }
 html.ui2 .ui2-player .status-bar {
   margin-bottom: 0;
@@ -822,22 +851,22 @@ html.ui2 .ui2-player .status-bar .now {
 html.ui2 .ui2-player .title-swap-row {
   min-height: var(--u-target);
   margin: 0;
-  font-size: 12px;
+  font-size: var(--u-fs-xs);
 }
 html.ui2 .ui2-player .spotify-refused-row {
   margin: 0;
-  padding: 2px 8px;
+  padding: 2px var(--u-space-2);
   border-left: 3px solid var(--u-warn);
   border-radius: 0;
   background: transparent;
   color: var(--u-text);
-  font-size: 12px;
+  font-size: var(--u-fs-xs);
   line-height: 1.35;
 }
 /* The why and the test under the refused notice (spotifyrefused.js), in the
    player and the accounts row. */
 html.ui2 .spotify-refused-more summary { color: var(--u-muted); }
-html.ui2 .spotify-refused-more summary:focus-visible { outline: 2px solid var(--u-focus); outline-offset: 2px; }
+html.ui2 .spotify-refused-more summary:focus-visible { outline: var(--u-focus-ring); outline-offset: var(--u-focus-offset); }
 html.ui2 .ui2-player .controls {
   flex-wrap: nowrap;
   margin-bottom: 0;
@@ -848,9 +877,9 @@ html.ui2 .ui2-player .btn { min-width: var(--u-target); min-height: var(--u-targ
    has no word). Its colours, lit while the speaker is on, stay the classic
    .btn-power ones from style.css. */
 html.ui2 .ui2-player .controls #powerBtn {
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
   border-radius: 6px;
-  font-size: 16px;
+  font-size: var(--u-fs-lg);
   line-height: 1;
 }
 html.ui2 .ui2-player #pauseBtn {
@@ -899,10 +928,10 @@ html.ui2 .ui2-levels-btn {
   gap: 0;
   min-width: 0;
   max-width: 180px;
-  padding-block: 4px;
+  padding-block: var(--u-space-1);
   text-align: start;
 }
-html.ui2 .ui2-output-kicker { color: var(--u-muted); font-size: 12px; font-weight: 600; }
+html.ui2 .ui2-output-kicker { color: var(--u-muted); font-size: var(--u-fs-xs); font-weight: var(--u-fw-semibold); }
 html.ui2 .ui2-output-text {
   max-width: 100%;
   overflow: hidden;
@@ -920,7 +949,7 @@ html.ui2 .ui2-player-pop {
 html.ui2 .ui2-player-sound {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-width: 0;
 }
 html.ui2 .ui2-player-volume { display: flex; flex: 1 1 auto; min-width: 0; }
@@ -931,7 +960,7 @@ html.ui2 .ui2-player-groupvol { flex: 1 1 auto; min-width: 0; }
 html.ui2 .ui2-player-groupvol .group-vol-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   max-width: none;
   margin: 0;
 }
@@ -959,17 +988,17 @@ html.ui2 .ui2-player-pop .group-member-name { color: var(--u-text); }
 html.ui2 .ui2-player-pop .group-member-vol .vol-val { color: var(--u-muted); }
 html.ui2 .ui2-player-pop .group-control,
 html.ui2 .ui2-player-pop .queue-controls,
-html.ui2 .ui2-player-pop .source-buttons { margin: 0 0 8px; }
+html.ui2 .ui2-player-pop .source-buttons { margin: 0 0 var(--u-space-2); }
 html.ui2 .ui2-more-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 .ui2-player-empty {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 
 /* Toasts and the world-map invite float above the player, not over it. */
@@ -997,13 +1026,13 @@ html.ui2 .ui2-update-line {
   display: inline-flex;
   align-items: center;
   min-height: var(--u-target);
-  padding: 0 8px;
+  padding: 0 var(--u-space-2);
   border: 0;
   border-radius: var(--u-radius);
   background: transparent;
   color: var(--u-accent);
   font-family: var(--u-font);
-  font-size: 12px;
+  font-size: var(--u-fs-xs);
   line-height: 1.4;
   text-align: start;
   text-decoration: underline;
@@ -1020,31 +1049,31 @@ html.ui2 .ui2-update-line:hover { background: var(--u-surface); }
 html.ui2 #view-spotify .sp2 {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin: 0 0 16px;
+  gap: var(--u-space-4);
+  margin: 0 0 var(--u-space-4);
   font-family: var(--u-font);
 }
-html.ui2 #view-spotify .sp2-card { display: flex; flex-direction: column; gap: 8px; }
+html.ui2 #view-spotify .sp2-card { display: flex; flex-direction: column; gap: var(--u-space-2); }
 html.ui2 #view-spotify .sp2-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
-html.ui2 #view-spotify .sp2-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--u-text); }
+html.ui2 #view-spotify .sp2-title { margin: 0; font-size: var(--u-fs-lg); font-weight: var(--u-fw-bold); color: var(--u-text); }
 /* The card's body size for every line in it (the view's own p is larger),
    wrapping however long a name or a translation gets. */
-html.ui2 #view-spotify .sp2-text { margin: 0; font-size: 14px; line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
-html.ui2 #view-spotify .sp2-strong { font-weight: 600; }
+html.ui2 #view-spotify .sp2-text { margin: 0; font-size: var(--u-fs-md); line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-strong { font-weight: var(--u-fw-semibold); }
 html.ui2 #view-spotify .sp2-muted { color: var(--u-muted); }
-html.ui2 #view-spotify .sp2-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-sub { margin: var(--u-space-2) 0 0; font-size: var(--u-fs-sm); font-weight: var(--u-fw-semibold); color: var(--u-muted); }
 
 html.ui2 #view-spotify .sp2-now {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   margin: 0;
   color: var(--u-text);
 }
@@ -1055,21 +1084,21 @@ html.ui2 #view-spotify .sp2-now-text { min-width: 0; overflow-wrap: anywhere; }
 html.ui2 #view-spotify .sp2-keys {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-spotify .sp2-key {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: 56px;
   min-width: 0;
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-bg);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   text-align: start;
   cursor: pointer;
 }
@@ -1089,33 +1118,33 @@ html.ui2 #view-spotify .sp2-key-n {
   height: 32px;
   border: 1px solid var(--u-border);
   border-radius: 6px;
-  font-weight: 700;
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 #view-spotify .sp2-key-text { display: flex; flex-direction: column; min-width: 0; }
 html.ui2 #view-spotify .sp2-key-name {
-  font-weight: 600;
+  font-weight: var(--u-fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-html.ui2 #view-spotify .sp2-key-sub { font-size: 12px; color: var(--u-muted); }
+html.ui2 #view-spotify .sp2-key-sub { font-size: var(--u-fs-xs); color: var(--u-muted); }
 html.ui2 #view-spotify .sp2-key.is-chosen .sp2-key-sub { color: var(--u-text); }
 
 html.ui2 #view-spotify .sp2-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
-  margin-top: 8px;
+  gap: var(--u-space-2) var(--u-space-4);
+  margin-top: var(--u-space-2);
 }
-html.ui2 #view-spotify .sp2-hint { font-size: 13px; }
+html.ui2 #view-spotify .sp2-hint { font-size: var(--u-fs-sm); }
 
 /* The outcome of the last save, in the card. Words carry the meaning; the
    colour and the edge only repeat it. */
-html.ui2 #view-spotify .sp2-result { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+html.ui2 #view-spotify .sp2-result { display: flex; flex-direction: column; gap: var(--u-space-1); margin: 0; }
 html.ui2 #view-spotify .sp2-result:empty { display: none; }
 html.ui2 #view-spotify .sp2-result-line {
-  padding-inline-start: 8px;
+  padding-inline-start: var(--u-space-2);
   border-inline-start: 4px solid currentcolor;
   line-height: 1.5;
 }
@@ -1130,23 +1159,23 @@ html.ui2 #view-spotify .sp2-acct-list {
   padding: 0;
   list-style: none;
 }
-html.ui2 #view-spotify .sp2-acct { padding: 8px 0; border-top: 1px solid var(--u-border); }
+html.ui2 #view-spotify .sp2-acct { padding: var(--u-space-2) 0; border-top: 1px solid var(--u-border); }
 html.ui2 #view-spotify .sp2-acct-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: var(--u-space-1) var(--u-space-2);
 }
-html.ui2 #view-spotify .sp2-acct-name { font-weight: 700; color: var(--u-text); overflow-wrap: anywhere; }
-html.ui2 #view-spotify .sp2-acct.is-offline .sp2-acct-name { color: var(--u-muted); font-weight: 400; }
-html.ui2 #view-spotify .sp2-acct-line { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-acct-name { font-weight: var(--u-fw-bold); color: var(--u-text); overflow-wrap: anywhere; }
+html.ui2 #view-spotify .sp2-acct.is-offline .sp2-acct-name { color: var(--u-muted); font-weight: var(--u-fw-regular); }
+html.ui2 #view-spotify .sp2-acct-line { margin: var(--u-space-1) 0 0; font-size: var(--u-fs-md); line-height: 1.5; color: var(--u-text); overflow-wrap: anywhere; }
 html.ui2 #view-spotify .sp2-acct-line.sp2-muted { color: var(--u-muted); }
 html.ui2 #view-spotify .sp2-acct-plan.is-free { color: var(--u-warn); }
-html.ui2 #view-spotify .sp2-acct-refused { padding-left: 8px; border-left: 3px solid var(--u-warn); }
+html.ui2 #view-spotify .sp2-acct-refused { padding-left: var(--u-space-2); border-left: 3px solid var(--u-warn); }
 
 html.ui2 #view-spotify .sp2 :focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
 }
 html.ui2 #view-spotify .sp2-result:focus { outline: none; }
-html.ui2 #view-spotify .sp2-result:focus-visible { outline: 2px solid var(--u-focus); }
+html.ui2 #view-spotify .sp2-result:focus-visible { outline: var(--u-focus-ring); }

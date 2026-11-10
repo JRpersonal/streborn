@@ -12,13 +12,13 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] {
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--u-space-5);
   max-width: 920px;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-top {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-tools {
   display: flex;
@@ -29,42 +29,42 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .stale-stereo {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-sec {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--u-space-3);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   margin: 0;
   color: var(--u-text);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--u-fs-xl);
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-lead,
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-empty,
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-note {
   margin: 0;
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
-html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneCurrent { margin-top: 0 !important; color: var(--u-text); font-size: 14px; }
+html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneCurrent { margin-top: 0 !important; color: var(--u-text); font-size: var(--u-fs-md); }
 
 /* The status line of a sent action: waiting, done, or not confirmed. */
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status {
   margin: 0;
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
   border: 1px solid var(--u-border);
   border-inline-start-width: 4px;
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status[hidden] { display: none; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status.is-ok { border-inline-start-color: var(--u-ok); }
@@ -74,7 +74,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status.is-warn { bord
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
+  gap: var(--u-space-3);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards:empty { display: none; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-cards > .ui2-grp-empty { grid-column: 1 / -1; }
@@ -82,36 +82,36 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card,
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-width: 0;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-title {
   flex: 1 1 auto;
   margin: 0;
   color: var(--u-text);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--u-fs-lg);
+  font-weight: var(--u-fw-bold);
   overflow-wrap: anywhere;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-pills {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--u-space-1);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--u-space-1);
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members:empty { display: none; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members li {
@@ -119,7 +119,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members li {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--u-space-2);
   overflow-wrap: anywhere;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members .zone-frame-chip {
@@ -127,19 +127,19 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members .zone-frame-c
   border: 0;
   background: none;
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   opacity: 1;
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-members .box-group-master {
-  margin-inline-end: 8px;
+  margin-inline-end: var(--u-space-2);
   color: var(--u-text);
-  font-weight: 700;
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-actions,
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-card-actions:empty,
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-actions:empty { display: none; }
@@ -149,11 +149,11 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-x {
   position: static;
   height: auto;
   min-height: var(--u-target);
-  padding: 4px 12px;
+  padding: var(--u-space-1) var(--u-space-3);
   border: 1px solid var(--u-border);
   background: var(--u-surface);
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   line-height: 1.2;
   opacity: 1;
   text-align: start;
@@ -185,20 +185,20 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-actions { flex-wrap: wra
 html.ui2 #view-multiroom[data-ui2-route="groups"] select,
 html.ui2 #view-multiroom[data-ui2-route="groups"] input[type="text"] {
   min-height: var(--u-target);
-  padding: 0 12px;
+  padding: 0 var(--u-space-3);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-bg);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .u-btn { white-space: normal; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--u-space-2);
+  margin-bottom: var(--u-space-2);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-cards > .muted { grid-column: 1 / -1; }
 /* The classic .muted carries a 10px padding that indents every note against
@@ -229,7 +229,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card-host { color: var(-
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-badge { align-self: center; }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-toggle[aria-pressed="true"] {
@@ -239,8 +239,8 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-toggle[aria-pressed="
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-toggle[aria-pressed="true"]::before { content: '\2713'; }
 
 html.ui2 #view-multiroom[data-ui2-route="groups"] :focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h:focus-visible { outline-offset: 4px; }
@@ -248,7 +248,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h:focus-visible { out
 /* The confirmation: a modal dialog that names the pair or group. */
 html.ui2 .ui2-grp-dialog {
   max-width: min(480px, calc(100vw - 32px));
-  padding: 24px;
+  padding: var(--u-space-5);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -257,25 +257,25 @@ html.ui2 .ui2-grp-dialog {
 }
 html.ui2 .ui2-grp-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 html.ui2 .ui2-grp-dialog-title {
-  margin: 0 0 8px;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 0 0 var(--u-space-2);
+  font-size: var(--u-fs-xl);
+  font-weight: var(--u-fw-bold);
   overflow-wrap: anywhere;
 }
 html.ui2 .ui2-grp-dialog-body {
-  margin: 0 0 16px;
+  margin: 0 0 var(--u-space-4);
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   overflow-wrap: anywhere;
 }
 html.ui2 .ui2-grp-dialog-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 html.ui2 .ui2-grp-dialog :focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
   box-shadow: 0 0 0 2px var(--u-surface), 0 0 0 4px var(--u-focus);
 }

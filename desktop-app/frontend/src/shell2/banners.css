@@ -17,8 +17,8 @@
 
 html.ui2 #ui2Banners .speaker-update-card {
   position: relative;
-  margin: 8px 16px 0;
-  padding: 12px 16px 12px 20px;
+  margin: var(--u-space-2) var(--u-space-4) 0;
+  padding: var(--u-space-3) var(--u-space-4) var(--u-space-3) 20px;
   border: 1px solid var(--u-border);
   border-inline-start: 4px solid var(--u-accent);
   border-radius: var(--u-radius);
@@ -33,15 +33,15 @@ html.ui2 #ui2Banners .speaker-update-card .suc-body {
   margin: 0;
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-title {
-  margin: 0 0 8px;
+  margin: 0 0 var(--u-space-2);
   color: var(--u-text);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--u-fs-lg);
+  font-weight: var(--u-fw-bold);
   line-height: 1.3;
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-text {
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   line-height: 1.5;
 }
 /* The speakers side by side, not one per line: with five or six speakers
@@ -50,12 +50,12 @@ html.ui2 #ui2Banners .speaker-update-card .suc-text {
 html.ui2 #ui2Banners .speaker-update-card .suc-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  margin: 6px 0 12px;
+  gap: var(--u-space-1) var(--u-space-4);
+  margin: 6px 0 var(--u-space-3);
   padding: 0;
   list-style: none;
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-list li {
   white-space: nowrap;
@@ -66,7 +66,7 @@ html.ui2 #ui2Banners .speaker-update-card .suc-list li {
 html.ui2 #ui2Banners .speaker-update-card .suc-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 24px;
+  column-gap: var(--u-space-5);
   max-width: none;
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-body > :not(.suc-actions) { grid-column: 1; }
@@ -79,12 +79,12 @@ html.ui2 #ui2Banners .speaker-update-card .suc-actions {
 html.ui2 #ui2Banners .speaker-update-card .suc-list { margin-bottom: 0; }
 html.ui2 #ui2Banners .speaker-update-card .suc-ver {
   color: var(--u-muted);
-  font-size: 12px;
+  font-size: var(--u-fs-xs);
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 /* The two buttons look like the shell's primary and secondary buttons. They
    keep their ids and classic classes (main.js wires them by id). */
@@ -94,12 +94,12 @@ html.ui2 #ui2Banners #sucLater {
   align-items: center;
   justify-content: center;
   min-height: var(--u-target);
-  padding: 0 16px;
+  padding: 0 var(--u-space-4);
   border: 1px solid transparent;
   border-radius: var(--u-radius);
   font-family: var(--u-font);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 html.ui2 #ui2Banners #sucUpdate {
@@ -120,8 +120,8 @@ html.ui2 #ui2Banners #sucUpdate:disabled {
 }
 html.ui2 #ui2Banners #sucUpdate:focus-visible,
 html.ui2 #ui2Banners #sucLater:focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
 }
 
 /* ---------- The banners about the computer ---------- */
@@ -132,8 +132,8 @@ html.ui2 #ui2Banners #sucLater:focus-visible {
 html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet),
 html.ui2 #ui2Banners .global-security-banner {
   position: static;
-  margin: 8px 16px 0;
-  padding: 12px 16px 12px 20px;
+  margin: var(--u-space-2) var(--u-space-4) 0;
+  padding: var(--u-space-3) var(--u-space-4) var(--u-space-3) 20px;
   border: 1px solid var(--u-border);
   border-inline-start: 4px solid var(--u-warn);
   border-radius: var(--u-radius);
@@ -167,8 +167,8 @@ html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .btn-primary {
 }
 html.ui2 #ui2Banners .app-update-banner :is(.btn, .banner-close, .footer-link):focus-visible,
 html.ui2 #ui2Banners .global-security-banner .btn:focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
 }
 html.ui2 #ui2Banners .app-update-banner .banner-close {
   min-width: var(--u-target);
