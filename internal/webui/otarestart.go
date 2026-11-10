@@ -336,24 +336,52 @@ func (s *Server) restartAgentAfterOTA(dst string) {
 	s.handOverAndExit(pid, "the restart helper starts the new binary, no box reboot")
 }
 
+// otaHandOver is how finishAgentOTA left the speaker.
+type otaHandOver int
+
+const (
+	// otaHandOverExiting: this process is ending, a helper or the fallback
+	// starts the new binary.
+	otaHandOverExiting otaHandOver = iota
+	// otaHandOverRebooting: reboot accepted the request; init ends this
+	// process within seconds.
+	otaHandOverRebooting
+	// otaHandOverFailed: nothing took over, this agent keeps running the
+	// previous build.
+	otaHandOverFailed
+)
+
+// otaRebootGrace is how long an accepted reboot gets to end this process. A
+// reboot takes this agent down within seconds; one still running after two
+// minutes is not rebooting.
+const otaRebootGrace = 2 * time.Minute
+
 // finishAgentOTA hands the speaker over to the binary just written to dst,
 // once the answer has gone out, the stick is refreshed, the OTA marker is
 // written and everything is synced.
-func (s *Server) finishAgentOTA(dst string) {
+func (s *Server) finishAgentOTA(dst string) otaHandOver {
 	if s.otaRestartOnly(dst) {
 		s.restartAgentAfterOTA(dst)
-		return
+		return otaHandOverExiting
 	}
 	err := otaReboot()
 	if err == nil {
-		return
+		return otaHandOverRebooting
 	}
-	// reboot binary missing or refused: fall back to the detached process
-	// self-restart so we at least run the new binary. The sleep 70 covers the
-	// :8081/:9080 TIME_WAIT window (60 s tcp_fin_timeout on this kernel) so
-	// the new binary does not crash-loop on "address already in use" (seen
-	// 2026-05-17).
 	s.logger.Error("post-OTA reboot failed, falling back to process self-restart", "err", err)
+	if s.selfRestartFallback() {
+		return otaHandOverExiting
+	}
+	return otaHandOverFailed
+}
+
+// selfRestartFallback is the hand-over when reboot is missing or refused: a
+// detached process self-restart, so the speaker at least runs the new binary.
+// The sleep 70 covers the :8081/:9080 TIME_WAIT window (60 s tcp_fin_timeout
+// on this kernel) so the new binary does not crash-loop on "address already
+// in use" (seen 2026-05-17). False when the helper could not be started; this
+// agent then keeps running.
+func (s *Server) selfRestartFallback() bool {
 	quoted := make([]string, 0, len(os.Args))
 	for _, a := range os.Args {
 		quoted = append(quoted, shQuote(a))
@@ -361,8 +389,49 @@ func (s *Server) finishAgentOTA(dst string) {
 	shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> " + agentLogPath + " 2>&1"
 	if _, serr := otaStartDetached(shCmd); serr != nil {
 		s.logger.Error("self-restart fallback also failed", "err", serr)
-		return
+		return false
 	}
 	time.Sleep(100 * time.Millisecond)
 	otaExit(0)
+	return true
+}
+
+// settleOTAHandOver follows a hand-over to its end. Nothing to do while this
+// process is on its way out. An accepted reboot is given otaRebootGrace; an
+// agent that is still running after it tries the self-restart instead. When
+// nothing takes over, the update is abandoned (abandonOTAHandOver), because
+// an agent that stays up must not keep saying an update is installing.
+func (s *Server) settleOTAHandOver(h otaHandOver, stopSplash func()) {
+	switch h {
+	case otaHandOverExiting:
+		return
+	case otaHandOverRebooting:
+		otaSleep(otaRebootGrace)
+		s.logger.Error("post-OTA: the reboot was accepted but this agent still runs, falling back to process self-restart",
+			"graceSec", int(otaRebootGrace/time.Second))
+		if s.selfRestartFallback() {
+			return
+		}
+	}
+	s.abandonOTAHandOver(stopSplash)
+}
+
+// abandonOTAHandOver puts this agent back into service after an update that
+// was written but could not restart the speaker. Before, updateInFlight stayed
+// set for the life of the process, so the speaker refused every Spotify engine
+// delivery (409) and every self-update until someone pulled the plug, and the
+// Portable's display kept showing the update screen.
+//
+// The new binary stays on the NAND: the next power cycle starts it, and the
+// self-update marker stays too, so that start finishes the update (engine
+// included). The OTA-reboot marker goes, because no OTA reboot happened and
+// the next start is a genuine power-on.
+func (s *Server) abandonOTAHandOver(stopSplash func()) {
+	s.logger.Error("post-OTA: the speaker could not be restarted; it keeps running the previous version until it is power-cycled, and accepts updates and engine deliveries again")
+	_ = os.Remove(otaRebootMarkerPath)
+	if stopSplash != nil {
+		stopSplash()
+	}
+	s.selfUpd.failIfRebooting("The update is on the speaker, but the speaker could not restart itself. Unplug it for ten seconds and plug it back in.")
+	updateInFlight.Store(false)
 }
