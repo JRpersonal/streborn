@@ -223,6 +223,9 @@ func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
 	if !strings.Contains(j, "the UNCONFIRMED line above is superseded") {
 		t.Errorf("the corrective line does not name the UNCONFIRMED line it supersedes:\n%s", j)
 	}
+	// The watcher writes the journal line before it sets the pin, so the line
+	// alone does not say the pin is there yet: wait for the watcher to end.
+	a.stopLateWatchers()
 	a.discMu.Lock()
 	_, pinned := a.otaPinned["192.0.2.36"]
 	a.discMu.Unlock()
