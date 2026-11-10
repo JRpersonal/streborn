@@ -53,6 +53,9 @@ type Server struct {
 	// otaEffects is the update's outside world: restart, helper, exit, clock,
 	// paths (otarestart.go); nil = productionOTAEffects.
 	otaEffects *otaEffects
+	// wlanClear is what "forget the Wi-Fi" reads off the speaker and does to
+	// it (wlanclear.go); nil = productionWLANClearEffects.
+	wlanClear *wlanClearEffects
 	// phoneRun is the claim of the phone that walks such a run itself
 	// (selfupdate_phone.go).
 	phoneRun phoneRun

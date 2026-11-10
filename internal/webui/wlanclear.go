@@ -129,16 +129,34 @@ func defaultWlanClearPaths() wlanClearPaths {
 	}
 }
 
-// Test seams. Production reads the box; the tests hand in a cabled speaker
-// and catch the restart.
-var (
-	wlanClearPathsFn  = defaultWlanClearPaths
-	wlanClearInputsFn = readWLANClearInputs
-	// wlanClearRunningFn removes every network from the running supplicant
-	// and reports how many went.
-	wlanClearRunningFn = clearRunningNetworks
-	wlanClearRebootFn  = rebootBox
-)
+// wlanClearEffects is what the clear reads off the speaker and does to it.
+// Production reads productionWLANClearEffects; a test installs its own copy on
+// the server (Server.wlanClear), hands in a cabled speaker and catches the
+// restart.
+type wlanClearEffects struct {
+	paths  func() wlanClearPaths
+	inputs func(*http.Request) (wlanClearInputs, string)
+	// running removes every network from the running supplicant and reports
+	// how many went.
+	running func(iface string) int
+	reboot  func()
+}
+
+// productionWLANClearEffects is the clear on a real speaker.
+var productionWLANClearEffects = wlanClearEffects{
+	paths:   defaultWlanClearPaths,
+	inputs:  readWLANClearInputs,
+	running: clearRunningNetworks,
+	reboot:  rebootBox,
+}
+
+// wlanClearFx returns the effects this server's clear runs on.
+func (s *Server) wlanClearFx() *wlanClearEffects {
+	if s.wlanClear != nil {
+		return s.wlanClear
+	}
+	return &productionWLANClearEffects
+}
 
 // readWLANClearInputs gathers the decision's inputs for one request.
 func readWLANClearInputs(r *http.Request) (wlanClearInputs, string) {
@@ -306,7 +324,7 @@ func (s *Server) clearWLANStores(p wlanClearPaths, iface string) (wlanClearResul
 
 	// 3. The running supplicant.
 	if iface != "" {
-		res.RunningRemoved = wlanClearRunningFn(iface)
+		res.RunningRemoved = s.wlanClearFx().running(iface)
 	}
 
 	// 4. STR's own records, so no boot path puts the network back.
@@ -338,9 +356,10 @@ func clearRunningNetworks(iface string) int {
 }
 
 // wlanClearState answers what a clear would do right now, for the networks
-// list: allowed or the refusal code.
+// list: allowed or the refusal code. It reads the speaker itself, not a
+// server's wlanClearEffects: its caller (wlanforget.go) has no seam for it.
 func wlanClearState(r *http.Request) map[string]any {
-	in, _ := wlanClearInputsFn(r)
+	in, _ := productionWLANClearEffects.inputs(r)
 	code, reason := planWLANClear(in)
 	return map[string]any{"allowed": code == "", "code": code, "reason": reason}
 }
@@ -364,8 +383,9 @@ func (s *Server) handleBoxWLANClear(w http.ResponseWriter, r *http.Request) {
 	}
 	reboot := req.Reboot == nil || *req.Reboot
 
+	fx := s.wlanClearFx()
 	s.wlanMu.Lock()
-	in, iface := wlanClearInputsFn(r)
+	in, iface := fx.inputs(r)
 	if code, reason := planWLANClear(in); code != "" {
 		s.wlanMu.Unlock()
 		s.logger.Info("wlan clear: refused", "code", code, "mechanism", in.Mechanism,
@@ -374,7 +394,7 @@ func (s *Server) handleBoxWLANClear(w http.ResponseWriter, r *http.Request) {
 			Mechanism: in.Mechanism, RemovedTags: []string{}})
 		return
 	}
-	res, ok := s.clearWLANStores(wlanClearPathsFn(), iface)
+	res, ok := s.clearWLANStores(fx.paths(), iface)
 	s.wlanMu.Unlock()
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, res)
@@ -392,6 +412,6 @@ func (s *Server) handleBoxWLANClear(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 	if res.Rebooting {
 		s.logger.Info("wlan clear: restarting the speaker so its network manager reloads the empty store")
-		wlanClearRebootFn()
+		fx.reboot()
 	}
 }
