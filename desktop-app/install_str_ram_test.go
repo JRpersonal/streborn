@@ -239,7 +239,7 @@ func TestStopSTRScriptEndsWatchdogsFirst(t *testing.T) {
 // Source checks for the paths a unit test cannot reach without a speaker.
 func TestRepairRestartPathsBringTheAgentBack(t *testing.T) {
 	src := readInstallSrc(t)
-	repair := funcBody(t, src, "func (a *App) RepairInstallViaSSH(")
+	repair := funcBody(t, readSource(t, "install_repair.go"), "func (a *App) RepairInstallViaSSH(")
 	i := strings.Index(repair, `res.Code = "repair-box-restarted"`)
 	if i < 0 {
 		t.Fatal("repair-box-restarted branch is gone; if it moved, move this test with it")
