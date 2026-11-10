@@ -16,6 +16,7 @@ func newPowerTestHandler(strSource func() bool) (h *presetWsHandler, exits, entr
 	exits, entries = new(atomic.Int32), new(atomic.Int32)
 	h = &presetWsHandler{
 		logger:            slog.Default(),
+		resync:            newResyncAsks(),
 		onStandbyExit:     func() { exits.Add(1) },
 		onEnterStandby:    func() { entries.Add(1) },
 		strSourceRecently: strSource,
@@ -39,8 +40,6 @@ func waitCount(t *testing.T, c *atomic.Int32, want int32) {
 }
 
 func TestPowerGateSuppressesDuplicateWake(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(0)
 	// Bus first, ring a moment later: one delivery.
 	h, exits, _ := newPowerTestHandler(nil)
 	h.OnStandbyExit(context.TODO())
@@ -63,12 +62,10 @@ func TestPowerGateSuppressesDuplicateWake(t *testing.T) {
 }
 
 func TestPowerGateDeliversLoneSyslogWake(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(0)
 	h, exits, _ := newPowerTestHandler(nil)
 	h.OnBoxPowerEvent(boxlog.PowerEvent{Kind: boxlog.PowerWake, Source: boxlog.PowerSourceHSM, At: time.Now(), Class: boxlog.ClassWake})
 	waitCount(t, exits, 1)
-	if !presetResyncAsk.Load() {
+	if !h.resync.ask.Load() {
 		t.Fatal("a syslog wake must schedule the key re-sync exactly as a bus standby exit does")
 	}
 	snap := h.powerGate.snapshot()

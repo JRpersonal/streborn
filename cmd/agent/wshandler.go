@@ -38,6 +38,10 @@ type presetWsHandler struct {
 	renderer *upnp.Renderer
 	autoPair *autopair.Manager
 	boxHost  string
+	// resync is the reconciler's ask scheduler: where a dead key, a re-login
+	// or a wake asks for a full re-sync of the hardware keys. Nil in tests
+	// that do not look at the ask, which then goes nowhere.
+	resync *resyncAsks
 	// firstPress tracks the last native preset activation so a playback
 	// failure just after it can be answered with one more press.
 	firstPress firstPressRescue
@@ -1116,7 +1120,7 @@ func (h *presetWsHandler) OnSourceRejected(_ context.Context) {
 	// registrations (field bundles: "missing=5/6" healed right after every
 	// "forced re-login sent"). Schedule the heal proactively; own short
 	// budget, so a routine ask cannot starve it.
-	requestPresetKeyResyncUrgent(h.logger, "1036")
+	h.resync.requestUrgent(h.logger, "1036")
 }
 
 // lastSourceRejectTime returns when the box last rejected STR's source (zero if
@@ -1191,17 +1195,16 @@ func (h *presetWsHandler) legacyThumbFrame(ctx context.Context) {
 		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
 		if src == "STANDBY" && !playing {
 			now := time.Now().Unix()
-			last := standbyThumbLast.Swap(now)
-			if last != 0 && now-last <= 60 {
+			if h.resync.standbyThumbRepeat(now) {
 				h.logger.Info("repeated thumb frames from a box reading STANDBY: treating as real presses on a dead key layer, scheduling the re-sync (#342)")
-				presetResyncStandbyOK.Store(true)
-				requestPresetKeyResync(h.logger, "thumb-repeat")
+				h.resync.grantStandbyOK()
+				h.resync.request(h.logger, "thumb-repeat")
 				return
 			}
 			h.logger.Info("thumb frame while the box idles in STANDBY (phantom), not scheduling a key re-sync")
 			return
 		}
-		requestPresetKeyResync(h.logger, "thumb")
+		h.resync.request(h.logger, "thumb")
 	}()
 	if h.webhooks == nil {
 		return
@@ -1238,7 +1241,7 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	// 5-minute reconcile tick, and "after power-on only the first program
 	// plays"). Ask for a full re-sync right at the wake so the keys work
 	// within seconds instead of minutes. Rate-limited internally.
-	requestPresetKeyResync(h.logger, "power-wake")
+	h.resync.request(h.logger, "power-wake")
 	// The fake marge login decays across the same power cycles: re-check the
 	// pairing right at the wake. On a healthy box this is one /info read; on
 	// a login-suspect box (a recent 1036 NOT_LOGGED_IN) it re-asserts the
@@ -1336,7 +1339,7 @@ func (h *presetWsHandler) actOnStandbyExit() {
 
 // standbyExit is what a standby exit does, whichever origin reported it.
 func (h *presetWsHandler) standbyExit() {
-	requestPresetKeyResync(h.logger, "standby-exit")
+	h.resync.request(h.logger, "standby-exit")
 	// A chassis whose syslog ring is not read still gets the clock check
 	// here; the keeper's rate limit drops the twin of a ring wake.
 	standbyClockOnPower("wake")
@@ -1367,7 +1370,7 @@ func (h *presetWsHandler) resyncUnlessIdleStandby() {
 			return
 		}
 	}
-	requestPresetKeyResync(h.logger, "reconnect")
+	h.resync.request(h.logger, "reconnect")
 }
 
 // logStandbyRaceSignature records (log-only) whether, shortly after a gabbo

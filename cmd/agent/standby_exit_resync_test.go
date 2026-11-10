@@ -10,11 +10,9 @@ import (
 )
 
 func TestOnStandbyExitSchedulesResync(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(0)
-	h := &presetWsHandler{logger: slog.Default()}
+	h := &presetWsHandler{logger: slog.Default(), resync: newResyncAsks()}
 	h.OnStandbyExit(context.TODO())
-	if !presetResyncAsk.Load() {
+	if !h.resync.ask.Load() {
 		t.Fatal("standby exit must schedule the forced key re-sync (#487)")
 	}
 }

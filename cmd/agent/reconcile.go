@@ -75,42 +75,48 @@ func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
 	return out
 }
 
-// presetResyncAsk flags one forced full box-preset re-sync for the periodic
-// reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
-// routine requests so repeated thumbs presses cannot cause a re-sync storm;
-// presetResyncUrgentLast is a SEPARATE, shorter budget for the deterministic
-// wipe moments (a 1036 source rejection precedes a forced re-login, and the
-// re-onboarding is when the firmware drops its key registrations) so a routine
-// ask consumed minutes earlier cannot starve the heal that is actually needed
-// now (field bundles 2026-07-22: five dead-key presses produced no resync
-// because the boot-time ask had eaten the 10-minute budget).
-var (
-	presetResyncAsk        atomic.Bool
-	presetResyncLast       atomic.Int64 // unix seconds of the last accepted routine request
-	presetResyncUrgentLast atomic.Int64 // unix seconds of the last accepted urgent request
-	// presetResyncAsker names the origin of the pending ask (thumb / 1036 /
-	// paired / power-wake / standby-exit / reconnect), so the standby deferral
-	// WARN and the forced-pass log say WHICH trigger wanted to write - the one
-	// fact overnight field bundles could never answer.
-	presetResyncAsker atomic.Value // string
+// resyncAsks is the resync-ask scheduler: the one place a full box-preset
+// re-sync is asked for, rate-limited and handed to the reconcile loop. The
+// askers (the gabbo handler's goroutines, autopair's paired hook, the
+// reconcile's own passes) and the loop that consumes the ask run on different
+// goroutines, so every field is atomic.
+//
+// One scheduler belongs to one reconciler. It is built before the loop starts
+// and handed to every asker; nothing here is a package variable, so a test
+// builds its own and cannot see another test's ask.
+//
+// ask flags one forced full box-preset re-sync for the periodic reconcile
+// (the #342 dead-key self-heal). last rate-limits the routine requests so
+// repeated thumbs presses cannot cause a re-sync storm; urgentLast is a
+// SEPARATE, shorter budget for the deterministic wipe moments (a 1036 source
+// rejection precedes a forced re-login, and the re-onboarding is when the
+// firmware drops its key registrations) so a routine ask consumed minutes
+// earlier cannot starve the heal that is actually needed now (field bundles
+// 2026-07-22: five dead-key presses produced no resync because the boot-time
+// ask had eaten the 10-minute budget).
+type resyncAsks struct {
+	ask        atomic.Bool
+	last       atomic.Int64 // unix seconds of the last accepted routine request
+	urgentLast atomic.Int64 // unix seconds of the last accepted urgent request
+	// asker names the origin of the pending ask (thumb / 1036 / paired /
+	// power-wake / standby-exit / reconnect), so the standby deferral WARN and
+	// the forced-pass log say WHICH trigger wanted to write - the one fact
+	// overnight field bundles could never answer.
+	asker atomic.Value // string
 	// standbyThumbLast tracks the previous standby-read thumb frame so a
 	// repeat within a minute reads as a human retrying a dead key, not a
-	// phantom frame. presetResyncStandbyOK grants that ask ONE execution
-	// despite a STANDBY reading (the user is demonstrably at the box).
-	// fullPresetWriteAt is when a full pass last wrote every slot to the box.
-	// Two writers exist and neither knew about the other: the reconcile, which
-	// compares against the box first, and initialBoxPresetSync, which writes
-	// unconditionally 30 s after start. They landed fifteen seconds apart and
-	// stored every preset twice, on every speaker, on every start (2026-09-29).
-	fullPresetWriteAt     atomic.Int64
-	standbyThumbLast      atomic.Int64
-	presetResyncStandbyOK atomic.Bool
-	// presetResyncKeysDead marks the pending ask as one that came with
-	// evidence that keys are dead although /presets still lists them
-	// (askerExpectsDeadKeys). It travels with the ask: consumed with it,
-	// dropped with it by the standby deferral.
-	presetResyncKeysDead atomic.Bool
-)
+	// phantom frame. standbyOK grants that ask ONE execution despite a STANDBY
+	// reading (the user is demonstrably at the box).
+	standbyThumbLast atomic.Int64
+	standbyOK        atomic.Bool
+	// keysDead marks the pending ask as one that came with evidence that keys
+	// are dead although /presets still lists them (askerExpectsDeadKeys). It
+	// travels with the ask: consumed with it, dropped with it by the standby
+	// deferral.
+	keysDead atomic.Bool
+}
+
+func newResyncAsks() *resyncAsks { return &resyncAsks{} }
 
 // askerExpectsDeadKeys reports whether a re-sync asker comes with evidence that
 // the hardware keys are dead while the speaker still LISTS them: a press that
@@ -128,18 +134,27 @@ func askerExpectsDeadKeys(asker string) bool {
 	return false
 }
 
-// notePresetResyncAsker records the asker of an ask that has just armed.
-func notePresetResyncAsker(asker string) {
-	presetResyncAsker.Store(asker)
+// noteAsker records the asker of an ask that has just armed.
+func (a *resyncAsks) noteAsker(asker string) {
+	a.asker.Store(asker)
 	if askerExpectsDeadKeys(asker) {
-		presetResyncKeysDead.Store(true)
+		a.keysDead.Store(true)
 	}
 }
 
-func requestPresetKeyResync(logger *slog.Logger, asker string) {
+// request asks for one forced full re-sync on the routine budget.
+//
+// The three methods the gabbo handler calls (request, requestUrgent,
+// standbyThumbRepeat) accept a nil scheduler and then do nothing: a handler
+// built without a reconciler has nobody to ask. The agent always wires one;
+// only tests of unrelated handler paths leave it out.
+func (a *resyncAsks) request(logger *slog.Logger, asker string) {
+	if a == nil {
+		return
+	}
 	const minGapSec = 2 * 60
 	now := time.Now().Unix()
-	last := presetResyncLast.Load()
+	last := a.last.Load()
 	if last != 0 && now-last < minGapSec {
 		return
 	}
@@ -148,53 +163,75 @@ func requestPresetKeyResync(logger *slog.Logger, asker string) {
 	// armed the flag; the standby deferral's budget reset introduced a
 	// non-arming concurrent writer, and losing to IT dropped a wake re-ask.
 	// Two concurrent askers both storing is harmless (one pending ask).
-	presetResyncLast.Store(now)
-	notePresetResyncAsker(asker)
-	presetResyncAsk.Store(true)
+	a.last.Store(now)
+	a.noteAsker(asker)
+	a.ask.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)", "asker", asker)
 	}
 }
 
-// requestPresetKeyResyncUrgent is requestPresetKeyResync for the moments where
-// a box-side key wipe is EXPECTED (a 1036 rejection / forced re-login, a fresh
-// pairing): it uses its own short budget so it cannot be starved by a routine
-// ask, and the reconcile's 10s wake bounds how often the forced pass can run.
-func requestPresetKeyResyncUrgent(logger *slog.Logger, asker string) {
+// requestUrgent is request for the moments where a box-side key wipe is
+// EXPECTED (a 1036 rejection / forced re-login, a fresh pairing): it uses its
+// own short budget so it cannot be starved by a routine ask, and the
+// reconcile's 10s wake bounds how often the forced pass can run.
+func (a *resyncAsks) requestUrgent(logger *slog.Logger, asker string) {
+	if a == nil {
+		return
+	}
 	const minGapSec = 60
 	now := time.Now().Unix()
-	last := presetResyncUrgentLast.Load()
+	last := a.urgentLast.Load()
 	if last != 0 && now-last < minGapSec {
 		return
 	}
-	presetResyncUrgentLast.Store(now)
-	notePresetResyncAsker(asker)
-	presetResyncAsk.Store(true)
+	a.urgentLast.Store(now)
+	a.noteAsker(asker)
+	a.ask.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)", "asker", asker)
 	}
 }
 
-// deferPresetResyncForStandby drops a pending re-sync ask because the box is
-// (or seems to be) in standby: a full AddPreset sweep into a sleeping box
-// resets the firmware's deep-standby countdown and heals nothing a sleeping
-// box can use (#119; the v0.9.17 reconnect writes provably kept boxes awake
-// for days). The wake moment re-asks via OnStandbyExit/OnPowerWake, so the
-// routine budget is reset here or a deferral seconds before a wake would
-// swallow the wake's own re-ask.
-func deferPresetResyncForStandby(logger *slog.Logger, src string) {
-	asker, _ := presetResyncAsker.Load().(string)
-	presetResyncLast.Store(0)
+// standbyThumbRepeat stamps a thumb frame read while the box reports STANDBY
+// (now in unix seconds) and reports whether it repeats one from the last
+// minute.
+func (a *resyncAsks) standbyThumbRepeat(now int64) bool {
+	if a == nil {
+		return false
+	}
+	last := a.standbyThumbLast.Swap(now)
+	return last != 0 && now-last <= 60
+}
+
+// grantStandbyOK lets the next ask run once although the box reads STANDBY.
+func (a *resyncAsks) grantStandbyOK() {
+	if a == nil {
+		return
+	}
+	a.standbyOK.Store(true)
+}
+
+// deferForStandby drops a pending re-sync ask because the box is (or seems to
+// be) in standby: a full AddPreset sweep into a sleeping box resets the
+// firmware's deep-standby countdown and heals nothing a sleeping box can use
+// (#119; the v0.9.17 reconnect writes provably kept boxes awake for days). The
+// wake moment re-asks via OnStandbyExit/OnPowerWake, so the routine budget is
+// reset here or a deferral seconds before a wake would swallow the wake's own
+// re-ask.
+func (a *resyncAsks) deferForStandby(logger *slog.Logger, src string) {
+	asker, _ := a.asker.Load().(string)
+	a.last.Store(0)
 	// The urgent budget resets too: a 1036/paired asker fires on a box that is
 	// ALREADY awake (no wake hook is coming for it), so when its ask was
 	// dropped on a transient probe error the ONLY natural retrigger is the
 	// next 1036 - which the still-burned 60s budget would silence. Urgent
 	// triggers are external events that never fire autonomously on a sleeping
 	// box, so this cannot create a standby write loop.
-	presetResyncUrgentLast.Store(0)
+	a.urgentLast.Store(0)
 	// The dropped ask takes its dead-key evidence with it; the wake re-ask
 	// brings its own.
-	presetResyncKeysDead.Store(false)
+	a.keysDead.Store(false)
 	reason := "box idles in STANDBY"
 	if src == "" {
 		reason = "box state unreadable, holding writes"
@@ -202,6 +239,13 @@ func deferPresetResyncForStandby(logger *slog.Logger, src string) {
 	logger.Warn("preset re-sync deferred: "+reason+", holding the key writes for the wake (#119)",
 		"asker", asker)
 }
+
+// fullPresetWriteAt is when a full pass last wrote every slot to the box.
+// Two writers exist and neither knew about the other: the reconcile, which
+// compares against the box first, and initialBoxPresetSync, which writes
+// unconditionally 30 s after start. They landed fifteen seconds apart and
+// stored every preset twice, on every speaker, on every start (2026-09-29).
+var fullPresetWriteAt atomic.Int64
 
 // retryHoldVerdict is what the steady-state retry gate decides for a box
 // that reads STANDBY (or nothing at all).
@@ -358,7 +402,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 // boxcli.AddPreset. This way the fix applies automatically without user
 // action when, e.g., the Bose firmware has lost individual entries after a
 // standby cycle.
-func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store) {
+func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store, asks *resyncAsks) {
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
 	// box's preset / hardware-button subsystem is fully up; the slots
@@ -433,14 +477,14 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// STANDBY before the first press, and gating it would regress the
 			// first-press-after-reboot registration (#4).
 			if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
-				switch retryHoldDecision(src, presetResyncAsk.Load(), presetResyncStandbyOK.Load()) {
+				switch retryHoldDecision(src, asks.ask.Load(), asks.standbyOK.Load()) {
 				case retryHoldRunAsk:
 					// User-present evidence (repeated dead-key presses): the
 					// pending ask runs despite the STANDBY reading, exactly as
 					// the routine path below grants it.
-					presetResyncStandbyOK.Store(false)
-					presetResyncAsk.Store(false)
-					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
+					asks.standbyOK.Store(false)
+					asks.ask.Store(false)
+					forceKeysDead = asks.keysDead.Swap(false) || forceKeysDead
 				default:
 					retryDeferred = true
 					retryHeldSrc = src
@@ -454,7 +498,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 		if !retryDeferred {
 			retryHoldLogged = false
 		}
-		if !retryDeferred && !force && presetResyncAsk.CompareAndSwap(true, false) {
+		if !retryDeferred && !force && asks.ask.CompareAndSwap(true, false) {
 			// Dead-key self-heal (#342): a hardware press produced no
 			// selection frame, so the box's key layer likely lost its
 			// registrations even though /presets still lists them.
@@ -473,18 +517,18 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// be swallowed by the consumed ask's stale rate-limit stamp. On
 			// the awake path the stamp is restored via CAS - if a re-ask
 			// already overwrote the 0, its own fresh stamp wins.
-			lastConsumed := presetResyncLast.Swap(0)
-			if presetResyncStandbyOK.CompareAndSwap(true, false) {
+			lastConsumed := asks.last.Swap(0)
+			if asks.standbyOK.CompareAndSwap(true, false) {
 				// User-present evidence (repeated dead-key presses): this ask
 				// runs even when the box still reads STANDBY.
-				presetResyncLast.CompareAndSwap(0, lastConsumed)
-				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
+				asks.last.CompareAndSwap(0, lastConsumed)
+				forceKeysDead = asks.keysDead.Swap(false) || forceKeysDead
 				force = true
 			} else if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
-				deferPresetResyncForStandby(logger, src)
+				asks.deferForStandby(logger, src)
 			} else {
-				presetResyncLast.CompareAndSwap(0, lastConsumed)
-				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
+				asks.last.CompareAndSwap(0, lastConsumed)
+				forceKeysDead = asks.keysDead.Swap(false) || forceKeysDead
 				force = true
 			}
 		}
@@ -549,8 +593,8 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// wait therefore also has a floor of one tick no matter what: an
 			// asker that re-arms straight after the deferral (its budget was
 			// just reset) must not shorten it to zero.
-			if presetResyncAsk.CompareAndSwap(true, false) {
-				deferPresetResyncForStandby(logger, retryHeldSrc)
+			if asks.ask.CompareAndSwap(true, false) {
+				asks.deferForStandby(logger, retryHeldSrc)
 			}
 			// The ceiling bounds a wait on STR's own playback. A night in
 			// standby is not that: counted, it fired the pass three seconds
@@ -560,7 +604,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			time.Sleep(10 * time.Second)
 			// Maintenance cadence, but wake early on a fresh ask (= the box
 			// woke up).
-			for waited := 10 * time.Second; waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
+			for waited := 10 * time.Second; waited < 5*time.Minute && !asks.ask.Load(); waited += 10 * time.Second {
 				time.Sleep(10 * time.Second)
 			}
 			continue
@@ -709,8 +753,8 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 				// shows, so a pass asked for by one of those runs at the
 				// ceiling as it always did. Such an ask may also have arrived
 				// while this pass was held; the pass about to run answers it.
-				if presetResyncKeysDead.Load() && presetResyncAsk.CompareAndSwap(true, false) {
-					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
+				if asks.keysDead.Load() && asks.ask.CompareAndSwap(true, false) {
+					forceKeysDead = asks.keysDead.Swap(false) || forceKeysDead
 				}
 				run, missing, listErr := ceilingRunsPass(forceKeysDead, func() ([]int, error) {
 					return keysMissingOnBox(store, boxHost, wh)
@@ -761,7 +805,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 		// (accountresync.go), so consume that ask here: a recheck arriving
 		// DURING the pass stays armed and wakes the wait below once more.
 		presetRecheckAsk.Store(false)
-		ready := reconcileOnce(store, boxHost, logger, force, wh)
+		ready := reconcileOnce(store, boxHost, logger, force, wh, asks)
 		fullDone = ready
 		if ready {
 			everFullDone = true
@@ -771,7 +815,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// for a forced re-sync so a dead key recovers in seconds, not
 			// after up to five minutes, and when the speaker re-read its
 			// account during boot (an ordinary pass, see accountresync.go).
-			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load() && !presetRecheckAsk.Load(); waited += 10 * time.Second {
+			for waited := time.Duration(0); waited < 5*time.Minute && !asks.ask.Load() && !presetRecheckAsk.Load(); waited += 10 * time.Second {
 				time.Sleep(10 * time.Second)
 			}
 		} else {
@@ -1110,7 +1154,7 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 	return missing
 }
 
-func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
+func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store, asks *resyncAsks) bool {
 	stick := boxRowPresets(store.All())
 	// Keys configured as "webhook only" need a placeholder even when the store
 	// is completely empty, which is the shape the second #536 reporter was in:
@@ -1299,7 +1343,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		if src, playing, paused, playKnown := boxSourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown) {
 			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
 				"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src, "slots", len(missing)+len(nativeWrites))
-			requestPresetKeyResync(logger, "missing-slots-held")
+			asks.request(logger, "missing-slots-held")
 			missing = nil
 			nativeWrites = nil
 		}
@@ -1410,7 +1454,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			refused := reportRewrittenSlots(logger, kept, verdict)
 			if len(kept) > 0 {
 				if ask, streak, wait := noteRewriteOutcome(refused, time.Now()); ask {
-					requestPresetKeyResync(logger, "refused-rewrite")
+					asks.request(logger, "refused-rewrite")
 				} else if refused {
 					logger.Info("preset reconcile: the speaker refused the rewrite again, backing off before asking for another re-sync",
 						"streak", streak, "backoffLeft", wait.Round(time.Second).String())

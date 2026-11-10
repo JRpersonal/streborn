@@ -117,6 +117,9 @@ type agent struct {
 	bootReason string
 
 	// buildMedia
+	// resync is where the gabbo handler and autopair ask the preset reconcile
+	// for a full re-sync; built before the reconcile loop starts.
+	resync         *resyncAsks
 	bmxSrv         *bmx.Resolver
 	autoPair       *autopair.Manager
 	region         string
@@ -810,7 +813,8 @@ func (a *agent) buildMedia() error {
 	// Bose state resets are healed automatically — the user normally never
 	// needs to press the "repair hardware buttons" button.
 	go initialBoxPresetSync(store, a.flags.boxHost, logger)
-	go periodicPresetReconcile(store, a.flags.boxHost, logger, webhooksStore)
+	a.resync = newResyncAsks()
+	go periodicPresetReconcile(store, a.flags.boxHost, logger, webhooksStore, a.resync)
 
 	// Read the region from a file on start (provisioned by the setup wizard).
 	region := loadRegion(a.flags.regionFile, logger)
@@ -1274,6 +1278,7 @@ func (a *agent) buildBoxLink() error {
 		renderer: renderer,
 		autoPair: autoPair,
 		boxHost:  a.flags.boxHost,
+		resync:   a.resync,
 		spotify:  spotifyMgr,
 		// A box/remote stop seen over gabbo tells the webui to hold the
 		// auto-re-push, so a deliberate stop is not immediately undone.
@@ -1715,7 +1720,7 @@ func (a *agent) buildBoxLink() error {
 	// A completed (re-)onboarding wipes the box's hardware-key preset
 	// registrations; re-register them right away instead of waiting for the
 	// reconcile cadence.
-	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger, "paired") })
+	autoPair.SetOnPaired(func() { a.resync.requestUrgent(logger, "paired") })
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)

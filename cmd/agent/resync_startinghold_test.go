@@ -69,7 +69,7 @@ func TestTheReconcileLoopUsesTheStartHoldAndForgetsStandbyTime(t *testing.T) {
 	if i < 0 || j < 0 || i > j {
 		t.Error("the forced pass no longer checks for a starting play before the playback hold")
 	}
-	k := strings.Index(src, "deferPresetResyncForStandby(logger, retryHeldSrc)")
+	k := strings.Index(src, "asks.deferForStandby(logger, retryHeldSrc)")
 	if k < 0 || !strings.Contains(src[k:min(k+800, len(src))], "forceHeldSince = time.Time{}") {
 		t.Error("the standby wait no longer resets the hold ceiling, so a night asleep fires the pass into the morning's resume")
 	}
