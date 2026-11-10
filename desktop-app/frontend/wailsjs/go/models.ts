@@ -1556,6 +1556,9 @@ export namespace main {
 	    message: string;
 	    log: string;
 	    removedFiles: string[];
+	    incomplete: boolean;
+	    leftoverFiles: string[];
+	    stillInstalled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new UninstallSTRResult(source);
@@ -1569,6 +1572,9 @@ export namespace main {
 	        this.message = source["message"];
 	        this.log = source["log"];
 	        this.removedFiles = source["removedFiles"];
+	        this.incomplete = source["incomplete"];
+	        this.leftoverFiles = source["leftoverFiles"];
+	        this.stillInstalled = source["stillInstalled"];
 	    }
 	}
 	export class UpdateAsset {

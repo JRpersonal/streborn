@@ -252,13 +252,26 @@ export function openInstallFor(box) {
 // by design, so the "reading speaker data" retry loop and its "agent died,
 // unplug the speaker" ending would be nonsense here: nothing is wrong, and
 // there is no agent to read from. Say what happened and where the box went.
+//
+// A removal that left files behind (state.strRemovedLeftover, for this host)
+// keeps saying so here: the toast is gone after a few seconds, and what to do
+// about the leftover files is the one thing the user still has to read. The
+// headline says it too: "STR was removed" above a note about files that are
+// still there read as a success with small print.
 export function renderSTRRemovedPanel(body, box) {
+  const left = state.strRemovedLeftover;
+  const incomplete = !!(left && box && left.host === box.host);
+  const leftover = incomplete
+    ? `<div class="empty-state-text" id="settingsRemovedLeftover" role="alert">${escapeHtml(t('settingsView.removeSTRIncomplete', { paths: left.paths }))}</div>`
+    : '';
+  const title = incomplete ? t('settingsView.strRemovedIncompleteTitle') : t('settingsView.strRemovedTitle');
   body.innerHTML = `
     <div class="empty-state">
-      <div class="empty-state-title">${escapeHtml(t('settingsView.strRemovedTitle'))}</div>
+      <div class="empty-state-title">${escapeHtml(title)}</div>
       <div class="empty-state-text">
         ${escapeHtml(t('settingsView.strRemovedHelp', { name: settingsBoxLabel(box) }))}
       </div>
+      ${leftover}
       <div class="empty-state-buttons">
         <button class="btn btn-mini" id="settingsInstallAgain">${escapeHtml(t('settingsView.repairSTRBtn'))}</button>
         <button class="btn btn-primary btn-mini" id="settingsBackToBoxes">${escapeHtml(t('settingsView.backToSpeakerList'))}</button>

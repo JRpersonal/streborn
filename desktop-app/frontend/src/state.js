@@ -210,6 +210,7 @@ export const state = {
   setupDoneOpen: false,       // the "already set up" group of the target picker is unfolded
   settingsReconnect: null,    // { attempts, max, timer } while Settings waits for a speaker to come back
   strRemovedHost: null,       // host STR was just removed from, until Settings showed the result
+  strRemovedLeftover: null,   // { host, paths } when that removal left files behind on the speaker
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after

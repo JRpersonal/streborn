@@ -22,6 +22,7 @@ import (
 // UninstallSTRResult is the JSON-serialisable outcome of an uninstall
 // attempt. StickPresent=true means we aborted because the stick was
 // still in the speaker (the frontend shows the pull-the-stick hint).
+// Incomplete=true means the removal went through only in part.
 type UninstallSTRResult struct {
 	Step         string   `json:"step"`
 	OK           bool     `json:"ok"`
@@ -29,6 +30,15 @@ type UninstallSTRResult struct {
 	Message      string   `json:"message"`
 	Log          string   `json:"log"`
 	RemovedFiles []string `json:"removedFiles"`
+	// Incomplete: STR no longer starts on the speaker (it rebooted into plain
+	// Bose), but the paths in LeftoverFiles could not be deleted. OK stays
+	// false: this is neither a success nor a removal that did nothing.
+	Incomplete    bool     `json:"incomplete"`
+	LeftoverFiles []string `json:"leftoverFiles"`
+	// StillInstalled: nothing effective came off, STR starts again on the
+	// restart that follows. LeftoverFiles lists what is still there. The
+	// frontend has its own translated sentence for it.
+	StillInstalled bool `json:"stillInstalled"`
 }
 
 // UninstallSTR removes STR from the speaker and returns it to vanilla
@@ -56,25 +66,121 @@ type UninstallSTRResult struct {
 // Package level so a test can assert what it reports; the Go side cannot tell
 // "removed nothing because it failed" from "removed nothing because there was
 // nothing there" unless the script says which.
+//
+// Order matters. Everything that writes into /mnt/nv/streborn is stopped
+// BEFORE the folder is removed, and only then is it deleted:
+//
+//   - the run script (run-override.sh, started by rc.local) and its watchdog
+//     subshells. They append to setup.log and logs/agent-crash.log the moment
+//     the agent dies, and they start the agent again, which writes agent.pid.
+//     A file created in the folder while rm walks it is what makes rm end in
+//     "Directory not empty" with the folder left behind (seen on a
+//     SoundTouch 10, 2026-11-10). They are found by command line, because a
+//     subshell carries the script's command line. Lines that contain one of
+//     this script's own markers are skipped: that is this script's shell.
+//   - the agent and the Spotify engine (go-librespot, which keeps its state
+//     in /mnt/nv/streborn/sp-cache and outlives a killed agent).
+//
+// The script then VERIFIES what is left and says so (STR_UNINSTALL_LEFTOVER),
+// instead of trusting rm's exit status. STR_UNINSTALL_STILL_STARTS is added
+// when both rc.local and run-override.sh survived, so STR would come back on
+// the next boot.
+//
+// A lost connection must not leave a stopped speaker behind. Once the run
+// script and the agent are killed nothing on the speaker starts them again, so
+// a session that drops between "stopped" and the app's reboot used to end in
+// a speaker with STR half removed and nothing running until someone pulled
+// the plug. Two things close that:
+//
+//   - BEFORE the first kill the script arms its own restart, a detached
+//     subshell that reboots the speaker uninstallGuardSeconds after the start,
+//     whatever happens to the session. It ignores HUP and holds no handle of
+//     the session, the same detached form as rebootCmd. The app's own reboot
+//     (one second, right after the script reports) normally comes first and
+//     takes the guard down with everything else; the guard is what is left
+//     when the app never gets to send it. It is NOT armed on the stick-present
+//     refusal, which touches nothing.
+//   - the script itself ignores HUP and PIPE, so it finishes the removal and
+//     the verification instead of dying at its next echo into a dead session.
+//
+// The guard's own command line is this script's (a subshell does not exec),
+// so stop_supervisors skips it like it skips the script's shell. The
+// stick-present marker stays in the first lines for the same reason: the
+// kernel hands out only the first page of a command line.
+//
+// BusyBox v1.19 on the speaker: killall and pidof with several names, no
+// pkill -f, no sed -E.
 const uninstallScript = `set -u
 if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/streborn ]; then
   echo "STR_UNINSTALL_ABORT_STICK_PRESENT"
   exit 0
 fi
+# A dropped session must not end this run halfway.
+trap '' HUP PIPE
+# Restart guard, armed before anything is stopped: whatever happens to this
+# session from here on, the speaker reboots by itself.
+(trap '' HUP; sleep 120; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &
+echo "STR_UNINSTALL_GUARD_ARMED"
 REMOVED=""
-# Stop the running agent so it cannot rewrite anything mid-uninstall.
-pkill -TERM streborn-armv7l 2>/dev/null
-sleep 1
-pkill -KILL streborn-armv7l 2>/dev/null
-# Remove the STR install + the NAND override entry point.
-if [ -d /mnt/nv/streborn ]; then rm -rf /mnt/nv/streborn && REMOVED="$REMOVED /mnt/nv/streborn"; fi
-if [ -f /mnt/nv/rc.local ]; then rm -f /mnt/nv/rc.local && REMOVED="$REMOVED /mnt/nv/rc.local"; fi
-# STR/go-librespot traces that live OUTSIDE /mnt/nv/streborn, so the rm -rf above
-# leaves them behind: go-librespot's Spotify oauth dump (can be multi-MB) and a
-# stranded SSH-repair install-staging dir. Uninstall is "back to stock", so drop
-# every trace, not just the install dir.
-if [ -f /mnt/nv/sp-oauth.out ]; then rm -f /mnt/nv/sp-oauth.out && REMOVED="$REMOVED /mnt/nv/sp-oauth.out"; fi
-if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMOVED="$REMOVED /mnt/nv/streborn-install"; fi
+SUP=0
+# Kill the run script's shells: the main one, its watchdog loops and the
+# supervisor subshell that waits for the agent. Never restarted here.
+stop_supervisors() {
+  SUP=0
+  for d in /proc/[0-9]*; do
+    [ -r "$d/cmdline" ] || continue
+    c=$(tr '\000' ' ' < "$d/cmdline" 2>/dev/null)
+    case "$c" in
+      *STR_UNINSTALL_*) ;;
+      *"/mnt/nv/streborn/run-override.sh"*|*"/media/sd"[a-d]"1/run.sh"*|*"/mnt/nv/rc.local"*)
+        kill -9 "${d##*/}" 2>/dev/null
+        SUP=$((SUP+1)) ;;
+    esac
+  done
+}
+stop_supervisors
+# Without the PID file a watchdog that slipped through ends its own loop.
+rm -f /mnt/nv/streborn/agent.pid
+# Agent and Spotify engine: ask first, so they can close their files.
+killall streborn-armv7l go-librespot 2>/dev/null
+i=0
+while [ $i -lt 5 ] && pidof streborn-armv7l go-librespot >/dev/null 2>&1; do
+  sleep 1
+  i=$((i+1))
+done
+# Then insist, until nothing of STR runs any more (bounded).
+i=0
+while [ $i -lt 10 ]; do
+  stop_supervisors
+  killall -9 streborn-armv7l go-librespot 2>/dev/null
+  if [ "$SUP" = 0 ] && ! pidof streborn-armv7l go-librespot >/dev/null 2>&1; then break; fi
+  sleep 1
+  i=$((i+1))
+done
+# remove_path PATH: delete it, and try again after a short pause when it is
+# still there (a straggler wrote into it mid-walk). 0 once it is gone.
+remove_path() {
+  n=0
+  while [ $n -lt 5 ]; do
+    rm -rf "$1"
+    [ -e "$1" ] || break
+    n=$((n+1))
+    stop_supervisors
+    killall -9 streborn-armv7l go-librespot 2>/dev/null
+    sleep 1
+  done
+  if [ $n -gt 0 ]; then echo "STR_UNINSTALL_RETRIED:$1 $n"; fi
+  [ ! -e "$1" ]
+}
+# The STR install, the NAND override entry point, and the STR/go-librespot
+# traces that live OUTSIDE /mnt/nv/streborn: go-librespot's Spotify oauth dump
+# (can be multi-MB) and a stranded SSH-repair install-staging dir. Uninstall is
+# "back to stock", so drop every trace, not just the install dir.
+for p in /mnt/nv/streborn /mnt/nv/rc.local /mnt/nv/sp-oauth.out /mnt/nv/streborn-install; do
+  if [ -e "$p" ]; then
+    remove_path "$p" && REMOVED="$REMOVED $p"
+  fi
+done
 # STR Remove deliberately does NOT touch the Bose network/account state.
 # Wiping NetworkProfiles.xml (as this used to, for a "factory OOB" reset) drops
 # the box off Wi-Fi into the Bose setup AP, so it vanishes from the LAN - that
@@ -86,9 +192,158 @@ if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMO
 # so unbind it now; a reboot clears it regardless.
 umount /etc/hosts 2>/dev/null || true
 sync
-if [ -z "$REMOVED" ] && [ ! -d /mnt/nv/streborn ] && [ ! -f /mnt/nv/rc.local ]; then echo "STR_UNINSTALL_ALREADY_CLEAN"; fi
+# Verify instead of trusting rm: look at what is really still there.
+LEFT=""
+for p in /mnt/nv/streborn /mnt/nv/rc.local /mnt/nv/sp-oauth.out /mnt/nv/streborn-install; do
+  if [ -e "$p" ]; then LEFT="$LEFT $p"; fi
+done
+if [ -n "$LEFT" ]; then
+  echo "STR_UNINSTALL_LEFTOVER:$LEFT"
+  if [ -f /mnt/nv/rc.local ] && [ -e /mnt/nv/streborn/run-override.sh ]; then echo "STR_UNINSTALL_STILL_STARTS"; fi
+  echo "left behind:"
+  ls -la $LEFT 2>&1 | head -n 40
+elif [ -z "$REMOVED" ]; then
+  echo "STR_UNINSTALL_ALREADY_CLEAN"
+fi
 echo "STR_UNINSTALL_REMOVED:$REMOVED"
 `
+
+// uninstallScriptTimeout bounds the script run from the app's side. The
+// script stops everything first and waits for it, bounded: up to ~15 s of
+// waiting plus the retries of a removal that does not go through.
+const uninstallScriptTimeout = 90 * time.Second
+
+// uninstallGuardSeconds is the delay of the restart guard inside
+// uninstallScript (the "sleep 120" there; a test keeps the two in step). It is
+// longer than uninstallScriptTimeout on purpose: while the app still waits for
+// the script, the guard must not pull the speaker away under it.
+const uninstallGuardSeconds = 120
+
+// uninstallGuardArmedMarker is what the script prints once its restart guard
+// is armed. From that line on the speaker reboots by itself.
+const uninstallGuardArmedMarker = "STR_UNINSTALL_GUARD_ARMED"
+
+// uninstallInterruptedMessage is the text for a script run the app lost: the
+// SSH call failed or timed out, or the script ended without its report.
+// armed says whether the output still showed the restart guard going up.
+func uninstallInterruptedMessage(cause string, armed bool) string {
+	if armed {
+		return "The removal was interrupted (" + cause + "). The speaker restarts by itself within about " +
+			"two minutes, so it does not stay stopped. Wait until it is back, then check it: if it still " +
+			"shows STR, run Remove again."
+	}
+	return "uninstall failed: " + cause + ". If the removal had already begun, the speaker restarts by " +
+		"itself within about two minutes. Wait until it is back, then run Remove again."
+}
+
+// stashedPresetsNote is the sentence about the preset keys kept on this PC,
+// empty when none were kept.
+func stashedPresetsNote(stashed int) string {
+	if stashed <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" Its %d preset keys were kept on this PC and go back onto the speaker "+
+		"the next time STR is installed on it from this app.", stashed)
+}
+
+// uninstallReport is what uninstallScript said about its run.
+type uninstallReport struct {
+	// guardArmed: the script armed its restart guard, so it got past the
+	// stick check and the speaker reboots by itself.
+	guardArmed bool
+	// stickPresent: the script refused, the STR stick is still inserted.
+	stickPresent bool
+	// alreadyClean: nothing was there to remove and nothing is left.
+	alreadyClean bool
+	// stillStarts: rc.local and run-override.sh both survived, so STR starts
+	// again on the next boot.
+	stillStarts bool
+	// removed: the paths the script deleted.
+	removed []string
+	// leftover: the paths that are still on the speaker after the removal.
+	leftover []string
+}
+
+// parseUninstallOutput reads uninstallScript's markers. Markers count only at
+// the start of a line, so a path echoed back inside another line cannot fake
+// one.
+func parseUninstallOutput(out string) uninstallReport {
+	var r uninstallReport
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "STR_UNINSTALL_ABORT_STICK_PRESENT":
+			r.stickPresent = true
+		case line == uninstallGuardArmedMarker:
+			r.guardArmed = true
+		case line == "STR_UNINSTALL_ALREADY_CLEAN":
+			r.alreadyClean = true
+		case line == "STR_UNINSTALL_STILL_STARTS":
+			r.stillStarts = true
+		case strings.HasPrefix(line, "STR_UNINSTALL_REMOVED:"):
+			r.removed = append(r.removed, strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_REMOVED:"))...)
+		case strings.HasPrefix(line, "STR_UNINSTALL_LEFTOVER:"):
+			r.leftover = append(r.leftover, strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_LEFTOVER:"))...)
+		}
+	}
+	return r
+}
+
+// uninstallOutcome is how a script run that got as far as removing things
+// ended.
+type uninstallOutcome int
+
+const (
+	// uninstallSilent: the script reported neither a removal, nor leftovers,
+	// nor a clean speaker. It did not run to its end.
+	uninstallSilent uninstallOutcome = iota
+	// uninstallClean: there was nothing to remove.
+	uninstallClean
+	// uninstallRemoved: everything is gone.
+	uninstallRemoved
+	// uninstallIncomplete: STR no longer starts, but files are left behind.
+	uninstallIncomplete
+	// uninstallStillInstalled: files are left behind and STR starts again on
+	// the next boot.
+	uninstallStillInstalled
+)
+
+// outcome classifies the report. Leftovers win over everything else: a run
+// that removed rc.local and left the folder is not a success, however many
+// entries it lists as removed.
+func (r uninstallReport) outcome() uninstallOutcome {
+	switch {
+	case len(r.leftover) > 0 && r.stillStarts:
+		return uninstallStillInstalled
+	case len(r.leftover) > 0:
+		return uninstallIncomplete
+	case len(r.removed) > 0:
+		return uninstallRemoved
+	case r.alreadyClean:
+		return uninstallClean
+	}
+	return uninstallSilent
+}
+
+// uninstallLeftoverMessage is the English text of the two leftover outcomes
+// (the frontend shows its own translated sentence for the incomplete one).
+//
+// The advice differs on purpose. While STR still starts, a restart brings the
+// agent back and Remove can simply run again. Once STR no longer starts, the
+// restarted speaker is a stock one with SSH closed and a second Remove would
+// only answer "already removed", so the way to the leftover files is a fresh
+// install followed by a removal.
+func uninstallLeftoverMessage(r uninstallReport) string {
+	left := strings.Join(r.leftover, ", ")
+	if r.stillStarts {
+		return "STR could not be removed, its files are still on the speaker (" + left + "). " +
+			"The speaker is restarting with STR still on it. Wait about 60 s until it is back, " +
+			"then run Remove again."
+	}
+	return "STR no longer starts on this speaker, but some of its files could not be deleted (" + left + "). " +
+		"The speaker is restarting as a plain Bose speaker; wait about 60 s. To clear the leftover files, " +
+		"install STR on it again from this app and then remove it once more."
+}
 
 func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	res := UninstallSTRResult{Step: "start"}
@@ -109,11 +364,12 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	defer release()
 	a.logger.Info("uninstall_str: starting", "host", host)
 	// From here on no engine delivery may land on this speaker (see
-	// App.uninstalling). The mark stays after a successful removal; a failed
-	// attempt lifts it again so a later update can still complete the engine.
+	// App.uninstalling). The mark stays after a removal that took STR off the
+	// speaker (also one that left files behind); a failed attempt lifts it
+	// again so a later update can still complete the engine.
 	a.uninstalling.Store(host, struct{}{})
 	defer func() {
-		if !res.OK {
+		if !res.OK && !res.Incomplete {
 			a.uninstalling.Delete(host)
 		}
 	}()
@@ -190,14 +446,25 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// /media/sda1), so we never remove STR only to have Bose reinstall it
 	// from the stick on the next boot.
 	res.Step = "uninstall"
-	script := uninstallScript
-	out, err := boxSSHOutput(host, script, 40*time.Second)
+	out, err := boxSSHOutput(host, uninstallScript, uninstallScriptTimeout)
 	res.Log = out
-	if err != nil {
-		res.Message = "uninstall failed: " + classifySSHError(out, err)
+	rep := parseUninstallOutput(out)
+	if err != nil && !rep.stickPresent {
+		// The call failed or timed out, and nobody knows how far the script
+		// got. If it was past its first kill, STR is stopped on the speaker and
+		// nothing there starts it again. The script's own restart guard covers
+		// that; a reboot from here as well gets the speaker back sooner when
+		// SSH still answers. Restarting a speaker the script never touched
+		// costs a minute and nothing else. A stick-present refusal is the one
+		// answer that needs no reboot; it is handled below as usual.
+		res.Step = "interrupted"
+		res.Message = uninstallInterruptedMessage(classifySSHError(out, err), rep.guardArmed)
+		a.logger.Warn("uninstall_str: the script run was lost; rebooting the speaker so it does not stay stopped",
+			"host", host, "guardArmed", rep.guardArmed, "err", err, "log", out)
+		_ = boxReboot(host)
 		return res
 	}
-	if strings.Contains(out, "STR_UNINSTALL_ABORT_STICK_PRESENT") {
+	if rep.stickPresent {
 		res.StickPresent = true
 		res.Step = "stick-present"
 		res.Message = "The USB stick is still in the speaker. Pull it out first, " +
@@ -206,11 +473,8 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		a.logger.Info("uninstall_str: aborted, stick still inserted", "host", host)
 		return res
 	}
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "STR_UNINSTALL_REMOVED:") {
-			res.RemovedFiles = append(res.RemovedFiles, strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_REMOVED:"))...)
-		}
-	}
+	res.RemovedFiles = rep.removed
+	res.LeftoverFiles = rep.leftover
 	// Nothing removed is only a failure when there was something to remove.
 	// Running Remove on a speaker that is ALREADY clean is the most ordinary
 	// thing in the world: a user who saw no confirmation the first time presses
@@ -223,14 +487,44 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// question the bug produces: why did one speaker flip to "READY FOR STR" by
 	// itself while the other needed the app restarted. The first came off in one
 	// go, the second was the second attempt.
-	alreadyClean := strings.Contains(out, "STR_UNINSTALL_ALREADY_CLEAN")
-	if len(res.RemovedFiles) == 0 && !alreadyClean {
-		res.Message = "uninstall returned no removed-file list — script may have failed silently. See log."
+	outcome := rep.outcome()
+	alreadyClean := outcome == uninstallClean
+	switch outcome {
+	case uninstallSilent:
+		// The script ended without its report, so it may have died after it
+		// stopped STR. Same answer as a lost call: restart the speaker.
+		res.Step = "interrupted"
+		res.Message = uninstallInterruptedMessage("the script ended without its report, see the log", rep.guardArmed)
+		a.logger.Warn("uninstall_str: the script ended without its report; rebooting the speaker so it does not stay stopped",
+			"host", host, "guardArmed", rep.guardArmed, "log", out)
+		_ = boxReboot(host)
 		return res
-	}
-	if alreadyClean {
+	case uninstallStillInstalled:
+		// Nothing that matters came off: rc.local and the run script are both
+		// still there. The script has stopped the agent and its watchdogs, so
+		// without a reboot the speaker would sit there with STR installed and
+		// nothing running. Restart it: STR comes back up, and with it the
+		// agent that opens SSH for the next attempt. The app keeps remembering
+		// the speaker as the STR speaker it still is.
+		res.Step = "leftover"
+		res.StillInstalled = true
+		res.Message = uninstallLeftoverMessage(rep)
+		a.logger.Warn("uninstall_str: nothing effective was removed, STR still starts; rebooting so it comes back",
+			"host", host, "leftover", rep.leftover, "removed", rep.removed, "log", out)
+		_ = boxReboot(host)
+		return res
+	case uninstallIncomplete:
+		// rc.local or the run script is gone, so STR no longer starts, but
+		// files are left (typically the folder itself). Reported as what it
+		// is: not a success. The speaker behaves like a stock one from here
+		// on, so the app's memory of it and the reboot follow the success
+		// path; a stock speaker left un-rebooted would keep root SSH open.
+		res.Incomplete = true
+		a.logger.Warn("uninstall_str: STR no longer starts, but files are left behind",
+			"host", host, "leftover", rep.leftover, "removed", rep.removed, "log", out)
+	case uninstallClean:
 		a.logger.Info("uninstall_str: speaker was already clean, nothing to remove", "host", host)
-	} else {
+	case uninstallRemoved:
 		a.logger.Info("uninstall_str: removed", "host", host, "removedCount", len(res.RemovedFiles))
 	}
 
@@ -249,6 +543,14 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	res.Step = "reboot"
 	_ = boxReboot(host)
 
+	if res.Incomplete {
+		res.Step = "incomplete"
+		// The preset keys were stashed before the script ran, and a fresh
+		// install starts with a new store, so the note applies here too.
+		res.Message = uninstallLeftoverMessage(rep) + stashedPresetsNote(stashed)
+		a.logger.Info("uninstall_str: done, incomplete", "host", host, "leftover", rep.leftover)
+		return res
+	}
 	res.Step = "done"
 	res.OK = true
 	if alreadyClean {
@@ -262,10 +564,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		"factory Bose state. Wait ~60 s. The speaker no longer runs STR; onboard it again "+
 		"with the Bose iOS app, or re-insert a prepared STR stick to bring STR back.",
 		len(res.RemovedFiles))
-	if stashed > 0 {
-		res.Message += fmt.Sprintf(" Its %d preset keys were kept on this PC and go back onto the speaker "+
-			"the next time STR is installed on it from this app.", stashed)
-	}
+	res.Message += stashedPresetsNote(stashed)
 	a.logger.Info("uninstall_str: done", "host", host, "removedCount", len(res.RemovedFiles))
 	return res
 }
