@@ -51,7 +51,7 @@ describe('stick firmware gate', () => {
   });
 
   it('runs before the stick is checked, formatted or written in doSetup', () => {
-    const src = readFileSync(new URL('./views/setup.js', import.meta.url), 'utf8');
+    const src = readFileSync(new URL('./views/setup/stick.js', import.meta.url), 'utf8');
     const start = src.indexOf('async function doSetup()');
     expect(start).toBeGreaterThan(0);
     const body = src.slice(start);

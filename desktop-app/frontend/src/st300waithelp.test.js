@@ -10,12 +10,15 @@
 // told him to unplug it since v0.9.84. The list under it outvoted the headline.
 import { describe, it, expect } from 'vitest';
 import { isSoundTouch300 } from './utils.js';
-import { allSource, srcBetween } from './test/source.js';
+import { allSource, fileSource, fileWith, srcBetween } from './test/source.js';
 
 const setup = allSource();
 
-// The install help block: the stuck-code table and the checklist builder.
-const help = srcBetween('const ST300_STUCK_CODES', '// waitForBoxAfterSetup runs after');
+// The install help block: the stuck-code table and the checklist builder. It
+// used to end where waitForBoxAfterSetup began; in its own module
+// (views/setup/installhelp.js) it runs to the end of the file, the same text.
+const helpFile = fileSource(fileWith('const ST300_STUCK_CODES'));
+const help = helpFile.slice(helpFile.indexOf('const ST300_STUCK_CODES'));
 
 describe('the checklist knows which speaker it is talking about', () => {
   it('takes the box, not only the failure code', () => {
