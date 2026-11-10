@@ -66,7 +66,7 @@ func TestBothWritePathsReadThePause(t *testing.T) {
 	if !strings.Contains(src, "forcedWriteHold(src, playing || paused, playKnown,") {
 		t.Error("the forced pass no longer counts a paused play as busy")
 	}
-	if !strings.Contains(src, "boxSourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown)") {
+	if !strings.Contains(src, "r.sourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown)") {
 		t.Error("the routine pass no longer counts a paused play as busy")
 	}
 }

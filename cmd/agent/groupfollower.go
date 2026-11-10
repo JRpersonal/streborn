@@ -4,38 +4,14 @@ package main
 // preset reconcile (#1077). A follower's firmware refuses every AddPreset
 // while it is in GroupSlave, so writing presets into it is wasted NAND writes
 // and, worse, a log that claims keys were healed when nothing was stored.
+// The reconciler asks through its group-follower seam (reconcile.go); this
+// file holds the role decision behind it.
 
 import (
 	"strings"
-	"sync/atomic"
 
 	"github.com/JRpersonal/streborn/internal/webui"
 )
-
-// groupFollowerFn is wired in main (setGroupFollowerFn): the stereo-pair
-// record STR keeps in marge first (a pair formed through STR leaves the zone
-// store empty), the speaker's own zone second. Unset (tests, early start)
-// means "not a follower". Atomic because the reconcile loop starts before the
-// webui server that answers it exists.
-var groupFollowerFn atomic.Pointer[func() (bool, string)]
-
-func setGroupFollowerFn(fn func() (bool, string)) {
-	if fn == nil {
-		groupFollowerFn.Store(nil)
-		return
-	}
-	groupFollowerFn.Store(&fn)
-}
-
-// presetWriteGroupFollower reports whether the preset writes must be skipped
-// because this speaker follows a group, and why.
-func presetWriteGroupFollower() (bool, string) {
-	fn := groupFollowerFn.Load()
-	if fn == nil {
-		return false, ""
-	}
-	return (*fn)()
-}
 
 // stereoFollowerFrom builds the play paths' pair-role answer from the pair
 // record (master, name, ok), this speaker's own deviceID, whether the record

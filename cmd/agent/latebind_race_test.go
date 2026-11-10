@@ -16,21 +16,15 @@ import (
 // while the hooks are bound and unbound the way run() binds them. Run with
 // -race, where a plain assignment would fail it again.
 func TestLateBoundHooksAreRaceFreeAgainstRunningReaders(t *testing.T) {
-	prevWake := quietWakeEpisodeActive.Load()
-	prevPlay := lastUserPlayStartFn.Load()
-	prevFollower := groupFollowerFn.Load()
+	// The reconcile's three seams are fields of the reconciler now, so this
+	// test binds them on one of its own.
+	rec := newTestReconciler(t)
 	prevName := peerSelfNameFn.Load()
 	prevIDs := peerSelfDeviceIDsFn.Load()
 	t.Cleanup(func() {
-		quietWakeEpisodeActive.Store(prevWake)
-		lastUserPlayStartFn.Store(prevPlay)
-		groupFollowerFn.Store(prevFollower)
 		peerSelfNameFn.Store(prevName)
 		peerSelfDeviceIDsFn.Store(prevIDs)
 	})
-	setQuietWakeEpisodeActive(nil)
-	setLastUserPlayStartFn(nil)
-	setGroupFollowerFn(nil)
 	setPeerSelfNameFn(nil)
 	setPeerSelfDeviceIDsFn(nil)
 
@@ -39,9 +33,9 @@ func TestLateBoundHooksAreRaceFreeAgainstRunningReaders(t *testing.T) {
 	// What the reconcile loop reads before a forced pass, and what the roster
 	// reads on every sweep and seed.
 	reads := []func(){
-		func() { groupWakeSettling() },
-		func() { sinceLastUserPlay() },
-		func() { presetWriteGroupFollower() },
+		func() { rec.groupWakeSettling() },
+		func() { rec.sinceLastUserPlay() },
+		func() { rec.presetWriteGroupFollower() },
 		func() { peerSelfDeviceIDs() },
 		func() { peerSelfName() },
 		func() { matchesSelfDeviceID("AABBCCDDEEFF") },
@@ -75,16 +69,16 @@ func TestLateBoundHooksAreRaceFreeAgainstRunningReaders(t *testing.T) {
 	// see the switch from unset to set and back.
 	deadline := time.Now().Add(50 * time.Millisecond)
 	for i := 0; time.Now().Before(deadline); i++ {
-		setQuietWakeEpisodeActive(func() bool { return i%2 == 0 })
-		setLastUserPlayStartFn(func() time.Time { return time.Now().Add(-time.Duration(i) * time.Second) })
-		setGroupFollowerFn(func() (bool, string) { return i%3 == 0, "stereo pair follower" })
+		rec.setQuietWakeEpisodeActive(func() bool { return i%2 == 0 })
+		rec.setLastUserPlayStart(func() time.Time { return time.Now().Add(-time.Duration(i) * time.Second) })
+		rec.setGroupFollower(func() (bool, string) { return i%3 == 0, "stereo pair follower" })
 		setPeerSelfNameFn(func() string { return " Kitchen " })
 		setPeerSelfDeviceIDsFn(func() []string { return []string{"AABBCCDDEEFF"} })
 		runtime.Gosched()
 		if i%10 == 9 {
-			setQuietWakeEpisodeActive(nil)
-			setLastUserPlayStartFn(nil)
-			setGroupFollowerFn(nil)
+			rec.setQuietWakeEpisodeActive(nil)
+			rec.setLastUserPlayStart(nil)
+			rec.setGroupFollower(nil)
 			setPeerSelfNameFn(nil)
 			setPeerSelfDeviceIDsFn(nil)
 			runtime.Gosched()
@@ -94,18 +88,18 @@ func TestLateBoundHooksAreRaceFreeAgainstRunningReaders(t *testing.T) {
 	readers.Wait()
 
 	// The nil-safe reads answer as before the seams were atomic.
-	setQuietWakeEpisodeActive(nil)
-	setLastUserPlayStartFn(nil)
-	setGroupFollowerFn(nil)
 	setPeerSelfNameFn(nil)
 	setPeerSelfDeviceIDsFn(nil)
-	if groupWakeSettling() {
+	rec.setQuietWakeEpisodeActive(nil)
+	rec.setLastUserPlayStart(nil)
+	rec.setGroupFollower(nil)
+	if rec.groupWakeSettling() {
 		t.Error("an unwired quiet-wake seam must read as no group wake")
 	}
-	if sinceLastUserPlay() != -1 {
+	if rec.sinceLastUserPlay() != -1 {
 		t.Error("an unwired play-start seam must read as unknown")
 	}
-	if f, _ := presetWriteGroupFollower(); f {
+	if f, _ := rec.presetWriteGroupFollower(); f {
 		t.Error("an unwired follower seam must read as standalone")
 	}
 	if peerSelfName() != "" || peerSelfDeviceIDs() != nil {

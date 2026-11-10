@@ -15,11 +15,12 @@ import (
 // repeats it on the next boot. That is avoidable NAND wear on every speaker, on
 // every start, on hardware nobody can replace.
 func TestAFullPassStandsTheInitialSyncDown(t *testing.T) {
-	t.Cleanup(func() { fullPresetWriteAt.Store(0) })
+	t.Parallel()
+	r := newTestReconciler(t)
 
 	// The measured gap: the reconcile writes, the initial sync follows.
-	fullPresetWriteAt.Store(time.Now().Unix() - 15)
-	if !initialSyncShouldStandDown() {
+	r.fullPresetWriteAt.Store(time.Now().Unix() - 15)
+	if !r.initialSyncShouldStandDown() {
 		t.Error("the initial sync would write every slot again fifteen seconds after a full pass")
 	}
 }
@@ -27,11 +28,12 @@ func TestAFullPassStandsTheInitialSyncDown(t *testing.T) {
 // An old stamp must not silence it forever: a speaker whose presets were written
 // an hour ago and has since rebooted needs the initial sync to run.
 func TestAnOldPassDoesNotSilenceTheInitialSync(t *testing.T) {
-	t.Cleanup(func() { fullPresetWriteAt.Store(0) })
+	t.Parallel()
+	r := newTestReconciler(t)
 
 	for _, ago := range []int64{121, 600, 3600} {
-		fullPresetWriteAt.Store(time.Now().Unix() - ago)
-		if initialSyncShouldStandDown() {
+		r.fullPresetWriteAt.Store(time.Now().Unix() - ago)
+		if r.initialSyncShouldStandDown() {
 			t.Errorf("a pass %d seconds ago still suppresses the initial sync", ago)
 		}
 	}
@@ -39,9 +41,9 @@ func TestAnOldPassDoesNotSilenceTheInitialSync(t *testing.T) {
 
 // A fresh agent has never written anything, so the initial sync must run.
 func TestWithNoPassAtAllTheInitialSyncRuns(t *testing.T) {
-	t.Cleanup(func() { fullPresetWriteAt.Store(0) })
-	fullPresetWriteAt.Store(0)
-	if initialSyncShouldStandDown() {
+	t.Parallel()
+	r := newTestReconciler(t)
+	if r.initialSyncShouldStandDown() {
 		t.Error("the initial sync stood down although nothing has ever written the slots")
 	}
 }

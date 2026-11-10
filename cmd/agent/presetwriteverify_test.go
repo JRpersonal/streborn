@@ -447,13 +447,13 @@ func TestTheReconcileLoopCarriesDeadKeyEvidenceToTheCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(b)
-	if !strings.Contains(src, "ceilingRunsPass(forceKeysDead, ") {
+	if !strings.Contains(src, "ceilingRunsPass(r.forceKeysDead, ") {
 		t.Error("the hold ceiling no longer decides with the ask's dead-key evidence")
 	}
-	if n := strings.Count(src, "forceKeysDead = asks.keysDead.Swap(false) || forceKeysDead"); n < 4 {
+	if n := strings.Count(src, "r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead"); n < 4 {
 		t.Errorf("want the evidence captured at all four consume points (retry run, standby-ok, awake, held-pass ask), found %d", n)
 	}
-	if !strings.Contains(src, "ceilingListedLogged = false\n\t\t\tforceKeysDead = false") {
+	if !strings.Contains(src, "r.ceilingListedLogged = false\n\tr.forceKeysDead = false") {
 		t.Error("a pass that ran must clear its dead-key evidence")
 	}
 }

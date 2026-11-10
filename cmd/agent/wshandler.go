@@ -565,29 +565,6 @@ var lastRecallActivity atomic.Int64
 
 func noteRecallActivity() { lastRecallActivity.Store(time.Now().UnixNano()) }
 
-// quietWakeEpisodeActive is wired to the webui's QuietWakeEpisodeActive in
-// main.go (setQuietWakeEpisodeActive). Unset in tests and in any build without
-// a webui, where it reads as "no group wake in progress", which is the
-// behaviour this file had before. Atomic because the reconcile loop starts
-// before the webui server that answers it exists.
-var quietWakeEpisodeActive atomic.Pointer[func() bool]
-
-func setQuietWakeEpisodeActive(fn func() bool) {
-	if fn == nil {
-		quietWakeEpisodeActive.Store(nil)
-		return
-	}
-	quietWakeEpisodeActive.Store(&fn)
-}
-
-// groupWakeSettling reports whether STR woke this speaker for a group
-// operation moments ago. See webui.QuietWakeEpisodeActive for why the preset
-// reconcile has to know.
-func groupWakeSettling() bool {
-	fn := quietWakeEpisodeActive.Load()
-	return fn != nil && (*fn)()
-}
-
 // recallActiveWithin reports whether a hardware recall showed activity within
 // the last d.
 func recallActiveWithin(d time.Duration) bool {
