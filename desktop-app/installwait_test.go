@@ -85,19 +85,14 @@ func TestBoxSetupPhaseReadsTheSpeakersOwnDocuments(t *testing.T) {
 	}
 }
 
-func stubBoxInSetup(t *testing.T, inSetup bool) {
-	t.Helper()
-	old := boxInSetupFn
-	boxInSetupFn = func(*App, string) bool { return inSetup }
-	t.Cleanup(func() { boxInSetupFn = old })
+func stubBoxInSetup(a *App, inSetup bool) {
+	testInstallSeams(a).inSetup = func(string) bool { return inSetup }
 }
 
 // shortWaitCeilings keeps the watcher's give-up path inside a test's patience.
-func shortWaitCeilings(t *testing.T) {
-	t.Helper()
-	oldW, oldS, oldP := installWaitCeiling, setupWaitCeiling, installWaitPoll
-	installWaitCeiling, setupWaitCeiling, installWaitPoll = 0, 0, 5*time.Millisecond
-	t.Cleanup(func() { installWaitCeiling, setupWaitCeiling, installWaitPoll = oldW, oldS, oldP })
+func shortWaitCeilings(a *App) {
+	p := testInstallPolicy(a)
+	p.waitCeiling, p.setupWaitCeiling, p.waitPoll = 0, 0, 5*time.Millisecond
 }
 
 // A speaker running the firmware's OWN out-of-box setup gets its own verdict.
@@ -105,16 +100,12 @@ func shortWaitCeilings(t *testing.T) {
 // the app can end the state.
 func TestAgentNotUpNamesTheSpeakersOwnSetupPhase(t *testing.T) {
 	journal := useTempJournal(t)
-	old := installLateRecheckDelay
-	installLateRecheckDelay = time.Hour
-	t.Cleanup(func() { installLateRecheckDelay = old })
-	stubWaitFacts(t, agentWaitFacts{PingRan: true, BoseHTTP: true, BosePort: true})
-	stubBoxInSetup(t, true)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	testInstallPolicy(a).lateRecheckDelay = time.Hour
+	stubWaitFacts(a, agentWaitFacts{PingRan: true, BoseHTTP: true, BosePort: true})
+	stubBoxInSetup(a, true)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.Code != speakerInSetupCode {
@@ -138,13 +129,11 @@ func TestAgentNotUpNamesTheSpeakersOwnSetupPhase(t *testing.T) {
 // case the three-way verdict must not have gone soft on.
 func TestAgentNotUpKeepsTheStrictVerdictForALiveSpeaker(t *testing.T) {
 	useTempJournal(t)
-	stubWaitFacts(t, agentWaitFacts{PingRan: true, PingAlive: true, BoseHTTP: true})
-	stubBoxInSetup(t, false)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	stubWaitFacts(a, agentWaitFacts{PingRan: true, PingAlive: true, BoseHTTP: true})
+	stubBoxInSetup(a, false)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.Code != "agent-not-up" || res.Message != "generic wording" {
@@ -152,18 +141,12 @@ func TestAgentNotUpKeepsTheStrictVerdictForALiveSpeaker(t *testing.T) {
 	}
 }
 
-func stubWaitFacts(t *testing.T, f agentWaitFacts) {
-	t.Helper()
-	old := agentWaitFactsFn
-	agentWaitFactsFn = func(context.Context, string) agentWaitFacts { return f }
-	t.Cleanup(func() { agentWaitFactsFn = old })
+func stubWaitFacts(a *App, f agentWaitFacts) {
+	testInstallSeams(a).waitFacts = func(context.Context, string) agentWaitFacts { return f }
 }
 
-func stubLateSSH(t *testing.T, running bool) {
-	t.Helper()
-	old := agentRunningLateFn
-	agentRunningLateFn = func(*App, string) bool { return running }
-	t.Cleanup(func() { agentRunningLateFn = old })
+func stubLateSSH(a *App, running bool) {
+	testInstallSeams(a).runningLate = func(string) bool { return running }
 }
 
 // The install that reported "agent did not come up" for a speaker that was
@@ -172,16 +155,12 @@ func stubLateSSH(t *testing.T, running bool) {
 // the journal carries the reason.
 func TestAgentNotUpReportsASilentSpeakerAsNotBackYet(t *testing.T) {
 	journal := useTempJournal(t)
-	old := installLateRecheckDelay
-	installLateRecheckDelay = time.Hour // the re-check itself is covered below
-	t.Cleanup(func() { installLateRecheckDelay = old })
-	stubWaitFacts(t, agentWaitFacts{PingRan: true})
-	stubBoxInSetup(t, false)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	testInstallPolicy(a).lateRecheckDelay = time.Hour // the re-check itself is covered below
+	stubWaitFacts(a, agentWaitFacts{PingRan: true})
+	stubBoxInSetup(a, false)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	res := a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "SoundTouch 10", "generic wording")
 	if res.OK {
@@ -210,17 +189,13 @@ func TestAgentNotUpReportsASilentSpeakerAsNotBackYet(t *testing.T) {
 // fresh facts.
 func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
 	journal := useTempJournal(t)
-	old := installLateRecheckDelay
-	installLateRecheckDelay = 10 * time.Millisecond
-	t.Cleanup(func() { installLateRecheckDelay = old })
-	stubWaitFacts(t, agentWaitFacts{PingRan: true})
-	stubLateSSH(t, false)
-	stubBoxInSetup(t, false)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	testInstallPolicy(a).lateRecheckDelay = 10 * time.Millisecond
+	stubWaitFacts(a, agentWaitFacts{PingRan: true})
+	stubLateSSH(a, false)
+	stubBoxInSetup(a, false)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) {
 		return BoxInfo{Host: "192.0.2.36", Port: 8888, Kind: "str", Version: "v0.9.75", Build: "b9"}, true
@@ -258,18 +233,14 @@ func TestLateRecheckCorrectsTheJournalWhenTheAgentAnswers(t *testing.T) {
 
 func TestLateRecheckJournalsAStillSilentSpeaker(t *testing.T) {
 	journal := useTempJournal(t)
-	old := installLateRecheckDelay
-	installLateRecheckDelay = 10 * time.Millisecond
-	t.Cleanup(func() { installLateRecheckDelay = old })
-	stubWaitFacts(t, agentWaitFacts{PingRan: true})
-	stubLateSSH(t, false)
-	stubBoxInSetup(t, false)
-	shortWaitCeilings(t)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	testInstallPolicy(a).lateRecheckDelay = 10 * time.Millisecond
+	stubWaitFacts(a, agentWaitFacts{PingRan: true})
+	stubLateSSH(a, false)
+	stubBoxInSetup(a, false)
+	shortWaitCeilings(a)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) { return BoxInfo{}, false }
 	a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "", "generic")
@@ -295,17 +266,13 @@ func TestLateRecheckJournalsAStillSilentSpeaker(t *testing.T) {
 // itself does.
 func TestLateRecheckAcceptsARunningProcessOverSSH(t *testing.T) {
 	journal := useTempJournal(t)
-	old := installLateRecheckDelay
-	installLateRecheckDelay = 10 * time.Millisecond
-	t.Cleanup(func() { installLateRecheckDelay = old })
-	stubWaitFacts(t, agentWaitFacts{PingRan: true})
-	stubLateSSH(t, true)
-	stubBoxInSetup(t, false)
-
 	a := fastTestApp()
-	// Registered after every stub above, so it runs first: the late watcher
-	// is stopped and joined before the globals it was started with are
-	// restored (#1547).
+	testInstallPolicy(a).lateRecheckDelay = 10 * time.Millisecond
+	stubWaitFacts(a, agentWaitFacts{PingRan: true})
+	stubLateSSH(a, true)
+	stubBoxInSetup(a, false)
+
+	// The late watcher is stopped and joined before the test returns (#1547).
 	t.Cleanup(a.stopLateWatchers)
 	a.probeSTRFn = func(context.Context, string) (BoxInfo, bool) { return BoxInfo{}, false }
 	a.agentNotUp(InstallResult{Step: "wait-agent"}, "192.0.2.36", "", "generic")

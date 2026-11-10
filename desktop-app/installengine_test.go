@@ -13,10 +13,11 @@ import (
 
 func engineTestApp(t *testing.T, results []error) (*App, *int, *[]time.Duration) {
 	t.Helper()
-	prevEnsure, prevSleep := installEnsureEngine, installEngineSleep
-	t.Cleanup(func() { installEnsureEngine, installEngineSleep = prevEnsure, prevSleep })
+	a := newTestApp()
+	a.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	seams := testInstallSeams(a)
 	calls := 0
-	installEnsureEngine = func(*App, string) (engineResult, error) {
+	seams.ensureEngine = func(string) (engineResult, error) {
 		err := results[calls]
 		calls++
 		if err != nil {
@@ -25,9 +26,7 @@ func engineTestApp(t *testing.T, results []error) (*App, *int, *[]time.Duration)
 		return engineInstalled, nil
 	}
 	var slept []time.Duration
-	installEngineSleep = func(d time.Duration) { slept = append(slept, d) }
-	a := newTestApp()
-	a.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	seams.sleep = func(d time.Duration) { slept = append(slept, d) }
 	return a, &calls, &slept
 }
 
@@ -72,17 +71,16 @@ func TestInstallEngineReportsAfterTheLastAttempt(t *testing.T) {
 // engineTestAppReplies is engineTestApp for the answers that are not errors.
 func engineTestAppReplies(t *testing.T, replies []engineReply) (*App, *int) {
 	t.Helper()
-	prevEnsure, prevSleep := installEnsureEngine, installEngineSleep
-	t.Cleanup(func() { installEnsureEngine, installEngineSleep = prevEnsure, prevSleep })
+	a := newTestApp()
+	a.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	seams := testInstallSeams(a)
 	calls := 0
-	installEnsureEngine = func(*App, string) (engineResult, error) {
+	seams.ensureEngine = func(string) (engineResult, error) {
 		r := replies[calls]
 		calls++
 		return r.res, r.err
 	}
-	installEngineSleep = func(time.Duration) {}
-	a := newTestApp()
-	a.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	seams.sleep = func(time.Duration) {}
 	return a, &calls
 }
 

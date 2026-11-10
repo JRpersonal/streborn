@@ -44,9 +44,9 @@ func TestParseUptimeProbe(t *testing.T) {
 	}
 }
 
-// stubHungReboot replaces the probe and the forced restart for one test, and
-// clears the ledger entry for host before and after.
-func stubHungReboot(t *testing.T, host, probeOut string, probeErr error) *int {
+// stubHungReboot returns an App whose probe and forced restart are scripted,
+// and clears the ledger entry for host before and after.
+func stubHungReboot(t *testing.T, host, probeOut string, probeErr error) (*App, *int) {
 	t.Helper()
 	// The forced path writes a journal line; keep it out of the real one.
 	dir := t.TempDir()
@@ -54,22 +54,20 @@ func stubHungReboot(t *testing.T, host, probeOut string, probeErr error) *int {
 		t.Setenv(k, dir)
 	}
 	forced := 0
-	oldProbe, oldForce, oldAfter := hungRebootProbeFn, forceRebootFn, hungRebootCheckAfter
-	hungRebootProbeFn = func(string) (string, error) { return probeOut, probeErr }
-	forceRebootFn = func(string) error { forced++; return nil }
+	a := quietApp()
+	seams := testInstallSeams(a)
+	seams.hungRebootProbe = func(string) (string, error) { return probeOut, probeErr }
+	seams.forceReboot = func(string) error { forced++; return nil }
 	rebootLedger.Delete(host)
-	t.Cleanup(func() {
-		hungRebootProbeFn, forceRebootFn, hungRebootCheckAfter = oldProbe, oldForce, oldAfter
-		rebootLedger.Delete(host)
-	})
-	return &forced
+	t.Cleanup(func() { rebootLedger.Delete(host) })
+	return a, &forced
 }
 
 func TestForceRebootIfHungForcesAStalledRestart(t *testing.T) {
 	const host = "192.0.2.45"
-	forced := stubHungReboot(t, host, "1363\n    1 root       0:00 init [6]\n", nil)
+	a, forced := stubHungReboot(t, host, "1363\n    1 root       0:00 init [6]\n", nil)
 	rebootLedger.Store(host, time.Now().Add(-5*time.Minute))
-	if !quietApp().forceRebootIfHung(host) {
+	if !a.forceRebootIfHung(host) {
 		t.Fatal("a speaker still on its old boot five minutes after the restart command must be forced")
 	}
 	if *forced != 1 {
@@ -83,9 +81,9 @@ func TestForceRebootIfHungForcesAStalledRestart(t *testing.T) {
 
 func TestForceRebootIfHungLeavesARestartedSpeakerAlone(t *testing.T) {
 	const host = "192.0.2.46"
-	forced := stubHungReboot(t, host, "30\n    1 root       0:02 init [5]\n", nil)
+	a, forced := stubHungReboot(t, host, "30\n    1 root       0:02 init [5]\n", nil)
 	rebootLedger.Store(host, time.Now().Add(-90*time.Second))
-	if quietApp().forceRebootIfHung(host) || *forced != 0 {
+	if a.forceRebootIfHung(host) || *forced != 0 {
 		t.Fatal("a speaker whose uptime is younger than the restart command did restart")
 	}
 }
@@ -105,11 +103,11 @@ func TestForceRebootIfHungNeedsPositiveEvidence(t *testing.T) {
 		{"uptime unreadable", 2 * time.Minute, "garbage\n", nil},
 	}
 	for _, c := range cases {
-		forced := stubHungReboot(t, host, c.probeOut, c.probeErr)
+		a, forced := stubHungReboot(t, host, c.probeOut, c.probeErr)
 		if c.sentAgo > 0 {
 			rebootLedger.Store(host, time.Now().Add(-c.sentAgo))
 		}
-		if quietApp().forceRebootIfHung(host) || *forced != 0 {
+		if a.forceRebootIfHung(host) || *forced != 0 {
 			t.Errorf("%s: forced a restart without evidence", c.name)
 		}
 	}

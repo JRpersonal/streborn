@@ -36,18 +36,15 @@ var fwTooOldVerdicts = struct {
 	m  map[string]fwTooOldVerdict
 }{m: map[string]fwTooOldVerdict{}}
 
-// fwGateNow and fwGateRead are the clock and the /info read; vars for tests.
-var (
-	fwGateNow  = time.Now
-	fwGateRead = func(a *App, host string) (FirmwareInfo, error) { return a.GetBoxFirmware(host) }
-)
+// The clock and the /info read are installSeams.now and readFirmware
+// (install_seams.go).
 
-func rememberFirmwareTooOld(host string, v fwTooOldVerdict) {
+func (a *App) rememberFirmwareTooOld(host string, v fwTooOldVerdict) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return
 	}
-	v.at = fwGateNow()
+	v.at = a.installSeams().now()
 	fwTooOldVerdicts.mu.Lock()
 	fwTooOldVerdicts.m[host] = v
 	fwTooOldVerdicts.mu.Unlock()
@@ -59,14 +56,14 @@ func forgetFirmwareTooOld(host string) {
 	fwTooOldVerdicts.mu.Unlock()
 }
 
-func recentFirmwareTooOld(host string) (fwTooOldVerdict, bool) {
+func (a *App) recentFirmwareTooOld(host string) (fwTooOldVerdict, bool) {
 	fwTooOldVerdicts.mu.Lock()
 	defer fwTooOldVerdicts.mu.Unlock()
 	v, ok := fwTooOldVerdicts.m[strings.TrimSpace(host)]
 	if !ok {
 		return fwTooOldVerdict{}, false
 	}
-	if fwGateNow().Sub(v.at) > fwTooOldVerdictTTL {
+	if a.installSeams().now().Sub(v.at) > fwTooOldVerdictTTL {
 		delete(fwTooOldVerdicts.m, strings.TrimSpace(host))
 		return fwTooOldVerdict{}, false
 	}
@@ -104,20 +101,21 @@ func (a *App) StickInstallFirmwareGate(host string) StickFirmwareGate {
 	if host == "" {
 		return StickFirmwareGate{}
 	}
-	fi, err := fwGateRead(a, host)
+	seams := a.installSeams()
+	fi, err := seams.readFirmware(host)
 	if err == nil && fi.Reachable && fi.Short != "" {
 		if !firmwareTooOldForInstall(fi) {
 			forgetFirmwareTooOld(host)
 			return StickFirmwareGate{}
 		}
-		rememberFirmwareTooOld(host, fwTooOldVerdict{firmware: fi.Short, model: fi.Model, moduleType: fi.ModuleType, variant: fi.Variant})
+		a.rememberFirmwareTooOld(host, fwTooOldVerdict{firmware: fi.Short, model: fi.Model, moduleType: fi.ModuleType, variant: fi.Variant})
 		a.fwLog().Warn("setup: firmware too old, not writing the STR install stick; showing the firmware update instead",
 			"host", host, "firmware", fi.Short, "model", fi.Model, "source", "speaker")
 		return StickFirmwareGate{Blocked: true, Firmware: fi.Short, Model: fi.Model, ModuleType: fi.ModuleType, Variant: fi.Variant, Source: "speaker"}
 	}
-	if v, ok := recentFirmwareTooOld(host); ok {
+	if v, ok := a.recentFirmwareTooOld(host); ok {
 		a.fwLog().Warn("setup: firmware too old, not writing the STR install stick; showing the firmware update instead",
-			"host", host, "firmware", v.firmware, "model", v.model, "source", "install", "verdictAge", fwGateNow().Sub(v.at).Round(time.Second))
+			"host", host, "firmware", v.firmware, "model", v.model, "source", "install", "verdictAge", seams.now().Sub(v.at).Round(time.Second))
 		return StickFirmwareGate{Blocked: true, Firmware: v.firmware, Model: v.model, ModuleType: v.moduleType, Variant: v.variant, Source: "install"}
 	}
 	return StickFirmwareGate{}

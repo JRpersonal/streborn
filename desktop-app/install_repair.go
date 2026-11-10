@@ -209,7 +209,7 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 // repairFileSet is the file set the SSH repair stages on the speaker: the stick
 // template, the agent binary and the version stamp, WITHOUT the go-librespot
 // Spotify engine. install.sh never uses a staged engine (it only ever deletes
-// the NAND one to make room), and installEnsureEngine pushes the engine once
+// the NAND one to make room), and ensureEngineAfterInstall pushes it once
 // the agent is up. Staging it anyway put ~16 MB of unreclaimable tmpfs into a
 // 122 MB, swapless ST20's RAM on top of BoseApp's boot and the old agent, and
 // the speaker restarted under install.sh's agent copy twice (2026-10-26).
@@ -409,17 +409,6 @@ var repairStageCandidates = []struct {
 	{"/mnt/nv", 0.6, false},
 }
 
-// The SSH seams of the staging chooser, so tests can script a speaker's free
-// space, its memory and the agent stop without one.
-var (
-	repairFreeBytes    = freeBytesAtPath
-	repairMemAvailable = boxMemAvailable
-	repairStopSTR      = stopSTROnBox
-	repairStageUpload  = func(a *App, host, dir string, files map[string][]byte) error {
-		return a.stageRepairFiles(host, dir, files)
-	}
-)
-
 // repairRAMShortError is the staging failure on a speaker whose RAM could not
 // hold the install files even after STR's own programs on it were stopped, and
 // whose NAND (the only other target) could not take them either.
@@ -565,20 +554,21 @@ func stopSTROnBox(host string) (strStopResult, error) {
 // outcome is unknown (the SSH call failed) counts as stopped: a needless
 // restart is cheap, a stranded speaker is not.
 func (a *App) repairMemForStage(host string, rawNeed int64) (mem int64, known, stopped bool) {
-	mem, known = repairMemAvailable(host)
+	seams := a.installSeams()
+	mem, known = seams.repairMemAvailable(host)
 	if repairRAMRoomFor(mem, known, rawNeed) {
 		return mem, known, false
 	}
 	a.logger.Warn("repair_ssh: speaker RAM too short to stage the install, stopping STR's own agent and engine first",
 		"host", host, "memAvailableBytes", mem, "rawNeed", rawNeed, "floorBytes", boxmem.RAMStageFloor)
-	sr, err := repairStopSTR(host)
+	sr, err := seams.repairStopSTR(host)
 	stopped = sr.found || err != nil
 	if err != nil {
 		a.logger.Warn("repair_ssh: could not stop STR on the speaker", "host", host, "err", err)
 	}
 	a.logger.Info("repair_ssh: STR stop on the speaker", "host", host,
 		"strWasRunning", sr.found, "respawnKilled", sr.respawned, "stillRunning", sr.stillRunning)
-	mem2, known2 := repairMemAvailable(host)
+	mem2, known2 := seams.repairMemAvailable(host)
 	a.logger.Info("repair_ssh: speaker RAM after stopping STR", "host", host,
 		"memAvailableBytes", mem2, "known", known2, "before", mem)
 	if !known2 {
@@ -603,13 +593,14 @@ func (a *App) repairMemForStage(host string, rawNeed int64) (mem int64, known, s
 // tried at all and only the NAND is. stoppedSTR reports that the agent was
 // stopped on the way (see repairMemForStage).
 func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[string][]byte) (stage string, stoppedSTR bool, err error) {
+	seams := a.installSeams()
 	mem, memKnown, stoppedSTR := a.repairMemForStage(host, rawNeed)
 	ramOK := repairRAMRoomFor(mem, memKnown, rawNeed)
 	var fits, tooSmall []string
 	ramRejected := false
 	for _, c := range repairStageCandidates {
 		need := int64(float64(rawNeed)*c.compress) + (2 << 20) // ~2 MB headroom for the dir + fs overhead
-		free := repairFreeBytes(host, c.base)
+		free := seams.repairFreeBytes(host, c.base)
 		a.logger.Info("repair_ssh: staging candidate space",
 			"host", host, "dir", c.base, "freeBytes", free, "needBytes", need, "rawNeed", rawNeed,
 			"memAvailableBytes", mem, "memKnown", memKnown)
@@ -630,7 +621,7 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 	attempts := 0
 	for _, base := range append(fits, tooSmall...) {
 		stage := base + "/streborn-install"
-		if err := repairStageUpload(a, host, stage, files); err != nil {
+		if err := seams.repairStageUpload(host, stage, files); err != nil {
 			lastErr = err
 			attempts++
 			var trunc *uploadTruncatedError

@@ -278,11 +278,12 @@ func (a *App) installReadFirmware(r *installRun) {
 	// variant at all (the 2.1.51 Wave of 2026-10-22 reported neither).
 	fwTooOldForUnlock := false
 	noStick := neverReadsStickAtBoot(model, "")
+	policy := a.installPolicy()
 	fw, ferr, booting := settledFirmware(a.appCtx(), func() (FirmwareInfo, error) { return a.GetBoxFirmware(host) },
-		installFirmwareSettle, installFirmwarePoll)
+		policy.firmwareSettle, policy.firmwarePoll)
 	if booting {
 		a.logger.Warn("install_str: the speaker answers /info but names neither its model nor its firmware, it is still starting up",
-			"host", host, "waited", installFirmwareSettle)
+			"host", host, "waited", policy.firmwareSettle)
 	}
 	r.fwBooting = booting
 	if ferr == nil && fw.Reachable {
@@ -375,7 +376,7 @@ func (a *App) installPreflight(r *installRun) bool {
 				"host", host, "firmware", res.Firmware, "model", res.Model)
 			// The USB stick section of the same wizard must not write STR's
 			// files for this speaker next (StickInstallFirmwareGate).
-			rememberFirmwareTooOld(host, fwTooOldVerdict{firmware: res.Firmware, model: res.Model, moduleType: res.ModuleType, variant: res.Variant})
+			a.rememberFirmwareTooOld(host, fwTooOldVerdict{firmware: res.Firmware, model: res.Model, moduleType: res.ModuleType, variant: res.Variant})
 			return true
 		}
 		// A speaker that answers /info with neither a model nor a firmware is
@@ -1099,13 +1100,6 @@ func neverReadsStickAtBoot(model, variant string) bool {
 // failures instead of at 27: a firmware in that unknown range still gets its
 // try, and is told about the firmware update either way.
 const unlockMinFirmwareMajor = 15
-
-// The settle wait for a speaker whose /info names neither its model nor its
-// firmware. Variables so the tests need not wait.
-var (
-	installFirmwareSettle = 45 * time.Second
-	installFirmwarePoll   = 5 * time.Second
-)
 
 // speakerStartingAdvice is what the install says when it stops at
 // speaker-starting.
