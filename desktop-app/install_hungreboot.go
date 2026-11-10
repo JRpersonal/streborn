@@ -49,15 +49,9 @@ func rebootSentAt(host string) (time.Time, bool) {
 	return t, ok
 }
 
-// hungRebootCheckAfter is how long after the restart command the check may run.
-// A speaker that is restarting normally has its SSH gone well before this; one
-// that answers SSH this late AND reports an uptime older than the command has
-// not restarted at all.
-var hungRebootCheckAfter = 60 * time.Second
-
-// hungRebootCheckWindow bounds how old a ledger entry may be and still count.
-// An entry from an install half an hour ago says nothing about the speaker now.
-var hungRebootCheckWindow = 10 * time.Minute
+// How long after the restart command the check may run, and how old a ledger
+// entry may be and still count, are installPolicy.hungRebootCheckAfter and
+// hungRebootCheckWindow (install_seams.go).
 
 // hungRebootSlack absorbs the second or two between the app sending the command
 // and the speaker's kernel starting its clock on a real restart.
@@ -94,17 +88,9 @@ func parseUptimeProbe(out string) (uptime time.Duration, pid1 string, ok bool) {
 
 const hungRebootProbeCmd = "awk '{print int($1)}' /proc/uptime 2>/dev/null; ps 2>/dev/null | awk '$1==1'"
 
-// Seams, so the check can be exercised without a speaker.
-var (
-	hungRebootProbeFn = func(host string) (string, error) {
-		return boxSSHOutput(host, hungRebootProbeCmd, 8*time.Second)
-	}
-	forceRebootFn = func(host string) error {
-		err := boxSSHFireAndForget(host, forcedRebootCmd, 6*time.Second)
-		boxSSHClients.invalidateHost(host)
-		return err
-	}
-)
+// The probe and the forced restart themselves are installSeams.hungRebootProbe
+// and forceReboot (install_seams.go), so the check can be exercised without a
+// speaker.
 
 // forceRebootIfHung runs the check described at the top of this file and, when
 // the restart stalled, forces it. It returns true only when it sent the forced
@@ -120,10 +106,12 @@ func (a *App) forceRebootIfHung(host string) bool {
 		return false
 	}
 	since := time.Since(sent)
-	if since < hungRebootCheckAfter || since > hungRebootCheckWindow {
+	policy := a.installPolicy()
+	if since < policy.hungRebootCheckAfter || since > policy.hungRebootCheckWindow {
 		return false
 	}
-	out, err := hungRebootProbeFn(host)
+	seams := a.installSeams()
+	out, err := seams.hungRebootProbe(host)
 	if err != nil {
 		return false
 	}
@@ -135,7 +123,7 @@ func (a *App) forceRebootIfHung(host string) bool {
 		"host", host, "sinceRestartCommand", since.Round(time.Second), "uptime", uptime, "pid1", pid1)
 	a.recordOTA(host, fmt.Sprintf("restart: the speaker was still on its old boot %s after the restart command (uptime %s, %q); forced the restart",
 		since.Round(time.Second), uptime, pid1))
-	_ = forceRebootFn(host)
+	_ = seams.forceReboot(host)
 	noteRebootSent(host)
 	return true
 }

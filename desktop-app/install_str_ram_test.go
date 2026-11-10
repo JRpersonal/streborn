@@ -61,14 +61,13 @@ type repairSeams struct {
 	stopErr  error // the stop's SSH call failed
 }
 
-func (s *repairSeams) install(t *testing.T) {
+// install returns an App whose staging chooser sees the scripted speaker.
+func (s *repairSeams) install(t *testing.T) *App {
 	t.Helper()
-	oFree, oMem, oStop, oUp := repairFreeBytes, repairMemAvailable, repairStopSTR, repairStageUpload
-	t.Cleanup(func() {
-		repairFreeBytes, repairMemAvailable, repairStopSTR, repairStageUpload = oFree, oMem, oStop, oUp
-	})
-	repairFreeBytes = func(_, path string) int64 { return s.free[path] }
-	repairMemAvailable = func(string) (int64, bool) {
+	a := quietApp()
+	seams := testInstallSeams(a)
+	seams.repairFreeBytes = func(_, path string) int64 { return s.free[path] }
+	seams.repairMemAvailable = func(string) (int64, bool) {
 		i := s.reads
 		if i >= len(s.mem) {
 			i = len(s.mem) - 1
@@ -77,16 +76,17 @@ func (s *repairSeams) install(t *testing.T) {
 		s.events = append(s.events, "mem")
 		return s.mem[i], true
 	}
-	repairStopSTR = func(string) (strStopResult, error) {
+	seams.repairStopSTR = func(string) (strStopResult, error) {
 		s.stopped++
 		s.events = append(s.events, "stop")
 		return strStopResult{found: !s.noSTR && s.stopErr == nil}, s.stopErr
 	}
-	repairStageUpload = func(_ *App, _, dir string, _ map[string][]byte) error {
+	seams.repairStageUpload = func(_, dir string, _ map[string][]byte) error {
 		s.events = append(s.events, "stage "+dir)
 		base := strings.TrimSuffix(dir, "/streborn-install")
 		return s.stageErr[base]
 	}
+	return a
 }
 
 const mb = int64(1 << 20)
@@ -98,8 +98,8 @@ func roomyTmpfs() map[string]int64 {
 // With plenty of RAM nothing is stopped and /dev/shm wins, as before.
 func TestRepairStageRoomyRAMStagesInShmWithoutStopping(t *testing.T) {
 	s := &repairSeams{mem: []int64{80 * mb}, free: roomyTmpfs()}
-	s.install(t)
-	stage, stopped, err := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	a := s.install(t)
+	stage, stopped, err := a.stageRepairFilesBestEffort("h", 20*mb, nil)
 	if err != nil || stage != "/dev/shm/streborn-install" || stopped {
 		t.Fatalf("got stage=%q stopped=%v err=%v", stage, stopped, err)
 	}
@@ -113,8 +113,8 @@ func TestRepairStageRoomyRAMStagesInShmWithoutStopping(t *testing.T) {
 // goes to RAM as usual.
 func TestRepairStageLowRAMStopsAgentBeforeStaging(t *testing.T) {
 	s := &repairSeams{mem: []int64{30 * mb, 60 * mb}, free: roomyTmpfs()}
-	s.install(t)
-	stage, stopped, err := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	a := s.install(t)
+	stage, stopped, err := a.stageRepairFilesBestEffort("h", 20*mb, nil)
 	if err != nil || stage != "/dev/shm/streborn-install" || !stopped {
 		t.Fatalf("got stage=%q stopped=%v err=%v", stage, stopped, err)
 	}
@@ -136,8 +136,8 @@ func TestRepairStageStillShortRejectsRAM(t *testing.T) {
 		free:     roomyTmpfs(),
 		stageErr: map[string]error{"/mnt/nv": &uploadTruncatedError{msg: "short"}},
 	}
-	s.install(t)
-	_, stopped, err := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	a := s.install(t)
+	_, stopped, err := a.stageRepairFilesBestEffort("h", 20*mb, nil)
 	if !stopped {
 		t.Fatal("the agent stop must have been tried first")
 	}
@@ -161,8 +161,8 @@ func TestRepairStageStillShortRejectsRAM(t *testing.T) {
 // (that restart would skip the SDK URL heal on a :17000-unlocked speaker).
 func TestRepairStageStockSpeakerIsNotMarkedStopped(t *testing.T) {
 	s := &repairSeams{mem: []int64{30 * mb, 60 * mb}, free: roomyTmpfs(), noSTR: true}
-	s.install(t)
-	_, stopped, err := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	a := s.install(t)
+	_, stopped, err := a.stageRepairFilesBestEffort("h", 20*mb, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +178,8 @@ func TestRepairStageStockSpeakerIsNotMarkedStopped(t *testing.T) {
 // stopped, so a failed install restarts the speaker rather than strand it.
 func TestRepairStageUnknownStopCountsAsStopped(t *testing.T) {
 	s := &repairSeams{mem: []int64{30 * mb, 60 * mb}, free: roomyTmpfs(), stopErr: errors.New("ssh: handshake failed")}
-	s.install(t)
-	_, stopped, _ := quietApp().stageRepairFilesBestEffort("h", 20*mb, nil)
+	a := s.install(t)
+	_, stopped, _ := a.stageRepairFilesBestEffort("h", 20*mb, nil)
 	if !stopped {
 		t.Fatal("an unknown stop outcome must count as stopped")
 	}
@@ -239,7 +239,7 @@ func TestStopSTRScriptEndsWatchdogsFirst(t *testing.T) {
 // Source checks for the paths a unit test cannot reach without a speaker.
 func TestRepairRestartPathsBringTheAgentBack(t *testing.T) {
 	src := readInstallSrc(t)
-	repair := funcBody(t, src, "func (a *App) RepairInstallViaSSH(")
+	repair := funcBody(t, readSource(t, "install_repair.go"), "func (a *App) RepairInstallViaSSH(")
 	i := strings.Index(repair, `res.Code = "repair-box-restarted"`)
 	if i < 0 {
 		t.Fatal("repair-box-restarted branch is gone; if it moved, move this test with it")

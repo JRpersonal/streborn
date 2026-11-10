@@ -16,19 +16,19 @@ import (
 func gateEnv(t *testing.T, read func(host string) (FirmwareInfo, error)) (*App, *time.Time) {
 	t.Helper()
 	now := time.Date(2026, 11, 8, 15, 18, 28, 0, time.UTC)
-	oldRead, oldNow := fwGateRead, fwGateNow
-	fwGateRead = func(_ *App, host string) (FirmwareInfo, error) { return read(host) }
-	fwGateNow = func() time.Time { return now }
+	a := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	seams := testInstallSeams(a)
+	seams.readFirmware = read
+	seams.now = func() time.Time { return now }
 	fwTooOldVerdicts.mu.Lock()
 	fwTooOldVerdicts.m = map[string]fwTooOldVerdict{}
 	fwTooOldVerdicts.mu.Unlock()
 	t.Cleanup(func() {
-		fwGateRead, fwGateNow = oldRead, oldNow
 		fwTooOldVerdicts.mu.Lock()
 		fwTooOldVerdicts.m = map[string]fwTooOldVerdict{}
 		fwTooOldVerdicts.mu.Unlock()
 	})
-	return &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, &now
+	return a, &now
 }
 
 var errGone = errors.New("no answer")
@@ -47,7 +47,7 @@ func TestStickGateBlocksOldFirmwareReadNow(t *testing.T) {
 // did not answer when the stick was prepared minutes later.
 func TestStickGateKeepsTheInstallVerdict(t *testing.T) {
 	a, now := gateEnv(t, func(string) (FirmwareInfo, error) { return FirmwareInfo{}, errGone })
-	rememberFirmwareTooOld("192.0.2.1", fwTooOldVerdict{firmware: "9.0.41", model: "SoundTouch 20", moduleType: "scm"})
+	a.rememberFirmwareTooOld("192.0.2.1", fwTooOldVerdict{firmware: "9.0.41", model: "SoundTouch 20", moduleType: "scm"})
 	*now = now.Add(148 * time.Second) // 15:18:28 -> 15:20:56
 	g := a.StickInstallFirmwareGate("192.0.2.1")
 	if !g.Blocked || g.Firmware != "9.0.41" || g.Source != "install" {
@@ -73,7 +73,7 @@ func TestStickGateClearsOnNewerFirmware(t *testing.T) {
 		}
 		return answer, nil
 	})
-	rememberFirmwareTooOld("192.0.2.1", fwTooOldVerdict{firmware: "9.0.41"})
+	a.rememberFirmwareTooOld("192.0.2.1", fwTooOldVerdict{firmware: "9.0.41"})
 	if g := a.StickInstallFirmwareGate("192.0.2.1"); g.Blocked {
 		t.Fatalf("16.0.9 is new enough for the install: %+v", g)
 	}

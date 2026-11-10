@@ -64,8 +64,14 @@ type App struct {
 	// lateWatch tracks the install late-watchers (installwait.go) so they can
 	// be stopped and joined. At runtime they end with the app context; tests
 	// call stopLateWatchers in their cleanup so no watcher outlives the test
-	// and its stubbed package globals (#1547).
+	// (#1547).
 	lateWatch lateWatchers
+
+	// instSeams and instPolicy replace the install's production wiring and
+	// waits (install_seams.go). Nil in the app; only tests set them, before
+	// the code under test runs.
+	instSeams  *installSeams
+	instPolicy *installPolicy
 
 	// portCache maps a box host to the agent port last seen answering it.
 	// BCO boxes (Portable/taigan, ST20-spotty) expose the agent only on

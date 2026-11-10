@@ -42,24 +42,9 @@ import (
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// installLateRecheckDelay is how long after the budget ran out the first extra
-// look happens. A seam so tests do not wait two minutes.
-var installLateRecheckDelay = 120 * time.Second
-
-// installWaitPoll is the cadence of the watcher after that first look.
-var installWaitPoll = 20 * time.Second
-
-// installWaitCeiling / setupWaitCeiling bound the watcher. Both fifteen
-// minutes, which is what every user-facing string promises ("wait about
-// fifteen minutes"): a watcher that outlives its own promise leaves the user
-// staring at a screen that said it would be done ten minutes ago. The setup
-// case gets its own name because it is a different wait with a different
-// message, not a longer one. Vars, like installLateRecheckDelay, so tests do
-// not sit through them.
-var (
-	installWaitCeiling = 15 * time.Minute
-	setupWaitCeiling   = 15 * time.Minute
-)
+// The watcher's waits (first extra look, cadence, the two ceilings) are
+// installPolicy's lateRecheckDelay, waitPoll, waitCeiling and setupWaitCeiling
+// (install_seams.go).
 
 // agentWaitFacts is what the PC can establish about a speaker that did not
 // bring up its agent within the budget. Zero values mean "not established",
@@ -143,18 +128,11 @@ func gatherAgentWaitFacts(ctx context.Context, host string) agentWaitFacts {
 	return f
 }
 
-// agentWaitFactsFn and agentRunningLateFn are seams: tests replace them so
-// the verdict and the late re-check can be exercised without a speaker, a
-// ping binary or an SSH server on this machine. Nothing in the app assigns
-// to them.
-var (
-	agentWaitFactsFn   = gatherAgentWaitFacts
-	agentRunningLateFn = (*App).agentRunningViaSSH
-	// boxInSetupFn is the "is the speaker running its own out-of-box setup"
-	// read, behind the same kind of seam so the three-way verdict is testable
-	// without a speaker on the LAN.
-	boxInSetupFn = (*App).boxInSetupNow
-)
+// The facts read, the "agent runs as a process over SSH" read and the "is the
+// speaker running its own out-of-box setup" read are installSeams.waitFacts,
+// runningLate and inSetup (install_seams.go), so the three-way verdict and the
+// late re-check can be exercised without a speaker, a ping binary or an SSH
+// server on this machine.
 
 // speakerNotBackCode is the InstallResult.Code for a speaker that answered
 // nothing at any layer when the agent-wait budget ran out. The frontend keys
@@ -249,13 +227,14 @@ func (a *App) boxInSetupNow(host string) bool {
 // firmware note) go on after this returns.
 func (a *App) agentNotUp(res InstallResult, host, model, genericMsg string) InstallResult {
 	res.OK = false
-	facts := agentWaitFactsFn(a.appCtx(), host)
+	seams, policy := a.installSeams(), a.installPolicy()
+	facts := seams.waitFacts(a.appCtx(), host)
 	// Two ways to know: the speaker says so now, or the wait watched it say so
 	// while it ran. The second one matters most, because a speaker in setup is
 	// off the network for minutes at a time and is very likely answering
 	// nothing at the moment the budget expires - which is exactly the shape
 	// Reporter A's install had.
-	inSetup := (facts.BoseHTTP && boxInSetupFn(a, host)) || a.installSawSetup
+	inSetup := (facts.BoseHTTP && seams.inSetup(host)) || a.installSawSetup
 	a.logger.Info("install_str: agent wait budget ran out; network facts",
 		"host", host, "facts", facts.String(), "inSetup", inSetup, "sawSetupDuringWait", a.installSawSetup)
 
@@ -266,7 +245,7 @@ func (a *App) agentNotUp(res InstallResult, host, model, genericMsg string) Inst
 		res.Code = speakerInSetupCode
 		res.Message = speakerInSetupMessage(model)
 		a.recordOTA(host, fmt.Sprintf("wait: the agent-wait budget (%s) ran out while the speaker is running its OWN out-of-box setup (%s): STR is installed, the speaker leaves this state by itself; watching for up to %s",
-			agentWaitBudget(model), facts, setupWaitCeiling))
+			agentWaitBudget(model), facts, policy.setupWaitCeiling))
 		a.watchInstallLate(host, model, true)
 	case !facts.speakerNotBackOnNetwork():
 		// The speaker is demonstrably there and STR is not running on it. This
@@ -277,7 +256,7 @@ func (a *App) agentNotUp(res InstallResult, host, model, genericMsg string) Inst
 		res.Code = speakerNotBackCode
 		res.Message = speakerNotBackMessage(model)
 		a.recordOTA(host, fmt.Sprintf("wait: the agent-wait budget (%s) ran out and the speaker answers nothing at any layer (%s): it is still restarting, reconnecting to Wi-Fi or finishing its own setup, not proven failed; watching for up to %s",
-			agentWaitBudget(model), facts, installWaitCeiling))
+			agentWaitBudget(model), facts, policy.waitCeiling))
 		a.watchInstallLate(host, model, false)
 	}
 	return res
@@ -355,23 +334,16 @@ type InstallWaiting struct {
 // failure on the reporter's box.
 func (a *App) watchInstallLate(host, model string, inSetup bool) {
 	since := time.Now()
-	// The tunables and seams are read once, here, not from the goroutine: a
-	// watcher reads only what it was started with (#1547).
-	var (
-		recheckDelay = installLateRecheckDelay
-		pollEvery    = installWaitPoll
-		setupCeiling = setupWaitCeiling
-		waitFacts    = agentWaitFactsFn
-		runningLate  = agentRunningLateFn
-		inSetupNow   = boxInSetupFn
-		ceiling      = installWaitCeiling
-		probe        = probeSTR
-	)
+	// The waits and seams are this App's own (install_seams.go), taken once
+	// here: the watcher runs on what it was started with.
+	seams, policy := a.installSeams(), a.installPolicy()
+	ceiling := policy.waitCeiling
+	probe := probeSTR
 	if a.probeSTRFn != nil {
 		probe = a.probeSTRFn
 	}
 	if inSetup {
-		ceiling = setupCeiling
+		ceiling = policy.setupWaitCeiling
 	}
 	ctx, done, ok := a.lateWatch.start(a.appCtx())
 	if !ok {
@@ -401,11 +373,11 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 		emitWaiting(inSetup, deadline)
 		// The first look keeps its old delay: a speaker that is merely slow is
 		// usually back inside it, and probing sooner only adds noise.
-		firstProbeAt := time.Now().Add(recheckDelay)
+		firstProbeAt := time.Now().Add(policy.lateRecheckDelay)
 		for time.Now().Before(firstProbeAt) {
 			wait := time.Until(firstProbeAt)
-			if wait > pollEvery {
-				wait = pollEvery
+			if wait > policy.waitPoll {
+				wait = policy.waitPoll
 			}
 			select {
 			case <-time.After(wait):
@@ -419,7 +391,7 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 			b, ok := probe(pctx, host)
 			cancel()
 			how := fmt.Sprintf("on :%d", b.Port)
-			if !ok && runningLate(a, host) {
+			if !ok && seams.runningLate(host) {
 				ok = true
 				how = "as a running process over SSH (its HTTP ports are not reachable from this PC)"
 			}
@@ -440,7 +412,7 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 				return
 			}
 			if !time.Now().Before(deadline) {
-				facts := waitFacts(ctx, host)
+				facts := seams.waitFacts(ctx, host)
 				a.recordOTA(host, fmt.Sprintf("install: still not answering %s after the wait budget ran out (%s)", late, facts))
 				a.logger.Warn("install_str: gave up waiting, agent still not answering", "host", host, "late", late, "facts", facts.String())
 				a.emitInstallLate(host, false, "")
@@ -449,14 +421,14 @@ func (a *App) watchInstallLate(host, model string, inSetup bool) {
 			// Re-read the setup state as we go: a speaker that only starts its
 			// setup phase after the budget ran out must still be described
 			// correctly on the screen the user is looking at.
-			if !inSetup && inSetupNow(a, host) {
+			if !inSetup && seams.inSetup(host) {
 				inSetup = true
-				deadline = since.Add(setupCeiling)
+				deadline = since.Add(policy.setupWaitCeiling)
 				a.recordOTA(host, "wait: the speaker is now running its OWN out-of-box setup; it leaves that state by itself")
 			}
 			emitWaiting(inSetup, deadline)
 			select {
-			case <-time.After(pollEvery):
+			case <-time.After(policy.waitPoll):
 			case <-ctx.Done():
 				return
 			}
@@ -486,8 +458,7 @@ func (a *App) emitInstallWaiting(w InstallWaiting) {
 // lateWatchers lets the install late-watchers be stopped and joined. Each
 // watcher runs on a context derived from the app context, so at runtime it
 // ends exactly when it did before (its own exit or app shutdown); stop exists
-// so tests can end and wait for a watcher before their cleanups restore the
-// package globals it was started with (#1547).
+// so tests can end and wait for a watcher before they return (#1547).
 type lateWatchers struct {
 	mu      sync.Mutex
 	ctx     context.Context

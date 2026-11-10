@@ -29,12 +29,6 @@ func installEngineBackoff(attempt int) time.Duration {
 	return 5 * time.Second << (attempt - 1)
 }
 
-// installEnsureEngine and installEngineSleep are the seams for the tests.
-var (
-	installEnsureEngine = func(a *App, host string) (engineResult, error) { return a.ensureSpotifyEngine(host, 0) }
-	installEngineSleep  = time.Sleep
-)
-
 // engineWillNeverFit reports a push refused for space: retrying cannot help.
 // The verdict travels as a nandFullError from the gate, the agent's 507 or
 // the SSH df refusal, so this no longer reads the text.
@@ -47,9 +41,10 @@ func engineWillNeverFit(err error) bool {
 // An empty string means the engine is there, or there is none to give (a
 // build with the engine stub, a speaker STR is being removed from again).
 func (a *App) ensureEngineAfterInstall(host string) string {
+	seams := a.installSeams()
 	var last error
 	for attempt := 1; attempt <= installEngineAttempts; attempt++ {
-		r, err := installEnsureEngine(a, host)
+		r, err := seams.ensureEngine(host)
 		if err == nil {
 			// No error is not "the engine is there": the step also answers
 			// without one when it sent nothing, and when what it sent is not
@@ -87,7 +82,7 @@ func (a *App) ensureEngineAfterInstall(host string) string {
 		if engineWillNeverFit(err) || attempt == installEngineAttempts {
 			break
 		}
-		installEngineSleep(installEngineBackoff(attempt))
+		seams.sleep(installEngineBackoff(attempt))
 	}
 	return last.Error()
 }
