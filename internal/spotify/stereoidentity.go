@@ -35,8 +35,6 @@ package spotify
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -172,8 +170,7 @@ func (m *Manager) rewriteConfigForStereo(ctx context.Context) error {
 		name = m.name
 		m.mu.Unlock()
 	}
-	return os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-		[]byte(m.configYAML(name, vol)), 0o644)
+	return m.writeConfig(name, vol)
 }
 
 // waitWhileStereoFollower parks the supervisor while this speaker is the

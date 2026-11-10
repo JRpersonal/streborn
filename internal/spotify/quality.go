@@ -196,8 +196,7 @@ func (m *Manager) prepareBitrateForStart() {
 	name, vol := m.name, m.configVol
 	m.mu.Unlock()
 	if cfgChanged {
-		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+		if err := m.writeConfig(name, vol); err != nil {
 			m.logger.Warn("spotify: could not write the streaming quality into config.yml", "err", err)
 		}
 	}
@@ -249,8 +248,7 @@ func (m *Manager) reconcilePlanBitrate() {
 	m.bitrPending = true
 	name, vol := m.name, m.configVol
 	m.mu.Unlock()
-	if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-		[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+	if err := m.writeConfig(name, vol); err != nil {
 		m.logger.Warn("spotify: could not write the streaming quality into config.yml", "err", err)
 	}
 	m.logger.Info("spotify: the account plan changes the default streaming quality, applying when playback stops or the engine restarts",
@@ -311,8 +309,7 @@ func (m *Manager) SetBitrate(kbps int) (applied bool, err error) {
 		}
 		return true, nil
 	}
-	if werr := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-		[]byte(m.configYAML(name, vol)), 0o644); werr != nil {
+	if werr := m.writeConfig(name, vol); werr != nil {
 		return false, fmt.Errorf("config rewrite: %w", werr)
 	}
 	if streaming {
