@@ -82,13 +82,15 @@ describe('anyInLiveGroup', () => {
 describe('the update-all paths', () => {
   const status = readFileSync(join(here, 'views', 'settings', 'status.js'), 'utf8');
   const main = readFileSync(join(here, 'main.js'), 'utf8');
+  // Update all lives in update/all.js since it left main.js.
+  const all = readFileSync(join(here, 'update', 'all.js'), 'utf8');
 
   it('say beforehand that grouped speakers leave their group', () => {
     // The Settings banner, when "Update all" is on offer.
     expect(status).toContain('updateAllBtn && anyInLiveGroup(updateAllTargets, state.zoneLive)');
     expect(status).toContain(`t('${ALL_KEY}')`);
     // The confirmation before the run starts.
-    expect(main).toContain(`if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('${ALL_KEY}'));`);
+    expect(all).toContain(`if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('${ALL_KEY}'));`);
     // The speaker update card in the music view, for more than one speaker.
     expect(main).toContain('outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)');
   });

@@ -338,41 +338,45 @@ describe('the words', () => {
 });
 
 describe('where it shows', () => {
-  const main = src('./main.js').replace(/\r\n/g, '\n');
+  // The update flow left main.js for src/update/: one file per runner, and the
+  // loop breaker in a file of its own.
+  const single = src('./update/single.js').replace(/\r\n/g, '\n');
+  const all = src('./update/all.js').replace(/\r\n/g, '\n');
+  const otastuck = src('./update/otastuck.js').replace(/\r\n/g, '\n');
   const setup = src('./views/setup.js').replace(/\r\n/g, '\n');
 
   it('replaces the bare "took longer" toast after a single update, except on the 300', () => {
-    const at = main.indexOf('darkAfterUpdate(result) && darkChecklistApplies(targetBox)');
+    const at = single.indexOf('darkAfterUpdate(result) && darkChecklistApplies(targetBox)');
     expect(at).toBeGreaterThan(0);
-    expect(main.indexOf('showDarkAfterUpdate(targetBox)', at)).toBeGreaterThan(at);
+    expect(single.indexOf('showDarkAfterUpdate(targetBox)', at)).toBeGreaterThan(at);
     // Still before the generic toast, which stays for every other timeout.
-    expect(main.indexOf("showToast(t('update.tookLongerToast'))", at)).toBeGreaterThan(at);
+    expect(single.indexOf("showToast(t('update.tookLongerToast'))", at)).toBeGreaterThan(at);
     // A computer without network gets its own notice first, not the checklist.
-    const noNet = main.indexOf('} else if (updateNoNetworkHere(result)) {');
+    const noNet = single.indexOf('} else if (updateNoNetworkHere(result)) {');
     expect(noNet).toBeGreaterThan(0);
     expect(noNet).toBeLessThan(at);
-    expect(main.indexOf('showUpdateNoNetworkNotice()', noNet)).toBeLessThan(at);
+    expect(single.indexOf('showUpdateNoNetworkNotice()', noNet)).toBeLessThan(at);
   });
 
   it('keeps a computer without network out of the loop breaker', () => {
-    const fn = main.indexOf('function noteOTAResult(box, result) {');
-    const count = main.indexOf('noteOTAFailure(box, result.verdict', fn);
+    const fn = otastuck.indexOf('function noteOTAResult(box, result) {');
+    const count = otastuck.indexOf('noteOTAFailure(box, result.verdict', fn);
     expect(fn).toBeGreaterThan(0);
-    expect(main.slice(fn, count)).toContain('if (updateNoNetworkHere(result)) return;');
+    expect(otastuck.slice(fn, count)).toContain('if (updateNoNetworkHere(result)) return;');
   });
 
   it('folds out under the rows of Update all, from the returned rows, through one batch plan', () => {
-    const loop = main.indexOf('for (const row of (fleet && fleet.rows) || [])');
-    const plan = main.indexOf('const darkPlan = darkBatchPlan(darkEntries);', loop);
-    const use = main.indexOf('darkChecklistRowHtml(', plan);
+    const loop = all.indexOf('for (const row of (fleet && fleet.rows) || [])');
+    const plan = all.indexOf('const darkPlan = darkBatchPlan(darkEntries);', loop);
+    const use = all.indexOf('darkChecklistRowHtml(', plan);
     expect(loop).toBeGreaterThan(0);
     expect(plan).toBeGreaterThan(loop);
     expect(use).toBeGreaterThan(plan);
-    expect(main.slice(loop, plan)).toContain('darkEntries.push({ host: row.host, result: row');
-    expect(main.slice(plan, use)).toContain('for (const host of darkPlan.checklist)');
+    expect(all.slice(loop, plan)).toContain('darkEntries.push({ host: row.host, result: row');
+    expect(all.slice(plan, use)).toContain('for (const host of darkPlan.checklist)');
     // The batch's one notice instead of a checklist on every row.
-    expect(main).toContain("if (darkPlan.notice === 'noNetwork') showUpdateNoNetworkNotice();");
-    expect(main).toContain("else if (darkPlan.notice === 'allDark') showError(t('darkCheck.allDark'));");
+    expect(all).toContain("if (darkPlan.notice === 'noNetwork') showUpdateNoNetworkNotice();");
+    expect(all).toContain("else if (darkPlan.notice === 'allDark') showError(t('darkCheck.allDark'));");
   });
 
   it('goes on the install screens that end with a silent speaker, shared by both layouts', () => {
