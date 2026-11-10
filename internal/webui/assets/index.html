@@ -6641,7 +6641,16 @@ async function saveDisplay(kind, enabled) {
   /* Showing a finished run for a while after it ends: the summary. */
   function runShown() { return !!(run && (run.mode === 'running' || Date.now() - (run.finishedAt || 0) < 15 * 60 * 1000)); }
   /* Another phone is walking the speakers: this one waits. */
-  function otherPhone() { return !!(st && st.phoneRun && !runActive()); }
+  function otherPhone() { return !!(st && st.phoneRun && !runActive() && !(run && run.release)); }
+  /* A run that ended while the network was away could not tell the speaker
+     so, and the speaker keeps the claim for its full lifetime. Until the
+     speaker has heard it, the claim it reports is this phone's own, and it is
+     given back at the first chance (#1847). */
+  async function releaseLeft() {
+    if (!run || !run.release || runActive()) return;
+    var e = await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 5000);
+    if (e.ok) { delete run.release; saveRun(); }
+  }
   /* The plan as the phone sees it: the serving speaker's list, corrected by
      what each peer told the phone directly. A peer the phone reaches is
      updated directly; one only the serving speaker reaches goes through it. */
@@ -6842,7 +6851,7 @@ async function saveDisplay(kind, enabled) {
   function suBusyState() { return !!(st && ['downloading','installing','rebooting','engine','checking'].indexOf(st.state) >= 0); }
   function suResume() { if (!polling && lostSince && suBusyState()) poll(); }
   window.suResume = suResume;
-  async function load() { var r = await suGet(); if (r && typeof r === 'object') heardFrom(r); else heardNothing(); return r; }
+  async function load() { await releaseLeft(); var r = await suGet(); if (r && typeof r === 'object') heardFrom(r); else heardNothing(); return r; }
   /* Asks each peer of the plan directly what it runs: the port the serving
      speaker knows first, then the other agent port. */
   async function probePeer(ip, port) {
@@ -7241,7 +7250,8 @@ async function saveDisplay(kind, enabled) {
       checked = false; probes = {};
       // Release the claim before reloading: a load that still sees it would
       // tell this very phone that another phone is updating.
-      await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 10000);
+      var ended = await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 10000);
+      if (!ended.ok) { run.release = true; saveRun(); }
       await load();
     } finally {
       driving = false;
@@ -7256,6 +7266,7 @@ async function saveDisplay(kind, enabled) {
     var rows = planRows(), n = waitingCount(rows);
     if (!n || runActive()) return;
     if (!window.confirm(fillAll(T.sfConfirm, { n: n, v: (st.fleet && st.fleet.target) || st.latest || '' }))) return;
+    await releaseLeft();
     var token = newToken();
     var c = await apiDetail(SU, 'POST', { action: 'run-claim', token: token });
     if (!c.ok) {
