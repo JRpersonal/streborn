@@ -55,6 +55,11 @@ type singleTrack struct {
 	// is no proof of the end while it still climbs: a file replaced under the
 	// same URL was cut at the old length every night (librarykey.go).
 	claimedLength bool
+	// artist and album are what the client that started the play named for
+	// the file, "" when it named none. Only reported back to clients
+	// (loneFileInfo); the speaker is never handed them.
+	artist string
+	album  string
 }
 
 // armSingleTrackEnd watches one directly played file and stops the box when it

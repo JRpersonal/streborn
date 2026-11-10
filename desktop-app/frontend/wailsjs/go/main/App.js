@@ -418,8 +418,8 @@ export function PlaySlot(arg1, arg2, arg3) {
   return window['go']['main']['App']['PlaySlot'](arg1, arg2, arg3);
 }
 
-export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) {
-  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
+export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12) {
+  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12);
 }
 
 export function PrepareFirmwareStick(arg1, arg2) {

@@ -72,7 +72,7 @@ func TestPlayURLCarriesTheTrackLength(t *testing.T) {
 	box := newPlayBox(t)
 	a := copyApp(t)
 	err := a.PlayURL("127.0.0.1", listenPort(t, box.srv),
-		"http://nas.example/Song.flac", "Song", "", "", "audio/flac", "", "", 247)
+		"http://nas.example/Song.flac", "Song", "", "", "audio/flac", "", "", 247, "", "")
 	if err != nil {
 		t.Fatalf("PlayURL: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestPlayURLSendsZeroForSomethingWithNoLength(t *testing.T) {
 	box := newPlayBox(t)
 	a := copyApp(t)
 	err := a.PlayURL("127.0.0.1", listenPort(t, box.srv),
-		"http://stream.example/rp", "Radio Paradise", "", "uuid-1", "", "https://example/rp", "AAC+", 0)
+		"http://stream.example/rp", "Radio Paradise", "", "uuid-1", "", "https://example/rp", "AAC+", 0, "", "")
 	if err != nil {
 		t.Fatalf("PlayURL: %v", err)
 	}

@@ -320,6 +320,17 @@ export function libraryTrackMeta(rec, nowLocation, decodedLocation) {
   return [rec.artist, rec.album].filter(Boolean).join(' — ');
 }
 
+// agentLoneFile returns the single library track the speaker's agent says it
+// is playing (the "file" object of GET /api/queue: url, title, artist, album),
+// or null. It has the fields libraryTrackMeta reads, so it stands in for
+// state.lastLibraryPlay when this app did not start the play itself: the phone
+// page did, or the app was restarted since (#1839). An agent older than the
+// field, or a running queue, gives null.
+export function agentLoneFile(queue) {
+  const f = queue && !queue.active ? queue.file : null;
+  return f && typeof f === 'object' && typeof f.url === 'string' && f.url ? f : null;
+}
+
 // beginLibraryNowPlaying moves the cached now-playing state onto a library
 // track or folder the app just sent to the speaker, the way a station play
 // does for a station. The caller repaints the bar and asks the speaker again

@@ -2371,6 +2371,8 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 			snap.Slot = s.queueKeySlot()
 		}
 		snap.SlotChecked = true
+	} else {
+		snap.File = s.loneFileInfo()
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

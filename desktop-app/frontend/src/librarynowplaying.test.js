@@ -6,7 +6,7 @@
 // for the track's artist and album, which a folder's queue line shows and a
 // single track never did.
 import { describe, it, expect, vi } from 'vitest';
-import { beginLibraryNowPlaying, libraryTrackMeta } from './utils.js';
+import { beginLibraryNowPlaying, libraryTrackMeta, agentLoneFile } from './utils.js';
 import { fileSource, srcOf } from './test/source.js';
 
 const trackURL = 'http://192.0.2.10:8200/MediaItems/42.flac';
@@ -80,6 +80,28 @@ describe('libraryTrackMeta', () => {
     expect(libraryTrackMeta(rec, 'http://192.0.2.1:8888/stream/3', 'http://192.0.2.1:8888/stream/3')).toBe('');
     expect(libraryTrackMeta(null, trackURL, trackURL)).toBe('');
     expect(libraryTrackMeta({ url: trackURL, name: 'x' }, trackURL, trackURL)).toBe('');
+  });
+});
+
+// #1839: a track this app did not start itself (the phone page did, or the app
+// was restarted) is named by the speaker's agent, in GET /api/queue.
+describe('agentLoneFile', () => {
+  const file = { url: trackURL, title: 'Amanda', artist: 'Boston', album: 'Third Stage' };
+
+  it('stands in for the remembered Library play', () => {
+    expect(libraryTrackMeta(agentLoneFile({ active: false, items: [], file }), trackURL, trackURL)).toBe('Boston — Third Stage');
+  });
+
+  it('is nothing while a queue runs, from an older agent, or without a URL', () => {
+    expect(agentLoneFile({ active: true, file })).toBe(null);
+    expect(agentLoneFile({ active: false, items: [] })).toBe(null);
+    expect(agentLoneFile({ active: false, file: { artist: 'Boston' } })).toBe(null);
+    expect(agentLoneFile({ active: false, file: 'x' })).toBe(null);
+    expect(agentLoneFile(null)).toBe(null);
+  });
+
+  it('a Library click sends artist and album to the agent', () => {
+    expect(srcOf('libraryPlay')).toContain("item.artist || '', item.album || '');");
   });
 });
 

@@ -214,7 +214,7 @@ export function PlayPandoraStation(arg1:string,arg2:number,arg3:string,arg4:stri
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
-export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number):Promise<void>;
+export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string,arg10:number,arg11:string,arg12:string):Promise<void>;
 
 export function PrepareFirmwareStick(arg1:string,arg2:string):Promise<main.FirmwareStickResult>;
 

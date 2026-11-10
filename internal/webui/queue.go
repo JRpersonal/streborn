@@ -378,6 +378,11 @@ type queueSnapshot struct {
 	// The app reads this every status tick anyway, so a change makes it
 	// re-read the presets at once instead of on its slow timer (#1217).
 	PresetRev uint64 `json:"preset_rev"`
+	// File is the lone library file that plays while no queue does, with the
+	// artist and album its start named (resumefile.go, loneFileInfo). Only on
+	// GET /api/queue, never while Active, and omitted when there is none, so
+	// a reader that knows nothing of it sees the answer it always saw (#1839).
+	File *loneFileInfo `json:"file,omitempty"`
 }
 
 // queueSnapItem is one track of the snapshot. Artist and Album are what the

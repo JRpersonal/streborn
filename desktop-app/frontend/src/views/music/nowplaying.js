@@ -20,6 +20,7 @@ import {
   balanceLabel,
   escapeHtml,
   libraryTrackMeta,
+  agentLoneFile,
   presetRevChanged,
   proxiedRadioPlaying,
   queueReplyMerge,
@@ -228,8 +229,11 @@ export function renderNowPlayingBar() {
   } else {
     // A single library track: its artist and album, as the Library row named
     // them, next to the title the speaker reports, the way the queue line
-    // names a folder's running song (#1394).
-    const libMeta = libraryTrackMeta(state.lastLibraryPlay, loc, decodeProxyUrl(loc));
+    // names a folder's running song (#1394). A track this app did not start
+    // itself (the phone page did, or the app was restarted) is named by the
+    // speaker's agent instead (#1839).
+    const libMeta = libraryTrackMeta(state.lastLibraryPlay, loc, decodeProxyUrl(loc))
+      || libraryTrackMeta(agentLoneFile(state.queue), loc, decodeProxyUrl(loc));
     if (libMeta) displayName = name ? `${name} · ${libMeta}` : libMeta;
   }
   // The per-station "artist and title are the wrong way round" switch, only

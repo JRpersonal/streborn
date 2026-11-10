@@ -243,8 +243,13 @@ func (a *App) waitAgentReady(host string, port int) bool {
 // no end of track to detect. A folder has always sent it, which is why a folder
 // drew a bar per track while a single track never did, in BOTH UIs, because both
 // only read back what the DIDL carried (#845, #844).
-func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage, codec string, durationSec int) error {
-	body, _ := json.Marshal(map[string]any{
+//
+// artist and album are what the media server named for a library track, ""
+// for radio and when unknown. The speaker reports neither for a file it is
+// handed directly, so the agent keeps them and serves them to whoever did not
+// start the play: the phone page, or this app after a restart (#1839).
+func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage, codec string, durationSec int, artist, album string) error {
+	fields := map[string]any{
 		"url":          streamURL,
 		"title":        title,
 		"icon":         icon,
@@ -253,7 +258,14 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 		"homepage":     homepage,
 		"codec":        codec,
 		"duration_sec": durationSec,
-	})
+	}
+	if artist != "" {
+		fields["artist"] = artist
+	}
+	if album != "" {
+		fields["album"] = album
+	}
+	body, _ := json.Marshal(fields)
 	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {
 		a.logger.Info("play: url failed", "host", host, "title", title, "err", err)

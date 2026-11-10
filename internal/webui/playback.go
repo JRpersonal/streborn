@@ -43,6 +43,13 @@ type playRequest struct {
 	// bar to fill and no end to detect. A folder already sends it, which is why
 	// a folder draws a bar per track and a single track never did (#845, #844).
 	DurationSec int `json:"duration_sec"`
+	// Artist and Album are what the media server named for a library file,
+	// both optional. The speaker reports neither for a file it is handed
+	// directly, so the agent keeps them for the clients that did not start
+	// the play (GET /api/queue, loneFileInfo). Untrusted text: bounded by
+	// cleanTrackText, never interpreted.
+	Artist string `json:"artist"`
+	Album  string `json:"album"`
 	// Homepage is the station website (radio only), recorded into Recently-played
 	// so a card can offer a "website" link like the radio search rows do (#135).
 	Homepage string `json:"homepage"`
@@ -300,7 +307,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if playDirect {
 		s.armSingleTrackEnd(singleTrack{
 			boxURL: playURL, title: req.Title, art: req.Icon, mime: mime, meta: meta,
-			dur: time.Duration(req.DurationSec) * time.Second,
+			dur:    time.Duration(req.DurationSec) * time.Second,
+			artist: cleanTrackText(req.Artist), album: cleanTrackText(req.Album),
 		}, playGen)
 		// Remembered so a key saved from this play keeps the length even
 		// when the saving app does not send it (#978).
