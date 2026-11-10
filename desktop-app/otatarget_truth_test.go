@@ -84,7 +84,7 @@ func TestUpdateTargetTruthTable(t *testing.T) {
 		{"this app's running checksum next to an older version string",
 			release,
 			map[string]string{"version": old, "build": oldBuild, "agentRunningSha256": shaApp},
-			"skip=yes confirms=no classify=not-landed reached=yes"},
+			"skip=no confirms=no classify=not-landed reached=yes"},
 		{"this app's build stamp next to an older version string",
 			release,
 			map[string]string{"version": old, "build": appBuild},

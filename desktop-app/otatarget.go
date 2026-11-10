@@ -90,11 +90,13 @@ func swapFailed(v map[string]string) string {
 //
 // A speaker that reports a failed swap is not current, whatever it runs: the
 // push this would skip is the one thing that gets the agent onto its storage.
+// Nor is one that reports a version older than this app's: it is not this
+// app's agent, whatever checksum it reports (see confirms).
 func (t otaTarget) onlyEngineMissing(v map[string]string) bool {
 	if v == nil || v["goLibrespot"] != "missing" {
 		return false
 	}
-	if swapFailed(v) != "" {
+	if swapFailed(v) != "" || t.older(v) {
 		return false
 	}
 	if t.sha != "" && v["agentRunningSha256"] != "" {

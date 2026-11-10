@@ -125,3 +125,38 @@ func TestClassifyAgentVersionDistrustsAChecksumNextToAnOlderVersion(t *testing.T
 		t.Fatalf("the new agent by its checksum: got %q", verdict)
 	}
 }
+
+// The same hole before the push: a speaker that reports an older version next
+// to this app's checksum was taken as "already on this agent, only the Spotify
+// engine is missing", so it got the engine and never the agent, and the run
+// ended as updated.
+func TestAnOlderVersionIsNeverAlreadyCurrent(t *testing.T) {
+	target := otaTarget{sha: testAppSha, build: testAppBuild, version: testAppVer}
+	stale := map[string]string{"version": testOldVer, "build": testOldBuild, "agentRunningSha256": testAppSha, "goLibrespot": "missing"}
+	if target.onlyEngineMissing(stale) {
+		t.Fatal("a speaker that reports an older version is not on this app's agent, whatever its checksum says")
+	}
+
+	fb := newOtaFakeBox()
+	fb.versionAt = func(now time.Time) (map[string]string, error) {
+		pt := fb.pushTime()
+		switch {
+		case pt.IsZero():
+			return stale, nil
+		case now.Sub(pt) < 40*time.Second:
+			return nil, errUnreachable
+		default:
+			return newVersion("present"), nil
+		}
+	}
+	out, err := runSingle(t, fb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.pushes) != 1 {
+		t.Fatalf("the agent was pushed %d time(s) to a speaker on older software, want 1 (journal: %v)", len(fb.pushes), fb.outcomes)
+	}
+	if !out.Confirmed || out.Outcome != outcomeDone {
+		t.Fatalf("the pushed update took: %+v", out)
+	}
+}
