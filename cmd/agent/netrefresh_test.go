@@ -61,22 +61,23 @@ func TestSeedPeersDropsSelf(t *testing.T) {
 	defer func() { peerSelfDeviceIDsFn.Store(prevDev); peerSelfNameFn.Store(prevName) }()
 	setPeerSelfDeviceIDsFn(func() []string { return []string{"AABBCCDDEEFF"} })
 	setPeerSelfNameFn(func() string { return "Küche" })
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{}
-	peersMu.Unlock()
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{}
+	r.mu.Unlock()
 
-	seedPeers([]webui.PeerSeed{
+	r.seedPeers([]webui.PeerSeed{
 		{Name: "str-192.0.2.174", Host: "192.0.2.174", Port: 8888, DeviceID: "AABBCCDDEEFF"}, // self by deviceID
 		{Name: "Küche", Host: "192.0.2.175", Port: 8888},                                     // self by name, legacy app
 		{Name: "Wohnzimmer", Host: "10.0.0.100", Port: 17008, DeviceID: "112233445566"},      // a real peer
 	}, slog.Default())
 
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if len(peersByIP) != 1 {
-		t.Fatalf("want only the real peer adopted, got %d entries: %v", len(peersByIP), peersByIP)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.byIP) != 1 {
+		t.Fatalf("want only the real peer adopted, got %d entries: %v", len(r.byIP), r.byIP)
 	}
-	e, ok := peersByIP["10.0.0.100"]
+	e, ok := r.byIP["10.0.0.100"]
 	if !ok {
 		t.Fatalf("the real peer was not adopted")
 	}
@@ -95,26 +96,27 @@ func TestPurgeSelfPeers(t *testing.T) {
 	setPeerSelfDeviceIDsFn(func() []string { return []string{"AABBCCDDEEFF"} })
 	setPeerSelfNameFn(func() string { return "Küche" })
 
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{
 		"192.0.2.174": {name: "str-192.0.2.174", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // self, placeholder name
 		"192.0.2.175": {name: "Küche", lastSeen: time.Now()},                                     // self by name, no deviceID
 		"10.0.0.100":  {name: "Wohnzimmer", deviceID: "112233445566", lastSeen: time.Now()},      // a real peer
 	}
-	peersBrowseAt = time.Now()
-	peersMu.Unlock()
+	r.browseAt = time.Now()
+	r.mu.Unlock()
 
-	purgeSelfPeers(slog.Default())
+	r.purgeSelfPeers(slog.Default())
 
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if len(peersByIP) != 1 {
-		t.Fatalf("want only the real peer left, got %d entries: %v", len(peersByIP), peersByIP)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.byIP) != 1 {
+		t.Fatalf("want only the real peer left, got %d entries: %v", len(r.byIP), r.byIP)
 	}
-	if _, ok := peersByIP["10.0.0.100"]; !ok {
+	if _, ok := r.byIP["10.0.0.100"]; !ok {
 		t.Fatalf("the real peer was purged")
 	}
-	if !peersBrowseAt.IsZero() {
+	if !r.browseAt.IsZero() {
 		t.Errorf("purge must force a fresh sweep on the next browse")
 	}
 }

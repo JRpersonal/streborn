@@ -29,6 +29,8 @@ import (
 // than the objects themselves: the mDNS announcer and host responder are
 // locals of run(), guarded by its own mutexes.
 type netRefreshDeps struct {
+	// peers is the roster the stale self-entries are purged from.
+	peers *peerRegistry
 	// setMDNSHostAddr repoints the A-record responder for str-<id>.local
 	// (mdnshost.Responder.SetAddress). nil when the responder never started;
 	// SetAddress itself no-ops and re-announces only on an actual change.
@@ -57,7 +59,7 @@ func refreshAfterNetworkChange(reason string, deps netRefreshDeps, logger *slog.
 		ip = waitForLeaseAfterSwitch(4*time.Minute, 5*time.Second)
 	}
 	// The stale-self purge is address-independent and safe in every outcome.
-	purgeSelfPeers(logger)
+	deps.peers.purgeSelfPeers(logger)
 	if ip == nil {
 		// Never tear working state down while the box holds no address at all:
 		// a failed re-register would leave the box announcing NOTHING, which

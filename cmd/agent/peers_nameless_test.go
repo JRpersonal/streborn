@@ -11,22 +11,18 @@ import (
 // speaker offered four of the five peers it had restored, and the missing one
 // was up and reachable the whole time.
 func TestANamelessPeerIsProbedForItsName(t *testing.T) {
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{
+	t.Parallel()
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{
 		"192.0.2.11": {name: "", lastSeen: time.Now()},                     // nameless and fresh
 		"192.0.2.12": {name: "Kitchen", lastSeen: time.Now()},              // named and fresh
 		"192.0.2.13": {name: "str-192.0.2.13", lastSeen: time.Now()},       // placeholder, fresh
 		"192.0.2.14": {name: "Bath", lastSeen: time.Now().Add(-time.Hour)}, // named but stale
 	}
-	peersMu.Unlock()
-	t.Cleanup(func() {
-		peersMu.Lock()
-		peersByIP = map[string]*peerEntry{}
-		peersProbing = false
-		peersMu.Unlock()
-	})
+	r.mu.Unlock()
 
-	got := probeCandidates()
+	got := r.probeCandidates()
 	in := func(ip string) bool {
 		for _, c := range got {
 			if c == ip {

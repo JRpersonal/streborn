@@ -103,22 +103,23 @@ func TestPurgeSelfPeersAlsoDropsTheFirmwareIdentity(t *testing.T) {
 	})
 	setPeerSelfNameFn(func() string { return "Küche" })
 
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{
 		"192.0.2.174": {name: "str-192.0.2.174", deviceID: "112233445566", lastSeen: time.Now()}, // us, by the firmware id
 		"192.0.2.175": {name: "str-192.0.2.175", deviceID: "AABBCCDDEEFF", lastSeen: time.Now()}, // us, by the announced id
 		"192.0.2.100": {name: "Wohnzimmer", deviceID: "999999999999", lastSeen: time.Now()},      // a real peer
 	}
-	peersMu.Unlock()
+	r.mu.Unlock()
 
-	purgeSelfPeers(slog.Default())
+	r.purgeSelfPeers(slog.Default())
 
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if len(peersByIP) != 1 {
-		t.Fatalf("want only the real peer left, got %d: %v", len(peersByIP), peersByIP)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.byIP) != 1 {
+		t.Fatalf("want only the real peer left, got %d: %v", len(r.byIP), r.byIP)
 	}
-	if _, ok := peersByIP["192.0.2.100"]; !ok {
+	if _, ok := r.byIP["192.0.2.100"]; !ok {
 		t.Fatal("the real peer was purged")
 	}
 }
