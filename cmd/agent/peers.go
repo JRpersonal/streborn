@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
 
@@ -279,13 +280,12 @@ func (r *peerRegistry) savePersistedPeersLocked(logger *slog.Logger) {
 	if err != nil {
 		return
 	}
-	tmp := r.storePath + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable, not merely atomic: the speaker cuts power at standby, and a
+	// plain write-then-rename comes back as a zero-byte file when the rename
+	// reached flash before the data did (see the atomicfile package). An empty
+	// peers.json restores nothing, so the picker started from scratch.
+	if err := atomicfile.WriteFile(r.storePath, b, 0o644); err != nil {
 		logger.Debug("peer list persist failed", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, r.storePath); err != nil {
-		logger.Debug("peer list persist rename failed", "err", err)
 		return
 	}
 	r.savedFP = fp

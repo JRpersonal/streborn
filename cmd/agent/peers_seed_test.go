@@ -7,12 +7,44 @@ package main
 
 import (
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/webui"
 )
+
+// The roster a speaker saved must be the roster it restores after a reboot,
+// and the durable write must leave no temp sibling behind on the NAND.
+func TestPeerRosterSurvivesARestart(t *testing.T) {
+	t.Parallel()
+	r := newTestPeerRegistry(t)
+	seen := time.Now().Add(-time.Minute).Truncate(time.Second)
+	r.mu.Lock()
+	r.byIP["192.0.2.9"] = &peerEntry{name: "Küche", deviceID: "AABBCCDDEEFF", boxDeviceID: "112233445566", port: 17008, lastSeen: seen, reachable: true}
+	r.savePersistedPeersLocked(slog.Default())
+	r.mu.Unlock()
+
+	if _, err := os.Stat(r.storePath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("the temp file must be gone after a successful write, stat err = %v", err)
+	}
+
+	restored := newPeerRegistry(r.storePath)
+	restored.loadPersistedPeers(slog.Default())
+	restored.mu.Lock()
+	defer restored.mu.Unlock()
+	e := restored.byIP["192.0.2.9"]
+	if e == nil {
+		t.Fatalf("the saved peer was not restored, got %v", restored.byIP)
+	}
+	if e.name != "Küche" || e.deviceID != "AABBCCDDEEFF" || e.boxDeviceID != "112233445566" || e.port != 17008 || !e.lastSeen.Equal(seen) {
+		t.Fatalf("restored entry differs from the saved one: %+v", e)
+	}
+	if e.reachable {
+		t.Fatal("a restored peer must come back dimmed until a probe confirms it")
+	}
+}
 
 func TestSeedPeersMergesAsSighting(t *testing.T) {
 	r := newTestPeerRegistry(t)
