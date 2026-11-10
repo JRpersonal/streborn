@@ -1824,7 +1824,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; ", needKB)
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; %s fi; ", needKB, sshStopEngineCmd)
 	// sshPushFile streams to .new, reads the on-box byte count back (the
 	// session can end "successfully" while the file never landed: stream cut,
 	// ENOSPC, or a reboot racing the write; live 2026-07-31), content-verifies
@@ -1879,6 +1879,18 @@ func sshPushNeedKB(rawLen int64) int64 {
 	return (nandNeedCompressed(rawLen) + 1023) / 1024
 }
 
+// sshStopEngineCmd ends the running Spotify engine after an SSH push deleted
+// its file to make room. A deleted file keeps its space for as long as a
+// process has it open, so without this the deletion freed nothing while the
+// engine ran: measured on a SoundTouch Portable on 2026-11-10, df read
+// 9204 kB before the rm and 9216 kB after it, and 18596 kB once the engine
+// process was gone. The engine push then gave up with STR_NO_SPACE having
+// already deleted the old engine, and the agent push ran into a full NAND.
+// The engine is being replaced or the speaker restarts right after, so
+// nothing is lost by stopping it; the agent cannot restart it without its
+// file. The sync and the pause let UBIFS report the space.
+const sshStopEngineCmd = "killall go-librespot 2>/dev/null; sleep 2; sync;"
+
 // pushSidecarViaSSH writes the embedded go-librespot sidecar to
 // /mnt/nv/streborn/bin/go-librespot over SSH (the fallback delivery for boxes
 // whose HTTP listener is Bose's, taken alongside updateAgentViaSSH). Mirrors the
@@ -1898,9 +1910,9 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// post-OTA EnsureSpotifyEngine retries once space frees.
 	needKB := sshPushNeedKB(int64(len(bin)))
 	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; %s fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, needKB)
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; ", needKB, dst, dst, sshStopEngineCmd, needKB)
 	sum := sha256.Sum256(bin)
 	sha := hex.EncodeToString(sum[:])
 	// Content-verify (sha256sum, else md5sum, else size, same rationale as
