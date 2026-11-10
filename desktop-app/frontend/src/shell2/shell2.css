@@ -1015,6 +1015,11 @@ html.ui2 .worldmap-invite { bottom: calc(var(--u-player-min) + 24px); }
 }
 
 
+/* The "still updating" strip (.ua-mini, style.css) floats at the bottom of the
+   window. Here the player is down there, so the strip sits above it and never
+   covers Pause or Stop. */
+html.ui2 .ua-mini { bottom: calc(var(--u-player-min) + var(--u-space-4)); }
+
 /* The app's version line ("Version ... Check for app updates") waits out of
    sight in the sidebar's update slot: the version and the update check live
    on Help and info, About. The slot shows only while an update is waiting and

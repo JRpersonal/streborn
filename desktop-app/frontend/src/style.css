@@ -2294,6 +2294,42 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* The strip that stays behind when the update panel is hidden.
+   Closing that panel never stopped anything, but with nothing left on screen
+   "hidden" and "finished" looked identical, and the step after that is closing
+   the app, which does stop it. Fixed to the bottom so it survives a tab change,
+   and a button so it is obvious it takes you back. */
+.ua-mini {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(92vw, 520px);
+  padding: 9px 16px;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+.ua-mini::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: ua-mini-pulse 1.4s ease-in-out infinite;
+}
+.ua-mini:hover { filter: brightness(1.12); }
+@keyframes ua-mini-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .ua-mini::before { animation: none; } }
+
 /* ---------- Speaker settings view ---------- */
 #view-settings h2 { margin: 0 0 8px 0; color: var(--brand); font-size: 18px; }
 /* The library tab acts on one speaker (play, and presets are stored on it), so

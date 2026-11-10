@@ -198,6 +198,14 @@ describe('custom properties in style.css', () => {
     expect([...unknown]).toEqual([]);
   });
 
+  // The strip that stays while an update runs behind a hidden panel had its
+  // rule in app.css, which nothing imports, so it rendered as a bare button
+  // in the page flow. It lives in the stylesheet main.js loads.
+  it('styles the "still updating" strip in the loaded stylesheet, from theme tokens', () => {
+    expect(css).toMatch(/\n\.ua-mini \{[^}]*position: fixed;[^}]*border: 1px solid var\(--brand\);[^}]*background: var\(--c-surface\);[^}]*color: var\(--c-text\);/);
+    expect(readFileSync(new URL('./main.js', import.meta.url), 'utf8')).toMatch(/^import '\.\/style\.css';/);
+  });
+
   it('the track time, the group member names, the network badge and the offline mark use checked tokens', () => {
     expect(css).toMatch(/\n\.track-time \{[^}]*color: var\(--c-faint\);/);
     expect(css).toMatch(/\n\.group-member-name \{[^}]*color: var\(--c-faint\);/);
