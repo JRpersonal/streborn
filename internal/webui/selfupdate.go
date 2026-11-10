@@ -659,6 +659,15 @@ func (s *Server) resumeSelfUpdate() {
 		s.selfUpd.fail(errors.New(msg))
 		s.fleetFromPending(p, msg)
 		writeSelfUpdateResult(selfUpdateResult{Version: p.Version, From: p.From, Error: msg, At: time.Now().UTC()})
+		// The update made room before the write by deleting the Spotify
+		// engine, and the reboot took away the run that would have put it
+		// back. Without this the speaker stays on its old version AND
+		// without Spotify until the owner tries again (#1798: an ST20 on a
+		// nearly full NAND, v1.5.4 -> v1.5.5 from the phone).
+		if present, _ := goLibrespotStamp(); !present && p.Engine != nil {
+			s.logger.Info("self-update: the failed update had dropped the Spotify engine, putting it back", "version", p.Version)
+			startEngineRestore(s, p.Base, p.Version, *p.Engine, errors.New(msg))
+		}
 		return
 	}
 	s.fleetFromPending(p, "")
@@ -692,6 +701,12 @@ func (s *Server) resumeSelfUpdate() {
 		}
 		writeSelfUpdateResult(res)
 	}()
+}
+
+// startEngineRestore hands an engine restore to the background; a variable so
+// the tests can see it was asked for without fetching anything.
+var startEngineRestore = func(s *Server, base, version string, want updatesig.File, agentErr error) {
+	go s.restoreEngineWhenOnline(base, version, want, agentErr)
 }
 
 // runEngineFetch puts back the Spotify engine of the running release, on the

@@ -3,11 +3,16 @@ package webui
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/updatesig"
 )
 
 func withEngineRestoreTiming(t *testing.T, every, waitFor time.Duration, reachable func(context.Context) bool) {
@@ -83,5 +88,47 @@ func TestFailedUpdateStartsTheEngineRestoreOnlyForANetworkError(t *testing.T) {
 	src := string(b)
 	if !strings.Contains(src, "if isNetworkError(eerr) {") || !strings.Contains(src, "go s.restoreEngineWhenOnline(base, ix.Version, *p.Engine, agentErr)") {
 		t.Fatal("runSelfUpdate no longer hands a network-failed engine restore to restoreEngineWhenOnline")
+	}
+}
+
+// #1798: an update that came back on the old version had already deleted the
+// Spotify engine to make room. The resume asks for it back; a resume that came
+// back on the NEW version, or a pending update that carried no engine, does not
+// go through this path.
+func TestFailedSwapPutsTheDroppedEngineBack(t *testing.T) {
+	dir := t.TempDir()
+	origPending, origResult, origStart, origVer := selfUpdatePendingPath, selfUpdateResultPath, startEngineRestore, agentVersion
+	t.Cleanup(func() {
+		selfUpdatePendingPath, selfUpdateResultPath, startEngineRestore, agentVersion = origPending, origResult, origStart, origVer
+	})
+	selfUpdatePendingPath = filepath.Join(dir, "pending.json")
+	selfUpdateResultPath = filepath.Join(dir, "last.json")
+	var asked []string
+	startEngineRestore = func(_ *Server, _, version string, want updatesig.File, agentErr error) {
+		asked = append(asked, version+" "+want.SHA256+" "+agentErr.Error())
+	}
+	engine := updatesig.File{Size: 2048, SHA256: "abc"}
+
+	// Back on the old version, engine gone (the test host has no
+	// /mnt/nv/streborn/bin/go-librespot): the restore is asked for.
+	agentVersion = func() string { return "v1.5.4" }
+	if err := writeJSONFile(selfUpdatePendingPath, selfUpdatePending{Version: "v1.5.5", From: "v1.5.4", Engine: &engine}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s.resumeSelfUpdate()
+	if len(asked) != 1 || !strings.Contains(asked[0], "v1.5.5 abc") || !strings.Contains(asked[0], "instead of v1.5.5") {
+		t.Fatalf("restore requests %q, want one for the v1.5.5 engine", asked)
+	}
+
+	// No engine in the pending update: nothing to put back.
+	asked = nil
+	if err := writeJSONFile(selfUpdatePendingPath, selfUpdatePending{Version: "v1.5.5", From: "v1.5.4"}); err != nil {
+		t.Fatal(err)
+	}
+	s = &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s.resumeSelfUpdate()
+	if len(asked) != 0 {
+		t.Fatalf("restore asked for without an engine in the update: %q", asked)
 	}
 }
