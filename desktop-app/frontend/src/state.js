@@ -130,6 +130,86 @@ export const state = {
   // (installhold.js). The setup picker refreshes it on every render; while a
   // speaker is in it, nothing offers that speaker an install.
   installHolds: {},
+
+  // ---- Everything below was created by its first assignment until every
+  // field was declared here (a write to a field this literal does not
+  // name fails state.fields.test.js). A typed default is given
+  // only where every reader treats it exactly like the missing field it
+  // replaces. `undefined` is deliberate everywhere else: a reader tells
+  // "never set" from the value the code resets the field to (a strict
+  // comparison, a default parameter), or hands the value on, and a tidier
+  // default would change behaviour.
+
+  // -- Discovery and the speaker list
+  discovery: null,            // { phase: 'searching' | 'done' | 'failed', error, at, last | found }; null before the first search
+  boxPlaying: undefined,      // deviceID -> plays right now, replaced by every refreshBoxPlaying round
+  boxPlayingBusy: false,      // a refreshBoxPlaying round is in flight
+  speakerIssueParts: null,    // the parts speakerIssues is built from, merged per reporter
+  speakerIssues: undefined,   // per-speaker attention items (shell2/attention.js speakerIssuesFrom)
+  speakerIssuesSig: undefined, // JSON of speakerIssues at the last repaint
+
+  // -- What the selected speaker plays (views/music)
+  nowSource: undefined,       // now_playing source ("TUNEIN", "STANDBY", ...); '' once reset
+  nowSourceAccount: undefined, // its sourceAccount; '' once reset
+  nowTitle: undefined,        // live track title of a proxied radio stream; '' once reset
+  nowTitleSwapped: false,     // the user swapped artist and title for this station
+  nowBitrate: undefined,      // measured kbit/s of the running stream; 0 once reset
+  lastStatusHTML: undefined,  // the status line as last painted; '' once reset
+  activePresetSlot: undefined, // index of the lit key in the grid; null while none is lit
+  presetRev: undefined,       // the agent's preset revision at the last read (a number once read)
+
+  // -- Optimistic play of a music-library key (#1767)
+  optimisticQueueSlot: undefined,    // the pressed slot; null once confirmed or dropped
+  optimisticQueuePrevLoc: undefined, // what played before the press
+
+  // -- Spotify
+  spotifyNow: undefined,      // the engine's now-playing snapshot; null while Spotify is not playing
+  spotifyNowGen: 0,           // bumped by every reset, so a late reply is recognised as stale
+  spotifyRecall: undefined,   // the recall still settling ({ uri, ... }) or null
+  lastSpotifyNowFetch: 0,     // Date.now() of the last SpotifyNowPlaying call
+  nowBoxSpotify: undefined,   // the speaker's NATIVE Spotify track, or null
+  nowSpotifySlot: undefined,  // the key the playing Spotify context belongs to, or null
+  spotifyAccountNames: undefined, // account id -> display name, merged from the replies
+  spotifyKeyUsable: null,     // host -> can this speaker play Spotify keys (cache, created on first use)
+  spotifyKeyUsablePending: undefined, // host a usability check is running for; '' once done
+  spotifyPremiumRequired: false, // the last reply said the account is not Premium
+  spotifyRefusal: null,       // { host, port, ...refusal } while the engine refuses to play
+  nativeSpotifyWarned: undefined, // the warn key the native-Spotify notice was last shown for
+  stuckBuf: null,             // tracker of a speaker that hangs in buffering (stuckbuffering.js)
+
+  // -- Volume
+  desiredVolume: null,        // the level the user last set, re-applied after a wake
+  desiredPairLevels: null,    // { key, levels } the pair slider last gave the two halves
+  muteUntil: 0,               // timestamp until which the mute button trusts the click over the speaker
+
+  // -- Search
+  searchMinBitrate: 0,        // minimum-bitrate filter of the result list (0 = off)
+
+  // -- Groups and stereo pairs (views/multiroom.js, groups.js)
+  zoneLive: undefined,        // deviceID -> the speaker's zone answer; created by the first poll or paint
+  zoneSlaves: undefined,      // deviceID -> ticked as a member in the editor; created by the first paint
+  zoneMaster: undefined,      // deviceID of the main speaker in the editor
+  zoneMasterPicked: false,    // the star was set by hand and waits for the live group to follow
+  zoneMasterHandPick: undefined, // the deviceID the user starred, to tell it from the automatic star
+  zonePermanent: false,       // "fixed group" is ticked
+  zoneMsg: '',                // the note under the group editor (HTML)
+  stereoLeft: undefined,      // deviceID picked as the left half
+  stereoRight: undefined,     // deviceID picked as the right half
+  stereoName: undefined,      // the pair name being typed; deleted when the pick changes
+  stereoMsg: '',              // the note under the pair editor (HTML)
+  staleStereo: [],            // confirmed findings of a pair only one half still remembers (stalestereo.js)
+
+  // -- Updates
+  otaTargetHost: undefined,   // host being updated, '__batch__' for update-all; null once finished
+  otaTargetName: undefined,   // its name for the "already running" toast; null once finished
+  appUpdateVersion: '',       // version of the app update on offer
+  wingetFailure: null,        // { text, command } after a failed winget update
+
+  // -- Setup and settings
+  sessionPrep: null,          // { ssid, pass } of the stick prepared in this session
+  setupDoneOpen: false,       // the "already set up" group of the target picker is unfolded
+  settingsReconnect: null,    // { attempts, max, timer } while Settings waits for a speaker to come back
+  strRemovedHost: null,       // host STR was just removed from, until Settings showed the result
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after
