@@ -19,7 +19,56 @@ import (
 const zoneTeardown1036Window = 12 * time.Second
 
 // handleZoneDissolve tears down the zone this box leads and stops re-forming it.
+// It reads the two switches off the query and renders what dissolveZone
+// answers; every answer of a dissolve is a 200 with a JSON body. The desktop
+// app (DissolveZone, the undo-pair action), the phone remote and the
+// groupkeys client read these bodies, so they are pinned byte for byte.
 func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	writeJSON(w, http.StatusOK, s.dissolveZone(r.Context(), zoneDissolveReq{
+		Stereo: q.Get("stereo") == "1",
+		Forget: q.Get("forget") == "1",
+	}))
+}
+
+// zoneDissolveReq is what a dissolve is asked to do beyond taking the live
+// group apart.
+type zoneDissolveReq struct {
+	// Stereo is "Undo stereo pair" (?stereo=1): act on a stereo pair, and on
+	// nothing else. Without it a pair is left alone.
+	Stereo bool
+	// Forget (?forget=1) deletes a saved permanent group as well, which a
+	// plain dissolve keeps.
+	Forget bool
+}
+
+// zoneDissolveAnswer is the JSON body DELETE /api/box/zone answers with,
+// always under a 200.
+type zoneDissolveAnswer map[string]any
+
+// zoneDissolveRun is the state one dissolve carries from phase to phase: the
+// request, the budgeted context and the firmware client, and who is to be
+// taken apart. The phase bodies are handleZoneDissolve's former body, moved;
+// each starts by naming the fields it reads the way that body did.
+type zoneDissolveRun struct {
+	req zoneDissolveReq
+	ctx context.Context
+	c   *boxapi.Client
+
+	master boxapi.ZoneMember
+	slaves []boxapi.ZoneMember
+	// stereo: what is being dissolved is a stereo pair, not a multiroom zone.
+	stereo bool
+}
+
+// dissolveZone is the service behind DELETE /api/box/zone: it takes the
+// group or the stereo pair of this box apart and says what happened. ctx is
+// the caller's; the dissolve runs on its own 8 s budget below it.
+//
+// The phases, top to bottom, each one finishing the dissolve with an answer
+// or handing over to the next. The order of the calls to the speakers is
+// the order they had in the handler.
+func (s *Server) dissolveZone(ctx context.Context, req zoneDissolveReq) zoneDissolveAnswer {
 	// A dissolve is a membership change like any form, so stamp the sequence:
 	// a join-volume applier still sitting in its settle has to stand down
 	// instead of writing the group's level onto a speaker that just left it.
@@ -42,12 +91,33 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// window.
 	s.suppress1036For(zoneTeardown1036Window, "zone teardown")
 	c := boxapi.New(s.boxHost)
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	run := &zoneDissolveRun{req: req, ctx: ctx, c: c}
+	if ans := s.zoneDissolveTargets(run); ans != nil {
+		return ans
+	}
+	if ans := s.zoneDissolveConfirmPair(run); ans != nil {
+		return ans
+	}
+	if run.stereo {
+		return s.dissolveStereoPair(run)
+	}
+	if run.master.DeviceID == "" && len(run.slaves) == 0 {
+		return s.zoneDissolveNothing(run)
+	}
+	return s.zoneDissolveMultiroom(run)
+}
+
+// zoneDissolveTargets works out who is to be taken apart: the persisted
+// membership first, the live zone when the store is empty. A plain dissolve
+// that finds a persisted stereo pair ends here and leaves it alone.
+func (s *Server) zoneDissolveTargets(run *zoneDissolveRun) zoneDissolveAnswer {
+	ctx, c := run.ctx, run.c
 	var master boxapi.ZoneMember
 	var slaves []boxapi.ZoneMember
 	stereo := false
-	wantStereo := r.URL.Query().Get("stereo") == "1"
+	wantStereo := run.req.Stereo
 	// Prefer the persisted membership; fall back to the live zone so a dissolve
 	// still works after an agent restart.
 	if s.zones != nil {
@@ -64,8 +134,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 				// Leave the pair persisted and untouched; report nothing-to-do so
 				// the app can say there was no group to ungroup.
 				s.logger.Info("zone: plain dissolve left a stereo pair intact (use undo-stereo-pair)", "master", z.Master)
-				writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nothing": true, "stereoPairKept": true})
-				return
+				return zoneDissolveAnswer{"ok": true, "nothing": true, "stereoPairKept": true}
 			}
 			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
 			stereo = z.Stereo
@@ -88,6 +157,17 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	run.master, run.slaves, run.stereo = master, slaves, stereo
+	return nil
+}
+
+// zoneDissolveConfirmPair is the "Undo stereo pair" half that the store
+// could not answer: it asks the firmware whether this speaker is in a pair,
+// refuses when it holds group state and no pair is confirmed, and retargets
+// the dissolve at the pair when one is.
+func (s *Server) zoneDissolveConfirmPair(run *zoneDissolveRun) zoneDissolveAnswer {
+	ctx, c, wantStereo := run.ctx, run.c, run.req.Stereo
+	master, slaves, stereo := run.master, run.slaves, run.stereo
 	// "Undo stereo pair" asks the PAIR AUTHORITY, always.
 	//
 	// This escalation used to carry `master.DeviceID == ""` as a precondition,
@@ -136,11 +216,10 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			// while the cost of continuing is somebody's group.
 			s.logger.Info("stereo: undo-pair refused, no pair confirmed on this speaker",
 				"readable", gerr == nil, "master", master.DeviceID, "slaves", len(slaves))
-			writeJSON(w, http.StatusOK, map[string]any{
+			return zoneDissolveAnswer{
 				"ok": false, "nothing": true, "noPair": true, "inZone": true,
 				"pairReadable": gerr == nil,
-			})
-			return
+			}
 		}
 		if pairConfirmed {
 			// The firmware confirms a pair, so dissolve it as a pair, whatever
@@ -172,87 +251,106 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 				"id", g.ID, "master", g.MasterDeviceID, "self", selfID, "members", len(g.Members))
 		}
 	}
-	if stereo {
-		// A stereo pair is a firmware-native L/R group, so tear it down with the
-		// matching endpoint (GET /removeGroup), not the multiroom /removeZoneSlave.
-		// The PARTNER's firmware keeps its own copy of the pair (GroupService),
-		// and a partner left uncleared answers every later /addGroup with 5510
-		// GROUP_ALREADY_EXISTS — so clear both firmwares and both marge records,
-		// not just our own. Always clear our store afterwards so we stop
-		// honoring the pair.
-		partnerIP, partnerID := "", ""
-		if len(slaves) > 0 {
-			partnerIP, partnerID = slaves[0].IP, slaves[0].DeviceID
-		}
-		s.logger.Info("stereo: dissolving pair via /removeGroup (beta)", "master", master.DeviceID, "partnerIP", partnerIP)
-		if err := c.RemoveGroup(ctx); err != nil {
-			s.logger.Warn("stereo: removeGroup failed (the user may need to undo the pair in the Bose app)", "err", err)
-		}
-		if partnerIP != "" {
-			// The stored partner IP can be stale (DHCP renewal since pairing):
-			// confirm the box at that address IS the recorded partner before
-			// tearing its pair down. A mismatch is reported, not acted on.
-			pc := boxapi.New(partnerIP)
-			skipRemote := false
-			if partnerID != "" {
-				if pinfo, perr := pc.GetInfo(ctx); perr == nil &&
-					strings.TrimSpace(pinfo.DeviceID) != "" && !strings.EqualFold(pinfo.DeviceID, partnerID) {
-					s.logger.Warn("stereo: box at the stored partner IP is a DIFFERENT speaker, skipping its teardown",
-						"partnerIP", partnerIP, "expected", partnerID, "found", pinfo.DeviceID)
-					skipRemote = true
-				}
-			}
-			if skipRemote {
-				partnerIP = ""
-			} else if err := pc.RemoveGroup(ctx); err != nil {
-				s.logger.Warn("stereo: removeGroup on the partner failed", "err", err, "partnerIP", partnerIP)
-			} else {
-				s.logger.Info("stereo: partner firmware pair cleared", "partnerIP", partnerIP)
-			}
-		}
-		if s.margeGroupClear != nil {
-			s.margeGroupClear("dissolve")
-		}
-		partnerCleared := s.pushGroupDocToPartner(ctx, partnerIP, "")
-		if s.zones != nil {
-			if err := s.clearZoneDoc(); err != nil {
-				s.logger.Warn("stereo: clear store failed", "err", err)
-			}
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok": true, "stereo": true,
-			"partnerIP": partnerIP, "partnerDeviceID": partnerID,
-			"partnerMargeCleared": partnerCleared,
-		})
-		return
+	run.master, run.slaves, run.stereo = master, slaves, stereo
+	return nil
+}
+
+// dissolveStereoPair takes a stereo pair apart on BOTH halves: this box's
+// firmware, the partner's firmware, both marge records, and the stored
+// document. In that order.
+func (s *Server) dissolveStereoPair(run *zoneDissolveRun) zoneDissolveAnswer {
+	ctx, c, master, slaves := run.ctx, run.c, run.master, run.slaves
+	// A stereo pair is a firmware-native L/R group, so tear it down with the
+	// matching endpoint (GET /removeGroup), not the multiroom /removeZoneSlave.
+	// The PARTNER's firmware keeps its own copy of the pair (GroupService),
+	// and a partner left uncleared answers every later /addGroup with 5510
+	// GROUP_ALREADY_EXISTS — so clear both firmwares and both marge records,
+	// not just our own. Always clear our store afterwards so we stop
+	// honoring the pair.
+	partnerIP, partnerID := "", ""
+	if len(slaves) > 0 {
+		partnerIP, partnerID = slaves[0].IP, slaves[0].DeviceID
 	}
-	if master.DeviceID == "" && len(slaves) == 0 {
-		// Nothing to act on: no persisted zone, firmware zone empty. Say so
-		// once instead of pretending to dissolve — and still clear the store
-		// so a repeating caller stops finding stale state to retry on.
-		firmwarePair := false
-		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
-			// A plain dissolve leaves a firmware stereo pair alone (the
-			// escalation above needs ?stereo=1); report it so the caller can
-			// tell "standalone" from "paired but not asked to unpair".
-			firmwarePair = true
-			s.logger.Info("zone: nothing to dissolve, but the firmware holds a stereo pair (use the undo-pair action to dissolve it)", "id", g.ID)
-		} else if err == nil && s.margeGroupClear != nil {
-			// Firmware has neither zone nor group: a stored marge pair record
-			// is provably phantom in this state (a factory reset wipes the
-			// firmware pairing but not /mnt/nv/streborn), so drop it — the
-			// explicit escape hatch.
-			s.margeGroupClear("nothing to dissolve (firmware reports no pair)")
-		}
-		if !firmwarePair {
-			s.logger.Info("zone: nothing to dissolve (no persisted zone, firmware reports no zone and no group)")
-		}
-		if s.zones != nil {
-			_ = s.clearZoneDoc()
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nothing": true, "firmwarePair": firmwarePair})
-		return
+	s.logger.Info("stereo: dissolving pair via /removeGroup (beta)", "master", master.DeviceID, "partnerIP", partnerIP)
+	if err := c.RemoveGroup(ctx); err != nil {
+		s.logger.Warn("stereo: removeGroup failed (the user may need to undo the pair in the Bose app)", "err", err)
 	}
+	if partnerIP != "" {
+		// The stored partner IP can be stale (DHCP renewal since pairing):
+		// confirm the box at that address IS the recorded partner before
+		// tearing its pair down. A mismatch is reported, not acted on.
+		pc := boxapi.New(partnerIP)
+		skipRemote := false
+		if partnerID != "" {
+			if pinfo, perr := pc.GetInfo(ctx); perr == nil &&
+				strings.TrimSpace(pinfo.DeviceID) != "" && !strings.EqualFold(pinfo.DeviceID, partnerID) {
+				s.logger.Warn("stereo: box at the stored partner IP is a DIFFERENT speaker, skipping its teardown",
+					"partnerIP", partnerIP, "expected", partnerID, "found", pinfo.DeviceID)
+				skipRemote = true
+			}
+		}
+		if skipRemote {
+			partnerIP = ""
+		} else if err := pc.RemoveGroup(ctx); err != nil {
+			s.logger.Warn("stereo: removeGroup on the partner failed", "err", err, "partnerIP", partnerIP)
+		} else {
+			s.logger.Info("stereo: partner firmware pair cleared", "partnerIP", partnerIP)
+		}
+	}
+	if s.margeGroupClear != nil {
+		s.margeGroupClear("dissolve")
+	}
+	partnerCleared := s.pushGroupDocToPartner(ctx, partnerIP, "")
+	if s.zones != nil {
+		if err := s.clearZoneDoc(); err != nil {
+			s.logger.Warn("stereo: clear store failed", "err", err)
+		}
+	}
+	return zoneDissolveAnswer{
+		"ok": true, "stereo": true,
+		"partnerIP": partnerIP, "partnerDeviceID": partnerID,
+		"partnerMargeCleared": partnerCleared,
+	}
+}
+
+// zoneDissolveNothing answers for a speaker that holds no group at all, and
+// clears what is provably stale on the way: the stored document, and a marge
+// pair record the firmware no longer backs.
+func (s *Server) zoneDissolveNothing(run *zoneDissolveRun) zoneDissolveAnswer {
+	ctx, c := run.ctx, run.c
+	// Nothing to act on: no persisted zone, firmware zone empty. Say so
+	// once instead of pretending to dissolve — and still clear the store
+	// so a repeating caller stops finding stale state to retry on.
+	firmwarePair := false
+	if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
+		// A plain dissolve leaves a firmware stereo pair alone (the
+		// escalation above needs ?stereo=1); report it so the caller can
+		// tell "standalone" from "paired but not asked to unpair".
+		firmwarePair = true
+		s.logger.Info("zone: nothing to dissolve, but the firmware holds a stereo pair (use the undo-pair action to dissolve it)", "id", g.ID)
+	} else if err == nil && s.margeGroupClear != nil {
+		// Firmware has neither zone nor group: a stored marge pair record
+		// is provably phantom in this state (a factory reset wipes the
+		// firmware pairing but not /mnt/nv/streborn), so drop it — the
+		// explicit escape hatch.
+		s.margeGroupClear("nothing to dissolve (firmware reports no pair)")
+	}
+	if !firmwarePair {
+		s.logger.Info("zone: nothing to dissolve (no persisted zone, firmware reports no zone and no group)")
+	}
+	if s.zones != nil {
+		_ = s.clearZoneDoc()
+	}
+	return zoneDissolveAnswer{"ok": true, "nothing": true, "firmwarePair": firmwarePair}
+}
+
+// zoneDissolveMultiroom takes the live multiroom zone apart: the members off
+// the master until the firmware reports the zone empty, the stragglers
+// silenced, the stored document cleared (a saved permanent group only when
+// asked), and the members' own stores purged. The answer says whether the
+// speaker confirmed it.
+func (s *Server) zoneDissolveMultiroom(run *zoneDissolveRun) zoneDissolveAnswer {
+	ctx, c, master, slaves := run.ctx, run.c, run.master, run.slaves
 	s.logger.Info("zone: dissolving (beta)", "master", master.DeviceID, "slaves", len(slaves))
 	// What the master is playing RIGHT NOW, before anything is torn down. It is
 	// the only way to tell, afterwards, whether a member that is still making
@@ -331,7 +429,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		// Reported as "the multiroom connection cannot be separated", with a log
 		// showing three dissolves in ninety seconds and the group re-forming
 		// each time (#119).
-		forget := r.URL.Query().Get("forget") == "1"
+		forget := run.req.Forget
 		if doc, ok := s.zones.Get(); ok && doc.Permanent && !forget {
 			s.logger.Info("zone: live group taken apart, the saved group stays saved and forms again when its main speaker plays",
 				"master", doc.Master, "members", len(doc.Slaves))
@@ -355,7 +453,7 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// firmware said, so a dissolve that removed nothing, and one whose result
 	// could not be read at all, both looked like success, and the user pressed
 	// the button again on a group that was still playing.
-	resp := map[string]any{"ok": dissolveUnverified == "" && remaining == 0}
+	resp := zoneDissolveAnswer{"ok": dissolveUnverified == "" && remaining == 0}
 	if remaining > 0 {
 		resp["remaining"] = remaining
 		resp["error"] = "the speaker still reports members in the group"
@@ -365,5 +463,5 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		resp["unverified"] = dissolveUnverified
 		s.logger.Warn("zone: dissolve could not be confirmed", "err", dissolveUnverified)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
 }

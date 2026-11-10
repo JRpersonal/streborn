@@ -1,8 +1,7 @@
 package webui
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"context"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/zones"
@@ -29,13 +28,8 @@ func TestUngroupKeepsAPermanentGroupSaved(t *testing.T) {
 	}
 	s, st := staleDocServer(t, deadBoxHost, group, true)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil)
-	w := httptest.NewRecorder()
-	s.handleZoneDissolve(w, req)
+	s.dissolveZone(context.Background(), zoneDissolveReq{})
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
 	if !storedGroup(t, st) {
 		t.Fatal("Ungroup deleted the saved permanent group; it can only be rebuilt by hand from there")
 	}
@@ -52,9 +46,7 @@ func TestUngroupStillClearsAnOrdinaryGroup(t *testing.T) {
 	}
 	s, st := staleDocServer(t, deadBoxHost, group, true)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil)
-	w := httptest.NewRecorder()
-	s.handleZoneDissolve(w, req)
+	s.dissolveZone(context.Background(), zoneDissolveReq{})
 
 	if storedGroup(t, st) {
 		t.Fatal("a plain group survived Ungroup in the store; only a permanent group is kept")

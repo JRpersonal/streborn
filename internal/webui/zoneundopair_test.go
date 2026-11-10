@@ -17,28 +17,17 @@
 package webui
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"context"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
-// undoPair drives DELETE /api/box/zone?stereo=1 and returns the decoded answer.
+// undoPair runs the dissolve DELETE /api/box/zone?stereo=1 asks for and
+// returns its answer. The wire itself is pinned in zones_stereo_wire_test.go.
 func undoPair(t *testing.T, s *Server) map[string]any {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone?stereo=1", nil)
-	w := httptest.NewRecorder()
-	s.handleZoneDissolve(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (%s)", w.Code, w.Body.String())
-	}
-	var out map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("bad JSON: %v (%s)", err, w.Body.String())
-	}
-	return out
+	return s.dissolveZone(context.Background(), zoneDissolveReq{Stereo: true})
 }
 
 func multiroomDoc(permanent bool) zones.Zone {
@@ -155,11 +144,7 @@ func TestPlainUngroupIsUnaffectedByTheStereoGuard(t *testing.T) {
 	}
 	s, st := staleDocServer(t, deadBoxHost, pair, true)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil) // no ?stereo=1
-	w := httptest.NewRecorder()
-	s.handleZoneDissolve(w, req)
-	var out map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	out := s.dissolveZone(context.Background(), zoneDissolveReq{}) // no ?stereo=1
 	if out["stereoPairKept"] != true {
 		t.Fatalf("a plain Ungroup on a pair must keep it, got %v", out)
 	}
