@@ -41,10 +41,12 @@ describe('Bose firmware support links', () => {
   // The firmware row of Speaker settings lives in the Status & info group.
   it('lives outside the views, where both of them can import it', () => {
     const settings = fileSource('views/settings/info.js');
-    const setup = fileSource('views/setup.js');
     expect(settings).toContain("from '../../firmware.js'");
-    // setup.js reaches the firmware facts through the guide, which imports them.
-    expect(setup).toContain("from '../fwguide.js'");
+    // The setup view reaches the firmware facts through the guide, which
+    // imports them: in the install screens' help and in the stick wait.
+    for (const rel of ['views/setup/installhelp.js', 'views/setup/await.js']) {
+      expect(fileSource(rel), rel).toContain("from '../../fwguide.js'");
+    }
   });
 
   it('has an article for every model that can show the outdated banner', () => {
