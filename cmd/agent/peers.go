@@ -53,14 +53,28 @@ type peerEntry struct {
 	reachable   bool // answered a web-port probe on the most recent sweep
 }
 
-var (
-	peersMu       sync.Mutex
-	peersByIP     = map[string]*peerEntry{}
-	peersBrowseAt time.Time
-	peersProbing  bool      // one fallback-probe goroutine at a time
-	peersSavedFP  string    // membership fingerprint of the last NAND write
-	peersSavedAt  time.Time // last NAND write (rate-limits lastSeen refreshes)
-)
+// peerRegistry owns the peer roster: the per-IP map, the lock that guards it,
+// the sweep and persistence bookkeeping, and the file it is persisted to.
+//
+// One instance serves the agent (built in buildStores and carried on the agent
+// struct). A struct rather than package-level state so a test builds its own
+// roster, pointed at its own file, instead of swapping the one every other
+// test in the package shares.
+type peerRegistry struct {
+	mu       sync.Mutex
+	byIP     map[string]*peerEntry
+	browseAt time.Time
+	probing  bool      // one fallback-probe goroutine at a time
+	savedFP  string    // membership fingerprint of the last NAND write
+	savedAt  time.Time // last NAND write (rate-limits lastSeen refreshes)
+	// storePath is the roster's file on NAND, peersStorePath in production.
+	storePath string
+}
+
+// newPeerRegistry returns an empty roster persisted at storePath.
+func newPeerRegistry(storePath string) *peerRegistry {
+	return &peerRegistry{byIP: map[string]*peerEntry{}, storePath: storePath}
+}
 
 // peersStorePath persists the peer list across reboots so the on-box page's
 // speaker picker is complete from the first load. Requirement (Jens,
@@ -95,15 +109,15 @@ type peerDiskEntry struct {
 // address change, so the entry follows the speaker and keeps the name that was
 // already known.
 //
-// Caller holds peersMu.
-func adoptPeerEntryLocked(ip, deviceID, boxDeviceID string) *peerEntry {
-	e := peersByIP[ip]
+// Caller holds r.mu.
+func (r *peerRegistry) adoptPeerEntryLocked(ip, deviceID, boxDeviceID string) *peerEntry {
+	e := r.byIP[ip]
 	if e == nil {
 		if deviceID != "" {
-			for oldIP, old := range peersByIP {
+			for oldIP, old := range r.byIP {
 				if old.deviceID == deviceID && oldIP != ip {
 					e = old
-					delete(peersByIP, oldIP)
+					delete(r.byIP, oldIP)
 					break
 				}
 			}
@@ -111,7 +125,7 @@ func adoptPeerEntryLocked(ip, deviceID, boxDeviceID string) *peerEntry {
 		if e == nil {
 			e = &peerEntry{}
 		}
-		peersByIP[ip] = e
+		r.byIP[ip] = e
 	}
 	if deviceID != "" {
 		e.deviceID = deviceID
@@ -125,10 +139,10 @@ func adoptPeerEntryLocked(ip, deviceID, boxDeviceID string) *peerEntry {
 // peerWebPort returns the agent port a listed peer answered on last, or 0
 // when it is unknown or the address is not in the roster. The group-key
 // toggle uses it as the first port to try for the main speaker's agent.
-func peerWebPort(ip string) int {
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if e := peersByIP[ip]; e != nil {
+func (r *peerRegistry) peerWebPort(ip string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e := r.byIP[ip]; e != nil {
 		return e.port
 	}
 	return 0
@@ -140,15 +154,15 @@ func peerWebPort(ip string) int {
 // group-key toggle resolves a template's speakers through it, because the
 // template stores the addresses of the day it was saved and a DHCP
 // renumbering hands those to other speakers.
-func peerIPByDeviceID(deviceID string) string {
+func (r *peerRegistry) peerIPByDeviceID(deviceID string) string {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
 		return ""
 	}
-	peersMu.Lock()
-	defer peersMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	best := ""
-	for ip, e := range peersByIP {
+	for ip, e := range r.byIP {
 		// Either id names the speaker. A template member carries the FIRMWARE
 		// id, so matching only the announced one meant a speaker that moved
 		// could never be found again on a two-chip chassis.
@@ -168,10 +182,10 @@ func peerIPByDeviceID(deviceID string) string {
 
 // peerDeviceIDAt returns the deviceID the roster knows the peer at ip by, or
 // "" when the address is not listed or its id is unknown.
-func peerDeviceIDAt(ip string) string {
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if e := peersByIP[strings.TrimSpace(ip)]; e != nil {
+func (r *peerRegistry) peerDeviceIDAt(ip string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e := r.byIP[strings.TrimSpace(ip)]; e != nil {
 		return e.deviceID
 	}
 	return ""
@@ -182,10 +196,10 @@ func peerDeviceIDAt(ip string) string {
 //
 // Both are the same speaker. A caller that holds one of them must be able to
 // recognise the other, which is exactly what the group-key guard could not do.
-func peerDeviceIDsAt(ip string) []string {
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	e := peersByIP[strings.TrimSpace(ip)]
+func (r *peerRegistry) peerDeviceIDsAt(ip string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e := r.byIP[strings.TrimSpace(ip)]
 	if e == nil {
 		return nil
 	}
@@ -216,11 +230,11 @@ func ownLANIPv4() string {
 	return best
 }
 
-// loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
+// loadPersistedPeers seeds r.byIP from NAND at agent start. Entries come
 // back dimmed (reachable=false); the browse sweep's fallback probe promotes
 // the ones that actually answer within about a minute.
-func loadPersistedPeers(logger *slog.Logger) {
-	b, err := os.ReadFile(peersStorePath)
+func (r *peerRegistry) loadPersistedPeers(logger *slog.Logger) {
+	b, err := os.ReadFile(r.storePath)
 	if err != nil {
 		return
 	}
@@ -229,16 +243,16 @@ func loadPersistedPeers(logger *slog.Logger) {
 		return
 	}
 	now := time.Now()
-	peersMu.Lock()
+	r.mu.Lock()
 	n := 0
 	for _, d := range list {
 		if d.IP == "" || now.Sub(d.LastSeen) > peerTTL {
 			continue
 		}
-		peersByIP[d.IP] = &peerEntry{name: d.Name, deviceID: d.DeviceID, boxDeviceID: d.BoxDeviceID, port: d.Port, lastSeen: d.LastSeen}
+		r.byIP[d.IP] = &peerEntry{name: d.Name, deviceID: d.DeviceID, boxDeviceID: d.BoxDeviceID, port: d.Port, lastSeen: d.LastSeen}
 		n++
 	}
-	peersMu.Unlock()
+	r.mu.Unlock()
 	if n > 0 {
 		logger.Info("peer list restored from NAND", "count", n)
 	}
@@ -247,35 +261,35 @@ func loadPersistedPeers(logger *slog.Logger) {
 // savePersistedPeersLocked writes the peer list to NAND when its membership
 // (IPs, names, ports) changed, or at most every 6 h to refresh lastSeen
 // stamps. Rate-limited on purpose: lastSeen moves on every sweep and NAND
-// writes are precious. Caller holds peersMu.
-func savePersistedPeersLocked(logger *slog.Logger) {
-	list := make([]peerDiskEntry, 0, len(peersByIP))
+// writes are precious. Caller holds r.mu.
+func (r *peerRegistry) savePersistedPeersLocked(logger *slog.Logger) {
+	list := make([]peerDiskEntry, 0, len(r.byIP))
 	fp := ""
-	for ip, e := range peersByIP {
+	for ip, e := range r.byIP {
 		list = append(list, peerDiskEntry{IP: ip, Name: e.name, DeviceID: e.deviceID, BoxDeviceID: e.boxDeviceID, Port: e.port, LastSeen: e.lastSeen})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].IP < list[j].IP })
 	for _, d := range list {
 		fp += d.IP + "|" + d.Name + "|" + d.DeviceID + "|" + d.BoxDeviceID + "|" + strconv.Itoa(d.Port) + ";"
 	}
-	if fp == peersSavedFP && time.Since(peersSavedAt) < 6*time.Hour {
+	if fp == r.savedFP && time.Since(r.savedAt) < 6*time.Hour {
 		return
 	}
 	b, err := json.MarshalIndent(list, "", " ")
 	if err != nil {
 		return
 	}
-	tmp := peersStorePath + ".tmp"
+	tmp := r.storePath + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		logger.Debug("peer list persist failed", "err", err)
 		return
 	}
-	if err := os.Rename(tmp, peersStorePath); err != nil {
+	if err := os.Rename(tmp, r.storePath); err != nil {
 		logger.Debug("peer list persist rename failed", "err", err)
 		return
 	}
-	peersSavedFP = fp
-	peersSavedAt = time.Now()
+	r.savedFP = fp
+	r.savedAt = time.Now()
 }
 
 // seedPeers merges a speaker list pushed by the desktop app (POST
@@ -406,33 +420,33 @@ func matchesSelfDeviceID(id string) bool {
 // next browse to run a fresh mDNS sweep. Called from the post-switch network
 // refresh: the entry for the address the box just left would otherwise be
 // re-dialed every sweep until its 12 h TTL.
-func purgeSelfPeers(logger *slog.Logger) {
+func (r *peerRegistry) purgeSelfPeers(logger *slog.Logger) {
 	selfName := peerSelfName()
-	peersMu.Lock()
-	defer peersMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	removed := 0
-	for ip, e := range peersByIP {
+	for ip, e := range r.byIP {
 		if matchesSelfDeviceID(e.deviceID) ||
 			(selfName != "" && strings.EqualFold(e.name, selfName)) {
-			delete(peersByIP, ip)
+			delete(r.byIP, ip)
 			removed++
 		}
 	}
 	if removed > 0 {
-		savePersistedPeersLocked(logger)
+		r.savePersistedPeersLocked(logger)
 		logger.Info("peers: dropped stale entries for this speaker itself", "removed", removed)
 	}
-	peersBrowseAt = time.Time{} // next browsePeers call sweeps fresh
+	r.browseAt = time.Time{} // next browsePeers call sweeps fresh
 }
 
-func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
+func (r *peerRegistry) seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 	if len(seeds) == 0 {
 		return
 	}
 	mine := ownIPv4s()
 	selfName := peerSelfName()
 	now := time.Now()
-	peersMu.Lock()
+	r.mu.Lock()
 	added := 0
 	for _, s := range seeds {
 		ip := strings.TrimSpace(s.Host)
@@ -454,10 +468,10 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 			(selfName != "" && strings.EqualFold(strings.TrimSpace(s.Name), selfName)) {
 			continue
 		}
-		e := peersByIP[ip]
+		e := r.byIP[ip]
 		if e == nil {
 			e = &peerEntry{}
-			peersByIP[ip] = e
+			r.byIP[ip] = e
 			added++
 		}
 		if s.DeviceID != "" && e.deviceID == "" {
@@ -483,29 +497,29 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		// open this link", and the app just proved that.
 		e.reachable = true
 	}
-	savePersistedPeersLocked(logger)
-	peersMu.Unlock()
+	r.savePersistedPeersLocked(logger)
+	r.mu.Unlock()
 	if added > 0 {
 		logger.Info("peer list seeded by the app", "added", added, "total", len(seeds))
 	}
-	probeStalePeers(logger)
+	r.probeStalePeers(logger)
 }
 
 // forgetPeer removes one entry from the sticky picker (POST /api/peers/forget):
 // the manual way out for an entry that does not belong there (a mistyped seed,
 // a speaker that moved households) without waiting out the 12 h TTL.
-func forgetPeer(host string, logger *slog.Logger) bool {
+func (r *peerRegistry) forgetPeer(host string, logger *slog.Logger) bool {
 	ip := strings.TrimSpace(host)
 	if ip == "" {
 		return false
 	}
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if _, ok := peersByIP[ip]; !ok {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.byIP[ip]; !ok {
 		return false
 	}
-	delete(peersByIP, ip)
-	savePersistedPeersLocked(logger)
+	delete(r.byIP, ip)
+	r.savePersistedPeersLocked(logger)
 	logger.Info("peer removed from the sticky picker", "host", ip)
 	return true
 }
@@ -516,20 +530,20 @@ func forgetPeer(host string, logger *slog.Logger) bool {
 // complaint) is still confirmed alive by its web port and stays listed and
 // clickable; a genuinely gone one stays dimmed until peerTTL expires it. One
 // goroutine at a time, a few 300 ms dials per round.
-func probeStalePeers(logger *slog.Logger) {
-	peersMu.Lock()
-	if peersProbing {
-		peersMu.Unlock()
+func (r *peerRegistry) probeStalePeers(logger *slog.Logger) {
+	r.mu.Lock()
+	if r.probing {
+		r.mu.Unlock()
 		return
 	}
-	peersProbing = true
-	stale := probeCandidatesLocked()
-	peersMu.Unlock()
+	r.probing = true
+	stale := r.probeCandidatesLocked()
+	r.mu.Unlock()
 	go func() {
 		defer func() {
-			peersMu.Lock()
-			peersProbing = false
-			peersMu.Unlock()
+			r.mu.Lock()
+			r.probing = false
+			r.mu.Unlock()
 		}()
 		for _, c := range stale {
 			port := reachableWebPort(c)
@@ -543,19 +557,19 @@ func probeStalePeers(logger *slog.Logger) {
 			// a name it did not just receive, so the owner kept seeing an address
 			// where a name belongs (#494, seen live 2026-07-28).
 			var friendly string
-			peersMu.Lock()
+			r.mu.Lock()
 			// An EMPTY name counts too, and used to be the worse case of the
 			// two: a nameless entry is skipped by the listing further down, so
 			// the speaker was not merely shown badly, it was not shown at all,
 			// and nothing ever came back to fix it. Live on 2026-08-15: after a
 			// reboot one speaker restored five peers from NAND and offered four,
 			// and the missing one was up, reachable and named the whole time.
-			if e := peersByIP[c]; e != nil && (e.name == "" || placeholderPeerName(e.name)) {
-				peersMu.Unlock()
+			if e := r.byIP[c]; e != nil && (e.name == "" || placeholderPeerName(e.name)) {
+				r.mu.Unlock()
 				friendly = peerFriendlyName(c)
-				peersMu.Lock()
+				r.mu.Lock()
 			}
-			if e := peersByIP[c]; e != nil {
+			if e := r.byIP[c]; e != nil {
 				e.lastSeen = time.Now()
 				e.reachable = true
 				e.port = port
@@ -563,7 +577,7 @@ func probeStalePeers(logger *slog.Logger) {
 					e.name = friendly
 				}
 			}
-			peersMu.Unlock()
+			r.mu.Unlock()
 		}
 		if logger != nil {
 			logger.Debug("peer fallback probe done", "checked", len(stale))
@@ -596,14 +610,14 @@ const peerTTL = 12 * time.Hour
 // inside the window even in a large fleet, and only genuinely silent boxes dim.
 const peerDimAfter = 3 * time.Minute
 
-func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
+func (r *peerRegistry) browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 	const (
 		rebrowseEvery = 15 * time.Second
 		browseWindow  = 3500 * time.Millisecond
 	)
-	peersMu.Lock()
-	needBrowse := peersBrowseAt.IsZero() || time.Since(peersBrowseAt) >= rebrowseEvery
-	peersMu.Unlock()
+	r.mu.Lock()
+	needBrowse := r.browseAt.IsZero() || time.Since(r.browseAt) >= rebrowseEvery
+	r.mu.Unlock()
 
 	if needBrowse {
 		bctx, cancel := context.WithTimeout(ctx, browseWindow)
@@ -648,14 +662,14 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				// the cable one), and adopt a second entry for the same speaker.
 				// Keep the known address while the record still carries it.
 				if len(inst.IPv4) > 1 {
-					peersMu.Lock()
+					r.mu.Lock()
 					for _, a := range inst.IPv4 {
-						if _, known := peersByIP[a]; known && !mine[a] {
+						if _, known := r.byIP[a]; known && !mine[a] {
 							ip = a
 							break
 						}
 					}
-					peersMu.Unlock()
+					r.mu.Unlock()
 				}
 				name := inst.FriendlyName
 				if name == "" {
@@ -678,10 +692,10 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		}
 		cancel()
 
-		peersMu.Lock()
+		r.mu.Lock()
 		now := time.Now()
 		for _, f := range fresh {
-			e := adoptPeerEntryLocked(f.ip, f.deviceID, f.boxDeviceID)
+			e := r.adoptPeerEntryLocked(f.ip, f.deviceID, f.boxDeviceID)
 			// Never let a placeholder overwrite a name we already know: mDNS can
 			// answer with the instance name only, and replacing "Kitchen" with
 			// "str-192.0.2.5" is the #494 defect arriving by the back door.
@@ -694,24 +708,24 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				e.port = f.port
 			}
 		}
-		peersBrowseAt = now
-		savePersistedPeersLocked(logger)
-		peersMu.Unlock()
+		r.browseAt = now
+		r.savePersistedPeersLocked(logger)
+		r.mu.Unlock()
 		// Independently of mDNS, re-confirm the longest-unseen listed peers over
 		// TCP so a speaker with lost announcements stays in the picker (async).
-		probeStalePeers(logger)
+		r.probeStalePeers(logger)
 	}
-	return cachedPeerLinks()
+	return r.cachedPeerLinks()
 }
 
 // cachedPeerLinks renders the peer map as it stands, without a browse or a
 // probe. browsePeers ends with it; the stereo follower refusal calls it alone,
 // because it runs under the play lock and must not start a sweep.
-func cachedPeerLinks() []webui.PeerLink {
+func (r *peerRegistry) cachedPeerLinks() []webui.PeerLink {
 	selfName := peerSelfName()
 	mineNow := ownIPv4s()
-	peersMu.Lock()
-	defer peersMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	now := time.Now()
 	// One physical speaker can sit in the map under two addresses after a DHCP
 	// lease change: the sticky roster keeps the old entry until its TTL while
@@ -728,7 +742,7 @@ func cachedPeerLinks() []webui.PeerLink {
 	// peerBeats: reachable beats dimmed, then the fresher sighting; the address
 	// breaks a full tie so the pick does not depend on map order.
 	peerBeats := func(ip string, e *peerEntry, curIP string) bool {
-		prev := peersByIP[curIP]
+		prev := r.byIP[curIP]
 		if e.reachable != prev.reachable {
 			return e.reachable
 		}
@@ -737,7 +751,7 @@ func cachedPeerLinks() []webui.PeerLink {
 		}
 		return ip < curIP
 	}
-	for ip, e := range peersByIP {
+	for ip, e := range r.byIP {
 		if e.name == "" || now.Sub(e.lastSeen) > peerTTL {
 			continue
 		}
@@ -750,14 +764,14 @@ func cachedPeerLinks() []webui.PeerLink {
 			}
 		}
 	}
-	out := make([]webui.PeerLink, 0, len(peersByIP))
-	for ip, e := range peersByIP {
+	out := make([]webui.PeerLink, 0, len(r.byIP))
+	for ip, e := range r.byIP {
 		if now.Sub(e.lastSeen) > peerTTL {
-			delete(peersByIP, ip)
+			delete(r.byIP, ip)
 			continue
 		}
 		if mineNow[ip] {
-			delete(peersByIP, ip) // one of our own current addresses
+			delete(r.byIP, ip) // one of our own current addresses
 			continue
 		}
 		// A speaker whose name we never learned would render as its bare IP
@@ -774,14 +788,14 @@ func cachedPeerLinks() []webui.PeerLink {
 		// until the entry aged out (seen live on an ST30, 2026-07-28). Our own
 		// name is the one signal that survives an address change.
 		if selfName != "" && strings.EqualFold(e.name, selfName) {
-			delete(peersByIP, ip)
+			delete(r.byIP, ip)
 			continue
 		}
 		// And by deviceID, which also survives a PLACEHOLDER name: the stale
 		// self-entry after a live subnet move carried "str-<old-ip>" and sailed
 		// past the name check above (#697).
 		if matchesSelfDeviceID(e.deviceID) {
-			delete(peersByIP, ip)
+			delete(r.byIP, ip)
 			continue
 		}
 		if keep, ok := bestByName[e.name]; ok && keep != ip {
@@ -953,20 +967,20 @@ func dialable(ip string, port int) bool {
 // whatever its age: the listing skips an entry with no name, and this is the
 // only path that ever learns one, so leaving it out hides the speaker for good.
 // Capped, because this runs on a speaker with 120 MB of RAM.
-func probeCandidates() []string {
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	return probeCandidatesLocked()
+func (r *peerRegistry) probeCandidates() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.probeCandidatesLocked()
 }
 
-func probeCandidatesLocked() []string {
+func (r *peerRegistry) probeCandidatesLocked() []string {
 	type cand struct {
 		ip   string
 		seen time.Time
 	}
 	var out []cand
 	now := time.Now()
-	for ip, e := range peersByIP {
+	for ip, e := range r.byIP {
 		if e.name == "" || now.Sub(e.lastSeen) > 30*time.Second {
 			out = append(out, cand{ip: ip, seen: e.lastSeen})
 		}

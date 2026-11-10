@@ -7,6 +7,7 @@ package main
 
 import (
 	"log/slog"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,21 +15,22 @@ import (
 )
 
 func TestSeedPeersMergesAsSighting(t *testing.T) {
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{}
-	peersMu.Unlock()
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{}
+	r.mu.Unlock()
 
-	seedPeers([]webui.PeerSeed{
+	r.seedPeers([]webui.PeerSeed{
 		{Name: "Küche", Host: "192.0.2.9", Port: 17008},
 		{Name: "", Host: "", Port: 8888}, // empty host must be ignored
 	}, slog.Default())
 
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	if len(peersByIP) != 1 {
-		t.Fatalf("expected exactly the one valid seed, got %d entries", len(peersByIP))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.byIP) != 1 {
+		t.Fatalf("expected exactly the one valid seed, got %d entries", len(r.byIP))
 	}
-	e := peersByIP["192.0.2.9"]
+	e := r.byIP["192.0.2.9"]
 	if e == nil || e.name != "Küche" || e.port != 17008 {
 		t.Fatalf("seed not merged verbatim: %+v", e)
 	}
@@ -38,16 +40,25 @@ func TestSeedPeersMergesAsSighting(t *testing.T) {
 }
 
 func TestSeedPeersDoesNotDowngradeKnownName(t *testing.T) {
-	peersMu.Lock()
-	peersByIP = map[string]*peerEntry{"192.0.2.9": {name: "Küche", port: 17008, lastSeen: time.Now()}}
-	peersMu.Unlock()
+	r := newTestPeerRegistry(t)
+	r.mu.Lock()
+	r.byIP = map[string]*peerEntry{"192.0.2.9": {name: "Küche", port: 17008, lastSeen: time.Now()}}
+	r.mu.Unlock()
 
-	seedPeers([]webui.PeerSeed{{Name: "", Host: "192.0.2.9", Port: 0}}, slog.Default())
+	r.seedPeers([]webui.PeerSeed{{Name: "", Host: "192.0.2.9", Port: 0}}, slog.Default())
 
-	peersMu.Lock()
-	defer peersMu.Unlock()
-	e := peersByIP["192.0.2.9"]
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e := r.byIP["192.0.2.9"]
 	if e == nil || e.name != "Küche" || e.port != 17008 {
 		t.Fatalf("an empty seed field overwrote known data: %+v", e)
 	}
+}
+
+// newTestPeerRegistry returns an empty roster of the test's own, persisted in
+// the test's temp directory, so no test shares roster state with another or
+// reaches for the speaker's NAND path.
+func newTestPeerRegistry(t *testing.T) *peerRegistry {
+	t.Helper()
+	return newPeerRegistry(filepath.Join(t.TempDir(), "peers.json"))
 }

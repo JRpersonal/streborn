@@ -101,6 +101,7 @@ type agent struct {
 	store            *presets.Store
 	webhooksStore    *webhooks.Store
 	groupKeysStore   *groupkeys.Store
+	peers            *peerRegistry
 	keyActionsStore  *keyactions.Store
 	alarmStore       *alarm.Store
 	alarmState       *alarm.StateStore
@@ -340,6 +341,9 @@ func (a *agent) buildStores() error {
 	// once here, written only when the app saves; a press reads the main
 	// speaker's live zone and reuses the zone form/dissolve endpoints, over
 	// loopback when this speaker leads the group and over the LAN otherwise.
+	// The peer roster. Built here because the group-key client right below
+	// resolves its speakers through it; restored from NAND in buildMedia.
+	peers := newPeerRegistry(peersStorePath)
 	groupKeysStore, gkErr := groupkeys.Load("/mnt/nv/streborn/group-keys.json", logger.With("comp", "groupkeys"))
 	if gkErr != nil {
 		logger.Warn("group keys load failed, continuing with none", "err", gkErr)
@@ -355,7 +359,7 @@ func (a *agent) buildStores() error {
 		// address-only match: after a DHCP renumbering another speaker's
 		// stored address can be this box's own.
 		SelfDeviceID: deviceID,
-		PortHint:     peerWebPort,
+		PortHint:     peers.peerWebPort,
 		// Current addresses by id: the roster for peers, the LAN interface
 		// for this box itself (a member's stored address may be stale too,
 		// and the main speaker enrols whoever answers at it).
@@ -363,10 +367,10 @@ func (a *agent) buildStores() error {
 			if isOwnDeviceID(id, deviceID, confirmedID) {
 				return ownLANIPv4()
 			}
-			return peerIPByDeviceID(id)
+			return peers.peerIPByDeviceID(id)
 		},
-		PeerDeviceID:  peerDeviceIDAt,
-		PeerDeviceIDs: peerDeviceIDsAt,
+		PeerDeviceID:  peers.peerDeviceIDAt,
+		PeerDeviceIDs: peers.peerDeviceIDsAt,
 	}))
 	webui.RegisterDebugSection("group_keys", groupKeysStore.Snapshot)
 
@@ -440,6 +444,7 @@ func (a *agent) buildStores() error {
 	a.store = store
 	a.webhooksStore = webhooksStore
 	a.groupKeysStore = groupKeysStore
+	a.peers = peers
 	a.keyActionsStore = keyActionsStore
 	a.alarmStore = alarmStore
 	a.alarmState = alarmState
@@ -961,7 +966,7 @@ func (a *agent) buildMedia() error {
 
 	// Restore the sticky speaker-picker list before the webui serves its first
 	// page, so the picker is complete from the very first load after a reboot.
-	loadPersistedPeers(logger.With("comp", "peers"))
+	a.peers.loadPersistedPeers(logger.With("comp", "peers"))
 	// Keep the peer verdicts fresh INDEPENDENTLY of page loads: the sweep and
 	// the TCP fallback probes used to run only when someone requested
 	// /api/peers, so the first render after opening the page showed stale
@@ -979,7 +984,7 @@ func (a *agent) buildMedia() error {
 				return
 			case <-t.C:
 			}
-			_ = browsePeers(ctx, logger.With("comp", "peers"))
+			_ = a.peers.browsePeers(ctx, logger.With("comp", "peers"))
 		}
 	}()
 
@@ -1043,14 +1048,14 @@ func (a *agent) buildWebui() error {
 			return stereoFollowerFrom(master, name, ok, self, margeSrv.GroupPairHasMember(self), margeSrv.GroupPairMasterIP())
 		}),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
-			return browsePeers(ctx, logger.With("comp", "peers"))
+			return a.peers.browsePeers(ctx, logger.With("comp", "peers"))
 		}),
-		webui.WithCachedPeers(cachedPeerLinks),
+		webui.WithCachedPeers(a.peers.cachedPeerLinks),
 		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
-			seedPeers(seeds, logger.With("comp", "peers"))
+			a.peers.seedPeers(seeds, logger.With("comp", "peers"))
 		}),
 		webui.WithPeerForget(func(host string) bool {
-			return forgetPeer(host, logger.With("comp", "peers"))
+			return a.peers.forgetPeer(host, logger.With("comp", "peers"))
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithGroupKeys(groupKeysStore),
@@ -2020,6 +2025,7 @@ func (a *agent) wireLate() error {
 	// self-entries, and deleting REDIRECT rules for addresses no longer held.
 	webuiSrv.SetNetworkChangedFn(func(reason string) {
 		refreshAfterNetworkChange(reason, netRefreshDeps{
+			peers: a.peers,
 			setMDNSHostAddr: func(ip net.IP) {
 				if r := a.mdnsHost.Load(); r != nil {
 					r.SetAddress(ip)
