@@ -115,7 +115,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// actually pairs, but every model lists /addGroup, so we let the firmware
 	// be the authority and surface its real response to the app.
 	if req.Stereo {
-		s.formStereoPair(w, ctx, run.c, run.master, run.slaves, req.Name, wokenMemberSet(req.WokenFromStandby))
+		writeZoneFormAnswer(w, s.formStereoPair(ctx, run.c, run.master, run.slaves, req.Name, wokenMemberSet(req.WokenFromStandby)))
 		return
 	}
 	writeZoneFormAnswer(w, s.zoneFormDrive(run))

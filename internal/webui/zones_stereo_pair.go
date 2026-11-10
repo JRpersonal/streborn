@@ -21,10 +21,6 @@ import (
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
-// formStereoPair drives POST /addGroup to make a real left/right stereo pair
-// and persists it so it is honored on dissolve. master becomes LEFT, the single
-// partner becomes RIGHT. The firmware decides whether the box can pair (ST10
-// only); its error is returned verbatim to the app so testers see the truth.
 // dropStereoDocAfterFailure removes the pair document that was written before
 // the firmware was asked.
 //
@@ -120,10 +116,95 @@ func (s *Server) storedGroupBlocksPair() (bool, zones.Zone) {
 	return true, z
 }
 
-func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string, woken map[string]bool) {
+// formStereoPair drives POST /addGroup to make a real left/right stereo pair
+// and persists it so it is honored on dissolve. master becomes LEFT, the single
+// partner becomes RIGHT. The firmware decides whether the box can pair (ST10
+// only); its error is returned verbatim to the app so testers see the truth.
+//
+// It is the service behind POST /api/box/zone with "stereo" set: plain
+// arguments in, the answer out, and handleZoneForm renders that answer with
+// writeZoneFormAnswer. woken holds the member addresses the app woke out of
+// standby for this pairing (wokenMemberSet).
+//
+// The phases, top to bottom, each one finishing the pairing with an answer
+// or handing over to the next. The order of the calls to the two speakers is
+// the order they had when this was one function; the phase bodies are that
+// function's body, moved.
+func (s *Server) formStereoPair(ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string, woken map[string]bool) *zoneFormAnswer {
+	run, ans := s.stereoPairStart(ctx, c, master, slaves, name, woken)
+	if ans != nil {
+		return ans
+	}
+	s.stereoPairResolvePartner(run)
+	if ans := s.stereoPairGuards(run); ans != nil {
+		return ans
+	}
+	s.stereoPairCapture(run)
+	if ans := s.stereoPairWake(run); ans != nil {
+		return ans
+	}
+	s.stereoPairPersist(run)
+	// Own budget, detached from the handler's. Pairing is the last step of the
+	// form, so by the time it runs, a slow probe earlier in the same request
+	// can have spent nearly the whole budget: live on two SoundTouch 10s the
+	// partner's /info took its full 6 s, /addGroup started with 4 s left, and
+	// the handler deadline killed it mid-call. The firmware went on to form the
+	// pair 4 s later and the speakers announced it, but the user had already
+	// been told the pairing failed.
+	// 30 s, not 20: the firmware runs a pairing op for a fixed ~20 s before it
+	// answers /addGroup at all (measured on a failing pair, eight identical
+	// attempts, 2026-08-18 — every groupUpdated arrived exactly ~20 s after the
+	// POST). Until the boxapi client cap was removed this budget silently died
+	// at 6 s anyway ("Client.Timeout exceeded while awaiting headers" in every
+	// bundle), so no field run has ever actually waited for the firmware's own
+	// verdict; 30 s finally collects it, including the error XML that names the
+	// reject reason on a refusing box.
+	actx, acancel := context.WithTimeout(context.WithoutCancel(run.ctx), 30*time.Second)
+	defer acancel()
+	run.ctx = actx
+	if ans := s.stereoPairAddGroup(run); ans != nil {
+		return ans
+	}
+	g, err := run.c.GetGroup(run.ctx)
+	if err != nil {
+		return s.stereoPairUnread(run, err)
+	}
+	return s.stereoPairConfirm(run, g)
+}
+
+// stereoPairRun is the state one pairing carries from phase to phase: the
+// budgeted context and the firmware client, the two halves with their roles,
+// the pair's name, and what the phases learn on the way (who was asleep,
+// what to restart afterwards). Each phase starts by naming the fields it
+// reads the way formStereoPair's body did.
+type stereoPairRun struct {
+	ctx     context.Context
+	c       *boxapi.Client
+	master  boxapi.ZoneMember // LEFT
+	partner boxapi.ZoneMember // RIGHT
+	name    string
+	// woken are the member addresses the app woke out of standby for this
+	// pairing.
+	woken map[string]bool
+
+	// pairStart is when the capture began; afterSilentPair measures from it.
+	pairStart time.Time
+	// Whether STR pulled each half out of standby for this pairing.
+	masterWasAsleep  bool
+	partnerWasAsleep bool
+	// What to restart on the pair afterwards (stereoPairCapture).
+	masterRef *lastPlayInfo
+	resume    *lastPlayInfo
+	// quietPair: the master is not playing the user's music, so the pair
+	// forms silent and the Spotify auto-attach is held off.
+	quietPair bool
+}
+
+// stereoPairStart checks the request and assigns the roles: exactly one
+// partner, on the local network. It answers 400 otherwise.
+func (s *Server) stereoPairStart(ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string, woken map[string]bool) (*stereoPairRun, *zoneFormAnswer) {
 	if len(slaves) != 1 {
-		http.Error(w, "a stereo pair needs exactly one partner speaker", http.StatusBadRequest)
-		return
+		return nil, zoneFormRefusal(http.StatusBadRequest, "a stereo pair needs exactly one partner speaker")
 	}
 	master.Role = "LEFT"
 	partner := slaves[0]
@@ -136,13 +217,18 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// it here covers every one of those dials with a single check.
 	if partner.IP != "" && !isLANPeer(partner.IP) {
 		s.logger.Warn("stereo: refusing a partner address that is not on the local network", "partnerIP", partner.IP)
-		http.Error(w, "the partner speaker must be on the local network", http.StatusBadRequest)
-		return
+		return nil, zoneFormRefusal(http.StatusBadRequest, "the partner speaker must be on the local network")
 	}
 	if name == "" {
 		name = "Stereo pair"
 	}
+	return &stereoPairRun{ctx: ctx, c: c, master: master, partner: partner, name: name, woken: woken}, nil
+}
 
+// stereoPairResolvePartner replaces the partner's deviceID with the one its
+// own firmware reports.
+func (s *Server) stereoPairResolvePartner(run *stereoPairRun) {
+	ctx, partner := run.ctx, run.partner
 	// Resolve the partner's REAL SoundTouch deviceID from its OWN firmware /info.
 	// The app derives a member's deviceID from mDNS, where a two-chip chassis
 	// announces its wlan0/SMSC MAC, not the deviceID the firmware keys /addGroup
@@ -167,7 +253,14 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			s.logger.Warn("stereo: could not read partner /info, using the app-supplied deviceID", "err", perr, "partnerIP", partner.IP)
 		}
 	}
+	run.partner = partner
+}
 
+// stereoPairGuards refuses the pairing when one of the two speakers is in a
+// live multiroom group, or when this one keeps a saved group the pair
+// document would overwrite. Before the wake, on purpose.
+func (s *Server) stereoPairGuards(run *stereoPairRun) *zoneFormAnswer {
+	ctx, master, partner := run.ctx, run.master, run.partner
 	// A speaker that is in a live multiroom ZONE must not become half of a
 	// stereo pair. STR guarded the reverse direction only: forming a zone is
 	// refused when a member is half of a pair (#792), while forming a PAIR out
@@ -188,11 +281,10 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	if inZone := s.zonedPairCandidates(ctx, partner.IP); len(inZone) > 0 {
 		s.logger.Warn("stereo: refusing to pair a speaker that is in a multiroom group (the group would stay standing behind the pair)",
 			"inZone", strings.Join(inZone, ","), "left", master.DeviceID, "rightIP", partner.IP)
-		writeJSON(w, http.StatusOK, map[string]any{
+		return zoneFormOK(map[string]any{
 			"ok": false, "stereo": true, "inZone": inZone,
 			"error": "a speaker that is in a multiroom group cannot become half of a stereo pair; dissolve the group first, then create the pair",
 		})
-		return
 	}
 
 	// And the PERMANENT group that is stored but not live, which the read above
@@ -202,13 +294,18 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		s.logger.Warn("stereo: refusing to pair a speaker that holds a saved multiroom group (pairing would overwrite the group document)",
 			"storedMaster", z.Master, "storedSlaves", len(z.Slaves), "permanent", z.Permanent,
 			"left", master.DeviceID, "rightIP", partner.IP)
-		writeJSON(w, http.StatusOK, map[string]any{
+		return zoneFormOK(map[string]any{
 			"ok": false, "stereo": true, "storedGroup": true, "inZone": []string{s.boxHost},
 			"error": "this speaker keeps a saved multiroom group; pairing it would delete that group. Dissolve the group first, then create the pair",
 		})
-		return
 	}
+	return nil
+}
 
+// stereoPairCapture notes what was playing on both speakers, and whether
+// each was asleep, before the firmware is asked for anything.
+func (s *Server) stereoPairCapture(run *stereoPairRun) {
+	ctx, partner, woken := run.ctx, run.partner, run.woken
 	// What was playing, captured from BOTH speakers BEFORE the firmware is
 	// asked. Pairing had none of the wake and resume machinery the zone form
 	// has, and issue #705 is the price: the user paired one second after a
@@ -274,7 +371,15 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			resume = pr
 		}
 	}
+	run.pairStart, run.masterWasAsleep, run.partnerWasAsleep = pairStart, masterWasAsleep, partnerWasAsleep
+	run.masterRef, run.resume, run.quietPair = masterRef, resume, quietPair
+}
 
+// stereoPairWake wakes a sleeping master, quietly, and refuses the pairing
+// when the speaker answers nothing at all. With nothing to restart it then
+// stops the firmware's own resume and renews the Spotify auto-attach hold.
+func (s *Server) stereoPairWake(run *stereoPairRun) *zoneFormAnswer {
+	ctx, c, master, resume, quietPair := run.ctx, run.c, run.master, run.resume, run.quietPair
 	// Never pair against a standby master, for the same reason the zone form
 	// wakes it (handleZoneForm): in #705 the standby master dragged the whole
 	// fresh pair into standby. As there, a failed wake alone is not a reason to
@@ -291,7 +396,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// captured above, so muting and stopping the firmware's own resume here
 	// costs nothing: the pair still restarts what the user was listening to.
 	if np := s.readBoxSnapshot(ctx); np.Source == "STANDBY" {
-		masterWasAsleep = true
+		run.masterWasAsleep = true
 		if err := s.quietWake(ctx); err != nil {
 			s.logger.Warn("stereo: quiet wake of the sleeping master failed, trying the plain wake", "err", err)
 		} else {
@@ -303,8 +408,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		if perr != nil {
 			s.logger.Warn("stereo: the speaker is not answering at all, not sending addGroup",
 				"wakeErr", err, "probeErr", perr, "left", master.DeviceID)
-			http.Error(w, "the speaker is not answering: "+perr.Error(), http.StatusBadGateway)
-			return
+			return zoneFormRefusal(http.StatusBadGateway, "the speaker is not answering: "+perr.Error())
 		}
 		s.logger.Info("stereo: the speaker did not report waking, but it is answering, so the pairing goes ahead",
 			"wakeErr", err, "left", master.DeviceID)
@@ -320,7 +424,13 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	if quietPair {
 		s.holdSpotifyAutoAttach(stereoPairAutoAttachHold, "before addGroup")
 	}
+	return nil
+}
 
+// stereoPairPersist stores the pair document before the firmware is asked,
+// and logs the drive that follows.
+func (s *Server) stereoPairPersist(run *stereoPairRun) {
+	master, partner, name := run.master, run.partner, run.name
 	// Persist before driving the firmware so the dissolve path knows it is a
 	// stereo pair even after an agent restart. Stereo pairs are firmware-native,
 	// so the reconcile loop leaves them alone (the box re-forms across reboots).
@@ -337,25 +447,15 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 
 	s.logger.Info("stereo: pairing via /addGroup (beta)", "name", name,
 		"left", master.DeviceID, "leftIP", master.IP, "right", partner.DeviceID, "rightIP", partner.IP)
+}
+
+// stereoPairAddGroup sends /addGroup, on the pairing's own budget
+// (formStereoPair sets it), with the two retries the firmware's error codes
+// call for and the read that asks the speaker before a failure is reported.
+// It answers 502 when the pair did not form, nil when it did.
+func (s *Server) stereoPairAddGroup(run *stereoPairRun) *zoneFormAnswer {
+	ctx, c, master, partner, name := run.ctx, run.c, run.master, run.partner, run.name
 	members := []boxapi.ZoneMember{master, partner}
-	// Own budget, detached from the handler's. Pairing is the last step of the
-	// form, so by the time it runs, a slow probe earlier in the same request
-	// can have spent nearly the whole budget: live on two SoundTouch 10s the
-	// partner's /info took its full 6 s, /addGroup started with 4 s left, and
-	// the handler deadline killed it mid-call. The firmware went on to form the
-	// pair 4 s later and the speakers announced it, but the user had already
-	// been told the pairing failed.
-	// 30 s, not 20: the firmware runs a pairing op for a fixed ~20 s before it
-	// answers /addGroup at all (measured on a failing pair, eight identical
-	// attempts, 2026-08-18 — every groupUpdated arrived exactly ~20 s after the
-	// POST). Until the boxapi client cap was removed this budget silently died
-	// at 6 s anyway ("Client.Timeout exceeded while awaiting headers" in every
-	// bundle), so no field run has ever actually waited for the firmware's own
-	// verdict; 30 s finally collects it, including the error XML that names the
-	// reject reason on a refusing box.
-	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer acancel()
-	ctx = actx
 	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
 		// 5510 GROUP_ALREADY_EXISTS: a stale pair (half-dissolved, or left over
 		// from a pre-shutdown Bose-app pairing) blocks every new /addGroup until
@@ -416,41 +516,55 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			} else {
 				s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
 				s.dropStereoDocAfterFailure("addGroup refused")
-				http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
-				return
+				return zoneFormRefusal(http.StatusBadGateway, "addGroup: "+err.Error())
 			}
 		}
 	}
-	g, err := c.GetGroup(ctx)
-	if err != nil {
-		// Paired, but the read-back failed (slow box, expiring ctx). The
-		// canonical document depends only on data known BEFORE the read-back,
-		// so still install and relay it — skipping it here left the partner's
-		// marge on its self-centered record exactly on the slowest boxes.
-		s.logger.Warn("stereo: paired but getGroup read-back failed", "err", err)
-		canonicalDoc := marge.CanonicalGroupXML(name, master.DeviceID, master.IP, partner.DeviceID, partner.IP)
-		if s.margeGroupSet != nil {
-			if serr := s.margeGroupSet(canonicalDoc); serr != nil {
-				s.logger.Warn("stereo: could not install the canonical pair document on the local marge", "err", serr)
-			}
+	return nil
+}
+
+// stereoPairUnread answers for a pair whose read-back failed after /addGroup
+// went through: the canonical document is still installed and relayed, and
+// what was playing is still restarted.
+func (s *Server) stereoPairUnread(run *stereoPairRun, err error) *zoneFormAnswer {
+	ctx, master, partner, name := run.ctx, run.master, run.partner, run.name
+	resume, masterRef := run.resume, run.masterRef
+	// Paired, but the read-back failed (slow box, expiring ctx). The
+	// canonical document depends only on data known BEFORE the read-back,
+	// so still install and relay it — skipping it here left the partner's
+	// marge on its self-centered record exactly on the slowest boxes.
+	s.logger.Warn("stereo: paired but getGroup read-back failed", "err", err)
+	canonicalDoc := marge.CanonicalGroupXML(name, master.DeviceID, master.IP, partner.DeviceID, partner.IP)
+	if s.margeGroupSet != nil {
+		if serr := s.margeGroupSet(canonicalDoc); serr != nil {
+			s.logger.Warn("stereo: could not install the canonical pair document on the local marge", "err", serr)
 		}
-		pctx, pcancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		partnerSynced := s.pushGroupDocToPartner(pctx, partner.IP, canonicalDoc)
-		pcancel()
-		// Same restart as on the confirmed path below: a failed read-back
-		// still very likely paired (that is why this path answers ok).
-		if resume != nil {
-			go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
-		} else {
-			s.scheduleLateSelfResumeCheck("after pairing")
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok": true, "stereo": true,
-			"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
-			"partnerMargeSynced": partnerSynced,
-		})
-		return
 	}
+	pctx, pcancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	partnerSynced := s.pushGroupDocToPartner(pctx, partner.IP, canonicalDoc)
+	pcancel()
+	// Same restart as on the confirmed path below: a failed read-back
+	// still very likely paired (that is why this path answers ok).
+	if resume != nil {
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
+	} else {
+		s.scheduleLateSelfResumeCheck("after pairing")
+	}
+	return zoneFormOK(map[string]any{
+		"ok": true, "stereo": true,
+		"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
+		"partnerMargeSynced": partnerSynced,
+	})
+}
+
+// stereoPairConfirm takes the firmware's read-back of the pair: both
+// channels bound, the canonical document on both marges, both halves
+// verified. Then it restarts what was playing, or lets a pair formed out of
+// standby go back to it.
+func (s *Server) stereoPairConfirm(run *stereoPairRun, g boxapi.Group) *zoneFormAnswer {
+	ctx, c, master, partner, name := run.ctx, run.c, run.master, run.partner, run.name
+	resume, masterRef, quietPair := run.resume, run.masterRef, run.quietPair
+	masterWasAsleep, partnerWasAsleep, pairStart := run.masterWasAsleep, run.partnerWasAsleep, run.pairStart
 	// Assert the firmware actually bound BOTH channels. /addGroup can return 200
 	// while silently dropping a member (wrong deviceID, account mismatch), which
 	// the old code reported as ok=true — the user thought it worked but only one
@@ -458,11 +572,10 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	if len(g.Members) != 2 {
 		s.logger.Warn("stereo: firmware formed an INCOMPLETE pair (a speaker was dropped)", "id", g.ID, "members", len(g.Members))
 		s.dropStereoDocAfterFailure("the firmware bound only one channel")
-		writeJSON(w, http.StatusOK, map[string]any{
+		return zoneFormOK(map[string]any{
 			"ok": false, "stereo": true, "members": len(g.Members),
 			"error": "the speaker did not accept the pair. Both speakers must be set up and on the same account, and only the SoundTouch 10 supports stereo pairs.",
 		})
-		return
 	}
 	s.logger.Info("stereo: paired", "id", g.ID, "members", len(g.Members))
 	// And once more for the two-sided verify below, which can take its own
@@ -496,13 +609,12 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		s.logger.Warn("stereo: the pair did not form on both speakers, undoing it",
 			"reason", verdict.Reason, "masterStatus", verdict.MasterStatus, "partnerIP", partner.IP)
 		cleared := s.undoUnconfirmedPair(ctx, c, partner)
-		writeJSON(w, http.StatusOK, map[string]any{
+		return zoneFormOK(map[string]any{
 			"ok": false, "stereo": true, "reason": verdict.Reason,
 			"masterStatus": verdict.MasterStatus, "partnerIP": partner.IP,
 			"partnerMargeCleared": cleared,
 			"error":               stereoFailureText(verdict.Reason),
 		})
-		return
 	}
 	if !verdict.PartnerVerified {
 		s.logger.Info("stereo: paired; the partner's firmware could not be read back, the master reports the pair healthy",
@@ -525,7 +637,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		// pair exists, and standing down a lone master there is a guess.
 		s.afterSilentPair(masterWasAsleep && partnerWasAsleep, pairStart)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	return zoneFormOK(map[string]any{
 		"ok": true, "stereo": true, "id": g.ID, "name": g.Name, "members": g.Members,
 		"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
 		"partnerMargeSynced": partnerSynced,

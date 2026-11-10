@@ -23,6 +23,57 @@ var zonesSourceFiles = []string{
 	"zones_dissolve.go",
 }
 
+// stereoPairPhases are the phases of formStereoPair, in the order it runs
+// them.
+var stereoPairPhases = []string{
+	"stereoPairStart",
+	"stereoPairResolvePartner",
+	"stereoPairGuards",
+	"stereoPairCapture",
+	"stereoPairWake",
+	"stereoPairPersist",
+	"stereoPairAddGroup",
+	"stereoPairUnread",
+	"stereoPairConfirm",
+}
+
+// stereoPairSource returns the bodies of formStereoPair's phases as one
+// text, in running order, for the tests that pin which step comes before
+// which across the whole pairing.
+func stereoPairSource(t *testing.T, src string) string {
+	t.Helper()
+	body := ""
+	for _, fn := range stereoPairPhases {
+		part := funcBody(t, src, fn)
+		if part == "" {
+			t.Fatalf("%s not found; if a phase of formStereoPair was renamed, update stereoPairPhases", fn)
+		}
+		body += part + "\n"
+	}
+	return body
+}
+
+// The phase bodies are read in the order of stereoPairPhases, so that list
+// has to be the order formStereoPair really runs them in.
+func TestStereoPairPhasesAreListedInRunningOrder(t *testing.T) {
+	t.Parallel()
+	body := funcBody(t, zonesSource(t), "formStereoPair")
+	if body == "" {
+		t.Fatal("formStereoPair not found")
+	}
+	last := -1
+	for _, fn := range stereoPairPhases {
+		at := strings.Index(body, "s."+fn+"(")
+		if at < 0 {
+			t.Fatalf("formStereoPair does not call %s", fn)
+		}
+		if at < last {
+			t.Errorf("%s is called earlier than stereoPairPhases lists it", fn)
+		}
+		last = at
+	}
+}
+
 // zonesSource returns the multiroom and stereo-pair sources as one text, with
 // line endings normalised.
 func zonesSource(t *testing.T) string {

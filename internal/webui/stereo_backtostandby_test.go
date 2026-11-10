@@ -126,10 +126,7 @@ func TestPairStandbyFailureIsReported(t *testing.T) {
 func TestOnlyTheSilentPairFromStandbyIsPutBackToSleep(t *testing.T) {
 	t.Parallel()
 	src := zonesSource(t)
-	pair := funcBody(t, src, "formStereoPair")
-	if pair == "" {
-		t.Fatal("formStereoPair not found")
-	}
+	pair := stereoPairSource(t, src)
 	for _, want := range []string{
 		"masterWasAsleep = true",
 		"partnerWasAsleep = true",

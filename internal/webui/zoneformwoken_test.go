@@ -184,10 +184,7 @@ func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
 func TestStereoPairNeverCarriesAGroupWakeResume(t *testing.T) {
 	t.Parallel()
 	src := zonesSource(t)
-	body := funcBody(t, src, "formStereoPair")
-	if body == "" {
-		t.Fatal("formStereoPair not found")
-	}
+	body := stereoPairSource(t, src)
 	before := strings.Index(body, `s.masterPlaysUsersMusic(ctx, "before pairing"`)
 	capture := strings.Index(body, "masterResumeForZone(np, masterRef)")
 	wake := strings.Index(body, "s.quietWake(ctx)")

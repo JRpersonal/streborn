@@ -28,11 +28,12 @@ import (
 // have caught a sibling nobody remembered to update.
 //
 // handleZoneForm is split into phases; its wake lives in zoneFormWakeMaster.
+// formStereoPair is split the same way; its wake lives in stereoPairWake.
 func TestBothGroupFormPathsWakeTheMasterQuietly(t *testing.T) {
 	src := zonesSource(t)
 	text := src
 
-	for _, fn := range []string{"zoneFormWakeMaster", "formStereoPair"} {
+	for _, fn := range []string{"zoneFormWakeMaster", "stereoPairWake"} {
 		body := funcBody(t, text, fn)
 		if body == "" {
 			t.Fatalf("%s not found in the zones sources; if it was renamed, update this test rather than deleting it", fn)
