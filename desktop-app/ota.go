@@ -154,13 +154,23 @@ func (a *App) uploadAgentWithRetries(host string, port int, bin []byte) (bodySen
 	}
 }
 
+// agentServerSideErr matches the 5xx status streamPostBinary puts in front of
+// an agent's refusal.
+var agentServerSideErr = regexp.MustCompile(`status 5\d\d`)
+
+// streamedUploadMinVersion is the first agent that streams an upload to disk.
+// Older ones collect the whole body in RAM (growth-doubling ReadAll), and the
+// speaker's watchdog reboots it under an agent- or engine-sized push, so they
+// are updated over SSH and never handed the engine before the reboot.
+const streamedUploadMinVersion = "v0.9.26"
+
 // isRetryableAgentWriteErr reports whether the agent answered with a server-side
 // error, which is the class worth offering again.
 func isRetryableAgentWriteErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	return regexp.MustCompile(`status 5\d\d`).MatchString(err.Error())
+	return agentServerSideErr.MatchString(err.Error())
 }
 
 func nandFits(freeBytes, reclaimableBytes, needBytes int64) bool {
@@ -458,8 +468,8 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// failure here falls through to the normal HTTP path, which is exactly
 	// today's behaviour - this detour can only improve things.
 	if verr == nil {
-		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
-			a.recordOTA(host, "agent "+bv+" predates the streamed upload path (v0.9.26): updating over SSH, the old agent dies receiving large HTTP bodies")
+		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, streamedUploadMinVersion) {
+			a.recordOTA(host, "agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+"): updating over SSH, the old agent dies receiving large HTTP bodies")
 			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
 			a.enableAgentSSH(host, port)
 			if sshErr := a.updateAgentViaSSH(host, bin); sshErr == nil {
@@ -681,12 +691,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
-	sum := sha256.Sum256(agentbin.Bytes())
-	embedded := ""
-	if len(agentbin.Bytes()) > 0 {
-		embedded = hex.EncodeToString(sum[:])
-	}
-	verdict, line := classifyAgentVersion(ver, embedded, appBuild, appVersion)
+	verdict, line := classifyAgentVersion(ver, embeddedAgentSha256(), appBuild, appVersion)
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
@@ -748,21 +753,6 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild, wantVersio
 		" and does not report the pushed binary on disk"
 }
 
-// nandCauseClause names the speaker's free space as the likely reason a push
-// landed on disk and never ran, when the space is what the pre-flight check
-// already called TIGHT.
-//
-// The check ran, said "a second copy for the atomic write may not fit", wrote
-// that to the journal and pushed anyway (fail-open, by design: "may not fit"
-// is not "will not"). But the VERDICT a few minutes later blamed a boot
-// rollback and said an identical re-push cannot help, with no mention of the
-// one thing the same run had already measured. So the user read a generic
-// failure and had nothing to act on.
-//
-// Live case, 2026-09-30: a SoundTouch 20 with 11 MB free for a 16 MB binary
-// failed this way twice in one morning and had been stuck on a build from the
-// 12th of September for weeks, while its owner's four other speakers updated
-// fine. He only found out because the speaker stopped answering altogether.
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as
 // opposed to STR's agent. /info is the cheapest endpoint the Bose firmware
 // serves and it answers on every model and every chassis, firewalled or not,
@@ -944,8 +934,8 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	// engine push and killed the box before the agent update could even start.
 	// Those agents must never be fed the engine pre-reboot; the post-reboot
 	// delivery to the NEW agent (which streams to disk) is the path that works.
-	if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
-		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path (v0.9.26) and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
+	if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, streamedUploadMinVersion) {
+		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+") and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
 		a.logger.Info("stageSidecarBeforeReboot: agent too old for a pre-reboot engine push, deferring to post-OTA delivery",
 			"host", host, "agent", bv)
 		return
