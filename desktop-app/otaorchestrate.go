@@ -27,7 +27,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/JRpersonal/streborn/versioncmp"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -411,107 +410,6 @@ func classifyEngineFailure(err error) engineFailure {
 	}
 }
 
-// agentCurrentEngineMissing reports whether a speaker already runs exactly the
-// agent this app would push and only lacks the Spotify engine. Such a speaker
-// needs the engine, not another agent upload and the reboot that comes with it.
-//
-// The running agent's checksum decides when both sides know it. It is the
-// running one on purpose: the one on disk differs exactly when a push landed
-// and did not boot, and that speaker does need the agent again. Without a
-// checksum, version and build must both match.
-func agentCurrentEngineMissing(v map[string]string, appVersion, appBuild, appSha string) bool {
-	if v == nil || v["goLibrespot"] != "missing" {
-		return false
-	}
-	if appSha != "" && v["agentRunningSha256"] != "" {
-		return v["agentRunningSha256"] == appSha
-	}
-	return appBuild != "" && appVersion != "" && v["build"] == appBuild && v["version"] == appVersion
-}
-
-// speakerReachedTarget answers the only question that matters at the end of an
-// update: is this speaker actually where it was meant to be. It returns which
-// half is outstanding ("agent", "engine", "unreachable") so the caller can say
-// so rather than showing a spinner with no explanation.
-//
-// It exists because judging on one half is how a run lies. A speaker whose
-// Spotify engine survived the reboot reports the engine present within seconds,
-// while its agent is still being replaced, and anything that stops looking at
-// that moment declares success on the old software. The mirror case is just as
-// real: the agent lands and the engine is still missing. Both halves, always.
-//
-// Learned from a fleet run on 2026-07-29 where a Portable passed on the old
-// build and only finished minutes later. Users hit the same on slow speakers.
-//
-// The binary the speaker is RUNNING first, then the version string. "the
-// version string moved" cannot be satisfied by a push of the SAME version, and
-// such a push is not harmless: a speaker that has the Spotify engine is by
-// definition NAND-tight, so the agent drops the engine to make the update fit.
-// Judging by the string then returns before the engine is put back, and a
-// working Spotify install is destroyed by a re-push that was meant to change
-// nothing. Four of six speakers in one household ended up that way after the
-// v0.9.88 stamp skew invited re-push after re-push.
-func speakerReachedTarget(live map[string]string, preVersion string, wantEngine bool, appSha string) (done bool, missing string) {
-	if live == nil {
-		return false, "unreachable"
-	}
-	agentDone := (appSha != "" && live["agentRunningSha256"] == appSha) ||
-		(live["version"] != "" && (preVersion == "" || live["version"] != preVersion))
-	engineDone := !wantEngine || live["goLibrespot"] == "present"
-	if !agentDone {
-		return false, "agent"
-	}
-	if !engineDone {
-		return false, "engine"
-	}
-	return true, ""
-}
-
-// updateConfirms is the predicate the post-push poll runs every two seconds for
-// up to six minutes: does this version reading prove the update took effect.
-//
-// The binary the speaker is RUNNING, first, because that is the only answer a
-// clock cannot spoil. Without it the v0.9.88 stamp skew made a successful update
-// wait out the whole 360 s window and then report "the update did not take
-// effect", which was false and told the user to stop trying.
-//
-// Not agentBinarySha256: that is what lies on the box's DISK, and the one case
-// where the two differ is a push that landed and then did not boot (#381).
-// Reading the disk here would report that rollback as a success.
-//
-// After the hash: the app's own build stamp, then "no longer the pre-OTA build",
-// then "no longer the pre-OTA version", which survive app/agent stamp drift
-// and an agent too old to report a hash.
-//
-// None of them may accept a speaker that is provably on OLDER software than
-// this app carries (readingOlderThanTarget). "No longer the pre-OTA build"
-// read a step BACKWARDS as success: a SoundTouch 10 whose reading before the
-// push already named the app's build came back on the build it had before that,
-// and the journal said "confirmed: box is on build <the old one>" (2026-11-09).
-// The checksum is held to the same rule, because the agent hashes its own
-// executable lazily by path and a path can hold another binary by then.
-func updateConfirms(v map[string]string, appSha, appBuild, appVersion, preBuild, preVersion string) bool {
-	if v == nil {
-		return false
-	}
-	if readingOlderThanTarget(v, appVersion, preBuild) {
-		return false
-	}
-	if appSha != "" && v["agentRunningSha256"] == appSha {
-		return true
-	}
-	if appBuild != "" && v["build"] == appBuild {
-		return true
-	}
-	if preBuild != "" && v["build"] != "" && v["build"] != preBuild {
-		return true
-	}
-	if preVersion != "" && v["version"] != "" && v["version"] != preVersion {
-		return true
-	}
-	return false
-}
-
 // describeAgentReading names a version reading for a journal line.
 func describeAgentReading(v map[string]string) string {
 	f := func(k string) string {
@@ -525,29 +423,6 @@ func describeAgentReading(v map[string]string) string {
 		sha = sha[:12]
 	}
 	return "version " + f("version") + " build " + f("build") + " running " + sha
-}
-
-// buildStampRe is the agent's build stamp, which sorts as text in time order.
-var buildStampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d{4}$`)
-
-// readingOlderThanTarget reports whether a version reading is provably older
-// software than the update was meant to install: its version is below this
-// app's, or its build stamp is earlier than the one the speaker reported before
-// the push. Unknown or unstamped values (an app that reports the default
-// "1.0.0", an agent without a build) prove nothing and never refuse.
-func readingOlderThanTarget(v map[string]string, appVersion, preBuild string) bool {
-	if v == nil {
-		return false
-	}
-	have := strings.TrimSpace(v["version"])
-	want := strings.TrimSpace(appVersion)
-	if have != "" && want != "" && strings.TrimPrefix(want, "v") != "1.0.0" &&
-		len(versioncmp.Parts(have)) > 0 && len(versioncmp.Parts(want)) > 0 &&
-		versioncmp.Less(have, want) {
-		return true
-	}
-	b := strings.TrimSpace(v["build"])
-	return buildStampRe.MatchString(b) && buildStampRe.MatchString(preBuild) && b < preBuild
 }
 
 // engineBackoff is the wait between engine passes: exponential (2s -> 30s
@@ -804,7 +679,6 @@ func (u *speakerUpdater) gatedPush() error {
 func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	u.attempts = attempt
 	base := UpdateOutcome{Host: u.host, Name: u.name, Attempts: attempt}
-	appSha, appBuild, appVersion := u.seams.appSha, u.seams.appBuild, u.seams.appVersion
 	// Record what the box runs RIGHT NOW; the post-OTA success signal is
 	// "reachable AND no longer this pre-OTA build", which survives app/agent
 	// build-stamp drift. A failed read leaves both empty and the hash and the
@@ -841,6 +715,9 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	} else {
 		pv = nil
 	}
+	// What this run is held against from here on: what the app carries and
+	// what the speaker just reported.
+	target := u.seams.target(preBuild, preVersion)
 	// A speaker that already runs exactly this agent and only lacks the Spotify
 	// engine gets the engine and nothing else. Pushing the agent again bought
 	// nothing and cost a reboot: on a slow chassis that reboot outlasts the
@@ -848,13 +725,13 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// back still without an engine, so every click on "Update" started the same
 	// round again (a CineMate, three rounds of about eight minutes each,
 	// 2026-10-10).
-	if agentCurrentEngineMissing(pv, appVersion, appBuild, appSha) {
+	if target.onlyEngineMissing(pv) {
 		b := pv["build"]
 		if b == "" {
 			b = "?"
 		}
 		u.record("agent upload skipped: the speaker already runs build " + b + ", only the Spotify engine is missing")
-		return u.deliverEngine(base, pv, preVersion)
+		return u.deliverEngine(base, pv, target)
 	}
 	u.phase(updatePhase{Phase: phaseUploading, Attempt: attempt})
 	err := u.gatedPush()
@@ -886,7 +763,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// bootstrap reboot is one-time and loop-guarded on the agent side).
 	var stableSince time.Time
 	sawSecondDrop := false
-	notedOlder := false
+	notedOlder, notedSwap := false, false
 	for u.seams.now().Before(deadline) {
 		// Only while we are still waiting for the box to come back. Once it has
 		// and we are merely holding it for the stability window, 'settling'
@@ -898,7 +775,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		u.sleep(u.policy.verifyPoll)
 		v, err := u.read()
 		switch {
-		case err == nil && updateConfirms(v, appSha, appBuild, appVersion, preBuild, preVersion):
+		case err == nil && target.confirms(v):
 			now := u.seams.now()
 			if stableSince.IsZero() {
 				stableSince = now
@@ -916,9 +793,16 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			}
 		case err == nil:
 			stableSince = time.Time{}
-			if !notedOlder && readingOlderThanTarget(v, appVersion, preBuild) {
+			if !notedOlder && target.older(v) {
 				notedOlder = true
 				u.record("the speaker answers on older software than this update installs (" + describeAgentReading(v) + "); not taken as the update")
+			}
+			// The rescue agent: the new build is running, from RAM, and is not
+			// on the speaker's storage. It writes itself there once more on its
+			// own and drops the marker when that worked, so keep waiting.
+			if msg := swapFailed(v); !notedSwap && msg != "" {
+				notedSwap = true
+				u.record("the speaker runs the new software from memory only, it could not write it to its storage (" + msg + "); not taken as the update until it has")
 			}
 		default:
 			// Unreachable: either still mid-first-reboot, or the bootstrap reboot
@@ -975,27 +859,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		}
 		if confirmed == nil {
 			base.Verdict = cls
-			switch cls {
-			// "agent-gone" is the speaker answering its OWN Bose web API while
-			// STR's agent is not running on it. That is not a timeout and not a
-			// network problem: the box is up, on the LAN, and reachable from this
-			// PC. It is also the one outcome with an exact, reliable fix, so it
-			// gets its own result instead of being folded into the generic "took
-			// longer than expected" line that sent a user hunting through his
-			// antivirus settings while three speakers sat there answering Bose's
-			// ports (2026-08-22).
-			case "agent-gone":
-				base.Outcome = outcomeAgentGone
-			// "box-in-setup" is the speaker running Bose's OWN out-of-box setup:
-			// it leaves the network for minutes at a time while it does, so the
-			// update may well have landed and confirmLateOTA corrects the journal
-			// on its own. Its own outcome, because the advice is the opposite of
-			// agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
-			case "box-in-setup":
-				base.Outcome = outcomeBoxInSetup
-			default:
-				base.Outcome = outcomeTimeout
-			}
+			base.Outcome = unconfirmedOutcome(cls)
 			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome})
 			return base
@@ -1023,7 +887,57 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		host, port := u.host, u.port
 		u.seams.spawn(func() { u.seams.restoreGroup(host, port) })
 	}
-	return u.deliverEngine(base, confirmed, preVersion)
+	return u.deliverEngine(base, confirmed, target)
+}
+
+// unconfirmedOutcome is the outcome of a run that ended without a confirmed
+// agent, by the classifier's verdict.
+func unconfirmedOutcome(verdict string) string {
+	switch verdict {
+	// "agent-gone" is the speaker answering its OWN Bose web API while
+	// STR's agent is not running on it. That is not a timeout and not a
+	// network problem: the box is up, on the LAN, and reachable from this
+	// PC. It is also the one outcome with an exact, reliable fix, so it
+	// gets its own result instead of being folded into the generic "took
+	// longer than expected" line that sent a user hunting through his
+	// antivirus settings while three speakers sat there answering Bose's
+	// ports (2026-08-22).
+	case "agent-gone":
+		return outcomeAgentGone
+	// "box-in-setup" is the speaker running Bose's OWN out-of-box setup:
+	// it leaves the network for minutes at a time while it does, so the
+	// update may well have landed and confirmLateOTA corrects the journal
+	// on its own. Its own outcome, because the advice is the opposite of
+	// agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
+	case "box-in-setup":
+		return outcomeBoxInSetup
+	default:
+		return outcomeTimeout
+	}
+}
+
+// fellBack ends the engine step for a speaker that answers on a version older
+// than this app's after its agent was already taken as updated: a restart that
+// started an older binary (a stick's boot sync, a swap that fell back). The
+// update is not installed, so the run must not end "done", whatever the engine
+// says; the record of what the speaker should run stays.
+//
+// The classifier gets the last word, as on the other unconfirmed exit: it
+// journals why, and if it finds the speaker on this app's agent after all, ok
+// is false and the engine step goes on.
+func (u *speakerUpdater) fellBack(base UpdateOutcome, v map[string]string) (out UpdateOutcome, ok bool) {
+	u.record("the speaker answers on older software than this update installs (" + describeAgentReading(v) + ") after the update had been confirmed; it is not installed")
+	u.log().Warn("speaker update: the speaker is back on older software during the engine step", "host", u.host, "version", v["version"], "build", v["build"])
+	live, livePort := u.addr()
+	cls := u.seams.classify(live, livePort)
+	if cls == "confirmed" {
+		return base, false
+	}
+	base.Confirmed = false
+	base.Verdict = cls
+	base.Outcome = unconfirmedOutcome(cls)
+	u.phase(updatePhase{Phase: base.Outcome, Attempt: base.Attempts, Outcome: base.Outcome})
+	return base, true
 }
 
 // engineRestoreAttempts bounds the engine re-delivery after an update that did
@@ -1182,8 +1096,8 @@ func (u *speakerUpdater) finish(out UpdateOutcome) UpdateOutcome {
 
 // deliverEngine is the second half of an update: the agent is on the target
 // build (just confirmed, or already there) and the Spotify engine is put back
-// if it is missing or outdated.
-func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[string]string, preVersion string) UpdateOutcome {
+// if it is missing or outdated. target is what the run is held against.
+func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[string]string, target otaTarget) UpdateOutcome {
 	// The agent half is done and proven. Say so now rather than at the very
 	// end: the engine step below can run for another ten minutes, and a user
 	// watching a single speaker has earned the news that the update itself
@@ -1233,7 +1147,15 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			Reachable:   live != nil, Version: live["version"], Engine: engine})
 		// Already in the target state (another pass landed it, or the agent
 		// hot-swapped it in): nothing left to do.
-		if reached, _ := speakerReachedTarget(live, preVersion, true, u.seams.appSha); reached {
+		// Back on older software than this app carries: not updated, whatever
+		// the engine says. Checked here and again after a delivery, because
+		// "the engine is present" is true of the old software as well.
+		if live != nil && target.olderVersion(live) {
+			if out, ok := u.fellBack(base, live); ok {
+				return out
+			}
+		}
+		if reached, _ := target.reached(live, true); reached {
 			u.clearIntent()
 			base.Outcome = outcomeDone
 			base.Version = live
@@ -1296,6 +1218,11 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			// called finished when the speaker itself reports the state it was
 			// supposed to end up in.
 			if check, cerr := u.read(); cerr == nil && check["goLibrespot"] == "present" {
+				if target.olderVersion(check) {
+					if out, ok := u.fellBack(base, check); ok {
+						return out
+					}
+				}
 				u.clearIntent()
 				base.Outcome = outcomeDone
 				base.Version = check
