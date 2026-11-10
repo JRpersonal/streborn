@@ -18,6 +18,10 @@
 // did exactly that). So NOTHING here touches the DOM at module scope: the
 // #view-setup shell HTML and all its control wiring live inside mountSetupShell,
 // guarded to run once, and renderSetupTargetPicker calls it first.
+//
+// The view is split by topic under views/setup/. This file keeps the shell
+// mount (below) and re-exports the entry points, so main.js and the UI 2.0
+// wizard keep importing them from here.
 
 import { state } from '../state.js';
 import { formatClock } from '../format.js';
@@ -96,6 +100,17 @@ import { takeShareOffer, wireShareOffer } from '../share.js';
 import { stereoInstallChoices, dissolveHosts, restoreMessage } from '../stereoinstall.js';
 import { verifyInstalledLoop, waitForStableAgent } from '../agentsettle.js';
 import { holdsByHost, holdFor, sameHeldHosts, stockCardText, heldInstallNote } from '../installhold.js';
+import { deps, initSetupView } from './setup/deps.js';
+import { isMacOS, currentHeroHold } from './setup/shared.js';
+
+// The entry points other files import from here (main.js, views/boxpicker.js,
+// shell2/setup/wizard.js). They live in the topic modules now.
+export { initSetupView };
+
+// mountSetupShell stays in this file, and the picker and the stick wizard both
+// call it; they cannot import this file (it imports them), so it is handed to
+// them the same way main.js hands its helpers in. No DOM is touched here.
+initSetupView({ mountSetupShell });
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
 // app's local Wi-Fi setup still works after the cloud shutdown, so it is the
@@ -103,17 +118,6 @@ import { holdsByHost, holdFor, sameHeldHosts, stockCardText, heldInstallNote } f
 // stick-free network install takes over.
 const BOSE_APP_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.bose.soundtouch';
 const BOSE_APP_IOS_URL = 'https://apps.apple.com/app/bose-soundtouch/id708379313';
-
-// macOS gates the System keychain behind an admin prompt for every
-// `security find-generic-password -ga`. Auto-firing the password
-// fetch at app startup pops the prompt every single launch (#88).
-// We still want auto-fill on Windows (netsh -> no prompt for
-// user-saved profiles) and Linux (nmcli -> no prompt). On macOS,
-// the SSID gets auto-selected but the password field stays empty
-// until the user clicks the explicit fill-from-keychain button.
-// Re-derived locally (the same pure check main.js uses) so the view does not
-// need an injected helper for it.
-const isMacOS = typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent);
 
 // Timezone helpers for the OTA setup card. detectTimeZone returns the real IANA
 // zone of THIS computer (e.g. "Europe/Berlin", "America/New_York", "Asia/Tokyo")
@@ -175,32 +179,6 @@ async function retryStep(fn, attempts, delayMs) {
     if (i < attempts - 1) await sleep(delayMs);
   }
   return last;
-}
-
-// Injected main.js helpers (see initSetupView). These stay in main.js because
-// they are shared across views; the setup code calls them as deps.<name>.
-let deps = {
-  switchView: () => {},
-  discoverBoxes: async () => {},
-  doBoxUpdate: async () => {},
-  getRoomNames: () => [],
-  // celebrateProvision(box): fire the community world-map pin invite right after a
-  // box is successfully provisioned with STR (the most reliable "alive again"
-  // moment). Wired in main.js; no-op default so the view never depends on it.
-  celebrateProvision: () => {},
-  // speakerPicked(box): focus this speaker across the tabs (it sets
-  // state.settingsBox and state.currentBox), so leaving Setup for another tab
-  // lands on the speaker the user just pointed at. It was already being called
-  // from the target picker but was missing from this list, which made it look
-  // optional; the no-op default keeps every call site safe either way.
-  speakerPicked: () => {},
-  // installHoldsChanged(): a speaker entered or left the update hold
-  // (refreshInstallHolds); main.js repaints the speaker list, whose badge and
-  // tooltip read the same holds.
-  installHoldsChanged: () => {},
-};
-export function initSetupView(d) {
-  deps = { ...deps, ...d };
 }
 
 // mountSetupShell builds the setup view's static shell (#view-setup) and wires
@@ -688,13 +666,6 @@ async function refreshInstallHolds(hosts) {
   } else {
     syncHeroInstallHold();
   }
-}
-
-// currentHeroHold is the hold on the speaker the network-install card is for,
-// or null.
-function currentHeroHold() {
-  const sel = state.setupTarget;
-  return sel && sel.kind === 'stock' && sel.box ? holdFor(state.installHolds, sel.box.host) : null;
 }
 
 // syncHeroInstallHold shows or hides the "an update is still finishing" note

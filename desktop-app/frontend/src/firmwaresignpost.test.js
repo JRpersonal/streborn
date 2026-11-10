@@ -20,14 +20,16 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { boseFwArticles, firmwareOlderThanLatest, LATEST_BOSE_FIRMWARE } from './firmware.js';
-import { allSource, fileSource, srcOf } from './test/source.js';
+import { allSource, fileSource, sourceFiles, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const all = allSource();
 // The setup view by file, for the one negative below that must stay scoped to
 // it: fwguide.js names btu.bose.com in a comment explaining why that route is
-// wrong, so "no screen names it" cannot be asserted over every file.
-const setup = fileSource('views/setup.js');
+// wrong, so "no screen names it" cannot be asserted over every file. The view
+// is views/setup.js and its topic modules under views/setup/.
+const setupFiles = sourceFiles().filter((f) => f === 'views/setup.js' || f.startsWith('views/setup/'));
+const setup = setupFiles.map(fileSource).join('\n');
 const installGo = readFileSync(join(here, '..', '..', 'install_str.go'), 'utf8').replace(/\r\n/g, '\n');
 const firmwareGo = readFileSync(join(here, '..', '..', 'app_firmware.go'), 'utf8').replace(/\r\n/g, '\n');
 // firmware.js by file: the importability test below is about this one module.
@@ -39,6 +41,8 @@ describe('the firmware route is rendered where a stock speaker can reach it', ()
   it('lives in the setup view, next to the failure', () => {
     expect(all).toContain('function outdatedFirmwareHtml(box, short, result)');
     expect(all).toContain('firmwareGuideMount(');
+    expect(setupFiles).toContain('views/setup.js');
+    expect(setupFiles.length).toBeGreaterThan(1);
     expect(setup).not.toContain('btu.bose.com');
   });
 
