@@ -3,9 +3,11 @@ package webui
 import (
 	"bytes"
 	"context"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -492,5 +494,94 @@ func TestQuietWakeStoppedSpeakerSetsNoMark(t *testing.T) {
 	// Without a mark, a paused speaker is served as paused.
 	if got := servedStatus(s, pandoraBody("PAUSE_STATE")); !strings.Contains(got, "PAUSE_STATE") {
 		t.Fatalf("unmarked pause served as %q", got)
+	}
+}
+
+// legacyParseWokenBody is parseWokenBody as it stood before it moved onto the
+// typed now_playing reader: three regexes over the body, verbatim.
+var (
+	legacyWokenSourceRe   = regexp.MustCompile(`source="([^"]*)"`)
+	legacyWokenStatusRe   = regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`)
+	legacyWokenLocationRe = regexp.MustCompile(`location="([^"]*)"`)
+)
+
+func legacyParseWokenBody(body []byte) (status string, item wokenItem) {
+	if m := legacyWokenStatusRe.FindSubmatch(body); m != nil {
+		status = string(m[1])
+	}
+	if m := legacyWokenSourceRe.FindSubmatch(body); m != nil {
+		item.source = string(m[1])
+	}
+	if m := legacyWokenLocationRe.FindSubmatch(body); m != nil {
+		item.location = html.UnescapeString(string(m[1]))
+	}
+	return status, item
+}
+
+// parseWokenBody reads the typed document now. This table pins that it still
+// answers as the regexes did, over the bodies it meets (the firmware's
+// now_playing, a bus frame's <nowPlaying>, a peer agent's /api/status) and
+// over malformed ones; the one input where it deliberately differs is named.
+func TestParseWokenBodyAgreesWithLegacyRegexes(t *testing.T) {
+	samples := map[string]string{
+		"pandora paused":         pandoraBody("PAUSE_STATE"),
+		"pandora playing":        pandoraBody("PLAY_STATE"),
+		"stored music paused":    storedMusicBody("PAUSE_STATE"),
+		"stored music buffering": storedMusicBody("BUFFERING_STATE"),
+		"standby":                `<nowPlaying deviceID="device-id-here" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`,
+		"standby bare":           `<nowPlaying source="STANDBY"></nowPlaying>`,
+		"invalid source":         `<nowPlaying deviceID="device-id-here" source="INVALID_SOURCE"><ContentItem source="INVALID_SOURCE" isPresetable="false" /></nowPlaying>`,
+		"error reply":            `<errors><error name="HTTP_STATUS_NOT_FOUND" /></errors>`,
+		"error reply with text":  `<errors deviceID="device-id-here"><error value="401" name="HTTP_STATUS_UNAUTHORIZED" severity="Unknown">Unauthorized</error></errors>`,
+		"declaration and layout": `<?xml version="1.0" encoding="UTF-8" ?>
+<nowPlaying deviceID="device-id-here" source="LOCAL_INTERNET_RADIO" sourceAccount="">
+  <ContentItem source="LOCAL_INTERNET_RADIO" location="/station?data=abc" sourceAccount="" isPresetable="true">
+    <itemName>Radio Paradise</itemName>
+  </ContentItem>
+  <track>T</track><artist>A</artist><stationName></stationName>
+  <playStatus>PLAY_STATE</playStatus>
+</nowPlaying>`,
+		"location with &amp;":          `<nowPlaying deviceID="device-id-here" source="UPNP" sourceAccount="UPnPUserName"><ContentItem source="UPNP" location="http://192.0.2.28:50002/m/a.mp3?x=1&amp;y=2" sourceAccount="UPnPUserName" isPresetable="false"><itemName>One &amp; Two</itemName></ContentItem><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"location with other entities": `<nowPlaying source="STORED_MUSIC"><ContentItem source="STORED_MUSIC" location="0$albums$O&apos;Brien &lt;1&gt; &quot;x&quot; &#38; y"/><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"no play state":                `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"/></nowPlaying>`,
+		"empty play state":             `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"/><playStatus></playStatus></nowPlaying>`,
+		"no location":                  `<nowPlaying source="AUX"><ContentItem source="AUX" isPresetable="false"/><playStatus>PLAY_STATE</playStatus></nowPlaying>`,
+		"empty location":               `<nowPlaying deviceID="device-id-here" source="BLUETOOTH" sourceAccount=""><ContentItem source="BLUETOOTH" location="" sourceAccount="" isPresetable="false"><itemName>Phone</itemName></ContentItem><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"root without a source":        `<nowPlaying deviceID="device-id-here"><ContentItem source="PANDORA" location="` + pandoraLoc + `"/><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"annotated station name":       `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"/><stationName>Pop &amp; Rock</stationName><playStatus>STOP_STATE</playStatus></nowPlaying>`,
+
+		// Malformed: the typed reader salvages these.
+		"truncated":                 `<?xml version="1.0" encoding="UTF-8" ?><nowPlaying deviceID="device-id-here" source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/5?a=1&amp;b=2"><itemName>Cut off</itemName></ContentItem><playStatus>BUFFERING_STATE</playStatus><art artImageStatus="IMAGE_PRESENT">https://example.com/a-very-long`,
+		"bare ampersand":            `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://192.0.2.28:50002/m/a.mp3?x=1&y=2"/><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"HTML entity in a location": `<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://192.0.2.28:50002/m/caf&eacute;.mp3"/><playStatus>PAUSE_STATE</playStatus></nowPlaying>`,
+		"not XML":                   `not xml at all`,
+		"empty":                     ``,
+
+		"padded play state": `<nowPlaying source="PANDORA"><ContentItem source="PANDORA" location="` + pandoraLoc + `"/><playStatus> PAUSE_STATE </playStatus></nowPlaying>`,
+	}
+	divergent := map[string]string{
+		"padded play state": "the regex kept the padding and so never matched a state; the typed reader trims the element. The firmware writes no padding, and the rewrite replaces the unpadded element only, so nothing is served differently",
+	}
+	for name, body := range samples {
+		ls, li := legacyParseWokenBody([]byte(body))
+		ts, ti := parseWokenBody([]byte(body))
+		equal := ls == ts && li == ti
+		if reason, listed := divergent[name]; listed {
+			if equal {
+				t.Errorf("%s: listed as divergent (%s) but both read %q %+v", name, reason, ts, ti)
+			}
+			continue
+		}
+		if !equal {
+			t.Errorf("%s: legacy %q %+v, typed %q %+v", name, ls, li, ts, ti)
+		}
+	}
+
+	// And the padded one, pinned: read as the state it is, served unchanged.
+	var w wokenStop
+	w.mark("PANDORA", pandoraLoc, time.Now())
+	padded := samples["padded play state"]
+	if out := w.apply([]byte(padded)); string(out) != padded {
+		t.Errorf("padded body rewritten to %q", out)
 	}
 }

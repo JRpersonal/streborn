@@ -7,11 +7,11 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
@@ -157,26 +157,32 @@ func (w *wokenStop) active() bool {
 }
 
 var (
-	nowPlayingSourceRe   = regexp.MustCompile(`source="([^"]*)"`)
-	nowPlayingStatusRe   = regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`)
 	pauseStatePlayStatus = []byte("<playStatus>PAUSE_STATE</playStatus>")
 	stopStatePlayStatus  = []byte("<playStatus>STOP_STATE</playStatus>")
 )
 
 // parseWokenBody reads the play state, source and station out of a
 // now_playing body: the firmware's own, a bus frame's <nowPlaying>, or another
-// agent's /api/status.
+// agent's /api/status. It reads them off the typed document
+// (boxapi.ParseNowPlaying), the same reader the mark itself is set from.
+//
+// Two details keep it answering as the three regexes it replaces did. Those
+// took the first source attribute anywhere in the body, so a root without one
+// falls back to the ContentItem's. And they ran the location through
+// html.UnescapeString: a well-formed document comes out of the XML decoder
+// with the same text, a body the decoder refused has its location salvaged
+// undecoded, so that one still gets the unescape here.
 func parseWokenBody(body []byte) (status string, item wokenItem) {
-	if m := nowPlayingStatusRe.FindSubmatch(body); m != nil {
-		status = string(m[1])
+	np := boxapi.ParseNowPlaying(body)
+	item.source = np.Source
+	if item.source == "" {
+		item.source = np.ContentItem.Source
 	}
-	if m := nowPlayingSourceRe.FindSubmatch(body); m != nil {
-		item.source = string(m[1])
+	item.location = np.Location()
+	if !np.Parsed {
+		item.location = html.UnescapeString(item.location)
 	}
-	if m := nowPlayingLocationRe.FindSubmatch(body); m != nil {
-		item.location = html.UnescapeString(string(m[1]))
-	}
-	return status, item
+	return np.PlayStatus, item
 }
 
 // apply returns body with PAUSE_STATE reported as STOP_STATE while the mark
