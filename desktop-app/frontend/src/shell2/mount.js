@@ -27,6 +27,7 @@ import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../gro
 import { shellMarkup } from './markup.js';
 import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
+import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
@@ -225,6 +226,7 @@ export function mountShell2(d) {
 
   // Phase 3: wire and activate.
   quietPlayerClock();
+  nameTransport();
   announceToasts();
   wire(frame, skip);
   state.ui2Shell = true;
@@ -251,6 +253,30 @@ function quietPlayerClock() {
   bar.removeAttribute('aria-live');
   main.setAttribute('role', 'status');
   main.setAttribute('aria-live', 'polite');
+}
+
+// nameTransport keeps the player's round transport buttons told apart and
+// named. The preview draws Play, Pause and Stop as glyphs (shell2.css); the
+// words nowplaying.js writes into the buttons stay their accessible names and
+// become their tooltips here, and the Play/Pause button says which glyph it
+// shows (data-ui2-glyph), on every change of its words. The classic layout
+// never runs this.
+function nameTransport() {
+  const pp = byId('pauseBtn');
+  const stop = byId('stopBtn');
+  if (stop) {
+    const label = transportLabel(stop.textContent);
+    if (label) stop.title = label;
+  }
+  if (!pp) return;
+  const sync = () => {
+    pp.dataset.ui2Glyph = transportGlyph(pp.textContent);
+    const label = transportLabel(pp.textContent);
+    if (label && pp.title !== label) pp.title = label;
+  };
+  sync();
+  if (typeof MutationObserver === 'undefined') return;
+  new MutationObserver(sync).observe(pp, { childList: true, characterData: true, subtree: true });
 }
 
 // announceToasts makes the window's toast a polite status in the preview, so

@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Sonando ahora: {{what}}",
   "ui2.speakers.speaker.netMore": "Detalles de la red",
   "ui2.speakers.speaker.hwKeysHeading": "Botones del altavoz",
+  "ui2.speakers.speaker.aboutHeading": "Acerca de este altavoz",
   "ui2.speakers.speaker.otherHalf": "Abrir la otra mitad: {{name}}",
   "ui2.speakers.groups.nowTitle": "Sonando juntos ahora",
   "ui2.speakers.groups.pairsTitle": "Pares estéreo",

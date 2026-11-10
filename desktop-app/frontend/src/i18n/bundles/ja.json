@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "再生中：{{what}}",
   "ui2.speakers.speaker.netMore": "ネットワークの詳細",
   "ui2.speakers.speaker.hwKeysHeading": "スピーカーのボタン",
+  "ui2.speakers.speaker.aboutHeading": "このスピーカーについて",
   "ui2.speakers.speaker.otherHalf": "もう一方を開く: {{name}}",
   "ui2.speakers.groups.nowTitle": "いま一緒に再生中",
   "ui2.speakers.groups.pairsTitle": "ステレオペア",

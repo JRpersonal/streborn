@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Şu an çalıyor: {{what}}",
   "ui2.speakers.speaker.netMore": "Ağ ayrıntıları",
   "ui2.speakers.speaker.hwKeysHeading": "Hoparlördeki tuşlar",
+  "ui2.speakers.speaker.aboutHeading": "Bu hoparlör hakkında",
   "ui2.speakers.speaker.otherHalf": "Diğer yarıyı aç: {{name}}",
   "ui2.speakers.groups.nowTitle": "Şu an birlikte çalanlar",
   "ui2.speakers.groups.pairsTitle": "Stereo çiftler",

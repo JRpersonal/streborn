@@ -59,7 +59,6 @@ export function shellMarkup() {
   return `
 <button type="button" class="u-skip" id="ui2Skip">${escapeHtml(t('ui2.skip'))}</button>
 <div class="ui2-shell" id="ui2Shell">
-  <div class="ui2-banners" id="ui2Banners"></div>
   <div class="ui2-sidebar" id="ui2Sidebar">
     <div class="ui2-side-top">
       <div class="ui2-brand"></div>
@@ -81,6 +80,7 @@ export function shellMarkup() {
     ${NAV.main.map(navItemHTML).join('')}
     <div class="ui2-tabs-small">${NAV.small.map(navItemHTML).join('')}</div>
   </nav>
+  <div class="ui2-banners" id="ui2Banners"></div>
   <main class="ui2-main" id="ui2Main" tabindex="-1">
     <div class="ui2-main-inner" id="ui2MainInner">${speakersAreaHTML()}<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div></div>
   </main>

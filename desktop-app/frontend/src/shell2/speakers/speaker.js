@@ -135,6 +135,10 @@ export const SPEAKER_SECTIONS = Object.freeze([
 // The two cards the page adds; every other key comes from the classic markup.
 export const PAGE_SECTIONS = Object.freeze(['netSummary', 'hwKeys']);
 
+// The Overview sections that make up the one "About this speaker" card
+// (arrangeSpeakerSections), in the order SPEAKER_SECTIONS lists them.
+export const ABOUT_SECTIONS = Object.freeze(['status', 'speakerInfo', 'netSummary']);
+
 // sectionTab is the tab a section key lives on. A section nobody mapped yet
 // (added to the classic view later) shows on Overview rather than nowhere.
 export function sectionTab(key) {
@@ -416,6 +420,21 @@ export function arrangeSpeakerSections(ctx = {}) {
   body.querySelectorAll('.settings-section').forEach((el) => {
     if (!el.closest('.sps-sec')) wraps[sectionTab(el.dataset.ui2Sec)].appendChild(el);
   });
+  // Overview: what there is to know about the speaker is one card, "About
+  // this speaker" (its software and update state, its model and firmware, how
+  // it is connected), where there were three. The sections inside are the
+  // same nodes, moved whole (ids, handlers, data-ui2-sec), so everything that
+  // finds, reveals or reports in one of them still does; speaker.css takes
+  // their own card look away inside this one.
+  const facts = [...wraps.overview.children].filter((el) => ABOUT_SECTIONS.includes(el.dataset.ui2Sec));
+  if (facts.length) {
+    const about = document.createElement('section');
+    about.className = 'sps-about';
+    about.setAttribute('aria-labelledby', 'ui2SpkAboutTitle');
+    about.innerHTML = `<h3 class="sps-about-title" id="ui2SpkAboutTitle">${escapeHtml(t('ui2.speakers.speaker.aboutHeading'))}</h3>`;
+    wraps.overview.insertBefore(about, facts[0]);
+    for (const el of facts) about.appendChild(el);
+  }
   // The accordion groups are empty now; the tabs replace them.
   body.querySelectorAll('details.settings-group').forEach((d) => d.remove());
   for (const tab of SPEAKER_TABS) body.appendChild(wraps[tab]);

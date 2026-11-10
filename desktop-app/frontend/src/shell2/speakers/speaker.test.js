@@ -5,7 +5,7 @@
 // desktop-ui2-speakers-page.spec.mjs.
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  PAGE_SECTIONS, SPEAKER_SECTIONS, bodyUnsorted, networkSummaryHTML, otherPairHalf, networkSummaryRows, sectionTab,
+  ABOUT_SECTIONS, PAGE_SECTIONS, SPEAKER_SECTIONS, bodyUnsorted, networkSummaryHTML, otherPairHalf, networkSummaryRows, sectionTab,
   speakerConfirmTitle, speakerStateHTML, speakerStateKind,
 } from './speaker.js';
 import { SPEAKER_TABS } from './routes.js';
@@ -39,6 +39,23 @@ describe('the classic-section checklist', () => {
     // section or one of the page's own cards.
     for (const k of classic) expect(mapped, k).toContain(k);
     expect([...mapped].sort()).toEqual([...classic, ...PAGE_SECTIONS].sort());
+  });
+
+  it('shows Status, Speaker info and the Network summary as one "About this speaker" card', () => {
+    // The first three sections of Overview, in the checklist's order, so the
+    // card is where the three cards were.
+    expect(SPEAKER_SECTIONS.slice(0, ABOUT_SECTIONS.length).map(([k]) => k)).toEqual([...ABOUT_SECTIONS]);
+    for (const k of ABOUT_SECTIONS) expect(sectionTab(k), k).toBe('overview');
+    const arrange = srcOf('arrangeSpeakerSections');
+    // The sections are moved whole into the card, never copied or rebuilt: the
+    // card's own markup is its heading only.
+    expect(arrange).toContain('for (const el of facts) about.appendChild(el);');
+    expect(arrange).toContain("t('ui2.speakers.speaker.aboutHeading')");
+    expect(arrange).not.toMatch(/cloneNode|outerHTML/);
+    // A section inside the card is still inside its tab's wrapper, so the
+    // reveal and the late sort find it.
+    expect(srcOf('revealSpeakerTabOf')).toContain("el.closest('.sps-sec[data-ui2-tab]')");
+    expect(srcOf('bodyUnsorted')).toContain("!el.closest('.sps-sec')");
   });
 
   it('puts every section on one of the five tabs, and no tab is empty', () => {

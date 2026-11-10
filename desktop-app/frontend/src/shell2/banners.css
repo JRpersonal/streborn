@@ -15,34 +15,60 @@
 
 /* ---------- The speaker update card ---------- */
 
+/* An inline notice, not a banner across the window: one quiet row in the
+   page's column on the accent-tinted ground, an arrow in the accent before the
+   words, the title with the explanation beside it, the speakers under them
+   and the two buttons at the end. No bar and no heavy edge: the tint and the
+   arrow mark it, the title says it. */
 html.ui2 #ui2Banners .speaker-update-card {
   position: relative;
-  margin: var(--u-space-2) var(--u-space-4) 0;
-  padding: var(--u-space-3) var(--u-space-4) var(--u-space-3) 20px;
-  border: 1px solid var(--u-border);
-  border-inline-start: 4px solid var(--u-accent);
-  border-radius: var(--u-radius);
-  background: var(--u-surface);
+  max-width: 912px;
+  margin: var(--u-space-3) 0 0;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--u-accent) 35%, var(--u-tint));
+  border-radius: var(--u-radius-card);
+  background: var(--u-tint);
   color: var(--u-text);
   font-family: var(--u-font);
 }
 html.ui2 #ui2Banners .speaker-update-card.hidden { display: none; }
-/* The content column of the main area, not the classic 720px centre. */
+/* Four columns: the arrow, the title, the explanation, the buttons. The
+   speakers (and the note about a group) take a second line under the words.
+   The buttons sit beside the text, not below it: a card that stacks them is
+   taller than the region allows in the smallest window. */
 html.ui2 #ui2Banners .speaker-update-card .suc-body {
-  max-width: 960px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--u-space-3);
+  max-width: none;
   margin: 0;
 }
-html.ui2 #ui2Banners .speaker-update-card .suc-title {
-  margin: 0 0 var(--u-space-2);
-  color: var(--u-text);
-  font-size: var(--u-fs-lg);
-  font-weight: var(--u-fw-bold);
-  line-height: 1.3;
+html.ui2 #ui2Banners .speaker-update-card .suc-body::before {
+  content: '';
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  background: var(--u-accent);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v11m0 0l-4-4m4 4l4-4'/%3E%3Cpath d='M5 20h14'/%3E%3C/svg%3E") center / contain no-repeat;
 }
-html.ui2 #ui2Banners .speaker-update-card .suc-text {
+html.ui2 #ui2Banners .speaker-update-card .suc-title {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
   color: var(--u-text);
   font-size: var(--u-fs-md);
-  line-height: 1.5;
+  font-weight: var(--u-fw-bold);
+  line-height: 1.45;
+}
+html.ui2 #ui2Banners .speaker-update-card .suc-text {
+  grid-column: 3;
+  color: var(--u-muted);
+  font-size: var(--u-fs-sm);
+  line-height: 1.45;
 }
 /* The speakers side by side, not one per line: with five or six speakers
    behind, a list of lines made the card taller than the banner region allows
@@ -50,41 +76,36 @@ html.ui2 #ui2Banners .speaker-update-card .suc-text {
 html.ui2 #ui2Banners .speaker-update-card .suc-list {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--u-space-1) var(--u-space-4);
-  margin: 6px 0 var(--u-space-3);
+  grid-column: 2 / 4;
+  gap: 0 var(--u-space-4);
+  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--u-text);
-  font-size: var(--u-fs-md);
+  font-size: var(--u-fs-sm);
+  line-height: 1.45;
 }
 html.ui2 #ui2Banners .speaker-update-card .suc-list li {
   white-space: nowrap;
 }
-/* The buttons sit beside the text, not below it: the window is at least
-   1000px wide, and a card that stacks them is taller than the region allows
-   in the smallest window. */
-html.ui2 #ui2Banners .speaker-update-card .suc-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--u-space-5);
-  max-width: none;
-}
-html.ui2 #ui2Banners .speaker-update-card .suc-body > :not(.suc-actions) { grid-column: 1; }
+html.ui2 #ui2Banners .speaker-update-card #sucGroupNote { grid-column: 2 / 4; }
 html.ui2 #ui2Banners .speaker-update-card .suc-actions {
-  grid-column: 2;
+  display: flex;
+  flex-wrap: nowrap;
+  grid-column: 4;
   grid-row: 1 / span 4;
   align-self: center;
-  flex-wrap: nowrap;
+  gap: var(--u-space-2);
 }
-html.ui2 #ui2Banners .speaker-update-card .suc-list { margin-bottom: 0; }
 html.ui2 #ui2Banners .speaker-update-card .suc-ver {
   color: var(--u-muted);
   font-size: var(--u-fs-xs);
 }
-html.ui2 #ui2Banners .speaker-update-card .suc-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--u-space-2);
+/* Less room across (the smallest window, a larger text size): the title
+   takes a line of its own over the explanation. */
+@container (width < 1100px) {
+  html.ui2 #ui2Banners .speaker-update-card .suc-title { grid-column: 2 / 4; }
+  html.ui2 #ui2Banners .speaker-update-card .suc-text { grid-column: 2 / 4; }
 }
 /* The two buttons look like the shell's primary and secondary buttons. They
    keep their ids and classic classes (main.js wires them by id). */
@@ -107,9 +128,9 @@ html.ui2 #ui2Banners #sucUpdate {
   color: var(--u-on-action);
 }
 html.ui2 #ui2Banners #sucLater {
-  background: var(--u-surface);
+  background: var(--u-raised);
   color: var(--u-text);
-  border-color: var(--u-border);
+  border-color: var(--u-raised-edge);
 }
 html.ui2 #ui2Banners #sucUpdate:disabled {
   border-style: dashed;
@@ -132,11 +153,12 @@ html.ui2 #ui2Banners #sucLater:focus-visible {
 html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet),
 html.ui2 #ui2Banners .global-security-banner {
   position: static;
-  margin: var(--u-space-2) var(--u-space-4) 0;
+  max-width: 912px;
+  margin: var(--u-space-3) 0 0;
   padding: var(--u-space-3) var(--u-space-4) var(--u-space-3) 20px;
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-inline-start: 4px solid var(--u-warn);
-  border-radius: var(--u-radius);
+  border-radius: var(--u-radius-card);
   box-shadow: none;
   background: var(--u-surface);
   color: var(--u-text);
@@ -155,9 +177,9 @@ html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .footer-link { co
 html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .btn,
 html.ui2 #ui2Banners .global-security-banner .btn {
   min-height: var(--u-target);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-raised-edge);
   border-radius: var(--u-radius);
-  background: var(--u-surface);
+  background: var(--u-raised);
   color: var(--u-text);
 }
 html.ui2 #ui2Banners .app-update-banner:not(.app-update-quiet) .btn-primary {

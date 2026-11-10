@@ -28,7 +28,7 @@ html.ui2 .u-check-row {
   gap: var(--u-space-2) var(--u-space-4);
   min-height: 56px;
   padding: var(--u-space-2) 0;
-  border-bottom: 1px solid var(--u-border);
+  border-bottom: 1px solid var(--u-hairline);
 }
 html.ui2 .u-check-mark {
   display: inline-flex;
@@ -95,7 +95,7 @@ html.ui2 .u-check-routea-act { margin: var(--u-space-2) 0; }
 html.ui2 .u-check-guide:empty { display: none; }
 html.ui2 .u-check-guide { margin-top: var(--u-space-4); }
 html.ui2 .u-check-other {
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
 }
 html.ui2 .u-check-other-sum {
