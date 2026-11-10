@@ -63,7 +63,7 @@ func TestPhoneRemoteOfflineStateStandsDownDuringFleetUpdate(t *testing.T) {
 func TestPhoneRemoteUpdateCardAfterAnOutage(t *testing.T) {
 	for _, want := range []string{
 		// Every status read keeps lostSince.
-		"async function load() { var r = await suGet(); if (r && typeof r === 'object') heardFrom(r); else heardNothing(); return r; }",
+		"async function load() { await releaseLeft(); var r = await suGet(); if (r && typeof r === 'object') heardFrom(r); else heardNothing(); return r; }",
 		"async function ownStatus() { var r = await suGet(); if (r && typeof r === 'object') { heardFrom(r); return r; } heardNothing(); return null; }",
 		"function heardFrom(r) { st = r; lostSince = 0; lastHeard = Date.now(); }",
 		// render paints an old busy status as silence, not as progress.

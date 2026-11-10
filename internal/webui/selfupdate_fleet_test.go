@@ -532,6 +532,13 @@ func TestPhoneCardOffersUpdateAllByDefault(t *testing.T) {
 		"action: 'run-claim', token: run.token",
 		// Awaited, or the reload sees this phone's own claim as another phone's.
 		"await apiDetail(SU, 'POST', { action: 'run-end', token: run.token }, 10000);",
+		// A run-end the speaker never heard (the network was away) leaves this
+		// phone's own claim standing: it is not another phone's, and it is
+		// given back before the next status read and the next claim (#1847).
+		"if (!ended.ok) { run.release = true; saveRun(); }",
+		"!runActive() && !(run && run.release)",
+		"async function load() { await releaseLeft();",
+		"await releaseLeft();\n    var token = newToken();",
 		"peerCall(base, 'POST', { action: 'check' }",
 		"peerCall(base, 'POST', { action: 'install' }",
 		"=== 'unreachable') setRow(row, { via: 'speaker'",
