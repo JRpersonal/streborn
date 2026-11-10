@@ -859,27 +859,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		}
 		if confirmed == nil {
 			base.Verdict = cls
-			switch cls {
-			// "agent-gone" is the speaker answering its OWN Bose web API while
-			// STR's agent is not running on it. That is not a timeout and not a
-			// network problem: the box is up, on the LAN, and reachable from this
-			// PC. It is also the one outcome with an exact, reliable fix, so it
-			// gets its own result instead of being folded into the generic "took
-			// longer than expected" line that sent a user hunting through his
-			// antivirus settings while three speakers sat there answering Bose's
-			// ports (2026-08-22).
-			case "agent-gone":
-				base.Outcome = outcomeAgentGone
-			// "box-in-setup" is the speaker running Bose's OWN out-of-box setup:
-			// it leaves the network for minutes at a time while it does, so the
-			// update may well have landed and confirmLateOTA corrects the journal
-			// on its own. Its own outcome, because the advice is the opposite of
-			// agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
-			case "box-in-setup":
-				base.Outcome = outcomeBoxInSetup
-			default:
-				base.Outcome = outcomeTimeout
-			}
+			base.Outcome = unconfirmedOutcome(cls)
 			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome})
 			return base
@@ -908,6 +888,56 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		u.seams.spawn(func() { u.seams.restoreGroup(host, port) })
 	}
 	return u.deliverEngine(base, confirmed, target)
+}
+
+// unconfirmedOutcome is the outcome of a run that ended without a confirmed
+// agent, by the classifier's verdict.
+func unconfirmedOutcome(verdict string) string {
+	switch verdict {
+	// "agent-gone" is the speaker answering its OWN Bose web API while
+	// STR's agent is not running on it. That is not a timeout and not a
+	// network problem: the box is up, on the LAN, and reachable from this
+	// PC. It is also the one outcome with an exact, reliable fix, so it
+	// gets its own result instead of being folded into the generic "took
+	// longer than expected" line that sent a user hunting through his
+	// antivirus settings while three speakers sat there answering Bose's
+	// ports (2026-08-22).
+	case "agent-gone":
+		return outcomeAgentGone
+	// "box-in-setup" is the speaker running Bose's OWN out-of-box setup:
+	// it leaves the network for minutes at a time while it does, so the
+	// update may well have landed and confirmLateOTA corrects the journal
+	// on its own. Its own outcome, because the advice is the opposite of
+	// agentGone's: do NOT pull the plug on a speaker mid-setup (#873).
+	case "box-in-setup":
+		return outcomeBoxInSetup
+	default:
+		return outcomeTimeout
+	}
+}
+
+// fellBack ends the engine step for a speaker that answers on a version older
+// than this app's after its agent was already taken as updated: a restart that
+// started an older binary (a stick's boot sync, a swap that fell back). The
+// update is not installed, so the run must not end "done", whatever the engine
+// says; the record of what the speaker should run stays.
+//
+// The classifier gets the last word, as on the other unconfirmed exit: it
+// journals why, and if it finds the speaker on this app's agent after all, ok
+// is false and the engine step goes on.
+func (u *speakerUpdater) fellBack(base UpdateOutcome, v map[string]string) (out UpdateOutcome, ok bool) {
+	u.record("the speaker answers on older software than this update installs (" + describeAgentReading(v) + ") after the update had been confirmed; it is not installed")
+	u.log().Warn("speaker update: the speaker is back on older software during the engine step", "host", u.host, "version", v["version"], "build", v["build"])
+	live, livePort := u.addr()
+	cls := u.seams.classify(live, livePort)
+	if cls == "confirmed" {
+		return base, false
+	}
+	base.Confirmed = false
+	base.Verdict = cls
+	base.Outcome = unconfirmedOutcome(cls)
+	u.phase(updatePhase{Phase: base.Outcome, Attempt: base.Attempts, Outcome: base.Outcome})
+	return base, true
 }
 
 // engineRestoreAttempts bounds the engine re-delivery after an update that did
@@ -1117,6 +1147,14 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			Reachable:   live != nil, Version: live["version"], Engine: engine})
 		// Already in the target state (another pass landed it, or the agent
 		// hot-swapped it in): nothing left to do.
+		// Back on older software than this app carries: not updated, whatever
+		// the engine says. Checked here and again after a delivery, because
+		// "the engine is present" is true of the old software as well.
+		if live != nil && target.olderVersion(live) {
+			if out, ok := u.fellBack(base, live); ok {
+				return out
+			}
+		}
 		if reached, _ := target.reached(live, true); reached {
 			u.clearIntent()
 			base.Outcome = outcomeDone
@@ -1180,6 +1218,11 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			// called finished when the speaker itself reports the state it was
 			// supposed to end up in.
 			if check, cerr := u.read(); cerr == nil && check["goLibrespot"] == "present" {
+				if target.olderVersion(check) {
+					if out, ok := u.fellBack(base, check); ok {
+						return out
+					}
+				}
 				u.clearIntent()
 				base.Outcome = outcomeDone
 				base.Version = check

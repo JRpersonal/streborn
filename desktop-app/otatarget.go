@@ -51,15 +51,22 @@ func (t otaTarget) older(v map[string]string) bool {
 	if v == nil {
 		return false
 	}
-	have := strings.TrimSpace(v["version"])
-	want := strings.TrimSpace(t.version)
-	if have != "" && want != "" && strings.TrimPrefix(want, "v") != "1.0.0" &&
-		len(versioncmp.Parts(have)) > 0 && len(versioncmp.Parts(want)) > 0 &&
-		versioncmp.Less(have, want) {
+	if t.olderVersion(v) {
 		return true
 	}
 	b := strings.TrimSpace(v["build"])
 	return buildStampRe.MatchString(b) && buildStampRe.MatchString(t.preBuild) && b < t.preBuild
+}
+
+// olderVersion is the version half of older: the reading's version is below
+// this app's. It needs no reading from before the push, so it is the half
+// classify can judge too.
+func (t otaTarget) olderVersion(v map[string]string) bool {
+	have := strings.TrimSpace(v["version"])
+	want := strings.TrimSpace(t.version)
+	return have != "" && want != "" && strings.TrimPrefix(want, "v") != "1.0.0" &&
+		len(versioncmp.Parts(have)) > 0 && len(versioncmp.Parts(want)) > 0 &&
+		versioncmp.Less(have, want)
 }
 
 // swapFailed returns the speaker's own report of an update it could not write
@@ -131,12 +138,19 @@ func (t otaTarget) onlyEngineMissing(v map[string]string) bool {
 // The agent half reads the checksum and the version string only, never the
 // build stamp: it is asked after confirms already took the agent, and a reading
 // it does not recognise costs one more look at the speaker, not a wrong result.
+//
+// A version below this app's is never the target (olderVersion): "the version
+// string moved" was true of a step back as well, and of a move to any other
+// old version. Only the version half of older is asked. The build-stamp half
+// would take back a dev build pushed over a later-stamped build of the same
+// version, which the poll leaves to classify and classify confirms.
 func (t otaTarget) reached(live map[string]string, wantEngine bool) (done bool, missing string) {
 	if live == nil {
 		return false, "unreachable"
 	}
-	agentDone := (t.sha != "" && live["agentRunningSha256"] == t.sha) ||
-		(live["version"] != "" && (t.preVersion == "" || live["version"] != t.preVersion))
+	agentDone := !t.olderVersion(live) &&
+		((t.sha != "" && live["agentRunningSha256"] == t.sha) ||
+			(live["version"] != "" && (t.preVersion == "" || live["version"] != t.preVersion)))
 	engineDone := !wantEngine || live["goLibrespot"] == "present"
 	if !agentDone {
 		return false, "agent"

@@ -72,11 +72,11 @@ func TestUpdateTargetTruthTable(t *testing.T) {
 		{"older than this app, but not what ran before the push (a step back, or sideways)",
 			otaTruthTarget{sha: shaApp, build: appBuild, version: app, preBuild: "", preVersion: "v1.5.3"},
 			map[string]string{"version": old, "agentRunningSha256": shaOther},
-			"skip=no confirms=no classify=not-landed reached=yes"},
+			"skip=no confirms=no classify=not-landed reached=no:agent"},
 		{"a build stamp earlier than the one before the push",
 			otaTruthTarget{sha: shaApp, build: appBuild, version: app, preBuild: appBuild, preVersion: app},
 			map[string]string{"version": old, "build": oldBuild, "agentRunningSha256": shaOther},
-			"skip=no confirms=no classify=not-landed reached=yes"},
+			"skip=no confirms=no classify=not-landed reached=no:agent"},
 		{"newer than this app (another computer updated the speaker meanwhile)",
 			release,
 			map[string]string{"version": "v1.6.0", "build": "2026-11-20-0900", "agentRunningSha256": shaOther},
@@ -84,7 +84,7 @@ func TestUpdateTargetTruthTable(t *testing.T) {
 		{"this app's running checksum next to an older version string",
 			release,
 			map[string]string{"version": old, "build": oldBuild, "agentRunningSha256": shaApp},
-			"skip=no confirms=no classify=not-landed reached=yes"},
+			"skip=no confirms=no classify=not-landed reached=no:agent"},
 		{"this app's build stamp next to an older version string",
 			release,
 			map[string]string{"version": old, "build": appBuild},
@@ -191,7 +191,8 @@ func (tt otaTruthTarget) answers(v map[string]string) string {
 	skip := agentCurrentEngineMissing(noEngine, tt.version, tt.build, tt.sha)
 	confirms := updateConfirms(v, tt.sha, tt.build, tt.version, tt.preBuild, tt.preVersion)
 	verdict, _ := classifyAgentVersion(v, tt.sha, tt.build, tt.version)
-	done, missing := speakerReachedTarget(v, tt.preVersion, false, tt.sha)
+	// With the whole target, as the engine step asks it.
+	done, missing := otaTarget(tt).reached(v, false)
 	reached := yn(done)
 	if !done {
 		reached += ":" + missing
