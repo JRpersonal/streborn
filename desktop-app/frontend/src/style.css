@@ -1956,7 +1956,7 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .search-input-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .search-input-row input { flex: 1; min-width: 130px; background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 4px; padding: 8px; font-size: 13px; }
 .search-input-row input:focus { outline: none; border-color: var(--brand); }
-/* Wenn Suchfeld nicht leer ist (aktiver Filter) — visuell hervorheben */
+/* A search field that is not empty (an active filter) is highlighted. */
 .search-input-row input.has-query {
   border-color: var(--brand);
   background: var(--brand-bg);
@@ -2294,7 +2294,7 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ---------- Box Einstellungen View ---------- */
+/* ---------- Speaker settings view ---------- */
 #view-settings h2 { margin: 0 0 8px 0; color: var(--brand); font-size: 18px; }
 /* The library tab acts on one speaker (play, and presets are stored on it), so
    it carries the same speaker picker as speaker settings and shares its look. */

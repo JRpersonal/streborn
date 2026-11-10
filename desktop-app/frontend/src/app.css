@@ -65,10 +65,10 @@
   z-index: 60;
   max-width: min(92vw, 520px);
   padding: 9px 16px;
-  border: 1px solid var(--accent, #4a9eff);
+  border: 1px solid var(--brand);
   border-radius: 999px;
-  background: var(--card, #1e2530);
-  color: var(--fg, #e8eaed);
+  background: var(--c-surface);
+  color: var(--c-text);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -81,7 +81,7 @@
   height: 8px;
   margin-right: 8px;
   border-radius: 50%;
-  background: var(--accent, #4a9eff);
+  background: var(--brand);
   animation: ua-mini-pulse 1.4s ease-in-out infinite;
 }
 .ua-mini:hover { filter: brightness(1.12); }
