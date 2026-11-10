@@ -71,7 +71,7 @@ var (
 // RunningAsRescue reports whether this agent is the rescue agent a failed swap
 // started from RAM.
 func RunningAsRescue() bool {
-	r := otaRunningBinary()
+	r := productionOTAEffects.runningBinary()
 	return r != "" && filepath.Clean(r) == filepath.Clean(ramRescueBin)
 }
 

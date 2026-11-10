@@ -23,6 +23,8 @@ type helperRun struct {
 	dir                                string
 	bin, argsOut, pidFile, log, marker string
 	setupLog, crashLog                 string
+	// paths are the same files as the helpers see them.
+	paths otaPaths
 }
 
 // newHelperRun points every path the helpers touch at a temp dir and writes a
@@ -46,11 +48,10 @@ func newHelperRun(t *testing.T, body string) *helperRun {
 		setupLog: filepath.Join(dir, "setup.log"),
 		crashLog: filepath.Join(dir, "agent-crash.log"),
 	}
-	oldPID, oldLog, oldSetup, oldCrash, oldMarker := agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker
-	t.Cleanup(func() {
-		agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker = oldPID, oldLog, oldSetup, oldCrash, oldMarker
-	})
-	agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker = r.pidFile, r.log, r.setupLog, r.crashLog, r.marker
+	r.paths = otaPaths{
+		agentPIDFile: r.pidFile, agentLogPath: r.log, agentSetupLogPath: r.setupLog,
+		agentCrashLogPath: r.crashLog, agentHandOverMarker: r.marker,
+	}
 	script := "#!/bin/sh\necho \"$$ $*\" > " + shQuote(r.argsOut) + "\necho \"fake agent $$ says bye\"\n" + body + "\n"
 	if err := os.WriteFile(r.bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -112,7 +113,7 @@ func (r *helperRun) agentRan(t *testing.T) (pid string, args string) {
 // the way run.sh's own supervisor records one.
 func TestAgentRestartScriptSupervisesInShell(t *testing.T) {
 	r := newHelperRun(t, "exit 3")
-	r.run(t, agentRestartScript(goneAgentPID(t), r.bin, []string{"--listen-webui", ":8888", "--name", "it's"}), true)
+	r.run(t, r.paths.agentRestartScript(goneAgentPID(t), r.bin, []string{"--listen-webui", ":8888", "--name", "it's"}), true)
 	pid, args := r.agentRan(t)
 	if args != "--listen-webui :8888 --name it's" {
 		t.Errorf("new agent got flags %q", args)
@@ -139,7 +140,7 @@ func TestAgentRestartScriptHandOverIsNotACrash(t *testing.T) {
 	if err := os.WriteFile(r.bin, []byte("#!/bin/sh\necho \"$$ $*\" > "+shQuote(r.argsOut)+"\necho \"$$\" > "+shQuote(r.marker)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r.run(t, agentRestartScript(goneAgentPID(t), r.bin, nil), true)
+	r.run(t, r.paths.agentRestartScript(goneAgentPID(t), r.bin, nil), true)
 	r.agentRan(t)
 	if got := readFileTrim(r.setupLog) + readFileTrim(r.crashLog); got != "" {
 		t.Errorf("a hand-over was recorded as an exit: %q", got)
@@ -155,7 +156,7 @@ func TestAgentRestartScriptIgnoresStaleMarker(t *testing.T) {
 	if err := os.WriteFile(r.marker, []byte("1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r.run(t, agentRestartScript(goneAgentPID(t), r.bin, nil), true)
+	r.run(t, r.paths.agentRestartScript(goneAgentPID(t), r.bin, nil), true)
 	pid, _ := r.agentRan(t)
 	if !strings.Contains(readFileTrim(r.setupLog), "pid="+pid+"): code=2") {
 		t.Errorf("crash after a stale marker not recorded: %q", readFileTrim(r.setupLog))
@@ -169,7 +170,7 @@ func TestAgentRestartScriptStepsAsideWithoutTheClaim(t *testing.T) {
 	if err := os.WriteFile(r.pidFile, []byte("1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r.run(t, agentRestartScript(goneAgentPID(t), r.bin, nil), false)
+	r.run(t, r.paths.agentRestartScript(goneAgentPID(t), r.bin, nil), false)
 	if _, err := os.Stat(r.argsOut); err == nil {
 		t.Errorf("helper started an agent although the PID file was not its own")
 	}
@@ -201,8 +202,9 @@ func TestSwapHelperScriptRestartOnlyRunsInShell(t *testing.T) {
 	script := swapHelper{
 		agentPID: goneAgentPID(t), waitSec: 5,
 		stage: stage, dst: r.bin, size: int64(len(body)), sha: hex.EncodeToString(sum[:]),
-		finish:    superviseNewAgentLines(r.bin, []string{"--tls=true"}),
+		finish:    r.paths.superviseNewAgentLines(r.bin, []string{"--tls=true"}),
 		rescueBin: filepath.Join(r.dir, "rescue", "streborn-armv7l"), args: []string{"--tls=true"},
+		paths: r.paths,
 	}.script()
 	r.run(t, script, true)
 	pid, args := r.agentRan(t)

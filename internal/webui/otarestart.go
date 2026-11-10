@@ -116,8 +116,8 @@ func (st *otaState) updating() bool { return st.inFlight.Load() }
 // instead of rebooting after an update.
 const otaRestartOnlyWLANMode = "bco"
 
-// The on-box paths the hand-over touches, vars so tests can point them at a
-// temp dir. agentPIDFile is where run.sh keeps the PID its watchdogs kill -0;
+// otaPaths are the on-box paths the hand-over touches, a struct so a test can
+// point its server at a temp dir. agentPIDFile is where run.sh keeps the PID its watchdogs kill -0;
 // the restart helper claims it before this process exits, so the watchdog sees
 // a live agent throughout and never starts a second one next to it.
 // agentLogPath is run.sh's $LOG (the agent's stdout); agentSetupLogPath and
@@ -125,13 +125,13 @@ const otaRestartOnlyWLANMode = "bco"
 // an agent's exit in. agentHandOverMarker holds the PID of an agent that exits
 // for an update restart, on tmpfs, so its supervisor can tell that exit from a
 // crash.
-var (
-	agentPIDFile        = "/mnt/nv/streborn/agent.pid"
-	agentLogPath        = "/tmp/streborn-agent.log"
-	agentSetupLogPath   = "/mnt/nv/streborn/setup.log"
-	agentCrashLogPath   = "/mnt/nv/streborn/logs/agent-crash.log"
-	agentHandOverMarker = "/tmp/streborn-agent-handover"
-)
+type otaPaths struct {
+	agentPIDFile        string
+	agentLogPath        string
+	agentSetupLogPath   string
+	agentCrashLogPath   string
+	agentHandOverMarker string
+}
 
 // otaHandOverMinAgentAge is how old this agent must be before it hands over
 // without a reboot. run.sh's boot watchdog (Phase A) checks every 5 s for 24
@@ -153,17 +153,56 @@ const otaShutdownBackstop = 20 * time.Second
 // start_agent for otaHandOverMinAgentAge.
 var processStart = time.Now()
 
-// The outside effects of the hand-over, swapped out in tests.
-var (
-	otaWLANMode      = readWlanMode
-	otaRunningBinary = runningAgentBinary
-	otaReboot        = func() error { return exec.Command("reboot").Run() }
-	otaStartDetached = startDetachedShell
-	otaExit          = os.Exit
-	otaShutdown      = shutdownForRestart
-	otaAgentAge      = func() time.Duration { return time.Since(processStart) }
-	otaSleep         = time.Sleep
-)
+// otaEffects is everything the update does to, or reads from, the world
+// outside this process: the speaker's restart, the helper it leaves behind,
+// its own exit, the clock, and the paths. Production reads
+// productionOTAEffects; a test installs its own copy on the server
+// (Server.otaEffects) and so never restarts, exits or sleeps for real.
+type otaEffects struct {
+	paths otaPaths
+	// wlanMode is run.sh's wlan-mode record; runningBinary the path this
+	// process was started from.
+	wlanMode      func() string
+	runningBinary func() string
+	// reboot asks the speaker to reboot. startDetached leaves a helper script
+	// running that outlives this process and returns its PID.
+	reboot        func() error
+	startDetached func(script string) (int, error)
+	// exit ends the process at once (the reboot fallback); shutdown ends it
+	// cleanly (the agent-only restart).
+	exit     func(code int)
+	shutdown func()
+	// agentAge is how long this agent has been running; sleep waits.
+	agentAge func() time.Duration
+	sleep    func(time.Duration)
+}
+
+// productionOTAEffects is the update's outside world on a real speaker.
+var productionOTAEffects = otaEffects{
+	paths: otaPaths{
+		agentPIDFile:        "/mnt/nv/streborn/agent.pid",
+		agentLogPath:        "/tmp/streborn-agent.log",
+		agentSetupLogPath:   "/mnt/nv/streborn/setup.log",
+		agentCrashLogPath:   "/mnt/nv/streborn/logs/agent-crash.log",
+		agentHandOverMarker: "/tmp/streborn-agent-handover",
+	},
+	wlanMode:      readWlanMode,
+	runningBinary: runningAgentBinary,
+	reboot:        func() error { return exec.Command("reboot").Run() },
+	startDetached: startDetachedShell,
+	exit:          os.Exit,
+	shutdown:      shutdownForRestart,
+	agentAge:      func() time.Duration { return time.Since(processStart) },
+	sleep:         time.Sleep,
+}
+
+// otaFx returns the effects this server's updates run on.
+func (s *Server) otaFx() *otaEffects {
+	if s.otaEffects != nil {
+		return s.otaEffects
+	}
+	return &productionOTAEffects
+}
 
 // runningAgentBinary is the path this process was started from. Linux reports
 // a replaced binary as "<path> (deleted)", which is exactly the state after an
@@ -222,7 +261,7 @@ func selfRestartAfterOTA(wlanMode, running, dst string) bool {
 
 // otaRestartOnly decides the hand-over for this speaker and logs why.
 func (s *Server) otaRestartOnly(dst string) bool {
-	mode, running := otaWLANMode(), otaRunningBinary()
+	mode, running := s.otaFx().wlanMode(), s.otaFx().runningBinary()
 	if selfRestartAfterOTA(mode, running, dst) {
 		s.logger.Info("post-OTA: restarting the agent only, no box reboot (a soft reboot can leave this chassis dark until it is unplugged)",
 			"wlanMode", mode)
@@ -239,8 +278,8 @@ func (s *Server) otaRestartOnly(dst string) bool {
 
 // handOverDelay is how much longer this agent has to keep running before a
 // hand-over is out of reach of run.sh's boot watchdog.
-func handOverDelay() time.Duration {
-	if d := otaHandOverMinAgentAge - otaAgentAge(); d > 0 {
+func (s *Server) handOverDelay() time.Duration {
+	if d := otaHandOverMinAgentAge - s.otaFx().agentAge(); d > 0 {
 		return d
 	}
 	return 0
@@ -249,13 +288,13 @@ func handOverDelay() time.Duration {
 // waitOutBootWatchdog holds the hand-over until handOverDelay has passed. The
 // old agent keeps serving meanwhile, so the watchdog keeps seeing it bound.
 func (s *Server) waitOutBootWatchdog() {
-	d := handOverDelay()
+	d := s.handOverDelay()
 	if d <= 0 {
 		return
 	}
 	s.logger.Info("post-OTA: agent started moments ago, waiting before the restart so run.sh's boot watchdog does not start a second agent",
 		"waitSec", int(d.Round(time.Second).Seconds()))
-	otaSleep(d)
+	s.otaFx().sleep(d)
 }
 
 // shQuote quotes one word for sh.
@@ -277,17 +316,17 @@ func shQuote(a string) string {
 // or it sees the old agent's PID dead and respawns from the same NAND path.
 // An empty or missing file starts the agent regardless, because the slow
 // watchdog stops for good once the file is gone.
-func superviseNewAgentLines(bin string, args []string) string {
+func (p otaPaths) superviseNewAgentLines(bin string, args []string) string {
 	return fmt.Sprintf(`cur=$(cat %q 2>/dev/null)
 if [ -n "$cur" ] && [ "$cur" != "$$" ]; then exit 0; fi
-`, agentPIDFile) + superviseAgentLines(shQuote(bin), args)
+`, p.agentPIDFile) + p.superviseAgentLines(shQuote(bin), args)
 }
 
 // superviseAgentLines starts the agent named by binWord (a word already quoted
 // for sh, so a caller can pass a variable such as "$run") with args, writes its
 // PID into run.sh's PID file and waits for it, recording an exit that is not a
 // hand-over as superviseNewAgentLines describes. It has no guard of its own.
-func superviseAgentLines(binWord string, args []string) string {
+func (p otaPaths) superviseAgentLines(binWord string, args []string) string {
 	words := make([]string, 0, len(args)+1)
 	words = append(words, binWord)
 	for _, a := range args {
@@ -311,8 +350,8 @@ echo "[up=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)s] $(date): agent EXI
   tail -n 40 %[4]q 2>/dev/null
   echo ""
 } >> %[6]q 2>/dev/null`,
-		agentPIDFile, agentHandOverMarker, strings.Join(words, " "),
-		agentLogPath, agentSetupLogPath, agentCrashLogPath)
+		p.agentPIDFile, p.agentHandOverMarker, strings.Join(words, " "),
+		p.agentLogPath, p.agentSetupLogPath, p.agentCrashLogPath)
 }
 
 // agentRestartScript is the helper that replaces the box reboot on a
@@ -320,19 +359,19 @@ echo "[up=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)s] $(date): agent EXI
 // then start and supervise the new binary. No 70 s TIME_WAIT sleep as in the
 // reboot fallback: Go's listeners set SO_REUSEADDR, and the old process is
 // gone (its listeners closed) before the new one binds.
-func agentRestartScript(agentPID int, bin string, args []string) string {
+func (p otaPaths) agentRestartScript(agentPID int, bin string, args []string) string {
 	return fmt.Sprintf(`i=0
 while [ -d /proc/%d ] && [ "$i" -lt 30 ]; do sleep 1; i=$((i+1)); done
 if [ -d /proc/%d ]; then kill -9 %d 2>/dev/null; sleep 3; fi
 sleep 2
-%s`, agentPID, agentPID, agentPID, superviseNewAgentLines(bin, args))
+%s`, agentPID, agentPID, agentPID, p.superviseNewAgentLines(bin, args))
 }
 
 // claimAgentPIDFile writes the helper's PID into run.sh's PID file. Best
 // effort: without it the helper steps aside and run.sh's watchdog starts the
 // new binary within 90 s (superviseNewAgentLines).
 func (s *Server) claimAgentPIDFile(pid int) {
-	if err := os.WriteFile(agentPIDFile, []byte(strconv.Itoa(pid)+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(s.otaFx().paths.agentPIDFile, []byte(strconv.Itoa(pid)+"\n"), 0o644); err != nil {
 		s.logger.Warn("post-OTA: could not hand run.sh's PID file to the restart helper; its watchdog starts the agent instead",
 			"helperPID", pid, "err", err)
 	}
@@ -346,8 +385,8 @@ func (s *Server) claimAgentPIDFile(pid int) {
 // and the clean shutdown after it. Teaching run.sh to read the marker waits
 // for a release that changes run.sh anyway: any run.sh change costs every
 // other chassis a bootstrap reboot (cmd/agent maybeRebootAfterBootstrapSync).
-func markHandOver() {
-	_ = os.WriteFile(agentHandOverMarker, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
+func (s *Server) markHandOver() {
+	_ = os.WriteFile(s.otaFx().paths.agentHandOverMarker, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
 }
 
 // stopEngineForRestart stops the supervised Spotify engine before the agent
@@ -366,11 +405,11 @@ func (s *Server) stopEngineForRestart() {
 func (s *Server) handOverAndExit(helperPID int, then string) {
 	if helperPID > 0 {
 		s.claimAgentPIDFile(helperPID)
-		markHandOver()
+		s.markHandOver()
 	}
 	s.stopEngineForRestart()
 	s.logger.Info("exiting for an agent update, not a crash; "+then, "helperPID", helperPID)
-	otaShutdown()
+	s.otaFx().shutdown()
 }
 
 // agentArgs are the flags run.sh started this agent with, which the new one
@@ -385,7 +424,8 @@ func agentArgs() []string {
 // restartAgentAfterOTA is the hand-over without a box reboot.
 func (s *Server) restartAgentAfterOTA(dst string) {
 	s.waitOutBootWatchdog()
-	pid, err := otaStartDetached(agentRestartScript(os.Getpid(), dst, agentArgs()))
+	fx := s.otaFx()
+	pid, err := fx.startDetached(fx.paths.agentRestartScript(os.Getpid(), dst, agentArgs()))
 	if err != nil {
 		// The watchdog in run.sh respawns an agent that is gone, from the same
 		// NAND path, within its 90 s cadence.
@@ -424,7 +464,7 @@ func (s *Server) finishAgentOTA(dst string) otaHandOver {
 		s.restartAgentAfterOTA(dst)
 		return otaHandOverExiting
 	}
-	err := otaReboot()
+	err := s.otaFx().reboot()
 	if err == nil {
 		return otaHandOverRebooting
 	}
@@ -446,13 +486,13 @@ func (s *Server) selfRestartFallback() bool {
 	for _, a := range os.Args {
 		quoted = append(quoted, shQuote(a))
 	}
-	shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> " + agentLogPath + " 2>&1"
-	if _, serr := otaStartDetached(shCmd); serr != nil {
+	shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> " + s.otaFx().paths.agentLogPath + " 2>&1"
+	if _, serr := s.otaFx().startDetached(shCmd); serr != nil {
 		s.logger.Error("self-restart fallback also failed", "err", serr)
 		return false
 	}
 	time.Sleep(100 * time.Millisecond)
-	otaExit(0)
+	s.otaFx().exit(0)
 	return true
 }
 
@@ -466,7 +506,7 @@ func (s *Server) settleOTAHandOver(h otaHandOver, stopSplash func()) {
 	case otaHandOverExiting:
 		return
 	case otaHandOverRebooting:
-		otaSleep(otaRebootGrace)
+		s.otaFx().sleep(otaRebootGrace)
 		s.logger.Error("post-OTA: the reboot was accepted but this agent still runs, falling back to process self-restart",
 			"graceSec", int(otaRebootGrace/time.Second))
 		if s.selfRestartFallback() {

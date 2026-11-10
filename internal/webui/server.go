@@ -50,6 +50,9 @@ type Server struct {
 	// ota is the agent update's state (otarestart.go); nil = processOTAState,
 	// the one of this process. Tests install their own.
 	ota *otaState
+	// otaEffects is the update's outside world: restart, helper, exit, clock,
+	// paths (otarestart.go); nil = productionOTAEffects.
+	otaEffects *otaEffects
 	// phoneRun is the claim of the phone that walks such a run itself
 	// (selfupdate_phone.go).
 	phoneRun phoneRun
