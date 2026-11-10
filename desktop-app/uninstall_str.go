@@ -35,6 +35,10 @@ type UninstallSTRResult struct {
 	// false: this is neither a success nor a removal that did nothing.
 	Incomplete    bool     `json:"incomplete"`
 	LeftoverFiles []string `json:"leftoverFiles"`
+	// StillInstalled: nothing effective came off, STR starts again on the
+	// restart that follows. LeftoverFiles lists what is still there. The
+	// frontend has its own translated sentence for it.
+	StillInstalled bool `json:"stillInstalled"`
 }
 
 // UninstallSTR removes STR from the speaker and returns it to vanilla
@@ -82,6 +86,28 @@ type UninstallSTRResult struct {
 // when both rc.local and run-override.sh survived, so STR would come back on
 // the next boot.
 //
+// A lost connection must not leave a stopped speaker behind. Once the run
+// script and the agent are killed nothing on the speaker starts them again, so
+// a session that drops between "stopped" and the app's reboot used to end in
+// a speaker with STR half removed and nothing running until someone pulled
+// the plug. Two things close that:
+//
+//   - BEFORE the first kill the script arms its own restart, a detached
+//     subshell that reboots the speaker uninstallGuardSeconds after the start,
+//     whatever happens to the session. It ignores HUP and holds no handle of
+//     the session, the same detached form as rebootCmd. The app's own reboot
+//     (one second, right after the script reports) normally comes first and
+//     takes the guard down with everything else; the guard is what is left
+//     when the app never gets to send it. It is NOT armed on the stick-present
+//     refusal, which touches nothing.
+//   - the script itself ignores HUP and PIPE, so it finishes the removal and
+//     the verification instead of dying at its next echo into a dead session.
+//
+// The guard's own command line is this script's (a subshell does not exec),
+// so stop_supervisors skips it like it skips the script's shell. The
+// stick-present marker stays in the first lines for the same reason: the
+// kernel hands out only the first page of a command line.
+//
 // BusyBox v1.19 on the speaker: killall and pidof with several names, no
 // pkill -f, no sed -E.
 const uninstallScript = `set -u
@@ -89,6 +115,12 @@ if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /medi
   echo "STR_UNINSTALL_ABORT_STICK_PRESENT"
   exit 0
 fi
+# A dropped session must not end this run halfway.
+trap '' HUP PIPE
+# Restart guard, armed before anything is stopped: whatever happens to this
+# session from here on, the speaker reboots by itself.
+(trap '' HUP; sleep 120; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &
+echo "STR_UNINSTALL_GUARD_ARMED"
 REMOVED=""
 SUP=0
 # Kill the run script's shells: the main one, its watchdog loops and the
@@ -176,8 +208,49 @@ fi
 echo "STR_UNINSTALL_REMOVED:$REMOVED"
 `
 
+// uninstallScriptTimeout bounds the script run from the app's side. The
+// script stops everything first and waits for it, bounded: up to ~15 s of
+// waiting plus the retries of a removal that does not go through.
+const uninstallScriptTimeout = 90 * time.Second
+
+// uninstallGuardSeconds is the delay of the restart guard inside
+// uninstallScript (the "sleep 120" there; a test keeps the two in step). It is
+// longer than uninstallScriptTimeout on purpose: while the app still waits for
+// the script, the guard must not pull the speaker away under it.
+const uninstallGuardSeconds = 120
+
+// uninstallGuardArmedMarker is what the script prints once its restart guard
+// is armed. From that line on the speaker reboots by itself.
+const uninstallGuardArmedMarker = "STR_UNINSTALL_GUARD_ARMED"
+
+// uninstallInterruptedMessage is the text for a script run the app lost: the
+// SSH call failed or timed out, or the script ended without its report.
+// armed says whether the output still showed the restart guard going up.
+func uninstallInterruptedMessage(cause string, armed bool) string {
+	if armed {
+		return "The removal was interrupted (" + cause + "). The speaker restarts by itself within about " +
+			"two minutes, so it does not stay stopped. Wait until it is back, then check it: if it still " +
+			"shows STR, run Remove again."
+	}
+	return "uninstall failed: " + cause + ". If the removal had already begun, the speaker restarts by " +
+		"itself within about two minutes. Wait until it is back, then run Remove again."
+}
+
+// stashedPresetsNote is the sentence about the preset keys kept on this PC,
+// empty when none were kept.
+func stashedPresetsNote(stashed int) string {
+	if stashed <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" Its %d preset keys were kept on this PC and go back onto the speaker "+
+		"the next time STR is installed on it from this app.", stashed)
+}
+
 // uninstallReport is what uninstallScript said about its run.
 type uninstallReport struct {
+	// guardArmed: the script armed its restart guard, so it got past the
+	// stick check and the speaker reboots by itself.
+	guardArmed bool
 	// stickPresent: the script refused, the STR stick is still inserted.
 	stickPresent bool
 	// alreadyClean: nothing was there to remove and nothing is left.
@@ -201,6 +274,8 @@ func parseUninstallOutput(out string) uninstallReport {
 		switch {
 		case line == "STR_UNINSTALL_ABORT_STICK_PRESENT":
 			r.stickPresent = true
+		case line == uninstallGuardArmedMarker:
+			r.guardArmed = true
 		case line == "STR_UNINSTALL_ALREADY_CLEAN":
 			r.alreadyClean = true
 		case line == "STR_UNINSTALL_STILL_STARTS":
@@ -371,15 +446,24 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// /media/sda1), so we never remove STR only to have Bose reinstall it
 	// from the stick on the next boot.
 	res.Step = "uninstall"
-	// The script stops everything first and waits for it, bounded: up to ~15 s
-	// of waiting plus the retries of a removal that does not go through.
-	out, err := boxSSHOutput(host, uninstallScript, 90*time.Second)
+	out, err := boxSSHOutput(host, uninstallScript, uninstallScriptTimeout)
 	res.Log = out
-	if err != nil {
-		res.Message = "uninstall failed: " + classifySSHError(out, err)
+	rep := parseUninstallOutput(out)
+	if err != nil && !rep.stickPresent {
+		// The call failed or timed out, and nobody knows how far the script
+		// got. If it was past its first kill, STR is stopped on the speaker and
+		// nothing there starts it again. The script's own restart guard covers
+		// that; a reboot from here as well gets the speaker back sooner when
+		// SSH still answers. Restarting a speaker the script never touched
+		// costs a minute and nothing else. A stick-present refusal is the one
+		// answer that needs no reboot; it is handled below as usual.
+		res.Step = "interrupted"
+		res.Message = uninstallInterruptedMessage(classifySSHError(out, err), rep.guardArmed)
+		a.logger.Warn("uninstall_str: the script run was lost; rebooting the speaker so it does not stay stopped",
+			"host", host, "guardArmed", rep.guardArmed, "err", err, "log", out)
+		_ = boxReboot(host)
 		return res
 	}
-	rep := parseUninstallOutput(out)
 	if rep.stickPresent {
 		res.StickPresent = true
 		res.Step = "stick-present"
@@ -407,7 +491,13 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	alreadyClean := outcome == uninstallClean
 	switch outcome {
 	case uninstallSilent:
-		res.Message = "uninstall returned no removed-file list — script may have failed silently. See log."
+		// The script ended without its report, so it may have died after it
+		// stopped STR. Same answer as a lost call: restart the speaker.
+		res.Step = "interrupted"
+		res.Message = uninstallInterruptedMessage("the script ended without its report, see the log", rep.guardArmed)
+		a.logger.Warn("uninstall_str: the script ended without its report; rebooting the speaker so it does not stay stopped",
+			"host", host, "guardArmed", rep.guardArmed, "log", out)
+		_ = boxReboot(host)
 		return res
 	case uninstallStillInstalled:
 		// Nothing that matters came off: rc.local and the run script are both
@@ -417,6 +507,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		// agent that opens SSH for the next attempt. The app keeps remembering
 		// the speaker as the STR speaker it still is.
 		res.Step = "leftover"
+		res.StillInstalled = true
 		res.Message = uninstallLeftoverMessage(rep)
 		a.logger.Warn("uninstall_str: nothing effective was removed, STR still starts; rebooting so it comes back",
 			"host", host, "leftover", rep.leftover, "removed", rep.removed, "log", out)
@@ -454,7 +545,9 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 
 	if res.Incomplete {
 		res.Step = "incomplete"
-		res.Message = uninstallLeftoverMessage(rep)
+		// The preset keys were stashed before the script ran, and a fresh
+		// install starts with a new store, so the note applies here too.
+		res.Message = uninstallLeftoverMessage(rep) + stashedPresetsNote(stashed)
 		a.logger.Info("uninstall_str: done, incomplete", "host", host, "leftover", rep.leftover)
 		return res
 	}
@@ -471,10 +564,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		"factory Bose state. Wait ~60 s. The speaker no longer runs STR; onboard it again "+
 		"with the Bose iOS app, or re-insert a prepared STR stick to bring STR back.",
 		len(res.RemovedFiles))
-	if stashed > 0 {
-		res.Message += fmt.Sprintf(" Its %d preset keys were kept on this PC and go back onto the speaker "+
-			"the next time STR is installed on it from this app.", stashed)
-	}
+	res.Message += stashedPresetsNote(stashed)
 	a.logger.Info("uninstall_str: done", "host", host, "removedCount", len(res.RemovedFiles))
 	return res
 }

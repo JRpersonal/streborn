@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Remove reported "STR removed (1 entries)" on a SoundTouch 10 on 2026-11-10
@@ -105,10 +107,15 @@ func (sb *uninstallSandbox) events() string {
 //	recreate      N: a straggler writes setup.log back into the STR folder
 //	              after each of the next N removals of that folder
 //	rm-refuses    removing the STR folder or rc.local does nothing at all
+//
+// The reboot (/sbin/reboot in the script, rewritten by run) leaves the file
+// "rebooted" behind. sleep returns at once, so the restart guard fires right
+// away instead of after its two minutes.
 const uninstallSandboxStubs = `SB=%[1]s
 NV=%[2]s
 sleep() { :; }
 sync() { :; }
+str_test_reboot() { echo reboot > "$SB/rebooted"; }
 umount() { return 0; }
 kill() {
   echo "kill $2" >> "$SB/events"
@@ -145,24 +152,63 @@ rm() {
 // run executes uninstallScript inside the sandbox and returns its output.
 func (sb *uninstallSandbox) run() string {
 	sb.t.Helper()
+	out, err := exec.Command(sb.sh, sb.scriptFile()).CombinedOutput()
+	if err != nil {
+		sb.t.Fatalf("the script did not run to its end: %v\n%s", err, out)
+	}
+	// Every run that got past the stick check has armed its restart guard,
+	// and the guard is detached: wait for it here, so it is checked on every
+	// run and never writes into a sandbox the test is already cleaning up.
+	if !parseUninstallOutput(string(out)).stickPresent && !sb.waitRebooted() {
+		sb.t.Fatalf("the script armed no restart guard, or the guard never rebooted\n%s", out)
+	}
+	return string(out)
+}
+
+// scriptFile writes uninstallScript into the sandbox, with the paths rewritten
+// and the stubs in front, and returns the file.
+func (sb *uninstallSandbox) scriptFile() string {
+	sb.t.Helper()
 	script := uninstallScript
 	for _, r := range [][2]string{
 		{"/mnt/nv", sb.nv},
 		{"/media/sd", sb.media + "/sd"},
 		{"/proc/", sb.proc + "/"},
+		{"/sbin/reboot", "str_test_reboot"},
 	} {
 		script = strings.ReplaceAll(script, r[0], r[1])
+	}
+	// The script must never reach a real reboot on the machine running the
+	// tests: every reboot in it has to be the one spelling rewritten above.
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.Contains(strings.ReplaceAll(line, "str_test_reboot", ""), "reboot") {
+			sb.t.Fatalf("the script reboots in a spelling the sandbox does not stub: %q", line)
+		}
 	}
 	stubs := strings.ReplaceAll(strings.ReplaceAll(uninstallSandboxStubs, "%[1]s", sb.root), "%[2]s", sb.nv)
 	file := sb.root + "/uninstall.sh"
 	if err := os.WriteFile(file, []byte(stubs+script), 0o755); err != nil {
 		sb.t.Fatal(err)
 	}
-	out, err := exec.Command(sb.sh, file).CombinedOutput()
-	if err != nil {
-		sb.t.Fatalf("the script did not run to its end: %v\n%s", err, out)
+	return file
+}
+
+// waitRebooted reports whether the sandboxed speaker "rebooted" (the stub
+// left its file), waiting a little for the detached guard.
+func (sb *uninstallSandbox) waitRebooted() bool {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if b, _ := os.ReadFile(sb.root + "/rebooted"); strings.Contains(string(b), "reboot") {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	return string(out)
 }
 
 func TestUninstallScriptRemovesEverythingAndStopsTheWritersFirst(t *testing.T) {
@@ -348,7 +394,176 @@ func TestUninstallScriptOnACleanSpeakerAndWithTheStickIn(t *testing.T) {
 		if sb.events() != "" || !sb.exists(sb.root+"/running") {
 			t.Errorf("the script stopped or removed something before refusing:\n%s", sb.events())
 		}
+		// A refusal touches nothing, so it must not restart the speaker either.
+		time.Sleep(300 * time.Millisecond)
+		if parseUninstallOutput(out).guardArmed || sb.exists(sb.root+"/rebooted") {
+			t.Errorf("the refusal armed the restart guard; the speaker would reboot for nothing\n%s", out)
+		}
 	})
+}
+
+// A review of the first version found the hole these tests close: the script
+// kills the run script and the agent, and if the SSH call then fails or times
+// out the app returned without a reboot. Nothing on the speaker starts STR
+// again, so it sat there half removed and silent until a power cycle.
+
+// The guard is armed after the stick check and before the first kill, and it
+// outlasts the app's own wait for the script.
+func TestUninstallScriptArmsItsRestartBeforeItStopsAnything(t *testing.T) {
+	guard := strings.Index(uninstallScript, "/sbin/reboot")
+	stick := strings.Index(uninstallScript, "STR_UNINSTALL_ABORT_STICK_PRESENT")
+	firstStop := strings.Index(uninstallScript, "\nstop_supervisors\n")
+	firstKillall := strings.Index(uninstallScript, "\nkillall ")
+	if guard < 0 || stick < 0 || firstStop < 0 || firstKillall < 0 {
+		t.Fatal("uninstallScript no longer has the shape this test reads")
+	}
+	if guard < stick {
+		t.Error("the restart guard is armed before the stick check; a refusal would reboot the speaker")
+	}
+	if guard > firstStop || guard > firstKillall {
+		t.Error("the restart guard is armed after the script starts killing; a session lost in between leaves the speaker stopped")
+	}
+	if strings.Count(uninstallScript, "/sbin/reboot") != 1 {
+		t.Error("the script is expected to carry exactly one reboot, the guard")
+	}
+
+	line := uninstallScript[strings.LastIndex(uninstallScript[:guard], "\n")+1:]
+	line = line[:strings.Index(line, "\n")]
+	// Detached like rebootCmd: no handle of the SSH session, in the
+	// background, and deaf to the hangup of a closing session.
+	for _, want := range []string{"trap '' HUP", "sync;", "</dev/null >/dev/null 2>&1 &"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the guard line %q lacks %q", line, want)
+		}
+	}
+	if want := fmt.Sprintf("sleep %d;", uninstallGuardSeconds); !strings.Contains(line, want) {
+		t.Errorf("the guard line %q does not wait uninstallGuardSeconds (%q)", line, want)
+	}
+	if time.Duration(uninstallGuardSeconds)*time.Second <= uninstallScriptTimeout {
+		t.Error("the guard fires while the app still waits for the script")
+	}
+	// The script's own shell is told apart from the run script by a marker in
+	// its command line, and the kernel hands out only the first page of it.
+	if stick > 1024 {
+		t.Error("the first marker sits too deep in the script to be in its /proc cmdline")
+	}
+
+	sb := newUninstallSandbox(t)
+	sb.install()
+	out := sb.run() // run fails the test when no reboot follows
+	if !parseUninstallOutput(out).guardArmed {
+		t.Errorf("the script did not report its restart guard\n%s", out)
+	}
+}
+
+// The session dies under the script: its output goes nowhere from the first
+// line on. The removal still runs to its end and the speaker still restarts.
+func TestUninstallScriptFinishesAndRestartsWhenTheSessionDrops(t *testing.T) {
+	sb := newUninstallSandbox(t)
+	sb.install()
+	sb.write(sb.root+"/running", "")
+	sb.process("101", "/bin/sh", sb.nv+"/streborn/run-override.sh")
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Close() // nobody reads: every echo of the script hits a dead pipe
+	cmd := exec.Command(sb.sh, sb.scriptFile())
+	cmd.Stdout = w
+	cmd.Stderr = w
+	runErr := cmd.Run()
+	_ = w.Close()
+	if runErr != nil {
+		t.Logf("the script ended with %v (its last echo failed, as expected)", runErr)
+	}
+
+	if !sb.waitRebooted() {
+		t.Fatalf("the speaker was left stopped: no reboot after the session dropped\nevents:\n%s", sb.events())
+	}
+	if sb.exists(sb.proc+"/101") || sb.exists(sb.root+"/running") {
+		t.Errorf("the script died before it stopped STR:\n%s", sb.events())
+	}
+	for _, p := range []string{"/streborn", "/rc.local"} {
+		if sb.exists(sb.nv + p) {
+			t.Errorf("%s is still there: the script died with the session instead of finishing\n%s", p, sb.events())
+		}
+	}
+}
+
+// The app's side of the same hole, read from the source because the function
+// needs a speaker behind SSH: a lost script run and a script that ended
+// without its report both restart the speaker before they return.
+func TestUninstallSTRRestartsTheSpeakerWhenTheScriptRunIsLost(t *testing.T) {
+	b, err := os.ReadFile("uninstall_str.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := strings.ReplaceAll(string(b), "\r\n", "\n")
+	fn := src[strings.Index(src, "func (a *App) UninstallSTR(host string)"):]
+	fn = fn[:strings.Index(fn, "\nfunc ")]
+
+	start := strings.Index(fn, "if err != nil && !rep.stickPresent {")
+	if start < 0 {
+		t.Fatal("UninstallSTR no longer has the shape this test reads")
+	}
+	lost := fn[start:]
+	lost = lost[:strings.Index(lost, "\n\t}\n")]
+	if !strings.Contains(lost, "boxReboot(host)") || !strings.Contains(lost, "return res") {
+		t.Error("a failed or timed-out script run returns without restarting the speaker")
+	}
+	if strings.Contains(lost, "res.OK = true") || strings.Contains(lost, "markHostStock") {
+		t.Error("a lost script run is treated as a removal")
+	}
+
+	silent := fn[strings.Index(fn, "case uninstallSilent:"):strings.Index(fn, "case uninstallStillInstalled:")]
+	if !strings.Contains(silent, "boxReboot(host)") || !strings.Contains(silent, "return res") {
+		t.Error("a script that ended without its report returns without restarting the speaker")
+	}
+
+	for _, armed := range []bool{true, false} {
+		msg := uninstallInterruptedMessage("connection lost", armed)
+		for _, want := range []string{"connection lost", "restarts by itself", "two minutes", "Remove again"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("armed=%v: the message %q lacks %q", armed, msg, want)
+			}
+		}
+		if strings.Contains(msg, "STR removed") {
+			t.Errorf("armed=%v: the message reads like a success: %q", armed, msg)
+		}
+	}
+}
+
+// The result tells the frontend which of the two leftover outcomes it is, and
+// an incomplete removal mentions the kept preset keys like a full one does.
+func TestUninstallSTRMarksStillInstalledAndKeepsThePresetNote(t *testing.T) {
+	b, err := os.ReadFile("uninstall_str.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := strings.ReplaceAll(string(b), "\r\n", "\n")
+	fn := src[strings.Index(src, "func (a *App) UninstallSTR(host string)"):]
+	fn = fn[:strings.Index(fn, "\nfunc ")]
+
+	still := fn[strings.Index(fn, "case uninstallStillInstalled:"):strings.Index(fn, "case uninstallIncomplete:")]
+	if !strings.Contains(still, "res.StillInstalled = true") {
+		t.Error("the still-installed outcome is not marked in the result")
+	}
+	if strings.Count(fn, "res.StillInstalled = true") != 1 {
+		t.Error("StillInstalled is set outside its own outcome")
+	}
+	incomplete := fn[strings.Index(fn, "if res.Incomplete {"):]
+	incomplete = incomplete[:strings.Index(incomplete, "return res")]
+	if !strings.Contains(incomplete, "uninstallLeftoverMessage(rep) + stashedPresetsNote(stashed)") {
+		t.Error("an incomplete removal does not say that the preset keys were kept")
+	}
+
+	if got := stashedPresetsNote(0); got != "" {
+		t.Errorf("no keys kept, but the note says %q", got)
+	}
+	if got := stashedPresetsNote(6); !strings.Contains(got, "6 preset keys were kept on this PC") {
+		t.Errorf("the note for six kept keys reads %q", got)
+	}
 }
 
 func TestUninstallOutcome(t *testing.T) {
