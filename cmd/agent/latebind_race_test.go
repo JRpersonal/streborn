@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"runtime"
 	"sync"
 	"testing"
@@ -109,4 +112,62 @@ func TestLateBoundHooksAreRaceFreeAgainstRunningReaders(t *testing.T) {
 	if got := peerSelfName(); got != "Kitchen" {
 		t.Errorf("peerSelfName() = %q, want the trimmed announcer name", got)
 	}
+}
+
+// The native-preset logger is bound in wireLate, long after buildMedia has
+// started the reconcile goroutines, and the reconcile's pass reads it on every
+// native-readiness verdict (nativePresetLocation -> nativeRadioReady) and on
+// every lost native write (disableNativePresets). As a plain package variable
+// that was a write in run() against a read in the loop with nothing ordering
+// them. This reads it the way the pass does while it is bound the way
+// wireLate binds it. Run with -race, where a plain assignment fails it.
+func TestNativeReadyLoggerIsRaceFreeAgainstARunningReconcile(t *testing.T) {
+	prev := nativeLogger()
+	nativeReady.Lock()
+	prevChecked, prevOK := nativeReady.checked, nativeReady.ok
+	nativeReady.Unlock()
+	t.Cleanup(func() {
+		setNativeReadyLogger(prev)
+		nativeReady.Lock()
+		nativeReady.checked, nativeReady.ok = prevChecked, prevOK
+		nativeReady.Unlock()
+	})
+	setNativeReadyLogger(nil)
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	stop := make(chan struct{})
+	var reader, started sync.WaitGroup
+	reader.Add(1)
+	started.Add(1)
+	go func() {
+		defer reader.Done()
+		first := true
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			// A forced pass drops the cached verdict and asks again; with no
+			// box host the probe answers at once and the verdict is logged.
+			invalidateNativeRadioReady()
+			nativeRadioReady(context.Background(), "")
+			if first {
+				first = false
+				started.Done()
+			}
+		}
+	}()
+	started.Wait()
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for i := 0; time.Now().Before(deadline); i++ {
+		if i%2 == 0 {
+			setNativeReadyLogger(quiet)
+		} else {
+			setNativeReadyLogger(nil)
+		}
+		runtime.Gosched()
+	}
+	close(stop)
+	reader.Wait()
 }

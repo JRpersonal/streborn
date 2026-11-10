@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -96,7 +97,7 @@ func disableNativePresets(reason string) {
 		nativeReady.disabledAt = nativeNow()
 	}
 	nativeReady.Unlock()
-	l := nativeReadyLogger
+	l := nativeLogger()
 	if l == nil || already {
 		return
 	}
@@ -175,7 +176,7 @@ func noteNativeStreamDropped() {
 	// speaker had done nothing wrong. Same reasoning as nativeDropIsOurOwnWrite
 	// on the write side.
 	if slot, ago, ok := lastSlotMiss(); ok && ago < nativeDropOwnMissWindow {
-		if l := nativeReadyLogger; l != nil {
+		if l := nativeLogger(); l != nil {
 			l.Info("native presets: the station was dropped after our own proxy refused the fetch, not counting it against the speaker",
 				"slot", slot, "ago", ago.Round(time.Millisecond))
 		}
@@ -194,7 +195,7 @@ func noteNativeStreamDropped() {
 	// which also makes its now-playing report isPresetable=false. The latch is
 	// for a speaker that abandons audio it was actually given.
 	if since, ok := nothingDelivered(); ok {
-		if l := nativeReadyLogger; l != nil {
+		if l := nativeLogger(); l != nil {
 			l.Info("native presets: the station was dropped without a single byte ever arriving, so this is not the speaker refusing it",
 				"waitingFor", since.Round(time.Second))
 		}
@@ -217,7 +218,7 @@ func noteNativeStreamDropped() {
 	if disabled, _ := nativePresetsDisabled(); disabled {
 		return
 	}
-	if l := nativeReadyLogger; l != nil {
+	if l := nativeLogger(); l != nil {
 		l.Warn("native presets: this speaker keeps dropping the station it just started, switching its presets back to the slower form that works here",
 			"drops", n)
 	}
@@ -270,7 +271,7 @@ func expireNativeLatchLocked() {
 	// Re-probe: the verdict that put the slots on the slower form is stale now.
 	nativeReady.checked = time.Time{}
 	resetNativeDrops()
-	if l := nativeReadyLogger; l != nil {
+	if l := nativeLogger(); l != nil {
 		l.Info("native presets: the fallback has had its hour, trying the native form again",
 			"coolOff", nativeLatchCoolOff, "latchedBecause", was)
 	}
@@ -356,7 +357,7 @@ func nativeRadioReady(ctx context.Context, boxHost string) bool {
 	// a bundle that only shows UPnP presets cannot say whether the box refused
 	// the radio source or the agent never asked. Log every change, and the
 	// first answer either way.
-	if l := nativeReadyLogger; l != nil && (first || was != nativeReady.ok) {
+	if l := nativeLogger(); l != nil && (first || was != nativeReady.ok) {
 		if nativeReady.ok {
 			l.Info("native presets: the box has LOCAL_INTERNET_RADIO registered, storing hardware presets natively")
 		} else {
@@ -369,10 +370,18 @@ func nativeRadioReady(ctx context.Context, boxHost string) bool {
 // nativeReadyLogger is set once at agent start. A package-level logger keeps
 // nativePresetLocation callable from the three preset-sync sites without
 // threading a logger through each of them.
-var nativeReadyLogger *slog.Logger
+//
+// Atomic because "at agent start" is wireLate, and by then the preset
+// reconcile and the initial sync (started in buildMedia) are already running
+// and read it on every readiness verdict and every lost native write. Read it
+// through nativeLogger.
+var nativeReadyLogger atomic.Pointer[slog.Logger]
 
-// SetNativeReadyLogger wires the logger used for the native-preset verdict.
-func setNativeReadyLogger(l *slog.Logger) { nativeReadyLogger = l }
+// setNativeReadyLogger wires the logger used for the native-preset verdict.
+func setNativeReadyLogger(l *slog.Logger) { nativeReadyLogger.Store(l) }
+
+// nativeLogger is the wired logger, nil until setNativeReadyLogger ran.
+func nativeLogger() *slog.Logger { return nativeReadyLogger.Load() }
 
 // invalidateNativeRadioReady drops the cached verdict so the next preset sync
 // re-probes. Called when the box re-associates, since that is when the source
