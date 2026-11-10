@@ -525,6 +525,75 @@ func TestEngineNotPushedWhenAddressTakenWhileQueued(t *testing.T) {
 	}
 }
 
+// engineOnlyAfterLeaseSwap runs an engine-only fleet row for speaker A at
+// addrOld, where speaker B takes the address while the row waits in the gate.
+func engineOnlyAfterLeaseSwap(t *testing.T, mf *movingFake) (UpdateOutcome, []string, []string) {
+	t.Helper()
+	var flipped atomic.Bool
+	mf.answer = func(host string, _ time.Duration) (map[string]string, error) {
+		switch {
+		case host == addrOld && flipped.Load():
+			return speakerB(), nil
+		case host == addrOld, host == addrNew && flipped.Load() && mf.locate != nil:
+			return mf.speakerANew(host), nil
+		}
+		return nil, errUnreachable
+	}
+	s := mf.seams()
+	emit := s.emit
+	s.emit = func(p updatePhase) {
+		if p.Phase == phaseEngineQueued {
+			flipped.Store(true)
+		}
+		emit(p)
+	}
+	var mu sync.Mutex
+	var cleared []string
+	s.recordIntent = func(string, int, string, string) {}
+	s.clearIntent = func(host string, _ int) {
+		mu.Lock()
+		defer mu.Unlock()
+		cleared = append(cleared, host)
+	}
+	u := &speakerUpdater{host: addrOld, port: 8888, deviceID: idA, name: "Kitchen",
+		seams: s, policy: otaProductionPolicy, gate: newUploadGate(1),
+		ident: speakerIdentity{hints: []string{idA}}}
+	out := u.runEngineOnly()
+	return out, mf.engines, cleared
+}
+
+// An engine-only row waits in the same gate as every other push, so it asks
+// the speaker who it is right before sending, like the update rows do. It
+// used to send to the address it started with, whoever answered there.
+func TestEngineOnlyRowNeverPushesToAnotherSpeaker(t *testing.T) {
+	out, engines, cleared := engineOnlyAfterLeaseSwap(t, newMovingFake())
+	if len(engines) != 0 {
+		t.Fatalf("engine pushed to %v after another speaker took the address in the queue", engines)
+	}
+	if out.Outcome != outcomePartial || out.Unmet != unmetSpotifyEngine || out.EngineDelivered {
+		t.Errorf("row = %+v, want partial with the engine still missing", out)
+	}
+	if out.Version != nil {
+		t.Errorf("the row carries %q's version, want none: it is another speaker's answer", out.Version["mdnsName"])
+	}
+	if len(cleared) != 0 {
+		t.Errorf("the update record was cleared (%v) although the engine never reached this speaker", cleared)
+	}
+}
+
+// Found at its new address, the speaker gets the engine there.
+func TestEngineOnlyRowFollowsTheSpeaker(t *testing.T) {
+	mf := newMovingFake()
+	mf.locate = func(speakerIdentity, string, bool) (string, int, bool) { return addrNew, 8888, true }
+	out, engines, _ := engineOnlyAfterLeaseSwap(t, mf)
+	if len(engines) != 1 || engines[0] != addrNew {
+		t.Fatalf("engine pushed to %v, want only %s (the speaker's new address)", engines, addrNew)
+	}
+	if out.Outcome != outcomeDone || !out.EngineDelivered || out.Version["mdnsName"] != nameA {
+		t.Errorf("row = %+v, want done on speaker A's own answer", out)
+	}
+}
+
 // The update record moves with the speaker, so the speaker that now holds the
 // old address is never judged against it.
 func TestUpdateIntentFollowsTheSpeaker(t *testing.T) {

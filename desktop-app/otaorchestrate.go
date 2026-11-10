@@ -1612,13 +1612,43 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 	if u.seams.recordIntent != nil {
 		u.seams.recordIntent(u.host, u.port, u.deviceID, u.name)
 	}
-	u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: 1})
-	var res engineResult
-	var err error
-	u.gate.run(func() {
-		u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: 1})
-		res, err = u.seams.ensureEngine(u.host, u.port)
-	})
+	// Who the speaker is, before the wait in the gate: the same first reading
+	// an update row takes. The row can queue for minutes behind the other
+	// speakers' pushes, and a speaker that restarts meanwhile can lose its
+	// address to another one; without a reference the guard in pushEngine has
+	// only the discovery hint to hold an answer against.
+	if !u.ident.reported() {
+		host, port := u.addr()
+		if v, verr := u.seams.readVersion(host, port); verr == nil && v != nil {
+			hints := u.ident.hints
+			u.ident = identityFrom(v)
+			u.ident.hints = hints
+		}
+	}
+	res, sent, err := u.pushEngine(1)
+	if !sent {
+		// Nothing went out. Either the speaker does not answer, which is the
+		// failure it always was, or another speaker answers at its address:
+		// then the engine is still missing on this one and the record stays,
+		// so the next time this speaker is seen the app finishes the job.
+		why := "the speaker did not answer when the Spotify engine was due to be sent"
+		if !u.foreign {
+			if _, rerr := u.read(); rerr != nil && !u.foreign {
+				why = rerr.Error()
+			}
+		}
+		if u.foreign {
+			u.record("engine not sent: another speaker answers at this speaker's address, so it cannot land on the other speaker; the next update run delivers it")
+			u.log().Info("update all: engine repair not sent, another speaker answers at this address", "host", u.host)
+			out.Outcome = outcomePartial
+			out.Unmet = unmetSpotifyEngine
+			return u.finish(out)
+		}
+		out.Outcome = outcomeFailed
+		out.Err = why
+		u.log().Warn("update all: engine repair not sent, the speaker does not answer", "host", u.host, "err", why)
+		return u.finish(out)
+	}
 	if err != nil {
 		out.Outcome = outcomeFailed
 		out.Err = err.Error()
@@ -1643,9 +1673,11 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 	// The same honesty check the update path does: a speaker can lose the
 	// engine again to a reboot right after it was delivered, so confirm it is
 	// really there before the row goes green. A read that fails means the box
-	// is still settling: trust the delivery.
+	// is still settling: trust the delivery. Read through the identity guard,
+	// so another speaker's answer at this address is never taken as this
+	// speaker's state.
 	stillMissing := false
-	if fv, ferr := u.seams.readVersion(u.host, u.port); ferr == nil {
+	if fv, ferr := u.read(); ferr == nil && fv != nil {
 		out.Version = fv
 		stillMissing = fv["goLibrespot"] == "missing"
 	}
