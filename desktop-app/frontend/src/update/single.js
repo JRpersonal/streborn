@@ -6,6 +6,7 @@
 
 import { BoxStoragePreflight, EventsOn, RunSpeakerUpdate } from '../api.js';
 import { darkAfterUpdate, darkChecklistApplies, updateNoNetworkHere } from '../darkafterupdate.js';
+import { fmtRate } from '../format.js';
 import { t } from '../i18n/index.js';
 import { syncShellPlayer } from '../shell2/mount.js';
 import { state } from '../state.js';
@@ -252,7 +253,7 @@ async function runSingleBoxUpdate(targetBox) {
     // to "restarting" the moment the upload completes instead of leaving the
     // user on "uploading" through the reboot the app cannot yet see.
     if (p.pct >= 100 && !engineStreaming) { setStatus(t('update.rebooting')); return; }
-    const rate = p.bytesPerSec ? ' (' + deps.fmtRate(p.bytesPerSec) + ')' : '';
+    const rate = p.bytesPerSec ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
     setStatus(t('update.uploadingPct', { pct: p.pct }) + rate);
   });
   deps.checkSshBanner();

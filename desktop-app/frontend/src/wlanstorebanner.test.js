@@ -16,7 +16,8 @@ const src = allSource();
 
 describe('Save Wi-Fi banner', () => {
   it('marks the speaker before switching to Settings', () => {
-    expect(src).toMatch(/wb\.onclick = \(\) => \{ state\.wlanStoreFor = noWifi\[0\]\.host; selectBox\(noWifi\[0\]\); switchView\('settings'\); \}/);
+    // switchView is injected into banners/speaker.js, hence deps.
+    expect(src).toMatch(/wb\.onclick = \(\) => \{ state\.wlanStoreFor = noWifi\[0\]\.host; selectBox\(noWifi\[0\]\); deps\.switchView\('settings'\); \}/);
   });
 
   it('opens the form for that speaker only, once, with the current network', () => {

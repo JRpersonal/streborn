@@ -18,9 +18,6 @@ export let deps = {
   // Both runners refresh the speaker list once the run is over (single.js,
   // all.js).
   discoverBoxes() {},
-  // The single update shows the upload throughput next to the percentage
-  // (single.js).
-  fmtRate() { return ''; },
 };
 
 export function initUpdateFlow(d) {

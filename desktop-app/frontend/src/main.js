@@ -4,18 +4,12 @@ import './style.css';
 // changes nothing.
 import './shell2/shell2.css';
 import { pinPromptKey, worldMapURL } from './worldmapinvite.js';
-import { noteCheckFailed, noteCheckSucceeded, shouldSayChecksAreFailing } from './updatecheckhealth.js';
-import { sshBannerShow } from './sshbanner.js';
 import { maybeShowStableNameNotice } from './stablenamenotice.js';
 import { announceHighscores } from './arcadeshare.js';
 import { openHighscorePopup } from './arcadepopup.js';
 import { firewallBannerView, firewallUnblockToast, firewallSuspectGate } from './firewallbanner.js';
-import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
-import { runConflictCleanup } from './conflictcleanup.js';
-import { boxCannotReachInternet, noInternetBoxes } from './nointernet.js';
-import { weakWifiDropoutBoxes } from './weakwifi.js';
-import { unsafeNameBoxes } from './speakername.js';
-import { groupKeyErrorBanners } from './groupkeys.js';
+import { wingetFailureView } from './wingetupdate.js';
+import { boxCannotReachInternet } from './nointernet.js';
 import { onUpdateRunningChange } from './updaterunning.js';
 import { checkTargets, failingSpeakers, needsAttention, precheckHTML, runSpeakerChecks } from './speakercheck.js';
 import { wantsFastPoll } from './trackprogress.js';
@@ -24,9 +18,6 @@ import {
   RefreshKnownBoxes,
   AddBoxByIP,
   RebootBox,
-  RepairSpeakerName,
-  RemoveConflictingMod,
-  RestoreSTRCloud,
   CheckSpeaker,
   PendingUpdateIntent,
   SyncBoxPresets,
@@ -50,15 +41,8 @@ import {
   ListWiFiProfiles,
   TryWiFiPassword,
   CurrentWiFi,
-  CheckAppUpdate,
-  NewerCopyNextToThisOne,
   ConsumeStableNameNotice,
-  DownloadUpdate,
-  ApplyUpdate,
-  UpdateViaWinget,
   ConsumeWingetUpgradeFailure,
-  ClipboardSetText,
-  RevealUpdateFile,
   ResolveStationLogo,
   SetBoxName,
   SetBoxBass,
@@ -91,8 +75,6 @@ import {
   BrowseLibrary,
   LogClientError,
   BrowserOpenURL,
-  EventsOn,
-  boxFetch,
   GetArcade,
   CheckFirewall,
   AllowThroughFirewall,
@@ -193,13 +175,9 @@ import {
   showToast,
   compareVerBuild,
   getBoxLabel,
-  dismissNotice,
-  noticeDismissed,
   clearNoticeDismissal,
-  stormBannerBoxes,
-  holdRefusedBannerKey,
 } from './utils.js';
-import { isPlaying, isStr, strBoxes } from './boxes.js';
+import { isPlaying, strBoxes } from './boxes.js';
 import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -208,7 +186,6 @@ import { boxRecordChange } from './boxstate.js';
 // renderBoxSelect keeps a local box-shaped wrapper of the same name.
 import {
   fetchZoneLive,
-  sameBoxIdentity,
   resolveBoxByRef,
   stereoPairsOf,
   groupCount,
@@ -333,10 +310,7 @@ import {
 import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
 // UI 2.0 phase 5: what one speaker needs is said on that speaker (the wedge
 // and box issue banners, the update failure report); preview only.
-import { speakerIssuesFrom, setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
-import { localizeStillRestarting, restarts } from './restartwait.js';
-import { openSpeakers } from './shell2/speakers/index.js';
-import { sectionReport } from './shell2/state.js';
+import { setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
 import { onSpeakerPurge } from './speakerPurge.js';
 // The Music view ("Listen": now playing, presets, volume, sources, search,
 // favourites, Pandora, the group panel and the status poll), extracted from
@@ -385,6 +359,20 @@ import {
 // The speaker update (one speaker and Update all), extracted from this monolith
 // into src/update/. Same pattern again: initUpdateFlow injects the main.js-local
 // helpers the runners call (see update/deps.js).
+// The app's own update (check, notice, install paths), extracted from this
+// monolith. initAppUpdate injects the one main.js-local helper it calls.
+import { checkAppUpdate, initAppUpdate, renderAppUpdateCheckLink } from './appupdate.js';
+// The global banners (SSH reminder, wedge, speaker issues, the speaker update
+// card) and the UI 2.0 attention runner, extracted from this monolith into
+// src/banners/. initBanners injects the main.js-local helpers they call (see
+// banners/deps.js). The Windows Firewall banner stays here: its state is
+// written by discoverBoxes and renderFooter.
+import { initBanners } from './banners/deps.js';
+import { warnDismissKey } from './banners/dismiss.js';
+import { checkSshBanner } from './banners/ssh.js';
+import { checkBoxIssueBanner, checkWedgeBanner } from './banners/speaker.js';
+import { runSpeakerAttention } from './banners/attention.js';
+import { maybeShowSpeakerUpdateCard } from './banners/speakerupdate.js';
 // The speaker picker (the tiles in #boxSelect, pickBox, selectBox and the
 // speaker check dialog), extracted from this monolith. Same pattern again:
 // initBoxPicker injects the main.js-local helpers it calls.
@@ -451,10 +439,13 @@ initWishesView();
 // Music view deps: the shell helpers the Music modules call (see
 // views/music/deps.js for what each one is used for).
 initMusicView({ checkAppUpdate, checkSshBanner, discoverBoxes, maybeInviteWorldMap, refreshMusicZones, renderBoxSelect, speakerPickedInTab, stereoStaleForError, switchView });
+// App update and banner deps (see appupdate.js and banners/deps.js).
+initAppUpdate({ checkBoxUpdate });
+initBanners({ boxNeedsUpdate, discoverBoxes, speakerUpdateCardMuted, switchView });
 // Speaker picker deps (see views/boxpicker.js for what each one is used for).
 initBoxPicker({ boxNeedsUpdate, checkBoxIssueBanner, checkBoxUpdate, checkWedgeBanner, discoverBoxes, refreshMusicZones, renderFirewallBanner, switchView, updateBoxUiVisibility });
 // Speaker update deps (see update/deps.js for what each one is used for).
-initUpdateFlow({ boxNeedsUpdate, checkBoxUpdate, checkSshBanner, discoverBoxes, fmtRate });
+initUpdateFlow({ boxNeedsUpdate, checkBoxUpdate, checkSshBanner, discoverBoxes });
 // Session maps this file keeps per speaker, cleared when STR is removed from
 // that speaker (Settings > Remove STR calls purgeSpeakerLocalState; see
 // speakerPurge.js). Registered as a hook because speakerPurge.js cannot import
@@ -1359,364 +1350,6 @@ function showDonate() {
   modal.classList.remove('hidden');
 }
 
-// renderAppUpdateCheckLink leaves a quiet way back to the update notice in the
-// place the banner would occupy.
-//
-// Dismissing the notice used to be one-way. The version check ran 8 s after
-// start and then every twelve hours, and a dismissal was remembered for that
-// version, so somebody who clicked it away, or who went back to an older
-// build, had nothing left to press and no way to be offered the update again
-// (discussion #597: "How do I force it to check for updates?"). A manual
-// check also ignores the stored dismissal, because a person pressing this has
-// just answered the question the dismissal was standing in for.
-function renderAppUpdateCheckLink(banner, note) {
-  if (!banner) return;
-  banner.classList.add('app-update-quiet');
-  banner.classList.remove('hidden');
-  // Name the version next to the link. On its own the link was a stray line
-  // above everything else with nothing to explain why it was there; with the
-  // installed version in front of it, the line says what it is about.
-  const cur = (state.appInfo && state.appInfo.version) ? String(state.appInfo.version) : '';
-  banner.innerHTML = (cur ? `<span class="app-update-quiet-ver">${escapeHtml(t('setup.versionLabel', { version: cur }))}</span>` : '')
-    + `<a href="#" id="appUpdateCheckLink" class="footer-link">${escapeHtml(t('banner.checkForAppUpdate'))}</a>`
-    + (note ? `<span class="app-update-quiet-note">${escapeHtml(note)}</span>` : '');
-  const link = $('appUpdateCheckLink');
-  if (link) link.onclick = (e) => {
-    e.preventDefault();
-    link.textContent = t('banner.checkingForAppUpdate');
-    try { clearNoticeDismissal('appUpdate'); } catch {}
-    checkAppUpdate(true);
-  };
-}
-
-// Resolves to what the check found ({ outcome: 'current' | 'available' |
-// 'failed', version }), so a button that asked can say it next to itself
-// (Help and info in the UI 2.0 preview); the classic callers ignore it.
-async function checkAppUpdate(manual) {
-  // Entirely best-effort: an unreachable endpoint or a garbage payload
-  // must never break the UI. Validate every field defensively and stay
-  // silent on any failure.
-  const banner = $('appUpdateBanner');
-  try {
-    const m = await CheckAppUpdate();
-    // The question was reachable, whatever the answer. That is what the run
-    // counts, not whether an update exists.
-    noteCheckSucceeded();
-    if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) {
-      // Nothing newer. Say so when the user asked; otherwise just leave the
-      // way back on screen.
-      renderAppUpdateCheckLink(banner, manual ? t('banner.appIsCurrent') : '');
-      return { outcome: 'current' };
-    }
-    if (!banner) return { outcome: 'available', version: m.version };
-    // An app update outranks the speaker updates and hides their prompts (see
-    // speakerUpdateCardMuted). Set before the dismissal check: the ORDER
-    // holds either way, and a user who clicked the app notice away has not
-    // stopped needing the app first.
-    state.appUpdateVersion = m.version;
-    // This check is async and often resolves after discovery already showed
-    // the speaker card or the Speaker Settings banner. Re-evaluate both now so
-    // they follow the app-first rule instead of sitting under the app notice
-    // as a second update prompt (#1154).
-    maybeShowSpeakerUpdateCard();
-    checkBoxUpdate();
-    if (noticeDismissed('appUpdate', m.version)) {
-      renderAppUpdateCheckLink(banner, '');
-      return { outcome: 'available', version: m.version };
-    }
-    banner.classList.remove('app-update-quiet');
-    // Keep the banner discreet: version, a single "What's new" LINK to
-    // the release notes (not the notes inline, which took too much space
-    // and does not interest every user), and the download button.
-    // Only treat a real http(s) URL as a download link; anything else is
-    // ignored so we never hand junk to the system browser.
-    const dlUrl = (typeof m.downloadUrl === 'string' && /^https?:\/\//i.test(m.downloadUrl)) ? m.downloadUrl : '';
-    // Link target for the notes: an explicit notesUrl from the server if
-    // present, else the matching GitHub release page for the new version,
-    // else the releases list.
-    const repo = ((state.appInfo && state.appInfo.githubUrl) || 'https://github.com/JRpersonal/streborn').replace(/\/+$/, '');
-    // /releases/latest always resolves to the newest PUBLISHED release, so it
-    // never 404s on a draft/just-published tag (the "page not found" a user hit).
-    const latestUrl = `${repo}/releases/latest`;
-    const notesUrl = (typeof m.notesUrl === 'string' && /^https?:\/\//i.test(m.notesUrl))
-      ? m.notesUrl
-      : latestUrl;
-    // The banner itself only shows for a genuinely newer version (CheckAppUpdate
-    // returns nothing otherwise), and the download button only when the manifest
-    // carries a real download URL. The button is a primary button so it stands
-    // out in the notice instead of reading as a faint secondary control.
-    // In-app update (#71): download the matching asset, verify its SHA256, then
-    // install. Linux/Windows self-replace and relaunch; macOS downloads+verifies
-    // and opens the .dmg (replacing a running .app bundle is unwritten work, not
-    // a Gatekeeper problem: the build is notarized). The button
-    // always shows now: the asset URL + hash are resolved from the release
-    // manifest in the backend, so it no longer depends on the manifest carrying a
-    // downloadUrl. notesUrl / releases page stays as the manual fallback.
-    const isMacOS = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
-    // Label makes the target unambiguous: this updates THE APP itself, not the
-    // speaker (a non-technical user clicked the speaker-update expecting the app
-    // to update, and ended up with two .exe copies downloaded by hand).
-    // A copy winget installed updates through winget (see wingetupdate.js), and
-    // the button says so before it is pressed.
-    const viaWinget = !!(state.appInfo && state.appInfo.installedViaWinget);
-    const installLabel = viaWinget
-      ? wingetInstallLabel(t)
-      : (isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow'));
-    banner.innerHTML = `
-      <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#8593;</span><span><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></span></div>
-      <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
-      <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
-    `;
-    banner.classList.remove('hidden');
-    // The winget upgrade the previous run started came back with an error:
-    // say so above the button, with the command to run by hand.
-    if (viaWinget && state.wingetFailure) {
-      banner.insertAdjacentHTML('afterbegin', wingetNoteHTML(state.wingetFailure));
-      wireWingetCopy(banner, state.wingetFailure.command);
-    }
-    // There is no Windows installer: the release is a bare exe (versioned
-    // STR-Windows-vX.Y.Z.exe up to v1.0.1, STR-Windows.exe since), so updating
-    // by hand means downloading a second file into the same folder and
-    // nothing replaces anything. The Go side reads a sibling's version from
-    // its Windows version resource, the old name being only the fallback. A reporter spent
-    // three rounds of mail on that (2026-10-01), downloading the new version
-    // again and again while starting the old one, until he deleted the old
-    // file by hand. If the newer file is already sitting next to this one,
-    // say so, because downloading it a fourth time will not help.
-    //
-    // The hint is added, and the Install button STAYS. It used to be hidden,
-    // which made a file name the only thing standing between somebody and
-    // their update: for files published up to v1.0.1 the name was the only
-    // evidence about a sibling, a person may rename these files for their own
-    // reasons (one does, to see the version on their desktop), and a file
-    // called STR-Windows-v9.9.9.exe that is actually ancient would have left
-    // the banner pointing at it with no way forward. The update check itself reads the version compiled into
-    // the running build, so it is never fooled; only this hint can be, so this
-    // hint may inform and must not block.
-    NewerCopyNextToThisOne().then((file) => {
-      if (!file) return;
-      const line = document.createElement('div');
-      line.className = 'app-update-text';
-      line.textContent = t('banner.appUpdateAlreadyHere', { file });
-      banner.insertBefore(line, banner.firstChild);
-    }).catch(() => {});
-    const notesLink = $('appUpdateNotes');
-    if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
-    const dl = $('appUpdateBtn');
-    if (dl) dl.onclick = viaWinget
-      ? () => runWingetUpdate(m.version, dl, installLabel)
-      : () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
-    // Clicking it away is allowed and remembered, for THIS version only. The
-    // next release is news again and says so; the user dismisses that one in
-    // turn or installs it.
-    const x = $('appUpdateDismiss');
-    if (x) x.onclick = () => {
-      dismissNotice('appUpdate', m.version);
-      // Not hidden: the quiet link stays so the notice can be brought back.
-      renderAppUpdateCheckLink(banner, '');
-      // The speaker prompts stay muted: the app is still the thing to do first.
-      // They return once the app is current.
-      maybeShowSpeakerUpdateCard();
-    };
-    return { outcome: 'available', version: m.version };
-  } catch (e) {
-    try { console.warn('checkAppUpdate failed', e); } catch {}
-    // A check that could not run must not swallow the control that triggers
-    // it, and a person who pressed it is owed the failure: with the link
-    // quietly resetting, a machine on which the request always fails (AV
-    // proxy, firewall, DNS) looks exactly like "no update exists", and one
-    // user pressed through several releases believing that.
-    try { renderAppUpdateCheckLink(banner, manual ? t('banner.appCheckFailed') : ''); } catch {}
-    // A silent automatic check that ALWAYS fails looks exactly like "you are up
-    // to date", forever. One user sat on a June build until the end of
-    // September, 142 releases behind, and nothing on his screen was ever about
-    // the app itself. After a run long enough to rule out a bad afternoon, say
-    // it once, quietly, with the way out beside it.
-    if (!manual) {
-      try {
-        if (shouldSayChecksAreFailing(noteCheckFailed())) {
-          showToast(t('banner.appCheckKeepsFailing'));
-        }
-      } catch { /* never let the notice break the startup */ }
-    }
-    return { outcome: 'failed' };
-  }
-}
-
-// runAppUpdate downloads + verifies the new version and installs it (#71). On
-// Linux/Windows the backend replaces the running binary and relaunches, so the
-// app quits mid-call and the code after ApplyUpdate only runs on macOS (assisted:
-// the verified .dmg is opened for the user to drag into Applications). On any
-// failure the button becomes a "download from the website" fallback so the user
-// is never stuck.
-// downloadWasInterrupted separates "the connection went away" from a genuine
-// failure of the update itself.
-//
-// Everything here is a transport fault: the machine lost its network, the
-// connection was cut, the server never answered, or the download stopped short.
-// None of them says anything is wrong with the app, the release or the file, so
-// none of them earns an error the user is invited to copy and send on. A hash
-// mismatch or a file that cannot be written is the opposite and is left to the
-// full error path.
-//
-// Matching on the message rather than a typed error because these arrive from
-// the Go side already flattened into a string.
-export function downloadWasInterrupted(err) {
-  const s = String(err || '').toLowerCase();
-  return [
-    'network is unreachable', 'unreachable network', // the machine has no route
-    'no route to host', 'no such host', 'dns',        // gateway or resolver gone
-    'connection reset', 'connection refused', 'broken pipe',
-    'eof', 'unexpected eof',                          // cut mid-transfer
-    'timeout', 'deadline exceeded', 'timed out',
-    'canceled', 'cancelled', 'aborted',
-    'i/o error', 'connection was aborted',
-  ].some((m) => s.includes(m));
-}
-
-// fmtRate turns a bytes/second number into a short human rate for the live
-// download/upload throughput shown during an app update or a speaker update.
-function fmtRate(bps) {
-  bps = Number(bps) || 0;
-  if (bps >= 1024 * 1024) return (bps / 1048576).toFixed(1) + ' MB/s';
-  if (bps >= 1024) return Math.round(bps / 1024) + ' KB/s';
-  return Math.max(0, Math.round(bps)) + ' B/s';
-}
-
-// showMacHandoff turns the update banner into the standing instruction for the
-// one step macOS leaves to the user: drag the new app out of the mounted .dmg.
-//
-// It replaces the banner rather than adding a second notice, because at this
-// point the "install now" button has done everything it can and re-pressing it
-// only downloads the same file again. The button here is short on purpose (Jens'
-// rule: a button carries a few words, never a status message) and re-opens the
-// downloaded file for anyone who closed the Finder window before reading it.
-//
-// Nothing dismisses this by itself. The banner is rebuilt from scratch by the
-// next update check, which finds the app already current once the user has
-// dragged it across, so the instruction disappears exactly when it is obsolete.
-function showMacHandoff(path) {
-  const banner = $('appUpdateBanner');
-  if (!banner) { showToast(t('banner.macDownloaded')); return; }
-  banner.innerHTML = `
-    <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#10003;</span><span><b>${escapeHtml(t('banner.macReadyTitle'))}</b> ${escapeHtml(t('banner.macDownloaded'))}</span></div>
-    <button class="btn btn-primary app-update-btn" id="appUpdateReveal">${escapeHtml(t('banner.macShowFile'))}</button>
-  `;
-  banner.classList.remove('hidden');
-  const rv = $('appUpdateReveal');
-  if (rv && path) rv.onclick = () => { RevealUpdateFile(path).catch(() => {}); };
-}
-
-function showDebHandoff() {
-  const banner = $('appUpdateBanner');
-  if (!banner) { showToast(t('banner.debHandoff'), 12000); return; }
-  banner.innerHTML = `
-    <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#10003;</span><span>${escapeHtml(t('banner.debHandoff'))}</span></div>
-  `;
-  banner.classList.remove('hidden');
-}
-
-// wingetNoteHTML renders a winget note for the update banner: the text and,
-// when there is one, the command to run by hand with a Copy button.
-function wingetNoteHTML(view) {
-  const cmd = view.command
-    ? `<code class="app-update-cmd">${escapeHtml(view.command)}</code><button class="btn app-update-copy" data-winget-copy>${escapeHtml(t('banner.wingetCopy'))}</button>`
-    : '';
-  return `<div class="app-update-text app-update-winget"><span>${escapeHtml(view.text)}</span>${cmd}</div>`;
-}
-
-function wireWingetCopy(root, command) {
-  const b = root.querySelector('[data-winget-copy]');
-  if (b && command) b.onclick = () => { ClipboardSetText(command).catch(() => {}); };
-}
-
-// runWingetUpdate is runAppUpdate for a copy winget installed. Nothing is
-// downloaded here: the backend asks winget whether it offers the version,
-// starts `winget upgrade` in a hidden helper and quits, and the helper starts
-// the app again when winget is done. When it cannot, the banner shows the
-// command to run by hand.
-async function runWingetUpdate(version, btn, installLabel) {
-  btn.disabled = true;
-  btn.textContent = t('banner.connecting');
-  try {
-    const res = await UpdateViaWinget(version);
-    const view = wingetOutcomeView(res, version, t);
-    const banner = $('appUpdateBanner');
-    if (!banner) { showToast(view.text, 15000); return; }
-    banner.innerHTML = wingetNoteHTML(view);
-    banner.classList.remove('hidden');
-    wireWingetCopy(banner, view.command);
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = installLabel;
-    showError(t('banner.updateFailed', { err: String(e) }));
-  }
-}
-
-async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
-  btn.disabled = true;
-  const off = EventsOn('app:update:progress', (p) => {
-    const pct = (p && typeof p === 'object') ? p.pct : p;
-    const rate = (p && typeof p === 'object' && p.bytesPerSec) ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
-    btn.textContent = t('banner.downloadingPct', { pct }) + rate;
-  });
-  try {
-    // Not "Downloading 0%". Nothing is downloading yet: the release
-    // manifest still has to be looked up and the connection opened, which is
-    // a minute of legitimate waiting on a slow link, and the first progress
-    // event only fires once body bytes arrive. Showing 0% for all of it made
-    // a reporter watch a frozen percentage and take a diagnostic (#935).
-    btn.textContent = t('banner.connecting');
-    const path = await DownloadUpdate(version);
-    btn.textContent = t('banner.installing');
-    await ApplyUpdate(path);
-    // Reached only on macOS and for a Linux .deb copy (Linux/Windows otherwise
-    // relaunch+quit inside ApplyUpdate).
-    //
-    // The last step is the user's: drag the app out of the mounted .dmg. Saying
-    // that in a toast did not work, because ApplyUpdate opens the .dmg and
-    // Finder's window comes up over ours, exactly where the toast sits, and the
-    // toast is gone by the time the user looks back. Reported 2026-08-06 with a
-    // screenshot showing the Finder window on top of it: "I feel that this
-    // notice is easy to miss". So the instruction takes over the update banner
-    // and stays there until the new version is actually running.
-    if (isMacOS) {
-      btn.disabled = false;
-      btn.textContent = installLabel;
-      showMacHandoff(path);
-    } else if (state.appInfo && state.appInfo.linuxPackage === 'deb') {
-      // A .deb copy: ApplyUpdate opened the package installer, which does the
-      // rest. The user confirms there and starts the new version.
-      showDebHandoff();
-    }
-  } catch (e) {
-    btn.disabled = false;
-    // A download the network cut off is not a fault anybody needs to report,
-    // and it is not a reason to send the user to a web page either: the same
-    // button, pressed again once the connection is back, is the whole fix.
-    // Reported by shorty310 (#916) after pulling his Wi-Fi mid-download: he got
-    // the copyable error modal, which reads as "send this to the developer",
-    // and a button that had turned into "Get it from the downloads page".
-    if (downloadWasInterrupted(e)) {
-      btn.textContent = t('banner.retryAppUpdate');
-      btn.onclick = () => runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl);
-      showToast(t('banner.updateInterrupted'), 9000);
-    } else {
-      // A real failure: a hash that did not match, a file that could not be
-      // written. That one IS worth showing in full and worth the web fallback.
-      showError(t('banner.updateFailed', { err: String(e) }));
-      btn.textContent = t('banner.getFromReleases');
-      if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
-      // Reassure the non-technical user: the app replaces itself, so any .exe
-      // they downloaded by hand earlier can simply be deleted (the
-      // duplicate-copies confusion that prompted this).
-      showToast(t('banner.manualHint'));
-    }
-  } finally {
-    if (typeof off === 'function') off();
-  }
-}
-
 // ---------- Music view ----------
 // The #view-box markup and its static wiring used to be assigned right here;
 // they now live in views/music/ and are mounted at this same point in the boot
@@ -1833,57 +1466,6 @@ if (gsd) gsd.onclick = () => {
   const gb = $('globalSecurityBanner');
   if (gb) gb.classList.add('hidden');
 };
-
-// checkSshBanner queries /api/stick/status to find out whether SSH is
-// open on the current speaker and toggles the global top banner
-// accordingly. Called on every refreshStatus + discoverBoxes so the
-// warning shows up before the user even visits the Settings tab.
-async function checkSshBanner() {
-  const gb = $('globalSecurityBanner');
-  if (!gb) return;
-  const box = state.currentBox;
-  // The Setup tab has no current speaker context, so the banner would
-  // be free-floating and just noise. Otherwise check sshOpen status.
-  if (!box || state.view === 'setup') { gb.classList.add('hidden'); return; }
-  // OTA window: agent restarts, SSH may flap, and the banner's
-  // "Reboot now" button would interrupt the agent exec. Suppress
-  // until doBoxUpdate clears the flag (finally{} guaranteed).
-  if (state.otaInProgress) { gb.classList.add('hidden'); return; }
-  // Everything below ends in exactly one write of the banner's visibility,
-  // including the failure paths. A verdict left standing because the speaker
-  // could not be asked is the bug this had: the banner says "this speaker", so
-  // a stale yes becomes a false alarm about whichever speaker is selected now,
-  // and it asks the user to reboot one for no reason (Jens, 2026-10-02: the Bad
-  // speaker, whose agent answered running:false with port 22 refusing).
-  let reachable = false;
-  let data = null;
-  try {
-    const r = await boxFetch(box, '/api/stick/status');
-    if (r.ok) {
-      data = await r.json();
-      reachable = true;
-    }
-  } catch {
-    // Asleep, unreachable, or a reply that was not JSON. Nothing is known, so
-    // nothing is claimed: reachable stays false and the banner comes down.
-  }
-  // A speaker switch while the request was in flight would otherwise paint the
-  // PREVIOUS speaker's answer under the new speaker's name, the same race the
-  // volume sync guards against.
-  if (!sameBoxIdentity(state.currentBox, box)) return;
-  // The banner is a "remove the stick now that setup is done, otherwise SSH
-  // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
-  // force-opens sshd on every boot; SSH is open only because a stick is in (the
-  // stick opens sshd via its remote_services marker), and a stickless reboot
-  // closes it. So sshOpen is an accurate, self-clearing signal, and keying on it
-  // (not data.mounted) also covers the Portable, where the stick is in but never
-  // auto-mounts so mounted=false (Jens, 2026-06-17). The old mounted-based gate
-  // was a workaround from when sshd was always up (#11). Setup view, the OTA
-  // window, the persistent-marker case and the per-speaker dismissal are all
-  // handled above or inside sshBannerShow, which carries their reasoning.
-  const show = sshBannerShow({ reachable, status: data, dismissed: warnDismissed(box, 'ssh') });
-  gb.classList.toggle('hidden', !show);
-}
 
 // emptyStateOnScreen reports whether the "no speaker found" card is the thing
 // currently in the speaker panel. Its manual connect-by-IP field exists only
@@ -2154,138 +1736,6 @@ function applyBoxList(list) {
   updateStockReprobe();
 }
 
-// The speaker-update prompt. Users update the APP (the website tells them to)
-// and never learn that the speaker carries its own software: three independent
-// "my speaker switches itself off" reports on the same day all turned out to be
-// speakers left on an old agent, one of them proven by a screenshot showing app
-// v0.9.21 next to speaker v0.9.17. The existing cues were a blue dot on the
-// tile and a banner buried in Speaker Settings, and the screenshot proved both
-// are missable: dots read as decoration, and a user who never opens that tab
-// never sees the banner.
-//
-// So: ask ONCE PER APP START, in the music view where everyone works, naming
-// the affected speakers and offering one button that updates all of them. Not
-// a modal (that trains people to dismiss), not repeated within a session, and
-// it disappears by itself as soon as the speakers are current, because it is
-// driven purely by boxNeedsUpdate.
-let speakerUpdateCardShown = false;
-function maybeShowSpeakerUpdateCard() {
-  const el = $('speakerUpdateCard');
-  if (!el) return;
-  if (!state.appInfo || !state.appInfo.version) return;
-  // App first: while the app itself is out of date this card stays away, so
-  // the user is never shown two update prompts and left to guess the order.
-  if (speakerUpdateCardMuted()) { el.classList.add('hidden'); return; }
-  const outdated = strBoxes(state.boxes).filter(b => !b.offline && boxNeedsUpdate(b));
-
-  // Nothing behind any more: TAKE THE CARD AWAY. This runs before the
-  // once-per-start latch on purpose. The latch used to short-circuit the whole
-  // function, so once the card had been shown there was no path that could ever
-  // hide it again: the user updated every speaker, the update finished, and the
-  // card still sat there asking them to do what they had just done (Jens,
-  // 2026-08-05, right after updating all four of his).
-  if (!outdated.length) { el.classList.add('hidden'); return; }
-
-  // Some are still behind. If the card is already up, refresh the list rather
-  // than leave a stale one naming speakers that are now current.
-  const visible = !el.classList.contains('hidden');
-  if (speakerUpdateCardShown && !visible) return; // asked once, they said later
-  speakerUpdateCardShown = true;
-
-  const list = outdated
-    .map(b => `<li>${escapeHtml(getBoxLabel(b))} <span class="suc-ver">${escapeHtml(b.version || '')}</span></li>`)
-    .join('');
-  const btnLabel = outdated.length > 1
-    ? t('speakerUpdate.btnAll', { n: outdated.length })
-    : t('speakerUpdate.btnOne');
-  // UI 2.0 preview: one speaker behind is named in the title (rule 1, the
-  // speaker is always named). The classic layout keeps its title.
-  const sucTitle = state.ui2Shell && outdated.length === 1
-    ? t('ui2.speakerUpdate.titleOne', { name: getBoxLabel(outdated[0]) })
-    : t('speakerUpdate.title');
-  if (state.ui2Shell) el.setAttribute('aria-label', sucTitle);
-  el.innerHTML =
-    `<div class="suc-body">` +
-      `<div class="suc-title">${escapeHtml(sucTitle)}</div>` +
-      `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
-      `<ul class="suc-list">${list}</ul>` +
-      // Several speakers at once restart one after the other; any of them in
-      // a live group leaves it (#1339). One speaker goes through doBoxUpdate,
-      // whose own banner says it for that speaker.
-      (outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive)
-        ? `<div class="suc-text" id="sucGroupNote">${escapeHtml(t('updateAll.groupNote'))}</div>` : '') +
-      `<div class="suc-actions">` +
-        `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
-        `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
-      `</div>` +
-    `</div>`;
-  el.classList.remove('hidden');
-
-  const hide = () => el.classList.add('hidden');
-  const later = $('sucLater');
-  if (later) later.onclick = hide;
-  const go = $('sucUpdate');
-  if (go) {
-    go.onclick = async () => {
-      // Do NOT hide first. The card used to disappear on the click and only
-      // then start working; every path that then declined to start (an update
-      // already running, the speakers turning out to be current, a pre-flight
-      // the user cancelled) left the user staring at the tab they were on with
-      // the prompt gone for the rest of the session, because the
-      // once-per-start latch never brings it back. It hides when the update is
-      // actually under way, and stays put otherwise (Jens, 2026-08-22).
-      const label = go.textContent;
-      const restore = () => { go.disabled = false; go.textContent = label; };
-      // Re-resolve against the CURRENT box list. `outdated` is a snapshot from
-      // render time, and a discovery pass landing between render and click
-      // replaces every object in state.boxes: the stale copies can carry an
-      // address the speaker has already left. This is the "shortly after the
-      // app started, while the scan is still running" case.
-      const wanted = new Set(outdated.map(b => b.host));
-      const live = strBoxes(state.boxes).filter(b => !b.offline && boxNeedsUpdate(b));
-      const targets = live.filter(b => wanted.has(b.host));
-      const pick = targets.length ? targets : live;
-      if (!pick.length) {
-        // Two different empties, and telling them apart matters. No speakers on
-        // the list at all means the sweep is mid-cycle or the LAN dropped them:
-        // keep the card up and say the speakers are not reachable. A populated
-        // list with nothing behind means they really are current, and the card
-        // has done its job.
-        const anyBox = (state.boxes || []).some(isStr);
-        showToast(anyBox ? t('updateAll.noneToUpdate') : t('speakerUpdate.notReachable'));
-        if (anyBox) hide();
-        return;
-      }
-      go.disabled = true;
-      go.textContent = t('speakerUpdate.working');
-      try {
-        if (pick.length === 1) {
-          const box = pick[0];
-          // Point Speaker Settings AT THE SPEAKER BEING UPDATED before
-          // switching. doBoxUpdate only paints its progress while the user is
-          // looking at the target box, so landing on whichever speaker the
-          // settings tab happened to have selected ran the whole OTA with no
-          // visible sign of it at all: the exact "nothing happens" report.
-          state.settingsBox = box;
-          showToast(t('speakerUpdate.starting', { name: getBoxLabel(box) }));
-          switchView('settings');
-          hide();
-          await doBoxUpdate(box);
-        } else {
-          // updateAllBoxes probes every speaker (version, USB stick, Wi-Fi
-          // quality) before it can ask, which is seconds of silence on a busy
-          // LAN. It keeps its own "checking" toast up; the card stays on screen
-          // in its working state until that flow commits or backs out.
-          const started = await updateAllBoxes(hide);
-          if (!started) restore();
-          return;
-        }
-      } catch (e) { showError(e); restore(); return; }
-      restore();
-    };
-  }
-}
-
 // Stock self-heal: a speaker captured mid-reboot classifies as "stock" (its
 // Bose port answers before the STR agent is up) and, with no steady-state
 // auto-refresh, stayed labelled "ready for STR" until a manual refresh even
@@ -2423,21 +1873,6 @@ async function refreshBoxPlaying() {
   renderShellSpeakers();
 }
 
-// checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports
-// the wedged-control state (transport accepted, never plays; only a
-// power-cycle clears it - see the agent's wedge detection). Global banner so
-// the hint is visible on every tab.
-function checkWedgeBanner() {
-  const el = $('boxWedgeBanner');
-  if (!el) return;
-  const wedged = (state.boxes || []).filter(b => b && b.boxHealth === 'wedged');
-  noteSpeakerIssues({ wedged });
-  if (!wedged.length) { el.classList.add('hidden'); return; }
-  const names = wedged.map(b => getBoxLabel(b)).join(', ');
-  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(t('speaker.wedgedTitle'))}</b> ${escapeHtml(t('speaker.wedgedBanner', { name: names }))}</span></div>`;
-  el.classList.remove('hidden');
-}
-
 // Windows Firewall banner (firewallbanner.js). firewallState holds the last
 // backend answer so a re-render (language switch, speaker list repaint) needs
 // no new check; firewallDismissed hides it for this session only, because the
@@ -2507,395 +1942,7 @@ async function allowThroughFirewall(includePublic) {
   if (toast.ok) { try { discoverBoxes(); } catch { /* the next sweep retries */ } }
 }
 
-// checkBoxIssueBanner is a heads-up when a speaker carries leftovers of a
-// rival cloud-free SoundTouch tool (they can fight STR) or has no STR Wi-Fi
-// backup saved. Global banner, #270. Dismissible per box and warning type:
-// both are informational (a healthy speaker keeps playing either way), so the
-// user must be able to acknowledge them once instead of being nagged forever
-// (Jens, 2026-07-12).
-function warnDismissKey(box, type) {
-  return 'warnDismiss:' + (box.deviceId || box.host) + ':' + type;
-}
-function warnDismissed(box, type) {
-  try { return !!localStorage.getItem(warnDismissKey(box, type)); } catch { return false; }
-}
-// noteRestartRequested records a restart the speaker accepted, and repaints
-// the warning once the wait can last no longer, so a speaker that never shows
-// as gone in a refresh still gets its button back.
-function noteRestartRequested(host) {
-  restarts.requested(host);
-  setTimeout(checkBoxIssueBanner, restarts.remainingMs(host) + 1000);
-}
-function checkBoxIssueBanner() {
-  const el = $('boxIssueBanner');
-  if (!el) return;
-  const boxes = state.boxes || [];
-  // Every refresh lands here: it is where a speaker the app restarted is seen
-  // going away and coming back, which ends its "Restarting…" button.
-  restarts.observe(boxes);
-  const conflict = boxes.filter(b => b && b.conflictingMod && !warnDismissed(b, 'conflict'));
-  // A speaker asking a non-standard Bose cloud address (#986). NOT dismissible
-  // and not folded into the conflict line: the marker files may be long gone
-  // (they do not survive a factory reset, this does) and nothing plays on such a
-  // speaker at all, so it is worth its own sentence naming the address.
-  const foreignCloud = boxes.filter(b => b && b.foreignCloudURL && !b.conflictingMod);
-  const noWifi = boxes.filter(b => b && b.wlanCredsMissing && !warnDismissed(b, 'nowifi'));
-  // A speaker refusing essentially every preset recall (Bose error 1036). This
-  // one is NOT dismissible: nothing the user presses will play until it clears,
-  // and the remedy people find on their own, pulling the plug, resets the box
-  // clock and poisons the next boot, while a soft restart clears it (#419
-  // Finding 4). Saying so at the moment it happens is the whole point.
-  // recallRefusal is the storm's quiet sibling (no 1036 ever fires, the box
-  // just drops its source for every recall); same remedy, same banner.
-  // A wedged speaker is excluded: it already has the "unplug it" banner, and
-  // a restart notice beside it contradicted that (#1065).
-  const storm = stormBannerBoxes(boxes);
-  // A thumbs-key press the speaker refused. Not dismissible and worth its own
-  // line: the press produced NOTHING visible before this, so two owners spent
-  // days re-saving a group that was never the problem (2026-09-26). The
-  // speaker's own reason is shown verbatim rather than paraphrased.
-  const keyErr = boxes.filter(b => b && b.groupKeyError);
-  // A long press the speaker made and STR could not keep. Same shape as the
-  // key error: it happened, it was refused, and nothing visible said so, so
-  // the key appeared to snap back to the old station on its own.
-  const holdErr = boxes.filter(b => b && b.holdRefusedSource);
-  // A folder key whose saved file addresses the media server no longer has
-  // (a USB stick swapped on a router's media server: the server answers,
-  // every old path is 404). The agent names the key until it is saved again,
-  // which is the only cure, so the banner says exactly that.
-  const staleKey = boxes.filter(b => b && b.staleFolderKeySlot);
-  // A speaker that cannot reach the internet while the LAN works (the agent's
-  // passive verdict, nointernet.js). Not dismissible: every station fails on
-  // it, and the fix is on the router, which only a sentence can point at.
-  const noNet = noInternetBoxes(boxes);
-  // Playback dropped out recently while the Wi-Fi signal at the speaker was
-  // weak (weakwifi.js). Informational, so dismissible per speaker; the
-  // dismissal holds for a day, because on a speaker with poor reception the
-  // next dropout is never far away.
-  const weakWifi = weakWifiDropoutBoxes(boxes, (b) => {
-    try { return localStorage.getItem(warnDismissKey(b, 'weakwifi')); } catch { return 0; }
-  });
-  const msgs = [];
-  if (noNet.length) {
-    const names = noNet.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(`<b>${escapeHtml(t('speaker.noInternetBanner', { name: names }))}</b> ${escapeHtml(t('speaker.noInternetHint'))}`);
-  }
-  if (conflict.length) {
-    const names = conflict.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.conflictModBanner', { name: names, mod: conflict[0].conflictingMod })));
-  }
-  if (foreignCloud.length) {
-    const names = foreignCloud.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.foreignCloudBanner', {
-      name: names, url: foreignCloud[0].foreignCloudURL,
-    })));
-  }
-  if (noWifi.length) {
-    const names = noWifi.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
-  }
-  if (storm.length) {
-    const names = storm.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
-  }
-  if (keyErr.length) {
-    // A refusal the user can act on reads as a sentence in their language,
-    // one per kind; the agent's raw reason (English, technical) is the line
-    // under it, visible and selectable for a support mail, not hover-only.
-    for (const line of groupKeyErrorBanners(keyErr, getBoxLabel)) {
-      const text = escapeHtml(t(line.key, { name: line.names, reason: line.reason }));
-      msgs.push(line.key === 'speaker.groupKeyErrorBanner'
-        ? text
-        : `${text}<br><small class="muted">${escapeHtml(line.reasons.join(' | '))}</small>`);
-    }
-  }
-  if (holdErr.length) {
-    const names = holdErr.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t(holdRefusedBannerKey(holdErr[0].holdRefusedSource), {
-      name: names, slot: holdErr[0].holdRefusedSlot || '?',
-    })));
-  }
-  if (staleKey.length) {
-    const names = staleKey.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.staleFolderKeyBanner', {
-      name: names, slot: staleKey[0].staleFolderKeySlot,
-    })));
-  }
-  if (weakWifi.length) {
-    const names = weakWifi.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.weakWifiDropoutBanner', { name: names })));
-  }
-  // A speaker name its firmware cannot survive ("&", "<", ">" or invalid
-  // UTF-8, #1582): the UPnP renderer does not come up, so Spotify and the
-  // music library cannot play while radio still does, and nothing else on
-  // screen says why. Not dismissible; the fix is one tap.
-  const badName = unsafeNameBoxes(boxes);
-  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, weakWifi, badName });
-  if (badName.length) {
-    const names = badName.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
-  }
-  if (!msgs.length) { el.classList.add('hidden'); return; }
-  const badNameBtn = badName.length
-    ? `<button class="btn btn-primary btn-mini" id="boxIssueBadNameBtn">${escapeHtml(t('speaker.badNameFixBtn'))}</button>`
-    : '';
-  // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
-  // instead of just telling them to "set it up in the settings": the button
-  // jumps straight to that speaker's settings, where the Wi-Fi section is.
-  const wifiBtn = noWifi.length
-    ? `<button class="btn btn-mini" id="boxIssueWifiBtn">${escapeHtml(t('speaker.wifiSaveBtn'))}</button>`
-    : '';
-  // A conflicting-mod (AfterTouch, OpenCloudTouch) leftover is removable in one
-  // click, and this button does it right here. It used to only switch to the
-  // speaker's settings page, which its label never said, so an owner pressed it
-  // twice and saw nothing happen (#1083).
-  const conflictBtn = conflict.length
-    ? `<button class="btn btn-mini" id="boxIssueConflictBtn">${escapeHtml(t('speaker.conflictRemoveBtn'))}</button>`
-    : '';
-  // The soft restart, offered right where the problem is stated. The speaker
-  // comes back in about a minute and the state is gone.
-  // Until a restart the app asked for has visibly happened, the button says
-  // "Restarting…" and stays off: the warning outlives the request by a
-  // minute or more, and a second press landed on a speaker mid-boot (#1768).
-  const stormRestarting = storm.length && restarts.isPending(storm[0].host);
-  const stormBtn = storm.length
-    ? `<button class="btn btn-primary btn-mini" id="boxIssueStormBtn"${stormRestarting ? ' disabled' : ''}>${escapeHtml(t(stormRestarting ? 'speaker.restartingBtn' : 'speaker.stormRestartBtn'))}</button>`
-    : '';
-  // One press puts STR back on every hijacked speaker at once.
-  //
-  // The per-speaker Actions page cannot do this. Its repair rewrites the cloud
-  // address FILE, and a rival app that sets the address at runtime leaves that
-  // file untouched, so the repair healed nothing and said it had worked. The
-  // cure is a restart, because the firmware reads the file once at boot.
-  // Measured across five speakers on 2026-09-26 after the ST Remote Pro iOS app
-  // was started; one reboot each brought every one back stock and paired.
-  const cloudBtn = foreignCloud.length
-    ? `<button class="btn btn-primary btn-mini" id="boxIssueCloudBtn">${escapeHtml(t('speaker.cloudRestoreBtn', { n: foreignCloud.length }))}</button>`
-    : '';
-  el.innerHTML = `
-    <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
-    ${badNameBtn}
-    ${cloudBtn}
-    ${stormBtn}
-    ${conflictBtn}
-    ${wifiBtn}
-    ${(conflict.length || noWifi.length || weakWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
-  const sb = $('boxIssueStormBtn');
-  if (sb) sb.onclick = async () => {
-    const box = storm[0];
-    if (restarts.isPending(box.host)) {
-      showToast(t('speaker.stillRestarting', { name: getBoxLabel(box) }));
-      return;
-    }
-    sb.disabled = true;
-    showToast(t('speaker.stormRestarting', { name: getBoxLabel(box) }));
-    try {
-      await RebootBox(box.host, box.port);
-      noteRestartRequested(box.host);
-      sb.textContent = t('speaker.restartingBtn');
-    } catch (e) {
-      sb.disabled = false;
-      showError(localizeStillRestarting(String(e), t('speaker.stillRestarting', { name: getBoxLabel(box) })));
-    }
-  };
-  const bnb = $('boxIssueBadNameBtn');
-  if (bnb) bnb.onclick = async () => {
-    bnb.disabled = true;
-    try {
-      for (const box of badName) {
-        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
-        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
-        box.friendlyName = name || box.friendlyName;
-        box.speakerNameUnsafe = false;
-        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
-        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: box.friendlyName, speakerNameUnsafe: false };
-      }
-      checkBoxIssueBanner();
-      renderBoxSelect();
-    } catch (e) {
-      showError(String(e));
-    } finally {
-      bnb.disabled = false;
-    }
-  };
-  const cloudB = $('boxIssueCloudBtn');
-  if (cloudB) cloudB.onclick = () => runCloudRestore(foreignCloud, cloudB);
-  const wb = $('boxIssueWifiBtn');
-  // Settings opens straight on the Wi-Fi form for this speaker (wireWlanSwitch).
-  if (wb) wb.onclick = () => { state.wlanStoreFor = noWifi[0].host; selectBox(noWifi[0]); switchView('settings'); };
-  const cb = $('boxIssueConflictBtn');
-  if (cb) cb.onclick = async () => {
-    const label = cb.textContent;
-    await runConflictCleanup(conflict[0], {
-      t, confirmWarn, showToast, showError,
-      removeConflictingMod: RemoveConflictingMod,
-      rebootBox: RebootBox,
-      rediscover: (afterMs) => {
-        if (afterMs > 0) setTimeout(discoverBoxes, afterMs);
-        else discoverBoxes();
-      },
-      setBusy: (busy) => {
-        cb.disabled = busy;
-        cb.textContent = busy ? t('settingsView.removeConflictRunning') : label;
-      },
-    });
-  };
-  const d = $('boxIssueDismissBtn');
-  if (d) d.onclick = () => {
-    const stamp = String(Date.now());
-    conflict.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'conflict'), stamp); } catch {} });
-    noWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'nowifi'), stamp); } catch {} });
-    weakWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'weakwifi'), stamp); } catch {} });
-    el.classList.add('hidden');
-  };
-  el.classList.remove('hidden');
-}
-
-// noteSpeakerIssues keeps the per-speaker side of the two banners above in
-// state.speakerIssues (shell2/attention.js), passively: the classic banners
-// render exactly as before, and the UI 2.0 preview shows the same words and
-// buttons on that speaker's card, page and sidebar row instead. part carries
-// the lists one of the two banner functions just worked out.
-// Kept on state, not in module variables: a banner check that runs while this
-// module is still being evaluated must not hit an uninitialised binding.
-function noteSpeakerIssues(part) {
-  state.speakerIssueParts = { ...(state.speakerIssueParts || {}), ...part };
-  state.speakerIssues = speakerIssuesFrom(state.speakerIssueParts, getBoxLabel);
-  const sig = JSON.stringify(state.speakerIssues);
-  if (sig === state.speakerIssuesSig) return;
-  state.speakerIssuesSig = sig;
-  if (state.ui2Shell) renderShellSpeakers(true);
-}
-
-// runSpeakerAttention is what a button of a speaker's attention note does in
-// the preview: the classic banner's own handler, for that one speaker.
-async function runSpeakerAttention(host, act, btn, dismissKind) {
-  const box = (state.boxes || []).find(b => b && b.host === host);
-  if (!box) return;
-  switch (act) {
-    case 'cloudRestore':
-      await runCloudRestore([box], btn);
-      break;
-    case 'removeConflict': {
-      const label = btn.textContent;
-      await runConflictCleanup(box, {
-        t, confirmWarn, showToast, showError,
-        removeConflictingMod: RemoveConflictingMod,
-        rebootBox: RebootBox,
-        rediscover: (afterMs) => {
-          if (afterMs > 0) setTimeout(discoverBoxes, afterMs);
-          else discoverBoxes();
-        },
-        setBusy: (busy) => {
-          btn.disabled = busy;
-          btn.textContent = busy ? t('settingsView.removeConflictRunning') : label;
-        },
-      });
-      break;
-    }
-    case 'saveWifi':
-      state.wlanStoreFor = box.host;
-      // The preview's speaker page shows one tab at a time: open it on
-      // Network, where the Wi-Fi form is (wireWlanSwitch opens it there).
-      if (state.ui2Shell && openSpeakers('speaker', { host: box.host, tab: 'network' })) break;
-      selectBox(box);
-      switchView('settings');
-      break;
-    case 'dismiss':
-      try { localStorage.setItem(warnDismissKey(box, dismissKind), String(Date.now())); } catch {}
-      checkBoxIssueBanner();
-      break;
-    case 'stormRestart':
-      // In the attention item the button sits in (sectionReport; the classic
-      // toast and dialog without the preview): "Restarting" only once the
-      // speaker took the restart, a refusal right there.
-      if (restarts.isPending(box.host)) {
-        sectionReport(btn, { tone: 'busy', text: t('speaker.stillRestarting', { name: getBoxLabel(box) }) });
-        break;
-      }
-      btn.disabled = true;
-      try {
-        await RebootBox(box.host, box.port);
-        noteRestartRequested(box.host);
-        btn.textContent = t('speaker.restartingBtn');
-        sectionReport(btn, { tone: 'busy', text: t('speaker.stormRestarting', { name: getBoxLabel(box) }) });
-      } catch (e) {
-        // Off until the speaker is back on success; on a failure the
-        // button is the way to try again.
-        btn.disabled = false;
-        sectionReport(btn, { tone: 'error', text: localizeStillRestarting(String(e), t('speaker.stillRestarting', { name: getBoxLabel(box) })) });
-      }
-      break;
-    case 'badNameFix':
-      btn.disabled = true;
-      try {
-        const name = await RepairSpeakerName(box.host, box.port, box.friendlyName || '');
-        // A success takes the item away (the name is fixed): its word goes
-        // where the classic one went.
-        showToast(t('speaker.badNameFixing', { name: name || getBoxLabel(box) }));
-        const idx = (state.boxes || []).findIndex(b => b && b.deviceID === box.deviceID);
-        if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: name || box.friendlyName, speakerNameUnsafe: false };
-        checkBoxIssueBanner();
-        renderBoxSelect();
-      } catch (e) { sectionReport(btn, { tone: 'error', text: String(e) }); } finally { btn.disabled = false; }
-      break;
-    default: break;
-  }
-}
 setSpeakerAttentionRunner(runSpeakerAttention);
-
-// runCloudRestore puts STR back on every speaker a rival app has taken over.
-//
-// The confirmation carries the warning that matters more than the restart: as
-// long as the other app runs, it sets the address again, including right after
-// the speaker comes back. That is not a theory, it is what happened on
-// 2026-09-26: the hijack itself restarted all five speakers, and they came back
-// still pointing at the other service because the app was still open. Restart
-// them while it runs and the whole thing simply repeats.
-async function runCloudRestore(boxes, btn) {
-  if (!boxes || !boxes.length) return;
-  const names = boxes.map(b => getBoxLabel(b)).join(', ');
-  const ok = await confirmWarn(
-    t('speaker.cloudRestoreTitle'),
-    `<p>${escapeHtml(t('speaker.cloudRestoreBody', { name: names, n: boxes.length }))}</p>`
-    + `<p><b>${escapeHtml(t('speaker.cloudRestoreAppWarning'))}</b></p>`,
-  );
-  if (!ok) return;
-  btn.disabled = true;
-  // The progress line names the speaker being worked on. One at a time, so a
-  // fleet takes a few minutes and silence would read as a hang.
-  const off = EventsOn('cloudrestore:progress', (p) => {
-    if (!p) return;
-    showToast(t('speaker.cloudRestoreProgress', {
-      name: p.name || '', done: p.done || 0, total: p.total || boxes.length,
-    }));
-  });
-  try {
-    const results = await RestoreSTRCloud(boxes.map(b => ({
-      host: b.host, port: b.port, name: getBoxLabel(b),
-    })));
-    const done = (results || []).filter(r => r && r.restored);
-    const failed = (results || []).filter(r => r && !r.restored);
-    if (!failed.length) {
-      showToast(t('speaker.cloudRestoreDone', { n: done.length }));
-    } else {
-      // Name the speakers that are still wrong and why. A partial repair
-      // reported as success is the mistake this whole path exists to undo.
-      const detail = failed
-        .map(r => `${r.name || r.host}: ${r.error || r.stillForeign || '?'}`)
-        .join('; ');
-      showError(t('speaker.cloudRestorePartial', {
-        ok: done.length, bad: failed.length, detail,
-      }));
-    }
-    discoverBoxes();
-  } catch (e) {
-    showError(String(e));
-  } finally {
-    try { off(); } catch {}
-    btn.disabled = false;
-  }
-}
 
 // reportProblemWithCheck is "Report a problem" (classic footer, UI 2.0 Help):
 // when the list shows speakers that are not answering, they are checked first

@@ -298,8 +298,9 @@ describe('the app update check in Help and info', () => {
     expect(about).toContain(`<p class="hlp-status" id="hlpUpdateStatus" role="status" aria-live="polite" data-kind="done">${t('banner.appIsCurrent')}</p>`);
   });
 
-  it('main.js checkAppUpdate resolves to what it found', () => {
-    const main = fileSource('main.js');
+  it('checkAppUpdate resolves to what it found', () => {
+    // checkAppUpdate left main.js for appupdate.js.
+    const main = fileSource('appupdate.js');
     const body = main.slice(main.indexOf('async function checkAppUpdate(manual) {'), main.indexOf('// runAppUpdate downloads'));
     expect(body).toContain("return { outcome: 'current' };");
     expect(body).toContain("return { outcome: 'available', version: m.version };");

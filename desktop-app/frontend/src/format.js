@@ -1,5 +1,5 @@
 // format.js: the small text formats several views share (a m:ss clock, "how
-// long ago"). No DOM and no state, so it imports anywhere.
+// long ago", a transfer rate). No DOM and no state, so it imports anywhere.
 
 import { getLocale } from './i18n/index.js';
 
@@ -25,4 +25,13 @@ export function agoText(sec, locale = getLocale()) {
   } catch {
     return `${Math.max(1, Math.round(s / 60))} min`;
   }
+}
+
+// fmtRate turns a bytes/second number into a short human rate for the live
+// download/upload throughput shown during an app update or a speaker update.
+export function fmtRate(bps) {
+  bps = Number(bps) || 0;
+  if (bps >= 1024 * 1024) return (bps / 1048576).toFixed(1) + ' MB/s';
+  if (bps >= 1024) return Math.round(bps / 1024) + ' KB/s';
+  return Math.max(0, Math.round(bps)) + ' B/s';
 }
