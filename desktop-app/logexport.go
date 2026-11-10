@@ -313,9 +313,37 @@ Privacy:
 		return LogExportResult{}, err
 	}
 
-	st, _ := f.Stat()
-	a.logger.Info("log export written", "path", req.SavePath, "bytes", st.Size(), "boxes", len(hosts), "sticksFromHost", stickIndex)
-	return LogExportResult{SavePath: req.SavePath, Bytes: st.Size()}, nil
+	size, err := closeZipFile(f, req.SavePath)
+	if err != nil {
+		a.logger.Warn("log export: the zip could not be completed", "path", req.SavePath, "err", err)
+		return LogExportResult{}, err
+	}
+	a.logger.Info("log export written", "path", req.SavePath, "bytes", size, "boxes", len(hosts), "sticksFromHost", stickIndex)
+	return LogExportResult{SavePath: req.SavePath, Bytes: size}, nil
+}
+
+// zipOutFile is the part of *os.File closeZipFile needs.
+type zipOutFile interface {
+	Stat() (os.FileInfo, error)
+	Close() error
+}
+
+// closeZipFile closes the finished bundle and returns its size. The close is
+// where a full disk or a vanished network share finally reports that the last
+// bytes never landed: dropped, the export claimed success for a zip that does
+// not open. A size that cannot be read from the open file is read from the
+// path instead.
+func closeZipFile(f zipOutFile, path string) (int64, error) {
+	st, statErr := f.Stat()
+	if err := f.Close(); err != nil {
+		return 0, fmt.Errorf("write zip: %w", err)
+	}
+	if statErr != nil {
+		if st, statErr = os.Stat(path); statErr != nil {
+			return 0, fmt.Errorf("the zip was written but cannot be read back: %w", statErr)
+		}
+	}
+	return st.Size(), nil
 }
 
 // stickMeta is the stick-<n>/_meta.json of one drive. Anonymised, it names
