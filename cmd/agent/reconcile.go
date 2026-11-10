@@ -815,8 +815,16 @@ func (r *reconciler) waitOutRecall() {
 // source change to LOCAL_INTERNET_RADIO at 06:26:56.025).
 //
 // The window is a deadline, so this can hold for at most half a
-// minute and the pass runs straight after with the ask still
-// pending.
+// minute. What follows it depends on where the forced pass came from.
+// The boot force is still set, so that pass runs straight after. A
+// pass forced by an ask (standby-exit after the wake, for one) is NOT
+// carried over: the ask was consumed before this hold, and this is the
+// only hold that does not set forceHeld. So the forced re-sync is
+// dropped, an ordinary pass follows, and the keys get their full write
+// with the next ask or the awake insurance. That is kept on purpose:
+// the carried-over pass would write the native presets on a speaker
+// that just joined a group, which is the write #900 is about.
+// TestStepGroupWakeHoldDropsAConsumedAsk pins it.
 func (r *reconciler) heldForGroupWake() bool {
 	if r.groupWakeSettling() {
 		if !r.groupWakeHeld {
