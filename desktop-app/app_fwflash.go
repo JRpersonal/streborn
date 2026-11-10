@@ -105,6 +105,14 @@ func (a *App) flashBoseFirmware(ctx context.Context, host string, force bool) (F
 	if host == "" {
 		return res, fmt.Errorf("host is required")
 	}
+	// One writer per speaker, see boxbusy.go: a flash restarts the speaker, so
+	// it must not start under a running install, update or removal, and none
+	// of those may start under it.
+	release, busyErr := writesInFlight.claim(host, "a firmware update")
+	if busyErr != nil {
+		return res, busyErr
+	}
+	defer release()
 	fi, err := a.GetBoxFirmware(host)
 	if err != nil {
 		return res, fmt.Errorf("the speaker does not answer: %w", err)

@@ -96,6 +96,17 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		res.Message = "host is required"
 		return res
 	}
+	// One writer per speaker, see boxbusy.go: removing STR under a running
+	// install or update deletes the folder that run is writing into, and the
+	// reboot at the end cuts off whatever is still going.
+	release, busyErr := writesInFlight.claim(host, "a removal")
+	if busyErr != nil {
+		res.Step = "busy"
+		res.Message = busyErr.Error()
+		a.logger.Info("uninstall_str: refused, the speaker is busy", "host", host, "err", busyErr)
+		return res
+	}
+	defer release()
 	a.logger.Info("uninstall_str: starting", "host", host)
 	// From here on no engine delivery may land on this speaker (see
 	// App.uninstalling). The mark stays after a successful removal; a failed
