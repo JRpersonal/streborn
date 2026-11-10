@@ -1754,6 +1754,21 @@ func (a *App) enableAgentSSH(host string, port int) {
 	time.Sleep(2 * time.Second)
 }
 
+// sshHandshakeFailure is the error for an SSH handshake that did not end in
+// the STR_SSH_OK marker. That happens with an error (the connection did not
+// come up) and without one (it did, and the speaker's shell answered something
+// else or nothing), so the error is wrapped only when there is one.
+func sshHandshakeFailure(err error, hello string) error {
+	hello = strings.TrimSpace(hello)
+	if err != nil {
+		return fmt.Errorf("ssh handshake failed: %w (%s)", err, hello)
+	}
+	if hello == "" {
+		return errors.New("ssh handshake failed: the speaker accepted the connection but did not answer")
+	}
+	return fmt.Errorf("ssh handshake failed: the speaker answered something unexpected (%s)", hello)
+}
+
 func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// 4 spaced attempts (sshHandshake): the OTA path runs when the box is
 	// busiest, exactly where the one-shot 8 s attempt used to flake (#114).
@@ -1776,7 +1791,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 			a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
 		} else {
 			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
-				return fmt.Errorf("ssh handshake failed: %w (%s)", err, strings.TrimSpace(hello))
+				return sshHandshakeFailure(err, hello)
 			}
 		}
 	}
