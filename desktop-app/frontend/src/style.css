@@ -1956,7 +1956,7 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .search-input-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .search-input-row input { flex: 1; min-width: 130px; background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 4px; padding: 8px; font-size: 13px; }
 .search-input-row input:focus { outline: none; border-color: var(--brand); }
-/* Wenn Suchfeld nicht leer ist (aktiver Filter) — visuell hervorheben */
+/* A search field that is not empty (an active filter) is highlighted. */
 .search-input-row input.has-query {
   border-color: var(--brand);
   background: var(--brand-bg);
@@ -2294,7 +2294,43 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ---------- Box Einstellungen View ---------- */
+/* The strip that stays behind when the update panel is hidden.
+   Closing that panel never stopped anything, but with nothing left on screen
+   "hidden" and "finished" looked identical, and the step after that is closing
+   the app, which does stop it. Fixed to the bottom so it survives a tab change,
+   and a button so it is obvious it takes you back. */
+.ua-mini {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(92vw, 520px);
+  padding: 9px 16px;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+.ua-mini::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: ua-mini-pulse 1.4s ease-in-out infinite;
+}
+.ua-mini:hover { filter: brightness(1.12); }
+@keyframes ua-mini-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .ua-mini::before { animation: none; } }
+
+/* ---------- Speaker settings view ---------- */
 #view-settings h2 { margin: 0 0 8px 0; color: var(--brand); font-size: 18px; }
 /* The library tab acts on one speaker (play, and presets are stored on it), so
    it carries the same speaker picker as speaker settings and shares its look. */
@@ -2671,7 +2707,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .wlan-stored-item.is-current .wlan-stored-name { font-weight: 600; }
 .wlan-badge { font-size: 11px; line-height: 1.4; padding: 0 6px; border-radius: 8px; border: 1px solid var(--brand-border); color: var(--c-muted); }
 .wlan-badge-current { border-color: var(--brand); color: var(--brand-text); }
-.wlan-badge-warn { border-color: var(--accent, #8a2318); color: var(--accent, #8a2318); }
+.wlan-badge-warn { border-color: var(--signal-red); color: var(--signal-red); }
 .btn-icon-sm { background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 4px; width: 36px; padding: 0; cursor: pointer; font-size: 14px; }
 #wlanSection input:focus, #wlanSection select:focus { outline: none; border-color: var(--brand); }
 #wlanSection h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }
@@ -3530,7 +3566,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   display: inline-flex;
   align-items: center;
   margin-right: 4px;
-  color: var(--err, #c66);
+  color: var(--signal-red);
 }
 
 /* Track progress bar (#399). Shown under the status line while a speaker is
@@ -3552,7 +3588,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    left, which is then just a few characters wide. */
 .track-progress .track-bar { flex: 0 0 96px; width: 96px; }
 .track-progress .track-bar.hidden { display: none; }
-.track-time { font-size: 12px; color: var(--c-text-dim, #888); white-space: nowrap; }
+.track-time { font-size: 12px; color: var(--c-faint); white-space: nowrap; }
 /* No min-width: the clock is right next to the station name now, and 34px
    of reserved space left a visible gap for a radio stream, which shows
    only the elapsed time and an empty total. */
@@ -3584,7 +3620,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: var(--c-text-dim, #888);
+  color: var(--c-faint);
 }
 .group-member-vol input[type=range] { flex: 1; }
 .group-member-vol .vol-val { min-width: 26px; text-align: right; font-size: 12px; }
@@ -3756,7 +3792,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
    and the whole point is that they find this out here rather than after a
    silent preset key. */
 .sp-prereq {
-  border-left: 3px solid var(--accent, #8a2318);
+  border-left: 3px solid var(--signal-red);
   padding: .55rem .85rem;
   margin: .6rem 0 1rem;
   background: rgba(127, 127, 127, .07);
@@ -3789,4 +3825,4 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 /* Example of the speaker display next to its settings: the panel's own
    pixels, kept sharp when scaled. */
 .display-preview { margin: 8px 0 10px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.display-preview img { width: 192px; height: 150px; image-rendering: pixelated; background: #000; border: 1px solid var(--border, #333); border-radius: 6px; }
+.display-preview img { width: 192px; height: 150px; image-rendering: pixelated; background: #000; border: 1px solid var(--c-border); border-radius: 6px; }

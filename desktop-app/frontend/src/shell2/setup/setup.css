@@ -9,7 +9,7 @@
 
 html.ui2 .w2 {
   max-width: 960px;
-  padding: 24px;
+  padding: var(--u-space-5);
   border: 1px solid var(--u-border);
   border-radius: 12px;
   background: var(--u-surface);
@@ -19,18 +19,18 @@ html.ui2 .w2 {
 html.ui2 #view-setup.w2-on > h2 { display: none; }
 
 html.ui2 .w2-crumb {
-  margin: 0 0 4px;
+  margin: 0 0 var(--u-space-1);
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   overflow-wrap: anywhere;
 }
 /* #view-setup h2 (style.css) colours the classic heading; the wizard's
    title is text, so the id beats it. */
 html.ui2 #ui2SetupWizard .w2-title {
-  margin: 0 0 16px;
+  margin: 0 0 var(--u-space-4);
   color: var(--u-text);
-  font-size: 24px;
-  font-weight: 700;
+  font-size: var(--u-fs-3xl);
+  font-weight: var(--u-fw-bold);
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -44,17 +44,17 @@ html.ui2 .w2-steps {
      by two, never three and one: below 36em the column minimum jumps from a
      quarter to a half of the row. */
   grid-template-columns: repeat(auto-fit, minmax(clamp((100% - 24px) / 4, (36em - 100%) * 999, (100% - 8px) / 2), 1fr));
-  gap: 8px;
-  margin: 0 0 24px;
+  gap: var(--u-space-2);
+  margin: 0 0 var(--u-space-5);
   padding: 0;
   list-style: none;
 }
 html.ui2 .w2-step {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: 56px;
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-bg);
@@ -72,8 +72,8 @@ html.ui2 .w2-step-mark {
   height: 24px;
   border: 1px solid currentcolor;
   border-radius: 50%;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-bold);
   line-height: 1;
 }
 html.ui2 .w2-step.is-done .w2-step-mark { color: var(--u-ok); }
@@ -82,10 +82,10 @@ html.ui2 .w2-step.is-failed .w2-step-mark { color: var(--u-danger); }
 html.ui2 .w2-step.is-waiting .w2-step-mark,
 html.ui2 .w2-step.is-skipped .w2-step-mark { color: var(--u-muted); }
 html.ui2 .w2-step-text { display: flex; flex-direction: column; min-width: 0; }
-html.ui2 .w2-step-n { color: var(--u-muted); font-size: 12px; }
-html.ui2 .w2-step-name { color: var(--u-text); font-size: 15px; font-weight: 700; overflow-wrap: break-word; }
-html.ui2 .w2-step-state { color: var(--u-muted); font-size: 12px; }
-html.ui2 .w2-step.is-failed .w2-step-state { color: var(--u-danger); font-weight: 600; }
+html.ui2 .w2-step-n { color: var(--u-muted); font-size: var(--u-fs-xs); }
+html.ui2 .w2-step-name { color: var(--u-text); font-size: var(--u-fs-md-plus); font-weight: var(--u-fw-bold); overflow-wrap: break-word; }
+html.ui2 .w2-step-state { color: var(--u-muted); font-size: var(--u-fs-xs); }
+html.ui2 .w2-step.is-failed .w2-step-state { color: var(--u-danger); font-weight: var(--u-fw-semibold); }
 html.ui2 .w2-step.is-done .w2-step-state { color: var(--u-ok); }
 
 html.ui2 .w2-panel[hidden] { display: none; }
@@ -96,13 +96,13 @@ html.ui2 #ui2SetupWizard.is-calm #setupResult .setup-warn { color: var(--u-text)
 /* The wizard's own title already says "Checking <name>": the check's heading
    stays for its aria-labelledby only, so it is not read or shown twice. */
 html.ui2 .w2-check .u-check-title { display: none; }
-html.ui2 .w2-lead { margin: 0 0 16px; color: var(--u-text); font-size: 15px; line-height: 1.45; }
-html.ui2 .w2-muted { color: var(--u-muted); font-size: 14px; line-height: 1.45; }
+html.ui2 .w2-lead { margin: 0 0 var(--u-space-4); color: var(--u-text); font-size: var(--u-fs-md-plus); line-height: 1.45; }
+html.ui2 .w2-muted { color: var(--u-muted); font-size: var(--u-fs-md); line-height: 1.45; }
 
 /* Find: one radio per speaker, the whole row is the target. */
 html.ui2 .w2-group { margin: 0; padding: 0; border: 0; min-width: 0; }
-html.ui2 .w2-legend { margin: 0 0 8px; padding: 0; color: var(--u-text); font-size: 15px; font-weight: 700; }
-html.ui2 .w2-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+html.ui2 .w2-legend { margin: 0 0 var(--u-space-2); padding: 0; color: var(--u-text); font-size: var(--u-fs-md-plus); font-weight: var(--u-fw-bold); }
+html.ui2 .w2-list { display: flex; flex-direction: column; gap: var(--u-space-2); margin: 0; padding: 0; list-style: none; }
 html.ui2 .w2-row {
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
@@ -112,9 +112,9 @@ html.ui2 .w2-row.is-selected { border-width: 2px; background: var(--u-selected);
 html.ui2 .w2-choice {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--u-space-3);
   min-height: 56px;
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
   cursor: pointer;
 }
 html.ui2 .w2-row.is-offline .w2-choice { cursor: not-allowed; }
@@ -126,34 +126,34 @@ html.ui2 .w2-radio {
   accent-color: var(--u-action);
 }
 html.ui2 .w2-choice-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-html.ui2 .w2-name { color: var(--u-text); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+html.ui2 .w2-name { color: var(--u-text); font-size: var(--u-fs-md-plus); font-weight: var(--u-fw-semibold); overflow-wrap: anywhere; }
 html.ui2 .w2-row.is-offline .w2-name { color: var(--u-muted); }
-html.ui2 .w2-meta { color: var(--u-muted); font-size: 13px; overflow-wrap: anywhere; }
-html.ui2 .w2-row-note { margin: 0; padding: 0 12px 10px 44px; color: var(--u-muted); font-size: 13px; line-height: 1.4; }
+html.ui2 .w2-meta { color: var(--u-muted); font-size: var(--u-fs-sm); overflow-wrap: anywhere; }
+html.ui2 .w2-row-note { margin: 0; padding: 0 var(--u-space-3) 10px 44px; color: var(--u-muted); font-size: var(--u-fs-sm); line-height: 1.4; }
 html.ui2 .w2-row--str {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--u-space-2) var(--u-space-3);
   min-height: 56px;
-  padding: 8px 12px;
+  padding: var(--u-space-2) var(--u-space-3);
 }
-html.ui2 .w2-empty { margin: 0 0 16px; }
-html.ui2 .w2-empty p { margin: 0 0 8px; }
-html.ui2 .w2-onstr { margin-top: 16px; }
+html.ui2 .w2-empty { margin: 0 0 var(--u-space-4); }
+html.ui2 .w2-empty p { margin: 0 0 var(--u-space-2); }
+html.ui2 .w2-onstr { margin-top: var(--u-space-4); }
 html.ui2 .w2-onstr-sum {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: var(--u-target);
   color: var(--u-text);
-  font-weight: 600;
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 /* A flex summary loses its marker: draw it, closed and open. */
 html.ui2 .w2-onstr-sum::before { content: '\25B8' / ''; }
 html.ui2 .w2-onstr[open] > .w2-onstr-sum::before { content: '\25BE' / ''; }
-html.ui2 .w2-onstr > .w2-muted { margin: 0 0 8px; }
+html.ui2 .w2-onstr > .w2-muted { margin: 0 0 var(--u-space-2); }
 
 /* The classic picker moves into Find for its onboarding part only: the cards
    and its own empty hints are the list above, in the wizard's words. */
@@ -164,7 +164,7 @@ html.ui2 .w2 .setup-target-limited-note,
 html.ui2 .w2 .setup-target-empty,
 html.ui2 .w2 .setup-target-empty-hint,
 html.ui2 .w2 .setup-target-empty-reset { display: none; }
-html.ui2 .w2 .w2-onboard { display: none; margin-top: 16px; }
+html.ui2 .w2 .w2-onboard { display: none; margin-top: var(--u-space-4); }
 html.ui2 .w2.is-onboarding .w2-onboard { display: block; }
 html.ui2 .w2.is-missing #setupPrimaryAction { display: none; }
 
@@ -172,8 +172,8 @@ html.ui2 .w2.is-missing #setupPrimaryAction { display: none; }
    failures; a failure says so in its words and its mark. */
 html.ui2 .w2-note,
 html.ui2 .w2-done {
-  margin: 0 0 16px;
-  padding: 12px 16px;
+  margin: 0 0 var(--u-space-4);
+  padding: var(--u-space-3) var(--u-space-4);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-bg);
@@ -184,15 +184,15 @@ html.ui2 .w2-done { border-width: 2px; border-color: var(--u-ok); }
 html.ui2 .w2-note-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 4px;
+  gap: var(--u-space-2);
+  margin: 0 0 var(--u-space-1);
   color: var(--u-text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--u-fs-md-plus);
+  font-weight: var(--u-fw-bold);
   overflow-wrap: anywhere;
 }
-html.ui2 .w2-note-text { margin: 0 0 4px; color: var(--u-text); font-size: 14px; line-height: 1.45; }
-html.ui2 .w2-note-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+html.ui2 .w2-note-text { margin: 0 0 var(--u-space-1); color: var(--u-text); font-size: var(--u-fs-md); line-height: 1.45; }
+html.ui2 .w2-note-acts { display: flex; flex-wrap: wrap; gap: var(--u-space-2); margin-top: var(--u-space-3); }
 html.ui2 .w2-ico {
   flex: 0 0 auto;
   display: inline-flex;
@@ -203,8 +203,8 @@ html.ui2 .w2-ico {
   border: 1px solid currentcolor;
   border-radius: 50%;
   color: var(--u-accent);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-bold);
 }
 html.ui2 .w2-note--failed .w2-ico { color: var(--u-danger); }
 html.ui2 .w2-ico--ok { color: var(--u-ok); }
@@ -222,7 +222,7 @@ html.ui2 .w2-spin {
   html.ui2 .w2-spin { animation: none; }
 }
 
-html.ui2 .w2-classic { margin-top: 8px; }
+html.ui2 .w2-classic { margin-top: var(--u-space-2); }
 html.ui2 .w2-details:empty { display: none; }
 
 /* The foot: Back on the left, the way on on the right. */
@@ -231,20 +231,20 @@ html.ui2 .w2-foot {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
-  margin-top: 24px;
+  gap: var(--u-space-2) var(--u-space-4);
+  margin-top: var(--u-space-5);
 }
 html.ui2 .w2-foot:empty { display: none; }
 html.ui2 .w2-foot-left,
-html.ui2 .w2-foot-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+html.ui2 .w2-foot-right { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u-space-2) var(--u-space-3); }
 html.ui2 .w2-foot-right { margin-inline-start: auto; justify-content: flex-end; }
-html.ui2 .w2-hint { color: var(--u-muted); font-size: 14px; }
+html.ui2 .w2-hint { color: var(--u-muted); font-size: var(--u-fs-md); }
 
 html.ui2 .w2 :focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
 html.ui2 .w2-title:focus { outline: none; }
-html.ui2 .w2-title:focus-visible { outline: 2px solid var(--u-focus); }
+html.ui2 .w2-title:focus-visible { outline: var(--u-focus-ring); }
 

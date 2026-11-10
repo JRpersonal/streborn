@@ -6,12 +6,12 @@
 html.ui2 .u-check {
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 .u-check-title {
-  margin: 0 0 8px;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 0 0 var(--u-space-2);
+  font-size: var(--u-fs-xl);
+  font-weight: var(--u-fw-bold);
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -25,9 +25,9 @@ html.ui2 .u-check-rows {
 html.ui2 .u-check-row {
   display: flex;
   align-items: center;
-  gap: 8px 16px;
+  gap: var(--u-space-2) var(--u-space-4);
   min-height: 56px;
-  padding: 8px 0;
+  padding: var(--u-space-2) 0;
   border-bottom: 1px solid var(--u-border);
 }
 html.ui2 .u-check-mark {
@@ -39,7 +39,7 @@ html.ui2 .u-check-mark {
   height: 28px;
   border: 2px solid currentcolor;
   border-radius: 50%;
-  font-weight: 700;
+  font-weight: var(--u-fw-bold);
   line-height: 1;
 }
 html.ui2 .u-check-mark--ok,
@@ -58,42 +58,42 @@ html.ui2 .u-check-row-text {
   flex-direction: column;
   min-width: 0;
 }
-html.ui2 .u-check-row-title { font-weight: 600; }
+html.ui2 .u-check-row-title { font-weight: var(--u-fw-semibold); }
 html.ui2 .u-check-row-detail {
   color: var(--u-muted);
   overflow-wrap: anywhere;
 }
 html.ui2 .u-check-row-status {
   flex: 0 0 auto;
-  font-weight: 600;
+  font-weight: var(--u-fw-semibold);
   text-align: end;
 }
 
 /* The callout: what the step says and the one main action. */
-html.ui2 .u-check-callout { margin-top: 16px; }
+html.ui2 .u-check-callout { margin-top: var(--u-space-4); }
 html.ui2 .u-check-callout:empty { display: none; }
-html.ui2 .u-check-line { margin: 0 0 8px; line-height: 1.45; }
+html.ui2 .u-check-line { margin: 0 0 var(--u-space-2); line-height: 1.45; }
 html.ui2 .u-check-muted { color: var(--u-muted); }
-html.ui2 .u-check-line--ok { font-weight: 600; }
+html.ui2 .u-check-line--ok { font-weight: var(--u-fw-semibold); }
 html.ui2 .u-check-line--ok::before { content: "\2713\00a0"; color: var(--u-ok); }
 html.ui2 .u-check-line--err { color: var(--u-danger); }
 html.ui2 .u-check-line--err::before { content: "\00d7\00a0"; }
 html.ui2 .u-check-routea {
-  padding: 16px;
+  padding: var(--u-space-4);
   border: 1px solid var(--u-accent);
   border-radius: var(--u-radius);
   background: var(--u-selected);
 }
 html.ui2 .u-check-routea-title {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 700;
+  margin: 0 0 var(--u-space-2);
+  font-size: var(--u-fs-md-plus);
+  font-weight: var(--u-fw-bold);
 }
-html.ui2 .u-check-routea-act { margin: 8px 0; }
+html.ui2 .u-check-routea-act { margin: var(--u-space-2) 0; }
 
 /* The guide or the ladder from the classic layout, inside the step. */
 html.ui2 .u-check-guide:empty { display: none; }
-html.ui2 .u-check-guide { margin-top: 16px; }
+html.ui2 .u-check-guide { margin-top: var(--u-space-4); }
 html.ui2 .u-check-other {
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
@@ -102,14 +102,14 @@ html.ui2 .u-check-other-sum {
   display: flex;
   align-items: center;
   min-height: var(--u-target);
-  padding: 0 16px;
-  font-weight: 600;
+  padding: 0 var(--u-space-4);
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 /* A flex summary loses its marker: draw it, closed and open. */
-html.ui2 .u-check-other-sum::before { content: '\25B8' / ''; margin-inline-end: 8px; }
+html.ui2 .u-check-other-sum::before { content: '\25B8' / ''; margin-inline-end: var(--u-space-2); }
 html.ui2 .u-check-other[open] > .u-check-other-sum::before { content: '\25BE' / ''; }
-html.ui2 .u-check-other-body { padding: 0 16px 16px; }
+html.ui2 .u-check-other-body { padding: 0 var(--u-space-4) var(--u-space-4); }
 /* The reused ladder and guide keep their classic look, but their controls
    get the preview's 40px targets. */
 html.ui2 .u-check :is(.fw-ladder, .fw-guide) button { min-height: var(--u-target); }
@@ -128,8 +128,8 @@ html.ui2 .u-check-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
-  margin-top: 16px;
+  gap: var(--u-space-2) var(--u-space-4);
+  margin-top: var(--u-space-4);
 }
 html.ui2 .u-check-actions [hidden] { display: none; }
 html.ui2 .u-check-risk {
@@ -140,5 +140,5 @@ html.ui2 .u-check-risk {
 
 html.ui2 .u-check :is(button, a, summary):focus-visible {
   outline: 3px solid var(--u-focus);
-  outline-offset: 2px;
+  outline-offset: var(--u-focus-offset);
 }

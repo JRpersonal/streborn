@@ -15,8 +15,8 @@ html.ui2 #view-box .topbar-title,
 html.ui2 #view-box #boxSelect,
 html.ui2 #view-box .search > h3,
 html.ui2 #view-box #favModeBtn { display: none; }
-html.ui2 #view-box .topbar { margin-bottom: 8px; padding: 0; }
-html.ui2 #view-box .topbar-head { gap: 16px; }
+html.ui2 #view-box .topbar { margin-bottom: var(--u-space-2); padding: 0; }
+html.ui2 #view-box .topbar-head { gap: var(--u-space-4); }
 /* Size and place come from the shared view header (shell2.css). */
 html.ui2 .ui2-radio-title { flex: 1 1 auto; }
 html.ui2 #view-box #refreshBtn {
@@ -33,28 +33,28 @@ html.ui2 .ui2-keys-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
-  margin: 0 0 8px;
+  gap: var(--u-space-1) var(--u-space-3);
+  margin: 0 0 var(--u-space-2);
 }
 html.ui2 .ui2-keys-title {
   margin: 0;
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--u-fs-lg);
+  font-weight: var(--u-fw-bold);
 }
-html.ui2 .ui2-keys-hint { flex: 1 1 16em; color: var(--u-muted); font-size: 13px; }
+html.ui2 .ui2-keys-hint { flex: 1 1 16em; color: var(--u-muted); font-size: var(--u-fs-sm); }
 /* Transfer, moved into this row (ui2radio.js), at its end. */
 html.ui2 .ui2-keys-head .preset-copy-row { margin: 0; margin-inline-start: auto; }
 html.ui2 .ui2-keys-head { align-items: center; }
 /* Once | Twice of a two-row speaker (#1110), moved into this line
    (ui2radio.js): a segmented pair instead of the classic tab strip. The chosen
    one keeps its weight and underline, so it is never told by fill alone. */
-html.ui2 .ui2-keys-head .preset-row-tabs { gap: 4px; margin: 0; border-bottom: 0; }
+html.ui2 .ui2-keys-head .preset-row-tabs { gap: var(--u-space-1); margin: 0; border-bottom: 0; }
 html.ui2 .ui2-keys-head .preset-row-tab {
   min-width: 0;
   min-height: var(--u-target);
-  padding: 4px 12px;
+  padding: var(--u-space-1) var(--u-space-3);
   margin: 0;
   border: 1px solid var(--u-border);
   border-bottom-width: 3px;
@@ -69,16 +69,16 @@ html.ui2 .ui2-keys-head .preset-row-tab[aria-selected="true"] {
 }
 html.ui2 #view-box .preset-transfer-btn {
   min-height: var(--u-target);
-  padding-inline: 12px;
+  padding-inline: var(--u-space-3);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 
-html.ui2 #view-box #presets { gap: 8px; margin-bottom: 16px; }
+html.ui2 #view-box #presets { gap: var(--u-space-2); margin-bottom: var(--u-space-4); }
 /* Compact tiles: "Key n" over the station, rename and clear beside both, and
    the hold hint said once over the grid instead of on every tile. */
 html.ui2 #view-box .preset:not(.empty) {
@@ -87,11 +87,11 @@ html.ui2 #view-box .preset:not(.empty) {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto 1fr;
   align-items: center;
-  column-gap: 4px;
+  column-gap: var(--u-space-1);
   min-height: 0;
-  padding: 6px 4px 6px 12px;
+  padding: 6px var(--u-space-1) 6px var(--u-space-3);
 }
-html.ui2 #view-box .preset.empty { min-height: 0; padding: 6px 12px; }
+html.ui2 #view-box .preset.empty { min-height: 0; padding: 6px var(--u-space-3); }
 html.ui2 #view-box .preset:not(.empty) .preset-head { display: contents; }
 html.ui2 #view-box .preset:not(.empty) .num { grid-area: num; }
 html.ui2 #view-box .preset:not(.empty) .preset-acts { grid-area: acts; display: flex; align-items: center; }
@@ -137,20 +137,20 @@ html.ui2 #view-box .preset :is(.ren, .del):hover { color: var(--u-text); backgro
 
 html.ui2 .ui2-radio-tabs {
   display: flex;
-  gap: 4px;
+  gap: var(--u-space-1);
   border-bottom: 1px solid var(--u-border);
-  margin: 0 0 12px;
+  margin: 0 0 var(--u-space-3);
 }
 html.ui2 .ui2-radio-tab {
   min-height: var(--u-target);
-  padding: 0 16px;
+  padding: 0 var(--u-space-4);
   border: 0;
   border-bottom: 3px solid transparent;
   background: transparent;
   color: var(--u-muted);
   font-family: var(--u-font);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 html.ui2 .ui2-radio-tab:hover { color: var(--u-text); }
@@ -161,7 +161,7 @@ html.ui2 .ui2-radio-tab.is-active { color: var(--u-text); border-bottom-color: v
 html.ui2 #view-box .search {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
   margin-top: 0;
   padding: 0;
   background: transparent;
@@ -189,11 +189,11 @@ html.ui2 #view-box :is(#streamSourceDetails, .ui2-filters) > summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--u-space-1) var(--u-space-3);
   min-height: var(--u-target);
-  padding: 4px 12px;
-  font-size: 14px;
-  font-weight: 600;
+  padding: var(--u-space-1) var(--u-space-3);
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
   cursor: pointer;
 }
 html.ui2 #view-box :is(#streamSourceDetails, .ui2-filters)[open] > summary { border-bottom: 1px solid var(--u-border); }
@@ -205,15 +205,15 @@ html.ui2 #view-box :is(#streamSourceDetails, .ui2-filters) > summary::before {
   content: "\25B8";
   margin-inline-end: -4px;
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-box :is(#streamSourceDetails, .ui2-filters) > summary:dir(rtl)::before { content: "\25C2"; }
 html.ui2 #view-box :is(#streamSourceDetails, .ui2-filters)[open] > summary::before { content: "\25BE"; }
 html.ui2 .ui2-filters-sum {
   min-width: 0;
   color: var(--u-muted);
-  font-size: 13px;
-  font-weight: 400;
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-regular);
   overflow-wrap: anywhere;
 }
 /* Inside: each select under its own label, in columns, then the checkboxes. */
@@ -221,38 +221,38 @@ html.ui2 #view-box .ui2-filters .search-filters {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   align-items: end;
-  gap: 12px 16px;
+  gap: var(--u-space-3) var(--u-space-4);
   margin: 0;
-  padding: 12px;
+  padding: var(--u-space-3);
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-box .ui2-filters .ui2-filter-field {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--u-space-1);
   min-width: 0;
   cursor: default;
 }
-html.ui2 #view-box .ui2-filters .ui2-filter-name { color: var(--u-muted); font-size: 13px; font-weight: 600; }
+html.ui2 #view-box .ui2-filters .ui2-filter-name { color: var(--u-muted); font-size: var(--u-fs-sm); font-weight: var(--u-fw-semibold); }
 html.ui2 #view-box .ui2-filters select {
   width: 100%;
   min-width: 0;
   min-height: var(--u-target);
-  padding: 0 8px;
+  padding: 0 var(--u-space-2);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-bg);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-box .ui2-filters select.has-filter { border-color: var(--u-accent); box-shadow: inset 0 0 0 1px var(--u-accent); }
 html.ui2 #view-box .ui2-filters .ui2-filter-check {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--u-space-2);
   min-height: var(--u-target);
   color: var(--u-text);
 }
@@ -266,9 +266,9 @@ html.ui2 .ui2-st { border-bottom: 1px solid var(--u-border); }
 html.ui2 .ui2-st-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--u-space-3);
   min-height: 56px;
-  padding: 8px 4px;
+  padding: var(--u-space-2) var(--u-space-1);
 }
 html.ui2 .ui2-st-main:hover { background: var(--u-surface); }
 html.ui2 .ui2-st-logo { flex: 0 0 auto; }
@@ -282,14 +282,14 @@ html.ui2 .ui2-st-text {
 html.ui2 .ui2-st-name {
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--u-fs-md-plus);
+  font-weight: var(--u-fw-semibold);
   overflow-wrap: anywhere;
 }
-html.ui2 .ui2-st-genre { color: var(--u-muted); font-size: 13px; }
-html.ui2 .ui2-st-broken { color: var(--u-warn); font-size: 13px; }
+html.ui2 .ui2-st-genre { color: var(--u-muted); font-size: var(--u-fs-sm); }
+html.ui2 .ui2-st-broken { color: var(--u-warn); font-size: var(--u-fs-sm); }
 html.ui2 .ui2-st-broken::before { content: '\26A0\FE0E  '; }
-html.ui2 .ui2-st-status { font-size: 13px; color: var(--u-muted); }
+html.ui2 .ui2-st-status { font-size: var(--u-fs-sm); color: var(--u-muted); }
 html.ui2 .ui2-st-status:empty { display: none; }
 html.ui2 .ui2-st-status.is-ok { color: var(--u-ok); }
 html.ui2 .ui2-st-status.is-warn { color: var(--u-warn); }
@@ -299,17 +299,17 @@ html.ui2 .ui2-st-actions {
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
-html.ui2 .ui2-st-btn { border: 1px solid var(--u-border); font-size: 16px; }
+html.ui2 .ui2-st-btn { border: 1px solid var(--u-border); font-size: var(--u-fs-lg); }
 html.ui2 .ui2-st-btn:hover { background: var(--u-surface); }
 html.ui2 .ui2-st-fav.is-fav { color: var(--u-warn); }
 html.ui2 .ui2-st-btn-gap { flex: 0 0 var(--u-target); width: var(--u-target); }
 html.ui2 .ui2-st-move[aria-disabled="true"] { opacity: .35; cursor: default; }
 html.ui2 .ui2-st.is-open .ui2-st-more { background: var(--u-selected); }
 html.ui2 .ui2-st-details {
-  margin: 0 4px 12px;
-  padding: 12px 16px;
+  margin: 0 var(--u-space-1) var(--u-space-3);
+  padding: var(--u-space-3) var(--u-space-4);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -318,13 +318,13 @@ html.ui2 .ui2-st-details[hidden] { display: none; }
 html.ui2 .ui2-st-details dl {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
+  gap: 6px var(--u-space-4);
   margin: 0;
-  font-size: 13px;
+  font-size: var(--u-fs-sm);
 }
 html.ui2 .ui2-st-details dt { color: var(--u-muted); }
 html.ui2 .ui2-st-details dd { margin: 0; color: var(--u-text); overflow-wrap: anywhere; }
-html.ui2 .ui2-st-url { font-size: 12px; user-select: all; }
+html.ui2 .ui2-st-url { font-size: var(--u-fs-xs); user-select: all; }
 html.ui2 .ui2-st-site { color: var(--u-accent); }
 
 /* A narrow main pane, or a large text size: the actions go under the name. */
@@ -345,8 +345,8 @@ html.ui2 .ui2-st-site { color: var(--u-accent); }
 html.ui2 #view-box :is(.ui2-radio-tab, .ui2-st button, .ui2-st a, #refreshBtn, .preset-transfer-btn, #streamSourceDetails > summary, .ui2-filters > summary, .ui2-filters select, .ui2-filters input):focus-visible,
 html.ui2 #view-box .preset:has(.preset-body[role="button"]:focus-visible),
 html.ui2 #pickModal .pick-slot:focus-visible {
-  outline: 2px solid var(--u-focus) !important;
-  outline-offset: 2px !important;
+  outline: var(--u-focus-ring) !important;
+  outline-offset: var(--u-focus-offset) !important;
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
 /* A key on its way to the speaker keeps the focus (aria-disabled, not
@@ -356,7 +356,7 @@ html.ui2 #pickModal .pick-slot[aria-disabled="true"] { opacity: .6; cursor: prog
    tile (above), and rename and clear draw their ring inward. */
 html.ui2 #view-box .preset-body[role="button"]:focus-visible { outline: none !important; }
 html.ui2 #view-box .preset :is(.ren, .del):focus-visible {
-  outline: 2px solid var(--u-focus) !important;
+  outline: var(--u-focus-ring) !important;
   outline-offset: -2px !important;
 }
 
@@ -370,8 +370,8 @@ html.ui2 #view-box #boxHint { display: none; }
    Empty, the line takes no room; the words say the outcome, the colour only
    repeats it. */
 html.ui2 #view-box .preset .ui2-key-status {
-  margin: 4px 0 0;
-  font-size: 12px;
+  margin: var(--u-space-1) 0 0;
+  font-size: var(--u-fs-xs);
   line-height: 1.3;
   color: var(--u-muted);
   overflow-wrap: anywhere;
@@ -383,8 +383,8 @@ html.ui2 #view-box .preset .ui2-key-status.is-error { color: var(--u-danger); }
 /* The Transfer result, under the Transfer button. */
 html.ui2 #view-box .ui2-xfer-status {
   flex-basis: 100%;
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: var(--u-space-1) 0 0;
+  font-size: var(--u-fs-sm);
   color: var(--u-muted);
 }
 html.ui2 #view-box .ui2-xfer-status:empty { display: none; }
@@ -395,55 +395,55 @@ html.ui2 #view-box .ui2-xfer-status.is-error { color: var(--u-danger); }
    Wi-Fi), right under the row's status line. */
 html.ui2 #view-box .ui2-st .ui2-st-fix {
   align-self: flex-start;
-  margin-top: 4px;
+  margin-top: var(--u-space-1);
   min-height: var(--u-target);
 }
 html.ui2 #view-box .ui2-st .ui2-st-fix:focus-visible {
-  outline: 2px solid var(--u-focus) !important;
-  outline-offset: 2px !important;
+  outline: var(--u-focus-ring) !important;
+  outline-offset: var(--u-focus-offset) !important;
 }
 /* The station list's loading line and its empty and error states (the
    Library's look, shell2/library.js stateHTML and loadingHTML). */
 html.ui2 #view-box #searchResults .lib2-state {
-  margin: 16px 0;
-  padding: 16px;
+  margin: var(--u-space-4) 0;
+  padding: var(--u-space-4);
   border: 1px solid var(--u-border);
-  border-radius: 12px;
+  border-radius: var(--u-radius-pill);
   background: var(--u-surface);
   color: var(--u-text);
 }
 html.ui2 #view-box #searchResults .lib2-state--error { border-color: var(--u-danger); }
 html.ui2 #view-box #searchResults .lib2-state-title {
-  margin: 0 0 8px;
-  font-size: 17px;
-  font-weight: 700;
+  margin: 0 0 var(--u-space-2);
+  font-size: var(--u-fs-lg-plus);
+  font-weight: var(--u-fw-bold);
   overflow-wrap: anywhere;
 }
 html.ui2 #view-box #searchResults .lib2-state--error .lib2-state-title { color: var(--u-danger); }
-html.ui2 #view-box #searchResults .lib2-state-body { margin: 0 0 8px; font-size: 14px; line-height: 1.45; }
+html.ui2 #view-box #searchResults .lib2-state-body { margin: 0 0 var(--u-space-2); font-size: var(--u-fs-md); line-height: 1.45; }
 html.ui2 #view-box #searchResults .lib2-state-detail {
-  margin: 0 0 8px;
+  margin: 0 0 var(--u-space-2);
   color: var(--u-muted);
-  font-size: 13px;
+  font-size: var(--u-fs-sm);
   overflow-wrap: anywhere;
 }
 html.ui2 #view-box #searchResults .lib2-state-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--u-space-2);
+  margin-top: var(--u-space-3);
 }
 html.ui2 #view-box #searchResults .lib2-state-acts .u-btn:focus-visible {
-  outline: 2px solid var(--u-focus) !important;
-  outline-offset: 2px !important;
+  outline: var(--u-focus-ring) !important;
+  outline-offset: var(--u-focus-offset) !important;
 }
 html.ui2 #view-box #searchResults .lib2-loading {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0;
+  gap: var(--u-space-2);
+  margin: var(--u-space-4) 0;
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-box #searchResults .lib2-spinner {
   flex: 0 0 auto;
@@ -461,17 +461,17 @@ html.ui2 #view-box #searchResults .lib2-spinner {
 /* The Spotify tools' row and result lines (views/spotify.js, preview only):
    one status line per speaker row and one under the copy-login button. They
    sit here with the other row status lines of the music views. */
-html.ui2 #view-spotify .sp2-q-row { flex-wrap: wrap; row-gap: 4px; }
+html.ui2 #view-spotify .sp2-q-row { flex-wrap: wrap; row-gap: var(--u-space-1); }
 html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status, .sp2-q-loading) {
   flex-basis: 100%;
-  margin: 4px 0 0;
-  font-size: 13px;
+  margin: var(--u-space-1) 0 0;
+  font-size: var(--u-fs-sm);
   color: var(--u-muted);
 }
 html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status):empty { display: none; }
 html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-ok { color: var(--u-ok); }
 html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-warn { color: var(--u-warn); }
 html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-error { color: var(--u-danger); }
-html.ui2 #view-spotify .sp2-q-note { color: var(--u-muted); font-size: 13px; }
+html.ui2 #view-spotify .sp2-q-note { color: var(--u-muted); font-size: var(--u-fs-sm); }
 html.ui2 #view-spotify #spotifySyncBtn[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
-html.ui2 #view-spotify .sp2-acct-open { margin-top: 8px; }
+html.ui2 #view-spotify .sp2-acct-open { margin-top: var(--u-space-2); }

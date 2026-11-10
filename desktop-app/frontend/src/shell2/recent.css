@@ -16,12 +16,12 @@ html.ui2 #view-recent {
 /* Header: title, the speaker scope and Clear list on one line, wrapping at a
    larger text size. */
 html.ui2 #view-recent .recent-head {
-  gap: 8px 16px;
-  margin-bottom: 4px;
+  gap: var(--u-space-2) var(--u-space-4);
+  margin-bottom: var(--u-space-1);
 }
 /* The title and the line under it are the shared view header (shell2.css). */
 html.ui2 #view-recent .recent-head .recent-scope { margin-inline-start: auto; }
-html.ui2 #view-recent .recent-sub { margin-bottom: 8px; }
+html.ui2 #view-recent .recent-sub { margin-bottom: var(--u-space-2); }
 /* The scope: a label and two pressed / not pressed buttons joined into one
    compact control, the pressed one filled. Words carry the state too
    (aria-pressed), the fill only repeats it. */
@@ -31,20 +31,20 @@ html.ui2 #view-recent .rc-scope2 {
   gap: 0;
 }
 html.ui2 #view-recent .rc-scope-label {
-  margin-inline-end: 8px;
+  margin-inline-end: var(--u-space-2);
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-recent .rc-scope-btn {
   min-height: var(--u-target);
   max-width: 200px;
-  padding: 0 12px;
+  padding: 0 var(--u-space-3);
   overflow: hidden;
   border: 1px solid var(--u-border);
   background: var(--u-bg);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -60,7 +60,7 @@ html.ui2 #view-recent .rc-scope-btn:last-of-type {
 }
 html.ui2 #view-recent .rc-scope-btn[aria-pressed="true"] {
   background: var(--u-selected);
-  font-weight: 600;
+  font-weight: var(--u-fw-semibold);
   box-shadow: inset 0 -3px 0 var(--u-accent);
 }
 html.ui2 #view-recent .rc-scope-btn:hover { background: var(--u-surface); }
@@ -68,36 +68,36 @@ html.ui2 #view-recent .rc-scope-btn[aria-pressed="true"]:hover { background: var
 html.ui2 #view-recent .recent-box-select {
   min-height: var(--u-target);
   max-width: 240px;
-  padding-inline: 12px 32px;
+  padding-inline: var(--u-space-3) var(--u-space-6);
   border: 1px solid var(--u-border);
   border-radius: var(--u-radius);
   background-color: var(--u-surface);
   color: var(--u-text);
   font-family: var(--u-font);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-recent .rc-clear-err,
 html.ui2 #view-recent .rc-err {
   color: var(--u-danger);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   line-height: 1.4;
 }
-html.ui2 #view-recent .rc-clear-err { margin-bottom: 8px; }
-html.ui2 #view-recent .rc-err { padding: 0 16px 8px; }
+html.ui2 #view-recent .rc-clear-err { margin-bottom: var(--u-space-2); }
+html.ui2 #view-recent .rc-err { padding: 0 var(--u-space-4) var(--u-space-2); }
 html.ui2 #view-recent :is(.rc-clear-err, .rc-err):empty { display: none; }
 
 /* One section per day, its heading above the cards of that day. */
-html.ui2 #view-recent .recent-list { gap: 24px; }
+html.ui2 #view-recent .recent-list { gap: var(--u-space-5); }
 html.ui2 #view-recent .rc-day-head {
-  margin: 0 0 8px;
+  margin: 0 0 var(--u-space-2);
   color: var(--u-muted);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
 }
 html.ui2 #view-recent .rc-day-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--u-space-2);
 }
 
 /* A card: the station, who played it, its actions, then the songs heard. */
@@ -108,35 +108,35 @@ html.ui2 #view-recent .recent-card {
   background: var(--u-surface);
   color: var(--u-text);
 }
-html.ui2 #view-recent .recent-card .rc-head { gap: 16px; padding: 8px 8px 8px 16px; }
+html.ui2 #view-recent .recent-card .rc-head { gap: var(--u-space-4); padding: var(--u-space-2) var(--u-space-2) var(--u-space-2) var(--u-space-4); }
 /* The name wraps instead of cutting off: at a larger text size the cut took
    the "now playing" badge with it. */
 html.ui2 #view-recent .rc-name {
   color: var(--u-text);
-  font-size: 16px;
+  font-size: var(--u-fs-lg);
   white-space: normal;
   overflow-wrap: anywhere;
 }
 html.ui2 #view-recent .rc-sub,
 html.ui2 #view-recent .rc-tr-sub,
 html.ui2 #view-recent .rc-tr-time { color: var(--u-muted); }
-html.ui2 #view-recent .rc-sub { font-size: 13px; }
+html.ui2 #view-recent .rc-sub { font-size: var(--u-fs-sm); }
 html.ui2 #view-recent .rc-box,
 html.ui2 #view-recent .rc-tr-lead { color: var(--u-text); }
 /* A link is underlined, not told apart by colour alone. */
 html.ui2 #view-recent .rc-site { color: var(--u-accent); text-decoration: underline; }
-html.ui2 #view-recent .rc-actions { gap: 8px; }
+html.ui2 #view-recent .rc-actions { gap: var(--u-space-2); }
 html.ui2 #view-recent .rc-actions .u-btn--icon {
   border-color: var(--u-border);
-  font-size: 16px;
+  font-size: var(--u-fs-lg);
 }
 html.ui2 #view-recent .rc-actions .u-btn--icon:hover:not(:disabled, [aria-disabled="true"]) { background: var(--u-bg); }
 html.ui2 #view-recent .rc-actions .rc-fav.is-fav { color: var(--u-warn); border-color: currentcolor; }
 html.ui2 #view-recent .rc-tracks {
-  padding: 4px 16px 8px 72px;
+  padding: var(--u-space-1) var(--u-space-4) var(--u-space-2) 72px;
   border-top: 1px solid var(--u-bg);
 }
-html.ui2 #view-recent .rc-track { font-size: 14px; }
+html.ui2 #view-recent .rc-track { font-size: var(--u-fs-md); }
 
 /* The card playing now: its border and the word, never the colour alone. */
 html.ui2 #view-recent .recent-card.rc-now { border-color: var(--u-ok); box-shadow: none; }
@@ -144,33 +144,33 @@ html.ui2 #view-recent .rc-now-badge {
   display: inline-flex;
   align-items: center;
   height: 24px;
-  margin-inline-start: 8px;
-  padding: 0 8px;
+  margin-inline-start: var(--u-space-2);
+  padding: 0 var(--u-space-2);
   border: 1px solid currentcolor;
-  border-radius: 12px;
+  border-radius: var(--u-radius-pill);
   color: var(--u-ok);
-  font-size: 12px;
+  font-size: var(--u-fs-xs);
   vertical-align: middle;
 }
 
 /* Empty and loading: what happened and what fills the list. */
 html.ui2 #view-recent .recent-loading { color: var(--u-muted); }
 html.ui2 #view-recent .rc-empty2 {
-  padding: 24px;
+  padding: var(--u-space-5);
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);
   text-align: start;
 }
 html.ui2 #view-recent .rc-empty2 p { margin: 0; }
-html.ui2 #view-recent .rc-empty-title { margin-bottom: 8px; font-size: 16px; font-weight: 600; }
-html.ui2 #view-recent .rc-empty-body { color: var(--u-muted); font-size: 14px; line-height: 1.5; }
+html.ui2 #view-recent .rc-empty-title { margin-bottom: var(--u-space-2); font-size: var(--u-fs-lg); font-weight: var(--u-fw-semibold); }
+html.ui2 #view-recent .rc-empty-body { color: var(--u-muted); font-size: var(--u-fs-md); line-height: 1.5; }
 /* The empty history's way forward: Radio, Library, Spotify. */
 html.ui2 #view-recent .rc-empty-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--u-space-2);
+  margin-top: var(--u-space-4);
 }
 
 /* A card's line also carries the verdict of its play or key action (phase
@@ -186,8 +186,8 @@ html.ui2 #view-recent .rc-unanswered {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
-  padding: 12px 16px;
+  gap: var(--u-space-2) var(--u-space-4);
+  padding: var(--u-space-3) var(--u-space-4);
   border: 1px solid var(--u-warn);
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -196,7 +196,7 @@ html.ui2 #view-recent .rc-unanswered-text {
   flex: 1 1 240px;
   margin: 0;
   color: var(--u-text);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
   line-height: 1.45;
 }
 
@@ -204,10 +204,10 @@ html.ui2 #view-recent .rc-unanswered-text {
 html.ui2 #view-recent .lib2-loading {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0;
+  gap: var(--u-space-2);
+  margin: var(--u-space-4) 0;
   color: var(--u-muted);
-  font-size: 14px;
+  font-size: var(--u-fs-md);
 }
 html.ui2 #view-recent .lib2-spinner {
   flex: 0 0 auto;
@@ -222,7 +222,7 @@ html.ui2 #view-recent .lib2-spinner {
 
 /* Keyboard focus: the shell's double ring, on every control of the view. */
 html.ui2 #view-recent :is(button, select, a):focus-visible {
-  outline: 2px solid var(--u-focus);
-  outline-offset: 2px;
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
   box-shadow: 0 0 0 2px var(--u-bg), 0 0 0 4px var(--u-focus);
 }
