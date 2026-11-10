@@ -158,6 +158,7 @@ every pairing is checked by `shell2/tokens.test.js`.
 | `--u-surface` | `#1F2024` | `#F7F7F8` | `#0A0A0A` |
 | `--u-selected` | `#203955` | `#DCEAF6` | `#003A70` |
 | `--u-action` | `#1F6FB2` | `#1769AA` | `#4FC3FF` |
+| `--u-on-action` | `#FFFFFF` | `#FFFFFF` | `#000000` |
 | `--u-accent` | `#66BBDD` | `#1769AA` | `#7FD8FF` |
 | `--u-text` | `#E9EAEE` | `#16181D` | `#FFFFFF` |
 | `--u-muted` | `#A9ADB6` | `#565B66` | `#E0E0E0` |
@@ -165,7 +166,13 @@ every pairing is checked by `shell2/tokens.test.js`.
 | `--u-ok` | `#5CC98A` | `#1A6B3C` | `#7CFFB2` |
 | `--u-warn` | `#E8B84A` | `#8A5A00` | `#FFD54A` |
 | `--u-danger` | `#FF7A6E` | `#B3261E` | `#FF8A80` |
+| `--u-danger-fill` | `#CC3328` | `#B3261E` | `#FF8A80` |
+| `--u-on-danger` | `#FFFFFF` | `#FFFFFF` | `#000000` |
 | `--u-focus` | `#66BBDD` | `#1769AA` | `#FFFFFF` |
+
+`--u-on-action` is the label on a button filled with `--u-action`.
+`--u-danger` is the danger colour as text and as an edge; a danger button is
+filled with `--u-danger-fill` and labelled in `--u-on-danger`.
 
 The sidebar speaker list adds no colour token, only two sizes:
 `--u-spk-row` (one row) and `--u-spk-pinned` (how many rows of a large
@@ -174,9 +181,60 @@ the height the sidebar has left and are its one scroll box.
 An offline speaker is greyed with `--u-muted`, never with opacity, so its
 name keeps 4.5:1.
 
-Spacing on an 8 px grid, targets at least 40 px high, the system UI font.
+Targets at least 40 px high (`--u-target`), the system UI font (`--u-font`).
 Contrast, keyboard focus, screen reader names and enlarged text are
 acceptance criteria for every phase.
+
+## Size tokens
+
+The same in all three themes, defined next to the colours on `html.ui2`.
+The UI 2.0 stylesheets (`shell2/**/*.css` and `views/music/ui2radio.css`)
+take `padding`, `margin`, `gap`, `inset` and `font-size` from these tokens
+wherever the value is one of the steps. One-off values (2 px, 6 px, 10 px,
+borders, widths and heights) stay literal.
+
+Spacing, on a 4 px base with 8 px as the grid:
+
+| Token | Value |
+|---|---|
+| `--u-space-1` | 4 px |
+| `--u-space-2` | 8 px |
+| `--u-space-3` | 12 px |
+| `--u-space-4` | 16 px |
+| `--u-space-5` | 24 px |
+| `--u-space-6` | 32 px |
+
+`--u-space` (8 px) is the grid unit itself and the same as `--u-space-2`.
+
+Type scale. It covers exactly the sizes the preview used when the tokens
+were introduced, so introducing them changed no pixel. The three `-plus`
+steps sit between two main steps and are the ones a later pass can fold
+into a neighbour:
+
+| Token | Value |
+|---|---|
+| `--u-fs-xs` | 12 px |
+| `--u-fs-sm` | 13 px |
+| `--u-fs-md` | 14 px (the body size) |
+| `--u-fs-md-plus` | 15 px |
+| `--u-fs-lg` | 16 px |
+| `--u-fs-lg-plus` | 17 px |
+| `--u-fs-xl` | 18 px |
+| `--u-fs-2xl` | 20 px |
+| `--u-fs-2xl-plus` | 22 px |
+| `--u-fs-3xl` | 24 px |
+
+Font weights: `--u-fw-regular` (400), `--u-fw-semibold` (600) and
+`--u-fw-bold` (700).
+
+Radii: `--u-radius` (8 px) for buttons, cards, rows and fields,
+`--u-radius-pill` (12 px) for the status pill, badges and state chips.
+Round marks use `50%`.
+
+Focus: `--u-focus-ring` (`2px solid var(--u-focus)`) is the outline of every
+keyboard focus in the preview, set off from the control by
+`--u-focus-offset` (2 px) unless a control draws its ring inside its own
+box.
 
 ## Phases
 
