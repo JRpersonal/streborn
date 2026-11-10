@@ -1076,6 +1076,13 @@ func (r engineResult) sent() bool {
 	return r == engineInstalled || r == engineStaged
 }
 
+// inPlace reports whether the speaker now runs this build's engine: it was
+// already current, or it was sent and is active. A staged engine is on the
+// disk but not running, and every other result sent nothing.
+func (r engineResult) inPlace() bool {
+	return r == engineCurrent || r == engineInstalled
+}
+
 // isUninstalling reports whether UninstallSTR has started (or finished) for
 // host in this session.
 func (a *App) isUninstalling(host string) bool {
