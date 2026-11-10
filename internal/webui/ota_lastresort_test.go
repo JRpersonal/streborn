@@ -177,10 +177,10 @@ func TestSwapHelperScriptRestartOnly(t *testing.T) {
 // helper supervising it) runs, and goes once neither does, so a later agent
 // does not leave ~18 MB of RAM pinned until the next reboot.
 func TestCleanStaleRAMStagesRescueBinary(t *testing.T) {
+	t.Parallel()
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
-	oldBin := ramRescueBin
-	t.Cleanup(func() { ramRescueBin = oldBin })
-	ramRescueBin = filepath.Join(t.TempDir(), "streborn-rescue", "streborn-armv7l")
+	ramRescueBin := filepath.Join(t.TempDir(), "streborn-rescue", "streborn-armv7l")
+	rig.fx.paths.ramRescueBin = ramRescueBin
 	rig.fx.runningBinary = func() string { return testAgentBin }
 	if err := os.MkdirAll(filepath.Dir(ramRescueBin), 0o755); err != nil {
 		t.Fatal(err)

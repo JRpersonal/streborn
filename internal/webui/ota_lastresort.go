@@ -309,7 +309,7 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID
 		agentPID: os.Getpid(), waitSec: waitSec,
 		stage: fx.paths.ramStageTarget, dst: dst, size: size, sha: sum,
 		finish:    finish,
-		rescueBin: ramRescueBin, args: agentArgs(),
+		rescueBin: fx.paths.ramRescueBin, args: agentArgs(),
 		paths: fx.paths,
 	}.script()
 	// Own session: the helper must survive this agent's exit and any process-

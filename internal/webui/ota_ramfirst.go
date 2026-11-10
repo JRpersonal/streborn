@@ -229,9 +229,9 @@ func cleanStaleRAMStages(st *otaState, fx *otaEffects, logger *slog.Logger) {
 		swapStage = os.Remove(ramStageTarget) == nil
 	}
 	rescue := false
-	if _, err := os.Stat(ramRescueBin); err == nil && !runningAsRescue(fx) && !swapHelperRunning(procRoot, ramRescueBin) {
-		rescue = os.Remove(ramRescueBin) == nil
-		_ = os.Remove(filepath.Dir(ramRescueBin))
+	if _, err := os.Stat(fx.paths.ramRescueBin); err == nil && !runningAsRescue(fx) && !swapHelperRunning(procRoot, fx.paths.ramRescueBin) {
+		rescue = os.Remove(fx.paths.ramRescueBin) == nil
+		_ = os.Remove(filepath.Dir(fx.paths.ramRescueBin))
 	}
 	if n > 0 || swapStage || rescue {
 		logger.Info("removed RAM stages left behind by an earlier agent",

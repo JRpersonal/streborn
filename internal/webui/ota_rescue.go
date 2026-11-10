@@ -38,11 +38,11 @@ import (
 	"time"
 )
 
-// ramRescueBin is where a failed swap moves the stage and starts it from. Its
-// own directory, so the process keeps the agent's name (killall and pidof
-// streborn-armv7l find it, as run.sh and the desktop app's stops expect). A
-// variable so tests can point it at a temp dir.
-var ramRescueBin = ramStageDir + "/streborn-rescue/streborn-armv7l"
+// ramRescueBinPath is where a failed swap moves the stage and starts it from
+// (otaPaths.ramRescueBin on a speaker). Its own directory, so the process keeps
+// the agent's name (killall and pidof streborn-armv7l find it, as run.sh and
+// the desktop app's stops expect).
+const ramRescueBinPath = ramStageDir + "/streborn-rescue/streborn-armv7l"
 
 // rescueRetryDelay is how long the rescue agent runs before it tries the write
 // itself, long enough for the speaker to settle after the failed swap and for
@@ -53,20 +53,24 @@ const rescueRetryDelay = 2 * time.Minute
 // NAND, each with a sync and a verify).
 const rescueRetryTimeout = 5 * time.Minute
 
-var (
-	// rescueNANDDst is the NAND binary the retry writes. A variable for tests.
-	rescueNANDDst = agentBinNANDPath
+// rescueState is what the rescue agent knows about its own NAND copy, part of
+// otaState.
+type rescueState struct {
 	// nandCopyVerified is set once the rescue agent's build is proven on the
-	// NAND (by its retry, or found there already).
+	// NAND (by its retry, or found there already). Atomic: the retry's
+	// goroutine sets it, the reboot guards of cmd/agent read it.
 	nandCopyVerified atomic.Bool
-	// rescueShell runs a retry script. A variable for tests.
-	rescueShell = func(ctx context.Context, script string) ([]byte, error) {
-		return exec.CommandContext(ctx, "sh", "-c", script).CombinedOutput()
-	}
-	// rescueSum is the hash of the running build, taken at agent start. A
-	// variable for tests.
-	rescueSum = runningBinaryStamp
-)
+}
+
+// runRescueShell runs a retry script on a speaker (otaEffects.rescueShell).
+func runRescueShell(ctx context.Context, script string) ([]byte, error) {
+	return exec.CommandContext(ctx, "sh", "-c", script).CombinedOutput()
+}
+
+// The four functions cmd/agent calls have no Server at hand (the retry is
+// scheduled, and the reboot guards ask, beside it), so they work on the
+// process's own update state and the production effects. Each is a one-line
+// wrapper around the function the tests drive with their own.
 
 // RunningAsRescue reports whether this agent is the rescue agent a failed swap
 // started from RAM.
@@ -75,15 +79,18 @@ func RunningAsRescue() bool { return runningAsRescue(&productionOTAEffects) }
 // runningAsRescue is RunningAsRescue for the given effects.
 func runningAsRescue(fx *otaEffects) bool {
 	r := fx.runningBinary()
-	return r != "" && filepath.Clean(r) == filepath.Clean(ramRescueBin)
+	return r != "" && filepath.Clean(r) == filepath.Clean(fx.paths.ramRescueBin)
 }
 
 // RebootUnsafe returns why a speaker restart the agent starts on its own would
 // leave the speaker without STR, or "" when it would not. Callers that reboot
 // without being asked to (bootstrap refresh, memory guard, stuck display) skip
 // the reboot and log this instead.
-func RebootUnsafe() string {
-	if RunningAsRescue() && !nandCopyVerified.Load() {
+func RebootUnsafe() string { return rebootUnsafe(processOTAState, &productionOTAEffects) }
+
+// rebootUnsafe is RebootUnsafe for the given state and effects.
+func rebootUnsafe(st *otaState, fx *otaEffects) string {
+	if runningAsRescue(fx) && !st.nandCopyVerified.Load() {
 		return "the agent runs from RAM because the last update could not be written to the speaker's storage; a restart now would leave the speaker without STR"
 	}
 	return ""
@@ -92,11 +99,16 @@ func RebootUnsafe() string {
 // StartRescueRetry schedules the rescue agent's one retry. A no-op for any
 // other agent. ctx ends it early (agent shutdown).
 func StartRescueRetry(ctx context.Context, logger *slog.Logger) {
-	if !RunningAsRescue() {
+	startRescueRetry(ctx, processOTAState, &productionOTAEffects, logger)
+}
+
+// startRescueRetry is StartRescueRetry for the given state and effects.
+func startRescueRetry(ctx context.Context, st *otaState, fx *otaEffects, logger *slog.Logger) {
+	if !runningAsRescue(fx) {
 		return
 	}
 	logger.Warn("running from RAM as the rescue agent: the last update could not be written to the speaker's storage; trying once more shortly, no speaker restarts until it is there",
-		"binary", ramRescueBin, "dst", rescueNANDDst, "retryInSec", int(rescueRetryDelay.Seconds()))
+		"binary", fx.paths.ramRescueBin, "dst", fx.paths.rescueNANDDst, "retryInSec", int(rescueRetryDelay.Seconds()))
 	go func() {
 		t := time.NewTimer(rescueRetryDelay)
 		defer t.Stop()
@@ -105,28 +117,28 @@ func StartRescueRetry(ctx context.Context, logger *slog.Logger) {
 			return
 		case <-t.C:
 		}
-		rescueRetry(ctx, logger)
+		rescueRetry(ctx, st, fx, logger)
 	}()
 }
 
 // rescueRetry writes the running build onto the NAND once, and reports whether
 // it is there afterwards.
-func rescueRetry(ctx context.Context, logger *slog.Logger) bool {
-	if processOTAState.updating() || processOTAState.swapArmed.Load() {
+func rescueRetry(ctx context.Context, st *otaState, fx *otaEffects, logger *slog.Logger) bool {
+	if st.updating() || st.swapArmed.Load() {
 		logger.Info("rescue agent: an update is in progress, leaving the write to it")
 		return false
 	}
-	sum := rescueSum()
+	sum := fx.rescueSum()
 	if sum == "" {
 		logger.Warn("rescue agent: cannot hash the running binary, not writing it to storage")
 		return false
 	}
-	dst := rescueNANDDst
+	dst := fx.paths.rescueNANDDst
 	if verifyBinaryOnFlash(dst, sum) == nil {
-		rescueWritten(logger, dst, "it was already there")
+		rescueWritten(st, logger, dst, "it was already there")
 		return true
 	}
-	src := ramRescueBin
+	src := fx.paths.ramRescueBin
 	fi, err := os.Stat(src)
 	if err != nil {
 		// The file went (an agent of an older build cleaned it up); the
@@ -138,7 +150,7 @@ func rescueRetry(ctx context.Context, logger *slog.Logger) bool {
 		logger.Warn("rescue agent: cannot read its own binary, not writing it to storage", "err", err)
 		return false
 	}
-	if n := killAgentsRunningFrom(productionOTAEffects.paths.procRoot, dst); n > 0 {
+	if n := killAgentsRunningFrom(fx.paths.procRoot, dst); n > 0 {
 		logger.Warn("rescue agent: stopped agents run.sh had started from the unverified storage copy", "count", n)
 	}
 	script := placeBinaryLines(src, dst, fi.Size(), sum) + `
@@ -149,7 +161,7 @@ sleep 2
 place_binary`
 	start := time.Now()
 	cctx, cancel := context.WithTimeout(ctx, rescueRetryTimeout)
-	out, err := rescueShell(cctx, script)
+	out, err := fx.rescueShell(cctx, script)
 	cancel()
 	if err == nil {
 		// The script verified already; this is the agent's own word on it.
@@ -166,13 +178,13 @@ place_binary`
 			"err", err, "out", strings.TrimSpace(string(out)), "ms", time.Since(start).Milliseconds())
 		return false
 	}
-	rescueWritten(logger, dst, "the retry wrote it")
+	rescueWritten(st, logger, dst, "the retry wrote it")
 	return true
 }
 
 // rescueWritten records that the running build is proven on the NAND.
-func rescueWritten(logger *slog.Logger, dst, how string) {
-	nandCopyVerified.Store(true)
+func rescueWritten(st *otaState, logger *slog.Logger, dst, how string) {
+	st.nandCopyVerified.Store(true)
 	_ = os.Remove(swapFailMarker)
 	logger.Info("rescue agent: the update is on the speaker's storage now ("+how+"); still running from RAM until the next restart, which starts the same build from storage",
 		"dst", dst)

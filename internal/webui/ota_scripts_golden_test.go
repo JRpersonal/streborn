@@ -38,21 +38,21 @@ func TestSwapHelperScriptGolden(t *testing.T) {
 		agentPID: 4242, waitSec: swapHelperWaitSec,
 		stage: productionOTAEffects.paths.ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
 		finish:    "reboot",
-		rescueBin: ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
+		rescueBin: productionOTAEffects.paths.ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
 	}.script()
 	checkGolden(t, "swap helper (reboot)", reboot, goldenSwapReboot)
 	restart := swapHelper{
 		agentPID: 4242, waitSec: swapHelperWaitSec + 81,
 		stage: productionOTAEffects.paths.ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
 		finish:    productionOTAEffects.paths.superviseNewAgentLines(agentBinNANDPath, goldenArgs),
-		rescueBin: ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
+		rescueBin: productionOTAEffects.paths.ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
 	}.script()
 	checkGolden(t, "swap helper (restart only)", restart, goldenSwapRestart)
 }
 
 // The copy the rescue agent's own retry runs (ota_rescue.go).
 func TestPlaceBinaryLinesGolden(t *testing.T) {
-	checkGolden(t, "place_binary", placeBinaryLines(ramRescueBin, agentBinNANDPath, 18123456, goldenSHA), goldenPlaceBinary)
+	checkGolden(t, "place_binary", placeBinaryLines(productionOTAEffects.paths.ramRescueBin, agentBinNANDPath, 18123456, goldenSHA), goldenPlaceBinary)
 }
 
 const goldenRestartScript = `i=0

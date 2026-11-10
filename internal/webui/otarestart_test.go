@@ -17,6 +17,7 @@ const testAgentBin = "/mnt/nv/streborn/bin/streborn-armv7l"
 // the agent runs from the binary the update replaced. The Portable
 // (taigan-bco), the Linux Wi-Fi chassis and an unreadable mode keep the reboot.
 func TestSelfRestartAfterOTA(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		mode, running string
 		want          bool
@@ -38,7 +39,7 @@ func TestSelfRestartAfterOTA(t *testing.T) {
 		{"BCO", testAgentBin, false},
 	}
 	for _, c := range cases {
-		if got := selfRestartAfterOTA(c.mode, c.running, testAgentBin); got != c.want {
+		if got := selfRestartAfterOTA(c.mode, c.running, testAgentBin, testRescueBin); got != c.want {
 			t.Errorf("selfRestartAfterOTA(%q, %q) = %v, want %v", c.mode, c.running, got, c.want)
 		}
 	}

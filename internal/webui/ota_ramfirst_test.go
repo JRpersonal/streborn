@@ -42,6 +42,7 @@ func newRAMFirstRig(t *testing.T, stageAvail, memKB int64) *ramFirstRig {
 	rig.stageDir = t.TempDir()
 	rig.stage = filepath.Join(rig.stageDir, "streborn-ota.stage")
 	rig.fx.paths.ramStageTarget = rig.stage
+	rig.fx.paths.ramRescueBin = filepath.Join(rig.stageDir, "streborn-rescue", "streborn-armv7l")
 	rig.fx.ramStageAvail = func(string) (int64, bool) { return stageAvail, true }
 	rig.fx.memAvailableKB = func() int64 { return memKB }
 	baseHook := rig.s.spotifyStop
@@ -373,6 +374,7 @@ func TestRAMFirstNeverReplacesAnArmedSwapStage(t *testing.T) {
 // Review finding 2: the startup cleanup removes a dead agent's RAM-first
 // stage, and the swap stage only when no helper is reading it.
 func TestCleanStaleRAMStages(t *testing.T) {
+	t.Parallel()
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
 	ramStageTarget, stageDir := rig.stage, rig.stageDir
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -42,6 +42,7 @@ package webui
 //     until this agent is older than that window (waitOutBootWatchdog).
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -86,6 +87,8 @@ type otaState struct {
 
 	// The receive routes' bookkeeping (ota_ramfirst.go).
 	ramFirstState
+	// The rescue agent's knowledge of its NAND copy (ota_rescue.go).
+	rescueState
 }
 
 // processOTAState is the update state of this agent process.
@@ -140,6 +143,11 @@ type otaPaths struct {
 	// procRoot is where the update looks for other processes (a swap helper
 	// still reading its stage, an agent run.sh respawned).
 	procRoot string
+	// ramRescueBin is where a failed swap moves the stage and starts it from
+	// (ota_rescue.go); rescueNANDDst the NAND binary the rescue agent's retry
+	// writes.
+	ramRescueBin  string
+	rescueNANDDst string
 }
 
 // otaHandOverMinAgentAge is how old this agent must be before it hands over
@@ -196,6 +204,10 @@ type otaEffects struct {
 	ramStageAvail  func(dir string) (int64, bool)
 	memAvailableKB func() int64
 	stageToNAND    func(stage, tmp string, buf []byte) error
+	// rescueShell runs the rescue agent's retry script; rescueSum is the hash
+	// of the running build, taken at agent start (ota_rescue.go).
+	rescueShell func(ctx context.Context, script string) ([]byte, error)
+	rescueSum   func() string
 }
 
 // productionOTAEffects is the update's outside world on a real speaker.
@@ -208,6 +220,8 @@ var productionOTAEffects = otaEffects{
 		agentHandOverMarker: "/tmp/streborn-agent-handover",
 		ramStageTarget:      ramStagePath,
 		procRoot:            "/proc",
+		ramRescueBin:        ramRescueBinPath,
+		rescueNANDDst:       agentBinNANDPath,
 	},
 	wlanMode:      readWlanMode,
 	runningBinary: runningAgentBinary,
@@ -223,6 +237,8 @@ var productionOTAEffects = otaEffects{
 	ramStageAvail:  ramStageAvail,
 	memAvailableKB: memAvailableKB,
 	stageToNAND:    copyStageToNAND,
+	rescueShell:    runRescueShell,
+	rescueSum:      runningBinaryStamp,
 }
 
 // otaFx returns the effects this server's updates run on.
@@ -280,18 +296,18 @@ func shutdownForRestart() {
 // (ota_rescue.go) counts as running from dst as well: it is the build that
 // could not be written there, run.sh's watchdog would start dst after it, and
 // rebooting this chassis to get there is exactly what the restart avoids.
-func selfRestartAfterOTA(wlanMode, running, dst string) bool {
+func selfRestartAfterOTA(wlanMode, running, dst, rescueBin string) bool {
 	if wlanMode != otaRestartOnlyWLANMode || running == "" {
 		return false
 	}
 	running = filepath.Clean(running)
-	return running == filepath.Clean(dst) || running == filepath.Clean(ramRescueBin)
+	return running == filepath.Clean(dst) || running == filepath.Clean(rescueBin)
 }
 
 // otaRestartOnly decides the hand-over for this speaker and logs why.
 func (s *Server) otaRestartOnly(dst string) bool {
 	mode, running := s.otaFx().wlanMode(), s.otaFx().runningBinary()
-	if selfRestartAfterOTA(mode, running, dst) {
+	if selfRestartAfterOTA(mode, running, dst, s.otaFx().paths.ramRescueBin) {
 		s.logger.Info("post-OTA: restarting the agent only, no box reboot (a soft reboot can leave this chassis dark until it is unplugged)",
 			"wlanMode", mode)
 		return true
