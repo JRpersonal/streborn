@@ -30,8 +30,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Preset is one preset slot as the box reports it on GET /presets.
@@ -164,7 +162,7 @@ func MergeReflect(path string, add []ReflectSource) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return atomicfile.WriteFile(path, data, 0o644)
+	return writeState(path, data)
 }
 
 // RemoveReflect drops every entry for source (matched case-insensitively) from
@@ -194,7 +192,7 @@ func RemoveReflect(path, source string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
+	if err := writeState(path, data); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -530,5 +528,5 @@ func write(path string, snap Snapshot) error {
 	if err != nil {
 		return err
 	}
-	return atomicfile.WriteFile(path, data, 0o644)
+	return writeState(path, data)
 }

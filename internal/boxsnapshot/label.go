@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
-
-	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // The speaker's last-known display name and model, kept on NAND.
@@ -106,7 +104,7 @@ func (s *LabelStore) Note(name, model string) (changed bool, err error) {
 	if dir := filepath.Dir(s.path); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o755)
 	}
-	return true, atomicfile.WriteFile(s.path, append(data, '\n'), 0o644)
+	return true, writeState(s.path, append(data, '\n'))
 }
 
 // cleanLabel trims both fields and drops values that must not be persisted: a
