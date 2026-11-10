@@ -1861,18 +1861,22 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 
 // sshPushNeedKB is the free space, in the kB that df -k prints, the on-box
 // space check of an SSH push asks for before it writes rawLen bytes to
-// /mnt/nv: the raw size plus 2 MB, with no compression credit. The agent
-// update over SSH drops the Spotify engine below this figure; the engine push
-// over SSH drops the old engine below it and gives up when the speaker is
-// still below it afterwards.
+// /mnt/nv. The agent update over SSH drops the Spotify engine below this
+// figure; the engine push over SSH drops the old engine below it and gives up
+// when the speaker is still below it afterwards.
 //
-// It is one of three app-side "how much room does this need" formulas, and
-// they do not agree: nandNeedCompressed credits UBIFS compression (0.7, plus
-// 1 MB) for the same file on the same volume, repairStageNeed
-// (install_repair.go) credits 0.6 plus 2 MB. nandneed_test.go pins what each
-// returns; do not change one without reading it.
+// It is nandNeedCompressed in df's unit, rounded up. The check on the speaker
+// compares against the same pessimistic UBIFS free figure the agent reports
+// as nandFreeBytes, so it must credit compression like every other app-side
+// gate. Until 2026-11-10 it asked for the raw size plus 2 MB: a speaker with
+// 13 to 18 MB free was handed the 16 MB engine over HTTP and refused it over
+// SSH, after the SSH preamble had already deleted the old one, and an agent
+// update over SSH dropped the engine on speakers that had room for both.
+// Measured on a SoundTouch Portable (TestLiveSSHEnginePushOnTightStorage):
+// the engine landed and verified with the free figure set just above this
+// need.
 func sshPushNeedKB(rawLen int64) int64 {
-	return (rawLen + 2*1024*1024) / 1024
+	return (nandNeedCompressed(rawLen) + 1023) / 1024
 }
 
 // pushSidecarViaSSH writes the embedded go-librespot sidecar to
