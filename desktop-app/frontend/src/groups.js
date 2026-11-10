@@ -21,12 +21,13 @@
 
 import { state } from './state.js';
 import { GetZoneState } from './api.js';
+import { isStr, strBoxes, up } from './boxes.js';
 
 // zoneBoxes filters a box list down to the STR speakers a zone can contain:
 // live agents with a host and a deviceID (the zoneLive map is keyed by
 // deviceID, so a box without one would collide under `undefined`).
 export function zoneBoxes(boxes) {
-  return (boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
+  return strBoxes(boxes).filter(b => b.host && b.deviceID);
 }
 
 // masterOf returns the UPPERCASED deviceID of the master the given box
@@ -255,9 +256,9 @@ export function parsePlayRejection(err) {
 export function resolveBoxByRef(ref, boxes) {
   const s = String(ref || '').trim();
   if (!s) return null;
-  const up = s.toUpperCase();
-  return (boxes || []).find(b => b && b.kind !== 'stock'
-    && ((b.deviceID && String(b.deviceID).toUpperCase() === up) || b.host === s)) || null;
+  const key = s.toUpperCase();
+  return (boxes || []).find(b => isStr(b)
+    && ((b.deviceID && String(b.deviceID).toUpperCase() === key) || b.host === s)) || null;
 }
 
 // ---- The one shared zoneLive poll ----
@@ -557,7 +558,7 @@ export function anyInLiveGroup(boxes, zoneLive) {
 // start from it, so the two never offer a different set.
 export function groupCandidates(masterBox, zoneLive, boxes) {
   if (!masterBox) return [];
-  return (boxes || []).filter((b) => b && b.kind !== 'stock' && b.host && b.host !== masterBox.host
+  return strBoxes(boxes).filter((b) => b.host && b.host !== masterBox.host
     && !inAnyStereoPair(b, zoneLive));
 }
 
@@ -579,7 +580,7 @@ export function groupCandidates(masterBox, zoneLive, boxes) {
 // "nothing to undo" and is left untouched.
 export function stereoUndoTargets(pair, boxes) {
   const live = pairMemberBoxes(pair, boxes).map(x => x.box)
-    .filter(b => b && b.kind !== 'stock');
+    .filter(isStr);
   const master = pairMasterBox(pair, boxes);
   const isMaster = (b) => !!master && b.host === master.host;
   return [...live.filter(isMaster), ...live.filter(b => !isMaster(b))];
@@ -642,7 +643,6 @@ export function zoneOrPairMaster(box, zoneLive, boxes) {
   if (!box || box.kind === 'stock') return '';
   const native = masterOf(box.deviceID, zoneLive);
   if (native) return native;
-  const up = (s) => String(s || '').toUpperCase();
   for (const p of stereoPairsOf(zoneLive)) {
     const bxs = pairMemberBoxes(p, boxes).map((x) => x.box).filter(Boolean);
     if (!bxs.some((b) => b.host === box.host)) continue;
@@ -685,11 +685,10 @@ export function zoneOrPairMaster(box, zoneLive, boxes) {
 //      a guess: the caller then falls back to a generic label, which is honest,
 //      while a guessed box would send a dissolve to the wrong speaker.
 export function masterBoxForKey(mk, zoneLive, boxes) {
-  const up = (s) => String(s || '').toUpperCase();
   const key = up(mk);
   if (!key) return null;
-  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock');
-  const byID = strBoxes.find((b) => (b.deviceID && up(b.deviceID) === key)
+  const strs = strBoxes(boxes);
+  const byID = strs.find((b) => (b.deviceID && up(b.deviceID) === key)
     || (b.boxDeviceID && up(b.boxDeviceID) === key));
   if (byID) return byID;
   const entryOf = (b) => (zoneLive || {})[b.deviceID] || null;
@@ -697,11 +696,11 @@ export function masterBoxForKey(mk, zoneLive, boxes) {
     const e = entryOf(b);
     return !!e && up(e.master) === key;
   };
-  const inGroup = strBoxes.filter(namesKey);
+  const inGroup = strs.filter(namesKey);
   for (const b of inGroup) {
     const ip = (entryOf(b) || {}).senderIP || '';
     if (!ip) continue;
-    const at = strBoxes.find((x) => x.host === ip);
+    const at = strs.find((x) => x.host === ip);
     if (at && namesKey(at)) return at;
   }
   const leaders = inGroup.filter((b) => {
@@ -745,7 +744,6 @@ export function groupColorMap(zoneLive, boxes) {
 // multiroom page can frame the group and offer to remove it.
 // Returns [{ masterKey, masterBox, members: [{ box, ip, name }] }].
 export function storedPermanentGroupsOf(zoneLive, boxes) {
-  const up = (s) => String(s || '').toUpperCase();
   const out = [];
   (boxes || []).forEach((b) => {
     if (!b || b.kind === 'stock' || !b.deviceID) return;
@@ -772,7 +770,6 @@ export function storedPermanentGroupsOf(zoneLive, boxes) {
 // candidates are box objects; returns a deviceID string or ''.
 export function defaultZoneMasterID(zoneLive, boxes, candidates) {
   const cands = candidates || [];
-  const up = (s) => String(s || '').toUpperCase();
   for (const g of storedPermanentGroupsOf(zoneLive, boxes)) {
     const hit = cands.find((b) => b && up(b.deviceID) === g.masterKey);
     if (hit) return hit.deviceID;
@@ -842,10 +839,9 @@ export function pairBlockedHosts(zoneLive, boxes) {
 // Stereo pairs are firmware groups, not zones: masterOf reads the zone field
 // only, so a pair never shows up here. Pure, so groups.test.js covers it.
 export function groupCount(zoneLive, boxes) {
-  const up = (s) => String(s || '').toUpperCase();
-  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock' && b.deviceID);
+  const strs = strBoxes(boxes).filter((b) => b.deviceID);
   const live = new Set();
-  for (const b of strBoxes) {
+  for (const b of strs) {
     const m = masterOf(b.deviceID, zoneLive);
     if (!m || live.has(m)) continue;
     if (m !== up(b.deviceID)) {
@@ -861,9 +857,9 @@ export function groupCount(zoneLive, boxes) {
       if (!id && !ip) return false;
       return !((id && id === m) || (ip && ip === host));
     });
-    if (others.length || followersOf(b.deviceID, zoneLive, strBoxes).length) live.add(m);
+    if (others.length || followersOf(b.deviceID, zoneLive, strs).length) live.add(m);
   }
-  const stored = storedPermanentGroupsOf(zoneLive, strBoxes).filter((g) => !live.has(g.masterKey));
+  const stored = storedPermanentGroupsOf(zoneLive, strs).filter((g) => !live.has(g.masterKey));
   return live.size + stored.length;
 }
 
@@ -873,10 +869,9 @@ export function groupCount(zoneLive, boxes) {
 // The tab badge counts both and has to know which it is looking at, so its
 // colour can match the state that produced it rather than always being brand.
 export function groupCountSplit(zoneLive, boxes) {
-  const up = (s) => String(s || '').toUpperCase();
-  const strBoxes = (boxes || []).filter((b) => b && b.kind !== 'stock' && b.deviceID);
+  const strs = strBoxes(boxes).filter((b) => b.deviceID);
   const live = new Set();
-  for (const b of strBoxes) {
+  for (const b of strs) {
     const m = masterOf(b.deviceID, zoneLive);
     if (!m || live.has(m)) continue;
     if (m !== up(b.deviceID)) {
@@ -891,8 +886,8 @@ export function groupCountSplit(zoneLive, boxes) {
       if (!id && !ip) return false;
       return !((id && id === m) || (ip && ip === host));
     });
-    if (others.length || followersOf(b.deviceID, zoneLive, strBoxes).length) live.add(m);
+    if (others.length || followersOf(b.deviceID, zoneLive, strs).length) live.add(m);
   }
-  const stored = storedPermanentGroupsOf(zoneLive, strBoxes).filter((g) => !live.has(g.masterKey));
+  const stored = storedPermanentGroupsOf(zoneLive, strs).filter((g) => !live.has(g.masterKey));
   return { live: live.size, stored: stored.length, total: live.size + stored.length };
 }

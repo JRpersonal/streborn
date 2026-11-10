@@ -6,6 +6,7 @@ import { applyFavAdditions, applyFavRemovals, parseFavAdditions, parseFavRemoval
 import { applyFavOrder, moveFav, newestFavOrder, parseFavOrder } from '../../favorder.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
+import { strBoxes } from '../../boxes.js';
 import { $, showError } from '../../utils.js';
 import { listButtonClick, renderSearchResults, syncSearchModeButtons } from './search.js';
 import { ensureUi2Radio } from './ui2radio.js';
@@ -119,7 +120,7 @@ export async function syncFavRemovals() {
   favRemovalsCheckedAt = now;
   favRemovalsRunning = true;
   try {
-    const boxes = (state.boxes || []).filter((b) => b && !b.offline && b.kind !== 'stock');
+    const boxes = strBoxes(state.boxes).filter((b) => !b.offline);
     const answers = await Promise.all(boxes.map((b) =>
       FavoriteRemovals(b.host, b.port).then(parseFavNotes).catch(() => parseFavNotes(''))));
     takeFavRemovals(answers.flatMap((a) => a.removed), answers.flatMap((a) => a.added),

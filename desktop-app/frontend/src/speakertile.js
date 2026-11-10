@@ -24,10 +24,7 @@
 
 import { inStereoPair } from './groups.js';
 import { isUpdateRunning } from './updaterunning.js';
-
-function isPlayState(ps) {
-  return ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE';
-}
+import { isPlaying } from './boxes.js';
 
 export function speakerTileState(b, ctx = {}) {
   const box = b || {};
@@ -39,7 +36,7 @@ export function speakerTileState(b, ctx = {}) {
   // from the refreshBoxPlaying poll. Exactly the rule behind the picker's small
   // speaker icon on a tile whose speaker is playing.
   const playing = !!((ctx.boxPlaying && ctx.boxPlaying[box.deviceID])
-    || (isCurrent && isPlayState(ctx.nowPlayState)));
+    || (isCurrent && isPlaying(ctx.nowPlayState)));
   const standby = isCurrent && !playing
     && (ctx.nowSource === 'STANDBY' || ctx.nowPlayState === 'STANDBY_STATE');
   const pairs = ctx.stereoPairs || [];

@@ -25,6 +25,7 @@
 import { t } from '../i18n/index.js';
 import { escapeAttr, escapeHtml, holdRefusedBannerKey } from '../utils.js';
 import { state } from '../state.js';
+import { labelOf } from '../boxes.js';
 import { groupKeyErrorBanners } from '../groupkeys.js';
 import { restarts } from '../restartwait.js';
 
@@ -45,7 +46,7 @@ const hostOf = (b) => (b && b.host) || '';
 // list of items per speaker host. parts holds any of the ATTENTION_KINDS as
 // arrays of boxes; label names a box (getBoxLabel). Each item keeps the data
 // its words need, so the text follows a language switch.
-export function speakerIssuesFrom(parts = {}, label = (b) => (b && (b.friendlyName || b.name || b.host)) || '') {
+export function speakerIssuesFrom(parts = {}, label = labelOf) {
   const out = {};
   const add = (b, item) => {
     const host = hostOf(b);

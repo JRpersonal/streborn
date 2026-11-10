@@ -216,6 +216,8 @@ import {
   STEREO_ICON,
   GROUP_ICON,
 } from './utils.js';
+import { isPlaying, isStr, strBoxes } from './boxes.js';
+import { agoText } from './format.js';
 import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -343,8 +345,7 @@ import {
 } from './views/settings.js';
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
-// showSlotPicker / formatDuration are main.js-local helpers it reuses, injected
-// below.
+// showSlotPicker is a main.js-local helper it reuses, injected below.
 import { openLibrary, initLibraryView, libraryFollowSpeaker } from './views/library.js';
 // USB stick setup / install wizard view (extracted from this monolith, same
 // pattern as the views above). renderSetupTargetPicker is the entry point
@@ -435,12 +436,12 @@ initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, switchView, openSp
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
-  strBoxes: () => (state.boxes || [])
-    .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
+  strBoxes: () => strBoxes(state.boxes)
+    .filter(b => b.deviceID && b.host)
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab, favStationsJSON, mergeFavStations });
-initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus, presetMoveOffer });
+initLibraryView({ showSlotPicker, effectivePlayTarget, speakerPicked: speakerPickedInTab, renderNowPlayingBar, refreshStatus, presetMoveOffer });
 initSetupView({
   switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab,
   // The speaker list reads the same holds (speakertile.js); repaint it when a
@@ -830,9 +831,9 @@ SetAppLocale(getLocale()).catch(() => {});
 
 // Tagline and supported-models line follow the active locale, falling
 // back to English. Native-speaker translations live inline here for
-// the languages we have native-speaker copy for. New languages added
-// to i18n/bundles fall back to English until a maintainer adds
-// localized prose here.
+// the languages we have native-speaker copy for. Every language with a
+// bundle in i18n/bundles has a line here (localetables.test.js fails when
+// one is missing); `it` and `pt` are kept for the day their bundles arrive.
 // Since the network install landed, every SoundTouch model runs STR - also the
 // ones that never read a USB stick at boot (300, Wave, SA-4/SA-5, CineMate).
 // Naming four models here was both wrong and discouraging for owners of the
@@ -851,6 +852,7 @@ const SUPPORTED_LINE = {
   lv: 'visiem SoundTouch modeļiem',
   tr: 'tüm SoundTouch modelleri için',
   ar: 'لجميع طُرز SoundTouch',
+  'zh-Hant': '適用於所有 SoundTouch 型號',
   en: 'for every SoundTouch model',
 };
 
@@ -868,6 +870,7 @@ const TAGLINES = {
   lv: 'Turpiniet lietot savus Bose SoundTouch skaļruņus bez Bose mākoņa.',
   tr: 'Bose SoundTouch hoparlörlerinizi Bose bulutu olmadan kullanmaya devam edin.',
   ar: 'واصِل استخدام مكبرات صوت Bose SoundTouch دون سحابة Bose.',
+  'zh-Hant': '不靠 Bose 雲端，繼續使用你的 Bose SoundTouch 喇叭。',
   en: 'Keep using your Bose SoundTouch speakers, without the Bose cloud.',
 };
 
@@ -1286,7 +1289,7 @@ async function renderFooter() {
   // to appear. For a short window the tick asks the speaker itself (#845).
   setInterval(() => {
     try {
-      const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+      const playing = isPlaying(state.nowPlayState);
       if (wantsFastPoll(trackPos, playing, Date.now())) pollTrackPosition();
       renderTrackProgress();
     } catch {}
@@ -2184,7 +2187,7 @@ function maybeShowSpeakerUpdateCard() {
   // App first: while the app itself is out of date this card stays away, so
   // the user is never shown two update prompts and left to guess the order.
   if (speakerUpdateCardMuted()) { el.classList.add('hidden'); return; }
-  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  const outdated = strBoxes(state.boxes).filter(b => !b.offline && boxNeedsUpdate(b));
 
   // Nothing behind any more: TAKE THE CARD AWAY. This runs before the
   // once-per-start latch on purpose. The latch used to short-circuit the whole
@@ -2250,7 +2253,7 @@ function maybeShowSpeakerUpdateCard() {
       // address the speaker has already left. This is the "shortly after the
       // app started, while the scan is still running" case.
       const wanted = new Set(outdated.map(b => b.host));
-      const live = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+      const live = strBoxes(state.boxes).filter(b => !b.offline && boxNeedsUpdate(b));
       const targets = live.filter(b => wanted.has(b.host));
       const pick = targets.length ? targets : live;
       if (!pick.length) {
@@ -2259,7 +2262,7 @@ function maybeShowSpeakerUpdateCard() {
         // keep the card up and say the speakers are not reachable. A populated
         // list with nothing behind means they really are current, and the card
         // has done its job.
-        const anyBox = (state.boxes || []).some(b => b && b.kind !== 'stock');
+        const anyBox = (state.boxes || []).some(isStr);
         showToast(anyBox ? t('updateAll.noneToUpdate') : t('speakerUpdate.notReachable'));
         if (anyBox) hide();
         return;
@@ -2404,14 +2407,14 @@ let _boxPlayingFetchAt = 0;
 async function refreshBoxPlaying() {
   // Offline tiles are excluded: every Status() against them just times out
   // and would delay the whole Promise.allSettled round for nothing.
-  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host && !b.offline);
-  if (!strBoxes.length) return;
+  const polled = strBoxes(state.boxes).filter(b => b.deviceID && b.host && !b.offline);
+  if (!polled.length) return;
   const now = Date.now();
   if (state.boxPlayingBusy || now - _boxPlayingFetchAt < 8000) return;
   _boxPlayingFetchAt = now;
   state.boxPlayingBusy = true;
   try {
-    const results = await Promise.allSettled(strBoxes.map(b => Status(b.host, b.port)));
+    const results = await Promise.allSettled(polled.map(b => Status(b.host, b.port)));
     const map = {};
     results.forEach((r, i) => {
       let playing = false;
@@ -2419,9 +2422,9 @@ async function refreshBoxPlaying() {
         const xml = r.value;
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
-        playing = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') && src !== 'STANDBY';
+        playing = isPlaying(ps) && src !== 'STANDBY';
       }
-      map[strBoxes[i].deviceID] = playing;
+      map[polled[i].deviceID] = playing;
     });
     state.boxPlaying = map;
   } catch { /* keep previous marks */ } finally {
@@ -2946,19 +2949,10 @@ function wireManualIp(inputId, btnId) {
   ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
 }
 
-// offlineAgo renders "how long unseen" for an offline speaker tile via
-// Intl.RelativeTimeFormat in the app locale, so the phrase localizes itself
-// ("vor 5 Minuten" / "5 minutes ago") without per-language time strings.
-function offlineAgo(sec) {
-  try {
-    const rtf = new Intl.RelativeTimeFormat(getLocale() || 'en', { numeric: 'auto' });
-    if (sec < 3600) return rtf.format(-Math.max(1, Math.round(sec / 60)), 'minute');
-    if (sec < 86400) return rtf.format(-Math.round(sec / 3600), 'hour');
-    return rtf.format(-Math.round(sec / 86400), 'day');
-  } catch { return Math.max(1, Math.round(sec / 60)) + ' min'; }
-}
+// offlineTitle is an offline speaker tile's tooltip: "how long unseen", worded
+// by agoText (format.js) in the app language.
 function offlineTitle(b) {
-  return t('speaker.offlineTooltip', { ago: offlineAgo(b.offlineSinceSec || 0) });
+  return t('speaker.offlineTooltip', { ago: agoText(b.offlineSinceSec || 0) });
 }
 
 // dissolveGroupFrame takes apart the group led by masterKey, from the x on its
@@ -3744,7 +3738,7 @@ onZoneLive(syncVolumeScopeOnZoneLive);
 onZoneLive(() => {
   const el = $('speakerUpdateCard');
   if (!el || el.classList.contains('hidden')) return;
-  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  const outdated = strBoxes(state.boxes).filter(b => !b.offline && boxNeedsUpdate(b));
   const want = outdated.length > 1 && anyInLiveGroup(outdated, state.zoneLive);
   if (want !== !!$('sucGroupNote')) maybeShowSpeakerUpdateCard();
 });
@@ -4616,7 +4610,7 @@ async function runUpdateAllBoxes(onStart) {
   // Offline speakers are excluded up front: probing them burns the pre-flight
   // budget, and counting them as "nothing to do" is how an all-offline fleet
   // produced "already up to date" (#775).
-  const candidates = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && !b.offline && !otaStuck(b));
+  const candidates = strBoxes(state.boxes).filter(b => b.host && !b.offline && !otaStuck(b));
   // Everything from here to the confirmation is network work: one version read
   // per speaker, then a stick check and a Wi-Fi read per update target. On a
   // busy LAN, or right after start while discovery is still sweeping, that is
@@ -4645,7 +4639,7 @@ async function runUpdateAllBoxes(onStart) {
     hideToast();
     // "Already up to date" is only an honest claim when reachable speakers
     // were actually inspected; a fleet that is offline gets the truth (#775).
-    const anyOnline = (state.boxes || []).some(b => b && b.kind !== 'stock' && !b.offline);
+    const anyOnline = strBoxes(state.boxes).some(b => !b.offline);
     showToast(anyOnline ? t('updateAll.noneToUpdate') : t('speakerUpdate.notReachable'));
     return false;
   }
@@ -5206,9 +5200,9 @@ function maybeInviteStickProvisioned() {
 async function maybeInviteWorldMapAllDone() {
   if (worldMapAllHandled) return;
   const boxes = state.boxes || [];
-  const strBoxes = boxes.filter(b => b && b.kind !== 'stock');
+  const strCount = strBoxes(boxes).length;
   const stockBoxes = boxes.filter(b => b && b.kind === 'stock');
-  if (strBoxes.length < 2 || stockBoxes.length > 0) return;
+  if (strCount < 2 || stockBoxes.length > 0) return;
   worldMapAllHandled = true; // latch only once the milestone is actually reached
   await inviteWorldMapOnce(WORLD_MAP_ALL_FLAG, 'all');
 }
@@ -5332,12 +5326,12 @@ try {
   });
 } catch { /* no preview hook */ }
 
-// ---------- Box Einstellungen View ----------
+// ---------- Speaker settings view ----------
 
 // ROOM_NAMES_BY_LOCALE contains the common room suggestions for the
 // friendly-name combobox. Recomputed via getRoomNames() so a locale
-// switch reflects on the next render. Falls back to English for any
-// locale we have not localised.
+// switch reflects on the next render. Every language with a bundle has a
+// list (localetables.test.js); anything else falls back to English.
 const ROOM_NAMES_BY_LOCALE = {
   de: [
     'Wohnzimmer', 'Schlafzimmer', 'Küche', 'Esszimmer',
@@ -5409,6 +5403,20 @@ const ROOM_NAMES_BY_LOCALE = {
     'Bahçe', 'Teras', 'Balkon', 'Atölye',
     'Hobi Odası', 'Bodrum', 'Çatı Katı', 'Garaj',
   ],
+  ar: [
+    'غرفة المعيشة', 'غرفة النوم', 'المطبخ', 'غرفة الطعام',
+    'الحمّام', 'غرفة الدراسة', 'المكتب', 'غرفة الأطفال',
+    'غرفة الضيوف', 'الممر', 'المدخل',
+    'الحديقة', 'الفناء', 'الشرفة', 'الورشة',
+    'غرفة الهوايات', 'القبو', 'العلّية', 'المرآب',
+  ],
+  'zh-Hant': [
+    '客廳', '臥室', '廚房', '餐廳',
+    '浴室', '書房', '辦公室', '兒童房',
+    '客房', '走廊', '玄關',
+    '花園', '露臺', '陽台', '工作室',
+    '休閒室', '地下室', '閣樓', '車庫',
+  ],
   en: [
     'Living Room', 'Bedroom', 'Kitchen', 'Dining Room',
     'Bathroom', 'Study', 'Office', 'Kid\'s Room',
@@ -5419,12 +5427,6 @@ const ROOM_NAMES_BY_LOCALE = {
 };
 function getRoomNames() {
   return ROOM_NAMES_BY_LOCALE[getLocale()] || ROOM_NAMES_BY_LOCALE.en;
-}
-
-function formatDuration(sec) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 renderFooter();
@@ -5497,8 +5499,7 @@ const STATUS_PLAYER_MS = 15000; // UI 2.0 player off the Music tab, playing
 const STATUS_IDLE_MS = 15000;   // idle, standby, or nothing on screen
 function nextStatusDelayMs() {
   if (!state.currentBox) return STATUS_IDLE_MS;
-  const ps = state.nowPlayState;
-  const playing = ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE';
+  const playing = isPlaying(state.nowPlayState);
   if (state.view === 'box') return playing ? STATUS_FAST_MS : STATUS_IDLE_MS;
   if (playing && playerOnScreen({ view: state.view, persistentPlayer: !!state.ui2Shell, otaInProgress: !!state.otaInProgress })) {
     return STATUS_PLAYER_MS;

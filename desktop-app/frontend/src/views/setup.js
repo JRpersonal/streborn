@@ -20,6 +20,7 @@
 // guarded to run once, and renderSetupTargetPicker calls it first.
 
 import { state } from '../state.js';
+import { formatClock } from '../format.js';
 import {
   $,
   escapeHtml,
@@ -1114,13 +1115,13 @@ async function startNetworkInstall(box) {
   const format24ForBox = detectClockFormat24();
   // Wi-Fi to write onto the box after install so it stays reachable once the
   // Ethernet cable is pulled. Empty SSID => skip the write (box stays wired).
-  // Eine SSID mit LEEREM Passwort wurde hier frueher als offenes Netz
-  // durchgereicht und per force:true auf die Box angewendet; gegen ein
-  // geschuetztes Heim-WLAN wirft das die Box direkt nach der erfolgreichen
-  // OTA-Installation aus dem Netz (Feldfall 2026-08-29: SSID vorbefuellt,
-  // Passwort-Auslesen leise gescheitert). Ohne Passwort wird deshalb NICHTS
-  // geschrieben und der Hinweis unten sagt es klar; ein zu kurzes Passwort
-  // ueberspringt den Schritt weiterhin, statt die Installation zu blocken.
+  // An SSID with an EMPTY password used to be passed on here as an open
+  // network and applied to the speaker with force:true; against a protected
+  // home Wi-Fi that throws the speaker off the network right after the
+  // successful OTA install (field case 2026-08-29: SSID prefilled, reading
+  // the password failed silently). Without a password NOTHING is written,
+  // and the note below says so plainly; a password that is too short still
+  // skips the step instead of blocking the install.
   const ssid = ($('netWlanSsid') && $('netWlanSsid').value.trim()) || '';
   const pass = ($('netWlanPass') && $('netWlanPass').value) || '';
   // Hidden networks never show up in the speaker's site survey, so the flag
@@ -1413,9 +1414,9 @@ async function updateDrivePanels() {
   let chk = null;
   try { chk = await CheckStick(drive.path); } catch {}
   const tooSmall = chk && chk.reason === 'too-small' && !drive.hasStick;
-  // 'read-only' ist der DIAGNOSTIZIERTE Fall des macOS-Read-only-Mounts
-  // (schmutziges FAT32 nach Abziehen ohne Auswerfen, #775) und bekommt eine
-  // Anleitung statt des ratlosen "vielleicht schreibgeschuetzt".
+  // 'read-only' is the DIAGNOSED case of the macOS read-only mount (a dirty
+  // FAT32 after the stick was pulled without ejecting, #775) and gets
+  // instructions instead of the helpless "maybe write-protected".
   const readOnly = chk && chk.reason === 'read-only';
   // 'macos-privacy': macOS refuses the app access to removable volumes (TCC
   // consent denied or never granted). Every stick fails identically then, so
@@ -1659,14 +1660,13 @@ async function doSetup() {
     const ssid = $('wlanSsid').value.trim();
     const pass = $('wlanPass').value;
     if (ssid && !pass) {
-      // Eine SSID ohne Passwort wuerde die Box auf ein OFFENES Netz
-      // umstellen und sie aus einem geschuetzten Heim-WLAN werfen (Feldfall
-      // 2026-08-29: Installation erfolgreich, Lautsprecher danach nicht mehr
-      // im WLAN). Die SSID wird vorbefuellt, das Passwort-Auslesen kann
-      // scheitern, also ist das leere Feld ein realistischer Zustand. Nicht
-      // schreiben, deutlich sagen warum; das Go-Backend lehnt denselben Fall
-      // zusaetzlich ab und run.sh auf der Box ignoriert Alt-Sticks mit
-      // leerem Passwort.
+      // An SSID without a password would switch the speaker to an OPEN
+      // network and throw it off a protected home Wi-Fi (field case
+      // 2026-08-29: install succeeded, speaker no longer on the Wi-Fi
+      // afterwards). The SSID is prefilled and reading the password can
+      // fail, so the empty field is a realistic state. Do not write, and
+      // say clearly why; the Go backend refuses the same case as well, and
+      // run.sh on the speaker ignores old sticks with an empty password.
       html += `<div class="setup-warn">${escapeHtml(t('setup.wlanNoPass'))}</div>`;
     } else if (ssid) {
       try {
@@ -2383,7 +2383,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
   };
   let curPhase = 0, copyDetail = '', accessHint = '';
   const installStartMs = Date.now();
-  const fmtMS = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const fmtMS = (ms) => formatClock(Math.round(ms / 1000));
   const chkRow = (label, st, detail, eta) => {
     const dot = st === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
       : st === 'run' ? '<span class="chk-ico chk-spin"></span>'

@@ -9,6 +9,8 @@ import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { refusalFor, refusalHTML } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
+import { isPlaying } from '../../boxes.js';
+import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
 import { titleSwapOffered } from '../../titleswap.js';
@@ -394,13 +396,6 @@ export async function refreshBalance() {
 // to zero is correct.
 export const trackPos = { sec: 0, dur: 0, at: 0, key: '', resetAt: 0, polling: false };
 
-function fmtClock(sec) {
-  sec = Math.max(0, Math.floor(sec));
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return m + ':' + String(s).padStart(2, '0');
-}
-
 export function resetTrackProgress(key) {
   resetProgress(trackPos, key, Date.now());
   renderTrackProgress();
@@ -409,20 +404,20 @@ export function resetTrackProgress(key) {
 export function renderTrackProgress() {
   const wrap = $('trackProgress');
   if (!wrap) return;
-  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+  const playing = isPlaying(state.nowPlayState);
   if (!playing || trackPos.at === 0) { wrap.classList.add('hidden'); return; }
   // Interpolate forward from the last reading while the speaker is playing.
   const drift = state.nowPlayState === 'PLAY_STATE' ? (Date.now() - trackPos.at) / 1000 : 0;
   const shown = trackPos.sec + drift;
   wrap.classList.remove('hidden');
-  $('trackElapsed').textContent = fmtClock(shown);
+  $('trackElapsed').textContent = formatClock(shown);
   const bar = $('trackBar');
   const fill = $('trackBarFill');
   if (trackPos.dur > 0) {
     // A track with a known length: show the bar and the total.
     bar.classList.remove('hidden');
     fill.style.width = Math.min(100, (shown / trackPos.dur) * 100).toFixed(1) + '%';
-    $('trackTotal').textContent = fmtClock(trackPos.dur);
+    $('trackTotal').textContent = formatClock(trackPos.dur);
   } else {
     // Radio has no end. Elapsed time only, no bar to fill.
     bar.classList.add('hidden');
@@ -434,7 +429,7 @@ export async function pollTrackPosition() {
   // No view gate here any more. The bar this feeds is on screen in every tab,
   // and refreshStatus decides what a tick is allowed to cost (#845).
   if (trackPos.polling || !state.currentBox) return;
-  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+  const playing = isPlaying(state.nowPlayState);
   if (!playing) { trackPos.at = 0; trackPos.resetAt = 0; renderTrackProgress(); return; }
   trackPos.polling = true;
   // A reading that lands after the track changed describes the old track.

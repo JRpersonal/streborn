@@ -53,11 +53,13 @@
 import { state } from '../../state.js';
 import { t } from '../../i18n/index.js';
 import { escapeAttr, escapeHtml, getBoxLabel } from '../../utils.js';
-import { groupMembersOf, masterBoxForKey, pairMemberBoxes, stereoPairKey, stereoPairsOf, storedPermanentGroupsOf } from '../../groups.js';
+import { groupMembersOf, masterBoxForKey, zoneBoxes, pairMemberBoxes, stereoPairKey, stereoPairsOf, storedPermanentGroupsOf } from '../../groups.js';
 import { pairDisplayName } from '../../stereoNames.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { renderMultiroom, setMultiroomRenderHooks } from '../../views/multiroom.js';
 import { ACTIONS, ACTION_SELECTOR, actionOf, expectationMet, focusKeyOf, liveLeaderOf, noteVerdict, pairKeyOf, pairUndoSplit, pendingPhase, restoreScroll, scrollPositionsOf } from './groupsmodel.js';
+import { liveRegion } from '../live.js';
+import { up } from '../../boxes.js';
 import './groups.css';
 
 let wiredRoot = null;
@@ -74,13 +76,14 @@ let wantFocus = '';
 // fixed groups are made. Once per session; the box can still be unticked.
 let permanentDefaulted = false;
 let dialog = null;
-let liveRegion = null;
 let lastSaid = '';
+// The region is created empty when mountGroups first runs, so it exists
+// before the first status of an action.
+const live = liveRegion('ui2GrpLive');
 
-const up = (s) => String(s || '').toUpperCase();
 const nameOf = (b) => (b ? ((labelFn && labelFn(b)) || getBoxLabel(b)) : '');
 const joinNames = (list) => (list || []).filter(Boolean).join(', ');
-const strBoxes = () => (state.boxes || []).filter((b) => b && b.kind !== 'stock' && b.host && b.deviceID);
+const strBoxes = () => zoneBoxes(state.boxes);
 const isOn = (root) => !!(state.ui2Shell && root && root.dataset.ui2Route === 'groups');
 
 // mountGroups is the groups route's hook (index.js), called on every entry
@@ -91,7 +94,7 @@ export function mountGroups(ctx = {}) {
   const root = ctx.root;
   if (!root) return;
   root.dataset.ui2Route = 'groups';
-  ensureLiveRegion();
+  live.ensure();
   if (typeof ctx.label === 'function') labelFn = ctx.label;
   if (wiredRoot !== root) {
     wire(root);
@@ -522,25 +525,12 @@ const textOf = (html) => {
 function say(text) {
   if (!text || text === lastSaid) return;
   lastSaid = text;
-  const fresh = !liveRegion || !document.body.contains(liveRegion);
-  const region = ensureLiveRegion();
+  const fresh = !live.attached();
+  const region = live.ensure();
   // A region that only now joined the page is not registered with a screen
   // reader yet: write into it a moment later, or the first status is lost.
   if (fresh) setTimeout(() => { if (lastSaid === text) region.textContent = text; }, 50);
   else region.textContent = text;
-}
-
-// ensureLiveRegion creates the region empty; mountGroups calls it on entry,
-// so it exists before the first action's status.
-function ensureLiveRegion() {
-  if (liveRegion && document.body.contains(liveRegion)) return liveRegion;
-  liveRegion = document.createElement('div');
-  liveRegion.id = 'ui2GrpLive';
-  liveRegion.className = 'u-sr-only';
-  liveRegion.setAttribute('role', 'status');
-  liveRegion.setAttribute('aria-live', 'polite');
-  document.body.appendChild(liveRegion);
-  return liveRegion;
 }
 
 // describe works out, for one action, what the speakers are, what to ask

@@ -42,6 +42,7 @@
 // and nothing touches the DOM at import.
 
 import { state } from '../../state.js';
+import { labelVia } from '../../boxes.js';
 import { stereoPairsOf } from '../../groups.js';
 import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab, subnavCurrent } from './routes.js';
 import { renderSpeakerList } from './list.js';
@@ -60,7 +61,7 @@ let wantAddHost = '';
 
 const byId = (id) => (frameRoot && frameRoot.querySelector(`#${id}`))
   || (typeof document !== 'undefined' ? document.getElementById(id) : null);
-const label = (b) => (typeof deps.getBoxLabel === 'function' ? deps.getBoxLabel(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+const label = (b) => labelVia(deps.getBoxLabel, b);
 const findBox = (host) => (state.boxes || []).find((b) => b && b.host === host) || null;
 
 export function initSpeakersArea(frame, d = {}) {

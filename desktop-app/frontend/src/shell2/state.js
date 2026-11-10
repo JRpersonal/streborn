@@ -28,6 +28,7 @@
 import './state.css';
 import { t } from '../i18n/index.js';
 import { state } from '../state.js';
+import { labelVia } from '../boxes.js';
 import { escapeAttr, escapeHtml, showError, showToast } from '../utils.js';
 
 // ---- the library helpers (moved from shell2/library.js) ---------------------
@@ -597,7 +598,7 @@ export function reporter(anchor) {
 //         speaker you control is not reachable), or a phase of the list
 //   text  the line, actions  its buttons (noSpeakersState names)
 export function playerStateModel({ currentBox = null, boxes = [], discovery = null, label } = {}) {
-  const name = (b) => (typeof label === 'function' ? label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+  const name = (b) => labelVia(label, b);
   if (currentBox) {
     const rec = (boxes || []).find((b) => b && b.host === currentBox.host) || currentBox;
     if (rec.offline) {

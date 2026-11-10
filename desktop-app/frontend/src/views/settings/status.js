@@ -4,6 +4,7 @@
 // feature and sits below the groups rather than buried in one.
 
 import { state } from '../../state.js';
+import { strBoxes } from '../../boxes.js';
 import { $, escapeHtml, escapeAttr, compareVerBuild } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '../../api.js';
@@ -310,7 +311,7 @@ export function wireStatusSections(ctx) {
     let updateAllBtn = '';
     let updateAllTargets = [];
     try {
-      updateAllTargets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b));
+      updateAllTargets = strBoxes(state.boxes).filter(b => b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b));
       const n = updateAllTargets.length;
       if (n >= 2 && !state.otaInProgress && deps.updateAllBoxes) {
         updateAllBtn = `<button class="btn btn-mini btn-secondary" id="settingsUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: n }))}</button>`;

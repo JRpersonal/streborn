@@ -6,6 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
+import { up } from '../boxes.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, balanceLabel, groupFollowerNames, STEREO_ICON, GROUP_ICON } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { FormZone, DissolveZone, ForgetPermanentGroup, RemoveGroupMember, DissolveStereoPair, PushStereoPairNameToBox, WakeBox, BrowserOpenURL, readBoxBalance, GetGroupKeys, SaveGroupKeys, GetWebhooks, GetKeyActions } from '../api.js';
@@ -16,7 +17,7 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, playModeOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers, boxUnreachable } from '../groups.js';
+import { masterOf as zoneMasterOf, zoneBoxes as strZoneBoxes, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers, boxUnreachable } from '../groups.js';
 // What the editors do and say about a speaker the app cannot reach (#1741).
 import { groupCreateBlock, zoneFormFailure, stereoReachBlock, stereoFormFailure } from '../zonereach.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
@@ -212,7 +213,7 @@ export function stopMultiroomLive() {
 // refresh replaces state.boxes without repainting this view, so a list kept
 // from the paint can be a whole outage old (#1741).
 export function multiroomStrBoxes() {
-  return (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
+  return strZoneBoxes(state.boxes);
 }
 
 // zoneFormBusy is true while a group create is on its way. The Create button
@@ -1482,7 +1483,6 @@ async function doFormZone(strBoxes) {
 // and then came back once the group ended (#1576). The agent reports them as
 // `notJoined` on the main speaker's zone answer.
 function notJoinedChips(list, boxes) {
-  const up = (s) => String(s || '').toUpperCase();
   return (list || []).map((m) => {
     const box = (boxes || []).find((x) => x && x.deviceID && m.deviceID && up(x.deviceID) === up(m.deviceID))
       || (boxes || []).find((x) => x && x.host && m.ip && x.host === m.ip) || null;

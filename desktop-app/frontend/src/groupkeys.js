@@ -9,6 +9,8 @@
 //
 // No DOM access, no imports from the views (the view-extraction trap).
 
+import { labelOf, up } from './boxes.js';
+
 export const GROUP_KEY_IDS = ['thumbsUp', 'thumbsDown'];
 
 // normalizeDoc turns whatever the agent (or an older agent, or nothing)
@@ -72,7 +74,7 @@ export function gkMembersForSave({ picked, live, stored }) {
 }
 
 export function templateFromBoxes({ name, master, members, permanent, label }) {
-  const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
+  const lbl = label || labelOf;
   const asMember = (b) => ({ deviceID: String(b.deviceID || ''), ip: String(b.host || ''), name: String(lbl(b) || '') });
   return {
     name: String(name || '').trim(),
@@ -85,7 +87,7 @@ export function templateFromBoxes({ name, master, members, permanent, label }) {
 // templateFromStored builds a template from a stored permanent group entry
 // (groups.js storedPermanentGroupsOf): { masterBox, members: [{box, ip, name}] }.
 export function templateFromStored(group, name, label) {
-  const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
+  const lbl = label || labelOf;
   return {
     name: String(name || '').trim(),
     master: { deviceID: String(group.masterBox.deviceID || ''), ip: String(group.masterBox.host || ''), name: String(lbl(group.masterBox) || '') },
@@ -149,8 +151,7 @@ export function bindKey(doc, name, key) {
 // stored names, refreshed from the discovered boxes where one matches (a
 // renamed speaker shows its new name).
 export function describeTemplate(tpl, boxes, label) {
-  const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
-  const up = (s) => String(s || '').toUpperCase();
+  const lbl = label || labelOf;
   const nameOf = (m) => {
     const box = (boxes || []).find(b => b && ((m.deviceID && up(b.deviceID) === up(m.deviceID)) || (m.ip && b.host === m.ip)));
     return (box && lbl(box)) || m.name || m.ip || m.deviceID || '?';
@@ -258,7 +259,7 @@ export function groupKeyErrorBannerKey(kind) {
 // first speaker's sentence told a speaker whose form was refused that it had
 // moved. Each line keeps its raw reasons for display under the sentence.
 export function groupKeyErrorBanners(boxes, label) {
-  const lbl = label || ((b) => (b && (b.friendlyName || b.name || b.host)) || '');
+  const lbl = label || labelOf;
   const out = [];
   const byKey = new Map();
   for (const b of boxes || []) {
