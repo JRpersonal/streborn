@@ -103,9 +103,32 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	now := time.Now()
 	a.discMu.Lock()
 	defer a.discMu.Unlock()
+	a.mergeDiscoveryCacheLocked(now, seen, presenceOnly)
+}
+
+// mergeDiscoveryCacheLocked is the body of mergeDiscoveryCacheWith: the seven
+// phases of one cache merge, in the order they depend on each other. Caller
+// holds discMu for the whole call, so the phases see one consistent cache.
+// now is the cycle's single timestamp, passed in so a test can place a merge
+// at any point in time.
+func (a *App) mergeDiscoveryCacheLocked(now time.Time, seen map[string]BoxInfo, presenceOnly map[string]bool) {
 	if a.discCache == nil {
 		a.discCache = map[string]discEntry{}
 	}
+	a.mergeSeenLocked(now, seen, presenceOnly)
+	freshDevices := freshDeviceHosts(seen)
+	movedAway := a.readdOrEvictLocked(now, seen, freshDevices)
+	a.applyOTAPinsLocked(now, seen, freshDevices, movedAway)
+	a.applyStockPinsLocked(now, seen)
+	a.recordSTRIdentityLocked(now, seen, presenceOnly)
+	a.reconcileSTRIdentityLocked(now, seen)
+	a.expireSTRIdentityLocked(now)
+}
+
+// mergeSeenLocked is phase 1 of the cache merge: every box genuinely seen this
+// cycle is merged into its cached record and stamped with now. Caller holds
+// discMu.
+func (a *App) mergeSeenLocked(now time.Time, seen map[string]BoxInfo, presenceOnly map[string]bool) {
 	// Boxes found this cycle refresh the timestamp, but their record is
 	// MERGED with the cached one rather than blindly overwriting it: a
 	// thinner cycle (only the stock mDNS entry because probeSTR missed the
@@ -171,6 +194,12 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		seen[key] = b
 		a.discCache[key] = e
 	}
+}
+
+// freshDeviceHosts maps the deviceID of every box in seen to the host it
+// answered on. Called between phase 1 and phase 2, while seen still holds only
+// this cycle's genuine sightings.
+func freshDeviceHosts(seen map[string]BoxInfo) map[string]string {
 	// Devices GENUINELY seen this cycle (before any cache re-adds), keyed by their
 	// stable deviceID. Used just below to drop a stale cache entry for a device that
 	// reappeared at a NEW IP this cycle: a router restart (or a LAN<->Wi-Fi / band
@@ -183,6 +212,15 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			freshDevices[b.DeviceID] = b.Host
 		}
 	}
+	return freshDevices
+}
+
+// readdOrEvictLocked is phase 2 of the cache merge: cached boxes this cycle
+// missed are served again from the cache, greyed out past their grace, and
+// evicted once their speaker turned up elsewhere or stayed silent for the full
+// retention. It returns the addresses evicted because their speaker moved.
+// Caller holds discMu.
+func (a *App) readdOrEvictLocked(now time.Time, seen map[string]BoxInfo, freshDevices map[string]string) map[string]bool {
 	// Addresses evicted below because their speaker turned up at a new one.
 	// The post-OTA pin must not bring them back (see the pin loop).
 	movedAway := map[string]bool{}
@@ -247,6 +285,12 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			delete(a.discCache, key)
 		}
 	}
+	return movedAway
+}
+
+// applyOTAPinsLocked is phase 3 of the cache merge: the post-OTA pins. Caller
+// holds discMu.
+func (a *App) applyOTAPinsLocked(now time.Time, seen map[string]BoxInfo, freshDevices map[string]string, movedAway map[string]bool) {
 	// Post-OTA pin: any IP STR is mid-update on stays classified as STR through
 	// its reboot, regardless of what the half-booted box reports (its stock Bose
 	// port answers before the agent does, #108). STR triggered the update, so it
@@ -334,7 +378,11 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		b.OTAPending = true
 		seen[host] = b
 	}
+}
 
+// applyStockPinsLocked is phase 4 of the cache merge: the post-uninstall pins.
+// Caller holds discMu.
+func (a *App) applyStockPinsLocked(now time.Time, seen map[string]BoxInfo) {
 	// Post-uninstall pin: the mirror image of the OTA pin above. This app just
 	// removed STR from the host, so it is a stock Bose speaker until an agent
 	// answers a live probe again. Any STR label that arrives without a verified
@@ -377,7 +425,11 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 		e.seen = now
 		a.discCache[host] = e
 	}
+}
 
+// recordSTRIdentityLocked is phase 5 of the cache merge: it refreshes the
+// deviceID-keyed STR identity memory. Caller holds discMu.
+func (a *App) recordSTRIdentityLocked(now time.Time, seen map[string]BoxInfo, presenceOnly map[string]bool) {
 	// STR identity memory (deviceID-keyed, survives an IP change). The pins above
 	// are keyed by IP and cannot help a box that returned on a new DHCP lease
 	// after a runtime Wi-Fi change / band switch — it reappears under a fresh key
@@ -401,6 +453,11 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			a.strKnown[b.DeviceID] = discEntry{box: b, seen: now}
 		}
 	}
+}
+
+// reconcileSTRIdentityLocked is phase 6 of the cache merge: a stock sighting of
+// a device remembered as STR is relabelled STR. Caller holds discMu.
+func (a *App) reconcileSTRIdentityLocked(now time.Time, seen map[string]BoxInfo) {
 	// Reconcile: a stock sighting of a device we recently knew as STR is the
 	// misclassification above. mergeBoxInfo promotes it back to STR and restores
 	// the remembered port/version/name (so no spurious update prompt) while
@@ -449,6 +506,11 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 				"host", b.Host, "deviceID", b.DeviceID)
 		}
 	}
+}
+
+// expireSTRIdentityLocked is phase 7 of the cache merge: STR identity memories
+// older than strKnownTTL are dropped. Caller holds discMu.
+func (a *App) expireSTRIdentityLocked(now time.Time) {
 	// Drop STR identity memories not refreshed within the TTL.
 	for id, e := range a.strKnown {
 		if now.Sub(e.seen) > strKnownTTL {
