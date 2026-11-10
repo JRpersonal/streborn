@@ -31,7 +31,7 @@ func installEngineBackoff(attempt int) time.Duration {
 
 // installEnsureEngine and installEngineSleep are the seams for the tests.
 var (
-	installEnsureEngine = func(a *App, host string) (string, error) { return a.EnsureSpotifyEngine(host, 0) }
+	installEnsureEngine = func(a *App, host string) (engineResult, error) { return a.ensureSpotifyEngine(host, 0) }
 	installEngineSleep  = time.Sleep
 )
 
@@ -44,15 +44,42 @@ func engineWillNeverFit(err error) bool {
 
 // ensureEngineAfterInstall is the install's last step: the speaker ends with
 // the embedded Spotify engine on it, or the reason it could not is returned.
-// An empty string means the engine is there (or this build has none to give).
+// An empty string means the engine is there, or there is none to give (a
+// build with the engine stub, a speaker STR is being removed from again).
 func (a *App) ensureEngineAfterInstall(host string) string {
 	var last error
 	for attempt := 1; attempt <= installEngineAttempts; attempt++ {
 		r, err := installEnsureEngine(a, host)
 		if err == nil {
-			a.recordOTA(host, "install: Spotify engine checked after the install: "+r)
-			a.logger.Info("install_str: Spotify engine verified after the install", "host", host, "result", r)
-			return ""
+			// No error is not "the engine is there": the step also answers
+			// without one when it sent nothing, and when what it sent is not
+			// running. Only an engine that is in place counts as verified.
+			switch {
+			case r.inPlace():
+				a.recordOTA(host, "install: Spotify engine checked after the install: "+r.String())
+				a.logger.Info("install_str: Spotify engine verified after the install", "host", host, "result", r.String())
+				return ""
+			case r == engineNotEmbedded, r == engineSkipped:
+				// Nothing to give (a build with the engine stub), or nothing
+				// to be given on purpose (STR is being removed again). Not a
+				// failure the user can act on, and not a verified engine.
+				a.recordOTA(host, "install: Spotify engine not delivered after the install: "+r.String())
+				a.logger.Info("install_str: no Spotify engine delivered after the install", "host", host, "result", r.String())
+				return ""
+			case r == engineStaged:
+				// On the speaker's disk, not running: the restart that starts
+				// it could not be triggered. Asking again would only find the
+				// file already there and answer "current".
+				a.recordOTA(host, "install: Spotify engine is on the speaker but not running, the activating restart could not be triggered: "+r.String())
+				a.logger.Warn("install_str: Spotify engine staged after the install, the activating restart failed", "host", host)
+				return "it is on the speaker and starts with the speaker's next restart"
+			}
+			// Refused without anything sent (the speaker's update latch): the
+			// same as a failed attempt, asked again after the backoff.
+			err = errors.New(r.String())
+			if r == engineNone {
+				err = errors.New("the engine step gave no result")
+			}
 		}
 		last = err
 		a.recordOTA(host, fmt.Sprintf("install: Spotify engine attempt %d/%d failed: %v", attempt, installEngineAttempts, err))

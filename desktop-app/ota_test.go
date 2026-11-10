@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,5 +91,29 @@ func TestAgentDowngradeRefused(t *testing.T) {
 		if got := agentDowngradeRefused(c.app, c.box); got != c.want {
 			t.Errorf("agentDowngradeRefused(%q, %q) = %v, want %v", c.app, c.box, got, c.want)
 		}
+	}
+}
+
+// The handshake fails in two ways: the connection did not come up (an error),
+// or it did and the speaker's shell did not answer with the marker (no error
+// at all). The second one used to be wrapped with %w around a nil error, and
+// the update failure the user read ended in "%!w(<nil>)".
+func TestSSHHandshakeFailureText(t *testing.T) {
+	dial := errors.New("dial tcp 192.0.2.1:22: connection refused")
+	withErr := sshHandshakeFailure(dial, "")
+	if !errors.Is(withErr, dial) || withErr.Error() != "ssh handshake failed: dial tcp 192.0.2.1:22: connection refused ()" {
+		t.Errorf("a connection error keeps its text and stays unwrappable, got %q", withErr)
+	}
+	for _, hello := range []string{"", "  \n", "login: \n"} {
+		got := sshHandshakeFailure(nil, hello).Error()
+		if strings.Contains(got, "%!") || strings.Contains(got, "<nil>") {
+			t.Errorf("hello %q: the text shows a formatting leftover: %q", hello, got)
+		}
+		if !strings.HasPrefix(got, "ssh handshake failed: ") {
+			t.Errorf("hello %q: the text lost its lead: %q", hello, got)
+		}
+	}
+	if got := sshHandshakeFailure(nil, "login: \n").Error(); !strings.Contains(got, "login:") {
+		t.Errorf("what the speaker did answer belongs in the text, got %q", got)
 	}
 }

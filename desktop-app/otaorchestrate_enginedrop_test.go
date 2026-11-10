@@ -49,7 +49,7 @@ func TestClassifyEngineFailure(t *testing.T) {
 // must not call the speaker too full for Spotify.
 func TestSpeakerUpdateRetriesTheEngineAfterAClosedConnection(t *testing.T) {
 	fb := newOtaFakeBox()
-	fb.engineReplies = []engineReply{{err: errEngineDrop1768}, {res: "ok"}}
+	fb.engineReplies = []engineReply{{err: errEngineDrop1768}, {res: engineInstalled}}
 	presentAfterSecondEngine(fb)
 	out, err := runSingle(t, fb)
 	if err != nil {

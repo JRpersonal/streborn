@@ -189,7 +189,7 @@ var otaProductionPolicy = otaPolicy{
 // fake speaker at a fast clock. Production wiring is in App.otaSeams.
 type otaSeams struct {
 	push          func(host string, port int) error
-	ensureEngine  func(host string, port int) (string, error)
+	ensureEngine  func(host string, port int) (engineResult, error)
 	readVersion   func(host string, port int) (map[string]string, error)
 	classify      func(host string, port int) string
 	recordOutcome func(host, verdict string)
@@ -410,13 +410,6 @@ func classifyEngineFailure(err error) engineFailure {
 		return engineFailRetry
 	}
 }
-
-// noEmbeddedEngine is EnsureSpotifyEngine's answer on a build that carries
-// only the engine stub.
-var noEmbeddedEngine = regexp.MustCompile(`(?i)no embedded engine`)
-
-// engineSkipped is EnsureSpotifyEngine's answer while STR is being removed.
-var engineSkipped = regexp.MustCompile(`(?i)^skipped:`)
 
 // agentCurrentEngineMissing reports whether a speaker already runs exactly the
 // agent this app would push and only lacks the Spotify engine. Such a speaker
@@ -1100,19 +1093,7 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 			u.record("engine re-delivery after the incomplete update stopped: another speaker answers at this speaker's address; the next update run delivers it")
 			return base
 		}
-		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
-		var res string
-		var engErr error
-		sent := false
-		u.gate.run(func() {
-			eh, ep, ok := u.engineTarget()
-			if !ok {
-				return
-			}
-			sent = true
-			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
-			res, engErr = u.seams.ensureEngine(eh, ep)
-		})
+		res, sent, engErr := u.pushEngine(attempt)
 		if !sent {
 			if u.foreign {
 				u.record("engine re-delivery after the incomplete update stopped: another speaker answers at this speaker's address; the next update run delivers it")
@@ -1124,7 +1105,7 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 			attempt++
 			continue
 		}
-		if engErr == nil && res == EngineDeferredUpdateInFlight {
+		if engErr == nil && res == engineDeferred {
 			if latchBy.IsZero() {
 				latchBy = u.seams.now().Add(u.policy.engineWindow)
 				u.record("engine re-delivery: the speaker still reports its update in flight; waiting for it to give up")
@@ -1151,19 +1132,52 @@ func (u *speakerUpdater) restoreEngineAfterIncompleteUpdate(base UpdateOutcome) 
 			}
 			continue
 		}
-		if noEmbeddedEngine.MatchString(res) || engineSkipped.MatchString(res) {
-			u.record("engine re-delivery after the incomplete update skipped: " + res)
+		if res == engineNotEmbedded || res == engineSkipped {
+			u.record("engine re-delivery after the incomplete update skipped: " + res.String())
 			return base
 		}
 		check, cerr := u.read()
 		if cerr == nil && check["goLibrespot"] == "present" {
-			base.EngineDelivered = engineSent(res)
-			u.record("engine back on the speaker after the incomplete update (" + res + ")")
+			base.EngineDelivered = res.sent()
+			u.record("engine back on the speaker after the incomplete update (" + res.String() + ")")
 			return base
 		}
 	}
 	u.record("engine re-delivery after the incomplete update did not succeed; the next update run delivers it")
 	return base
+}
+
+// pushEngine is the one engine-push step of the updater. It says the push is
+// queued, waits for the upload gate, asks the speaker who it is right before
+// sending (engineTarget, inside the gate: the wait there can run for minutes,
+// long enough for the address to change hands), then says the upload is
+// running and sends.
+//
+// sent is false when nothing went out: the speaker did not answer at the
+// moment the push was due, or another speaker answers at its address
+// (u.foreign tells the two apart). res and err are the delivery's own answer
+// and mean nothing while sent is false.
+func (u *speakerUpdater) pushEngine(attempt int) (res engineResult, sent bool, err error) {
+	u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
+	u.gate.run(func() {
+		host, port, ok := u.engineTarget()
+		if !ok {
+			return
+		}
+		sent = true
+		u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
+		res, err = u.seams.ensureEngine(host, port)
+	})
+	return res, sent, err
+}
+
+// finish emits the closing phase of a run that reached its engine step, the
+// outcome with everything the row says about it, and hands the outcome back.
+func (u *speakerUpdater) finish(out UpdateOutcome) UpdateOutcome {
+	u.phase(updatePhase{Phase: out.Outcome, Attempt: out.Attempts, Outcome: out.Outcome,
+		Reachable: out.Version != nil, Version: out.Version["version"], Engine: out.Version["goLibrespot"],
+		EngineDelivered: out.EngineDelivered, EngineTooFull: out.EngineTooFull, Quiet: out.Quiet, Unmet: out.Unmet, Err: out.Err})
+	return out
 }
 
 // deliverEngine is the second half of an update: the agent is on the target
@@ -1176,12 +1190,6 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 	// landed.
 	u.phase(updatePhase{Phase: phaseConfirmed, Attempt: base.Attempts, Reachable: true,
 		Version: confirmedVer["version"], Engine: confirmedVer["goLibrespot"]})
-	done := func(out UpdateOutcome) UpdateOutcome {
-		u.phase(updatePhase{Phase: out.Outcome, Attempt: base.Attempts, Outcome: out.Outcome,
-			Reachable: out.Version != nil, Version: out.Version["version"], Engine: out.Version["goLibrespot"],
-			EngineDelivered: out.EngineDelivered, EngineTooFull: out.EngineTooFull, Quiet: out.Quiet, Unmet: out.Unmet})
-		return out
-	}
 	// Post-reboot Spotify engine reconcile: covers the one-time pre-v0.8.22
 	// upgrade case (#240, engine missing) AND a present-but-outdated engine on a
 	// tight box whose pre-reboot staging was deferred (the old engine's space is
@@ -1191,7 +1199,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		u.clearIntent()
 		base.Outcome = outcomeDone
 		base.Version = confirmedVer
-		return done(base)
+		return u.finish(base)
 	}
 	// 10 min window, and every push attempt is gated on a settled box. The old
 	// 240 s window with an ungated first push burned itself on exactly two
@@ -1230,7 +1238,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			base.Outcome = outcomeDone
 			base.Version = live
 			base.EngineDelivered = engineDelivered
-			return done(base)
+			return u.finish(base)
 		}
 		u.waitForStableAgent(engDeadline)
 		// Never push at an address another speaker answers on: the engine
@@ -1244,21 +1252,9 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 		// "Spotify engine: missing, waiting for the target state" described the
 		// speaker, not what the app was doing, so the ~16 MB delivery that
 		// follows looked like nothing was happening (Jens, watching a live run).
-		// Say that it is queued, then that it is being sent; the row's bar is
-		// already fed by the transfer's own progress events.
-		u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: attempt})
-		var engRes string
-		var engErr error
-		sent := false
-		u.gate.run(func() {
-			eh, ep, ok := u.engineTarget()
-			if !ok {
-				return
-			}
-			sent = true
-			u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: attempt})
-			engRes, engErr = u.seams.ensureEngine(eh, ep)
-		})
+		// pushEngine says that it is queued, then that it is being sent; the
+		// row's bar is already fed by the transfer's own progress events.
+		engRes, sent, engErr := u.pushEngine(attempt)
 		if !sent {
 			// Not answering, or another speaker answers at the address, at
 			// the moment the push was due: nothing was sent. Wait and look
@@ -1273,27 +1269,27 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 			}
 			// A build that carries no engine cannot deliver one, so waiting the
 			// full window would only burn ten minutes to reach the same answer.
-			if noEmbeddedEngine.MatchString(engRes) {
+			if engRes == engineNotEmbedded {
 				u.clearIntent()
 				base.Outcome = outcomeDone
 				base.Version = fallback
 				base.EngineDelivered = engineDelivered
-				return done(base)
+				return u.finish(base)
 			}
 			// STR is being removed from this speaker: the delivery was skipped on
 			// purpose, and a "Spotify engine installed" toast in the middle of an
 			// uninstall reads as a bug (report of 2026-09-06). Finish quietly.
-			if engineSkipped.MatchString(engRes) {
+			if engRes == engineSkipped {
 				u.clearIntent()
 				base.Outcome = outcomeDone
 				base.Version = fallback
 				base.EngineDelivered = false
 				base.Quiet = true
-				return done(base)
+				return u.finish(base)
 			}
 			// "current" means nothing was sent: the engine was already the right
 			// one.
-			if engineSent(engRes) {
+			if engRes.sent() {
 				engineDelivered = true
 			}
 			// Do not take the delivery's word for it. The update may only be
@@ -1304,7 +1300,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 				base.Outcome = outcomeDone
 				base.Version = check
 				base.EngineDelivered = engineDelivered
-				return done(base)
+				return u.finish(base)
 			}
 			continue // delivered but not visible yet: stay in the loop
 		}
@@ -1344,7 +1340,7 @@ func (u *speakerUpdater) deliverEngine(base UpdateOutcome, confirmedVer map[stri
 	base.Version = confirmedVer
 	base.Unmet = unmetSpotifyEngine
 	base.EngineTooFull = engineTooFull
-	return done(base)
+	return u.finish(base)
 }
 
 // waitForStableAgent waits (bounded by deadline) until the box's agent answers
@@ -1437,7 +1433,7 @@ func (o *otaOrchestration) claim(what string) (release func(), err error) {
 func (a *App) otaSeams() *otaSeams {
 	return &otaSeams{
 		push:          a.UpdateBoxAgent,
-		ensureEngine:  a.EnsureSpotifyEngine,
+		ensureEngine:  a.ensureSpotifyEngine,
 		readVersion:   a.BoxAgentVersion,
 		classify:      a.ClassifyOTAResult,
 		recordOutcome: a.RecordOTAOutcome,
@@ -1616,19 +1612,43 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 	if u.seams.recordIntent != nil {
 		u.seams.recordIntent(u.host, u.port, u.deviceID, u.name)
 	}
-	finish := func() UpdateOutcome {
-		u.phase(updatePhase{Phase: out.Outcome, Attempt: 1, Outcome: out.Outcome,
-			Reachable: out.Version != nil, Version: out.Version["version"], Engine: out.Version["goLibrespot"],
-			EngineDelivered: out.EngineDelivered, EngineTooFull: out.EngineTooFull, Unmet: out.Unmet, Err: out.Err})
-		return out
+	// Who the speaker is, before the wait in the gate: the same first reading
+	// an update row takes. The row can queue for minutes behind the other
+	// speakers' pushes, and a speaker that restarts meanwhile can lose its
+	// address to another one; without a reference the guard in pushEngine has
+	// only the discovery hint to hold an answer against.
+	if !u.ident.reported() {
+		host, port := u.addr()
+		if v, verr := u.seams.readVersion(host, port); verr == nil && v != nil {
+			hints := u.ident.hints
+			u.ident = identityFrom(v)
+			u.ident.hints = hints
+		}
 	}
-	u.phase(updatePhase{Phase: phaseEngineQueued, Attempt: 1})
-	var res string
-	var err error
-	u.gate.run(func() {
-		u.phase(updatePhase{Phase: phaseEngineUploading, Attempt: 1})
-		res, err = u.seams.ensureEngine(u.host, u.port)
-	})
+	res, sent, err := u.pushEngine(1)
+	if !sent {
+		// Nothing went out. Either the speaker does not answer, which is the
+		// failure it always was, or another speaker answers at its address:
+		// then the engine is still missing on this one and the record stays,
+		// so the next time this speaker is seen the app finishes the job.
+		why := "the speaker did not answer when the Spotify engine was due to be sent"
+		if !u.foreign {
+			if _, rerr := u.read(); rerr != nil && !u.foreign {
+				why = rerr.Error()
+			}
+		}
+		if u.foreign {
+			u.record("engine not sent: another speaker answers at this speaker's address, so it cannot land on the other speaker; the next update run delivers it")
+			u.log().Info("update all: engine repair not sent, another speaker answers at this address", "host", u.host)
+			out.Outcome = outcomePartial
+			out.Unmet = unmetSpotifyEngine
+			return u.finish(out)
+		}
+		out.Outcome = outcomeFailed
+		out.Err = why
+		u.log().Warn("update all: engine repair not sent, the speaker does not answer", "host", u.host, "err", why)
+		return u.finish(out)
+	}
 	if err != nil {
 		out.Outcome = outcomeFailed
 		out.Err = err.Error()
@@ -1639,32 +1659,34 @@ func (u *speakerUpdater) runEngineOnly() UpdateOutcome {
 			out.EngineTooFull = true
 		}
 		u.log().Warn("update all: engine repair failed", "host", u.host, "err", err)
-		return finish()
+		return u.finish(out)
 	}
-	if noEmbeddedEngine.MatchString(res) {
+	if res == engineNotEmbedded {
 		// This app build carries no engine, so there is nothing to deliver.
 		out.Outcome = outcomePartial
 		out.Unmet = unmetNoEmbeddedEngine
-		return finish()
+		return u.finish(out)
 	}
-	if engineSent(res) {
+	if res.sent() {
 		out.EngineDelivered = true
 	}
 	// The same honesty check the update path does: a speaker can lose the
 	// engine again to a reboot right after it was delivered, so confirm it is
 	// really there before the row goes green. A read that fails means the box
-	// is still settling: trust the delivery.
+	// is still settling: trust the delivery. Read through the identity guard,
+	// so another speaker's answer at this address is never taken as this
+	// speaker's state.
 	stillMissing := false
-	if fv, ferr := u.seams.readVersion(u.host, u.port); ferr == nil {
+	if fv, ferr := u.read(); ferr == nil && fv != nil {
 		out.Version = fv
 		stillMissing = fv["goLibrespot"] == "missing"
 	}
 	if stillMissing {
 		out.Outcome = outcomePartial
 		out.Unmet = unmetSpotifyEngine
-		return finish()
+		return u.finish(out)
 	}
 	out.Outcome = outcomeDone
 	u.clearIntent()
-	return finish()
+	return u.finish(out)
 }

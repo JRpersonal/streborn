@@ -154,13 +154,23 @@ func (a *App) uploadAgentWithRetries(host string, port int, bin []byte) (bodySen
 	}
 }
 
+// agentServerSideErr matches the 5xx status streamPostBinary puts in front of
+// an agent's refusal.
+var agentServerSideErr = regexp.MustCompile(`status 5\d\d`)
+
+// streamedUploadMinVersion is the first agent that streams an upload to disk.
+// Older ones collect the whole body in RAM (growth-doubling ReadAll), and the
+// speaker's watchdog reboots it under an agent- or engine-sized push, so they
+// are updated over SSH and never handed the engine before the reboot.
+const streamedUploadMinVersion = "v0.9.26"
+
 // isRetryableAgentWriteErr reports whether the agent answered with a server-side
 // error, which is the class worth offering again.
 func isRetryableAgentWriteErr(err error) bool {
 	if err == nil {
 		return false
 	}
-	return regexp.MustCompile(`status 5\d\d`).MatchString(err.Error())
+	return agentServerSideErr.MatchString(err.Error())
 }
 
 func nandFits(freeBytes, reclaimableBytes, needBytes int64) bool {
@@ -458,8 +468,8 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// failure here falls through to the normal HTTP path, which is exactly
 	// today's behaviour - this detour can only improve things.
 	if verr == nil {
-		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
-			a.recordOTA(host, "agent "+bv+" predates the streamed upload path (v0.9.26): updating over SSH, the old agent dies receiving large HTTP bodies")
+		if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, streamedUploadMinVersion) {
+			a.recordOTA(host, "agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+"): updating over SSH, the old agent dies receiving large HTTP bodies")
 			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
 			a.enableAgentSSH(host, port)
 			if sshErr := a.updateAgentViaSSH(host, bin); sshErr == nil {
@@ -681,12 +691,7 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
-	sum := sha256.Sum256(agentbin.Bytes())
-	embedded := ""
-	if len(agentbin.Bytes()) > 0 {
-		embedded = hex.EncodeToString(sum[:])
-	}
-	verdict, line := classifyAgentVersion(ver, embedded, appBuild, appVersion)
+	verdict, line := classifyAgentVersion(ver, embeddedAgentSha256(), appBuild, appVersion)
 	a.recordOTA(host, line)
 	if verdict == "confirmed" {
 		a.forgetOTAVerify(host)
@@ -748,21 +753,6 @@ func classifyAgentVersion(ver map[string]string, embedded, wantBuild, wantVersio
 		" and does not report the pushed binary on disk"
 }
 
-// nandCauseClause names the speaker's free space as the likely reason a push
-// landed on disk and never ran, when the space is what the pre-flight check
-// already called TIGHT.
-//
-// The check ran, said "a second copy for the atomic write may not fit", wrote
-// that to the journal and pushed anyway (fail-open, by design: "may not fit"
-// is not "will not"). But the VERDICT a few minutes later blamed a boot
-// rollback and said an identical re-push cannot help, with no mention of the
-// one thing the same run had already measured. So the user read a generic
-// failure and had nothing to act on.
-//
-// Live case, 2026-09-30: a SoundTouch 20 with 11 MB free for a 16 MB binary
-// failed this way twice in one morning and had been stuck on a build from the
-// 12th of September for weeks, while its owner's four other speakers updated
-// fine. He only found out because the speaker stopped answering altogether.
 // boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as
 // opposed to STR's agent. /info is the cheapest endpoint the Bose firmware
 // serves and it answers on every model and every chassis, firewalled or not,
@@ -944,8 +934,8 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	// engine push and killed the box before the agent update could even start.
 	// Those agents must never be fed the engine pre-reboot; the post-reboot
 	// delivery to the NEW agent (which streams to disk) is the path that works.
-	if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, "v0.9.26") {
-		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path (v0.9.26) and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
+	if bv := strings.TrimSpace(ver["version"]); bv != "" && versioncmp.Less(bv, streamedUploadMinVersion) {
+		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path ("+streamedUploadMinVersion+") and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
 		a.logger.Info("stageSidecarBeforeReboot: agent too old for a pre-reboot engine push, deferring to post-OTA delivery",
 			"host", host, "agent", bv)
 		return
@@ -1025,10 +1015,62 @@ const EngineSkippedUninstalling = "skipped: STR is being removed from this speak
 // restarted the speaker or given up.
 const EngineDeferredUpdateInFlight = "deferred: an agent update is in flight on the speaker"
 
-// engineSent reports whether an EnsureSpotifyEngine result means bytes went
-// out: "current" and the update-in-flight deferral both sent nothing.
-func engineSent(res string) bool {
-	return res != "current" && res != EngineDeferredUpdateInFlight
+// engineResult is what one EnsureSpotifyEngine call did, for the Go callers.
+// The window gets the same answer as the string it has always read
+// (String); Go code compares the value, never the text.
+type engineResult int
+
+const (
+	// engineNone is the zero value: no result, returned beside an error.
+	engineNone engineResult = iota
+	// engineCurrent: the speaker already had this build's engine. Nothing sent.
+	engineCurrent
+	// engineInstalled: the engine was sent and is active (hot-swapped, or
+	// present after the activation reboot).
+	engineInstalled
+	// engineStaged: the engine was sent and is on the speaker's disk, but the
+	// reboot that activates it could not be triggered.
+	engineStaged
+	// engineNotEmbedded: this build carries only the engine stub.
+	engineNotEmbedded
+	// engineSkipped: STR is being removed from the speaker. Nothing sent.
+	engineSkipped
+	// engineDeferred: the speaker refused with its update-in-flight latch.
+	// Nothing sent.
+	engineDeferred
+)
+
+// String is the answer the bound EnsureSpotifyEngine hands to the window.
+// The frontend matches these texts, so they are a contract.
+func (r engineResult) String() string {
+	switch r {
+	case engineCurrent:
+		return "current"
+	case engineInstalled:
+		return "ok"
+	case engineStaged:
+		return "engine-staged-reboot-failed"
+	case engineNotEmbedded:
+		return "no embedded engine in this build"
+	case engineSkipped:
+		return EngineSkippedUninstalling
+	case engineDeferred:
+		return EngineDeferredUpdateInFlight
+	default:
+		return ""
+	}
+}
+
+// sent reports whether engine bytes went out to the speaker.
+func (r engineResult) sent() bool {
+	return r == engineInstalled || r == engineStaged
+}
+
+// inPlace reports whether the speaker now runs this build's engine: it was
+// already current, or it was sent and is active. A staged engine is on the
+// disk but not running, and every other result sent nothing.
+func (r engineResult) inPlace() bool {
+	return r == engineCurrent || r == engineInstalled
 }
 
 // isUninstalling reports whether UninstallSTR has started (or finished) for
@@ -1065,15 +1107,22 @@ func (a *App) isUninstalling(host string) bool {
 // transient drop right after a reboot it returns the error so the caller's retry
 // loop tries again while keeping the user informed.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
+	res, err := a.ensureSpotifyEngine(host, port)
+	return res.String(), err
+}
+
+// ensureSpotifyEngine is EnsureSpotifyEngine for the Go callers: the same
+// step, answering with the typed result.
+func (a *App) ensureSpotifyEngine(host string, port int) (engineResult, error) {
 	if a.isUninstalling(host) {
 		// The user is removing STR from this speaker: do not push an engine
 		// onto it and do not announce one. The update flow treats this like
 		// "nothing to deliver" and stays quiet.
 		a.logger.Info("ensure spotify engine: STR is being removed from this speaker, skipping the engine delivery", "host", host)
-		return EngineSkippedUninstalling, nil
+		return engineSkipped, nil
 	}
 	if !agentbin.GoLibrespotAvailable() {
-		return "no embedded engine in this build", nil
+		return engineNotEmbedded, nil
 	}
 	delivered, err := a.pushSidecar(host, port)
 	if errors.Is(err, errSidecarUpdateInFlight) {
@@ -1081,16 +1130,16 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		// here, as this used to, told the restore after a failed update that
 		// the delivery had gone through when the speaker had only said "not
 		// yet".
-		return EngineDeferredUpdateInFlight, nil
+		return engineDeferred, nil
 	}
 	if err != nil {
-		return "", err
+		return engineNone, err
 	}
 	if !delivered {
 		// Engine already current: the running agent is supervising it, no
 		// reboot. Distinct return value so callers can tell "nothing to do"
 		// from "delivered now" (the UI only announces the latter).
-		return "current", nil
+		return engineCurrent, nil
 	}
 	// Hot-swap path (#240): a sidecar-capable agent that advertises engineHotSwap
 	// restarts go-librespot in place the moment the sidecar write lands, so the
@@ -1102,7 +1151,7 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if ver, verr := a.BoxAgentVersion(host, port); verr == nil && ver["engineHotSwap"] == "true" {
 		a.recordOTA(host, "engine: delivered and hot-swapped live by the agent, no reboot needed")
 		a.logger.Info("ensure spotify engine: engine delivered and hot-swapped live, skipping the activation reboot", "host", host)
-		return "ok", nil
+		return engineInstalled, nil
 	}
 	// Reboot the box once more, as part of this same OTA, so the fresh agent picks
 	// up the new engine at start instead of leaving the user to restart by hand.
@@ -1113,7 +1162,7 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		// The engine is staged on disk and will come up on the next restart, so do
 		// not hard-fail; report it so the UI can fall back to a manual restart hint.
 		a.logger.Warn("ensure spotify engine: activation reboot could not be triggered; engine staged, needs a restart", "host", host, "err", rerr)
-		return "engine-staged-reboot-failed", nil
+		return engineStaged, nil
 	}
 	// Wait for the box to return with the engine present.
 	deadline := time.Now().Add(otaEngineRebootWait)
@@ -1121,12 +1170,12 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		time.Sleep(3 * time.Second)
 		if ver, e := a.BoxAgentVersion(host, port); e == nil && ver["goLibrespot"] == "present" {
 			a.recordOTA(host, "engine: present after the activation reboot")
-			return "ok", nil
+			return engineInstalled, nil
 		}
 	}
 	// Did not confirm in time (slow reboot, or a changed IP after DHCP): the engine
 	// is delivered and will be live once the box finishes; let the caller poll on.
-	return "", fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
+	return engineNone, fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
 }
 
 // otaEngineRebootWait bounds how long EnsureSpotifyEngine waits for the box to
@@ -1578,7 +1627,11 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	// instead of a blind "uploading" spinner that looks frozen on a slow link.
 	prog := newTransferProgress(a, "box:update:progress", total, host)
 	uploadDone := make(chan struct{})
-	finished := false
+	// finished is set once the whole body has been read by the transport. It
+	// is atomic because the transport reads the body on its own goroutine,
+	// and that goroutine can still be inside Read when Do has already
+	// returned an error to this one.
+	var finished atomic.Bool
 	// transferred feeds the stall watchdog below with the cumulative byte
 	// count the HTTP transport has consumed.
 	var transferred atomic.Int64
@@ -1588,10 +1641,8 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 		if n >= total {
 			// Body fully streamed. Stop the upload-stall watchdog so the box's
 			// NAND-write + reply window (bounded by ResponseHeaderTimeout) is not
-			// mistaken for a stall. onProgress runs on the single body-read
-			// goroutine, so this flag needs no lock.
-			if !finished {
-				finished = true
+			// mistaken for a stall. The swap makes the close happen once.
+			if finished.CompareAndSwap(false, true) {
 				close(uploadDone)
 			}
 		}
@@ -1644,24 +1695,23 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// finished is written on the body-read goroutine, which has stopped by the
-		// time Do returns, so this read is safe. It tells the caller whether the
-		// whole binary reached the box before the connection died: a drop AFTER a
-		// full upload is the self-replacing agent rebooting, not a failed transfer.
-		return "", finished, err
+		// finished tells the caller whether the whole binary reached the box
+		// before the connection died: a drop AFTER a full upload is the
+		// self-replacing agent rebooting, not a failed transfer.
+		return "", finished.Load(), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if httpReplyMeansNANDFull(resp.StatusCode, string(body)) {
-			return "", finished, &nandFullError{status: resp.StatusCode, detail: string(body)}
+			return "", finished.Load(), &nandFullError{status: resp.StatusCode, detail: string(body)}
 		}
-		return "", finished, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return "", finished.Load(), fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
 	// the agent-update caller can journal the chosen apply mode.
 	replyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return string(replyBytes), finished, nil
+	return string(replyBytes), finished.Load(), nil
 }
 
 // updateAgentViaSSH streams bin into /mnt/nv/streborn/bin/streborn-armv7l
@@ -1704,6 +1754,21 @@ func (a *App) enableAgentSSH(host string, port int) {
 	time.Sleep(2 * time.Second)
 }
 
+// sshHandshakeFailure is the error for an SSH handshake that did not end in
+// the STR_SSH_OK marker. That happens with an error (the connection did not
+// come up) and without one (it did, and the speaker's shell answered something
+// else or nothing), so the error is wrapped only when there is one.
+func sshHandshakeFailure(err error, hello string) error {
+	hello = strings.TrimSpace(hello)
+	if err != nil {
+		return fmt.Errorf("ssh handshake failed: %w (%s)", err, hello)
+	}
+	if hello == "" {
+		return errors.New("ssh handshake failed: the speaker accepted the connection but did not answer")
+	}
+	return fmt.Errorf("ssh handshake failed: the speaker answered something unexpected (%s)", hello)
+}
+
 func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// 4 spaced attempts (sshHandshake): the OTA path runs when the box is
 	// busiest, exactly where the one-shot 8 s attempt used to flake (#114).
@@ -1726,7 +1791,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 			a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
 		} else {
 			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
-				return fmt.Errorf("ssh handshake failed: %w (%s)", err, strings.TrimSpace(hello))
+				return sshHandshakeFailure(err, hello)
 			}
 		}
 	}
