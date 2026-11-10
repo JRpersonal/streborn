@@ -77,6 +77,57 @@ func TestLiveSSHEnginePushOnTightStorage(t *testing.T) {
 		}
 		return n
 	}
+	if os.Getenv("STR_LIVE_SSH_TIGHT_AGENT") != "" {
+		// Third question, the whole SSH update as a user's speaker gets it:
+		// updateAgentViaSSH writes the agent (dropping the engine first when
+		// free is below the agent's need), puts the engine back over SSH and
+		// restarts the speaker. Afterwards the speaker must run the embedded
+		// agent, and must have the engine once the app's engine step ran.
+		if !agentbin.Available() {
+			t.Fatal("this build carries no agent; run make agent-embed first")
+		}
+		bin := agentbin.Bytes()
+		start := freeKB()
+		t.Logf("free at start: %d kB; agent %d bytes needs %d kB, engine %d bytes needs %d kB",
+			start, len(bin), sshPushNeedKB(int64(len(bin))), len(engine), needKB)
+		if err := a.updateAgentViaSSH(host, bin); err != nil {
+			t.Fatalf("updateAgentViaSSH: %v", err)
+		}
+		sum := sha256.Sum256(bin)
+		want := hex.EncodeToString(sum[:])
+		deadline := time.Now().Add(6 * time.Minute)
+		for {
+			time.Sleep(10 * time.Second)
+			v, verr := a.BoxAgentVersion(host, port)
+			if verr == nil && v["agentRunningSha256"] == want {
+				t.Logf("speaker is back on the pushed agent: version %s build %s, engine %s, free %s bytes",
+					v["version"], v["build"], v["goLibrespot"], v["nandFreeBytes"])
+				if v["goLibrespot"] == "present" {
+					return
+				}
+				// Expected on a tight speaker: the old agent still holds its
+				// replaced file open until the restart, so the engine push
+				// inside the SSH update finds no room and skips. The update
+				// sequence then delivers the engine once the speaker is back
+				// (the "spotify" phase), which is this call.
+				t.Logf("engine %q right after the SSH update; running the app's engine step", v["goLibrespot"])
+				res, eerr := a.EnsureSpotifyEngine(host, port)
+				if eerr != nil {
+					t.Fatalf("EnsureSpotifyEngine: %v (%s)", eerr, res)
+				}
+				after, _ := a.BoxAgentVersion(host, port)
+				t.Logf("engine step answered %q; speaker reports engine %s, free %s bytes", res, after["goLibrespot"], after["nandFreeBytes"])
+				if after["goLibrespot"] != "present" {
+					t.Errorf("the engine is %q after the engine step, want present", after["goLibrespot"])
+				}
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the speaker did not come back on the pushed agent within 6 minutes (last: %v, err %v)", v, verr)
+			}
+		}
+	}
+
 	defer func() {
 		_, _ = boxSSHOutput(host, "rm -f "+filler+"; sync", 60*time.Second)
 		_ = boxReboot(host)
