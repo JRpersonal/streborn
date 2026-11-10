@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/wlanlive"
@@ -838,17 +839,12 @@ func decodeOptionalJSONRequest[T any](w http.ResponseWriter, r *http.Request, ma
 	return false
 }
 
-// writeFileAtomic writes data to path via a temp file and rename, so a crash
-// mid-write never leaves a torn file. Callers on NAND follow up with one sync.
+// writeFileAtomic writes data to path durably (temp file, fsync, rename, see
+// atomicfile), so neither a crash mid-write nor a power cut right after it
+// leaves a torn or empty file. Not every caller followed up with a sync (the
+// play mode never did), so the durability lives here and not with the callers.
 func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".str-new"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
+	return atomicfile.WriteFile(path, data, 0o644)
 }
 
 // readBoolFlag reads a one-line NAND flag file as a switch. A missing or

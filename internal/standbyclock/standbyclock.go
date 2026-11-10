@@ -50,6 +50,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/tzrules"
 )
@@ -188,7 +189,8 @@ func Load(path string) (Config, bool) {
 	return c.normalized(), true
 }
 
-// Save writes the choice atomically.
+// Save writes the choice atomically and durably (see atomicfile): the speaker
+// cuts power at standby, and a rename without an fsync can come back empty.
 func Save(path string, c Config) error {
 	b, err := json.Marshal(c.normalized())
 	if err != nil {
@@ -197,14 +199,7 @@ func Save(path string, c Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	tmp := path + ".str-new"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename: %w", err)
-	}
-	return nil
+	return atomicfile.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 // ErrStore wraps a failure to store a choice the speaker already took.

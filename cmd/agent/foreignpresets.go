@@ -27,6 +27,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/webui"
@@ -158,12 +159,7 @@ func (s *foreignPresetStore) persistLocked() {
 		s.logger.Warn("foreign presets: persist failed", "err", err)
 		return
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		s.logger.Warn("foreign presets: persist failed", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	if err := atomicfile.WriteFile(s.path, data, 0o644); err != nil {
 		s.logger.Warn("foreign presets: persist failed", "err", err)
 		return
 	}

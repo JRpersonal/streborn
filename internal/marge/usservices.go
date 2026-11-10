@@ -51,6 +51,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 )
 
@@ -252,11 +253,7 @@ func (s *Server) saveNative(typ string, rec nativeRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.WriteFile(path, b, 0o600)
 }
 
 // ClearNative forgets one service: the source the firmware registered with
