@@ -117,6 +117,10 @@ type agent struct {
 	bootReason string
 
 	// buildMedia
+	// reconciler keeps the speaker's hardware keys in line with the store;
+	// the gabbo handler and autopair ask it for a full re-sync through its
+	// ask scheduler (reconciler.asks).
+	reconciler     *reconciler
 	bmxSrv         *bmx.Resolver
 	autoPair       *autopair.Manager
 	region         string
@@ -809,8 +813,13 @@ func (a *agent) buildMedia() error {
 	// reconciler (every 5 min) so inconsistencies caused by a box reboot or
 	// Bose state resets are healed automatically — the user normally never
 	// needs to press the "repair hardware buttons" button.
-	go initialBoxPresetSync(store, a.flags.boxHost, logger)
-	go periodicPresetReconcile(store, a.flags.boxHost, logger, webhooksStore)
+	//
+	// The reconciler is complete before either goroutine starts. The three
+	// seams that answer for the webui server are bound in buildWebui, through
+	// atomic setters, because that server does not exist yet.
+	a.reconciler = newReconciler(store, a.flags.boxHost, logger, webhooksStore)
+	go a.reconciler.initialSync()
+	go a.reconciler.run()
 
 	// Read the region from a file on start (provisioned by the setup wizard).
 	region := loadRegion(a.flags.regionFile, logger)
@@ -1089,13 +1098,13 @@ func (a *agent) buildWebui() error {
 	// full of music on one that was just woken and un-muted (#900). The
 	// reconcile loop sleeps before its first pass, and the seams are atomic,
 	// so wiring it here is early enough and race-free.
-	setQuietWakeEpisodeActive(webuiSrv.QuietWakeEpisodeActive)
+	a.reconciler.setQuietWakeEpisodeActive(webuiSrv.QuietWakeEpisodeActive)
 	// ... and when the user last asked for playback, so a forced pass does not
 	// write into a play that is still starting (#1322).
-	setLastUserPlayStartFn(webuiSrv.LastUserPlayStart)
+	a.reconciler.setLastUserPlayStart(webuiSrv.LastUserPlayStart)
 	// ... and whether this speaker follows a group or stereo pair: its
 	// firmware refuses every preset write while it does (#1077).
-	setGroupFollowerFn(func() (bool, string) {
+	a.reconciler.setGroupFollower(func() (bool, string) {
 		master, _, ok := margeSrv.GroupPair()
 		if decided, follower := pairRole(master, margeSrv.DeviceID(), ok); decided {
 			if follower {
@@ -1274,6 +1283,7 @@ func (a *agent) buildBoxLink() error {
 		renderer: renderer,
 		autoPair: autoPair,
 		boxHost:  a.flags.boxHost,
+		resync:   a.reconciler.asks,
 		spotify:  spotifyMgr,
 		// A box/remote stop seen over gabbo tells the webui to hold the
 		// auto-re-push, so a deliberate stop is not immediately undone.
@@ -1715,7 +1725,7 @@ func (a *agent) buildBoxLink() error {
 	// A completed (re-)onboarding wipes the box's hardware-key preset
 	// registrations; re-register them right away instead of waiting for the
 	// reconcile cadence.
-	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger, "paired") })
+	autoPair.SetOnPaired(func() { a.reconciler.asks.requestUrgent(logger, "paired") })
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)

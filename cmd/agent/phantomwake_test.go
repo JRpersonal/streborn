@@ -59,12 +59,10 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // answer).
 func newTrackRig(t *testing.T, answers ...string) (*trackRig, *presetWsHandler) {
 	t.Helper()
-	resetResyncGlobals()
 	r := &trackRig{refreshed: make(chan struct{}, 8), exits: make(chan struct{}, 8)}
 	oldSet, oldRefresh, oldNote, oldDelay := setTrackSource, refreshTrackPanel, notePanelSource, wakeConfirmDelay
 	t.Cleanup(func() {
 		setTrackSource, refreshTrackPanel, notePanelSource, wakeConfirmDelay = oldSet, oldRefresh, oldNote, oldDelay
-		resetResyncGlobals()
 	})
 	setTrackSource = func(name string, ours bool) {
 		r.mu.Lock()
@@ -77,6 +75,7 @@ func newTrackRig(t *testing.T, answers ...string) (*trackRig, *presetWsHandler) 
 	reads := 0
 	h := &presetWsHandler{
 		boxHost:       "192.0.2.1",
+		resync:        newResyncAsks(),
 		onStandbyExit: func() { r.exits <- struct{}{} },
 		boxSummaryFn: func() (string, string, string) {
 			r.mu.Lock()
@@ -139,7 +138,7 @@ func assertStaysOff(t *testing.T, r *trackRig, h *presetWsHandler) {
 	if got := r.lastSource(); got != "STANDBY:false" {
 		t.Fatalf("track source ends %q, want STANDBY:false (%s)", got, r.sourceLog())
 	}
-	if presetResyncAsk.Load() {
+	if h.resync.ask.Load() {
 		t.Fatal("the phantom wake asked for a key re-sync of a sleeping speaker")
 	}
 	h.powerGate.mu.Lock()

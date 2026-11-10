@@ -48,14 +48,13 @@ func TestStereoFollowerFrom(t *testing.T) {
 }
 
 func TestPresetWriteGroupFollowerNilIsStandalone(t *testing.T) {
-	old := groupFollowerFn.Load()
-	t.Cleanup(func() { groupFollowerFn.Store(old) })
-	setGroupFollowerFn(nil)
-	if f, _ := presetWriteGroupFollower(); f {
+	t.Parallel()
+	r := newTestReconciler(t)
+	if f, _ := r.presetWriteGroupFollower(); f {
 		t.Fatal("an unwired check must not hold the preset writes")
 	}
-	setGroupFollowerFn(func() (bool, string) { return true, "stereo pair follower" })
-	if f, why := presetWriteGroupFollower(); !f || why == "" {
+	r.setGroupFollower(func() (bool, string) { return true, "stereo pair follower" })
+	if f, why := r.presetWriteGroupFollower(); !f || why == "" {
 		t.Fatal("a follower must hold the preset writes and say why")
 	}
 }

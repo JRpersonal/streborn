@@ -135,14 +135,12 @@ func TestAccountResyncStaleTimerDoesNothing(t *testing.T) {
 // never the forced full re-write.
 func TestAskPresetRecheckArmsTheOrdinaryPass(t *testing.T) {
 	presetRecheckAsk.Store(false)
-	forced := presetResyncAsk.Load()
 	t.Cleanup(func() { presetRecheckAsk.Store(false) })
 
+	// The action is handed no resync scheduler at all, so it has no way to
+	// arm the forced full re-sync: only the ordinary pass can come of it.
 	askPresetRecheckAfterAccountRead(nil)(2)
 	if !presetRecheckAsk.Load() {
 		t.Error("the recheck was not armed")
-	}
-	if presetResyncAsk.Load() != forced {
-		t.Error("an account read armed a forced full re-sync; it must only ask for an ordinary pass")
 	}
 }

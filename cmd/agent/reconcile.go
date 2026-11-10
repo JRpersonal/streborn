@@ -75,42 +75,48 @@ func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
 	return out
 }
 
-// presetResyncAsk flags one forced full box-preset re-sync for the periodic
-// reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
-// routine requests so repeated thumbs presses cannot cause a re-sync storm;
-// presetResyncUrgentLast is a SEPARATE, shorter budget for the deterministic
-// wipe moments (a 1036 source rejection precedes a forced re-login, and the
-// re-onboarding is when the firmware drops its key registrations) so a routine
-// ask consumed minutes earlier cannot starve the heal that is actually needed
-// now (field bundles 2026-07-22: five dead-key presses produced no resync
-// because the boot-time ask had eaten the 10-minute budget).
-var (
-	presetResyncAsk        atomic.Bool
-	presetResyncLast       atomic.Int64 // unix seconds of the last accepted routine request
-	presetResyncUrgentLast atomic.Int64 // unix seconds of the last accepted urgent request
-	// presetResyncAsker names the origin of the pending ask (thumb / 1036 /
-	// paired / power-wake / standby-exit / reconnect), so the standby deferral
-	// WARN and the forced-pass log say WHICH trigger wanted to write - the one
-	// fact overnight field bundles could never answer.
-	presetResyncAsker atomic.Value // string
+// resyncAsks is the resync-ask scheduler: the one place a full box-preset
+// re-sync is asked for, rate-limited and handed to the reconcile loop. The
+// askers (the gabbo handler's goroutines, autopair's paired hook, the
+// reconcile's own passes) and the loop that consumes the ask run on different
+// goroutines, so every field is atomic.
+//
+// One scheduler belongs to one reconciler. It is built before the loop starts
+// and handed to every asker; nothing here is a package variable, so a test
+// builds its own and cannot see another test's ask.
+//
+// ask flags one forced full box-preset re-sync for the periodic reconcile
+// (the #342 dead-key self-heal). last rate-limits the routine requests so
+// repeated thumbs presses cannot cause a re-sync storm; urgentLast is a
+// SEPARATE, shorter budget for the deterministic wipe moments (a 1036 source
+// rejection precedes a forced re-login, and the re-onboarding is when the
+// firmware drops its key registrations) so a routine ask consumed minutes
+// earlier cannot starve the heal that is actually needed now (field bundles
+// 2026-07-22: five dead-key presses produced no resync because the boot-time
+// ask had eaten the 10-minute budget).
+type resyncAsks struct {
+	ask        atomic.Bool
+	last       atomic.Int64 // unix seconds of the last accepted routine request
+	urgentLast atomic.Int64 // unix seconds of the last accepted urgent request
+	// asker names the origin of the pending ask (thumb / 1036 / paired /
+	// power-wake / standby-exit / reconnect), so the standby deferral WARN and
+	// the forced-pass log say WHICH trigger wanted to write - the one fact
+	// overnight field bundles could never answer.
+	asker atomic.Value // string
 	// standbyThumbLast tracks the previous standby-read thumb frame so a
 	// repeat within a minute reads as a human retrying a dead key, not a
-	// phantom frame. presetResyncStandbyOK grants that ask ONE execution
-	// despite a STANDBY reading (the user is demonstrably at the box).
-	// fullPresetWriteAt is when a full pass last wrote every slot to the box.
-	// Two writers exist and neither knew about the other: the reconcile, which
-	// compares against the box first, and initialBoxPresetSync, which writes
-	// unconditionally 30 s after start. They landed fifteen seconds apart and
-	// stored every preset twice, on every speaker, on every start (2026-09-29).
-	fullPresetWriteAt     atomic.Int64
-	standbyThumbLast      atomic.Int64
-	presetResyncStandbyOK atomic.Bool
-	// presetResyncKeysDead marks the pending ask as one that came with
-	// evidence that keys are dead although /presets still lists them
-	// (askerExpectsDeadKeys). It travels with the ask: consumed with it,
-	// dropped with it by the standby deferral.
-	presetResyncKeysDead atomic.Bool
-)
+	// phantom frame. standbyOK grants that ask ONE execution despite a STANDBY
+	// reading (the user is demonstrably at the box).
+	standbyThumbLast atomic.Int64
+	standbyOK        atomic.Bool
+	// keysDead marks the pending ask as one that came with evidence that keys
+	// are dead although /presets still lists them (askerExpectsDeadKeys). It
+	// travels with the ask: consumed with it, dropped with it by the standby
+	// deferral.
+	keysDead atomic.Bool
+}
+
+func newResyncAsks() *resyncAsks { return &resyncAsks{} }
 
 // askerExpectsDeadKeys reports whether a re-sync asker comes with evidence that
 // the hardware keys are dead while the speaker still LISTS them: a press that
@@ -128,18 +134,27 @@ func askerExpectsDeadKeys(asker string) bool {
 	return false
 }
 
-// notePresetResyncAsker records the asker of an ask that has just armed.
-func notePresetResyncAsker(asker string) {
-	presetResyncAsker.Store(asker)
+// noteAsker records the asker of an ask that has just armed.
+func (a *resyncAsks) noteAsker(asker string) {
+	a.asker.Store(asker)
 	if askerExpectsDeadKeys(asker) {
-		presetResyncKeysDead.Store(true)
+		a.keysDead.Store(true)
 	}
 }
 
-func requestPresetKeyResync(logger *slog.Logger, asker string) {
+// request asks for one forced full re-sync on the routine budget.
+//
+// The three methods the gabbo handler calls (request, requestUrgent,
+// standbyThumbRepeat) accept a nil scheduler and then do nothing: a handler
+// built without a reconciler has nobody to ask. The agent always wires one;
+// only tests of unrelated handler paths leave it out.
+func (a *resyncAsks) request(logger *slog.Logger, asker string) {
+	if a == nil {
+		return
+	}
 	const minGapSec = 2 * 60
 	now := time.Now().Unix()
-	last := presetResyncLast.Load()
+	last := a.last.Load()
 	if last != 0 && now-last < minGapSec {
 		return
 	}
@@ -148,53 +163,75 @@ func requestPresetKeyResync(logger *slog.Logger, asker string) {
 	// armed the flag; the standby deferral's budget reset introduced a
 	// non-arming concurrent writer, and losing to IT dropped a wake re-ask.
 	// Two concurrent askers both storing is harmless (one pending ask).
-	presetResyncLast.Store(now)
-	notePresetResyncAsker(asker)
-	presetResyncAsk.Store(true)
+	a.last.Store(now)
+	a.noteAsker(asker)
+	a.ask.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)", "asker", asker)
 	}
 }
 
-// requestPresetKeyResyncUrgent is requestPresetKeyResync for the moments where
-// a box-side key wipe is EXPECTED (a 1036 rejection / forced re-login, a fresh
-// pairing): it uses its own short budget so it cannot be starved by a routine
-// ask, and the reconcile's 10s wake bounds how often the forced pass can run.
-func requestPresetKeyResyncUrgent(logger *slog.Logger, asker string) {
+// requestUrgent is request for the moments where a box-side key wipe is
+// EXPECTED (a 1036 rejection / forced re-login, a fresh pairing): it uses its
+// own short budget so it cannot be starved by a routine ask, and the
+// reconcile's 10s wake bounds how often the forced pass can run.
+func (a *resyncAsks) requestUrgent(logger *slog.Logger, asker string) {
+	if a == nil {
+		return
+	}
 	const minGapSec = 60
 	now := time.Now().Unix()
-	last := presetResyncUrgentLast.Load()
+	last := a.urgentLast.Load()
 	if last != 0 && now-last < minGapSec {
 		return
 	}
-	presetResyncUrgentLast.Store(now)
-	notePresetResyncAsker(asker)
-	presetResyncAsk.Store(true)
+	a.urgentLast.Store(now)
+	a.noteAsker(asker)
+	a.ask.Store(true)
 	if logger != nil {
 		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)", "asker", asker)
 	}
 }
 
-// deferPresetResyncForStandby drops a pending re-sync ask because the box is
-// (or seems to be) in standby: a full AddPreset sweep into a sleeping box
-// resets the firmware's deep-standby countdown and heals nothing a sleeping
-// box can use (#119; the v0.9.17 reconnect writes provably kept boxes awake
-// for days). The wake moment re-asks via OnStandbyExit/OnPowerWake, so the
-// routine budget is reset here or a deferral seconds before a wake would
-// swallow the wake's own re-ask.
-func deferPresetResyncForStandby(logger *slog.Logger, src string) {
-	asker, _ := presetResyncAsker.Load().(string)
-	presetResyncLast.Store(0)
+// standbyThumbRepeat stamps a thumb frame read while the box reports STANDBY
+// (now in unix seconds) and reports whether it repeats one from the last
+// minute.
+func (a *resyncAsks) standbyThumbRepeat(now int64) bool {
+	if a == nil {
+		return false
+	}
+	last := a.standbyThumbLast.Swap(now)
+	return last != 0 && now-last <= 60
+}
+
+// grantStandbyOK lets the next ask run once although the box reads STANDBY.
+func (a *resyncAsks) grantStandbyOK() {
+	if a == nil {
+		return
+	}
+	a.standbyOK.Store(true)
+}
+
+// deferForStandby drops a pending re-sync ask because the box is (or seems to
+// be) in standby: a full AddPreset sweep into a sleeping box resets the
+// firmware's deep-standby countdown and heals nothing a sleeping box can use
+// (#119; the v0.9.17 reconnect writes provably kept boxes awake for days). The
+// wake moment re-asks via OnStandbyExit/OnPowerWake, so the routine budget is
+// reset here or a deferral seconds before a wake would swallow the wake's own
+// re-ask.
+func (a *resyncAsks) deferForStandby(logger *slog.Logger, src string) {
+	asker, _ := a.asker.Load().(string)
+	a.last.Store(0)
 	// The urgent budget resets too: a 1036/paired asker fires on a box that is
 	// ALREADY awake (no wake hook is coming for it), so when its ask was
 	// dropped on a transient probe error the ONLY natural retrigger is the
 	// next 1036 - which the still-burned 60s budget would silence. Urgent
 	// triggers are external events that never fire autonomously on a sleeping
 	// box, so this cannot create a standby write loop.
-	presetResyncUrgentLast.Store(0)
+	a.urgentLast.Store(0)
 	// The dropped ask takes its dead-key evidence with it; the wake re-ask
 	// brings its own.
-	presetResyncKeysDead.Store(false)
+	a.keysDead.Store(false)
 	reason := "box idles in STANDBY"
 	if src == "" {
 		reason = "box state unreadable, holding writes"
@@ -252,7 +289,7 @@ func boxPresetURL(p presets.Preset) string {
 	return boxurl.Preset(p.Slot, p.Type == "spotify")
 }
 
-// initialBoxPresetSync waits for the box to boot and syncs all stick
+// initialSync waits for the box to boot and syncs all stick
 // presets to the box's internal preset store. With a retry loop: failed
 // slots are retried after 10s, up to 12 times. Background: the Bose
 // firmware is sometimes not yet ready for AddPreset calls at boot (autopair
@@ -270,16 +307,17 @@ const fullPresetWriteWindow = 120 * time.Second
 
 // initialSyncShouldStandDown reports whether a full pass has just written every
 // slot this sync would write.
-func initialSyncShouldStandDown() bool {
-	last := fullPresetWriteAt.Load()
+func (r *reconciler) initialSyncShouldStandDown() bool {
+	last := r.fullPresetWriteAt.Load()
 	if last == 0 {
 		return false
 	}
 	return time.Since(time.Unix(last, 0)) < fullPresetWriteWindow
 }
 
-func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
-	time.Sleep(30 * time.Second)
+func (r *reconciler) initialSync() {
+	store, boxHost, logger := r.store, r.boxHost, r.logger
+	r.sleep(30 * time.Second)
 	specs := make([]boxcli.PresetSpec, 0, presets.BoxSlots)
 	for _, p := range boxRowPresets(store.All()) {
 		if p.IsNative() {
@@ -300,9 +338,9 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	// this would write, and writing them again is pure NAND wear on hardware
 	// nobody can replace. The retry runway below is untouched: it exists for a
 	// firmware that is not ready at boot, which is a different problem.
-	if initialSyncShouldStandDown() {
+	if r.initialSyncShouldStandDown() {
 		logger.Info("initial box preset sync: a full re-sync just wrote every slot, standing down",
-			"secondsAgo", time.Now().Unix()-fullPresetWriteAt.Load(), "slots", len(specs))
+			"secondsAgo", time.Now().Unix()-r.fullPresetWriteAt.Load(), "slots", len(specs))
 		return
 	}
 	logger.Info("starting initial box preset sync", "count", len(specs))
@@ -314,7 +352,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 
 	for attempt := 0; attempt < 12 && len(pending) > 0; attempt++ {
 		if attempt > 0 {
-			time.Sleep(10 * time.Second)
+			r.sleep(10 * time.Second)
 		}
 		// This sync writes unconditionally, so it would be the back door for
 		// the very interruption the reconcile holds back (#1035): an agent
@@ -353,12 +391,73 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	}
 }
 
-// periodicPresetReconcile checks every 5 minutes whether the box still has
-// all stick presets in its own list. Missing slots are restored via
-// boxcli.AddPreset. This way the fix applies automatically without user
-// action when, e.g., the Bose firmware has lost individual entries after a
-// standby cycle.
-func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store) {
+// reconciler keeps the speaker's own preset list in line with STR's store. It
+// owns two goroutines, both started by the agent right after newReconciler:
+// initialSync, which writes every slot once after boot, and run, the periodic
+// loop that checks every 5 minutes whether the box still has all stick presets
+// in its own list and restores missing slots via boxcli.AddPreset. This way
+// the fix applies automatically without user action when, e.g., the Bose
+// firmware has lost individual entries after a standby cycle.
+//
+// Everything the loop needs is a field. The fields come in four groups, and
+// the group says who may touch a field and when:
+//
+//   - dependencies, set by newReconciler and never assigned again, so both
+//     goroutines read them without synchronisation;
+//   - the three late-bound seams, which answer for things that do not exist
+//     yet when the loop starts (the webui server, the marge pair record) and
+//     are therefore atomics behind setters;
+//   - fullPresetWriteAt, the one value the two goroutines share;
+//   - the loop state, read and written by the run goroutine only.
+type reconciler struct {
+	// Dependencies. Set by newReconciler before either goroutine starts and
+	// never assigned afterwards (a test swaps the seams on a reconciler it has
+	// not started).
+	store   *presets.Store
+	boxHost string
+	logger  *slog.Logger
+	wh      *webhooks.Store
+	// asks is where a forced full re-sync is asked for; the loop consumes it.
+	asks *resyncAsks
+	// recheck is the account-read recheck ask (accountresync.go): an ordinary
+	// pass ahead of the maintenance cadence, never a forced one.
+	recheck *atomic.Bool
+	// The seams to the speaker and to the rest of the agent. The ports are
+	// fixed by the firmware, so a test cannot hand the loop an httptest
+	// listener; it replaces these instead.
+	sleep              func(time.Duration)
+	nowPlayingSource   func(boxHost string) string
+	isPlaying          func(boxHost string) bool
+	sourcePlayState    func(boxHost string) (src string, playing, paused, ok bool)
+	recallActiveWithin func(time.Duration) bool
+	defaultGateway     func() string
+	// keysMissing is the /presets read the hold ceiling decides on, pass is
+	// one reconcile pass; both default to the reconciler's own methods.
+	keysMissing func() ([]int, error)
+	pass        func(forceFull bool) bool
+
+	// The late-bound seams. The agent starts the loop in buildMedia; the
+	// webui server and the marge pair record these three ask are built later
+	// (buildWebui), and starting the loop later instead would move its first
+	// pass. So they are bound through setters after the goroutine is running,
+	// and are atomic for that reason: the loop reads them while the agent
+	// binds them. Unset (tests, the seconds before the webui exists) each
+	// reads as "no": no play starting, no group wake, not a follower.
+	lastUserPlayStart      atomic.Pointer[func() time.Time]
+	quietWakeEpisodeActive atomic.Pointer[func() bool]
+	groupFollower          atomic.Pointer[func() (bool, string)]
+
+	// fullPresetWriteAt is when a full pass last wrote every slot to the box.
+	// Two writers exist and neither knew about the other: the reconcile, which
+	// compares against the box first, and initialSync, which writes
+	// unconditionally 30 s after start. They landed fifteen seconds apart and
+	// stored every preset twice, on every speaker, on every start (2026-09-29).
+	// Atomic because the pass stamps it on the run goroutine and initialSync
+	// reads it on its own.
+	fullPresetWriteAt atomic.Int64
+
+	// Loop state. Only the run goroutine touches anything below.
+	//
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
 	// box's preset / hardware-button subsystem is fully up; the slots
@@ -370,413 +469,542 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// re-registers the buttons. Live-confirmed on a taigan Portable
 	// 2026-06-01: buttons 1/2 stayed "empty" until a full re-sync even
 	// though /presets listed them.
-	//
-	// Converge FAST after a cold boot, then idle. A blind 90s pre-wait
-	// meant the hardware buttons stayed unregistered for ~90s+ after every
-	// reboot, so an early press hit "button not assigned" (#4). The box
-	// /info / preset subsystem comes up ~20-45s in, so polling every 10s from
-	// 15s wins that first full re-sync as soon as the box is ready, then the
-	// loop drops to a 5 min maintenance cadence. reconcileOnce is gated on the
-	// box being out of OOB and reachable, so the early polls are cheap no-ops
-	// until it is ready. The fast interval re-tightens automatically if the
-	// box later drops back to OOB (ready=false -> fullDone=false).
-	time.Sleep(15 * time.Second)
-	fullDone := false
-	everFullDone := false
-	lastAwakeForce := time.Now()
+	fullDone       bool
+	everFullDone   bool
+	lastAwakeForce time.Time
 	// forceHeld carries a forced pass across iterations while it waits for
 	// playback to stop. The ask that armed it has already been consumed, so
 	// without this the deferral would DROP the re-sync instead of delaying it,
 	// and nothing would re-ask when the music ends. forceHeldSince anchors the
 	// ceiling to the first hold, not to the latest retry.
-	forceHeld := false
-	var forceHeldSince time.Time
+	forceHeld      bool
+	forceHeldSince time.Time
 	// forceKeysDead is set when the forced pass was asked for by an asker that
 	// saw dead keys the list still shows (askerExpectsDeadKeys). Such a pass
 	// runs at the hold ceiling without consulting the list.
-	forceKeysDead := false
+	forceKeysDead bool
 	// userHeldSrc is the listener's source the forced pass is currently held
 	// on (#1035), "" when it is not. It keeps the hold line to one per source
 	// and lets the release say what was protected.
-	userHeldSrc := ""
+	userHeldSrc string
 	// setupHeldSrc is the setup source the forced pass was held on, "" when
 	// it was not. One hold line per stretch in setup, and the release names it.
-	setupHeldSrc := ""
+	setupHeldSrc string
 	// setupNetSince is when the speaker, still in setup, was first seen with a
 	// default gateway in the current stretch; zero while it has none. Only that
 	// time counts towards forcedSetupHoldCeiling (see setupWriteHold).
-	var setupNetSince time.Time
+	setupNetSince time.Time
 	// groupWakeHeld keeps the group-wake hold line to one per episode, the
 	// same way retryHoldLogged does for the playback hold.
-	groupWakeHeld := false
+	groupWakeHeld bool
 	// startHoldLogged does the same for the hold on a play that is starting.
-	startHoldLogged := false
+	startHoldLogged bool
 	// ceilingListedLogged keeps the "ceiling passed, every key listed" line
 	// to one per hold episode.
-	ceilingListedLogged := false
+	ceilingListedLogged bool
 	// retryHoldLogged keeps the "retry pass held" line to ONE per hold
 	// episode: the hold is re-evaluated every maintenance tick for as long as
 	// the box sleeps, and a line per tick is noise in the NAND log.
-	retryHoldLogged := false
+	retryHoldLogged bool
+}
+
+// newReconciler builds the reconciler with everything it needs. Nothing runs
+// yet: the caller starts initialSync and run, and binds the three late seams
+// once the webui server exists.
+func newReconciler(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store) *reconciler {
+	r := &reconciler{
+		store:              store,
+		boxHost:            boxHost,
+		logger:             logger,
+		wh:                 wh,
+		asks:               newResyncAsks(),
+		recheck:            &presetRecheckAsk,
+		sleep:              time.Sleep,
+		nowPlayingSource:   boxNowPlayingSource,
+		isPlaying:          boxIsPlaying,
+		sourcePlayState:    boxSourcePlayState,
+		recallActiveWithin: recallActiveWithin,
+		defaultGateway:     dnsboot.DefaultGateway,
+	}
+	r.keysMissing = r.keysMissingOnBox
+	r.pass = r.reconcileOnce
+	return r
+}
+
+// run is the periodic reconcile loop. It never returns.
+//
+// Converge FAST after a cold boot, then idle. A blind 90s pre-wait
+// meant the hardware buttons stayed unregistered for ~90s+ after every
+// reboot, so an early press hit "button not assigned" (#4). The box
+// /info / preset subsystem comes up ~20-45s in, so polling every 10s from
+// 15s wins that first full re-sync as soon as the box is ready, then the
+// loop drops to a 5 min maintenance cadence. reconcileOnce is gated on the
+// box being out of OOB and reachable, so the early polls are cheap no-ops
+// until it is ready. The fast interval re-tightens automatically if the
+// box later drops back to OOB (ready=false -> fullDone=false).
+func (r *reconciler) run() {
+	r.sleep(15 * time.Second)
+	r.lastAwakeForce = time.Now()
 	for {
-		force := !fullDone || forceHeld
-		retryDeferred := false
-		retryHeldSrc := ""
-		if force && everFullDone {
-			// A steady-state retry force (failed AddPresets, a transient
-			// /presets read error) is NOT the boot window: gate it like any
-			// other write, or a box whose BoseApp rejects AddPreset overnight
-			// gets hammered with write attempts every 10s all night. Skipping
-			// the pass entirely also keeps the missing-only heal from doing
-			// the same writes through the back door. The BOOT force stays
-			// ungated on purpose: a just-booted box legitimately reads
-			// STANDBY before the first press, and gating it would regress the
-			// first-press-after-reboot registration (#4).
-			if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
-				switch retryHoldDecision(src, presetResyncAsk.Load(), presetResyncStandbyOK.Load()) {
-				case retryHoldRunAsk:
-					// User-present evidence (repeated dead-key presses): the
-					// pending ask runs despite the STANDBY reading, exactly as
-					// the routine path below grants it.
-					presetResyncStandbyOK.Store(false)
-					presetResyncAsk.Store(false)
-					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
-				default:
-					retryDeferred = true
-					retryHeldSrc = src
-					if !retryHoldLogged {
-						logger.Info("preset reconcile: retry pass held, box in standby or unreadable; resuming on wake or the next maintenance tick")
-						retryHoldLogged = true
-					}
-				}
-			}
-		}
-		if !retryDeferred {
-			retryHoldLogged = false
-		}
-		if !retryDeferred && !force && presetResyncAsk.CompareAndSwap(true, false) {
-			// Dead-key self-heal (#342): a hardware press produced no
-			// selection frame, so the box's key layer likely lost its
-			// registrations even though /presets still lists them.
-			//
-			// Standby gate at the EXECUTION, for every asker (#119): the
-			// OnConnected gate covered only its own ask, while 1036-urgent,
-			// paired-urgent, thumb and late standby-exit asks all wrote into a
-			// sleeping box, and a failed probe used to count as awake. A
-			// deferred ask is DROPPED, not re-armed - the wake itself re-asks
-			// via OnStandbyExit/OnPowerWake (the deferral resets both ask
-			// budgets so those re-asks are accepted), and re-arming would
-			// turn the 10s wake-poll into an all-night probe loop.
-			//
-			// The routine budget is cleared at CONSUME time, before the
-			// up-to-4s probe: a wake re-ask landing DURING the probe must not
-			// be swallowed by the consumed ask's stale rate-limit stamp. On
-			// the awake path the stamp is restored via CAS - if a re-ask
-			// already overwrote the 0, its own fresh stamp wins.
-			lastConsumed := presetResyncLast.Swap(0)
-			if presetResyncStandbyOK.CompareAndSwap(true, false) {
-				// User-present evidence (repeated dead-key presses): this ask
-				// runs even when the box still reads STANDBY.
-				presetResyncLast.CompareAndSwap(0, lastConsumed)
-				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
-				force = true
-			} else if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
-				deferPresetResyncForStandby(logger, src)
-			} else {
-				presetResyncLast.CompareAndSwap(0, lastConsumed)
-				forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
-				force = true
-			}
-		}
-		// Periodic dead-key insurance while the box is AWAKE (#487): the
-		// firmware can silently de-register the hardware key layer while
-		// /presets still lists every slot, and on some boxes a dead press
-		// emits no frame at all - so no event-driven heal ever fires. Before
-		// v0.9.21 the accidental every-11-min reconnect re-sync papered over
-		// this; the keepalive fix removed it and one ST10's remote went dead
-		// within an hour. A forced pass every 20 minutes restores that
-		// insurance, gated on the box NOT being in standby: writes to an
-		// awake box never touch the deep-standby countdown (#119), and a box
-		// in standby gets its re-sync from the standby-exit hook the moment
-		// it wakes.
-		if !force && time.Since(lastAwakeForce) > 20*time.Minute {
-			src := boxNowPlayingSource(boxHost)
-			switch {
-			case src == "" || src == "STANDBY":
-				// asleep or unreadable: the standby-exit hook owns the wake
-			case boxIsPlaying(boxHost):
-				// The source NAME alone stopped being enough when presets moved
-				// to the native form. UPNP used to mean "STR's leftover source,
-				// nothing playing" and is on the allowlist for that reason; on a
-				// native box UPNP is STR's own LIVE stream, so the allowlist was
-				// waving the insurance pass straight through a running station.
-				// The allowlist stays (a PAUSED Bluetooth session must still be
-				// left alone, which a play test alone would not catch); this is
-				// the second condition, not a replacement for it.
-				logger.Info("preset reconcile: periodic awake re-sync skipped, the speaker is playing", "source", src)
-			case !resyncSafeSource(src):
-				// The box is on a source the USER chose. AddPreset names
-				// UPNP, and the firmware activates that source on the write:
-				// a field bundle caught the insurance pass yanking a running
-				// BLUETOOTH session to UPNP 43 ms after the re-sync line
-				// (2026-08-02). Dead-key insurance is not worth interrupting
-				// what someone is listening to; the next wake, press or
-				// maintenance tick on our own source re-registers the keys.
-				logger.Info("preset reconcile: periodic awake re-sync skipped, the box is on a user-chosen source", "source", src)
+		r.step()
+	}
+}
+
+// step is one iteration of the loop: decide whether this pass is forced, hold
+// it where a write would do harm, run it, and wait for the next one. The
+// phases run in this order and each is a method of its own:
+//
+//  1. gateRetryForce: a steady-state retry force is held on a sleeping box
+//  2. consumeAsk: a pending ask becomes a forced pass, or is deferred
+//  3. awakeInsurance: the 20-minute dead-key insurance on an awake box
+//  4. waitOutRetryHold: the held retry sleeps a maintenance tick (ends the step)
+//  5. forcedPassMayRun: the forced pass waits for a recall, a group wake, a
+//     starting play, playback or a source somebody chose (may end the step)
+//  6. the pass itself
+//  7. waitForNextPass: maintenance cadence, or the fast retry
+func (r *reconciler) step() {
+	force := !r.fullDone || r.forceHeld
+	retryDeferred, retryHeldSrc := r.gateRetryForce(force)
+	if !retryDeferred {
+		r.retryHoldLogged = false
+	}
+	if !retryDeferred && !force && r.asks.ask.CompareAndSwap(true, false) {
+		force = r.consumeAsk()
+	}
+	force = r.awakeInsurance(force)
+	if force {
+		r.lastAwakeForce = time.Now()
+	}
+	if retryDeferred {
+		r.waitOutRetryHold(retryHeldSrc)
+		return
+	}
+	if force && !r.forcedPassMayRun() {
+		return
+	}
+	// This pass is the look an account-read recheck asked for
+	// (accountresync.go), so consume that ask here: a recheck arriving
+	// DURING the pass stays armed and wakes the wait below once more.
+	r.recheck.Store(false)
+	ready := r.pass(force)
+	r.fullDone = ready
+	if ready {
+		r.everFullDone = true
+	}
+	r.waitForNextPass()
+}
+
+// gateRetryForce is phase 1. It reports whether this iteration's forced pass
+// is a steady-state retry that must be held because the box sleeps or cannot
+// be read, and the reading it was held on.
+func (r *reconciler) gateRetryForce(force bool) (retryDeferred bool, retryHeldSrc string) {
+	if force && r.everFullDone {
+		// A steady-state retry force (failed AddPresets, a transient
+		// /presets read error) is NOT the boot window: gate it like any
+		// other write, or a box whose BoseApp rejects AddPreset overnight
+		// gets hammered with write attempts every 10s all night. Skipping
+		// the pass entirely also keeps the missing-only heal from doing
+		// the same writes through the back door. The BOOT force stays
+		// ungated on purpose: a just-booted box legitimately reads
+		// STANDBY before the first press, and gating it would regress the
+		// first-press-after-reboot registration (#4).
+		if src := r.nowPlayingSource(r.boxHost); src == "STANDBY" || src == "" {
+			switch retryHoldDecision(src, r.asks.ask.Load(), r.asks.standbyOK.Load()) {
+			case retryHoldRunAsk:
+				// User-present evidence (repeated dead-key presses): the
+				// pending ask runs despite the STANDBY reading, exactly as
+				// the routine path below grants it.
+				r.asks.standbyOK.Store(false)
+				r.asks.ask.Store(false)
+				r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead
 			default:
-				force = true
-				logger.Info("preset reconcile: periodic awake re-sync (dead-key insurance, #487)")
+				retryDeferred = true
+				retryHeldSrc = src
+				if !r.retryHoldLogged {
+					r.logger.Info("preset reconcile: retry pass held, box in standby or unreadable; resuming on wake or the next maintenance tick")
+					r.retryHoldLogged = true
+				}
 			}
-			// Stamp even when skipped in standby: re-check 20 min later, not
-			// every 10 s tick, and the standby-exit hook owns the wake moment.
-			lastAwakeForce = time.Now()
 		}
-		if force {
-			lastAwakeForce = time.Now()
+	}
+	return retryDeferred, retryHeldSrc
+}
+
+// consumeAsk is phase 2, entered with the ask already taken off the
+// scheduler. It reports whether the ask forces this pass; a deferred ask does
+// not.
+//
+// Dead-key self-heal (#342): a hardware press produced no
+// selection frame, so the box's key layer likely lost its
+// registrations even though /presets still lists them.
+//
+// Standby gate at the EXECUTION, for every asker (#119): the
+// OnConnected gate covered only its own ask, while 1036-urgent,
+// paired-urgent, thumb and late standby-exit asks all wrote into a
+// sleeping box, and a failed probe used to count as awake. A
+// deferred ask is DROPPED, not re-armed - the wake itself re-asks
+// via OnStandbyExit/OnPowerWake (the deferral resets both ask
+// budgets so those re-asks are accepted), and re-arming would
+// turn the 10s wake-poll into an all-night probe loop.
+//
+// The routine budget is cleared at CONSUME time, before the
+// up-to-4s probe: a wake re-ask landing DURING the probe must not
+// be swallowed by the consumed ask's stale rate-limit stamp. On
+// the awake path the stamp is restored via CAS - if a re-ask
+// already overwrote the 0, its own fresh stamp wins.
+func (r *reconciler) consumeAsk() (force bool) {
+	lastConsumed := r.asks.last.Swap(0)
+	if r.asks.standbyOK.CompareAndSwap(true, false) {
+		// User-present evidence (repeated dead-key presses): this ask
+		// runs even when the box still reads STANDBY.
+		r.asks.last.CompareAndSwap(0, lastConsumed)
+		r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead
+		force = true
+	} else if src := r.nowPlayingSource(r.boxHost); src == "STANDBY" || src == "" {
+		r.asks.deferForStandby(r.logger, src)
+	} else {
+		r.asks.last.CompareAndSwap(0, lastConsumed)
+		r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead
+		force = true
+	}
+	return force
+}
+
+// awakeInsurance is phase 3. It takes whether the pass is forced so far and
+// returns whether it is forced now.
+//
+// Periodic dead-key insurance while the box is AWAKE (#487): the
+// firmware can silently de-register the hardware key layer while
+// /presets still lists every slot, and on some boxes a dead press
+// emits no frame at all - so no event-driven heal ever fires. Before
+// v0.9.21 the accidental every-11-min reconnect re-sync papered over
+// this; the keepalive fix removed it and one ST10's remote went dead
+// within an hour. A forced pass every 20 minutes restores that
+// insurance, gated on the box NOT being in standby: writes to an
+// awake box never touch the deep-standby countdown (#119), and a box
+// in standby gets its re-sync from the standby-exit hook the moment
+// it wakes.
+func (r *reconciler) awakeInsurance(force bool) bool {
+	if !force && time.Since(r.lastAwakeForce) > 20*time.Minute {
+		src := r.nowPlayingSource(r.boxHost)
+		switch {
+		case src == "" || src == "STANDBY":
+			// asleep or unreadable: the standby-exit hook owns the wake
+		case r.isPlaying(r.boxHost):
+			// The source NAME alone stopped being enough when presets moved
+			// to the native form. UPNP used to mean "STR's leftover source,
+			// nothing playing" and is on the allowlist for that reason; on a
+			// native box UPNP is STR's own LIVE stream, so the allowlist was
+			// waving the insurance pass straight through a running station.
+			// The allowlist stays (a PAUSED Bluetooth session must still be
+			// left alone, which a play test alone would not catch); this is
+			// the second condition, not a replacement for it.
+			r.logger.Info("preset reconcile: periodic awake re-sync skipped, the speaker is playing", "source", src)
+		case !resyncSafeSource(src):
+			// The box is on a source the USER chose. AddPreset names
+			// UPNP, and the firmware activates that source on the write:
+			// a field bundle caught the insurance pass yanking a running
+			// BLUETOOTH session to UPNP 43 ms after the re-sync line
+			// (2026-08-02). Dead-key insurance is not worth interrupting
+			// what someone is listening to; the next wake, press or
+			// maintenance tick on our own source re-registers the keys.
+			r.logger.Info("preset reconcile: periodic awake re-sync skipped, the box is on a user-chosen source", "source", src)
+		default:
+			force = true
+			r.logger.Info("preset reconcile: periodic awake re-sync (dead-key insurance, #487)")
 		}
-		if retryDeferred {
-			// Held pass: no reconcile at all this round (the missing-only
-			// heal would write the same failed slots right back).
-			//
-			// A pending ask cannot run into the sleeping box either, so it is
-			// consumed through the standby deferral (which resets the budgets
-			// so the wake re-asks) BEFORE the wait starts. Until 2026-09-07 the
-			// wait below exited at once on a pending ask this branch never
-			// consumed, and the loop spun: one /now_playing read per pass, some
-			// 25 a second, for as long as the box slept. A field bundle showed
-			// two ST10s in that state for hours, the firmware's syslog ring
-			// and the NAND agent log flooded (4 MB agent.log of one line). The
-			// wait therefore also has a floor of one tick no matter what: an
-			// asker that re-arms straight after the deferral (its budget was
-			// just reset) must not shorten it to zero.
-			if presetResyncAsk.CompareAndSwap(true, false) {
-				deferPresetResyncForStandby(logger, retryHeldSrc)
-			}
-			// The ceiling bounds a wait on STR's own playback. A night in
-			// standby is not that: counted, it fired the pass three seconds
-			// into the morning's wake resume ("heldFor=9h51m36s", #1322) and
-			// pulled the box off the song. The wait starts over after a wake.
-			forceHeldSince = time.Time{}
-			time.Sleep(10 * time.Second)
-			// Maintenance cadence, but wake early on a fresh ask (= the box
-			// woke up).
-			for waited := 10 * time.Second; waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
-				time.Sleep(10 * time.Second)
-			}
-			continue
+		// Stamp even when skipped in standby: re-check 20 min later, not
+		// every 10 s tick, and the standby-exit hook owns the wake moment.
+		r.lastAwakeForce = time.Now()
+	}
+	return force
+}
+
+// waitOutRetryHold is phase 4, the whole rest of an iteration whose retry pass
+// was held.
+//
+// Held pass: no reconcile at all this round (the missing-only
+// heal would write the same failed slots right back).
+//
+// A pending ask cannot run into the sleeping box either, so it is
+// consumed through the standby deferral (which resets the budgets
+// so the wake re-asks) BEFORE the wait starts. Until 2026-09-07 the
+// wait below exited at once on a pending ask this branch never
+// consumed, and the loop spun: one /now_playing read per pass, some
+// 25 a second, for as long as the box slept. A field bundle showed
+// two ST10s in that state for hours, the firmware's syslog ring
+// and the NAND agent log flooded (4 MB agent.log of one line). The
+// wait therefore also has a floor of one tick no matter what: an
+// asker that re-arms straight after the deferral (its budget was
+// just reset) must not shorten it to zero.
+func (r *reconciler) waitOutRetryHold(retryHeldSrc string) {
+	if r.asks.ask.CompareAndSwap(true, false) {
+		r.asks.deferForStandby(r.logger, retryHeldSrc)
+	}
+	// The ceiling bounds a wait on STR's own playback. A night in
+	// standby is not that: counted, it fired the pass three seconds
+	// into the morning's wake resume ("heldFor=9h51m36s", #1322) and
+	// pulled the box off the song. The wait starts over after a wake.
+	r.forceHeldSince = time.Time{}
+	r.sleep(10 * time.Second)
+	// Maintenance cadence, but wake early on a fresh ask (= the box
+	// woke up).
+	for waited := 10 * time.Second; waited < 5*time.Minute && !r.asks.ask.Load(); waited += 10 * time.Second {
+		r.sleep(10 * time.Second)
+	}
+}
+
+// forcedPassMayRun is phase 5. It reports whether the forced pass runs in this
+// iteration; false means it was held, has already slept its retry interval,
+// and the iteration is over. The holds are checked in this order, and each
+// one that holds ends the check:
+//
+//	waitOutRecall, heldForGroupWake, heldForStartingPlay, heldForPlaybackOrSource
+//
+// A pass that gets past all of them is released by releaseForcedPass.
+func (r *reconciler) forcedPassMayRun() bool {
+	r.waitOutRecall()
+	if r.heldForGroupWake() {
+		return false
+	}
+	// ... and it must not run into live AUDIO either, nor into a
+	// source somebody is using. A recall is over in seconds; a
+	// station plays for hours and a pairing session is mid-handshake,
+	// and the write ends both.
+	src, playing, paused, playKnown := r.sourcePlayState(r.boxHost)
+	if r.heldForStartingPlay(src, playing, playKnown) {
+		return false
+	}
+	if r.heldForPlaybackOrSource(src, playing, paused, playKnown) {
+		return false
+	}
+	r.releaseForcedPass(src)
+	return true
+}
+
+// waitOutRecall waits, bounded, for a live hardware recall to finish.
+//
+// A forced full pass must not run INTO a live hardware recall: the six
+// AddPresets activate sources and yank the transport the recall is
+// driving (live ST30 2026-08-19: the wake-press recall and the
+// box-became-ready full re-sync interleaved, the source flapped
+// UPNP/LOCAL_INTERNET_RADIO/INVALID_SOURCE, and the press ended in
+// silence plus a skip storm). Wait the recall out, bounded: the verify
+// loops stamp activity for at most ~25 s, and the re-sync still runs
+// right afterwards, so nothing is lost, only ordered.
+func (r *reconciler) waitOutRecall() {
+	waitedForRecall := false
+	for waited := time.Duration(0); r.recallActiveWithin(15*time.Second) && waited < 60*time.Second; waited += 2 * time.Second {
+		waitedForRecall = true
+		r.sleep(2 * time.Second)
+	}
+	if waitedForRecall {
+		r.logger.Info("preset reconcile: forced pass waited for a live hardware recall to finish before writing")
+	}
+}
+
+// heldForGroupWake holds the forced pass while a group wake settles.
+//
+// ... and it must not run into a GROUP WAKE either. Writing the
+// native preset elements makes the firmware select
+// LOCAL_INTERNET_RADIO and start playing. On a speaker that was
+// already idle nobody ever noticed. On one STR just woke for a
+// group, the quiet wake's mute has been lifted by the zone join a
+// second earlier, so the same write is a room full of music nobody
+// asked for (#900, re-confirmed on v0.9.79: reconcile at 06:26:55.857,
+// source change to LOCAL_INTERNET_RADIO at 06:26:56.025).
+//
+// The window is a deadline, so this can hold for at most half a
+// minute and the pass runs straight after with the ask still
+// pending.
+func (r *reconciler) heldForGroupWake() bool {
+	if r.groupWakeSettling() {
+		if !r.groupWakeHeld {
+			r.groupWakeHeld = true
+			r.logger.Info("preset reconcile: forced pass held, this speaker was just woken for a group and the write would start music")
 		}
-		// A forced full pass must not run INTO a live hardware recall: the six
-		// AddPresets activate sources and yank the transport the recall is
-		// driving (live ST30 2026-08-19: the wake-press recall and the
-		// box-became-ready full re-sync interleaved, the source flapped
-		// UPNP/LOCAL_INTERNET_RADIO/INVALID_SOURCE, and the press ended in
-		// silence plus a skip storm). Wait the recall out, bounded: the verify
-		// loops stamp activity for at most ~25 s, and the re-sync still runs
-		// right afterwards, so nothing is lost, only ordered.
-		if force {
-			waitedForRecall := false
-			for waited := time.Duration(0); recallActiveWithin(15*time.Second) && waited < 60*time.Second; waited += 2 * time.Second {
-				waitedForRecall = true
-				time.Sleep(2 * time.Second)
-			}
-			if waitedForRecall {
-				logger.Info("preset reconcile: forced pass waited for a live hardware recall to finish before writing")
-			}
-			// ... and it must not run into a GROUP WAKE either. Writing the
-			// native preset elements makes the firmware select
-			// LOCAL_INTERNET_RADIO and start playing. On a speaker that was
-			// already idle nobody ever noticed. On one STR just woke for a
-			// group, the quiet wake's mute has been lifted by the zone join a
-			// second earlier, so the same write is a room full of music nobody
-			// asked for (#900, re-confirmed on v0.9.79: reconcile at 06:26:55.857,
-			// source change to LOCAL_INTERNET_RADIO at 06:26:56.025).
-			//
-			// The window is a deadline, so this can hold for at most half a
-			// minute and the pass runs straight after with the ask still
-			// pending.
-			if groupWakeSettling() {
-				if !groupWakeHeld {
-					groupWakeHeld = true
-					logger.Info("preset reconcile: forced pass held, this speaker was just woken for a group and the write would start music")
-				}
-				time.Sleep(forcedPlayHoldRetry)
-				continue
-			}
-			groupWakeHeld = false
-			// ... and it must not run into live AUDIO either, nor into a
-			// source somebody is using. A recall is over in seconds; a
-			// station plays for hours and a pairing session is mid-handshake,
-			// and the write ends both.
-			src, playing, paused, playKnown := boxSourcePlayState(boxHost)
-			// ... and not into a play the user just asked for that is still
-			// on its way (#1322). Bounded by the start window, so the pass
-			// runs at the latest once the play has had its chance.
-			if since := sinceLastUserPlay(); userPlayStartingHold(src, playing, playKnown, since) {
-				if !startHoldLogged {
-					startHoldLogged = true
-					logger.Info("preset reconcile: forced pass held, a play the user asked for is still starting",
-						"source", src, "sinceUserPlaySec", int(since.Seconds()))
-				}
-				forceHeld = true
-				time.Sleep(userPlayStartHoldRetry)
-				continue
-			}
-			startHoldLogged = false
-			userSrc := userChosenSource(src)
-			setupSrc := isSetupSource(src)
-			if userSrc || setupSrc {
-				// The ceiling bounds a wait on STR's own playback only. Time
-				// spent on the listener's AirPlay or Bluetooth, or in the
-				// speaker's setup, must not count towards it, or the moment
-				// the speaker moves on to an STR station the pass would write
-				// straight into it.
-				forceHeldSince = time.Time{}
-			}
-			// A paused play holds the pass like a running one: the listener
-			// will resume it, and the write would switch the speaker off it
-			// (see boxSourcePlayState). The same ceiling bounds a speaker
-			// left paused for hours, and runs the pass there only when keys
-			// are actually missing.
-			hold, ceilingHit := forcedWriteHold(src, playing || paused, playKnown, everFullDone, forceHeldSince, time.Now())
-			setupHold := false
-			if setupSrc {
-				// One /proc/net/route read per retry, and only while a forced
-				// pass is held on a speaker in setup.
-				setupHold, setupNetSince = setupWriteHold(dnsboot.DefaultGateway(), setupNetSince, time.Now())
-			} else {
-				setupNetSince = time.Time{}
-			}
-			switch {
-			case setupSrc && setupHold:
-				// One line per stretch in setup, not per retry.
-				if setupHeldSrc == "" {
-					logger.Info("preset reconcile: forced pass held, the speaker is in setup; it runs once the speaker leaves setup",
-						"source", src, "firstPass", !everFullDone)
-				}
-				setupHeldSrc = src
-				forceHeld = true
-				time.Sleep(forcedPlayHoldRetry)
-				continue
-			case setupSrc:
-				// The speaker is on the network and has still not left setup
-				// after the setup ceiling: a Portable that finished Bose's
-				// setup page keeps reporting SETUP, and so do #873 speakers.
-				// Waiting longer would leave its keys unregistered for good.
-				logger.Warn("preset reconcile: forced pass ran anyway, the speaker has had a network for the whole setup ceiling but still reports setup",
-					"source", src, "ceiling", forcedSetupHoldCeiling.String(),
-					"onNetworkFor", time.Since(setupNetSince).Round(time.Second).String())
-				setupNetSince = time.Time{}
-				setupHeldSrc = "" // it has not left setup; no release line
-			case hold && userSrc:
-				// One line per source, not per retry: a held pass re-reads the
-				// box every 30 s for as long as the session lasts.
-				if userHeldSrc != src {
-					userHeldSrc = src
-					logger.Info("preset reconcile: forced pass held until the speaker leaves a source the listener chose, writing presets now would interrupt it",
-						"source", src, "playing", playing, "firstPass", !everFullDone)
-				}
-				forceHeld = true
-				time.Sleep(forcedPlayHoldRetry)
-				continue
-			case hold:
-				userHeldSrc = ""
-				if forceHeldSince.IsZero() {
-					forceHeldSince = time.Now()
-					logger.Info("preset reconcile: forced pass held, the write would take the box off what it is doing",
-						"reason", forcedHoldReason(src, playing, paused, playKnown),
-						"source", src, "ceiling", forcedPlayHoldCeiling.String())
-				}
-				forceHeld = true
-				// Short retry, not the maintenance cadence: the moment the
-				// music stops the keys should be registered, and one
-				// now_playing read per interval only happens while a pass is
-				// actually waiting.
-				time.Sleep(forcedPlayHoldRetry)
-				continue
-			case ceilingHit:
-				// The ceiling exists for keys that are NOT registered. When the
-				// speaker still lists every key, nothing is missing that a
-				// write into the music would give back, and the pass waits
-				// for the next idle or standby moment instead (2026-10-26:
-				// a forced pass every five minutes, each one flipping a
-				// playing speaker to LOCAL_INTERNET_RADIO and back, on a box
-				// that listed all six keys throughout). The list is read once
-				// per ceiling, not per retry, so the wait costs no extra
-				// polling beyond the hold's own now_playing read.
-				//
-				// The list only speaks for keys that are gone. A press on a
-				// dead key (#342) or a re-login wipe kills keys the list still
-				// shows, so a pass asked for by one of those runs at the
-				// ceiling as it always did. Such an ask may also have arrived
-				// while this pass was held; the pass about to run answers it.
-				if presetResyncKeysDead.Load() && presetResyncAsk.CompareAndSwap(true, false) {
-					forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead
-				}
-				run, missing, listErr := ceilingRunsPass(forceKeysDead, func() ([]int, error) {
-					return keysMissingOnBox(store, boxHost, wh)
-				})
-				if !run {
-					if !ceilingListedLogged {
-						ceilingListedLogged = true
-						why := "the speaker lists every key"
-						if listErr != nil {
-							why = "the speaker's key list is unreadable"
-						}
-						logger.Info("preset reconcile: hold ceiling passed, but "+why+"; the forced pass waits for the music to stop instead of interrupting it",
-							"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
-							"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
-					}
-					forceHeld = true
-					forceHeldSince = time.Now()
-					time.Sleep(forcedPlayHoldRetry)
-					continue
-				}
-				if forceKeysDead {
-					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and a dead key or a re-login asked for it",
-						"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
-						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
-				} else {
-					logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
-						"reason", forcedHoldReason(src, playing, paused, playKnown),
-						"source", src, "missing", missing,
-						"heldFor", time.Since(forceHeldSince).Round(time.Second).String())
-				}
-			}
-			ceilingListedLogged = false
-			forceKeysDead = false
-			if setupHeldSrc != "" {
-				logger.Info("preset reconcile: the speaker left setup, running the held pass",
-					"heldOn", setupHeldSrc, "source", src)
-				setupHeldSrc = ""
-			}
-			if userHeldSrc != "" {
-				logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
-					"heldOn", userHeldSrc, "source", src)
-			}
-			userHeldSrc = ""
-			forceHeld = false
-			forceHeldSince = time.Time{}
+		r.sleep(forcedPlayHoldRetry)
+		return true
+	}
+	r.groupWakeHeld = false
+	return false
+}
+
+// heldForStartingPlay holds the forced pass while a play the user just asked
+// for is still on its way (#1322). Bounded by the start window, so the pass
+// runs at the latest once the play has had its chance.
+func (r *reconciler) heldForStartingPlay(src string, playing, playKnown bool) bool {
+	if since := r.sinceLastUserPlay(); userPlayStartingHold(src, playing, playKnown, since) {
+		if !r.startHoldLogged {
+			r.startHoldLogged = true
+			r.logger.Info("preset reconcile: forced pass held, a play the user asked for is still starting",
+				"source", src, "sinceUserPlaySec", int(since.Seconds()))
 		}
-		// This pass is the look an account-read recheck asked for
-		// (accountresync.go), so consume that ask here: a recheck arriving
-		// DURING the pass stays armed and wakes the wait below once more.
-		presetRecheckAsk.Store(false)
-		ready := reconcileOnce(store, boxHost, logger, force, wh)
-		fullDone = ready
-		if ready {
-			everFullDone = true
+		r.forceHeld = true
+		r.sleep(userPlayStartHoldRetry)
+		return true
+	}
+	r.startHoldLogged = false
+	return false
+}
+
+// heldForPlaybackOrSource holds the forced pass while audio flows, while the
+// speaker is on a source the listener chose, or while it is in setup, and
+// decides what happens when the hold ceiling passes. False means the pass
+// runs now.
+func (r *reconciler) heldForPlaybackOrSource(src string, playing, paused, playKnown bool) bool {
+	userSrc := userChosenSource(src)
+	setupSrc := isSetupSource(src)
+	if userSrc || setupSrc {
+		// The ceiling bounds a wait on STR's own playback only. Time
+		// spent on the listener's AirPlay or Bluetooth, or in the
+		// speaker's setup, must not count towards it, or the moment
+		// the speaker moves on to an STR station the pass would write
+		// straight into it.
+		r.forceHeldSince = time.Time{}
+	}
+	// A paused play holds the pass like a running one: the listener
+	// will resume it, and the write would switch the speaker off it
+	// (see boxSourcePlayState). The same ceiling bounds a speaker
+	// left paused for hours, and runs the pass there only when keys
+	// are actually missing.
+	hold, ceilingHit := forcedWriteHold(src, playing || paused, playKnown, r.everFullDone, r.forceHeldSince, time.Now())
+	setupHold := false
+	if setupSrc {
+		// One /proc/net/route read per retry, and only while a forced
+		// pass is held on a speaker in setup.
+		setupHold, r.setupNetSince = setupWriteHold(r.defaultGateway(), r.setupNetSince, time.Now())
+	} else {
+		r.setupNetSince = time.Time{}
+	}
+	switch {
+	case setupSrc && setupHold:
+		// One line per stretch in setup, not per retry.
+		if r.setupHeldSrc == "" {
+			r.logger.Info("preset reconcile: forced pass held, the speaker is in setup; it runs once the speaker leaves setup",
+				"source", src, "firstPass", !r.everFullDone)
 		}
-		if fullDone {
-			// Maintenance cadence, but wake early when the self-heal asked
-			// for a forced re-sync so a dead key recovers in seconds, not
-			// after up to five minutes, and when the speaker re-read its
-			// account during boot (an ordinary pass, see accountresync.go).
-			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load() && !presetRecheckAsk.Load(); waited += 10 * time.Second {
-				time.Sleep(10 * time.Second)
+		r.setupHeldSrc = src
+		r.forceHeld = true
+		r.sleep(forcedPlayHoldRetry)
+		return true
+	case setupSrc:
+		// The speaker is on the network and has still not left setup
+		// after the setup ceiling: a Portable that finished Bose's
+		// setup page keeps reporting SETUP, and so do #873 speakers.
+		// Waiting longer would leave its keys unregistered for good.
+		r.logger.Warn("preset reconcile: forced pass ran anyway, the speaker has had a network for the whole setup ceiling but still reports setup",
+			"source", src, "ceiling", forcedSetupHoldCeiling.String(),
+			"onNetworkFor", time.Since(r.setupNetSince).Round(time.Second).String())
+		r.setupNetSince = time.Time{}
+		r.setupHeldSrc = "" // it has not left setup; no release line
+	case hold && userSrc:
+		// One line per source, not per retry: a held pass re-reads the
+		// box every 30 s for as long as the session lasts.
+		if r.userHeldSrc != src {
+			r.userHeldSrc = src
+			r.logger.Info("preset reconcile: forced pass held until the speaker leaves a source the listener chose, writing presets now would interrupt it",
+				"source", src, "playing", playing, "firstPass", !r.everFullDone)
+		}
+		r.forceHeld = true
+		r.sleep(forcedPlayHoldRetry)
+		return true
+	case hold:
+		r.userHeldSrc = ""
+		if r.forceHeldSince.IsZero() {
+			r.forceHeldSince = time.Now()
+			r.logger.Info("preset reconcile: forced pass held, the write would take the box off what it is doing",
+				"reason", forcedHoldReason(src, playing, paused, playKnown),
+				"source", src, "ceiling", forcedPlayHoldCeiling.String())
+		}
+		r.forceHeld = true
+		// Short retry, not the maintenance cadence: the moment the
+		// music stops the keys should be registered, and one
+		// now_playing read per interval only happens while a pass is
+		// actually waiting.
+		r.sleep(forcedPlayHoldRetry)
+		return true
+	case ceilingHit:
+		// The ceiling exists for keys that are NOT registered. When the
+		// speaker still lists every key, nothing is missing that a
+		// write into the music would give back, and the pass waits
+		// for the next idle or standby moment instead (2026-10-26:
+		// a forced pass every five minutes, each one flipping a
+		// playing speaker to LOCAL_INTERNET_RADIO and back, on a box
+		// that listed all six keys throughout). The list is read once
+		// per ceiling, not per retry, so the wait costs no extra
+		// polling beyond the hold's own now_playing read.
+		//
+		// The list only speaks for keys that are gone. A press on a
+		// dead key (#342) or a re-login wipe kills keys the list still
+		// shows, so a pass asked for by one of those runs at the
+		// ceiling as it always did. Such an ask may also have arrived
+		// while this pass was held; the pass about to run answers it.
+		if r.asks.keysDead.Load() && r.asks.ask.CompareAndSwap(true, false) {
+			r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead
+		}
+		run, missing, listErr := ceilingRunsPass(r.forceKeysDead, r.keysMissing)
+		if !run {
+			if !r.ceilingListedLogged {
+				r.ceilingListedLogged = true
+				why := "the speaker lists every key"
+				if listErr != nil {
+					why = "the speaker's key list is unreadable"
+				}
+				r.logger.Info("preset reconcile: hold ceiling passed, but "+why+"; the forced pass waits for the music to stop instead of interrupting it",
+					"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
+					"heldFor", time.Since(r.forceHeldSince).Round(time.Second).String())
 			}
+			r.forceHeld = true
+			r.forceHeldSince = time.Now()
+			r.sleep(forcedPlayHoldRetry)
+			return true
+		}
+		if r.forceKeysDead {
+			r.logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and a dead key or a re-login asked for it",
+				"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src,
+				"heldFor", time.Since(r.forceHeldSince).Round(time.Second).String())
 		} else {
-			time.Sleep(10 * time.Second)
+			r.logger.Warn("preset reconcile: forced pass ran anyway, the hold ceiling passed and the speaker is missing hardware keys",
+				"reason", forcedHoldReason(src, playing, paused, playKnown),
+				"source", src, "missing", missing,
+				"heldFor", time.Since(r.forceHeldSince).Round(time.Second).String())
 		}
+	}
+	return false
+}
+
+// releaseForcedPass clears every hold marker once the forced pass is about to
+// run, and says what it had been held on.
+func (r *reconciler) releaseForcedPass(src string) {
+	r.ceilingListedLogged = false
+	r.forceKeysDead = false
+	if r.setupHeldSrc != "" {
+		r.logger.Info("preset reconcile: the speaker left setup, running the held pass",
+			"heldOn", r.setupHeldSrc, "source", src)
+		r.setupHeldSrc = ""
+	}
+	if r.userHeldSrc != "" {
+		r.logger.Info("preset reconcile: the speaker left the listener's source, running the held pass",
+			"heldOn", r.userHeldSrc, "source", src)
+	}
+	r.userHeldSrc = ""
+	r.forceHeld = false
+	r.forceHeldSince = time.Time{}
+}
+
+// waitForNextPass is phase 7.
+func (r *reconciler) waitForNextPass() {
+	if r.fullDone {
+		// Maintenance cadence, but wake early when the self-heal asked
+		// for a forced re-sync so a dead key recovers in seconds, not
+		// after up to five minutes, and when the speaker re-read its
+		// account during boot (an ordinary pass, see accountresync.go).
+		for waited := time.Duration(0); waited < 5*time.Minute && !r.asks.ask.Load() && !r.recheck.Load(); waited += 10 * time.Second {
+			r.sleep(10 * time.Second)
+		}
+	} else {
+		r.sleep(10 * time.Second)
 	}
 }
 
@@ -804,18 +1032,60 @@ func resyncSafeSource(src string) bool {
 	}
 }
 
-// lastUserPlayStartFn is wired to the webui's LastUserPlayStart in main.go
-// (setLastUserPlayStartFn). Unset in tests and in builds without a webui,
-// where it reads as "no play is starting". Atomic because the reconcile loop
-// starts before the webui server that answers it exists.
-var lastUserPlayStartFn atomic.Pointer[func() time.Time]
-
-func setLastUserPlayStartFn(fn func() time.Time) {
+// setLastUserPlayStart binds the webui's LastUserPlayStart, so a forced pass
+// does not write into a play that is still starting (#1322). Bound by the
+// agent once the webui server exists, which is after the loop has started;
+// see the late-bound seams in reconciler for why that is an atomic.
+func (r *reconciler) setLastUserPlayStart(fn func() time.Time) {
 	if fn == nil {
-		lastUserPlayStartFn.Store(nil)
+		r.lastUserPlayStart.Store(nil)
 		return
 	}
-	lastUserPlayStartFn.Store(&fn)
+	r.lastUserPlayStart.Store(&fn)
+}
+
+// setQuietWakeEpisodeActive binds the webui's QuietWakeEpisodeActive: whether
+// STR woke this speaker for a group moments ago (#900). Late-bound like
+// setLastUserPlayStart.
+func (r *reconciler) setQuietWakeEpisodeActive(fn func() bool) {
+	if fn == nil {
+		r.quietWakeEpisodeActive.Store(nil)
+		return
+	}
+	r.quietWakeEpisodeActive.Store(&fn)
+}
+
+// setGroupFollower binds the check whether this speaker follows a group or
+// stereo pair (#1077): the stereo-pair record STR keeps in marge first (a
+// pair formed through STR leaves the zone store empty), the speaker's own
+// zone second. Late-bound like setLastUserPlayStart.
+func (r *reconciler) setGroupFollower(fn func() (bool, string)) {
+	if fn == nil {
+		r.groupFollower.Store(nil)
+		return
+	}
+	r.groupFollower.Store(&fn)
+}
+
+// groupWakeSettling reports whether STR woke this speaker for a group
+// operation moments ago. See webui.QuietWakeEpisodeActive for why the preset
+// reconcile has to know. Unbound, it reads as "no group wake in progress".
+func (r *reconciler) groupWakeSettling() bool {
+	fn := r.quietWakeEpisodeActive.Load()
+	return fn != nil && (*fn)()
+}
+
+// presetWriteGroupFollower reports whether the preset writes must be skipped
+// because this speaker follows a group, and why. A follower's firmware refuses
+// every AddPreset while it is in GroupSlave, so writing presets into it is
+// wasted NAND writes and, worse, a log that claims keys were healed when
+// nothing was stored. Unbound, it reads as "not a follower".
+func (r *reconciler) presetWriteGroupFollower() (bool, string) {
+	fn := r.groupFollower.Load()
+	if fn == nil {
+		return false, ""
+	}
+	return (*fn)()
 }
 
 // userPlayStartWindow is how long after an app or phone play the speaker may
@@ -848,8 +1118,8 @@ func userPlayStartingHold(src string, playing, playKnown bool, sinceUserPlay tim
 
 // sinceLastUserPlay is how long ago a user last asked for playback, -1 when
 // unknown or never.
-func sinceLastUserPlay() time.Duration {
-	fn := lastUserPlayStartFn.Load()
+func (r *reconciler) sinceLastUserPlay() time.Duration {
+	fn := r.lastUserPlayStart.Load()
 	if fn == nil {
 		return -1
 	}
@@ -1074,13 +1344,13 @@ func ceilingRunsPass(keysDead bool, readMissing func() ([]int, error)) (run bool
 // wants on it that it does not list. The forced pass reads it when its hold
 // ceiling passes, to tell keys that are gone from keys that are merely
 // rewritten.
-func keysMissingOnBox(store *presets.Store, boxHost string, wh *webhooks.Store) ([]int, error) {
-	entries, err := fetchBoxPresetsFullFn(boxHost)
+func (r *reconciler) keysMissingOnBox() ([]int, error) {
+	entries, err := fetchBoxPresetsFullFn(r.boxHost)
 	if err != nil {
 		return nil, err
 	}
-	stick := boxRowPresets(store.All())
-	return slotsMissingOnBox(stick, webhookOnlySlots(wh, stick), entries), nil
+	stick := boxRowPresets(r.store.All())
+	return slotsMissingOnBox(stick, webhookOnlySlots(r.wh, stick), entries), nil
 }
 
 // slotsMissingOnBox lists, sorted, the store's slots and webhook-only keys the
@@ -1110,7 +1380,8 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 	return missing
 }
 
-func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
+func (r *reconciler) reconcileOnce(forceFull bool) bool {
+	store, boxHost, logger, wh := r.store, r.boxHost, r.logger, r.wh
 	stick := boxRowPresets(store.All())
 	// Keys configured as "webhook only" need a placeholder even when the store
 	// is completely empty, which is the shape the second #536 reporter was in:
@@ -1296,10 +1567,10 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// was protected, so the key is still registered shortly after the source
 	// frees up, or at the ceiling at the latest.
 	if (len(missing) > 0 || len(nativeWrites) > 0) && !forceFull {
-		if src, playing, paused, playKnown := boxSourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown) {
+		if src, playing, paused, playKnown := r.sourcePlayState(boxHost); forcedWriteBusy(src, playing || paused, playKnown) {
 			logger.Info("preset reconcile: missing slots held, the write would take the box off what it is doing",
 				"reason", forcedHoldReason(src, playing, paused, playKnown), "source", src, "slots", len(missing)+len(nativeWrites))
-			requestPresetKeyResync(logger, "missing-slots-held")
+			r.asks.request(logger, "missing-slots-held")
 			missing = nil
 			nativeWrites = nil
 		}
@@ -1314,7 +1585,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// missing once it stands alone again. No extra polling: the check runs
 	// only when this pass has something to write.
 	if len(missing) > 0 || len(nativeWrites) > 0 {
-		if follower, why := presetWriteGroupFollower(); follower {
+		if follower, why := r.presetWriteGroupFollower(); follower {
 			logger.Info("preset reconcile: writes skipped, this speaker follows a group and its firmware refuses preset writes until it stands alone",
 				"reason", why, "slots", len(missing)+len(nativeWrites), "forced", forceFull)
 			missing = nil
@@ -1331,7 +1602,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		if forceFull {
 			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
 			// Tell the initial sync it has nothing left to do.
-			fullPresetWriteAt.Store(time.Now().Unix())
+			r.fullPresetWriteAt.Store(time.Now().Unix())
 		} else {
 			logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
 		}
@@ -1347,14 +1618,14 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// shows the flip as cause and effect instead of correlation, and name
 		// which slot the batch started with (the flip lands ~23-43 ms in, i.e.
 		// during the FIRST AddPreset, not the batch as a whole).
-		srcBefore := boxNowPlayingSource(boxHost)
+		srcBefore := r.nowPlayingSource(boxHost)
 		// The firmware's refusal of a write arrives in its syslog, not in the
 		// CLI answer; anything stamped from here on belongs to this sweep.
 		sweepStart := time.Now()
 		boxwrites.NoteN("addpreset", srcBefore, len(missing))
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 		writesDone := time.Now()
-		if srcAfter := boxNowPlayingSource(boxHost); srcAfter != srcBefore {
+		if srcAfter := r.nowPlayingSource(boxHost); srcAfter != srcBefore {
 			logger.Warn("preset forensics: the box changed source across a preset write",
 				"before", srcBefore, "after", srcAfter, "slots", len(missing),
 				"firstSlot", missing[0].Slot, "forced", forceFull)
@@ -1403,14 +1674,14 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			swept := sweptSpecs(missing)
 			if len(kept) > 0 {
 				if wait := refusalSettleWait(swept, writesDone, time.Now()); wait > 0 {
-					time.Sleep(wait)
+					r.sleep(wait)
 				}
 			}
 			verdict := judgeSweepRefusals(swept, kept, firmwarePresetRefusalsSince(sweepStart))
 			refused := reportRewrittenSlots(logger, kept, verdict)
 			if len(kept) > 0 {
 				if ask, streak, wait := noteRewriteOutcome(refused, time.Now()); ask {
-					requestPresetKeyResync(logger, "refused-rewrite")
+					r.asks.request(logger, "refused-rewrite")
 				} else if refused {
 					logger.Info("preset reconcile: the speaker refused the rewrite again, backing off before asking for another re-sync",
 						"streak", streak, "backoffLeft", wait.Round(time.Second).String())
@@ -1419,7 +1690,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			if len(lost) > 0 {
 				syncFailed = true
 				logger.Warn("preset reconcile: the box accepted these writes and kept none of them; the hardware keys for them are dead until a retry lands",
-					"slots", lost, "source", boxNowPlayingSource(boxHost))
+					"slots", lost, "source", r.nowPlayingSource(boxHost))
 			}
 		}
 		// Read the slots back before believing the sweep, and re-write the ones

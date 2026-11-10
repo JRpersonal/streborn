@@ -131,29 +131,24 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 // budget minutes earlier - the field bundles showed five dead-key presses
 // producing no heal because the boot-time ask had eaten the shared budget.
 func TestUrgentResyncHasOwnBudget(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(time.Now().Unix()) // routine budget just consumed
-	presetResyncUrgentLast.Store(0)
-	t.Cleanup(func() {
-		presetResyncAsk.Store(false)
-		presetResyncLast.Store(0)
-		presetResyncUrgentLast.Store(0)
-	})
+	t.Parallel()
+	asks := newResyncAsks()
+	asks.last.Store(time.Now().Unix()) // routine budget just consumed
 
-	requestPresetKeyResync(nil, "test")
-	if presetResyncAsk.Load() {
+	asks.request(nil, "test")
+	if asks.ask.Load() {
 		t.Fatal("routine ask inside its gap must be rate-limited")
 	}
 
-	requestPresetKeyResyncUrgent(nil, "test")
-	if !presetResyncAsk.Load() {
+	asks.requestUrgent(nil, "test")
+	if !asks.ask.Load() {
 		t.Fatal("urgent ask must not be starved by the routine budget")
 	}
 
 	// The urgent budget itself still bounds a 1036 storm.
-	presetResyncAsk.Store(false)
-	requestPresetKeyResyncUrgent(nil, "test")
-	if presetResyncAsk.Load() {
+	asks.ask.Store(false)
+	asks.requestUrgent(nil, "test")
+	if asks.ask.Load() {
 		t.Fatal("urgent asks inside the urgent gap must coalesce")
 	}
 }
@@ -163,24 +158,18 @@ func TestUrgentResyncHasOwnBudget(t *testing.T) {
 // before a wake must not swallow the wake's own re-ask under the 2-minute
 // rate limit (the deferred heal would then wait for the 20-minute insurance).
 func TestStandbyDeferralResetsRoutineBudget(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(0)
-	presetResyncUrgentLast.Store(0)
-	t.Cleanup(func() {
-		presetResyncAsk.Store(false)
-		presetResyncLast.Store(0)
-		presetResyncUrgentLast.Store(0)
-	})
+	t.Parallel()
+	asks := newResyncAsks()
 
-	requestPresetKeyResync(nil, "thumb")
-	if !presetResyncAsk.Load() {
+	asks.request(nil, "thumb")
+	if !asks.ask.Load() {
 		t.Fatal("fresh routine ask must be accepted")
 	}
-	presetResyncAsk.Store(false) // the reconcile consumed the ask...
-	deferPresetResyncForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "STANDBY")
+	asks.ask.Store(false) // the reconcile consumed the ask...
+	asks.deferForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "STANDBY")
 
-	requestPresetKeyResync(nil, "standby-exit") // ...and the wake re-asks
-	if !presetResyncAsk.Load() {
+	asks.request(nil, "standby-exit") // ...and the wake re-asks
+	if !asks.ask.Load() {
 		t.Fatal("wake re-ask was swallowed by the routine budget after a deferral")
 	}
 }
@@ -190,24 +179,18 @@ func TestStandbyDeferralResetsRoutineBudget(t *testing.T) {
 // after a deferral on a transient probe error the next 1036 is the only
 // natural retrigger, and the burned 60s budget would silence it.
 func TestStandbyDeferralResetsUrgentBudget(t *testing.T) {
-	presetResyncAsk.Store(false)
-	presetResyncLast.Store(0)
-	presetResyncUrgentLast.Store(0)
-	t.Cleanup(func() {
-		presetResyncAsk.Store(false)
-		presetResyncLast.Store(0)
-		presetResyncUrgentLast.Store(0)
-	})
+	t.Parallel()
+	asks := newResyncAsks()
 
-	requestPresetKeyResyncUrgent(nil, "1036")
-	if !presetResyncAsk.Load() {
+	asks.requestUrgent(nil, "1036")
+	if !asks.ask.Load() {
 		t.Fatal("fresh urgent ask must be accepted")
 	}
-	presetResyncAsk.Store(false) // consumed by the reconcile...
-	deferPresetResyncForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "")
+	asks.ask.Store(false) // consumed by the reconcile...
+	asks.deferForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "")
 
-	requestPresetKeyResyncUrgent(nil, "1036") // ...and the next 1036 re-asks
-	if !presetResyncAsk.Load() {
+	asks.requestUrgent(nil, "1036") // ...and the next 1036 re-asks
+	if !asks.ask.Load() {
 		t.Fatal("follow-up 1036 was swallowed by the urgent budget after a deferral")
 	}
 }

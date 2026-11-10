@@ -40,18 +40,17 @@ func TestAPlayThatIsStartingHoldsTheForcedPass(t *testing.T) {
 }
 
 func TestSinceLastUserPlayWithoutAWebuiIsUnknown(t *testing.T) {
-	old := lastUserPlayStartFn.Load()
-	t.Cleanup(func() { lastUserPlayStartFn.Store(old) })
-	setLastUserPlayStartFn(nil)
-	if d := sinceLastUserPlay(); d >= 0 {
+	t.Parallel()
+	r := newTestReconciler(t)
+	if d := r.sinceLastUserPlay(); d >= 0 {
 		t.Fatalf("no webui wired, got %v, want -1", d)
 	}
-	setLastUserPlayStartFn(func() time.Time { return time.Time{} })
-	if d := sinceLastUserPlay(); d >= 0 {
+	r.setLastUserPlayStart(func() time.Time { return time.Time{} })
+	if d := r.sinceLastUserPlay(); d >= 0 {
 		t.Fatalf("never played, got %v, want -1", d)
 	}
-	setLastUserPlayStartFn(func() time.Time { return time.Now().Add(-5 * time.Second) })
-	if d := sinceLastUserPlay(); d < 4*time.Second || d > 10*time.Second {
+	r.setLastUserPlayStart(func() time.Time { return time.Now().Add(-5 * time.Second) })
+	if d := r.sinceLastUserPlay(); d < 4*time.Second || d > 10*time.Second {
 		t.Fatalf("played 5 s ago, got %v", d)
 	}
 }
@@ -69,7 +68,7 @@ func TestTheReconcileLoopUsesTheStartHoldAndForgetsStandbyTime(t *testing.T) {
 	if i < 0 || j < 0 || i > j {
 		t.Error("the forced pass no longer checks for a starting play before the playback hold")
 	}
-	k := strings.Index(src, "deferPresetResyncForStandby(logger, retryHeldSrc)")
+	k := strings.Index(src, "r.asks.deferForStandby(r.logger, retryHeldSrc)")
 	if k < 0 || !strings.Contains(src[k:min(k+800, len(src))], "forceHeldSince = time.Time{}") {
 		t.Error("the standby wait no longer resets the hold ceiling, so a night asleep fires the pass into the morning's resume")
 	}
@@ -77,7 +76,7 @@ func TestTheReconcileLoopUsesTheStartHoldAndForgetsStandbyTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(m), "setLastUserPlayStartFn(webuiSrv.LastUserPlayStart)") {
+	if !strings.Contains(string(m), "a.reconciler.setLastUserPlayStart(webuiSrv.LastUserPlayStart)") {
 		t.Error("the start hold is not wired to the webui, so it never holds")
 	}
 }

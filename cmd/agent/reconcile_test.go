@@ -1,11 +1,37 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 )
+
+// newTestReconciler builds a reconciler that talks to no speaker: every seam
+// answers "idle, nothing listed missing", the sleeps return at once, and the
+// account-read recheck is the test's own flag instead of the agent's. Nothing
+// is started; a test drives step() or the phases itself.
+func newTestReconciler(t *testing.T) *reconciler {
+	t.Helper()
+	r := newReconciler(nil, "192.0.2.1", slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	r.recheck = new(atomic.Bool)
+	r.sleep = func(time.Duration) {}
+	r.nowPlayingSource = func(string) string { return "UPNP" }
+	r.isPlaying = func(string) bool { return false }
+	r.sourcePlayState = func(string) (string, bool, bool, bool) { return "UPNP", false, false, true }
+	r.recallActiveWithin = func(time.Duration) bool { return false }
+	r.defaultGateway = func() string { return "192.0.2.254" }
+	r.keysMissing = func() ([]int, error) { return nil, nil }
+	r.pass = func(bool) bool { return true }
+	// run() stamps this after its start-up sleep; a test that calls step()
+	// directly is where run() would be after it.
+	r.lastAwakeForce = time.Now()
+	return r
+}
 
 // TestResyncSafeSource pins the allowlist: input source names differ per model
 // (CineMate says LOCAL where an ST10 says AUX, an SA-5 answers AUX1..AUX3), so

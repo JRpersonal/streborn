@@ -370,14 +370,7 @@ func TestRefusalSettleWait(t *testing.T) {
 // even when every key is listed (#342); every other asker waits for the music
 // to stop unless a key is actually missing.
 func TestCeilingRunsPassPerAsker(t *testing.T) {
-	reset := func() {
-		presetResyncAsk.Store(false)
-		presetResyncLast.Store(0)
-		presetResyncUrgentLast.Store(0)
-		presetResyncKeysDead.Store(false)
-	}
-	reset()
-	t.Cleanup(reset)
+	t.Parallel()
 
 	listsAll := func() ([]int, error) { return nil, nil }
 	lacksTwo := func() ([]int, error) { return []int{2}, nil }
@@ -400,18 +393,20 @@ func TestCeilingRunsPassPerAsker(t *testing.T) {
 		{"", false, false}, // the insurance pass and the retry force have no asker
 	}
 	for _, tc := range cases {
-		reset()
+		// Each asker gets its own scheduler: a fresh budget and no evidence
+		// left over from the case before.
+		asks := newResyncAsks()
 		if tc.asker != "" {
 			if tc.urgent {
-				requestPresetKeyResyncUrgent(nil, tc.asker)
+				asks.requestUrgent(nil, tc.asker)
 			} else {
-				requestPresetKeyResync(nil, tc.asker)
+				asks.request(nil, tc.asker)
 			}
-			if !presetResyncAsk.CompareAndSwap(true, false) {
+			if !asks.ask.CompareAndSwap(true, false) {
 				t.Fatalf("%s: the ask did not arm", tc.asker)
 			}
 		}
-		keysDead := presetResyncKeysDead.Swap(false)
+		keysDead := asks.keysDead.Swap(false)
 		run, _, _ := ceilingRunsPass(keysDead, listsAll)
 		if run != tc.run {
 			t.Errorf("asker %q, every key listed: run=%v, want %v", tc.asker, run, tc.run)
@@ -429,20 +424,14 @@ func TestCeilingRunsPassPerAsker(t *testing.T) {
 // A dead-key ask dropped for standby must not leave a flag that would make a
 // later, ordinary ask run into the music at the ceiling.
 func TestStandbyDeferralDropsDeadKeyEvidence(t *testing.T) {
-	reset := func() {
-		presetResyncAsk.Store(false)
-		presetResyncLast.Store(0)
-		presetResyncUrgentLast.Store(0)
-		presetResyncKeysDead.Store(false)
-	}
-	reset()
-	t.Cleanup(reset)
+	t.Parallel()
+	asks := newResyncAsks()
 
-	requestPresetKeyResync(nil, "thumb")
-	presetResyncAsk.Store(false) // consumed by the reconcile, which found STANDBY
-	deferPresetResyncForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "STANDBY")
-	requestPresetKeyResync(nil, "standby-exit")
-	if presetResyncKeysDead.Load() {
+	asks.request(nil, "thumb")
+	asks.ask.Store(false) // consumed by the reconcile, which found STANDBY
+	asks.deferForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "STANDBY")
+	asks.request(nil, "standby-exit")
+	if asks.keysDead.Load() {
 		t.Fatal("the wake re-ask must not inherit the dropped dead-key evidence")
 	}
 }
@@ -458,13 +447,13 @@ func TestTheReconcileLoopCarriesDeadKeyEvidenceToTheCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := string(b)
-	if !strings.Contains(src, "ceilingRunsPass(forceKeysDead, ") {
+	if !strings.Contains(src, "ceilingRunsPass(r.forceKeysDead, ") {
 		t.Error("the hold ceiling no longer decides with the ask's dead-key evidence")
 	}
-	if n := strings.Count(src, "forceKeysDead = presetResyncKeysDead.Swap(false) || forceKeysDead"); n < 4 {
+	if n := strings.Count(src, "r.forceKeysDead = r.asks.keysDead.Swap(false) || r.forceKeysDead"); n < 4 {
 		t.Errorf("want the evidence captured at all four consume points (retry run, standby-ok, awake, held-pass ask), found %d", n)
 	}
-	if !strings.Contains(src, "ceilingListedLogged = false\n\t\t\tforceKeysDead = false") {
+	if !strings.Contains(src, "r.ceilingListedLogged = false\n\tr.forceKeysDead = false") {
 		t.Error("a pass that ran must clear its dead-key evidence")
 	}
 }

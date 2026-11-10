@@ -22,9 +22,9 @@ import (
 
 func quietNativeLogger(t *testing.T) func() {
 	t.Helper()
-	prev := nativeReadyLogger
-	nativeReadyLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	return func() { nativeReadyLogger = prev }
+	prev := nativeLogger()
+	setNativeReadyLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return func() { setNativeReadyLogger(prev) }
 }
 
 // stubDelivery makes nothingDelivered answer a fixed way for one test.

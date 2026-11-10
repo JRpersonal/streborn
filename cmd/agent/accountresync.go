@@ -36,7 +36,7 @@ const (
 )
 
 // presetRecheckAsk wakes the reconcile for one ordinary (missing-only) pass
-// ahead of its maintenance cadence. Unlike presetResyncAsk it never forces a
+// ahead of its maintenance cadence. Unlike the forced ask (resyncAsks) it never forces a
 // full re-write: it only makes the next look at the speaker's key list happen
 // now rather than in up to five minutes.
 var presetRecheckAsk atomic.Bool
