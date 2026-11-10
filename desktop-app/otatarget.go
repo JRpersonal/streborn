@@ -62,6 +62,20 @@ func (t otaTarget) older(v map[string]string) bool {
 	return buildStampRe.MatchString(b) && buildStampRe.MatchString(t.preBuild) && b < t.preBuild
 }
 
+// swapFailed returns the speaker's own report of an update it could not write
+// to its storage, empty when there is none.
+//
+// A speaker whose storage could not take the new agent runs that agent from
+// RAM instead (the rescue agent, internal/webui/ota_rescue.go) and says so in
+// otaSwapFailed. It IS this app's build, by version, build stamp and running
+// checksum, and its next restart starts whatever the storage holds. So the
+// marker outranks every other sign: an update that is not on the speaker's
+// storage is not installed. The rescue agent drops the marker itself once it
+// managed the write.
+func swapFailed(v map[string]string) string {
+	return strings.TrimSpace(v["otaSwapFailed"])
+}
+
 // onlyEngineMissing reports whether a speaker already runs exactly the agent
 // this app would push and only lacks the Spotify engine. Such a speaker needs
 // the engine, not another agent upload and the reboot that comes with it.
@@ -73,8 +87,14 @@ func (t otaTarget) older(v map[string]string) bool {
 //
 // It is asked before the push, so it has no earlier reading to see a change
 // against: preBuild and preVersion play no part.
+//
+// A speaker that reports a failed swap is not current, whatever it runs: the
+// push this would skip is the one thing that gets the agent onto its storage.
 func (t otaTarget) onlyEngineMissing(v map[string]string) bool {
 	if v == nil || v["goLibrespot"] != "missing" {
+		return false
+	}
+	if swapFailed(v) != "" {
 		return false
 	}
 	if t.sha != "" && v["agentRunningSha256"] != "" {
@@ -148,11 +168,16 @@ func (t otaTarget) reached(live map[string]string, wantEngine bool) (done bool, 
 // "confirmed: box is on build <the old one>" (2026-11-09). The checksum is held
 // to the same rule, because the agent hashes its own executable lazily by path
 // and a path can hold another binary by then.
+//
+// Nor one that reports a failed swap (swapFailed): it runs the new build, and
+// has it nowhere a restart would find it. The poll keeps waiting, because the
+// speaker tries the write once more by itself and drops the marker when that
+// worked.
 func (t otaTarget) confirms(v map[string]string) bool {
 	if v == nil {
 		return false
 	}
-	if t.older(v) {
+	if t.older(v) || swapFailed(v) != "" {
 		return false
 	}
 	if t.sha != "" && v["agentRunningSha256"] == t.sha {
@@ -203,10 +228,13 @@ func (t otaTarget) confirms(v map[string]string) bool {
 func (t otaTarget) classify(ver map[string]string) (verdict, journal string) {
 	running, onDisk := ver["agentRunningSha256"], ver["agentBinarySha256"]
 	older := t.older(ver)
-	if t.sha != "" && running == t.sha && ver["otaSwapFailed"] == "" && !older {
+	failedSwap := swapFailed(ver)
+	if t.sha != "" && running == t.sha && failedSwap == "" && !older {
 		return "confirmed", "outcome: confirmed late - box runs the agent this build carries"
 	}
-	if t.build != "" && ver["build"] == t.build {
+	// A failed swap outranks the build stamp exactly as it outranks the
+	// checksum: the rescue agent carries this app's stamp.
+	if t.build != "" && ver["build"] == t.build && failedSwap == "" {
 		return "confirmed", "outcome: confirmed late - box is on build " + ver["build"]
 	}
 	if msg := ver["otaSwapFailed"]; msg != "" {

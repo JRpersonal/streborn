@@ -763,7 +763,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 	// bootstrap reboot is one-time and loop-guarded on the agent side).
 	var stableSince time.Time
 	sawSecondDrop := false
-	notedOlder := false
+	notedOlder, notedSwap := false, false
 	for u.seams.now().Before(deadline) {
 		// Only while we are still waiting for the box to come back. Once it has
 		// and we are merely holding it for the stability window, 'settling'
@@ -796,6 +796,13 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 			if !notedOlder && target.older(v) {
 				notedOlder = true
 				u.record("the speaker answers on older software than this update installs (" + describeAgentReading(v) + "); not taken as the update")
+			}
+			// The rescue agent: the new build is running, from RAM, and is not
+			// on the speaker's storage. It writes itself there once more on its
+			// own and drops the marker when that worked, so keep waiting.
+			if msg := swapFailed(v); !notedSwap && msg != "" {
+				notedSwap = true
+				u.record("the speaker runs the new software from memory only, it could not write it to its storage (" + msg + "); not taken as the update until it has")
 			}
 		default:
 			// Unreachable: either still mid-first-reboot, or the bootstrap reboot

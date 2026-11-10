@@ -92,11 +92,14 @@ func TestUpdateTargetTruthTable(t *testing.T) {
 		{"this app's agent running from RAM after a failed swap (the rescue agent)",
 			release,
 			map[string]string{"version": app, "build": appBuild, "agentRunningSha256": shaApp, "otaSwapFailed": "copy to NAND did not verify"},
-			"skip=yes confirms=yes classify=confirmed reached=yes"},
+			// reached does not ask about the marker: it is only asked after
+			// confirms took the agent, and a speaker sets the marker during a
+			// swap, never afterwards.
+			"skip=no confirms=no classify=swap-failed reached=yes"},
 		{"the same rescue agent, build stamp a minute off",
 			release,
 			map[string]string{"version": app, "build": appBuildSkew, "agentRunningSha256": shaApp, "otaSwapFailed": "copy to NAND did not verify"},
-			"skip=yes confirms=yes classify=swap-failed reached=yes"},
+			"skip=no confirms=no classify=swap-failed reached=yes"},
 		{"a failed swap reported by the old agent",
 			release,
 			map[string]string{"version": old, "build": oldBuild, "agentRunningSha256": shaOther, "otaSwapFailed": "copy to NAND did not verify"},
