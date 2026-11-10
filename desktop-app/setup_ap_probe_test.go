@@ -40,11 +40,10 @@ func TestProbeSetupAPHits(t *testing.T) {
 	defer infoSrv.Close()
 
 	host := "127.0.0.1"
-	// We cannot run with fixed ports (CI may have them busy); the
-	// helper hardcodes :22 and :8090. Probe through the unexported
-	// helper using the real fetchBoseInfo wired to a separate
-	// addr is awkward, so we sub-test only the SSH-dial portion
-	// here against the random port and assert the BoxInfo shape.
+	// We cannot run with fixed ports (CI may have them busy), and the
+	// exported probe hardcodes :22 and :8090. So go through the
+	// port-taking helper against the two random ports and assert the
+	// BoxInfo shape.
 	got, ok := probeSetupAPAtPorts(host, sshAddr.Port, infoSrv.Listener.Addr().(*net.TCPAddr).Port, 800*time.Millisecond, 1500*time.Millisecond)
 	if !ok {
 		t.Fatal("expected probe to succeed with both listeners alive")
