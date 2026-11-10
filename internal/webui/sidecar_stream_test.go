@@ -32,7 +32,7 @@ func TestStreamBinaryAtomicWritesAndHashes(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "go-librespot")
 	body := elfBody(64 * 1024)
 
-	sum, n, err := streamBinaryAtomic(dst, bytes.NewReader(body), int64(len(body)))
+	sum, n, err := (&Server{ota: &otaState{}}).streamBinaryAtomic(dst, bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		t.Fatalf("streamBinaryAtomic: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestStreamBinaryAtomicLeavesNothingBehindOnFailure(t *testing.T) {
 	body := elfBody(8 * 1024)
 	broken := io.MultiReader(bytes.NewReader(body[:2048]), &erroringReader{})
 
-	if _, _, err := streamBinaryAtomic(dst, broken, int64(len(body))); err == nil {
+	if _, _, err := (&Server{ota: &otaState{}}).streamBinaryAtomic(dst, broken, int64(len(body))); err == nil {
 		t.Fatal("a broken stream was reported as a successful write")
 	}
 	if _, err := os.Stat(dst); !os.IsNotExist(err) {

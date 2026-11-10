@@ -70,8 +70,11 @@ var (
 
 // RunningAsRescue reports whether this agent is the rescue agent a failed swap
 // started from RAM.
-func RunningAsRescue() bool {
-	r := productionOTAEffects.runningBinary()
+func RunningAsRescue() bool { return runningAsRescue(&productionOTAEffects) }
+
+// runningAsRescue is RunningAsRescue for the given effects.
+func runningAsRescue(fx *otaEffects) bool {
+	r := fx.runningBinary()
 	return r != "" && filepath.Clean(r) == filepath.Clean(ramRescueBin)
 }
 
@@ -109,7 +112,7 @@ func StartRescueRetry(ctx context.Context, logger *slog.Logger) {
 // rescueRetry writes the running build onto the NAND once, and reports whether
 // it is there afterwards.
 func rescueRetry(ctx context.Context, logger *slog.Logger) bool {
-	if processOTAState.updating() || swapArmed.Load() {
+	if processOTAState.updating() || processOTAState.swapArmed.Load() {
 		logger.Info("rescue agent: an update is in progress, leaving the write to it")
 		return false
 	}
@@ -135,7 +138,7 @@ func rescueRetry(ctx context.Context, logger *slog.Logger) bool {
 		logger.Warn("rescue agent: cannot read its own binary, not writing it to storage", "err", err)
 		return false
 	}
-	if n := killAgentsRunningFrom(dst); n > 0 {
+	if n := killAgentsRunningFrom(productionOTAEffects.paths.procRoot, dst); n > 0 {
 		logger.Warn("rescue agent: stopped agents run.sh had started from the unverified storage copy", "count", n)
 	}
 	script := placeBinaryLines(src, dst, fi.Size(), sum) + `
@@ -191,7 +194,7 @@ func writeSwapFailMarker(msg string) {
 // (a watchdog respawn of the unverified NAND copy pins its blocks), and
 // returns how many it signalled. By executable, not by name: the rescue agent
 // has the same name.
-func killAgentsRunningFrom(path string) int {
+func killAgentsRunningFrom(procRoot, path string) int {
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
 		return 0

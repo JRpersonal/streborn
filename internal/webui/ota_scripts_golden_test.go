@@ -36,14 +36,14 @@ func TestAgentRestartScriptGolden(t *testing.T) {
 func TestSwapHelperScriptGolden(t *testing.T) {
 	reboot := swapHelper{
 		agentPID: 4242, waitSec: swapHelperWaitSec,
-		stage: ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
+		stage: productionOTAEffects.paths.ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
 		finish:    "reboot",
 		rescueBin: ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
 	}.script()
 	checkGolden(t, "swap helper (reboot)", reboot, goldenSwapReboot)
 	restart := swapHelper{
 		agentPID: 4242, waitSec: swapHelperWaitSec + 81,
-		stage: ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
+		stage: productionOTAEffects.paths.ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
 		finish:    productionOTAEffects.paths.superviseNewAgentLines(agentBinNANDPath, goldenArgs),
 		rescueBin: ramRescueBin, args: goldenArgs, paths: productionOTAEffects.paths,
 	}.script()

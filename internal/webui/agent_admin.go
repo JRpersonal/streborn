@@ -786,12 +786,6 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 // that already existed and is well tested.
 const nandWriteMargin = 3 * 1024 * 1024
 
-// engineStopHook stops the running go-librespot so the space-pressed OTA write can
-// truly free the engine's NAND blocks before dropping it (an unlink of a running
-// binary frees nothing). Set by WithSpotifyStop; nil in tests and when Spotify is
-// not configured, in which case the reclaim falls back to a plain os.Remove.
-var engineStopHook func() bool
-
 // nandWriteState carries what the reclaim preamble learned into the error
 // classification, so a failure can still say whether the engine was dropped
 // and whether statfs had predicted the shortage.
@@ -811,13 +805,13 @@ type nandWriteState struct {
 // move: the parent directory, the stale temp, and the reclaim cascade that
 // makes room. Shared with the streaming variant so the two cannot drift on the
 // space handling, which is the part that took the longest to get right.
-func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+func (s *Server) prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
 	tmp, dir, err = prepareBinaryWriteBase(dst)
 	if err != nil {
 		return "", "", st, err
 	}
-	if !nandHasRoom(dir, need) {
-		st = reclaimEngineForWrite(dir, need)
+	if !s.otaFx().nandHasRoom(dir, need) {
+		st = s.reclaimEngineForWrite(dir, need)
 	}
 	return tmp, dir, st, nil
 }
@@ -844,13 +838,13 @@ func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteSt
 // the volume gets closer to full than nandWriteMargin (plus one check window),
 // so the write stays off the sub-megabyte cliff that margin exists for, and a
 // real ENOSPC while the drop is pending runs it at once and retries the bytes.
-func prepareBinaryWriteDeferred(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+func (s *Server) prepareBinaryWriteDeferred(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
 	tmp, dir, err = prepareBinaryWriteBase(dst)
 	if err != nil {
 		return "", "", st, err
 	}
-	if !nandHasRoom(dir, need) {
-		_, avail, _ := nandAvailFn(dir)
+	if !s.otaFx().nandHasRoom(dir, need) {
+		_, avail, _ := s.otaFx().nandAvail(dir)
 		st.enginePending = true
 		slog.Info("OTA write: statfs predicts a shortage; the Spotify engine is dropped only once the body actually needs its room",
 			"needKB", need/1024, "availKB", avail/1024, "marginKB", nandWriteMargin/1024)
@@ -883,16 +877,15 @@ func prepareBinaryWriteBase(dst string) (tmp, dir string, err error) {
 // margin before the drop runs.
 const engineReclaimCheckEvery = 256 * 1024
 
-// nandAvailFn is diskFree behind a seam, so the deferred reclaim can be driven
-// by a scripted volume in tests.
-var nandAvailFn = func(dir string) (total, avail int64, ok bool) { return diskFree(dir) }
-
 // engineReclaimGate drives the pending engine drop of a deferred write. The
 // receive loop calls due before every write; it asks statfs at most once per
 // engineReclaimCheckEvery bytes. The first call always asks, so a volume that
 // is already at the margin drops the engine before the first byte, exactly as
 // the up-front reclaim did.
 type engineReclaimGate struct {
+	// s is the server whose write this is: its free-space figure (otaEffects)
+	// and its engine stop.
+	s          *Server
 	dir        string
 	need       int64
 	sinceCheck int64
@@ -911,7 +904,7 @@ func (g *engineReclaimGate) due(st *nandWriteState, next int) bool {
 	}
 	g.asked = true
 	g.sinceCheck = 0
-	_, avail, ok := nandAvailFn(g.dir)
+	_, avail, ok := g.s.otaFx().nandAvail(g.dir)
 	if !ok {
 		// No free figure: nandHasRoom would have predicted room, so there is
 		// nothing to steer by. Keep the engine; a real ENOSPC still drops it.
@@ -932,13 +925,13 @@ func (g *engineReclaimGate) run(st *nandWriteState, written int64, forced bool) 
 	if remaining < 0 {
 		remaining = 0
 	}
-	*st = reclaimEngineForWrite(g.dir, remaining)
+	*st = g.s.reclaimEngineForWrite(g.dir, remaining)
 }
 
 // reclaimEngineForWrite is the second reclaim tier: stop and drop the Spotify
 // engine so a write that statfs says cannot fit gets the room. need is what is
 // still to be written.
-func reclaimEngineForWrite(dir string, need int64) nandWriteState {
+func (s *Server) reclaimEngineForWrite(dir string, need int64) nandWriteState {
 	// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
 	// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
 	// cheap reclaim never touches it. Drop it so the agent .new fits rather
@@ -955,8 +948,8 @@ func reclaimEngineForWrite(dir string, need int64) nandWriteState {
 	// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
 	// the (now-unused) binary.
 	engineStopped := false
-	if engineStopHook != nil {
-		engineStopped = engineStopHook()
+	if s.spotifyStop != nil {
+		engineStopped = s.spotifyStop()
 	}
 	engineReclaim := reclaimSpotifyEngine()
 	// Re-check with patience: UBIFS updates its free-space accounting lazily
@@ -967,7 +960,7 @@ func reclaimEngineForWrite(dir string, need int64) nandWriteState {
 	// embedded in the error.
 	fits := false
 	for i := 0; i < 10; i++ {
-		if nandHasRoom(dir, need) {
+		if s.otaFx().nandHasRoom(dir, need) {
 			fits = true
 			break
 		}
@@ -1877,9 +1870,10 @@ func reclaimSpotifyEngine() string {
 // file plus the atomic-write margin. Returns true when df is unavailable, so an
 // unknown free figure never blocks a write (matching the original gate). Since
 // the optimistic-write change it only steers the reclaim cascade and logging;
-// it no longer refuses the write. Var so the test for that optimistic attempt
-// can force the pessimistic "no room" prediction on a roomy temp dir.
-var nandHasRoom = func(dir string, need int64) bool {
+// it no longer refuses the write. Read through otaEffects.nandHasRoom, so the
+// test for that optimistic attempt can force the pessimistic "no room"
+// prediction on a roomy temp dir.
+func nandHasRoom(dir string, need int64) bool {
 	_, avail, ok := diskFree(dir)
 	if !ok {
 		return true
@@ -2186,8 +2180,8 @@ func sameSubnetAsAnInterface(ip net.IP) bool {
 //
 // need is the expected size (Content-Length) and is used only to make room; the
 // actual size written is returned.
-func streamBinaryAtomic(dst string, src io.Reader, need int64) (sum string, n int64, err error) {
-	tmp, dir, st, err := prepareBinaryWrite(dst, need)
+func (s *Server) streamBinaryAtomic(dst string, src io.Reader, need int64) (sum string, n int64, err error) {
+	tmp, dir, st, err := s.prepareBinaryWrite(dst, need)
 	if err != nil {
 		return "", 0, err
 	}

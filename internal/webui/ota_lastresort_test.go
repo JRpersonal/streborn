@@ -177,11 +177,11 @@ func TestSwapHelperScriptRestartOnly(t *testing.T) {
 // helper supervising it) runs, and goes once neither does, so a later agent
 // does not leave ~18 MB of RAM pinned until the next reboot.
 func TestCleanStaleRAMStagesRescueBinary(t *testing.T) {
-	_ = newRAMFirstRig(t, 60<<20, 60<<10)
-	oldBin, oldProc, oldRun := ramRescueBin, procRoot, productionOTAEffects.runningBinary
-	t.Cleanup(func() { ramRescueBin, procRoot, productionOTAEffects.runningBinary = oldBin, oldProc, oldRun })
+	rig := newRAMFirstRig(t, 60<<20, 60<<10)
+	oldBin := ramRescueBin
+	t.Cleanup(func() { ramRescueBin = oldBin })
 	ramRescueBin = filepath.Join(t.TempDir(), "streborn-rescue", "streborn-armv7l")
-	productionOTAEffects.runningBinary = func() string { return testAgentBin }
+	rig.fx.runningBinary = func() string { return testAgentBin }
 	if err := os.MkdirAll(filepath.Dir(ramRescueBin), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -191,29 +191,29 @@ func TestCleanStaleRAMStagesRescueBinary(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// The rescue agent runs: its command line names the file.
-	procRoot = t.TempDir()
-	if err := os.MkdirAll(filepath.Join(procRoot, "4242"), 0o700); err != nil {
+	rig.fx.paths.procRoot = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rig.fx.paths.procRoot, "4242"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(procRoot, "4242", "cmdline"), []byte(ramRescueBin+"\x00--tls=true"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(rig.fx.paths.procRoot, "4242", "cmdline"), []byte(ramRescueBin+"\x00--tls=true"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	CleanStaleRAMStages(logger)
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err != nil {
 		t.Errorf("the rescue binary must stay while it runs: %v", err)
 	}
 
 	// The rescue agent itself never removes it.
-	procRoot = t.TempDir()
-	productionOTAEffects.runningBinary = func() string { return ramRescueBin }
-	CleanStaleRAMStages(logger)
+	rig.fx.paths.procRoot = t.TempDir()
+	rig.fx.runningBinary = func() string { return ramRescueBin }
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err != nil {
 		t.Errorf("the rescue agent removed its own binary: %v", err)
 	}
 
 	// Nobody runs it any more: it goes.
-	productionOTAEffects.runningBinary = func() string { return testAgentBin }
-	CleanStaleRAMStages(logger)
+	rig.fx.runningBinary = func() string { return testAgentBin }
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err == nil {
 		t.Errorf("the orphaned rescue binary was left in tmpfs")
 	}

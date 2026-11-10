@@ -342,17 +342,17 @@ func TestRescueRetryStandsBackForAnUpdate(t *testing.T) {
 func rescueTestSeams(t *testing.T, r *swapRig) {
 	t.Helper()
 	oldBin, oldDst, oldRun, oldSum, oldShell := ramRescueBin, rescueNANDDst, productionOTAEffects.runningBinary, rescueSum, rescueShell
-	oldProc := procRoot
+	oldProc := productionOTAEffects.paths.procRoot
 	t.Cleanup(func() {
 		ramRescueBin, rescueNANDDst, productionOTAEffects.runningBinary, rescueSum, rescueShell = oldBin, oldDst, oldRun, oldSum, oldShell
-		procRoot = oldProc
+		productionOTAEffects.paths.procRoot = oldProc
 		nandCopyVerified.Store(false)
 	})
 	nandCopyVerified.Store(false)
 	ramRescueBin, rescueNANDDst = r.rescue, r.dst
 	productionOTAEffects.runningBinary = func() string { return r.rescue }
 	rescueSum = func() string { return r.sum }
-	procRoot = filepath.Join(r.dir, "no-proc")
+	productionOTAEffects.paths.procRoot = filepath.Join(r.dir, "no-proc")
 	rescueShell = func(ctx context.Context, script string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, "sh", "-c", script)
 		cmd.Env = r.env

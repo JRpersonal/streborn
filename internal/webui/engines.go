@@ -191,10 +191,10 @@ func WithSpotify(e SpotifyEngine) Option {
 		}
 		if l, ok := e.(SpotifyEngineLifecycle); ok {
 			s.spotifyReload = l.Reload
-			// The OTA write path reads the stop hook from a package variable
-			// (agent_admin.go), exactly as the former WithSpotifyStop set it.
+			// spotifyStop is also the stop the OTA write path uses before it
+			// drops the engine for room (reclaimEngineForWrite): this server's
+			// engine, not that of whichever server was built last.
 			s.spotifyStop = l.Stop
-			engineStopHook = l.Stop
 		}
 	}
 }

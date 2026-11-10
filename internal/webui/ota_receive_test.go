@@ -51,7 +51,7 @@ func TestReceiveAgentBinaryDoesNotBufferTheUpload(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	got, err := receiveAgentBinary(dst, &patternReader{n: size}, size, 30<<20)
+	got, err := newDeferredRouteServer(t).receiveAgentBinary(dst, &patternReader{n: size}, size, 30<<20)
 	runtime.ReadMemStats(&after)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
@@ -82,7 +82,7 @@ func TestReceiveAgentBinaryRefusesTooBigWithoutTouchingTheBinary(t *testing.T) {
 	if err := os.WriteFile(dst, []byte("OLD-AGENT"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err := receiveAgentBinary(dst, &patternReader{n: 64 << 10}, 64<<10, 32<<10)
+	_, err := newDeferredRouteServer(t).receiveAgentBinary(dst, &patternReader{n: 64 << 10}, 64<<10, 32<<10)
 	if !errors.Is(err, errUploadTooBig) {
 		t.Fatalf("err = %v, want errUploadTooBig", err)
 	}
@@ -96,7 +96,7 @@ func TestReceiveAgentBinaryRefusesTooBigWithoutTouchingTheBinary(t *testing.T) {
 
 func TestReceiveAgentBinaryRefusesTooSmall(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "streborn-armv7l")
-	_, err := receiveAgentBinary(dst, bytes.NewReader(make([]byte, 100)), 100, 30<<20)
+	_, err := newDeferredRouteServer(t).receiveAgentBinary(dst, bytes.NewReader(make([]byte, 100)), 100, 30<<20)
 	if !errors.Is(err, errUploadTooSmall) {
 		t.Fatalf("err = %v, want errUploadTooSmall", err)
 	}
@@ -110,7 +110,7 @@ func TestReceiveAgentBinaryRefusesTooSmall(t *testing.T) {
 func TestReceiveAgentBinaryReadFailureLeavesNothing(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "streborn-armv7l")
 	src := io.MultiReader(&patternReader{n: 64 << 10}, iotestErrReader{})
-	_, err := receiveAgentBinary(dst, src, 128<<10, 30<<20)
+	_, err := newDeferredRouteServer(t).receiveAgentBinary(dst, src, 128<<10, 30<<20)
 	var rerr uploadReadError
 	if !errors.As(err, &rerr) {
 		t.Fatalf("err = %v, want an uploadReadError", err)
@@ -132,10 +132,11 @@ func (iotestErrReader) Read([]byte) (int, error) { return 0, errors.New("connect
 // all end up in the RAM stage, in order, so the swap helper finds the
 // complete binary. Without the old in-memory copy this is the only source.
 func TestSpillToRAMStageReassemblesTheWholeUpload(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	old := ramStageTarget
-	ramStageTarget = filepath.Join(dir, "streborn-ota.stage")
-	t.Cleanup(func() { ramStageTarget = old })
+	s := newDeferredRouteServer(t)
+	ramStageTarget := filepath.Join(dir, "streborn-ota.stage")
+	s.otaEffects.paths.ramStageTarget = ramStageTarget
 
 	body := patternBytes(200 << 10)
 	const written, pendingLen = 70 << 10, 5 << 10
@@ -150,7 +151,7 @@ func TestSpillToRAMStageReassemblesTheWholeUpload(t *testing.T) {
 	pending := append([]byte(nil), body[written:written+pendingLen]...)
 	rest := bytes.NewReader(body[written+pendingLen:])
 
-	got, err := spillToRAMStage(tmp, written, pending, rest, h, make([]byte, 32<<10), int64(len(body)), 30<<20, errInsufficientNAND)
+	got, err := s.spillToRAMStage(tmp, written, pending, rest, h, make([]byte, 32<<10), int64(len(body)), 30<<20, errInsufficientNAND)
 	if err != nil {
 		t.Fatalf("spill: %v", err)
 	}

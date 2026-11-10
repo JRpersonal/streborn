@@ -20,15 +20,14 @@ import (
 // OTA up front. The write is attempted anyway and, on a filesystem that
 // actually has room, succeeds.
 func TestWriteBinaryAtomicOptimisticDespitePessimisticStatfs(t *testing.T) {
-	orig := nandHasRoom
-	nandHasRoom = func(string, int64) bool { return false }
-	defer func() { nandHasRoom = orig }()
-	pinDeferredRoute(t)
+	t.Parallel()
+	s := newDeferredRouteServer(t)
+	s.otaEffects.nandHasRoom = func(string, int64) bool { return false }
 
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "streborn-armv7l")
 	body := patternBytes(4096)
-	if _, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
+	if _, err := s.receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
 		t.Fatalf("optimistic write must succeed when the filesystem has room, got %v", err)
 	}
 	got, err := os.ReadFile(dst)
@@ -109,10 +108,8 @@ func TestWriteBinaryAtomicCleansTruncatedTempOnFailure(t *testing.T) {
 		// Windows directory permissions do not stop file creation.
 		t.Skip("read-only dir does not fail writes on windows")
 	}
-	orig := nandHasRoom
-	nandHasRoom = func(string, int64) bool { return false }
-	defer func() { nandHasRoom = orig }()
-	pinDeferredRoute(t)
+	s := newDeferredRouteServer(t)
+	s.otaEffects.nandHasRoom = func(string, int64) bool { return false }
 
 	dir := t.TempDir()
 	// Make dst's parent read-only so the tmp write fails after the gate said
@@ -126,7 +123,7 @@ func TestWriteBinaryAtomicCleansTruncatedTempOnFailure(t *testing.T) {
 	}
 	dst := filepath.Join(dir, "streborn-armv7l")
 	body := patternBytes(4096)
-	_, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	_, err := s.receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err == nil {
 		t.Fatal("write into a read-only dir must fail")
 	}

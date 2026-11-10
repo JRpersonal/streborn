@@ -42,10 +42,6 @@ import (
 //     retry delivers fresh bytes.
 //   - stick refresh: copies from the file on NAND (or the RAM stage), streamed.
 
-// ramStageTarget is where a tier-3 swap stages the binary. A variable so tests
-// can point it at a temp dir; the swap helper reads the same path.
-var ramStageTarget = ramStagePath
-
 // errUploadTooBig and errUploadTooSmall reject a body by size. Checked while
 // streaming, before anything is renamed over the running agent's binary.
 var (
@@ -65,7 +61,7 @@ func (e uploadReadError) Unwrap() error { return e.err }
 type receivedAgent struct {
 	sum       string // hex SHA256 of the complete upload
 	size      int64
-	ramStaged bool // NAND filled up mid-stream; the binary is complete at ramStageTarget
+	ramStaged bool // NAND filled up mid-stream; the binary is complete at otaPaths.ramStageTarget
 	// ramFirstStage is the RAM-first stage dst was copied from, kept for the
 	// flash verify; the caller releases it (releaseRAMFirstStage).
 	ramFirstStage string
@@ -76,28 +72,29 @@ type receivedAgent struct {
 // Peak memory is the 32 KB window. When the NAND runs out of space the upload
 // is moved to the RAM stage instead and receivedAgent.ramStaged is set; dst is
 // then untouched and the caller arms the tier-3 swap.
-func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receivedAgent, error) {
-	agentReceivesActive.Add(1)
-	defer agentReceivesActive.Add(-1)
+func (s *Server) receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receivedAgent, error) {
+	ota := s.otaSt()
+	ota.receivesActive.Add(1)
+	defer ota.receivesActive.Add(-1)
 	h := sha256.New()
 	buf := make([]byte, 32*1024)
 
 	// Deferred: a tight speaker keeps its Spotify engine until the body has
 	// actually filled the volume to the margin (prepareBinaryWriteDeferred), so
 	// a transfer that dies early does not cost the speaker Spotify.
-	tmp, dir, st, err := prepareBinaryWriteDeferred(dst, need)
+	tmp, dir, st, err := s.prepareBinaryWriteDeferred(dst, need)
 	if err != nil {
 		if errors.Is(err, errInsufficientNAND) {
-			return spillToRAMStage("", 0, nil, src, h, buf, need, maxSize, err)
+			return s.spillToRAMStage("", 0, nil, src, h, buf, need, maxSize, err)
 		}
 		return receivedAgent{}, err
 	}
 	// RAM first: when the speaker has the memory, the whole body lands in the
 	// RAM stage before the engine is touched at all (ota_ramfirst.go).
-	if st.enginePending && ramFirstRoute(need) {
-		return receiveRAMFirst(tmp, dst, dir, src, h, buf, need, maxSize)
+	if st.enginePending && s.ramFirstRoute(need) {
+		return s.receiveRAMFirst(tmp, dst, dir, src, h, buf, need, maxSize)
 	}
-	gate := &engineReclaimGate{dir: dir, need: need}
+	gate := &engineReclaimGate{s: s, dir: dir, need: need}
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil && isNoSpaceErr(err) && st.enginePending {
 		gate.run(&st, 0, true)
@@ -106,7 +103,7 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 	if err != nil {
 		cerr := classifyNANDWriteErr("open tmp", err, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
 		if errors.Is(cerr, errInsufficientNAND) {
-			return spillToRAMStage("", 0, nil, src, h, buf, need, maxSize, cerr)
+			return s.spillToRAMStage("", 0, nil, src, h, buf, need, maxSize, cerr)
 		}
 		return receivedAgent{}, cerr
 	}
@@ -140,7 +137,7 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 				_ = f.Close()
 				if isNoSpaceErr(werr) {
 					cerr := classifyNANDWriteErr("write tmp", werr, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
-					res, serr := spillToRAMStage(tmp, n, buf[nw:nr], src, h, buf, need, maxSize, cerr)
+					res, serr := s.spillToRAMStage(tmp, n, buf[nw:nr], src, h, buf, need, maxSize, cerr)
 					_ = os.Remove(tmp)
 					return res, serr
 				}
@@ -184,20 +181,21 @@ func receiveAgentBinary(dst string, src io.Reader, need, maxSize int64) (receive
 // already seen everything read so far and keeps hashing what follows. nandErr
 // is the original no-space error, returned when the stage cannot take the
 // binary either, so the answer still describes the NAND.
-func spillToRAMStage(tmp string, written int64, pending []byte, src io.Reader, h hash.Hash, buf []byte, need, maxSize int64, nandErr error) (receivedAgent, error) {
-	stageDir := filepath.Dir(ramStageTarget)
+func (s *Server) spillToRAMStage(tmp string, written int64, pending []byte, src io.Reader, h hash.Hash, buf []byte, need, maxSize int64, nandErr error) (receivedAgent, error) {
+	stage := s.otaFx().paths.ramStageTarget
+	stageDir := filepath.Dir(stage)
 	if need > 0 {
 		if _, avail, ok := diskFree(stageDir); ok && avail < need+(1<<20) {
 			return receivedAgent{}, fmt.Errorf("%w (RAM stage %s too small: need %d, avail %d)", nandErr, stageDir, need, avail)
 		}
 	}
-	out, err := os.OpenFile(ramStageTarget, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	out, err := os.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return receivedAgent{}, fmt.Errorf("%w (RAM stage: %w)", nandErr, err)
 	}
 	fail := func(e error) (receivedAgent, error) {
 		_ = out.Close()
-		_ = os.Remove(ramStageTarget)
+		_ = os.Remove(stage)
 		return receivedAgent{}, e
 	}
 	var n int64
@@ -243,7 +241,7 @@ func spillToRAMStage(tmp string, written int64, pending []byte, src io.Reader, h
 		return fail(errUploadTooSmall)
 	}
 	if err := out.Close(); err != nil {
-		_ = os.Remove(ramStageTarget)
+		_ = os.Remove(stage)
 		return receivedAgent{}, fmt.Errorf("%w (RAM stage: %w)", nandErr, err)
 	}
 	return receivedAgent{sum: hex.EncodeToString(h.Sum(nil)), size: n, ramStaged: true}, nil

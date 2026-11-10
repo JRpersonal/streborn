@@ -83,6 +83,9 @@ type otaState struct {
 	// Atomic: it is read by requests, by the self-update's goroutines and by
 	// the rescue agent's retry while an upload's own goroutine writes it.
 	inFlight atomic.Bool
+
+	// The receive routes' bookkeeping (ota_ramfirst.go).
+	ramFirstState
 }
 
 // processOTAState is the update state of this agent process.
@@ -131,6 +134,12 @@ type otaPaths struct {
 	agentSetupLogPath   string
 	agentCrashLogPath   string
 	agentHandOverMarker string
+	// ramStageTarget is where a tier-3 swap stages the binary; the swap helper
+	// reads the same path. The RAM-first stages sit next to it.
+	ramStageTarget string
+	// procRoot is where the update looks for other processes (a swap helper
+	// still reading its stage, an agent run.sh respawned).
+	procRoot string
 }
 
 // otaHandOverMinAgentAge is how old this agent must be before it hands over
@@ -175,6 +184,18 @@ type otaEffects struct {
 	// agentAge is how long this agent has been running; sleep waits.
 	agentAge func() time.Duration
 	sleep    func(time.Duration)
+
+	// nandHasRoom is statfs's prediction whether a write of need bytes fits
+	// with the margin, nandAvail the free figure behind it. They steer the
+	// engine reclaim, never refuse a write (agent_admin.go).
+	nandHasRoom func(dir string, need int64) bool
+	nandAvail   func(dir string) (total, avail int64, ok bool)
+	// ramStageAvail and memAvailableKB are the two figures the RAM-first
+	// route decision reads; stageToNAND copies a complete RAM stage onto the
+	// NAND temp file (ota_ramfirst.go).
+	ramStageAvail  func(dir string) (int64, bool)
+	memAvailableKB func() int64
+	stageToNAND    func(stage, tmp string, buf []byte) error
 }
 
 // productionOTAEffects is the update's outside world on a real speaker.
@@ -185,6 +206,8 @@ var productionOTAEffects = otaEffects{
 		agentSetupLogPath:   "/mnt/nv/streborn/setup.log",
 		agentCrashLogPath:   "/mnt/nv/streborn/logs/agent-crash.log",
 		agentHandOverMarker: "/tmp/streborn-agent-handover",
+		ramStageTarget:      ramStagePath,
+		procRoot:            "/proc",
 	},
 	wlanMode:      readWlanMode,
 	runningBinary: runningAgentBinary,
@@ -194,6 +217,12 @@ var productionOTAEffects = otaEffects{
 	shutdown:      shutdownForRestart,
 	agentAge:      func() time.Duration { return time.Since(processStart) },
 	sleep:         time.Sleep,
+
+	nandHasRoom:    nandHasRoom,
+	nandAvail:      diskFree,
+	ramStageAvail:  ramStageAvail,
+	memAvailableKB: memAvailableKB,
+	stageToNAND:    copyStageToNAND,
 }
 
 // otaFx returns the effects this server's updates run on.

@@ -289,14 +289,14 @@ const swapHelperWaitSec = 90
 // helperPID before it exits, so the watchdog neither respawns the old binary
 // during the copy nor starts a second agent after it.
 func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID int, restartOnly bool, err error) {
-	fi, err := os.Stat(ramStageTarget)
+	fx := s.otaFx()
+	fi, err := os.Stat(fx.paths.ramStageTarget)
 	if err != nil {
-		return 0, false, fmt.Errorf("RAM stage %s: %w", ramStageTarget, err)
+		return 0, false, fmt.Errorf("RAM stage %s: %w", fx.paths.ramStageTarget, err)
 	}
 	if fi.Size() != size {
-		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
+		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", fx.paths.ramStageTarget, fi.Size(), size)
 	}
-	fx := s.otaFx()
 	finish, waitSec := "reboot", swapHelperWaitSec
 	restartOnly = s.otaRestartOnly(dst)
 	if restartOnly {
@@ -307,7 +307,7 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID
 	}
 	script := swapHelper{
 		agentPID: os.Getpid(), waitSec: waitSec,
-		stage: ramStageTarget, dst: dst, size: size, sha: sum,
+		stage: fx.paths.ramStageTarget, dst: dst, size: size, sha: sum,
 		finish:    finish,
 		rescueBin: ramRescueBin, args: agentArgs(),
 		paths: fx.paths,
@@ -319,12 +319,12 @@ func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID
 	if err != nil {
 		return 0, false, fmt.Errorf("start swap helper: %w", err)
 	}
-	swapArmed.Store(true)
+	s.otaSt().swapArmed.Store(true)
 	then := "the helper reboots the box"
 	if restartOnly {
 		then = "the helper starts the new agent, no box reboot"
 	}
 	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and "+then,
-		"stage", ramStageTarget, "bytes", size, "helperPID", helperPID)
+		"stage", fx.paths.ramStageTarget, "bytes", size, "helperPID", helperPID)
 	return helperPID, restartOnly, nil
 }

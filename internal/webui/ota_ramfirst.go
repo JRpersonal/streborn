@@ -66,30 +66,30 @@ const ramFirstStageSlack = 1 << 20
 // swap's ramStageTarget in the same tmpfs.
 const ramFirstStagePrefix = "streborn-ota.rf-"
 
-// ramStageAvailFn and memAvailableKBFn are the two figures the route decision
-// reads, behind seams so tests can script them.
-var (
-	ramStageAvailFn = func(dir string) (int64, bool) {
-		_, avail, ok := diskFree(dir)
-		return avail, ok
-	}
-	memAvailableKBFn = func() int64 {
-		avail, _ := uploadMemKB()
-		return avail
-	}
-)
+// ramStageAvail and memAvailableKB are the two figures the route decision
+// reads on a speaker (otaEffects.ramStageAvail, otaEffects.memAvailableKB).
+func ramStageAvail(dir string) (int64, bool) {
+	_, avail, ok := diskFree(dir)
+	return avail, ok
+}
 
-var (
+func memAvailableKB() int64 {
+	avail, _ := uploadMemKB()
+	return avail
+}
+
+// ramFirstState is the receive routes' bookkeeping, part of otaState.
+type ramFirstState struct {
 	// ramFirstSeq numbers the RAM-first stages of this process.
 	ramFirstSeq atomic.Uint64
 	// ramFirstActive holds the RAM-first stages a receive or an install still
 	// owns; the leftover cleanup skips them.
 	ramFirstActiveMu sync.Mutex
-	ramFirstActive   = map[string]bool{}
-	// agentReceivesActive counts the agent receives in progress in this
+	ramFirstActive   map[string]bool
+	// receivesActive counts the agent receives in progress in this
 	// process. The shared swap stage is only cleaned up by a receive that is
 	// the only one, since a concurrent spill may be writing it.
-	agentReceivesActive atomic.Int32
+	receivesActive atomic.Int32
 	// swapArmed is set once a tier-3 swap helper has been started: from then on
 	// the shared swap stage belongs to that helper and this process neither
 	// removes nor replaces it.
@@ -99,11 +99,12 @@ var (
 	// takes the deferred route, so the app's retries do not keep running into
 	// the same wall.
 	ramFirstStageFailed atomic.Bool
-)
+}
 
-// stageToNAND copies the complete RAM stage onto the NAND temp file and syncs
-// it. A variable so a test can make the NAND refuse the copy.
-var stageToNAND = func(stage, tmp string, buf []byte) error {
+// copyStageToNAND copies the complete RAM stage onto the NAND temp file and
+// syncs it. Called through otaEffects.stageToNAND, so a test can make the NAND
+// refuse the copy.
+func copyStageToNAND(stage, tmp string, buf []byte) error {
 	in, err := os.Open(stage)
 	if err != nil {
 		return fmt.Errorf("open RAM stage: %w", err)
@@ -124,51 +125,54 @@ var stageToNAND = func(stage, tmp string, buf []byte) error {
 	return err
 }
 
-// newRAMFirstStage returns a fresh stage path for one receive and registers it
-// as in use.
-func newRAMFirstStage() string {
-	p := filepath.Join(filepath.Dir(ramStageTarget),
-		fmt.Sprintf("%s%d-%d", ramFirstStagePrefix, os.Getpid(), ramFirstSeq.Add(1)))
-	ramFirstActiveMu.Lock()
-	ramFirstActive[p] = true
-	ramFirstActiveMu.Unlock()
+// newRAMFirstStage returns a fresh stage path for one receive, next to the
+// swap stage swapStage, and registers it as in use.
+func (st *ramFirstState) newRAMFirstStage(swapStage string) string {
+	p := filepath.Join(filepath.Dir(swapStage),
+		fmt.Sprintf("%s%d-%d", ramFirstStagePrefix, os.Getpid(), st.ramFirstSeq.Add(1)))
+	st.ramFirstActiveMu.Lock()
+	if st.ramFirstActive == nil {
+		st.ramFirstActive = map[string]bool{}
+	}
+	st.ramFirstActive[p] = true
+	st.ramFirstActiveMu.Unlock()
 	return p
 }
 
 // releaseRAMFirstStage removes a RAM-first stage and drops its registration.
 // Safe to call with "" and more than once.
-func releaseRAMFirstStage(p string) {
+func (st *ramFirstState) releaseRAMFirstStage(p string) {
 	if p == "" {
 		return
 	}
 	_ = os.Remove(p)
-	forgetRAMFirstStage(p)
+	st.forgetRAMFirstStage(p)
 }
 
 // forgetRAMFirstStage drops the registration of a stage without touching any
 // file (used once the stage has been renamed onto the swap path).
-func forgetRAMFirstStage(p string) {
-	ramFirstActiveMu.Lock()
-	delete(ramFirstActive, p)
-	ramFirstActiveMu.Unlock()
+func (st *ramFirstState) forgetRAMFirstStage(p string) {
+	st.ramFirstActiveMu.Lock()
+	delete(st.ramFirstActive, p)
+	st.ramFirstActiveMu.Unlock()
 }
 
 // removeStaleRAMFirstStages removes the RAM-first stages in dir that no
 // receive of this process owns, and returns how many it removed.
-func removeStaleRAMFirstStages(dir string) int {
+func (st *ramFirstState) removeStaleRAMFirstStages(dir string) int {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
 	}
 	removed := 0
-	ramFirstActiveMu.Lock()
-	defer ramFirstActiveMu.Unlock()
+	st.ramFirstActiveMu.Lock()
+	defer st.ramFirstActiveMu.Unlock()
 	for _, e := range ents {
 		if !strings.HasPrefix(e.Name(), ramFirstStagePrefix) {
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
-		if ramFirstActive[p] {
+		if st.ramFirstActive[p] {
 			continue
 		}
 		if os.Remove(p) == nil {
@@ -178,15 +182,11 @@ func removeStaleRAMFirstStages(dir string) int {
 	return removed
 }
 
-// procRoot is where swapHelperRunning looks for processes. A variable so a
-// test can script it.
-var procRoot = "/proc"
-
 // swapHelperRunning reports whether another process's command line names the
 // swap stage, which is how the detached tier-3 helper (sh -c <script>) shows
-// up. When the process table cannot be read it answers true, so the caller
-// keeps the stage.
-func swapHelperRunning(stage string) bool {
+// up. procRoot is where it looks for processes (otaPaths.procRoot). When the
+// process table cannot be read it answers true, so the caller keeps the stage.
+func swapHelperRunning(procRoot, stage string) bool {
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
 		return true
@@ -216,14 +216,20 @@ func swapHelperRunning(stage string) bool {
 // The rescue agent's binary (ota_rescue.go) goes the same way, once neither
 // this process nor any other runs or supervises it.
 func CleanStaleRAMStages(logger *slog.Logger) {
+	cleanStaleRAMStages(processOTAState, &productionOTAEffects, logger)
+}
+
+// cleanStaleRAMStages is CleanStaleRAMStages for the given state and effects.
+func cleanStaleRAMStages(st *otaState, fx *otaEffects, logger *slog.Logger) {
+	ramStageTarget, procRoot := fx.paths.ramStageTarget, fx.paths.procRoot
 	dir := filepath.Dir(ramStageTarget)
-	n := removeStaleRAMFirstStages(dir)
+	n := st.removeStaleRAMFirstStages(dir)
 	swapStage := false
-	if _, err := os.Stat(ramStageTarget); err == nil && !swapHelperRunning(ramStageTarget) {
+	if _, err := os.Stat(ramStageTarget); err == nil && !swapHelperRunning(procRoot, ramStageTarget) {
 		swapStage = os.Remove(ramStageTarget) == nil
 	}
 	rescue := false
-	if _, err := os.Stat(ramRescueBin); err == nil && !RunningAsRescue() && !swapHelperRunning(ramRescueBin) {
+	if _, err := os.Stat(ramRescueBin); err == nil && !runningAsRescue(fx) && !swapHelperRunning(procRoot, ramRescueBin) {
 		rescue = os.Remove(ramRescueBin) == nil
 		_ = os.Remove(filepath.Dir(ramRescueBin))
 	}
@@ -236,23 +242,24 @@ func CleanStaleRAMStages(logger *slog.Logger) {
 // ramFirstRoute decides, for a write where statfs predicted a NAND shortage,
 // whether the body is received into RAM first (true) or streamed onto the
 // NAND with the deferred engine drop (false). Every decision is logged.
-func ramFirstRoute(need int64) bool {
-	stageDir := filepath.Dir(ramStageTarget)
+func (s *Server) ramFirstRoute(need int64) bool {
+	st, fx := s.otaSt(), s.otaFx()
+	stageDir := filepath.Dir(fx.paths.ramStageTarget)
 	// Stages left behind by an earlier attempt would only make the figures
 	// lie. The stage of a receive still running (a stalled request whose retry
 	// this is) is kept, and the shared swap stage is only removed when no other
 	// receive is running and no swap is armed.
-	removeStaleRAMFirstStages(stageDir)
-	if agentReceivesActive.Load() <= 1 && !swapArmed.Load() {
-		_ = os.Remove(ramStageTarget)
+	st.removeStaleRAMFirstStages(stageDir)
+	if st.receivesActive.Load() <= 1 && !st.swapArmed.Load() {
+		_ = os.Remove(fx.paths.ramStageTarget)
 	}
-	stageAvail, stageOK := ramStageAvailFn(stageDir)
-	memKB := memAvailableKBFn()
+	stageAvail, stageOK := fx.ramStageAvail(stageDir)
+	memKB := fx.memAvailableKB()
 	reason := ""
 	switch {
 	case need <= 0:
 		reason = "upload size unknown"
-	case ramFirstStageFailed.Load():
+	case st.ramFirstStageFailed.Load():
 		reason = "an earlier RAM-first stage write failed"
 	case !stageOK:
 		reason = "RAM stage free space unknown"
@@ -284,30 +291,31 @@ var errRAMFirstStageWrite = errors.New("RAM-first stage")
 // named by receivedAgent.ramFirstStage: the caller keeps it until the flash
 // verify has passed (a mismatch is re-copied from it instead of making the app
 // send the whole binary again) and then calls releaseRAMFirstStage.
-func receiveRAMFirst(tmp, dst, dir string, src io.Reader, h hash.Hash, buf []byte, need, maxSize int64) (receivedAgent, error) {
-	stage := newRAMFirstStage()
+func (s *Server) receiveRAMFirst(tmp, dst, dir string, src io.Reader, h hash.Hash, buf []byte, need, maxSize int64) (receivedAgent, error) {
+	ota, fx := s.otaSt(), s.otaFx()
+	stage := ota.newRAMFirstStage(fx.paths.ramStageTarget)
 	start := time.Now()
 	n, err := streamIntoRAMStage(stage, src, h, buf, maxSize)
 	if err != nil {
-		releaseRAMFirstStage(stage)
+		ota.releaseRAMFirstStage(stage)
 		if errors.Is(err, errRAMFirstStageWrite) {
-			ramFirstStageFailed.Store(true)
+			ota.ramFirstStageFailed.Store(true)
 		}
 		slog.Info("OTA write: RAM-first receive stopped before the Spotify engine was touched; stage removed",
 			"bytes", n, "err", err)
 		return receivedAgent{size: n}, err
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	memKB := memAvailableKBFn()
+	memKB := fx.memAvailableKB()
 	slog.Info("OTA write: the whole body is in the RAM stage, dropping the Spotify engine now",
 		"bytes", n, "needKB", need/1024, "memAvailableKB", memKB,
 		"receiveMs", time.Since(start).Milliseconds())
 	dropStart := time.Now()
-	st := reclaimEngineForWrite(dir, n)
+	st := s.reclaimEngineForWrite(dir, n)
 	dropMs := time.Since(dropStart).Milliseconds()
 
 	copyStart := time.Now()
-	werr := stageToNAND(stage, tmp, buf)
+	werr := fx.stageToNAND(stage, tmp, buf)
 	if werr != nil {
 		_ = os.Remove(tmp)
 		werr = classifyNANDWriteErr("copy RAM stage", werr, dir, n, st.engineStopped, st.engineReclaim, st.predictedFull)
@@ -316,8 +324,8 @@ func receiveRAMFirst(tmp, dst, dir string, src io.Reader, h hash.Hash, buf []byt
 	}
 	if werr != nil {
 		if errors.Is(werr, errInsufficientNAND) {
-			if herr := handStageToSwap(stage); herr != nil {
-				releaseRAMFirstStage(stage)
+			if herr := s.handStageToSwap(stage); herr != nil {
+				ota.releaseRAMFirstStage(stage)
 				slog.Warn("OTA write: the NAND refused the copy from the RAM stage and the stage could not be handed to the swap",
 					"bytes", n, "err", werr, "handoffErr", herr)
 				return receivedAgent{size: n}, werr
@@ -328,7 +336,7 @@ func receiveRAMFirst(tmp, dst, dir string, src io.Reader, h hash.Hash, buf []byt
 				"bytes", n, "err", werr)
 			return receivedAgent{sum: sum, size: n, ramStaged: true}, nil
 		}
-		releaseRAMFirstStage(stage)
+		ota.releaseRAMFirstStage(stage)
 		return receivedAgent{size: n}, werr
 	}
 	slog.Info("OTA write: RAM-first receive copied onto the NAND; the stage stays until the flash verify",
@@ -339,23 +347,24 @@ func receiveRAMFirst(tmp, dst, dir string, src io.Reader, h hash.Hash, buf []byt
 // handStageToSwap moves a complete RAM-first stage onto the shared swap path
 // that armRAMStagedSwap and its helper read. It refuses while a swap is armed:
 // that stage belongs to the running helper.
-func handStageToSwap(stage string) error {
-	if swapArmed.Load() {
+func (s *Server) handStageToSwap(stage string) error {
+	ota := s.otaSt()
+	if ota.swapArmed.Load() {
 		return errors.New("a RAM-staged swap is already armed")
 	}
-	if err := os.Rename(stage, ramStageTarget); err != nil {
+	if err := os.Rename(stage, s.otaFx().paths.ramStageTarget); err != nil {
 		return err
 	}
-	forgetRAMFirstStage(stage)
+	ota.forgetRAMFirstStage(stage)
 	return nil
 }
 
 // reinstallFromRAMFirstStage copies a RAM-first stage onto dst once more (via
 // dst.new, fsynced, renamed, directory synced) after the flash verify of the
 // first copy failed. The engine is already gone, so no reclaim runs.
-func reinstallFromRAMFirstStage(stage, dst string) error {
+func (s *Server) reinstallFromRAMFirstStage(stage, dst string) error {
 	tmp := dst + ".new"
-	if err := stageToNAND(stage, tmp, make([]byte, 32*1024)); err != nil {
+	if err := s.otaFx().stageToNAND(stage, tmp, make([]byte, 32*1024)); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
