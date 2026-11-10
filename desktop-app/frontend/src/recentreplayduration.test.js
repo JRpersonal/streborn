@@ -19,13 +19,13 @@ describe('replaying a Recently-played library track', () => {
   it('hands the stored length to the speaker', async () => {
     const play = vi.fn().mockResolvedValue(undefined);
     await makeReplay(play)({ url: 'http://nas/a.flac', name: 'Song', mime: 'audio/flac', durationSec: 245 }, BOX, 'art.png');
-    expect(play).toHaveBeenCalledWith('192.0.2.10', 17008, 'http://nas/a.flac', 'Song', 'art.png', '', 'audio/flac', '', '', 245);
+    expect(play).toHaveBeenCalledWith('192.0.2.10', 17008, 'http://nas/a.flac', 'Song', 'art.png', '', 'audio/flac', '', '', 245, '', '');
   });
 
   it('still plays a card recorded before the length was kept', async () => {
     const play = vi.fn().mockResolvedValue(undefined);
     await makeReplay(play)({ url: 'http://nas/a.mp3', name: 'Old', mime: 'audio/mpeg' }, BOX, '');
-    expect(play).toHaveBeenCalledWith('192.0.2.10', 17008, 'http://nas/a.mp3', 'Old', '', '', 'audio/mpeg', '', '', 0);
+    expect(play).toHaveBeenCalledWith('192.0.2.10', 17008, 'http://nas/a.mp3', 'Old', '', '', 'audio/mpeg', '', '', 0, '', '');
   });
 });
 

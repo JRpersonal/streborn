@@ -754,9 +754,12 @@ async function libraryPlay(item) {
     // the app nor the phone page can draw a progress bar or see the track end
     // (#845, #844). The folder path has always sent it, which is why a folder
     // drew a bar and a single click never did.
+    // Artist and album go to the speaker's agent too: it keeps them for the
+    // phone page, and for this app after a restart (#1839).
     await PlayURL(target.host, target.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '',
-      item.mimeType || guessAudioMime(item.streamURL), '', '', item.durationSec || 0);
+      item.mimeType || guessAudioMime(item.streamURL), '', '', item.durationSec || 0,
+      item.artist || '', item.album || '');
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;

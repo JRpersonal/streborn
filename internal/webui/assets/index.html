@@ -3517,9 +3517,32 @@ async function currentSong() {
 // answer nor the stream proxy knows the song's artist and album; the queue
 // does (#1033). Best-effort like currentSong, and only asked on the status
 // cadence that already runs.
+//
+// The same answer names the lone library file that plays while no queue does
+// (its "file" object), kept in loneFile for loneFileMeta below (#1839).
+var loneFile = null;
 async function currentQueue() {
   var q = await api('/api/queue');
-  return (q && typeof q === 'object' && q.active) ? q : null;
+  var ok = !!q && typeof q === 'object';
+  loneFile = (ok && !q.active && q.file && typeof q.file === 'object') ? q.file : null;
+  return (ok && q.active) ? q : null;
+}
+
+// loneFileMeta is "Artist · Album" of a single library track, the same shape
+// as queueSongMeta, or ''. The speaker reports neither for a file it fetches
+// itself, and this page did not necessarily start the play, so the agent
+// keeps what the start named (#1839). Shown only while the speaker's own
+// location is that file: a play that went past the agent leaves the record
+// behind. The location comes out of the XML with a regex and still carries
+// its escapes, undone as in playingSlot.
+function loneFileMeta(file, loc) {
+  if (!file || !file.url || !loc) return '';
+  var plain = loc.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); });
+  if (String(file.url) !== plain) return '';
+  return [file.artist, file.album].filter(function (v) { return typeof v === 'string' && v; }).join(' · ');
 }
 
 // queueSongMeta is "Artist · Album" of the song the queue is on, the same
@@ -3803,13 +3826,17 @@ async function refreshStatus() {
   // and album go here (#1033). The stream proxy is not asked then, because it
   // still holds the title of whatever radio stream it carried last (#274).
   const pmSeq = playModeSeq;
-  const queue = (upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc)) ? await currentQueue() : null;
+  const upnpPlay = upSrc === 'UPNP' && !/\/spotify\/stream/.test(nowLoc);
+  const queue = upnpPlay ? await currentQueue() : null;
   // The running queue's shuffle and repeat, set here or anywhere else (#1233).
   playModeLive = !!queue;
   if (queue) followPlayMode(queue, pmSeq);
   // The same read lights the key a folder was started from (#1029).
   markPlaying(nowLoc, queue, spKey, state);
   if (!song && playing && queue) song = queueSongMeta(queue);
+  // A single library track: its artist and album as its start named them,
+  // from the same read (#1839). Never for a proxied radio stream.
+  if (!song && playing && upnpPlay && !queue && !proxiedRadioLoc(nowLoc)) song = loneFileMeta(loneFile, nowLoc);
   // And only while the location is a proxied radio stream: a single library
   // track is UPNP too, and the proxy still held the station's song for a few
   // seconds after the switch, so it sat under the track (#1394).
@@ -5235,7 +5262,10 @@ async function playLibTrack(idx, btn) {
     title: it.title || '',
     icon: it.art || '',
     mime: it.mime || '',
-    duration_sec: it.durationSec || 0
+    duration_sec: it.durationSec || 0,
+    // Kept by the agent for the line under the title (#1839).
+    artist: it.artist || '',
+    album: it.album || ''
   });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
   else if (!res.handled) { searchMsg(findFail(res), true); }
@@ -8043,7 +8073,8 @@ async function playBrowseTrack(it, btn) {
   /* mime routes the file past the endless-radio proxy, same as playLibTrack. */
   var res = await postPlay('/api/play', {
     url: it.url, title: it.title || '', icon: it.art || '', mime: it.mime || '',
-    duration_sec: it.durationSec || 0
+    duration_sec: it.durationSec || 0,
+    artist: it.artist || '', album: it.album || ''
   });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
   else if (!res.handled) { browseMsgSet(T.cantStart); }

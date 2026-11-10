@@ -609,7 +609,7 @@ async function replayFolderCard(c, box) {
 // still plays, just without the bar.
 async function replayLibraryTrack(c, box, art) {
   const dur = c.durationSec > 0 ? Math.round(c.durationSec) : 0;
-  await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur);
+  await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur, '', '');
   // The bar describes the selected speaker, so only a replay on that speaker
   // moves the line (a card can belong to another one). Same instant change as
   // a Library click (#1394).

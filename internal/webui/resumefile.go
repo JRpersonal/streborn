@@ -3,7 +3,9 @@ package webui
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // A paused music file that never came back (#830).
@@ -178,6 +180,67 @@ func (s *Server) currentDirectFile() (singleTrack, bool) {
 		return singleTrack{}, false
 	}
 	return af.tr, true
+}
+
+// currentLoneFile returns the lone file that is the speaker's current play as
+// far as this agent knows: the newest play it started, with no queue running.
+// Unlike currentDirectFile it does not ask for a known length, because what it
+// feeds is the file's label, not a seek.
+func (s *Server) currentLoneFile() (singleTrack, bool) {
+	s.activeFileMu.Lock()
+	af := s.activeFile
+	s.activeFileMu.Unlock()
+	if af == nil || af.gen != s.RecallGeneration() {
+		return singleTrack{}, false
+	}
+	if s.queue != nil && s.queue.isActive() {
+		return singleTrack{}, false
+	}
+	return af.tr, true
+}
+
+// trackTextMax bounds an artist or album a client sends with a play, in runes.
+const trackTextMax = 200
+
+// cleanTrackText makes a client's artist or album safe to keep and hand out
+// again: control characters become spaces, the ends are trimmed and the rest
+// is cut at trackTextMax runes. It is still untrusted text; every client
+// escapes it where it prints it.
+func cleanTrackText(v string) string {
+	v = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, strings.ToValidUTF8(v, "")))
+	if r := []rune(v); len(r) > trackTextMax {
+		v = strings.TrimSpace(string(r[:trackTextMax]))
+	}
+	return v
+}
+
+// loneFileInfo is the "file" object of GET /api/queue: the lone library file
+// that plays while no queue does, with the artist and album its start named.
+// The speaker reports neither for a file it fetches itself, so a client that
+// did not start the play (the phone page, the app after a restart) has only
+// this to label the song with (#1839).
+type loneFileInfo struct {
+	// URL is the address the speaker was handed. A client shows the rest only
+	// while the speaker's own location names it: a play that went past this
+	// agent leaves the record behind.
+	URL    string `json:"url"`
+	Title  string `json:"title"`
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
+}
+
+// loneFileInfo returns the current lone file for GET /api/queue, or nil.
+func (s *Server) loneFileInfo() *loneFileInfo {
+	tr, ok := s.currentLoneFile()
+	if !ok {
+		return nil
+	}
+	return &loneFileInfo{URL: tr.boxURL, Title: tr.title, Artist: tr.artist, Album: tr.album}
 }
 
 // fileRestarting reports whether STR is restarting a file right now, so the end
