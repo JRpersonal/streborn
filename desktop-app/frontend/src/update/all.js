@@ -6,12 +6,10 @@
 
 import {
   BoxAgentVersion,
-  BoxSettings,
   BoxStoragePreflight,
   BrowserOpenURL,
   EventsOn,
   RunFleetUpdate,
-  boxFetch,
 } from '../api.js';
 import { strBoxes } from '../boxes.js';
 import { darkBatchPlan, darkChecklistRowHtml, wireDarkChecklist } from '../darkafterupdate.js';
@@ -40,6 +38,7 @@ import {
   updateAllRowReport,
 } from './failreport.js';
 import { noteOTAResult, otaStuck } from './otastuck.js';
+import { fmtMB, stickMounted, weakWifiSignal } from './preflight.js';
 import { BOX_BUSY_TOKEN, UPDATE_STEPS, withStep } from './shared.js';
 import { ustate } from './state.js';
 
@@ -137,17 +136,12 @@ async function runUpdateAllBoxes(onStart) {
   const notes = [];
   for (const b of updateTargets) {
     try {
-      const r = await boxFetch(b, '/api/stick/status');
-      if (r.ok) { const d = await r.json(); if (d && d.mounted) notes.push(t('updateAll.noteStick', { name: getBoxLabel(b) })); }
+      if (await stickMounted(b)) notes.push(t('updateAll.noteStick', { name: getBoxLabel(b) }));
     } catch { /* stick status unknown: do not block */ }
     try {
-      const s = await BoxSettings(b.host, b.port);
-      const ifs = (s && s.network && s.network.interfaces) || [];
-      // Firmware-reported Wi-Fi class only, same rule as doBoxUpdate: the
-      // coprocessor boxes' agent-relayed snapshot is not a live measurement.
-      const conn = ifs.find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
-      const sig = conn && conn.signal;
-      if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
+      // Firmware-reported Wi-Fi class only, same rule as doBoxUpdate
+      // (weakWifiSignal, preflight.js).
+      if (await weakWifiSignal(b)) notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
     } catch { /* signal unknown: do not block */ }
     try {
       // Storage, the one thing this pre-scan never looked at. The single-box
@@ -163,9 +157,8 @@ async function runUpdateAllBoxes(onStart) {
       // itself, so the user needs to KNOW rather than to decide.
       const pf = await BoxStoragePreflight(b.host, b.port);
       if (pf && pf.tight) {
-        const mb = (n) => ((n || 0) / 1048576).toFixed(1);
         notes.push(t('updateAll.noteTightNand', {
-          name: getBoxLabel(b), freeMB: mb(pf.freeBytes), needMB: mb(pf.needBytes),
+          name: getBoxLabel(b), freeMB: fmtMB(pf.freeBytes), needMB: fmtMB(pf.needBytes),
         }));
       }
     } catch { /* headroom unknown (older agent): never block a batch */ }

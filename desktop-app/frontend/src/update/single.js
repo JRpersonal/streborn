@@ -4,7 +4,7 @@
 // status line and toasts. Extracted from the main.js monolith; main.js-local
 // helpers arrive through deps.js.
 
-import { BoxSettings, BoxStoragePreflight, EventsOn, RunSpeakerUpdate, boxFetch } from '../api.js';
+import { BoxStoragePreflight, EventsOn, RunSpeakerUpdate } from '../api.js';
 import { darkAfterUpdate, darkChecklistApplies, updateNoNetworkHere } from '../darkafterupdate.js';
 import { t } from '../i18n/index.js';
 import { syncShellPlayer } from '../shell2/mount.js';
@@ -20,6 +20,7 @@ import {
   showUpdateNoNetworkNotice,
 } from './failreport.js';
 import { noteOTAResult } from './otastuck.js';
+import { fmtMB, stickMounted, weakWifiSignal } from './preflight.js';
 import { BOX_BUSY_TOKEN, UPDATE_STEPS, withStep } from './shared.js';
 import { ustate } from './state.js';
 
@@ -106,13 +107,9 @@ async function runSingleBoxUpdate(targetBox) {
   // sat on the stick-info button, so the banner button started the OTA
   // (and the reboot) with no confirmation.
   try {
-    const r = await boxFetch(targetBox, '/api/stick/status');
-    if (r.ok) {
-      const data = await r.json();
-      if (data && data.mounted) {
-        const ok = await confirmWarn(t('update.stickInTitle'), t('update.stickInBody'));
-        if (!ok) return; // user cancelled: no OTA, no reboot
-      }
+    if (await stickMounted(targetBox)) {
+      const ok = await confirmWarn(t('update.stickInTitle'), t('update.stickInBody'));
+      if (!ok) return; // user cancelled: no OTA, no reboot
     }
   } catch { /* status unknown: do not block the update */ }
 
@@ -122,16 +119,9 @@ async function runSingleBoxUpdate(targetBox) {
   // router closer before committing. Ethernet/coprocessor boxes report no
   // signal class and are never blocked; an unknown reading never blocks.
   try {
-    const s = await BoxSettings(targetBox.host, targetBox.port);
-    const ifs = (s && s.network && s.network.interfaces) || [];
-    // Only a real WIFI_INTERFACE reading gates the update: that class comes
-    // from the firmware live. Coprocessor boxes (ETHERNET-presented Wi-Fi)
-    // carry only the agent's last gabbo snapshot - a display hint, not a
-    // current measurement, and it false-alarmed on a Portable sitting next
-    // to the router (2026-07-12).
-    const conn = ifs.find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
-    const sig = conn && conn.signal;
-    if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') {
+    // Only a real WIFI_INTERFACE reading gates the update (weakWifiSignal,
+    // preflight.js).
+    if (await weakWifiSignal(targetBox)) {
       const ok = await confirmWarn(t('update.weakWifiTitle'), t('update.weakWifiBody'));
       if (!ok) return; // user chose to improve the signal first
     }
@@ -156,7 +146,6 @@ async function runSingleBoxUpdate(targetBox) {
   try {
     const pf = await BoxStoragePreflight(targetBox.host, targetBox.port);
     if (pf && pf.tight) {
-      const fmtMB = (n) => ((n || 0) / 1048576).toFixed(1);
       // Only one thing here is ever the user's to act on: other SoundTouch
       // software occupying the storage. Name it when it is there, because then
       // the warning carries an instruction instead of a decision they have no
