@@ -346,8 +346,8 @@ export function wireActionSections(ctx) {
         } else if (busyRefusalText(r && r.message)) {
           // The one-write-per-speaker guard turned the removal away: an
           // install, update or flash is still running on this speaker.
-          // Nothing failed, so the plain sentence the update gives for the
-          // same refusal, not "could not remove" around a raw STR_BUSY error.
+          // Nothing failed, so the plain "still busy" sentence, not "could
+          // not remove" around a raw STR_BUSY error.
           reportError(rmBtn, busyRefusalText(r.message, settingsBoxLabel(box)));
         } else {
           reportError(rmBtn, t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));

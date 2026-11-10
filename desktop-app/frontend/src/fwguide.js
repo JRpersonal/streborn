@@ -164,8 +164,8 @@ export function fwFlashStatus(p) {
     case 'done': return t('fwGuide.autoDone', { version: e.version || '?' });
     case 'error':
       // A flash the one-write-per-speaker guard turned away did not fail: an
-      // install, update or removal is still running on the speaker. The same
-      // sentence the update gives, not the raw STR_BUSY error in a failure line.
+      // install, update or removal is still running on the speaker. The plain
+      // "still busy" sentence, not the raw STR_BUSY error in a failure line.
       return busyRefusalText(e.error, e.name) || t('fwGuide.autoFailed', { error: e.error || '?' });
     default: return t('fwGuide.autoStarting');
   }

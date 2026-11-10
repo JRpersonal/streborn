@@ -661,6 +661,7 @@
   "update.spotifyTooFullToast": "Lautsprecher aktualisiert. Auf dem Lautsprecher ist nicht genug Speicher für die Spotify-Komponente frei. Gib etwas Speicher frei, dann wird sie automatisch installiert.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",
   "update.alreadyRunning": "Es läuft bereits ein Update für {{name}}. Bitte warte, bis es fertig ist.",
+  "speaker.busyOtherTask": "{{name}} ist noch mit einer anderen Aufgabe beschäftigt (Installation, Update oder Entfernen). Bitte warte, bis sie abgeschlossen ist, und versuche es dann erneut.",
   "update.failedNoChange": "Update fehlgeschlagen: {{err}}\n\nAm Lautsprecher wurde nichts verändert, er läuft unverändert weiter.",
   "update.otherBoxRunning": "Update läuft auf {{name}} ...",
   "update.stickInTitle": "USB-Stick noch eingesteckt",

@@ -661,6 +661,7 @@
   "update.spotifyTooFullToast": "喇叭已更新。喇叭上的儲存空間不夠放 Spotify 元件。在喇叭上清出一些空間，它就會自動安裝。",
   "update.failed": "更新失敗：{{err}}\n\n如果喇叭之後不再回應，請短暫拔掉電源再插回去。",
   "update.alreadyRunning": "{{name}} 的更新已經在進行中，請等它跑完。",
+  "speaker.busyOtherTask": "{{name}} 還在忙別的工作（安裝、更新或移除），請等它跑完再試一次。",
   "update.failedNoChange": "更新失敗：{{err}}\n\n喇叭上沒有任何東西被改動，它會照原本的樣子繼續運作。",
   "update.otherBoxRunning": "{{name}} 更新中 ...",
   "update.stickInTitle": "USB 隨身碟還插著",

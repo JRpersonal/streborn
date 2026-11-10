@@ -609,6 +609,7 @@
   "update.spotifyTooFullToast": "Altavoz actualizado. No hay suficiente espacio libre para el motor de Spotify; libera algo de espacio en el altavoz y se instalará automáticamente.",
   "update.failed": "Error en la actualización: {{err}}\n\nSi el altavoz ya no responde, desconecta brevemente la alimentación y vuelve a conectarla.",
   "update.alreadyRunning": "Ya hay una actualización en marcha para {{name}}. Espera a que termine.",
+  "speaker.busyOtherTask": "{{name}} sigue con otra tarea en marcha (una instalación, actualización o eliminación). Espera a que termine y vuelve a intentarlo.",
   "update.failedNoChange": "La actualización falló: {{err}}\n\nNo se cambió nada en el altavoz, sigue funcionando como antes.",
   "update.otherBoxRunning": "Actualización en curso en {{name}} ...",
   "update.stickInTitle": "Memoria USB aún insertada",
