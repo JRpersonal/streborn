@@ -831,9 +831,9 @@ SetAppLocale(getLocale()).catch(() => {});
 
 // Tagline and supported-models line follow the active locale, falling
 // back to English. Native-speaker translations live inline here for
-// the languages we have native-speaker copy for. New languages added
-// to i18n/bundles fall back to English until a maintainer adds
-// localized prose here.
+// the languages we have native-speaker copy for. Every language with a
+// bundle in i18n/bundles has a line here (localetables.test.js fails when
+// one is missing); `it` and `pt` are kept for the day their bundles arrive.
 // Since the network install landed, every SoundTouch model runs STR - also the
 // ones that never read a USB stick at boot (300, Wave, SA-4/SA-5, CineMate).
 // Naming four models here was both wrong and discouraging for owners of the
@@ -852,6 +852,7 @@ const SUPPORTED_LINE = {
   lv: 'visiem SoundTouch modeļiem',
   tr: 'tüm SoundTouch modelleri için',
   ar: 'لجميع طُرز SoundTouch',
+  'zh-Hant': '適用於所有 SoundTouch 型號',
   en: 'for every SoundTouch model',
 };
 
@@ -869,6 +870,7 @@ const TAGLINES = {
   lv: 'Turpiniet lietot savus Bose SoundTouch skaļruņus bez Bose mākoņa.',
   tr: 'Bose SoundTouch hoparlörlerinizi Bose bulutu olmadan kullanmaya devam edin.',
   ar: 'واصِل استخدام مكبرات صوت Bose SoundTouch دون سحابة Bose.',
+  'zh-Hant': '不靠 Bose 雲端，繼續使用你的 Bose SoundTouch 喇叭。',
   en: 'Keep using your Bose SoundTouch speakers, without the Bose cloud.',
 };
 
@@ -5328,8 +5330,8 @@ try {
 
 // ROOM_NAMES_BY_LOCALE contains the common room suggestions for the
 // friendly-name combobox. Recomputed via getRoomNames() so a locale
-// switch reflects on the next render. Falls back to English for any
-// locale we have not localised.
+// switch reflects on the next render. Every language with a bundle has a
+// list (localetables.test.js); anything else falls back to English.
 const ROOM_NAMES_BY_LOCALE = {
   de: [
     'Wohnzimmer', 'Schlafzimmer', 'Küche', 'Esszimmer',
@@ -5400,6 +5402,20 @@ const ROOM_NAMES_BY_LOCALE = {
     'Misafir Odası', 'Koridor', 'Giriş',
     'Bahçe', 'Teras', 'Balkon', 'Atölye',
     'Hobi Odası', 'Bodrum', 'Çatı Katı', 'Garaj',
+  ],
+  ar: [
+    'غرفة المعيشة', 'غرفة النوم', 'المطبخ', 'غرفة الطعام',
+    'الحمّام', 'غرفة الدراسة', 'المكتب', 'غرفة الأطفال',
+    'غرفة الضيوف', 'الممر', 'المدخل',
+    'الحديقة', 'الفناء', 'الشرفة', 'الورشة',
+    'غرفة الهوايات', 'القبو', 'العلّية', 'المرآب',
+  ],
+  'zh-Hant': [
+    '客廳', '臥室', '廚房', '餐廳',
+    '浴室', '書房', '辦公室', '兒童房',
+    '客房', '走廊', '玄關',
+    '花園', '露臺', '陽台', '工作室',
+    '休閒室', '地下室', '閣樓', '車庫',
   ],
   en: [
     'Living Room', 'Bedroom', 'Kitchen', 'Dining Room',
