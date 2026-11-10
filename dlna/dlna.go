@@ -142,6 +142,26 @@ func FindServer(ctx context.Context, timeout time.Duration, match func(Server) b
 	return Server{}, false, found, err
 }
 
+// maxDescriptionFetches caps how many device descriptions one discovery
+// fetches at the same time. Every SSDP LOCATION used to get its fetch at once,
+// and a network decides how many of those there are: each UPnP device answers
+// ssdp:all with several, and anything on the LAN can send as many as it likes.
+// The desktop app's own SSDP speaker scan caps the same source at 24
+// (desktop-app/discovery_scan.go); a home has a handful of media servers.
+const maxDescriptionFetches = 24
+
+// fetchableLocation reports whether an SSDP LOCATION is a URL a device
+// description can be fetched from: http or https with a host. Deliberately no
+// address filter: a NAS on a routed subnet, a VPN or a public address is
+// still the user's NAS.
+func fetchableLocation(loc string) bool {
+	u, err := url.Parse(strings.TrimSpace(loc))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
 func discoverServers(ctx context.Context, timeout time.Duration, match func(Server) bool) ([]Server, *Server, error) {
 	if timeout <= 0 {
 		timeout = defaultDiscover
@@ -193,7 +213,13 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 	}
 	resCh := make(chan result, 256)
 	var pending sync.WaitGroup
+	// At most maxDescriptionFetches descriptions are fetched at a time; the
+	// rest wait their turn (see the constant).
+	fetchSlots := make(chan struct{}, maxDescriptionFetches)
 	enqueue := func(loc string) bool { // reports whether loc was new
+		if !fetchableLocation(loc) {
+			return false
+		}
 		locationsMu.Lock()
 		if _, dup := locations[loc]; dup {
 			locationsMu.Unlock()
@@ -204,9 +230,16 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 		pending.Add(1)
 		go func() {
 			defer pending.Done()
+			select {
+			case fetchSlots <- struct{}{}:
+				defer func() { <-fetchSlots }()
+			case <-fparent.Done():
+				return
+			}
 			// Per-fetch deadline instead of the old one shared 12 s window
 			// after the listen phase: a slow NAS (WD Twonky, #733) keeps its
-			// headroom, the fast ones answer in well under a second.
+			// headroom, the fast ones answer in well under a second. It starts
+			// once the fetch has its slot, so waiting for one costs no headroom.
 			fctx, c := context.WithTimeout(fparent, 12*time.Second)
 			defer c()
 			s, err := fetchDeviceDescription(fctx, loc)
@@ -228,6 +261,12 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 		if deadline, _ := dctx.Deadline(); !deadline.IsZero() {
 			_ = conn.SetReadDeadline(deadline)
 		}
+		// The read below only looks at dctx between packets. An early match
+		// cancels dctx long before the deadline, so wake the read then: without
+		// this every probe kept its socket and goroutine for the rest of the
+		// listen window after the answer was already returned.
+		stopWake := context.AfterFunc(dctx, func() { _ = conn.SetReadDeadline(time.Now()) })
+		defer stopWake()
 		localHits := 0
 		// One line per distinct answer, not per packet. A single media server
 		// answers each M-SEARCH several times from several ephemeral ports, and
