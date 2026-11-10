@@ -148,7 +148,11 @@ func saveBitrateChoice(configDir string, choice int) error {
 		}
 		return nil
 	}
-	if err := os.WriteFile(num, []byte(strconv.Itoa(choice)+"\n"), 0o644); err != nil {
+	// The number is written durably: cut by a power loss, a plain write left it
+	// empty, which reads as automatic and silently dropped the choice. The
+	// marker only has to exist, its content is never read, so it stays a plain
+	// write.
+	if err := writeFileAtomic(num, []byte(strconv.Itoa(choice)+"\n"), 0o644); err != nil {
 		return err
 	}
 	return os.WriteFile(marker, []byte("explicit\n"), 0o644)

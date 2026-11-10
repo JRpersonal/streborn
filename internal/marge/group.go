@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // groupRole is one <groupRole> entry inside a stereo-pair group descriptor.
@@ -155,7 +157,7 @@ func (s *Server) persistGroupLocked() {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(s.groupPath, data, 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.groupPath, data, 0o644); err != nil {
 		s.logger.Warn("marge group: persist failed",
 			slog.String("comp", "marge"), slog.String("err", err.Error()))
 	}

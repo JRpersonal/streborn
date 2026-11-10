@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/shepherd"
@@ -127,20 +128,29 @@ func canonicalPresetsPath(p string, logger *slog.Logger) string {
 	if !strings.HasPrefix(clean, "/media/") && !strings.HasPrefix(clean, "/run/media/") {
 		return p
 	}
-	if _, err := os.Stat(nandPresetsPath); os.IsNotExist(err) {
-		if data, rerr := os.ReadFile(p); rerr == nil && len(data) > 0 {
-			if mkErr := os.MkdirAll(filepath.Dir(nandPresetsPath), 0o755); mkErr == nil {
-				if werr := os.WriteFile(nandPresetsPath, data, 0o644); werr == nil {
-					logger.Warn("presets: migrated stick preset store to NAND", "from", p, "to", nandPresetsPath)
+	migratePresetsToNAND(p, nandPresetsPath, logger)
+	logger.Warn("presets: redirecting removable-media preset path to NAND so it survives reboot",
+		"flag", p, "using", nandPresetsPath)
+	return nandPresetsPath
+}
+
+// migratePresetsToNAND copies a still-readable stick preset store at from to
+// the NAND store at nand, once: only while NAND has no store yet. The copy is
+// written durably (temp file, fsync, rename): it becomes the only copy the
+// agent reads from then on, and a plain write cut by a power loss left it
+// empty, which also blocked a second migration because the file then existed.
+func migratePresetsToNAND(from, nand string, logger *slog.Logger) {
+	if _, err := os.Stat(nand); os.IsNotExist(err) {
+		if data, rerr := os.ReadFile(from); rerr == nil && len(data) > 0 {
+			if mkErr := os.MkdirAll(filepath.Dir(nand), 0o755); mkErr == nil {
+				if werr := atomicfile.WriteFile(nand, data, 0o644); werr == nil {
+					logger.Warn("presets: migrated stick preset store to NAND", "from", from, "to", nand)
 				} else {
 					logger.Warn("presets: NAND migration write failed", "err", werr)
 				}
 			}
 		}
 	}
-	logger.Warn("presets: redirecting removable-media preset path to NAND so it survives reboot",
-		"flag", p, "using", nandPresetsPath)
-	return nandPresetsPath
 }
 
 func run() error {

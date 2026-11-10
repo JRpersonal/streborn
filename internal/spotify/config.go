@@ -196,9 +196,11 @@ func (m *Manager) boxNameAndVolume(ctx context.Context) (name string, vol int) {
 
 // writeConfig writes go-librespot's config.yml for the given device name and
 // initial volume. It is the one place config.yml is written, so every rewrite
-// (first start, name change, streaming quality, stereo role) goes the same way.
+// (first start, name change, streaming quality, stereo role) goes the same way:
+// durably (temp file, fsync, rename), so a power cut right after a rewrite
+// cannot leave the engine an empty config.
 func (m *Manager) writeConfig(name string, vol int) error {
-	return os.WriteFile(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML(name, vol)), 0o644)
+	return writeFileAtomic(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML(name, vol)), 0o644)
 }
 
 func (m *Manager) ensureConfig(ctx context.Context) error {
