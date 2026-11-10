@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Remembering the box's confirmed device id across restarts.
@@ -93,7 +95,7 @@ func (s *Server) persistDeviceID(id string) {
 	if dir := filepath.Dir(s.deviceIDPath); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o755)
 	}
-	if err := os.WriteFile(s.deviceIDPath, []byte(strings.ToUpper(id)+"\n"), 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.deviceIDPath, []byte(strings.ToUpper(id)+"\n"), 0o644); err != nil {
 		s.logger.Warn("marge: could not store the confirmed deviceID (it will be relearned next boot)",
 			slog.String("comp", "marge"), slog.String("err", err.Error()))
 	}

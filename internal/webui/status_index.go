@@ -14,13 +14,13 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/region"
 )
@@ -104,7 +104,7 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 		// The US music services follow the region (internal/region).
 		s.regionRes.SetSTR(cc)
 		if path != "" {
-			if err := os.WriteFile(path, []byte(cc+"\n"), 0o644); err != nil {
+			if err := atomicfile.WriteFile(path, []byte(cc+"\n"), 0o644); err != nil {
 				s.logger.Warn("region.txt write failed", "err", err)
 			}
 		}

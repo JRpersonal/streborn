@@ -194,6 +194,15 @@ func (m *Manager) boxNameAndVolume(ctx context.Context) (name string, vol int) {
 	return name, vol
 }
 
+// writeConfig writes go-librespot's config.yml for the given device name and
+// initial volume. It is the one place config.yml is written, so every rewrite
+// (first start, name change, streaming quality, stereo role) goes the same way:
+// durably (temp file, fsync, rename), so a power cut right after a rewrite
+// cannot leave the engine an empty config.
+func (m *Manager) writeConfig(name string, vol int) error {
+	return writeFileAtomic(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML(name, vol)), 0o644)
+}
+
 func (m *Manager) ensureConfig(ctx context.Context) error {
 	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
@@ -207,7 +216,7 @@ func (m *Manager) ensureConfig(ctx context.Context) error {
 	// disk (verified in its source; only the tiny config + credential files
 	// land in configDir). The NAND-filling cache seen earlier was the old
 	// librespot (Rust, --cache), not go-librespot.
-	return os.WriteFile(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML(name, vol)), 0o644)
+	return m.writeConfig(name, vol)
 }
 
 // refreshVolumeConfigOnce rewrites config.yml with the box's real name and
@@ -264,8 +273,7 @@ func (m *Manager) refreshVolumeConfigOnce(ctx context.Context) {
 		if !nameChanged {
 			restart = nil
 		}
-		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+		if err := m.writeConfig(name, vol); err != nil {
 			m.logger.Warn("spotify: refresh config failed", "err", err)
 			return
 		}
@@ -304,8 +312,7 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 		if !changed || streaming {
 			continue
 		}
-		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
-			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+		if err := m.writeConfig(name, vol); err != nil {
 			m.logger.Warn("spotify: rewrite config for name change failed", "err", err)
 			continue
 		}

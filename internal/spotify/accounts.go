@@ -735,7 +735,7 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 		if err := m.writeActiveCredential(cred); err != nil {
 			return err
 		}
-	} else if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
+	} else if err := writeFileAtomic(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
 		return err
 	}
 	m.logger.Info("spotify: imported credential from another speaker, restarting go-librespot")

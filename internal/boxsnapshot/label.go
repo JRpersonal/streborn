@@ -104,11 +104,7 @@ func (s *LabelStore) Note(name, model string) (changed bool, err error) {
 	if dir := filepath.Dir(s.path); dir != "" && dir != "." {
 		_ = os.MkdirAll(dir, 0o755)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return true, err
-	}
-	return true, os.Rename(tmp, s.path)
+	return true, writeState(s.path, append(data, '\n'))
 }
 
 // cleanLabel trims both fields and drops values that must not be persisted: a

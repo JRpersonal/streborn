@@ -165,11 +165,7 @@ func MergeReflect(path string, add []ReflectSource) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeState(path, data)
 }
 
 // RemoveReflect drops every entry for source (matched case-insensitively) from
@@ -199,11 +195,7 @@ func RemoveReflect(path, source string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return false, err
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := writeState(path, data); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -537,9 +529,5 @@ func write(path string, snap Snapshot) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeState(path, data)
 }
