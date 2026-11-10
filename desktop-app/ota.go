@@ -1627,7 +1627,11 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	// instead of a blind "uploading" spinner that looks frozen on a slow link.
 	prog := newTransferProgress(a, "box:update:progress", total, host)
 	uploadDone := make(chan struct{})
-	finished := false
+	// finished is set once the whole body has been read by the transport. It
+	// is atomic because the transport reads the body on its own goroutine,
+	// and that goroutine can still be inside Read when Do has already
+	// returned an error to this one.
+	var finished atomic.Bool
 	// transferred feeds the stall watchdog below with the cumulative byte
 	// count the HTTP transport has consumed.
 	var transferred atomic.Int64
@@ -1637,10 +1641,8 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 		if n >= total {
 			// Body fully streamed. Stop the upload-stall watchdog so the box's
 			// NAND-write + reply window (bounded by ResponseHeaderTimeout) is not
-			// mistaken for a stall. onProgress runs on the single body-read
-			// goroutine, so this flag needs no lock.
-			if !finished {
-				finished = true
+			// mistaken for a stall. The swap makes the close happen once.
+			if finished.CompareAndSwap(false, true) {
 				close(uploadDone)
 			}
 		}
@@ -1693,24 +1695,23 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// finished is written on the body-read goroutine, which has stopped by the
-		// time Do returns, so this read is safe. It tells the caller whether the
-		// whole binary reached the box before the connection died: a drop AFTER a
-		// full upload is the self-replacing agent rebooting, not a failed transfer.
-		return "", finished, err
+		// finished tells the caller whether the whole binary reached the box
+		// before the connection died: a drop AFTER a full upload is the
+		// self-replacing agent rebooting, not a failed transfer.
+		return "", finished.Load(), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if httpReplyMeansNANDFull(resp.StatusCode, string(body)) {
-			return "", finished, &nandFullError{status: resp.StatusCode, detail: string(body)}
+			return "", finished.Load(), &nandFullError{status: resp.StatusCode, detail: string(body)}
 		}
-		return "", finished, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return "", finished.Load(), fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
 	// the agent-update caller can journal the chosen apply mode.
 	replyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return string(replyBytes), finished, nil
+	return string(replyBytes), finished.Load(), nil
 }
 
 // updateAgentViaSSH streams bin into /mnt/nv/streborn/bin/streborn-armv7l
