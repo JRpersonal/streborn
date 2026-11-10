@@ -228,16 +228,20 @@ describe('who a report checks', () => {
 describe('wiring', () => {
   it('runs the check from the classic list, the report link and the support mail', () => {
     const main = fileSource('main.js');
+    // pickBox and checkSpeakerDialog left main.js for views/boxpicker.js.
+    const picker = fileSource('views/boxpicker.js');
     // Awaited: pickBoxFromShell restores a running install's setup target
     // only after pickBox returns, so the dialog must be over by then.
-    expect(main).toContain('if (box.strNotRunning) { await checkSpeakerDialog(box); return; }');
-    expect(main).toContain('if (box.host) { await checkSpeakerDialog(box); return; }');
+    expect(picker).toContain('if (box.strNotRunning) { await checkSpeakerDialog(box); return; }');
+    expect(picker).toContain('if (box.host) { await checkSpeakerDialog(box); return; }');
+    expect(picker).not.toMatch(/[^t] checkSpeakerDialog\(box\); return;/);
     expect(main).not.toMatch(/[^t] checkSpeakerDialog\(box\); return;/);
-    expect(main).toContain('if (!installRunActive()) state.setupTarget = { kind: \'stock\', box: live };');
+    expect(picker).toContain('if (!installRunActive()) state.setupTarget = { kind: \'stock\', box: live };');
     expect(main).toContain("reportProblemWithCheck(`$" + "{repo}/issues`)");
     expect(main).toContain('checkSpeaker: CheckSpeaker,');
     expect(main).toContain('reportProblem: reportProblemWithCheck,');
     expect(main).not.toContain('speaker.strNotRunningConfirmBody');
+    expect(picker).not.toContain('speaker.strNotRunningConfirmBody');
     const actions = fileSource('views/settings/actions.js');
     expect(actions).toContain('runSpeakerChecks(CheckSpeaker, checkTargets(box, state.boxes))');
     expect(actions).toContain("t('speakerCheck.mailAnyway')");
