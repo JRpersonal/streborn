@@ -1025,10 +1025,55 @@ const EngineSkippedUninstalling = "skipped: STR is being removed from this speak
 // restarted the speaker or given up.
 const EngineDeferredUpdateInFlight = "deferred: an agent update is in flight on the speaker"
 
-// engineSent reports whether an EnsureSpotifyEngine result means bytes went
-// out: "current" and the update-in-flight deferral both sent nothing.
-func engineSent(res string) bool {
-	return res != "current" && res != EngineDeferredUpdateInFlight
+// engineResult is what one EnsureSpotifyEngine call did, for the Go callers.
+// The window gets the same answer as the string it has always read
+// (String); Go code compares the value, never the text.
+type engineResult int
+
+const (
+	// engineNone is the zero value: no result, returned beside an error.
+	engineNone engineResult = iota
+	// engineCurrent: the speaker already had this build's engine. Nothing sent.
+	engineCurrent
+	// engineInstalled: the engine was sent and is active (hot-swapped, or
+	// present after the activation reboot).
+	engineInstalled
+	// engineStaged: the engine was sent and is on the speaker's disk, but the
+	// reboot that activates it could not be triggered.
+	engineStaged
+	// engineNotEmbedded: this build carries only the engine stub.
+	engineNotEmbedded
+	// engineSkipped: STR is being removed from the speaker. Nothing sent.
+	engineSkipped
+	// engineDeferred: the speaker refused with its update-in-flight latch.
+	// Nothing sent.
+	engineDeferred
+)
+
+// String is the answer the bound EnsureSpotifyEngine hands to the window.
+// The frontend matches these texts, so they are a contract.
+func (r engineResult) String() string {
+	switch r {
+	case engineCurrent:
+		return "current"
+	case engineInstalled:
+		return "ok"
+	case engineStaged:
+		return "engine-staged-reboot-failed"
+	case engineNotEmbedded:
+		return "no embedded engine in this build"
+	case engineSkipped:
+		return EngineSkippedUninstalling
+	case engineDeferred:
+		return EngineDeferredUpdateInFlight
+	default:
+		return ""
+	}
+}
+
+// sent reports whether engine bytes went out to the speaker.
+func (r engineResult) sent() bool {
+	return r == engineInstalled || r == engineStaged
 }
 
 // isUninstalling reports whether UninstallSTR has started (or finished) for
@@ -1065,15 +1110,22 @@ func (a *App) isUninstalling(host string) bool {
 // transient drop right after a reboot it returns the error so the caller's retry
 // loop tries again while keeping the user informed.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
+	res, err := a.ensureSpotifyEngine(host, port)
+	return res.String(), err
+}
+
+// ensureSpotifyEngine is EnsureSpotifyEngine for the Go callers: the same
+// step, answering with the typed result.
+func (a *App) ensureSpotifyEngine(host string, port int) (engineResult, error) {
 	if a.isUninstalling(host) {
 		// The user is removing STR from this speaker: do not push an engine
 		// onto it and do not announce one. The update flow treats this like
 		// "nothing to deliver" and stays quiet.
 		a.logger.Info("ensure spotify engine: STR is being removed from this speaker, skipping the engine delivery", "host", host)
-		return EngineSkippedUninstalling, nil
+		return engineSkipped, nil
 	}
 	if !agentbin.GoLibrespotAvailable() {
-		return "no embedded engine in this build", nil
+		return engineNotEmbedded, nil
 	}
 	delivered, err := a.pushSidecar(host, port)
 	if errors.Is(err, errSidecarUpdateInFlight) {
@@ -1081,16 +1133,16 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		// here, as this used to, told the restore after a failed update that
 		// the delivery had gone through when the speaker had only said "not
 		// yet".
-		return EngineDeferredUpdateInFlight, nil
+		return engineDeferred, nil
 	}
 	if err != nil {
-		return "", err
+		return engineNone, err
 	}
 	if !delivered {
 		// Engine already current: the running agent is supervising it, no
 		// reboot. Distinct return value so callers can tell "nothing to do"
 		// from "delivered now" (the UI only announces the latter).
-		return "current", nil
+		return engineCurrent, nil
 	}
 	// Hot-swap path (#240): a sidecar-capable agent that advertises engineHotSwap
 	// restarts go-librespot in place the moment the sidecar write lands, so the
@@ -1102,7 +1154,7 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if ver, verr := a.BoxAgentVersion(host, port); verr == nil && ver["engineHotSwap"] == "true" {
 		a.recordOTA(host, "engine: delivered and hot-swapped live by the agent, no reboot needed")
 		a.logger.Info("ensure spotify engine: engine delivered and hot-swapped live, skipping the activation reboot", "host", host)
-		return "ok", nil
+		return engineInstalled, nil
 	}
 	// Reboot the box once more, as part of this same OTA, so the fresh agent picks
 	// up the new engine at start instead of leaving the user to restart by hand.
@@ -1113,7 +1165,7 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		// The engine is staged on disk and will come up on the next restart, so do
 		// not hard-fail; report it so the UI can fall back to a manual restart hint.
 		a.logger.Warn("ensure spotify engine: activation reboot could not be triggered; engine staged, needs a restart", "host", host, "err", rerr)
-		return "engine-staged-reboot-failed", nil
+		return engineStaged, nil
 	}
 	// Wait for the box to return with the engine present.
 	deadline := time.Now().Add(otaEngineRebootWait)
@@ -1121,12 +1173,12 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		time.Sleep(3 * time.Second)
 		if ver, e := a.BoxAgentVersion(host, port); e == nil && ver["goLibrespot"] == "present" {
 			a.recordOTA(host, "engine: present after the activation reboot")
-			return "ok", nil
+			return engineInstalled, nil
 		}
 	}
 	// Did not confirm in time (slow reboot, or a changed IP after DHCP): the engine
 	// is delivered and will be live once the box finishes; let the caller poll on.
-	return "", fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
+	return engineNone, fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
 }
 
 // otaEngineRebootWait bounds how long EnsureSpotifyEngine waits for the box to

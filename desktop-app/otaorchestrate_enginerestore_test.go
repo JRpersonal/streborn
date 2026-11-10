@@ -46,7 +46,7 @@ func TestIncompleteUpdateRestoresDroppedEngine(t *testing.T) {
 				fb.verdicts = []string{c.verdict}
 			}
 			fb.versionAt = oldVersionEngineDropped(fb, true)
-			fb.engineReplies = []engineReply{{res: "ok"}}
+			fb.engineReplies = []engineReply{{res: engineInstalled}}
 			out, _ := runSingle(t, fb)
 			if out.Outcome != c.outcome {
 				t.Fatalf("the update did not complete and must say so, got %+v", out)
@@ -151,9 +151,9 @@ func TestIncompleteUpdateEngineRestoreWaitsOutTheUpdateLatch(t *testing.T) {
 	fb.pushErr = errors.New("context canceled")
 	fb.versionAt = droppedUntilEngineCalls(fb, 5)
 	fb.engineReplies = []engineReply{
-		{res: EngineDeferredUpdateInFlight}, {res: EngineDeferredUpdateInFlight},
-		{res: EngineDeferredUpdateInFlight}, {res: EngineDeferredUpdateInFlight},
-		{res: "ok"},
+		{res: engineDeferred}, {res: engineDeferred},
+		{res: engineDeferred}, {res: engineDeferred},
+		{res: engineInstalled},
 	}
 	out, _ := runSingle(t, fb)
 	if out.Outcome != outcomeFailed {
@@ -180,7 +180,7 @@ func TestIncompleteUpdateEngineRestoreLatchWaitIsBounded(t *testing.T) {
 	fb := newOtaFakeBox()
 	fb.pushErr = errors.New("context canceled")
 	fb.versionAt = droppedUntilEngineCalls(fb, 1<<30)
-	fb.engineReplies = []engineReply{{res: EngineDeferredUpdateInFlight}}
+	fb.engineReplies = []engineReply{{res: engineDeferred}}
 	out, _ := runSingle(t, fb)
 	if out.Outcome != outcomeFailed || out.EngineDelivered {
 		t.Fatalf("got %+v", out)
@@ -197,12 +197,25 @@ func TestIncompleteUpdateEngineRestoreLatchWaitIsBounded(t *testing.T) {
 }
 
 func TestEngineSent(t *testing.T) {
-	for res, want := range map[string]bool{
-		"ok": true, "engine-staged-reboot-failed": true,
-		"current": false, EngineDeferredUpdateInFlight: false,
+	for res, want := range map[engineResult]bool{
+		engineInstalled: true, engineStaged: true,
+		engineCurrent: false, engineDeferred: false,
+		engineNotEmbedded: false, engineSkipped: false, engineNone: false,
 	} {
-		if got := engineSent(res); got != want {
-			t.Errorf("engineSent(%q) = %v, want %v", res, got, want)
+		if got := res.sent(); got != want {
+			t.Errorf("%q.sent() = %v, want %v", res, got, want)
+		}
+	}
+	// The window matches these texts; they are the bound method's contract.
+	for res, want := range map[engineResult]string{
+		engineNone: "", engineCurrent: "current", engineInstalled: "ok",
+		engineStaged:      "engine-staged-reboot-failed",
+		engineNotEmbedded: "no embedded engine in this build",
+		engineSkipped:     EngineSkippedUninstalling,
+		engineDeferred:    EngineDeferredUpdateInFlight,
+	} {
+		if got := res.String(); got != want {
+			t.Errorf("engineResult(%d).String() = %q, want %q", int(res), got, want)
 		}
 	}
 }
@@ -236,7 +249,7 @@ func TestFleetEngineRestoreYieldsToTheBatchPushes(t *testing.T) {
 	}
 	var engineAt time.Time
 	ensure := s.ensureEngine
-	s.ensureEngine = func(host string, port int) (string, error) {
+	s.ensureEngine = func(host string, port int) (engineResult, error) {
 		if host == "bad" {
 			ff.mu.Lock()
 			if engineAt.IsZero() {

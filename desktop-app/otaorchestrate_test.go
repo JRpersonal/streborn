@@ -77,7 +77,7 @@ type otaFakeBox struct {
 }
 
 type engineReply struct {
-	res string
+	res engineResult
 	err error
 }
 
@@ -137,12 +137,12 @@ func (fb *otaFakeBox) seams() *otaSeams {
 			}
 			return err
 		},
-		ensureEngine: func(host string, port int) (string, error) {
+		ensureEngine: func(host string, port int) (engineResult, error) {
 			fb.mu.Lock()
 			defer fb.mu.Unlock()
 			fb.engineCalls = append(fb.engineCalls, fb.clk.now())
 			if len(fb.engineReplies) == 0 {
-				return "current", nil
+				return engineCurrent, nil
 			}
 			r := fb.engineReplies[0]
 			if len(fb.engineReplies) > 1 {
@@ -614,17 +614,17 @@ func TestSpeakerUpdateEngineStep(t *testing.T) {
 	}{
 		{"no goLibrespot field at all: nothing to deliver", "", nil, nil,
 			want{outcomeDone, false, false, false, "", 1, 0}},
-		{"no embedded engine in this build", "missing", []engineReply{{res: "no embedded engine in this build"}}, nil,
+		{"no embedded engine in this build", "missing", []engineReply{{res: engineNotEmbedded}}, nil,
 			want{outcomeDone, false, false, false, "", 1, 1}},
-		{"skipped because STR is being removed", "missing", []engineReply{{res: EngineSkippedUninstalling}}, nil,
+		{"skipped because STR is being removed", "missing", []engineReply{{res: engineSkipped}}, nil,
 			want{outcomeDone, false, false, true, "", 1, 1}},
-		{"delivered and present", "missing", []engineReply{{res: "ok"}}, presentAfterEngine,
+		{"delivered and present", "missing", []engineReply{{res: engineInstalled}}, presentAfterEngine,
 			want{outcomeDone, true, false, false, "", 1, 1}},
-		{"already current and present", "missing", []engineReply{{res: "current"}}, presentAfterEngine,
+		{"already current and present", "missing", []engineReply{{res: engineCurrent}}, presentAfterEngine,
 			want{outcomeDone, false, false, false, "", 1, 1}},
 		{"too full: stop, clear the intent", "missing", []engineReply{{err: errors.New("status 507: insufficient NAND space: need 16 MB, free 11 MB")}}, nil,
 			want{outcomePartial, false, true, false, unmetSpotifyEngine, 1, 1}},
-		{"stream drop then delivered", "missing", []engineReply{{err: errors.New("write tcp: wsarecv: connection reset by peer")}, {res: "ok"}}, presentAfterSecondEngine,
+		{"stream drop then delivered", "missing", []engineReply{{err: errors.New("write tcp: wsarecv: connection reset by peer")}, {res: engineInstalled}}, presentAfterSecondEngine,
 			want{outcomeDone, true, false, false, "", 1, 2}},
 		{"window over: partial, intent kept", "missing", []engineReply{{err: errors.New("status 500: agent busy")}}, nil,
 			want{outcomePartial, false, false, false, unmetSpotifyEngine, 0, -1}},
@@ -714,7 +714,7 @@ func TestSpeakerUpdateEngineWindowAndBackoff(t *testing.T) {
 
 func TestSpeakerUpdateStreamDropRetriesWithoutBackoff(t *testing.T) {
 	fb := newOtaFakeBox()
-	fb.engineReplies = []engineReply{{err: errors.New("write: broken pipe")}, {res: "ok"}}
+	fb.engineReplies = []engineReply{{err: errors.New("write: broken pipe")}, {res: engineInstalled}}
 	presentAfterSecondEngine(fb)
 	if _, err := runSingle(t, fb); err != nil {
 		t.Fatal(err)
@@ -745,7 +745,7 @@ func TestSpeakerUpdateSkipsPushWhenOnlyEngineMissing(t *testing.T) {
 		}
 		return newVersion("missing"), nil
 	}
-	fb.engineReplies = []engineReply{{res: "ok"}}
+	fb.engineReplies = []engineReply{{res: engineInstalled}}
 	out, err := runSingle(t, fb)
 	if err != nil {
 		t.Fatal(err)
@@ -946,20 +946,20 @@ func (ff *fleetFake) seams() *otaSeams {
 			ff.mu.Unlock()
 			return err
 		},
-		ensureEngine: func(host string, port int) (string, error) {
+		ensureEngine: func(host string, port int) (engineResult, error) {
 			ff.mu.Lock()
 			defer ff.mu.Unlock()
 			b := ff.boxes[host]
 			b.engineCnt++
 			if len(b.engine) == 0 {
 				b.version["goLibrespot"] = "present"
-				return "ok", nil
+				return engineInstalled, nil
 			}
 			r := b.engine[0]
 			if len(b.engine) > 1 {
 				b.engine = b.engine[1:]
 			}
-			if r.err == nil && r.res != "current" && !noEmbeddedEngine.MatchString(r.res) {
+			if r.err == nil && r.res != engineCurrent && r.res != engineNotEmbedded {
 				b.version["goLibrespot"] = "present"
 			}
 			return r.res, r.err
@@ -1121,9 +1121,9 @@ func TestFleetEngineOnlyRows(t *testing.T) {
 		wantErr       string
 		wantCleared   bool
 	}{
-		{"delivered and confirmed", []engineReply{{res: "ok"}}, false, outcomeDone, "", true, false, "", true},
-		{"no engine in this build", []engineReply{{res: "no embedded engine in this build"}}, true, outcomePartial, unmetNoEmbeddedEngine, false, false, "", false},
-		{"delivered but gone again", []engineReply{{res: "ok"}}, true, outcomePartial, unmetSpotifyEngine, true, false, "", false},
+		{"delivered and confirmed", []engineReply{{res: engineInstalled}}, false, outcomeDone, "", true, false, "", true},
+		{"no engine in this build", []engineReply{{res: engineNotEmbedded}}, true, outcomePartial, unmetNoEmbeddedEngine, false, false, "", false},
+		{"delivered but gone again", []engineReply{{res: engineInstalled}}, true, outcomePartial, unmetSpotifyEngine, true, false, "", false},
 		{"too full", []engineReply{{err: errors.New("status 507: insufficient NAND space")}}, true, outcomeFailed, "", false, true, "507", false},
 		{"failed", []engineReply{{err: errors.New("dial tcp: connection refused")}}, true, outcomeFailed, "", false, false, "connection refused", false},
 	}
@@ -1136,7 +1136,7 @@ func TestFleetEngineOnlyRows(t *testing.T) {
 			s := ff.seams()
 			if c.staysMissing {
 				inner := s.ensureEngine
-				s.ensureEngine = func(host string, port int) (string, error) {
+				s.ensureEngine = func(host string, port int) (engineResult, error) {
 					res, err := inner(host, port)
 					ff.mu.Lock()
 					b.version["goLibrespot"] = "missing"

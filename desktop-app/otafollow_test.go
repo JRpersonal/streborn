@@ -71,12 +71,12 @@ func (mf *movingFake) seams() *otaSeams {
 			mf.pushAt = mf.clk.now()
 			return nil
 		},
-		ensureEngine: func(host string, port int) (string, error) {
+		ensureEngine: func(host string, port int) (engineResult, error) {
 			mf.mu.Lock()
 			defer mf.mu.Unlock()
 			mf.engines = append(mf.engines, host)
 			mf.engineDelivered[host] = true
-			return "ok", nil
+			return engineInstalled, nil
 		},
 		readVersion: mf.read,
 		classify: func(host string, port int) string {
@@ -551,7 +551,7 @@ func TestUpdateIntentFollowsTheSpeaker(t *testing.T) {
 		delete(intents, host)
 	}
 	// Keep the record alive past the move: the engine never lands.
-	s.ensureEngine = func(string, int) (string, error) { return "", errors.New("connection reset by peer") }
+	s.ensureEngine = func(string, int) (engineResult, error) { return engineNone, errors.New("connection reset by peer") }
 	out, _ := orchestrateSpeaker(s, otaProductionPolicy, addrOld, 8888, idA, "Kitchen", nil)
 	if out.Outcome != outcomePartial {
 		t.Fatalf("outcome = %q, want partial", out.Outcome)

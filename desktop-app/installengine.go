@@ -31,7 +31,7 @@ func installEngineBackoff(attempt int) time.Duration {
 
 // installEnsureEngine and installEngineSleep are the seams for the tests.
 var (
-	installEnsureEngine = func(a *App, host string) (string, error) { return a.EnsureSpotifyEngine(host, 0) }
+	installEnsureEngine = func(a *App, host string) (engineResult, error) { return a.ensureSpotifyEngine(host, 0) }
 	installEngineSleep  = time.Sleep
 )
 
@@ -50,8 +50,8 @@ func (a *App) ensureEngineAfterInstall(host string) string {
 	for attempt := 1; attempt <= installEngineAttempts; attempt++ {
 		r, err := installEnsureEngine(a, host)
 		if err == nil {
-			a.recordOTA(host, "install: Spotify engine checked after the install: "+r)
-			a.logger.Info("install_str: Spotify engine verified after the install", "host", host, "result", r)
+			a.recordOTA(host, "install: Spotify engine checked after the install: "+r.String())
+			a.logger.Info("install_str: Spotify engine verified after the install", "host", host, "result", r.String())
 			return ""
 		}
 		last = err

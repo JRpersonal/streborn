@@ -16,13 +16,13 @@ func engineTestApp(t *testing.T, results []error) (*App, *int, *[]time.Duration)
 	prevEnsure, prevSleep := installEnsureEngine, installEngineSleep
 	t.Cleanup(func() { installEnsureEngine, installEngineSleep = prevEnsure, prevSleep })
 	calls := 0
-	installEnsureEngine = func(*App, string) (string, error) {
+	installEnsureEngine = func(*App, string) (engineResult, error) {
 		err := results[calls]
 		calls++
 		if err != nil {
-			return "", err
+			return engineNone, err
 		}
-		return "ok", nil
+		return engineInstalled, nil
 	}
 	var slept []time.Duration
 	installEngineSleep = func(d time.Duration) { slept = append(slept, d) }
