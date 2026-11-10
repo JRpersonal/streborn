@@ -7,7 +7,6 @@
 package webui
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,11 +14,7 @@ import (
 
 func zoneFormSource(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("zones_stereo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.ReplaceAll(string(b), "\r\n", "\n")
+	return zonesSource(t)
 }
 
 func TestAFailedZoneReadBackNeverReturnsPastTheResume(t *testing.T) {

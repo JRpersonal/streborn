@@ -3,7 +3,6 @@ package webui
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -126,11 +125,8 @@ func TestPairStandbyFailureIsReported(t *testing.T) {
 // when its master drops to STANDBY.
 func TestOnlyTheSilentPairFromStandbyIsPutBackToSleep(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("zones_stereo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pair := funcBody(t, string(src), "formStereoPair")
+	src := zonesSource(t)
+	pair := funcBody(t, src, "formStereoPair")
 	if pair == "" {
 		t.Fatal("formStereoPair not found")
 	}
@@ -148,7 +144,7 @@ func TestOnlyTheSilentPairFromStandbyIsPutBackToSleep(t *testing.T) {
 	if verify < 0 || after < verify {
 		t.Error("the pair may only go back to standby after it was verified on both speakers")
 	}
-	zone := funcBody(t, string(src), "handleZoneForm")
+	zone := funcBody(t, src, "handleZoneForm")
 	if strings.Contains(zone, "s.afterSilentPair(") || strings.Contains(zone, "s.returnSilentPairToStandby(") {
 		t.Error("handleZoneForm puts its master to standby, which dissolves the group it just formed")
 	}
