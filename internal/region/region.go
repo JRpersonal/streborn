@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Info is the region as the agent reports it (/api/agent/version, the
@@ -126,10 +128,7 @@ func (r *Resolver) SetBox(cc string) {
 	}
 	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err == nil {
-		tmp := path + ".tmp"
-		if err = os.WriteFile(tmp, []byte(cc+"\n"), 0o644); err == nil {
-			err = os.Rename(tmp, path)
-		}
+		err = atomicfile.WriteFile(path, []byte(cc+"\n"), 0o644)
 	}
 	if err != nil {
 		r.logger.Warn("region: box country cache write failed", "err", err)
