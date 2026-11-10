@@ -22,7 +22,7 @@ const THEMES = {
   light: { ...base, ...block('html.ui2.a11y-light') },
   contrast: { ...base, ...block('html.ui2.a11y-contrast') },
 };
-const COLORS = ['u-bg', 'u-sidebar', 'u-surface', 'u-selected', 'u-action', 'u-on-action', 'u-accent', 'u-text',
+const COLORS = ['u-bg', 'u-sidebar', 'u-surface', 'u-raised', 'u-raised-edge', 'u-hairline', 'u-tint', 'u-selected', 'u-action', 'u-on-action', 'u-accent', 'u-text',
   'u-muted', 'u-border', 'u-ok', 'u-warn', 'u-danger', 'u-danger-fill', 'u-on-danger', 'u-focus'];
 
 function lum(hex) {
@@ -49,6 +49,28 @@ describe('UI 2.0 tokens', () => {
           for (const bg of ['u-bg', 'u-sidebar', 'u-surface']) {
             expect(ratio(col(fg), col(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
           }
+        }
+      });
+      it('words stay readable on a quiet control and on an inline notice', () => {
+        // --u-raised is the fill of a quiet button (its label, a muted glyph,
+        // a state colour on it); --u-tint is the ground of the update notice
+        // (its title, its muted explanation, the accent arrow).
+        for (const fg of ['u-text', 'u-muted', 'u-ok', 'u-warn', 'u-danger', 'u-accent']) {
+          for (const bg of ['u-raised', 'u-tint']) {
+            expect(ratio(col(fg), col(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+        // The filled Update button keeps its shape on the notice.
+        expect(ratio(col('u-action'), col('u-tint')), 'u-action on u-tint').toBeGreaterThanOrEqual(3);
+        // The round Play/Pause button is the inverse of the page.
+        expect(ratio(col('u-bg'), col('u-text')), 'u-bg on u-text').toBeGreaterThanOrEqual(4.5);
+      });
+      it('the hairline is decoration only: a field keeps the 3:1 border', () => {
+        // In the contrast theme the hairline is a full line; in the other two
+        // it is too faint to be the only edge of anything you type into.
+        if (name !== 'contrast') expect(ratio(col('u-hairline'), col('u-bg'))).toBeLessThan(3);
+        for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]*(?:input|select|textarea)[^{}]*)\{([^}]*)\}/g)) {
+          expect(m[2], m[1]).not.toMatch(/border[^;]*var\(--u-hairline\)/);
         }
       });
       it('text, accent and the pill colours stay readable on a selected row', () => {
@@ -181,6 +203,8 @@ describe('UI 2.0 phase 5 banners and section messages', () => {
     const noComments = declarationsOf(bannersCss);
     const selectors = [];
     for (const m of noComments.matchAll(/([^{}]+)\{/g)) {
+      // At-rules aside (the container query for a narrow window).
+      if (m[1].trim().startsWith('@')) continue;
       for (const s of m[1].trim().split(/,(?![^(]*\))/)) selectors.push(s.trim());
     }
     expect(selectors.length).toBeGreaterThan(10);
@@ -196,9 +220,12 @@ describe('UI 2.0 phase 5 banners and section messages', () => {
     }
   });
 
-  it('draws the update card on the surface with an accent bar, the others with a warn bar', () => {
-    expect(bannersCss).toMatch(/\.speaker-update-card \{[^}]*background: var\(--u-surface\)[^}]*\}/);
-    expect(bannersCss).toMatch(/\.speaker-update-card \{[^}]*border-inline-start: 4px solid var\(--u-accent\)/);
+  it('draws the update notice as a quiet row on the tint with an accent arrow, the others with a warn bar', () => {
+    expect(bannersCss).toMatch(/\.speaker-update-card \{[^}]*background: var\(--u-tint\)[^}]*\}/);
+    // No bar and no heavy edge on the update notice: the tint and the arrow.
+    expect(bannersCss).not.toMatch(/\.speaker-update-card \{[^}]*border-inline-start/);
+    expect(bannersCss).not.toMatch(/\.speaker-update-card \{[^}]*var\(--u-border\)/);
+    expect(bannersCss).toMatch(/\.speaker-update-card \.suc-body::before \{[^}]*background: var\(--u-accent\)/);
     expect(bannersCss).toMatch(/\.global-security-banner \{[^}]*border-inline-start: 4px solid var\(--u-warn\)/);
     expect(bannersCss).toMatch(/#boxWedgeBanner,[\s\S]*#boxIssueBanner,[\s\S]*\{\s*display: none;/);
   });

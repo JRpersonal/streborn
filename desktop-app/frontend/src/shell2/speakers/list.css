@@ -16,7 +16,7 @@ html.ui2 #view-speakers .spl-list {
   list-style: none;
 }
 html.ui2 #view-speakers .spl-item {
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
   background: var(--u-surface);
 }
@@ -118,7 +118,7 @@ html.ui2 #view-speakers .spl-foot {
   gap: var(--u-space-2);
   margin-top: var(--u-space-4);
   padding-top: var(--u-space-4);
-  border-top: 1px solid var(--u-border);
+  border-top: 1px solid var(--u-hairline);
 }
 html.ui2 #view-speakers .spl-foot-row {
   display: flex;

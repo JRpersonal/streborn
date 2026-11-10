@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "قيد التشغيل الآن: {{what}}",
   "ui2.speakers.speaker.netMore": "تفاصيل الشبكة",
   "ui2.speakers.speaker.hwKeysHeading": "أزرار السمّاعة",
+  "ui2.speakers.speaker.aboutHeading": "حول هذه السمّاعة",
   "ui2.speakers.speaker.otherHalf": "فتح النصف الآخر: {{name}}",
   "ui2.speakers.groups.nowTitle": "تعمل معًا الآن",
   "ui2.speakers.groups.pairsTitle": "أزواج الاستريو",

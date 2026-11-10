@@ -37,7 +37,7 @@ html.ui2 #view-help .hlp-sec {
   flex-direction: column;
   gap: var(--u-space-2);
   padding: var(--u-space-4);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
   background: var(--u-surface);
 }
@@ -114,7 +114,7 @@ html.ui2 #view-help .hlp-build { color: var(--u-muted); }
 html.ui2 #view-help .hlp-trademark {
   margin: 0;
   padding-top: var(--u-space-2);
-  border-top: 1px solid var(--u-border);
+  border-top: 1px solid var(--u-hairline);
   color: var(--u-muted);
   font-size: var(--u-fs-xs);
   line-height: 1.5;

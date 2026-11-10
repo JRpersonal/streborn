@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Now playing: {{what}}",
   "ui2.speakers.speaker.netMore": "Network details",
   "ui2.speakers.speaker.hwKeysHeading": "Buttons on the speaker",
+  "ui2.speakers.speaker.aboutHeading": "About this speaker",
   "ui2.speakers.speaker.otherHalf": "Open the other half: {{name}}",
   "ui2.speakers.groups.nowTitle": "Playing together now",
   "ui2.speakers.groups.pairsTitle": "Stereo pairs",

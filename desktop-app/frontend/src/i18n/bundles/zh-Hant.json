@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "正在播放：{{what}}",
   "ui2.speakers.speaker.netMore": "網路詳細資料",
   "ui2.speakers.speaker.hwKeysHeading": "喇叭上的按鍵",
+  "ui2.speakers.speaker.aboutHeading": "關於這台喇叭",
   "ui2.speakers.speaker.otherHalf": "開啟另一半：{{name}}",
   "ui2.speakers.groups.nowTitle": "目前一起播放",
   "ui2.speakers.groups.pairsTitle": "立體聲配對",

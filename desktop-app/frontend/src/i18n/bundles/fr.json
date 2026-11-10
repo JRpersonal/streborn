@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "En cours de lecture : {{what}}",
   "ui2.speakers.speaker.netMore": "Détails du réseau",
   "ui2.speakers.speaker.hwKeysHeading": "Touches de l'enceinte",
+  "ui2.speakers.speaker.aboutHeading": "À propos de cette enceinte",
   "ui2.speakers.speaker.otherHalf": "Ouvrir l'autre moitié : {{name}}",
   "ui2.speakers.groups.nowTitle": "Jouent ensemble maintenant",
   "ui2.speakers.groups.pairsTitle": "Paires stéréo",

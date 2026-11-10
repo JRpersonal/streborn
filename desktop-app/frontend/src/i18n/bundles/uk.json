@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Зараз грає: {{what}}",
   "ui2.speakers.speaker.netMore": "Подробиці мережі",
   "ui2.speakers.speaker.hwKeysHeading": "Кнопки на колонці",
+  "ui2.speakers.speaker.aboutHeading": "Про цю колонку",
   "ui2.speakers.speaker.otherHalf": "Відкрити іншу половину: {{name}}",
   "ui2.speakers.groups.nowTitle": "Грають разом зараз",
   "ui2.speakers.groups.pairsTitle": "Стереопари",

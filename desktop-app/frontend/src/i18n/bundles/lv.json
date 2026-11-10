@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Pašlaik skan: {{what}}",
   "ui2.speakers.speaker.netMore": "Tīkla informācija",
   "ui2.speakers.speaker.hwKeysHeading": "Skaļruņa pogas",
+  "ui2.speakers.speaker.aboutHeading": "Par šo skaļruni",
   "ui2.speakers.speaker.otherHalf": "Atvērt otru pusi: {{name}}",
   "ui2.speakers.groups.nowTitle": "Tagad spēlē kopā",
   "ui2.speakers.groups.pairsTitle": "Stereo pāri",

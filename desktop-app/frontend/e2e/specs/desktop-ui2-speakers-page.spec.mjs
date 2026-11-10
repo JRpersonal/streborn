@@ -91,7 +91,9 @@ test.describe('UI 2.0 one speaker page', () => {
     const { page } = app;
     await openSpeaker(page, LR.host, LR.friendlyName);
     await expect(page.locator('#ui2SpkPanels .sps-sec')).toHaveCount(5);
-    await expect(page.locator('#ui2SpkPanels .sps-sec > .settings-section[data-ui2-sec]')).toHaveCount(ALL_SECTIONS);
+    // Three of them sit one level down, inside the "About this speaker" card.
+    await expect(page.locator('#ui2SpkPanels .sps-sec .settings-section[data-ui2-sec]')).toHaveCount(ALL_SECTIONS);
+    await expect(page.locator('#ui2SpkPanels .sps-sec > .sps-about > .settings-section[data-ui2-sec]')).toHaveCount(3);
     // The accordion groups are gone in the preview; the tabs replace them.
     await expect(page.locator('#settingsBody details.settings-group')).toHaveCount(0);
     for (const [key, { shown, placed }] of Object.entries(CONTROLS)) {

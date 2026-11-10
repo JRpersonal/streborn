@@ -1,6 +1,6 @@
 // UI 2.0 phase 5: the banner region in the shell's tokens (shell2/banners.css)
 // and the notices about ONE speaker moved to that speaker (shell2/attention.js,
-// main.js). The speaker update card reads --u-surface and --u-text in every
+// main.js). The speaker update card reads --u-tint and --u-text in every
 // theme and names the one speaker that is behind; the wedge and box issue
 // banners are hidden in the preview and say the same, with the same buttons,
 // on the speaker's card in the list and at the top of its Overview (no
@@ -40,7 +40,7 @@ for (const theme of ['dark', 'light', 'contrast']) {
   test.describe(`speaker update card, ${theme}`, () => {
     test.use({ ui2: true, theme, fakeClock: true, scenario: { banners: { speakerUpdate: true } } });
 
-    test('reads the surface and text tokens, names the one speaker behind, and is a named region', async ({ app }) => {
+    test('reads the tint and text tokens, names the one speaker behind, and is a named region', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
       await page.addStyleTag({ content: KILL_ANIM });
@@ -49,13 +49,14 @@ for (const theme of ['dark', 'light', 'contrast']) {
       const got = await cardEl.evaluate((el) => ({
         bg: getComputedStyle(el).backgroundColor,
         title: getComputedStyle(el.querySelector('.suc-title')).color,
-        bar: getComputedStyle(el).borderInlineStartColor,
+        icon: getComputedStyle(el.querySelector('.suc-body'), '::before').backgroundColor,
         barWidth: getComputedStyle(el).borderInlineStartWidth,
       }));
-      expect(got.bg).toBe(await tokenColour(page, '--u-surface'));
+      // A quiet tinted row with an accent icon, no heavy bar down its side.
+      expect(got.bg).toBe(await tokenColour(page, '--u-tint'));
       expect(got.title).toBe(await tokenColour(page, '--u-text'));
-      expect(got.bar).toBe(await tokenColour(page, '--u-accent'));
-      expect(got.barWidth).toBe('4px');
+      expect(got.icon).toBe(await tokenColour(page, '--u-accent'));
+      expect(got.barWidth).toBe('1px');
       // One speaker behind: the title names it (rule 1).
       await expect(cardEl.locator('.suc-title')).toHaveText(`${OLD.friendlyName} needs an update`);
       await expect(cardEl).toHaveAttribute('role', 'region');

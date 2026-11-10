@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Teraz gra: {{what}}",
   "ui2.speakers.speaker.netMore": "Szczegóły sieci",
   "ui2.speakers.speaker.hwKeysHeading": "Przyciski na głośniku",
+  "ui2.speakers.speaker.aboutHeading": "O tym głośniku",
   "ui2.speakers.speaker.otherHalf": "Otwórz drugą połowę: {{name}}",
   "ui2.speakers.groups.nowTitle": "Grają teraz razem",
   "ui2.speakers.groups.pairsTitle": "Pary stereo",

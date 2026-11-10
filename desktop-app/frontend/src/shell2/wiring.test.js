@@ -178,7 +178,12 @@ describe('UI 2.0 sidebar speaker list', () => {
     const tabs = markup.indexOf('<nav class="ui2-tabs" id="ui2Tabs" aria-label=');
     expect(tabs).toBeGreaterThan(0);
     expect(markup.indexOf('<main class="ui2-main"')).toBeGreaterThan(markup.indexOf('</nav>', tabs));
-    expect(shellCss).toMatch(/grid-template-areas:\s*"banners banners"\s*"side tabs"\s*"side main"\s*"player player";/);
+    // The notices are inline: a row of the page's column under the tabs, not a
+    // band across the window, and in the markup where they are on screen.
+    expect(shellCss).toMatch(/grid-template-areas:\s*"side tabs"\s*"side banners"\s*"side main"\s*"player player";/);
+    const region = markup.indexOf('id="ui2Banners"');
+    expect(region).toBeGreaterThan(markup.indexOf('</nav>', tabs));
+    expect(region).toBeLessThan(markup.indexOf('<main class="ui2-main"'));
     expect(srcOf('syncShellNav')).toContain("'#ui2Tabs .ui2-nav-item[data-view]'");
     // The floor and squeeze machinery that shared the height with the
     // navigation is gone.

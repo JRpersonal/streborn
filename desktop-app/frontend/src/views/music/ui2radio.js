@@ -83,6 +83,13 @@ export function ensureUi2Radio() {
   title.className = 'ui2-radio-title';
   title.textContent = t('ui2.nav.radio');
   head.insertBefore(title, head.firstChild);
+  // The search field sits next to the title, the first thing on the page, not
+  // in a row of its own under the keys. It is the Music view's own row, moved
+  // (field, Search, Top list and the Pandora switch keep their ids and their
+  // handlers); ui2radio.css shows it exactly when the row showed before: with
+  // a speaker chosen, on Discover.
+  const searchRow = search.querySelector('.search-input-row');
+  if (searchRow) head.insertBefore(searchRow, title.nextSibling);
   // Phase 5: the state of the speakers under the title (no speaker, none
   // chosen, only Bose originals), filled by fillUi2RadioState.
   const stateSlot = document.createElement('div');

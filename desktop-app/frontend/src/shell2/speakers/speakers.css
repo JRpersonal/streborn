@@ -42,9 +42,9 @@ html.ui2 .spa-sub {
   gap: var(--u-space-2);
   min-height: var(--u-target);
   padding: 0 var(--u-space-4);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-raised-edge);
   border-radius: var(--u-radius);
-  background: var(--u-surface);
+  background: var(--u-raised);
   color: var(--u-text);
   font-family: var(--u-font);
   font-size: var(--u-fs-md);

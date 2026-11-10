@@ -201,8 +201,8 @@ html.ui2 #view-library .lib2-acts {
   gap: var(--u-space-2);
 }
 html.ui2 #view-library .lib2-acts .u-btn--icon {
-  border-color: var(--u-border);
-  background: var(--u-surface);
+  border-color: var(--u-raised-edge);
+  background: var(--u-raised);
 }
 html.ui2 #view-library .lib2-none {
   padding: var(--u-space-4) var(--u-space-2);
@@ -305,7 +305,7 @@ html.ui2 #view-library .lib2-inline-error {
 html.ui2 #view-library .lib2-state {
   margin: var(--u-space-4) 0;
   padding: var(--u-space-4);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius-pill);
   background: var(--u-surface);
 }

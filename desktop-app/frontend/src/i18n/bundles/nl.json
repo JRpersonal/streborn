@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Speelt nu: {{what}}",
   "ui2.speakers.speaker.netMore": "Netwerkdetails",
   "ui2.speakers.speaker.hwKeysHeading": "Toetsen op de speaker",
+  "ui2.speakers.speaker.aboutHeading": "Over deze speaker",
   "ui2.speakers.speaker.otherHalf": "Andere helft openen: {{name}}",
   "ui2.speakers.groups.nowTitle": "Spelen nu samen",
   "ui2.speakers.groups.pairsTitle": "Stereoparen",

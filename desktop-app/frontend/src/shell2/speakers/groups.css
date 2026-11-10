@@ -59,7 +59,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneCurrent { margin-top: 0 !
 html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-status {
   margin: 0;
   padding: var(--u-space-2) var(--u-space-3);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-inline-start-width: 4px;
   border-radius: var(--u-radius);
   background: var(--u-surface);
@@ -150,8 +150,8 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-x {
   height: auto;
   min-height: var(--u-target);
   padding: var(--u-space-1) var(--u-space-3);
-  border: 1px solid var(--u-border);
-  background: var(--u-surface);
+  border: 1px solid var(--u-raised-edge);
+  background: var(--u-raised);
   color: var(--u-text);
   font-size: var(--u-fs-md);
   line-height: 1.2;
@@ -215,7 +215,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] #zoneUngroup.ui2-grp-off { dis
 html.ui2 #view-multiroom[data-ui2-route="groups"] .zone-card {
   min-width: 0;
   max-width: none;
-  border-color: var(--u-border);
+  border-color: var(--u-hairline);
   background: var(--u-bg);
   color: var(--u-text);
 }
@@ -249,7 +249,7 @@ html.ui2 #view-multiroom[data-ui2-route="groups"] .ui2-grp-h:focus-visible { out
 html.ui2 .ui2-grp-dialog {
   max-width: min(480px, calc(100vw - 32px));
   padding: var(--u-space-5);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);

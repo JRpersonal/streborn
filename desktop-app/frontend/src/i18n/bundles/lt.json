@@ -2474,6 +2474,7 @@
   "ui2.speakers.speaker.nowPlaying": "Dabar groja: {{what}}",
   "ui2.speakers.speaker.netMore": "Tinklo informacija",
   "ui2.speakers.speaker.hwKeysHeading": "Garsiakalbio mygtukai",
+  "ui2.speakers.speaker.aboutHeading": "Apie šį garsiakalbį",
   "ui2.speakers.speaker.otherHalf": "Atidaryti kitą pusę: {{name}}",
   "ui2.speakers.groups.nowTitle": "Dabar groja kartu",
   "ui2.speakers.groups.pairsTitle": "Stereo poros",

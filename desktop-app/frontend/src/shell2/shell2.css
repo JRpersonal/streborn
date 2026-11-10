@@ -10,14 +10,26 @@
    of every pairing is checked by shell2/tokens.test.js. */
 
 html.ui2 {
-  --u-bg: #17181B;
-  --u-sidebar: #1E1F23;
-  --u-surface: #1F2024;
+  /* Four neutral layers, the page darkest and each layer on it a step
+     lighter: the page, the sidebar and the player, a card, and the fill of a
+     quiet control. --u-hairline parts them; it is decoration (a card's edge, a
+     divider), never the only edge of a field. --u-border stays the 3:1 edge
+     of text fields, selects and anything told by its outline alone.
+     --u-raised-edge is the outline of a quiet control: the fill's own colour
+     where the fill shows, a real line in the contrast theme. --u-tint is the
+     accent-tinted ground of an inline notice. */
+  --u-bg: #131417;
+  --u-sidebar: #17181C;
+  --u-surface: #1D1F24;
+  --u-raised: #262930;
+  --u-raised-edge: #262930;
+  --u-hairline: #2E3138;
+  --u-tint: #16222F;
   --u-selected: #203955;
   --u-action: #1F6FB2;
   --u-on-action: #FFFFFF;
   --u-accent: #66BBDD;
-  --u-text: #E9EAEE;
+  --u-text: #ECEDF0;
   --u-muted: #A9ADB6;
   --u-border: #6E727C;
   --u-ok: #5CC98A;
@@ -58,8 +70,11 @@ html.ui2 {
   /* The keyboard focus outline and its distance from the control. */
   --u-focus-ring: 2px solid var(--u-focus);
   --u-focus-offset: 2px;
-  --u-sidebar-w: 264px;
-  --u-player-min: 80px;
+  /* The corner of a card and of a pill-shaped notice, a step rounder than a
+     control's. */
+  --u-radius-card: 10px;
+  --u-sidebar-w: 256px;
+  --u-player-min: 76px;
   /* The sidebar speaker list: one row's height and how many rows of a pinned
      group show before it scrolls on its own. The other speakers take the rest
      of the sidebar's height. */
@@ -70,8 +85,12 @@ html.ui2 {
 
 html.ui2.a11y-light {
   --u-bg: #FFFFFF;
-  --u-sidebar: #F3F3F5;
-  --u-surface: #F7F7F8;
+  --u-sidebar: #F7F7F9;
+  --u-surface: #F3F4F6;
+  --u-raised: #E8E9ED;
+  --u-raised-edge: #E8E9ED;
+  --u-hairline: #DDDFE4;
+  --u-tint: #E6F0F8;
   --u-selected: #DCEAF6;
   --u-action: #1769AA;
   --u-on-action: #FFFFFF;
@@ -91,6 +110,10 @@ html.ui2.a11y-contrast {
   --u-bg: #000000;
   --u-sidebar: #000000;
   --u-surface: #0A0A0A;
+  --u-raised: #1A1A1A;
+  --u-raised-edge: #FFFFFF;
+  --u-hairline: #FFFFFF;
+  --u-tint: #001F3D;
   --u-selected: #003A70;
   --u-action: #4FC3FF;
   --u-on-action: #000000;
@@ -126,7 +149,10 @@ html.ui2 .u-btn {
   cursor: pointer;
 }
 html.ui2 .u-btn--primary { background: var(--u-action); color: var(--u-on-action); }
-html.ui2 .u-btn--secondary { background: var(--u-surface); color: var(--u-text); border-color: var(--u-border); }
+/* The quiet button: a fill one step above a card, told by its words. Its edge
+   is the fill's own colour, a real line only in the contrast theme. */
+html.ui2 .u-btn--secondary:hover { background: color-mix(in srgb, var(--u-raised) 94%, var(--u-text)); }
+html.ui2 .u-btn--secondary { background: var(--u-raised); color: var(--u-text); border-color: var(--u-raised-edge); }
 /* A filled button's shape reaches 3:1 against the surface it sits on; the
    danger button also draws its edge in the danger text colour (4.5:1 there). */
 html.ui2 .u-btn--danger { background: var(--u-danger-fill); color: var(--u-on-danger); border-color: var(--u-danger); }
@@ -288,8 +314,8 @@ html.ui2 .u-row.is-selected::before {
 /* Cards. The empty / offline / error variants are components only in phase 1. */
 html.ui2 .u-card {
   padding: var(--u-space-4);
-  border: 1px solid var(--u-border);
-  border-radius: var(--u-radius);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius-card);
   background: var(--u-surface);
   color: var(--u-text);
 }
@@ -307,7 +333,7 @@ html.ui2 .u-popover {
   max-height: min(60vh, 480px);
   overflow: auto;
   padding: var(--u-space-2);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
   background: var(--u-surface);
   color: var(--u-text);
@@ -403,19 +429,22 @@ html.ui2 .ui2-shell {
   grid-template-columns: var(--u-sidebar-w) minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "banners banners"
     "side tabs"
+    "side banners"
     "side main"
     "player player";
   background: var(--u-bg);
 }
 html.ui2 .ui2-shell > * { min-width: 0; min-height: 0; }
 
-/* Window-wide banners: on top, and never more than a third of the window, so
-   two or three of them at once still leave the view and the player usable. */
+/* The notices about the computer or every speaker at once: inline, in the
+   page's column under the tabs, on every view. Never more than a third of the
+   window, so two or three of them at once still leave the view and the player
+   usable. */
 html.ui2 .ui2-banners {
   grid-area: banners;
   max-height: 30vh;
+  padding-inline: var(--u-space-5);
   overflow: auto;
 }
 
@@ -427,14 +456,14 @@ html.ui2 .ui2-sidebar {
   flex-direction: column;
   background: var(--u-sidebar);
   color: var(--u-text);
-  border-inline-end: 1px solid var(--u-border);
+  border-inline-end: 1px solid var(--u-hairline);
   font-family: var(--u-font);
 }
 html.ui2 .ui2-side-top {
   display: flex;
   flex-direction: column;
   gap: var(--u-space-4);
-  padding: var(--u-space-2) var(--u-space-2) 2px;
+  padding: 10px var(--u-space-2) 2px;
 }
 
 /* The sidebar is the speakers' (2026-11-02): the logo, the speaker section
@@ -446,41 +475,50 @@ html.ui2 .ui2-side-top {
    here they are narrower so all three fit side by side. */
 html.ui2 .ui2-support {
   flex: 0 0 auto;
-  padding: var(--u-space-2) var(--u-space-2) 6px;
-  border-top: 1px solid var(--u-border);
+  padding: 10px var(--u-space-3) 6px;
+  border-top: 1px solid var(--u-hairline);
 }
 /* The same words as the classic donate rail (footer.donateSlogan, with the
-   cup): Jens, 2026-11-02, "the same text as before, that matters". */
+   cup): Jens, 2026-11-02, "the same text as before, that matters". Quiet in
+   colour (the muted text, 4.5:1 on the sidebar), never hidden. */
 html.ui2 .ui2-support-head {
-  margin: 0 var(--u-space-1) 6px;
-  color: var(--u-text);
-  font-size: var(--u-fs-sm);
-  font-weight: var(--u-fw-semibold);
+  margin: 0 0 6px;
+  color: var(--u-muted);
+  font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-regular);
   line-height: 1.35;
 }
-html.ui2 .ui2-support-cup { font-size: var(--u-fs-lg); }
+html.ui2 .ui2-support-cup { font-size: var(--u-fs-sm); }
 html.ui2 #ui2Sidebar .ui2-donate {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 /* #ui2Support in the selector: help.css's shared rule (min-width 140px) has
-   the same specificity otherwise and loads later. */
+   the same specificity otherwise and loads later. Here the three buttons are
+   quiet controls like the others in the frame: the providers' brand colours
+   stay on Help and info, where the buttons are the subject of the page. Their
+   names, their order and what they open are the same. */
 html.ui2 #ui2Sidebar #ui2Support .donate-btn {
   gap: var(--u-space-1);
   min-width: 0;
   padding: 0 var(--u-space-1);
+  border-color: var(--u-raised-edge);
+  background: var(--u-raised);
+  color: var(--u-text);
   font-size: var(--u-fs-xs);
   white-space: nowrap;
 }
-html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: var(--u-fs-md); }
+html.ui2 #ui2Sidebar #ui2Support .donate-btn:hover { background: color-mix(in srgb, var(--u-raised) 94%, var(--u-text)); }
+html.ui2 #ui2Sidebar #ui2Support .donate-btn .donate-btn-icon { color: var(--u-muted); }
+html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: var(--u-fs-sm); }
+html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark :is(.pay, .pal) { color: var(--u-text); }
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   gap: 2px;
-  padding: 6px var(--u-space-2);
-  border-top: 1px solid var(--u-border);
+  padding: 2px var(--u-space-2) 6px;
 }
 
 html.ui2 .ui2-brand {
@@ -530,15 +568,21 @@ html.ui2 .ui2-spk-pinned {
   flex: 0 1 auto;
   flex-direction: column;
   min-height: 0;
-  margin-bottom: var(--u-space-1);
-  padding-bottom: var(--u-space-1);
-  border-bottom: 1px solid var(--u-border);
+  margin-bottom: 6px;
+}
+/* The group you control sits on a card of its own, a layer above the sidebar;
+   the heading over it stays on the sidebar. */
+html.ui2 .ui2-spk-pinned .ui2-spk-list {
+  margin-inline: var(--u-space-1);
+  border-radius: var(--u-radius-card);
 }
 html.ui2 .ui2-spk-subhead {
-  padding: 0 var(--u-space-3) var(--u-space-1);
+  padding: 2px var(--u-space-3);
   color: var(--u-muted);
   font-size: var(--u-fs-xs);
-  font-weight: var(--u-fw-semibold);
+  font-weight: var(--u-fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 html.ui2 .ui2-spk-list {
   display: flex;
@@ -588,6 +632,15 @@ html.ui2 :is(.ui2-spk-scroll, .ui2-spk-pinned .ui2-spk-list) {
     linear-gradient(transparent, color-mix(in srgb, var(--u-text) 22%, transparent)) bottom / 100% 10px no-repeat scroll;
   background-color: var(--u-sidebar);
 }
+/* The same on the pinned group's card. */
+html.ui2 .ui2-spk-pinned .ui2-spk-list {
+  background:
+    linear-gradient(var(--u-surface) 40%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--u-surface) 60%) bottom / 100% 24px no-repeat local,
+    linear-gradient(color-mix(in srgb, var(--u-text) 22%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--u-text) 22%, transparent)) bottom / 100% 10px no-repeat scroll;
+  background-color: var(--u-surface);
+}
 /* Named for screen readers (the section's heading); on screen the sub
    headings and the rows say it, and the height goes to the rows. */
 html.ui2 .u-sr-only {
@@ -622,7 +675,11 @@ html.ui2 .ui2-spk-pick {
   text-align: start;
   cursor: pointer;
 }
-html.ui2 .ui2-spk-pick:hover { background: var(--u-surface); }
+html.ui2 .ui2-spk-pick:hover { background: var(--u-raised); }
+/* In the sidebar a speaker's state is words and a dot beside its name, without
+   the pill's outline: eleven outlined pills made the list the loudest thing in
+   the window. A running update keeps its outline (.u-pill--busy). */
+html.ui2 .ui2-spk-pick .u-pill:not(.u-pill--busy) { padding: 0; border-color: transparent; }
 html.ui2 .ui2-spk-row.is-current .ui2-spk-pick { background: var(--u-selected); }
 html.ui2 .ui2-spk-row.is-current .ui2-spk-pick::before {
   content: '';
@@ -649,11 +706,15 @@ html.ui2 .ui2-spk-pick .ui2-room-badges { flex: 0 1 auto; }
 html.ui2 .ui2-spk-row.is-offline .ui2-spk-name { color: var(--u-muted); font-weight: var(--u-fw-regular); }
 html.ui2 .ui2-spk-act {
   flex: 0 0 auto;
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-raised-edge);
   font-size: var(--u-fs-xl);
   font-weight: var(--u-fw-bold);
 }
-html.ui2 .ui2-spk-act:hover { background: var(--u-surface); }
+/* "+" and "-" are quiet: the glyph alone until the pointer or the keyboard is
+   on it. The contrast theme keeps the outline. */
+html.ui2 .ui2-spk-act { border-color: transparent; color: var(--u-muted); }
+html.ui2.a11y-contrast .ui2-spk-act { border-color: var(--u-border); color: var(--u-text); }
+html.ui2 .ui2-spk-act:hover { background: var(--u-raised); color: var(--u-text); }
 html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
 html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
@@ -680,8 +741,8 @@ html.ui2 .ui2-tabs {
   flex-wrap: wrap;
   align-items: stretch;
   column-gap: 2px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--u-border);
+  padding: 0 var(--u-space-3);
+  border-bottom: 1px solid var(--u-hairline);
   background: var(--u-bg);
   color: var(--u-text);
   font-family: var(--u-font);
@@ -698,11 +759,10 @@ html.ui2 .ui2-nav-item {
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  /* The 40px target and no more: every pixel of the row is taken from the
-     page below it (Radio still shows its first station row without
-     scrolling in the default window). */
-  min-height: var(--u-target);
-  padding: 0 10px;
+  /* A 48px row: the six keys take one row of tiles now, so Radio shows its
+     first stations without scrolling in the default window all the same. */
+  min-height: 48px;
+  padding: 0 var(--u-space-3);
   border: 0;
   border-radius: var(--u-radius) var(--u-radius) 0 0;
   background: transparent;
@@ -741,7 +801,16 @@ html.ui2 .ui2-app-settings {
 html.ui2 .ui2-app-settings .app-a11y,
 html.ui2 .ui2-app-settings .app-locale { margin: 0; }
 html.ui2 .ui2-app-settings .a11y-dd-trigger,
-html.ui2 .ui2-app-settings .locale-dd-trigger { min-height: var(--u-target); padding-inline: var(--u-space-3); }
+html.ui2 .ui2-app-settings .locale-dd-trigger {
+  min-height: var(--u-target);
+  padding-inline: var(--u-space-3);
+  border-color: transparent;
+  background: transparent;
+  color: var(--u-muted);
+}
+html.ui2 .ui2-app-settings :is(.a11y-dd-trigger, .locale-dd-trigger):hover,
+html.ui2 .ui2-app-settings :is(.a11y-dd-trigger, .locale-dd-trigger)[aria-expanded="true"] { background: var(--u-raised); color: var(--u-text); }
+html.ui2.a11y-contrast .ui2-app-settings :is(.a11y-dd-trigger, .locale-dd-trigger) { border-color: var(--u-border); color: var(--u-text); }
 html.ui2 .ui2-app-settings .a11y-dd-menu,
 html.ui2 .ui2-app-settings .locale-dd-menu {
   inset: auto auto 100% auto;
@@ -821,7 +890,7 @@ html.ui2 .ui2-player {
   gap: var(--u-space-2);
   min-height: var(--u-player-min);
   padding: var(--u-space-2) var(--u-space-4);
-  border-top: 1px solid var(--u-border);
+  border-top: 1px solid var(--u-hairline);
   background: var(--u-sidebar);
   color: var(--u-text);
   font-family: var(--u-font);
@@ -869,24 +938,82 @@ html.ui2 .spotify-refused-more summary { color: var(--u-muted); }
 html.ui2 .spotify-refused-more summary:focus-visible { outline: var(--u-focus-ring); outline-offset: var(--u-focus-offset); }
 html.ui2 .ui2-player .controls {
   flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--u-space-2);
   margin-bottom: 0;
 }
 html.ui2 .ui2-player .btn { min-width: var(--u-target); min-height: var(--u-target); }
-/* Power in the transport (#1796): the input row's toggle, sized like its
-   neighbours Pause and Stop (their padding and corners; a larger glyph, as it
-   has no word). Its colours, lit while the speaker is on, stay the classic
-   .btn-power ones from style.css. */
-html.ui2 .ui2-player .controls #powerBtn {
-  padding: var(--u-space-2) var(--u-space-3);
-  border-radius: 6px;
+/* The transport: one round primary button (Play or Pause, the inverse of the
+   page: the text colour as its fill, the page colour as its glyph) and every
+   other control quiet around it, a round 44px target without a fill of its
+   own. Each is the classic button, with its handler and its words: the words
+   stay the button's name (and its tooltip, mount.js nameTransport) and are
+   drawn at size 0; the glyph is drawn here in the text colour, so it reaches
+   3:1 in every theme, which the classic emoji-range characters did not. */
+html.ui2 .ui2-player .controls > .btn,
+html.ui2 .ui2-player .volume-control .vol-step {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--u-text);
+  font-family: var(--u-font);
   font-size: var(--u-fs-lg);
   line-height: 1;
 }
-html.ui2 .ui2-player #pauseBtn {
-  min-width: 48px;
-  min-height: 48px;
-  border-radius: 24px;
+html.ui2 .ui2-player .volume-control .vol-step { width: var(--u-target); height: var(--u-target); }
+html.ui2 .ui2-player .controls > .btn.hidden { display: none; }
+html.ui2 .ui2-player .controls > .btn:hover,
+html.ui2 .ui2-player .volume-control .vol-step:hover { background: var(--u-raised); }
+html.ui2 .ui2-player .controls :is(#pauseBtn, #stopBtn) { font-size: 0; }
+html.ui2 .ui2-player .controls :is(#pauseBtn, #stopBtn)::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5' y='5' width='14' height='14' rx='2'/%3E%3C/svg%3E") center / contain no-repeat;
 }
+html.ui2 .ui2-player .controls #pauseBtn {
+  width: 52px;
+  height: 52px;
+  background: var(--u-text);
+  color: var(--u-bg);
+}
+html.ui2 .ui2-player .controls #pauseBtn:hover { background: color-mix(in srgb, var(--u-text) 88%, var(--u-bg)); }
+html.ui2 .ui2-player .controls #pauseBtn::before {
+  width: 22px;
+  height: 22px;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5' y='4' width='5' height='16' rx='1'/%3E%3Crect x='14' y='4' width='5' height='16' rx='1'/%3E%3C/svg%3E");
+}
+html.ui2 .ui2-player .controls #pauseBtn[data-ui2-glyph="play"]::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 4v16l13-8z'/%3E%3C/svg%3E");
+}
+/* Power in the transport (#1796): the input row's toggle, one of the quiet
+   round controls. While the speaker is on it is lit: the accent for its glyph
+   and a ring, so on and off differ by more than a colour (aria-pressed says
+   it to a screen reader). */
+html.ui2 .ui2-player .controls #powerBtn { font-size: 0; }
+html.ui2 .ui2-player .controls #powerBtn::before {
+  content: '';
+  width: 20px;
+  height: 20px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 3v9'/%3E%3Cpath d='M6.3 6.8a8 8 0 1 0 11.4 0'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html.ui2 .ui2-player .controls #powerBtn.on {
+  border-color: var(--u-accent);
+  color: var(--u-accent);
+}
+/* A press on its way to the speaker: by colour and cursor, never by opacity. */
+html.ui2 .ui2-player .controls > .btn:disabled { color: var(--u-muted); cursor: progress; }
+html.ui2 .ui2-player .controls #pauseBtn:disabled { background: var(--u-muted); color: var(--u-bg); }
 html.ui2 .ui2-player .volume-control {
   flex: 1 1 auto;
   min-width: 0;
@@ -1098,7 +1225,7 @@ html.ui2 #view-spotify .sp2-key {
   min-height: 56px;
   min-width: 0;
   padding: var(--u-space-2) var(--u-space-3);
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: var(--u-radius);
   background: var(--u-bg);
   color: var(--u-text);
@@ -1121,7 +1248,7 @@ html.ui2 #view-spotify .sp2-key-n {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--u-border);
+  border: 1px solid var(--u-hairline);
   border-radius: 6px;
   font-weight: var(--u-fw-bold);
 }
@@ -1164,7 +1291,7 @@ html.ui2 #view-spotify .sp2-acct-list {
   padding: 0;
   list-style: none;
 }
-html.ui2 #view-spotify .sp2-acct { padding: var(--u-space-2) 0; border-top: 1px solid var(--u-border); }
+html.ui2 #view-spotify .sp2-acct { padding: var(--u-space-2) 0; border-top: 1px solid var(--u-hairline); }
 html.ui2 #view-spotify .sp2-acct-head {
   display: flex;
   flex-wrap: wrap;
