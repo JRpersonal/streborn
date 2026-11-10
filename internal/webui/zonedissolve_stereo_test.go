@@ -1,9 +1,7 @@
 package webui
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"context"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/zones"
@@ -22,17 +20,8 @@ func TestPlainUngroupLeavesAPersistedStereoPairIntact(t *testing.T) {
 	}
 	s, st := staleDocServer(t, "192.0.2.10", pair, true)
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/box/zone", nil) // no ?stereo=1
-	w := httptest.NewRecorder()
-	s.handleZoneDissolve(w, req)
+	body := s.dissolveZone(context.Background(), zoneDissolveReq{}) // no ?stereo=1
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("bad JSON: %v (%s)", err, w.Body.String())
-	}
 	if body["stereoPairKept"] != true || body["nothing"] != true {
 		t.Fatalf("a plain Ungroup on a pair must report it was kept, got %v", body)
 	}

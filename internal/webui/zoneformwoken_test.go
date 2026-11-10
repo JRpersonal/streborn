@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -152,13 +151,10 @@ func TestANativeActivationThatIsNoEchoStillCountsAsTheBoxs(t *testing.T) {
 // phases, so the three that carry these steps are read in their order.
 func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("zones_stereo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	src := zonesSource(t)
 	body := ""
 	for _, fn := range []string{"zoneFormPrepareResume", "zoneFormWakeMaster", "zoneFormVerify"} {
-		part := funcBody(t, string(src), fn)
+		part := funcBody(t, src, fn)
 		if part == "" {
 			t.Fatalf("%s not found", fn)
 		}
@@ -187,14 +183,8 @@ func TestZoneFormNeverCarriesAGroupWakeResume(t *testing.T) {
 // order, and hold the auto-attach across the /addGroup round trip.
 func TestStereoPairNeverCarriesAGroupWakeResume(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("zones_stereo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := funcBody(t, string(src), "formStereoPair")
-	if body == "" {
-		t.Fatal("formStereoPair not found")
-	}
+	src := zonesSource(t)
+	body := stereoPairSource(t, src)
 	before := strings.Index(body, `s.masterPlaysUsersMusic(ctx, "before pairing"`)
 	capture := strings.Index(body, "masterResumeForZone(np, masterRef)")
 	wake := strings.Index(body, "s.quietWake(ctx)")

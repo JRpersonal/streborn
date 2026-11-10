@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -117,23 +116,23 @@ func TestPairRefusalAnswersTheAppWithTheReason(t *testing.T) {
 	t.Parallel()
 	s := quietServer(pairSelfHost)
 	withSpeakers(s, map[string]boxapi.Zone{pairSelfHost: groupedZone()}, nil)
-	rec := httptest.NewRecorder()
 
-	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
+	ans := s.formStereoPair(context.Background(), boxapi.New(pairSelfHost),
 		boxapi.ZoneMember{DeviceID: "AABBCCDDEEFF", IP: pairSelfHost},
 		[]boxapi.ZoneMember{{DeviceID: "112233445566"}}, "Living room", nil)
 
-	if rec.Code != 200 {
-		t.Fatalf("the app must get a 200 it can read, got %d", rec.Code)
+	if ans.Status != 200 {
+		t.Fatalf("the app must get a 200 it can read, got %d", ans.Status)
 	}
+	answer := jsonBody(t, ans)
 	var out struct {
 		OK     bool     `json:"ok"`
 		Stereo bool     `json:"stereo"`
 		InZone []string `json:"inZone"`
 		Error  string   `json:"error"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("answer is not JSON: %v (%s)", err, rec.Body.String())
+	if err := json.Unmarshal([]byte(answer), &out); err != nil {
+		t.Fatalf("answer is not JSON: %v (%s)", err, answer)
 	}
 	if out.OK || !out.Stereo {
 		t.Errorf("the refusal must read ok:false stereo:true, got %+v", out)
@@ -177,15 +176,15 @@ func TestPairRefusedWhenAGroupIsStoredButNotLive(t *testing.T) {
 		pairSelfHost:    {}, // idle: the permanent group is not formed right now
 		pairPartnerHost: {},
 	}, nil)
-	rec := httptest.NewRecorder()
 
-	s.formStereoPair(rec, context.Background(), boxapi.New(pairSelfHost),
+	ans := s.formStereoPair(context.Background(), boxapi.New(pairSelfHost),
 		boxapi.ZoneMember{DeviceID: "AABBCCDDEEFF", IP: pairSelfHost},
 		[]boxapi.ZoneMember{{DeviceID: "999999999999"}}, "Living room", nil)
 
-	if rec.Code != 200 {
-		t.Fatalf("the app must get a 200 it can read, got %d", rec.Code)
+	if ans.Status != 200 {
+		t.Fatalf("the app must get a 200 it can read, got %d", ans.Status)
 	}
+	answer := jsonBody(t, ans)
 	var out struct {
 		OK          bool     `json:"ok"`
 		Stereo      bool     `json:"stereo"`
@@ -193,8 +192,8 @@ func TestPairRefusedWhenAGroupIsStoredButNotLive(t *testing.T) {
 		InZone      []string `json:"inZone"`
 		Error       string   `json:"error"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("answer is not JSON: %v (%s)", err, rec.Body.String())
+	if err := json.Unmarshal([]byte(answer), &out); err != nil {
+		t.Fatalf("answer is not JSON: %v (%s)", err, answer)
 	}
 	if out.OK || !out.Stereo || !out.StoredGroup {
 		t.Errorf("the refusal must read ok:false stereo:true storedGroup:true, got %+v", out)

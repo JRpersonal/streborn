@@ -31,7 +31,7 @@ func srcOf(t *testing.T, name string) string {
 // This asserts the reading happens on every path and changes no decision.
 
 func TestTheFormSettleStateIsLoggedOnEveryPath(t *testing.T) {
-	src := srcOf(t, "zones_stereo.go")
+	src := zonesSource(t)
 	at := strings.Index(src, "func (s *Server) resumeAfterZoneForm")
 	if at < 0 {
 		t.Fatal("resumeAfterZoneForm not found")
@@ -66,7 +66,7 @@ func TestTheFormSettleStateIsLoggedOnEveryPath(t *testing.T) {
 // from the master. That last one is the whole guard against Martin's silent
 // members coming back.
 func TestTheFreshFormSkipStillAsksTheBoxAndTheMembers(t *testing.T) {
-	src := srcOf(t, "zones_stereo.go")
+	src := zonesSource(t)
 	at := strings.Index(src, "func (s *Server) resumeAfterZoneForm")
 	body := src[at : at+4200]
 

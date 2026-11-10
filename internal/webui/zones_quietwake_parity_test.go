@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,17 +28,15 @@ import (
 // have caught a sibling nobody remembered to update.
 //
 // handleZoneForm is split into phases; its wake lives in zoneFormWakeMaster.
+// formStereoPair is split the same way; its wake lives in stereoPairWake.
 func TestBothGroupFormPathsWakeTheMasterQuietly(t *testing.T) {
-	src, err := os.ReadFile("zones_stereo.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(src)
+	src := zonesSource(t)
+	text := src
 
-	for _, fn := range []string{"zoneFormWakeMaster", "formStereoPair"} {
+	for _, fn := range []string{"zoneFormWakeMaster", "stereoPairWake"} {
 		body := funcBody(t, text, fn)
 		if body == "" {
-			t.Fatalf("%s not found in zones_stereo.go; if it was renamed, update this test rather than deleting it", fn)
+			t.Fatalf("%s not found in the zones sources; if it was renamed, update this test rather than deleting it", fn)
 		}
 		if !strings.Contains(body, "s.quietWake(ctx)") {
 			t.Errorf("%s does not wake the master quietly, so forming a group there starts the speaker's last source", fn)
