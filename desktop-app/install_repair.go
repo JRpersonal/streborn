@@ -24,7 +24,26 @@ import (
 // pointing at that directory, bypassing the stick entirely. /mnt/nv is a
 // writable ubifs even when the USB mount is dead. Requires SSH up (Bose stock
 // root SSH) and a real embedded agent (release build, not a dev stub).
+//
+// This is the entry the window's "repair over SSH" button calls, so it takes
+// the one-writer-per-speaker claim itself (boxbusy.go): the repair stops the
+// speaker's agent, rewrites its NAND folder and restarts it, and none of that
+// may start under a running install, update, removal or firmware flash, nor
+// may one of those start under it. The install calls repairInstallViaSSH
+// directly, under the claim it already holds.
 func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
+	release, busyErr := writesInFlight.claim(host, "a repair")
+	if busyErr != nil {
+		a.logger.Info("repair_ssh: refused, the speaker is busy", "host", host, "err", busyErr)
+		return InstallResult{Step: "busy", Message: busyErr.Error()}, busyErr
+	}
+	defer release()
+	return a.repairInstallViaSSH(host, model)
+}
+
+// repairInstallViaSSH is the repair itself, for a caller that already holds
+// the speaker's write claim (repairAndAwaitAgent, inside a running install).
+func (a *App) repairInstallViaSSH(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "repair-ssh"}
 
 	if len(agentbin.Bytes()) == 0 {

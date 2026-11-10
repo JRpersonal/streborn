@@ -998,7 +998,9 @@ type repairPlan struct {
 // also carries the box diagnostics, as every install failure with SSH up does
 // (boxInstallDiag), so a saved log holds the evidence in one shot.
 func (a *App) repairAndAwaitAgent(res InstallResult, host, model, fwNote string, p repairPlan) (out InstallResult, done bool, err error) {
-	rr, rerr := a.RepairInstallViaSSH(host, model)
+	// The unexported repair: this runs inside an install, which already holds
+	// the speaker's write claim (the exported one would refuse itself).
+	rr, rerr := a.repairInstallViaSSH(host, model)
 	if rr.Code == "repair-box-restarted" {
 		// The speaker went down under install.sh. RepairInstallViaSSH has
 		// already worded the wait-and-send-logs advice (and restarted the

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"streborn-app/agentbin"
 )
 
 // Removing STR and flashing Bose's firmware both end in a restart of the
@@ -58,6 +60,68 @@ func TestFirmwareFlashIsRefusedWhileTheSpeakerIsBeingWrittenTo(t *testing.T) {
 	}
 	if took := time.Since(begin); took > 2*time.Second {
 		t.Errorf("the refusal took %v: it must come before anything talks to the speaker", took)
+	}
+}
+
+// The SSH repair behind the failure screen's button stops the speaker's agent,
+// rewrites its NAND folder and restarts it, and it was the one writer left
+// without the claim: a click on it under a running update or removal ran both
+// against the same speaker.
+func TestRepairIsRefusedWhileTheSpeakerIsBeingWrittenTo(t *testing.T) {
+	const host = "192.0.2.64"
+	release, err := writesInFlight.claim(host, "an update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	a := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	begin := time.Now()
+	res, err := a.RepairInstallViaSSH(host, "SoundTouch 20")
+	if err == nil || !strings.HasPrefix(err.Error(), errBoxBusyToken) || !strings.Contains(err.Error(), "an update is running") {
+		t.Fatalf("err = %v, want the same refusal an install or update gives", err)
+	}
+	if res.OK || res.Step != "busy" || res.Message != err.Error() {
+		t.Errorf("result = %+v, want it refused as busy with the refusal as its message", res)
+	}
+	if took := time.Since(begin); took > 2*time.Second {
+		t.Errorf("the refusal took %v: it must come before anything talks to the speaker", took)
+	}
+	// The refusal must not take the claim away from the run that holds it.
+	if !writesInFlight.isBusy(host) {
+		t.Error("the refused repair released the claim of the update that is running")
+	}
+}
+
+// A repair on one speaker is not held up by work on another, and it gives its
+// own speaker back when it ends. Runs on the checked-in empty agent stub, where
+// the repair ends before it reaches the network; with a real agent embedded
+// (a release build tree) it would go on to an SSH handshake, so it is skipped.
+func TestRepairOnAnotherSpeakerIsNotRefusedAndReleases(t *testing.T) {
+	if agentbin.Available() {
+		t.Skip("a real agent is embedded: the repair would go on to the network")
+	}
+	const busyHost, host = "192.0.2.65", "192.0.2.66"
+	release, err := writesInFlight.claim(busyHost, "an update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	a := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	res, err := a.RepairInstallViaSSH(host, "SoundTouch 20")
+	if err != nil || res.Step == "busy" || strings.Contains(res.Message, errBoxBusyToken) {
+		t.Fatalf("result = %+v err = %v, want a repair on a different speaker let through", res, err)
+	}
+	if res.Code != "no-embedded-agent" {
+		t.Errorf("code = %q, want the repair to have run up to its embedded-agent check", res.Code)
+	}
+	if writesInFlight.isBusy(host) {
+		t.Error("the ended repair kept its speaker claimed")
+	}
+	// The install's own repair step runs under the install's claim and must
+	// not ask for a second one, or every install would refuse its own repair.
+	helper := funcBody(t, readInstallSrc(t), "func (a *App) repairAndAwaitAgent(")
+	if strings.Contains(helper, "a.RepairInstallViaSSH(") || !strings.Contains(helper, "a.repairInstallViaSSH(") {
+		t.Error("repairAndAwaitAgent must call the unexported repair: it already holds the speaker's claim")
 	}
 }
 
