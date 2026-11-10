@@ -9,6 +9,24 @@ import { t } from '../i18n/index.js';
 // to be reworded and translated.
 export const BOX_BUSY_TOKEN = 'STR_BUSY:';
 
+// busyRefusalText is the sentence for a start the guard turned away, or '' when
+// err is anything else. Every operation that takes the guard (update, install,
+// repair, removal, firmware flash) can be refused by it, and the refusal
+// arrives as a rejected call or as a result's message depending on the
+// operation, so err is an Error, a string or a message field. name is the
+// speaker's label.
+export function busyRefusalText(err, name) {
+  const msg = String((err && err.message) || err || '');
+  if (!msg.includes(BOX_BUSY_TOKEN)) return '';
+  return t('update.alreadyRunning', { name: name || t('common.unknown') });
+}
+
+// busyRefusalOr is the text to show for a failure: the refusal sentence when
+// the guard turned the start away, else the error as it came.
+export function busyRefusalOr(err, name) {
+  return busyRefusalText(err, name) || String(err);
+}
+
 // step numbers the phases a speaker goes through, because the middle of the
 // sequence looks exactly like the end of it.
 //

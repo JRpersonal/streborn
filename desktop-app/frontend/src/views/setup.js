@@ -36,6 +36,7 @@ import {
   neverReadsStick,
 } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
+import { busyRefusalOr } from '../update/shared.js';
 import { COUNTRIES, optFlag } from '../localization.js';
 // langOptionsHtml + wireCombobox are exported by the settings view (the Bose
 // language dropdown and the name combobox are shared between Settings and Setup);
@@ -2592,7 +2593,7 @@ function verifyInstalledState(box, onState) {
     clearInterval(timerHandle);
     if (offProgress) offProgress();
     try { SetOTARunning(false); } catch {}
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: busyRefusalOr(err, foundBox.friendlyName || foundBox.name || foundBox.host) }))}</div>`
       + installFailureReportHtml());
     wireInstallFailureReport(foundBox);
     fillFailReport(foundBox, 'install', String(err));
@@ -2711,7 +2712,7 @@ function verifyInstalledState(box, onState) {
             render(`<div class="setup-err">${escapeHtml(t('setup.repairSSHFailed', { msg: m2 }))}</div>` + log2);
           }
         } catch (e) {
-          render(`<div class="setup-err">${escapeHtml(t('setup.repairSSHFailed', { msg: String(e) }))}</div>`);
+          render(`<div class="setup-err">${escapeHtml(t('setup.repairSSHFailed', { msg: busyRefusalOr(e, foundBox.friendlyName || foundBox.name || foundBox.host) }))}</div>`);
         }
       };
     }

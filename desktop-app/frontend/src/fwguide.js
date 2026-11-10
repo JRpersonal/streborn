@@ -23,6 +23,7 @@
 // one backend call, with the Wails functions passed in.
 import { t } from './i18n/index.js';
 import { escapeHtml } from './utils.js';
+import { busyRefusalText } from './update/shared.js';
 import { LATEST_BOSE_FIRMWARE, boseFwArticles, firmwareOlderThanLatest } from './firmware.js';
 import {
   FIRMWARE_LADDER_URL,
@@ -161,7 +162,11 @@ export function fwFlashStatus(p) {
     case 'upload': return pct === null ? t('fwGuide.autoUpload', { pct: '' }).trim() : t('fwGuide.autoUpload', { pct: `${pct} %` });
     case 'install': return t('fwGuide.autoInstall');
     case 'done': return t('fwGuide.autoDone', { version: e.version || '?' });
-    case 'error': return t('fwGuide.autoFailed', { error: e.error || '?' });
+    case 'error':
+      // A flash the one-write-per-speaker guard turned away did not fail: an
+      // install, update or removal is still running on the speaker. The same
+      // sentence the update gives, not the raw STR_BUSY error in a failure line.
+      return busyRefusalText(e.error, e.name) || t('fwGuide.autoFailed', { error: e.error || '?' });
     default: return t('fwGuide.autoStarting');
   }
 }
@@ -379,7 +384,7 @@ async function startFlash(el, id, deps) {
     const res = await deps.flash(id.host, false);
     set({ phase: 'done', version: res && res.after });
   } catch (err) {
-    set({ phase: 'error', error: String((err && err.message) || err || '') });
+    set({ phase: 'error', error: String((err && err.message) || err || ''), name: id.model || id.host });
   } finally {
     if (typeof off === 'function') off();
   }
