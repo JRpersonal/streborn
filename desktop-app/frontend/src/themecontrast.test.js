@@ -177,3 +177,31 @@ describe('caution button (.btn-warning) label contrast', () => {
     expect(css).toMatch(/\nhtml\.a11y-contrast \.btn-danger:hover \{ background: var\(--signal-red\); \}/);
   });
 });
+
+// The track time, the per-speaker names in a group, the open-network badge,
+// the offline mark and two edges read custom properties nobody defined
+// (--c-text-dim, --accent, --err, --border), so every theme drew the fallback:
+// a #888 clock at 3.25:1 in the light theme, a #8a2318 badge at 1.77:1 in the
+// dark one. They read theme tokens now, and a name that exists nowhere fails
+// here instead of quietly painting its fallback.
+describe('custom properties in style.css', () => {
+  const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const defined = new Set([...body.matchAll(/--([a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  // Set per element by views/music/presettiles.js for the scrolling track line.
+  const SET_BY_SCRIPT = new Set(['track-dur', 'track-scroll']);
+
+  it('every var() names a property the stylesheet defines', () => {
+    const unknown = new Set();
+    for (const m of body.matchAll(/var\(--([a-z0-9-]+)/g)) {
+      if (!defined.has(m[1]) && !SET_BY_SCRIPT.has(m[1])) unknown.add(m[1]);
+    }
+    expect([...unknown]).toEqual([]);
+  });
+
+  it('the track time, the group member names, the network badge and the offline mark use checked tokens', () => {
+    expect(css).toMatch(/\n\.track-time \{[^}]*color: var\(--c-faint\);/);
+    expect(css).toMatch(/\n\.group-member-name \{[^}]*color: var\(--c-faint\);/);
+    expect(css).toMatch(/\n\.wlan-badge-warn \{ border-color: var\(--signal-red\); color: var\(--signal-red\); \}/);
+    expect(css).toMatch(/\n\.box-offline-mark \{[^}]*color: var\(--signal-red\);/);
+  });
+});
