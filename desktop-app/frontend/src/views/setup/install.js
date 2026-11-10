@@ -40,8 +40,10 @@ import {
   DiscoverBoxes,
   SaveDiagnosticBundle,
   EventsOn,
+  LogSetupWifiStep,
   boxFetch,
 } from '../../api.js';
+import { wifiStepOutcome, wifiStepRediscoverDelays, wifiStepLogDetail } from '../../wifistep.js';
 import { takeShareOffer, wireShareOffer } from '../../share.js';
 import { verifyInstalledLoop, waitForStableAgent } from '../../agentsettle.js';
 import { deps } from './deps.js';
@@ -914,6 +916,21 @@ function verifyInstalledState(box, onState) {
           failReasons[s.id] = { label: s.label, reason: String((res.value && res.value.message) || res.value || t('setup.provisionNoAnswer')) };
         }
         if (s.id === 'wifi') {
+          // One line in the app log saying the step ran and how it ended. The
+          // step can move the speaker to another address, and until now a
+          // bundle could not even tell whether it had run. Never the password,
+          // and the network only as the tag the app derives from its name.
+          const wifiInfo = res.ok ? (res.value || {}) : null;
+          try {
+            LogSetupWifiStep(agentBox.host, wifiForBox.ssid,
+              wifiInfo ? wifiStepOutcome(wifiInfo) : 'failed',
+              wifiInfo ? wifiStepLogDetail(wifiInfo) : failReasons.wifi.reason).catch(() => {});
+          } catch {}
+          // A real change: search again once the speaker has settled, it may
+          // answer on another address by then (see wifiStepRediscoverDelays).
+          for (const ms of wifiStepRediscoverDelays(wifiInfo || { unchanged: true })) {
+            setTimeout(() => { try { deps.discoverBoxes(); } catch {} }, ms);
+          }
           if (res.ok) {
             const info = res.value || {};
             // A cabled wpa speaker only stored the network (#1307): its radio

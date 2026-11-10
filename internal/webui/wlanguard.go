@@ -50,10 +50,12 @@ const (
 	// generous: the runtime switch itself escalates internally (reconfigure,
 	// restart, add_network) before it reports failure.
 	wlanGuardAttempts = 3
-	// procRoutePath is the kernel's IPv4 routing table, read to find out which
-	// interface the box actually leaves through.
-	procRoutePath = "/proc/net/route"
 )
+
+// procRoutePath is the kernel's IPv4 routing table, read to find out which
+// interface the box actually leaves through. A var only so a test can take the
+// test host's own cable out of the picture, never reassigned in production.
+var procRoutePath = "/proc/net/route"
 
 // guardAction is what the guard decided to do about this boot.
 type guardAction int

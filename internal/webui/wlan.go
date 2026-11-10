@@ -161,12 +161,18 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	// skips the survey altogether: its radio is down, so the survey can only
 	// time out or come back empty (#1307), and either way it burns twelve
 	// seconds to learn nothing.
-	iface, mech := detectWlanMechanism()
+	iface, mech := s.wlanMechanism()
 	wired := ""
 	if mech == "wpa" {
 		wired = wiredUplinkIface(iface)
 	}
 	mode := wlanSwitchModeFor(mech, wired)
+	// The speaker is already on this network with this password: record it and
+	// leave the running connection alone (wlankeep.go). Before the pre-flight,
+	// because a network the speaker is associated to needs no survey.
+	if s.keepCurrentWLAN(w, iface, mech, mode, req.SSID, req.Password, req.Hidden, req.Open, req.ForgetOthers) {
+		return
+	}
 	if mode != wlanSwitchStoreWired && wlanPreflightApplies(req.Force, req.Hidden) {
 		sctx, scancel := context.WithTimeout(r.Context(), 12*time.Second)
 		ssids, serr := boxapi.New(s.boxHost).SiteSurvey(sctx)
@@ -226,7 +232,11 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		go s.storeWLANForWiredUplink(wired, req.SSID, req.Password, req.Hidden)
 		return
 	}
-	go s.applyWLANChange(iface, mech, req.SSID, req.Password, req.Hidden, req.ForgetOthers)
+	apply := s.applyWLANChange
+	if s.wlanApplyFn != nil {
+		apply = s.wlanApplyFn
+	}
+	go apply(iface, mech, req.SSID, req.Password, req.Hidden, req.ForgetOthers)
 }
 
 // The three ways a Wi-Fi change request is carried out.
@@ -277,7 +287,9 @@ func wlanSwitchModeFor(mech, wiredIface string) string {
 
 // wlanSwitchResponse is the handler's answer for an accepted change.
 // "status" tells the app what happens next: "switching" (live), "rebooting"
-// (BCO), or "stored" (cabled, nothing happens until the cable is out).
+// (BCO), or "stored" (cabled, nothing happens until the cable is out). A
+// fourth, "unchanged" with "unchanged": true, is set by keepCurrentWLAN when
+// the speaker already is on that network with that password.
 // wiredUplink is what the app keys its "unplug the cable" message on.
 func wlanSwitchResponse(mode, mech, ssid string, forgetOthers bool) map[string]any {
 	status := "switching"
@@ -317,7 +329,7 @@ func (s *Server) storeWLANForWiredUplink(wired, ssid, password string, hidden bo
 		"uplink", wired, "wantTag", ssidTag(ssid))
 	// No rollback can follow, so a stale backup must not survive to roll a
 	// later switch back to this superseded set.
-	_ = os.Remove(wlanCredsPath + ".bak")
+	_ = os.Remove(wlanCredsLivePath + ".bak")
 	s.commitFirmwareProfile(context.Background(), ssid, password)
 	s.armWlanTarget(ssid, password, hidden, "weak")
 	touchWLANApplyMarker()
@@ -384,7 +396,7 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 		switch s.applyWlanWPALive(iface, ssid, password, hidden) {
 		case wpaConfirmed:
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface, "wantTag", ssidTag(ssid))
-			_ = os.Remove(wlanCredsPath + ".bak")
+			_ = os.Remove(wlanCredsLivePath + ".bak")
 			_ = os.Remove(wpaBackupPath)
 			// Record the STANDING intent, and ONLY here: the association is
 			// verified, so a wrong password can never arm the boot guard into
@@ -615,8 +627,8 @@ func activeWifiProfile(host string) string {
 // format the boot path replays, plus HIDDEN=1 for hidden networks), keeping the
 // previous set as .bak for rollback.
 func backupAndWriteWlanCreds(ssid, password string, hidden bool) error {
-	_ = os.Rename(wlanCredsPath, wlanCredsPath+".bak") // best-effort backup
-	return writeWlanCredsFile(wlanCredsPath, ssid, password, hidden)
+	_ = os.Rename(wlanCredsLivePath, wlanCredsLivePath+".bak") // best-effort backup
+	return writeWlanCredsFile(wlanCredsLivePath, ssid, password, hidden)
 }
 
 // writeWlanCredsFile is the path-injectable core of backupAndWriteWlanCreds,
@@ -635,8 +647,8 @@ func writeWlanCredsFile(path, ssid, password string, hidden bool) error {
 }
 
 func restoreWlanCreds() {
-	if _, err := os.Stat(wlanCredsPath + ".bak"); err == nil {
-		_ = os.Rename(wlanCredsPath+".bak", wlanCredsPath)
+	if _, err := os.Stat(wlanCredsLivePath + ".bak"); err == nil {
+		_ = os.Rename(wlanCredsLivePath+".bak", wlanCredsLivePath)
 	}
 }
 

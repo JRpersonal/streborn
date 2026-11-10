@@ -321,6 +321,15 @@ export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notic
   return callOptionalBinding('LogSpotifySaveGate', [host, slot, canRecall, premiumRequired, notice]);
 }
 
+// LogSetupWifiStep records that the setup's Wi-Fi step ran and how it ended
+// ('changed', 'unchanged', 'stored' or 'failed'). The network name is passed so
+// the app can log its tag; the app never writes the name itself, and the
+// password is not an argument at all. Optional binding, per the note above;
+// callers ignore the rejection.
+export function LogSetupWifiStep(host, ssid, outcome, detail) {
+  return callOptionalBinding('LogSetupWifiStep', [host, ssid, outcome, detail]);
+}
+
 // SaveNativePreset stores the Pandora or iHeartRadio station the speaker is
 // playing on a key; the speaker agent reads the exact item from the speaker.
 // Optional binding, per the note above.
