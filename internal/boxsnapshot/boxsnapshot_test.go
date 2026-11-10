@@ -72,6 +72,62 @@ func TestParsePresets(t *testing.T) {
 	}
 }
 
+// parsePresets reads through boxapi.ParsePresets since the three /presets
+// readers were merged. Pinned here: what the snapshot stores is unchanged
+// (every field entity-decoded, the name trimmed, every <preset> kept whatever
+// its id, an empty list is an empty non-nil slice) and a body that is not
+// well-formed XML is still an error, never the typed reader's regex salvage.
+func TestParsePresetsGolden(t *testing.T) {
+	const body = `<?xml version="1.0" encoding="UTF-8" ?>
+<presets>
+  <preset id="2" createdOn="1700000000" updatedOn="1700000001">
+    <ContentItem source="DEEZER" type="tracklisturl" location="/playlist/1234?a=1&amp;b=2" sourceAccount="a&amp;b@example.com" isPresetable="true">
+      <itemName>  Pop &amp; Rock </itemName>
+      <containerArt>http://example.com/a.png</containerArt>
+    </ContentItem>
+  </preset>
+  <preset id="4"></preset>
+  <preset><ContentItem source="TUNEIN" location="/v1/playback/station/s1"><itemName>No id</itemName></ContentItem></preset>
+  <preset id="9"><ContentItem source="STORED_MUSIC" location="0$1$13$75" sourceAccount="device-id-here/0"><itemName>Album</itemName></ContentItem></preset>
+</presets>`
+	got, err := parsePresets([]byte(body))
+	if err != nil {
+		t.Fatalf("parsePresets: %v", err)
+	}
+	want := []Preset{
+		{Slot: 2, Source: "DEEZER", Type: "tracklisturl", Location: "/playlist/1234?a=1&b=2", SourceAccount: "a&b@example.com", Name: "Pop & Rock"},
+		{Slot: 4},
+		{Slot: 0, Source: "TUNEIN", Location: "/v1/playback/station/s1", Name: "No id"},
+		{Slot: 9, Source: "STORED_MUSIC", Location: "0$1$13$75", SourceAccount: "device-id-here/0", Name: "Album"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d presets, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("preset %d:\n got  %+v\n want %+v", i, got[i], want[i])
+		}
+	}
+
+	for _, empty := range []string{`<presets></presets>`, `<presets />`} {
+		ps, err := parsePresets([]byte(empty))
+		if err != nil || ps == nil || len(ps) != 0 {
+			t.Errorf("%s: %+v, %v, want an empty non-nil list", empty, ps, err)
+		}
+	}
+
+	for name, bad := range map[string]string{
+		"truncated":      `<presets><preset id="1"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/1"><itemName>One</itemName></ContentItem></preset><preset id="2"><ContentItem`,
+		"bare ampersand": `<presets><preset id="1"><ContentItem source="UPNP" location="http://192.0.2.1:8888/stream/raw?u=abc&x=1"/></preset></presets>`,
+		"not XML":        `not xml at all`,
+		"empty body":     ``,
+	} {
+		if ps, err := parsePresets([]byte(bad)); err == nil || ps != nil {
+			t.Errorf("%s: %+v, %v, want an error and no presets", name, ps, err)
+		}
+	}
+}
+
 func TestParsePresetsXMLSingleBlock(t *testing.T) {
 	// A user who pasted a single <preset> element (not the whole <presets> dump)
 	// got "no account-linked buttons found" because the <presets>-rooted parser
