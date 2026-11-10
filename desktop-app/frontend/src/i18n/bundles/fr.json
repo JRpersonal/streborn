@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR supprimé ({{n}} éléments). L'enceinte redémarre en Bose standard, patientez environ 60 secondes.",
   "settingsView.removeSTRStickPresent": "La clé USB est toujours dans l'enceinte. Retirez-la d'abord, puis réessayez, sinon l'enceinte réinstalle STR depuis la clé au redémarrage.",
   "settingsView.removeSTRFailed": "Impossible de supprimer STR : {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR ne démarre plus sur cette enceinte, mais certains de ses fichiers n'ont pas pu être supprimés ({{paths}}). L'enceinte redémarre comme une enceinte Bose normale, patientez environ 60 secondes. Pour effacer les fichiers restants, réinstallez STR dessus depuis cette application, puis supprimez-le une nouvelle fois.",
   "settingsView.speakerInfoHeading": "Infos de l'enceinte",
   "settingsView.modelLabel": "Modèle",
   "settingsView.deviceIdLabel": "Identifiant de l'appareil",

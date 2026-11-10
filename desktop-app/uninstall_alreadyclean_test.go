@@ -22,13 +22,19 @@ func TestUninstallScriptReportsAnAlreadyCleanSpeaker(t *testing.T) {
 	if !strings.Contains(uninstallScript, "STR_UNINSTALL_ALREADY_CLEAN") {
 		t.Fatal("the script no longer reports an already-clean speaker; the Go side cannot tell it from a silent failure")
 	}
-	// It must only claim that when BOTH of the things Remove deletes are absent,
-	// or a half-removed speaker would be waved through as clean.
-	i := strings.Index(uninstallScript, "STR_UNINSTALL_ALREADY_CLEAN")
-	line := uninstallScript[max0(i-160):i]
-	for _, want := range []string{"-z \"$REMOVED\"", "! -d /mnt/nv/streborn", "! -f /mnt/nv/rc.local"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the already-clean check is missing %q, so a half-removed speaker could pass", want)
+	// It must only claim that when nothing was removed AND nothing is left, or
+	// a half-removed speaker would be waved through as clean: the claim sits in
+	// the branch the leftover check did not take. (What the script really
+	// reports on a half-removed tree is run in uninstall_leftover_test.go.)
+	left := strings.Index(uninstallScript, `if [ -n "$LEFT" ]; then`)
+	clean := strings.Index(uninstallScript, `elif [ -z "$REMOVED" ]; then`)
+	i := strings.Index(uninstallScript, `echo "STR_UNINSTALL_ALREADY_CLEAN"`)
+	if left < 0 || clean < left || i < clean {
+		t.Error("the already-clean report is no longer tied to \"nothing removed and nothing left\"")
+	}
+	for _, want := range []string{"/mnt/nv/streborn", "/mnt/nv/rc.local"} {
+		if !strings.Contains(uninstallScript[strings.Index(uninstallScript, `LEFT=""`):left], want) {
+			t.Errorf("the leftover check does not look at %s, so a half-removed speaker could pass", want)
 		}
 	}
 }
@@ -44,11 +50,7 @@ func TestUninstallStillFailsLoudlyWhenTheScriptSaysNothing(t *testing.T) {
 	if strings.Contains(out, "STR_UNINSTALL_REMOVED:") {
 		t.Fatal("fixture is wrong")
 	}
-}
-
-func max0(n int) int {
-	if n < 0 {
-		return 0
+	if got := parseUninstallOutput(out).outcome(); got != uninstallSilent {
+		t.Errorf("outcome = %v, want the silent failure", got)
 	}
-	return n
 }

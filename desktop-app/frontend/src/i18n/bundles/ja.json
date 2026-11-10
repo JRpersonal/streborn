@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STRを削除しました ({{n}} 件)。スピーカーは通常のBoseに再起動中です。約60秒お待ちください。",
   "settingsView.removeSTRStickPresent": "USBメモリがまだスピーカーに挿さっています。先に抜いてから再試行してください。抜かないと再起動時にスピーカーがメモリからSTRを再インストールします。",
   "settingsView.removeSTRFailed": "STRを削除できませんでした: {{msg}}",
+  "settingsView.removeSTRIncomplete": "このスピーカーでSTRは起動しなくなりましたが、一部のファイルを削除できませんでした（{{paths}}）。スピーカーは通常のBoseスピーカーとして再起動しています。約60秒お待ちください。残ったファイルを消すには、このアプリからSTRをもう一度インストールし、その後もう一度削除してください。",
   "settingsView.speakerInfoHeading": "スピーカー情報",
   "settingsView.modelLabel": "モデル",
   "settingsView.deviceIdLabel": "デバイスID",

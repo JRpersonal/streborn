@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR verwijderd ({{n}} items). De speaker herstart naar gewoon Bose, wacht ongeveer 60 seconden.",
   "settingsView.removeSTRStickPresent": "De USB-stick zit nog in de speaker. Haal hem er eerst uit en probeer dan opnieuw, anders installeert de speaker STR bij de herstart opnieuw vanaf de stick.",
   "settingsView.removeSTRFailed": "Kon STR niet verwijderen: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR start niet meer op deze speaker, maar enkele bestanden konden niet worden verwijderd ({{paths}}). De speaker herstart als gewone Bose-speaker, wacht ongeveer 60 seconden. Om de achtergebleven bestanden te wissen, installeer je STR er opnieuw op vanuit deze app en verwijder je het daarna nog een keer.",
   "settingsView.speakerInfoHeading": "Speakerinfo",
   "settingsView.modelLabel": "Model",
   "settingsView.deviceIdLabel": "Apparaat-ID",

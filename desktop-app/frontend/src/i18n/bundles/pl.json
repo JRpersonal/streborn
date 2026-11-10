@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR usunięte ({{n}} elementów). Głośnik uruchamia się ponownie jako zwykły Bose, odczekaj około 60 sekund.",
   "settingsView.removeSTRStickPresent": "Pendrive USB nadal jest w głośniku. Najpierw go wyjmij i spróbuj ponownie, inaczej głośnik przy restarcie zainstaluje STR ponownie z pendrive'a.",
   "settingsView.removeSTRFailed": "Nie udało się usunąć STR: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR nie uruchamia się już na tym głośniku, ale części jego plików nie udało się usunąć ({{paths}}). Głośnik uruchamia się ponownie jako zwykły głośnik Bose, poczekaj około 60 sekund. Aby usunąć pozostałe pliki, zainstaluj na nim STR ponownie z tej aplikacji, a potem usuń go jeszcze raz.",
   "settingsView.speakerInfoHeading": "Informacje o głośniku",
   "settingsView.modelLabel": "Model",
   "settingsView.deviceIdLabel": "Identyfikator urządzenia",

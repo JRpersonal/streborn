@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR noņemts ({{n}} elementi). Skaļrunis tiek restartēts kā parasts Bose, pagaidiet apmēram 60 sekundes.",
   "settingsView.removeSTRStickPresent": "USB zibatmiņa joprojām ir skaļrunī. Vispirms to izņemiet un mēģiniet vēlreiz, citādi skaļrunis startēšanā atkal instalēs STR no zibatmiņas.",
   "settingsView.removeSTRFailed": "Neizdevās noņemt STR: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR šajā skaļrunī vairs nestartējas, taču dažus tā failus neizdevās izdzēst ({{paths}}). Skaļrunis restartējas kā parasts Bose skaļrunis, uzgaidiet aptuveni 60 sekundes. Lai notīrītu atlikušos failus, no šīs lietotnes vēlreiz instalējiet STR skaļrunī un pēc tam noņemiet to vēlreiz.",
   "settingsView.speakerInfoHeading": "Skaļruņa informācija",
   "settingsView.modelLabel": "Modelis",
   "settingsView.deviceIdLabel": "Ierīces ID",

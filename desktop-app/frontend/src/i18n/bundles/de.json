@@ -1292,6 +1292,7 @@
   "settingsView.removeSTRDoneToast": "STR entfernt ({{n}} Einträge). Der Lautsprecher startet als reines Bose neu, warte etwa 60 Sekunden.",
   "settingsView.removeSTRStickPresent": "Der USB-Stick steckt noch im Lautsprecher. Zieh ihn zuerst ab und versuch es erneut, sonst installiert der Lautsprecher STR beim Neustart wieder vom Stick.",
   "settingsView.removeSTRFailed": "STR konnte nicht entfernt werden: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR startet auf diesem Lautsprecher nicht mehr, aber einige seiner Dateien konnten nicht gelöscht werden ({{paths}}). Der Lautsprecher startet als reines Bose neu, warte etwa 60 Sekunden. Um die übrigen Dateien zu entfernen, installiere STR aus dieser App erneut darauf und entferne es danach noch einmal.",
   "settingsView.speakerInfoHeading": "Lautsprecher-Info",
   "settingsView.modelLabel": "Modell",
   "settingsView.deviceIdLabel": "Device ID",

@@ -1292,6 +1292,7 @@
   "settingsView.removeSTRDoneToast": "STR 已移除（{{n}} 項）。喇叭正在重新開機變回單純的 Bose，請等大約 60 秒。",
   "settingsView.removeSTRStickPresent": "USB 隨身碟還插在喇叭上。請先拔掉再試一次，不然喇叭重新開機時會從隨身碟再裝一次 STR。",
   "settingsView.removeSTRFailed": "無法移除 STR：{{msg}}",
+  "settingsView.removeSTRIncomplete": "STR 已不會在這台喇叭上啟動，但有部分檔案無法刪除（{{paths}}）。喇叭正在重新開機變回單純的 Bose 喇叭，請等大約 60 秒。若要清掉殘留的檔案，請從這個 App 再安裝一次 STR，然後再移除一次。",
   "settingsView.speakerInfoHeading": "喇叭資訊",
   "settingsView.modelLabel": "型號",
   "settingsView.deviceIdLabel": "裝置 ID",

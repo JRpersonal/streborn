@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "أُزيل STR ({{n}} عنصر). السمّاعة قيد إعادة التشغيل إلى Bose عادية، انتظر نحو 60 ثانية.",
   "settingsView.removeSTRStickPresent": "ذاكرة USB ما زالت في السمّاعة. أخرجها أولًا ثم أعد المحاولة، وإلا فستعيد السمّاعة تثبيت STR من الذاكرة عند إعادة التشغيل.",
   "settingsView.removeSTRFailed": "تعذّرت إزالة STR: {{msg}}",
+  "settingsView.removeSTRIncomplete": "لم يعد STR يعمل على هذه السمّاعة، لكن تعذّر حذف بعض ملفاته ({{paths}}). السمّاعة قيد إعادة التشغيل كسمّاعة Bose عادية، انتظر نحو 60 ثانية. لإزالة الملفات المتبقية، ثبّت STR عليها مجددًا من هذا التطبيق ثم أزِله مرة أخرى.",
   "settingsView.speakerInfoHeading": "معلومات السمّاعة",
   "settingsView.modelLabel": "الطراز",
   "settingsView.deviceIdLabel": "معرّف الجهاز",

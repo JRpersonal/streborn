@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR pašalintas ({{n}} elementų). Garsiakalbis paleidžiamas iš naujo kaip įprastas Bose, palaukite apie 60 sekundžių.",
   "settingsView.removeSTRStickPresent": "USB atmintinė vis dar garsiakalbyje. Pirmiausia ją išimkite ir pabandykite dar kartą, kitaip garsiakalbis paleidimo metu vėl įdiegs STR iš atmintinės.",
   "settingsView.removeSTRFailed": "Nepavyko pašalinti STR: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR šiame garsiakalbyje nebepasileidžia, tačiau kai kurių jo failų ištrinti nepavyko ({{paths}}). Garsiakalbis paleidžiamas iš naujo kaip paprastas Bose garsiakalbis, palaukite apie 60 sekundžių. Kad pašalintumėte likusius failus, iš šios programėlės dar kartą įdiekite STR į garsiakalbį ir tada vėl jį pašalinkite.",
   "settingsView.speakerInfoHeading": "Garsiakalbio informacija",
   "settingsView.modelLabel": "Modelis",
   "settingsView.deviceIdLabel": "Įrenginio ID",

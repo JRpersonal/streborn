@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR eliminado ({{n}} elementos). El altavoz se está reiniciando como Bose normal, espera unos 60 segundos.",
   "settingsView.removeSTRStickPresent": "La memoria USB sigue en el altavoz. Retírala primero y vuelve a intentarlo, de lo contrario el altavoz reinstala STR desde la memoria al reiniciarse.",
   "settingsView.removeSTRFailed": "No se pudo eliminar STR: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR ya no se inicia en este altavoz, pero algunos de sus archivos no se pudieron borrar ({{paths}}). El altavoz se está reiniciando como un altavoz Bose normal, espera unos 60 segundos. Para eliminar los archivos restantes, instala STR de nuevo en él desde esta app y luego elimínalo otra vez.",
   "settingsView.speakerInfoHeading": "Información del altavoz",
   "settingsView.modelLabel": "Modelo",
   "settingsView.deviceIdLabel": "Identificador del dispositivo",

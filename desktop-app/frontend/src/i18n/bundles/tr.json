@@ -1157,6 +1157,7 @@
   "settingsView.removeSTRDoneToast": "STR kaldırıldı ({{n}} öğe). Hoparlör normal Bose olarak yeniden başlatılıyor, yaklaşık 60 saniye bekleyin.",
   "settingsView.removeSTRStickPresent": "USB bellek hâlâ hoparlörde. Önce onu çıkarıp tekrar deneyin, aksi halde hoparlör başlatmada STR'yi bellekten yeniden kurar.",
   "settingsView.removeSTRFailed": "STR kaldırılamadı: {{msg}}",
+  "settingsView.removeSTRIncomplete": "STR bu hoparlörde artık başlamıyor, ancak bazı dosyaları silinemedi ({{paths}}). Hoparlör sade bir Bose hoparlör olarak yeniden başlıyor, yaklaşık 60 saniye bekleyin. Kalan dosyaları temizlemek için STR'yi bu uygulamadan hoparlöre yeniden kurun ve ardından bir kez daha kaldırın.",
   "settingsView.speakerInfoHeading": "Hoparlör bilgisi",
   "settingsView.modelLabel": "Model",
   "settingsView.deviceIdLabel": "Cihaz kimliği",

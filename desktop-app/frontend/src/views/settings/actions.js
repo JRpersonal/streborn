@@ -321,8 +321,16 @@ export function wireActionSections(ctx) {
       rmBtn.textContent = t('settingsView.removeSTRRunning');
       try {
         const r = await UninstallSTR(box.host);
-        if (r && r.ok) {
-          showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
+        // incomplete: STR no longer starts and the speaker reboots into plain
+        // Bose like after a full removal, but files were left behind. The
+        // app follows the speaker (it IS stock now), and says what is left
+        // instead of the success toast, on the panel so it stays readable.
+        if (r && (r.ok || r.incomplete)) {
+          state.strRemovedLeftover = r.incomplete
+            ? { host: box.host, paths: (r.leftoverFiles || []).join(', ') }
+            : null;
+          if (r.incomplete) showToast(t('settingsView.removeSTRIncomplete', { paths: state.strRemovedLeftover.paths }));
+          else showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
           purgeSpeakerLocalState(box, state); // forget every local record of this speaker (speakerPurge.js)
           // The speaker is a stock Bose box again, by design. Do not let the
           // reconnect loop chase an agent that is gone on purpose (it ended in
