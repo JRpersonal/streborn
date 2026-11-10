@@ -11,9 +11,13 @@ import (
 
 // deferredReclaimRig scripts a tight volume for the deferred engine drop:
 // statfs predicts no room until the engine is dropped, and the free figure
-// shrinks as the temp file grows from `free`. engineStopHook stands in for the
-// drop and records how much of the body had reached the temp file by then.
+// shrinks as the temp file grows from `free`. The server's engine stop stands
+// in for the drop and records how much of the body had reached the temp file
+// by then. The rig's server has its own update state and effects (fx), so the
+// receives it runs touch nothing another test sees.
 type deferredReclaimRig struct {
+	s             *Server
+	fx            *otaEffects
 	dst           string
 	drops         int
 	writtenAtDrop int64
@@ -22,18 +26,17 @@ type deferredReclaimRig struct {
 func newDeferredReclaimRig(t *testing.T, free int64, availOK bool) *deferredReclaimRig {
 	t.Helper()
 	rig := &deferredReclaimRig{dst: filepath.Join(t.TempDir(), "streborn-armv7l"), writtenAtDrop: -1}
-	pinDeferredRoute(t)
-	origRoom, origAvail, origHook := nandHasRoom, nandAvailFn, engineStopHook
-	t.Cleanup(func() { nandHasRoom, nandAvailFn, engineStopHook = origRoom, origAvail, origHook })
+	rig.s = newDeferredRouteServer(t)
+	rig.fx = rig.s.otaEffects
 	tmpSize := func() int64 {
 		if fi, err := os.Stat(rig.dst + ".new"); err == nil {
 			return fi.Size()
 		}
 		return 0
 	}
-	nandHasRoom = func(string, int64) bool { return rig.drops > 0 }
-	nandAvailFn = func(string) (int64, int64, bool) { return 0, free - tmpSize(), availOK }
-	engineStopHook = func() bool {
+	rig.fx.nandHasRoom = func(string, int64) bool { return rig.drops > 0 }
+	rig.fx.nandAvail = func(string) (int64, int64, bool) { return 0, free - tmpSize(), availOK }
+	rig.s.spotifyStop = func() bool {
 		rig.drops++
 		rig.writtenAtDrop = tmpSize()
 		return true
@@ -62,10 +65,11 @@ func (f *failingReader) Read(p []byte) (int, error) {
 // The field case (2026-10-25): a tight speaker, an upload that dies after a
 // couple of MB. The engine must still be there afterwards.
 func TestReceiveAgentKeepsEngineWhenTransferDiesBeforeTheMargin(t *testing.T) {
+	t.Parallel()
 	rig := newDeferredReclaimRig(t, nandWriteMargin+8<<20, true)
 	const size = 18 << 20
 	src := &failingReader{r: bytes.NewReader(patternBytes(size)), left: 2 << 20}
-	_, err := receiveAgentBinary(rig.dst, src, size, 30<<20)
+	_, err := rig.s.receiveAgentBinary(rig.dst, src, size, 30<<20)
 	var rerr uploadReadError
 	if !errors.As(err, &rerr) {
 		t.Fatalf("an aborted body must surface as a read error, got %v", err)
@@ -81,10 +85,11 @@ func TestReceiveAgentKeepsEngineWhenTransferDiesBeforeTheMargin(t *testing.T) {
 // A body that does need the room gets it once the volume reaches the margin,
 // and the update completes.
 func TestReceiveAgentDropsEngineWhenTheBodyReachesTheMargin(t *testing.T) {
+	t.Parallel()
 	const headroom = 1 << 20
 	rig := newDeferredReclaimRig(t, nandWriteMargin+headroom, true)
 	body := patternBytes(3 << 20)
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err != nil {
 		t.Fatalf("the update must complete, got %v", err)
 	}
@@ -107,9 +112,10 @@ func TestReceiveAgentDropsEngineWhenTheBodyReachesTheMargin(t *testing.T) {
 // A volume already at the margin drops the engine before the first byte, as
 // the up-front reclaim always did.
 func TestReceiveAgentDropsEngineFirstWhenAlreadyAtTheMargin(t *testing.T) {
+	t.Parallel()
 	rig := newDeferredReclaimRig(t, nandWriteMargin-1, true)
 	body := patternBytes(1 << 20)
-	if _, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
+	if _, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
 		t.Fatal(err)
 	}
 	if rig.drops != 1 || rig.writtenAtDrop != 0 {
@@ -119,10 +125,11 @@ func TestReceiveAgentDropsEngineFirstWhenAlreadyAtTheMargin(t *testing.T) {
 
 // A roomy speaker never loses its engine.
 func TestReceiveAgentRoomyBoxKeepsEngine(t *testing.T) {
+	t.Parallel()
 	rig := newDeferredReclaimRig(t, 0, true)
-	nandHasRoom = func(string, int64) bool { return true }
+	rig.fx.nandHasRoom = func(string, int64) bool { return true }
 	body := patternBytes(1 << 20)
-	if _, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
+	if _, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
 		t.Fatal(err)
 	}
 	if rig.drops != 0 {
@@ -133,8 +140,9 @@ func TestReceiveAgentRoomyBoxKeepsEngine(t *testing.T) {
 // Without a free figure there is nothing to steer by, so the engine stays
 // unless the filesystem itself says no.
 func TestEngineReclaimGateWithoutStatfsKeepsEngine(t *testing.T) {
+	t.Parallel()
 	rig := newDeferredReclaimRig(t, 0, false)
-	g := &engineReclaimGate{dir: filepath.Dir(rig.dst), need: 1 << 20}
+	g := &engineReclaimGate{s: rig.s, dir: filepath.Dir(rig.dst), need: 1 << 20}
 	st := nandWriteState{enginePending: true}
 	for i := 0; i < 100; i++ {
 		if g.due(&st, 32*1024) {

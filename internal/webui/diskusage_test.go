@@ -51,7 +51,7 @@ func TestWriteBinaryAtomic(t *testing.T) {
 	for i := range body {
 		body[i] = byte(i)
 	}
-	if _, err := receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
+	if _, err := newDeferredRouteServer(t).receiveAgentBinary(dst, bytes.NewReader(body), int64(len(body)), 30<<20); err != nil {
 		t.Fatalf("receiveAgentBinary: %v", err)
 	}
 

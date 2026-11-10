@@ -16,10 +16,9 @@ import (
 // because a client pushed the engine while the update it had just started was
 // still running.
 func TestSidecarIsRefusedWhileAnUpdateIsInstalling(t *testing.T) {
-	updateInFlight.Store(true)
-	t.Cleanup(func() { updateInFlight.Store(false) })
-
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ota: &otaState{}}
+	s.ota.beginUpdate()
 	rec := httptest.NewRecorder()
 	s.handleAgentSidecar(rec, httptest.NewRequest(http.MethodPost, "/api/agent/sidecar", nil))
 
@@ -35,9 +34,8 @@ func TestSidecarIsRefusedWhileAnUpdateIsInstalling(t *testing.T) {
 // And it must not refuse the rest of the time, or every speaker loses its
 // engine delivery for good.
 func TestSidecarIsAcceptedWhenNoUpdateIsRunning(t *testing.T) {
-	updateInFlight.Store(false)
-
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ota: &otaState{}}
 	rec := httptest.NewRecorder()
 	s.handleAgentSidecar(rec, httptest.NewRequest(http.MethodPost, "/api/agent/sidecar", nil))
 

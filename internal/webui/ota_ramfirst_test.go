@@ -12,14 +12,16 @@ import (
 	"testing"
 )
 
-// pinDeferredRoute makes the route decision refuse RAM first (MemAvailable
-// unknown), so a test written for the deferred NAND path stays on it even on
-// a Linux host where /dev/shm and /proc/meminfo report real room.
-func pinDeferredRoute(t *testing.T) {
+// newDeferredRouteServer is a server with its own update state and effects
+// whose route decision refuses RAM first (MemAvailable unknown), so a test
+// written for the deferred NAND path stays on it even on a Linux host where
+// /dev/shm and /proc/meminfo report real room. Its RAM stage is a temp dir.
+func newDeferredRouteServer(t *testing.T) *Server {
 	t.Helper()
-	orig := memAvailableKBFn
-	t.Cleanup(func() { memAvailableKBFn = orig })
-	memAvailableKBFn = func() int64 { return -1 }
+	fx := productionOTAEffects
+	fx.paths.ramStageTarget = filepath.Join(t.TempDir(), "streborn-ota.stage")
+	fx.memAvailableKB = func() int64 { return -1 }
+	return &Server{ota: &otaState{}, otaEffects: &fx}
 }
 
 // ramFirstRig is a tight NAND (deferredReclaimRig) on a speaker with a
@@ -28,7 +30,7 @@ func pinDeferredRoute(t *testing.T) {
 type ramFirstRig struct {
 	*deferredReclaimRig
 	stageDir       string
-	stage          string // the shared swap stage (ramStageTarget)
+	stage          string // the shared swap stage (otaPaths.ramStageTarget)
 	stageAtDrop    int64
 	tmpExistedAtDr bool
 }
@@ -37,22 +39,14 @@ func newRAMFirstRig(t *testing.T, stageAvail, memKB int64) *ramFirstRig {
 	t.Helper()
 	base := newDeferredReclaimRig(t, nandWriteMargin+1<<20, true)
 	rig := &ramFirstRig{deferredReclaimRig: base, stageAtDrop: -1}
-	origStage, origAvail, origMem, origCopy := ramStageTarget, ramStageAvailFn, memAvailableKBFn, stageToNAND
-	origArmed, origFailed := swapArmed.Load(), ramFirstStageFailed.Load()
-	t.Cleanup(func() {
-		ramStageTarget, ramStageAvailFn, memAvailableKBFn, stageToNAND = origStage, origAvail, origMem, origCopy
-		swapArmed.Store(origArmed)
-		ramFirstStageFailed.Store(origFailed)
-	})
-	swapArmed.Store(false)
-	ramFirstStageFailed.Store(false)
 	rig.stageDir = t.TempDir()
 	rig.stage = filepath.Join(rig.stageDir, "streborn-ota.stage")
-	ramStageTarget = rig.stage
-	ramStageAvailFn = func(string) (int64, bool) { return stageAvail, true }
-	memAvailableKBFn = func() int64 { return memKB }
-	baseHook := engineStopHook
-	engineStopHook = func() bool {
+	rig.fx.paths.ramStageTarget = rig.stage
+	rig.fx.paths.ramRescueBin = filepath.Join(rig.stageDir, "streborn-rescue", "streborn-armv7l")
+	rig.fx.ramStageAvail = func(string) (int64, bool) { return stageAvail, true }
+	rig.fx.memAvailableKB = func() int64 { return memKB }
+	baseHook := rig.s.spotifyStop
+	rig.s.spotifyStop = func() bool {
 		for _, p := range ramFirstStages(t, rig.stageDir) {
 			if fi, err := os.Stat(p); err == nil && fi.Size() > rig.stageAtDrop {
 				rig.stageAtDrop = fi.Size()
@@ -98,10 +92,11 @@ func assertNoRAMFirstStages(t *testing.T, dir string) {
 // The 2026-10-26 BCO case: tight NAND, plenty of RAM, the transfer dies after
 // 3 MB. On the RAM-first route the engine is never touched.
 func TestRAMFirstAbortMidBodyKeepsEngineAndRemovesStage(t *testing.T) {
+	t.Parallel()
 	const size = 18 << 20
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
 	src := &failingReader{r: bytes.NewReader(patternBytes(size)), left: 3 << 20}
-	_, err := receiveAgentBinary(rig.dst, src, size, 30<<20)
+	_, err := rig.s.receiveAgentBinary(rig.dst, src, size, 30<<20)
 	var rerr uploadReadError
 	if !errors.As(err, &rerr) {
 		t.Fatalf("an aborted body must surface as a read error, got %v", err)
@@ -119,9 +114,10 @@ func TestRAMFirstAbortMidBodyKeepsEngineAndRemovesStage(t *testing.T) {
 // installs through the normal NAND path. The stage is kept for the flash
 // verify and goes once it is released.
 func TestRAMFirstCompleteBodyDropsEngineAfterLastByteAndInstalls(t *testing.T) {
+	t.Parallel()
 	body := patternBytes(5 << 20)
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err != nil {
 		t.Fatalf("the update must complete, got %v", err)
 	}
@@ -147,27 +143,28 @@ func TestRAMFirstCompleteBodyDropsEngineAfterLastByteAndInstalls(t *testing.T) {
 		t.Error("the kept stage must hold the complete binary")
 	}
 	assertGone(t, "the NAND temp", rig.dst+".new")
-	releaseRAMFirstStage(got.ramFirstStage)
+	rig.s.ota.releaseRAMFirstStage(got.ramFirstStage)
 	assertNoRAMFirstStages(t, rig.stageDir)
 }
 
 // A flash verify mismatch after a RAM-first receive is repaired from the kept
 // stage, without the app sending the binary again.
 func TestRAMFirstVerifyMismatchIsRecopiedFromTheStage(t *testing.T) {
+	t.Parallel()
 	body := patternBytes(2 << 20)
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err != nil || got.ramFirstStage == "" {
 		t.Fatalf("want a RAM-first install with its stage kept, got %+v, %v", got, err)
 	}
-	defer releaseRAMFirstStage(got.ramFirstStage)
+	defer rig.s.ota.releaseRAMFirstStage(got.ramFirstStage)
 	if err := os.WriteFile(rig.dst, body[:1<<20], 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if verifyBinaryOnFlash(rig.dst, got.sum) == nil {
 		t.Fatal("the damaged dst must fail the verify")
 	}
-	if err := reinstallFromRAMFirstStage(got.ramFirstStage, rig.dst); err != nil {
+	if err := rig.s.reinstallFromRAMFirstStage(got.ramFirstStage, rig.dst); err != nil {
 		t.Fatalf("re-copy from the stage: %v", err)
 	}
 	if err := verifyBinaryOnFlash(rig.dst, got.sum); err != nil {
@@ -201,13 +198,14 @@ func (s *stallingReader) Read(p []byte) (int, error) {
 // The retry must not delete the stalled request's stage, and the stalled
 // request failing must not delete the retry's stage.
 func TestRAMFirstOverlappingUploadsKeepEachOthersStage(t *testing.T) {
+	t.Parallel()
 	const size = 6 << 20
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
 
 	a := &stallingReader{chunk: patternBytes(1 << 20), started: make(chan struct{}), release: make(chan struct{})}
 	aDone := make(chan error, 1)
 	go func() {
-		_, err := receiveAgentBinary(rig.dst, a, size, 30<<20)
+		_, err := rig.s.receiveAgentBinary(rig.dst, a, size, 30<<20)
 		aDone <- err
 	}()
 	<-a.started
@@ -220,7 +218,7 @@ func TestRAMFirstOverlappingUploadsKeepEachOthersStage(t *testing.T) {
 	}
 	bDone := make(chan res, 1)
 	go func() {
-		got, err := receiveAgentBinary(rig.dst, pr, size, 30<<20)
+		got, err := rig.s.receiveAgentBinary(rig.dst, pr, size, 30<<20)
 		bDone <- res{got, err}
 	}()
 	if _, err := pw.Write(body[:2<<20]); err != nil {
@@ -243,7 +241,7 @@ func TestRAMFirstOverlappingUploadsKeepEachOthersStage(t *testing.T) {
 	if b.err != nil {
 		t.Fatalf("the retry must install, got %v", b.err)
 	}
-	defer releaseRAMFirstStage(b.got.ramFirstStage)
+	defer rig.s.ota.releaseRAMFirstStage(b.got.ramFirstStage)
 	if b.got.sum != sumHex(body) {
 		t.Fatal("the retry's sum does not match its body")
 	}
@@ -261,6 +259,7 @@ func TestRAMFirstOverlappingUploadsKeepEachOthersStage(t *testing.T) {
 // Too little RAM stage or MemAvailable falls back to the deferred drop at the
 // NAND margin, and the stage is never created.
 func TestRAMFirstFallsBackToDeferredWhenRAMIsShort(t *testing.T) {
+	t.Parallel()
 	const size = 3 << 20
 	cases := []struct {
 		name       string
@@ -275,7 +274,7 @@ func TestRAMFirstFallsBackToDeferredWhenRAMIsShort(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			rig := newRAMFirstRig(t, c.stageAvail, c.memKB)
 			body := patternBytes(size)
-			got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
+			got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
 			if err != nil || got.ramStaged || got.ramFirstStage != "" {
 				t.Fatalf("the deferred route must complete on the NAND, got %+v, %v", got, err)
 			}
@@ -298,19 +297,20 @@ func TestRAMFirstFallsBackToDeferredWhenRAMIsShort(t *testing.T) {
 // Review finding 5: a stage that cannot be written leaves the engine alone,
 // and the retry takes the deferred route instead of hitting the same wall.
 func TestRAMFirstStageWriteFailureFallsBackToDeferredOnRetry(t *testing.T) {
+	t.Parallel()
 	const size = 3 << 20
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
 	// A stage directory that cannot be written into.
-	ramStageTarget = filepath.Join(rig.stageDir, "missing", "streborn-ota.stage")
+	rig.fx.paths.ramStageTarget = filepath.Join(rig.stageDir, "missing", "streborn-ota.stage")
 	body := patternBytes(size)
-	_, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
+	_, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
 	if !errors.Is(err, errRAMFirstStageWrite) {
 		t.Fatalf("want the stage write failure, got %v", err)
 	}
 	if rig.drops != 0 {
 		t.Fatalf("a failed stage write must not touch the engine, got %d drops", rig.drops)
 	}
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), size, 30<<20)
 	if err != nil || got.ramFirstStage != "" || got.ramStaged {
 		t.Fatalf("the retry must complete on the deferred route, got %+v, %v", got, err)
 	}
@@ -322,13 +322,14 @@ func TestRAMFirstStageWriteFailureFallsBackToDeferredOnRetry(t *testing.T) {
 // The NAND refuses the copy even after the drop: the complete stage is handed
 // to the tier-3 swap path instead of failing the update.
 func TestRAMFirstNANDCopyFailureTakesTheSwapPath(t *testing.T) {
+	t.Parallel()
 	body := patternBytes(2 << 20)
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
-	stageToNAND = func(_, tmp string, _ []byte) error {
+	rig.fx.stageToNAND = func(_, tmp string, _ []byte) error {
 		_ = os.WriteFile(tmp, body[:1<<20], 0o600) // a partial copy, as ENOSPC leaves it
 		return &os.PathError{Op: "write", Path: tmp, Err: syscall.ENOSPC}
 	}
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if err != nil {
 		t.Fatalf("a full NAND after the drop must take the swap path, got %v", err)
 	}
@@ -349,17 +350,18 @@ func TestRAMFirstNANDCopyFailureTakesTheSwapPath(t *testing.T) {
 // With a swap already armed, a RAM-first receive must not replace the stage
 // the running helper reads.
 func TestRAMFirstNeverReplacesAnArmedSwapStage(t *testing.T) {
+	t.Parallel()
 	body := patternBytes(2 << 20)
 	rig := newRAMFirstRig(t, 60<<20, 60<<10)
 	armed := []byte("the armed swap's binary")
 	if err := os.WriteFile(rig.stage, armed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	swapArmed.Store(true)
-	stageToNAND = func(_, tmp string, _ []byte) error {
+	rig.s.ota.swapArmed.Store(true)
+	rig.fx.stageToNAND = func(_, tmp string, _ []byte) error {
 		return &os.PathError{Op: "write", Path: tmp, Err: syscall.ENOSPC}
 	}
-	got, err := receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
+	got, err := rig.s.receiveAgentBinary(rig.dst, bytes.NewReader(body), int64(len(body)), 30<<20)
 	if !errors.Is(err, errInsufficientNAND) || got.ramStaged {
 		t.Fatalf("want the space failure without a second swap, got %+v, %v", got, err)
 	}
@@ -372,11 +374,11 @@ func TestRAMFirstNeverReplacesAnArmedSwapStage(t *testing.T) {
 // Review finding 2: the startup cleanup removes a dead agent's RAM-first
 // stage, and the swap stage only when no helper is reading it.
 func TestCleanStaleRAMStages(t *testing.T) {
-	_ = newRAMFirstRig(t, 60<<20, 60<<10)
-	stageDir := filepath.Dir(ramStageTarget)
-	origProc := procRoot
-	t.Cleanup(func() { procRoot = origProc })
+	t.Parallel()
+	rig := newRAMFirstRig(t, 60<<20, 60<<10)
+	ramStageTarget, stageDir := rig.stage, rig.stageDir
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	clean := func() { cleanStaleRAMStages(rig.s.ota, rig.fx, logger) }
 
 	write := func(p string) {
 		t.Helper()
@@ -388,7 +390,7 @@ func TestCleanStaleRAMStages(t *testing.T) {
 
 	// A helper is running: its command line names the swap stage.
 	proc := t.TempDir()
-	procRoot = proc
+	rig.fx.paths.procRoot = proc
 	if err := os.MkdirAll(filepath.Join(proc, "4242"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -397,21 +399,21 @@ func TestCleanStaleRAMStages(t *testing.T) {
 	}
 	write(dead)
 	write(ramStageTarget)
-	CleanStaleRAMStages(logger)
+	clean()
 	assertGone(t, "the dead agent's RAM-first stage", dead)
 	if _, err := os.Stat(ramStageTarget); err != nil {
 		t.Errorf("the swap stage must stay while a helper reads it: %v", err)
 	}
 
 	// No helper: the swap stage goes too.
-	procRoot = t.TempDir()
-	CleanStaleRAMStages(logger)
+	rig.fx.paths.procRoot = t.TempDir()
+	clean()
 	assertGone(t, "the orphaned swap stage", ramStageTarget)
 
 	// An unreadable process table keeps the swap stage.
 	write(ramStageTarget)
-	procRoot = filepath.Join(t.TempDir(), "missing")
-	CleanStaleRAMStages(logger)
+	rig.fx.paths.procRoot = filepath.Join(t.TempDir(), "missing")
+	clean()
 	if _, err := os.Stat(ramStageTarget); err != nil {
 		t.Errorf("the swap stage must stay when /proc cannot be read: %v", err)
 	}

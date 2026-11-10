@@ -47,6 +47,7 @@ func testSwapHelper(waitSec int, finish string) swapHelper {
 		stage: testStage, dst: testAgentBin, size: 12345678, sha: "abc123",
 		finish:    finish,
 		rescueBin: testRescueBin, args: []string{"--listen-webui", ":8888"},
+		paths: productionOTAEffects.paths,
 	}
 }
 
@@ -75,6 +76,7 @@ func failureBranch(t *testing.T, script string) string {
 // Guard the script's load-bearing pieces so a refactor cannot silently drop
 // one.
 func TestSwapHelperScript(t *testing.T) {
+	t.Parallel()
 	script := testSwapHelper(swapHelperWaitSec, "reboot").script()
 	for _, want := range []string{
 		"/proc/4242",
@@ -94,8 +96,8 @@ func TestSwapHelperScript(t *testing.T) {
 		"12345678",
 		"killall -9 streborn-armv7l", // retry must clear a watchdog-respawned agent
 		"swap failed",                // failed verify -> marker, no reboot
-		swapFailMarker,
-		`rm -f "/dev/shm/streborn-ota.stage" "` + swapFailMarker + `"`, // success only
+		productionOTAEffects.paths.swapFailMarker,
+		`rm -f "/dev/shm/streborn-ota.stage" "` + productionOTAEffects.paths.swapFailMarker + `"`, // success only
 		"reboot",
 	} {
 		if !strings.Contains(script, want) {
@@ -119,7 +121,8 @@ func TestSwapHelperScript(t *testing.T) {
 // reaches finish, removes the unverified NAND copy and starts the staged build
 // from RAM under the helper's supervision with run.sh's flags.
 func TestSwapHelperFailureKeepsAnAgent(t *testing.T) {
-	for _, finish := range []string{"reboot", superviseNewAgentLines(testAgentBin, []string{"--tls=true"})} {
+	t.Parallel()
+	for _, finish := range []string{"reboot", productionOTAEffects.paths.superviseNewAgentLines(testAgentBin, []string{"--tls=true"})} {
 		script := testSwapHelper(swapHelperWaitSec, finish).script()
 		fail := failureBranch(t, script)
 		if strings.Contains(fail, "reboot") {
@@ -134,9 +137,9 @@ func TestSwapHelperFailureKeepsAnAgent(t *testing.T) {
 			`run="` + testStage + `"`,
 			`mkdir -p "/dev/shm/streborn-rescue"`,
 			`mv -f "` + testStage + `" "` + testRescueBin + `" 2>/dev/null; then run="` + testRescueBin + `"; fi`,
-			`{ echo "$$" > "` + agentPIDFile + `"; } 2>/dev/null`,
+			`{ echo "$$" > "` + productionOTAEffects.paths.agentPIDFile + `"; } 2>/dev/null`,
 			`"$run" '--listen-webui' ':8888' >> `,
-			`echo "$bpid" > "` + agentPIDFile + `"`,
+			`echo "$bpid" > "` + productionOTAEffects.paths.agentPIDFile + `"`,
 			`wait "$bpid"`,
 		} {
 			if !strings.Contains(fail, want) {
@@ -154,8 +157,9 @@ func TestSwapHelperFailureKeepsAnAgent(t *testing.T) {
 // starts the new binary after a passing verify and never reboots; the abort
 // paths still come first.
 func TestSwapHelperScriptRestartOnly(t *testing.T) {
+	t.Parallel()
 	dst := testAgentBin
-	finish := superviseNewAgentLines(dst, []string{"--listen-webui", ":8888"})
+	finish := productionOTAEffects.paths.superviseNewAgentLines(dst, []string{"--listen-webui", ":8888"})
 	script := testSwapHelper(150, finish).script()
 	if strings.Contains(script, "reboot") {
 		t.Errorf("restart-only helper must not reboot:\n%s", script)
@@ -176,11 +180,11 @@ func TestSwapHelperScriptRestartOnly(t *testing.T) {
 // helper supervising it) runs, and goes once neither does, so a later agent
 // does not leave ~18 MB of RAM pinned until the next reboot.
 func TestCleanStaleRAMStagesRescueBinary(t *testing.T) {
-	_ = newRAMFirstRig(t, 60<<20, 60<<10)
-	oldBin, oldProc, oldRun := ramRescueBin, procRoot, otaRunningBinary
-	t.Cleanup(func() { ramRescueBin, procRoot, otaRunningBinary = oldBin, oldProc, oldRun })
-	ramRescueBin = filepath.Join(t.TempDir(), "streborn-rescue", "streborn-armv7l")
-	otaRunningBinary = func() string { return testAgentBin }
+	t.Parallel()
+	rig := newRAMFirstRig(t, 60<<20, 60<<10)
+	ramRescueBin := filepath.Join(t.TempDir(), "streborn-rescue", "streborn-armv7l")
+	rig.fx.paths.ramRescueBin = ramRescueBin
+	rig.fx.runningBinary = func() string { return testAgentBin }
 	if err := os.MkdirAll(filepath.Dir(ramRescueBin), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -190,29 +194,29 @@ func TestCleanStaleRAMStagesRescueBinary(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// The rescue agent runs: its command line names the file.
-	procRoot = t.TempDir()
-	if err := os.MkdirAll(filepath.Join(procRoot, "4242"), 0o700); err != nil {
+	rig.fx.paths.procRoot = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rig.fx.paths.procRoot, "4242"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(procRoot, "4242", "cmdline"), []byte(ramRescueBin+"\x00--tls=true"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(rig.fx.paths.procRoot, "4242", "cmdline"), []byte(ramRescueBin+"\x00--tls=true"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	CleanStaleRAMStages(logger)
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err != nil {
 		t.Errorf("the rescue binary must stay while it runs: %v", err)
 	}
 
 	// The rescue agent itself never removes it.
-	procRoot = t.TempDir()
-	otaRunningBinary = func() string { return ramRescueBin }
-	CleanStaleRAMStages(logger)
+	rig.fx.paths.procRoot = t.TempDir()
+	rig.fx.runningBinary = func() string { return ramRescueBin }
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err != nil {
 		t.Errorf("the rescue agent removed its own binary: %v", err)
 	}
 
 	// Nobody runs it any more: it goes.
-	otaRunningBinary = func() string { return testAgentBin }
-	CleanStaleRAMStages(logger)
+	rig.fx.runningBinary = func() string { return testAgentBin }
+	cleanStaleRAMStages(rig.s.ota, rig.fx, logger)
 	if _, err := os.Stat(ramRescueBin); err == nil {
 		t.Errorf("the orphaned rescue binary was left in tmpfs")
 	}

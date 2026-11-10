@@ -99,6 +99,8 @@ type clearFixture struct {
 	profiles string
 	rebooted int
 	running  int
+	// fx is the clear's effects for the server of this fixture.
+	fx *wlanClearEffects
 }
 
 func newClearFixture(t *testing.T, in wlanClearInputs) *clearFixture {
@@ -133,14 +135,16 @@ func newClearFixture(t *testing.T, in wlanClearInputs) *clearFixture {
 	write(f.paths.target, `{"ssid":"HomeNet"}`)
 	write(f.paths.applyMarker, "1\n")
 
-	oldPaths, oldIn, oldRun, oldReboot, oldRec := wlanClearPathsFn, wlanClearInputsFn, wlanClearRunningFn, wlanClearRebootFn, wlanForgetRecordPath
-	t.Cleanup(func() {
-		wlanClearPathsFn, wlanClearInputsFn, wlanClearRunningFn, wlanClearRebootFn, wlanForgetRecordPath = oldPaths, oldIn, oldRun, oldReboot, oldRec
-	})
-	wlanClearPathsFn = func() wlanClearPaths { return f.paths }
-	wlanClearInputsFn = func(*http.Request) (wlanClearInputs, string) { return in, "wlan0" }
-	wlanClearRunningFn = func(string) int { f.running++; return 3 }
-	wlanClearRebootFn = func() { f.rebooted++ }
+	f.fx = &wlanClearEffects{
+		paths:   func() wlanClearPaths { return f.paths },
+		inputs:  func(*http.Request) (wlanClearInputs, string) { return in, "wlan0" },
+		running: func(string) int { f.running++; return 3 },
+		reboot:  func() { f.rebooted++ },
+	}
+	// The after-boot record's path belongs to the forget (wlanforget.go) and
+	// is still a package variable, so these tests cannot run in parallel.
+	oldRec := wlanForgetRecordPath
+	t.Cleanup(func() { wlanForgetRecordPath = oldRec })
 	wlanForgetRecordPath = filepath.Join(dir, "wlan-forget.json")
 	return f
 }
@@ -154,9 +158,9 @@ func (f *clearFixture) read(t *testing.T, p string) string {
 	return string(b)
 }
 
-func doClear(t *testing.T, body string) (*httptest.ResponseRecorder, wlanClearResult) {
+func (f *clearFixture) doClear(t *testing.T, body string) (*httptest.ResponseRecorder, wlanClearResult) {
 	t.Helper()
-	s := &Server{logger: slog.New(slog.DiscardHandler)}
+	s := &Server{logger: slog.New(slog.DiscardHandler), wlanClear: f.fx}
 	var r *http.Request
 	if body == "" {
 		r = httptest.NewRequest(http.MethodDelete, "/api/box/wlan", nil)
@@ -178,7 +182,7 @@ func TestHandleBoxWLANClear_RefusesASpeakerThatIsNotWired(t *testing.T) {
 		{Mechanism: "bco", WiredIface: "eth0", RequestOnWired: true},
 	} {
 		f := newClearFixture(t, in)
-		w, res := doClear(t, "")
+		w, res := f.doClear(t, "")
 		wantCode, _ := planWLANClear(in)
 		if w.Code != http.StatusConflict || res.Status != "refused" || res.Code != wantCode {
 			t.Fatalf("%+v: HTTP %d %+v, want 409 refused %q", in, w.Code, res, wantCode)
@@ -201,7 +205,7 @@ func TestHandleBoxWLANClear_RefusesASpeakerThatIsNotWired(t *testing.T) {
 
 func TestHandleBoxWLANClear_CabledSpeakerForgetsEverything(t *testing.T) {
 	f := newClearFixture(t, wlanClearInputs{Mechanism: "wpa", WiredIface: "eth0", RequestOnWired: true})
-	w, res := doClear(t, "")
+	w, res := f.doClear(t, "")
 	if w.Code != http.StatusOK || res.Status != "ok" {
 		t.Fatalf("HTTP %d %s", w.Code, w.Body.String())
 	}
@@ -251,7 +255,7 @@ func TestHandleBoxWLANClear_CabledSpeakerForgetsEverything(t *testing.T) {
 
 func TestHandleBoxWLANClear_RebootFalseSkipsTheRestart(t *testing.T) {
 	f := newClearFixture(t, wlanClearInputs{Mechanism: "wpa", WiredIface: "eth0", RequestOnWired: true})
-	w, res := doClear(t, `{"reboot":false}`)
+	w, res := f.doClear(t, `{"reboot":false}`)
 	if w.Code != http.StatusOK || res.Rebooting || f.rebooted != 0 {
 		t.Fatalf("HTTP %d rebooting=%v count=%d", w.Code, res.Rebooting, f.rebooted)
 	}
@@ -263,7 +267,7 @@ func TestHandleBoxWLANClear_UnexpectedStoreShapeChangesNothing(t *testing.T) {
 	if err := os.WriteFile(f.profiles, []byte(odd), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w, res := doClear(t, "")
+	w, res := f.doClear(t, "")
 	if w.Code != http.StatusInternalServerError || res.Code != clearUnexpected {
 		t.Fatalf("HTTP %d %+v", w.Code, res)
 	}

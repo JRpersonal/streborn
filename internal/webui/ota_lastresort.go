@@ -147,6 +147,9 @@ type swapHelper struct {
 	// args are the flags it gets (run.sh's, as for the restarted agent).
 	rescueBin string
 	args      []string
+	// paths are the swap-failed marker and run.sh's files the rescue agent's
+	// supervision writes.
+	paths otaPaths
 }
 
 // swapFailedWhy is the marker text of a swap whose binary could not be placed.
@@ -182,9 +185,9 @@ rm -f %[4]q %[3]q
 sync
 sleep 1
 %[7]s`,
-		h.agentPID, h.waitSec, swapFailMarker, h.stage,
+		h.agentPID, h.waitSec, h.paths.swapFailMarker, h.stage,
 		placeBinaryLines(h.stage, h.dst, h.size, h.sha),
-		rescueLines(h.stage, h.dst, h.rescueBin, h.args, swapFailedWhy),
+		h.paths.rescueLines(h.stage, h.dst, h.rescueBin, h.args, swapFailedWhy),
 		h.finish)
 }
 
@@ -251,7 +254,7 @@ place_binary() {
 // The helper then claims run.sh's PID file (on a rebooting speaker the old
 // agent did not hand it over) and the supervise lines put the rescue agent's
 // PID in it, so the watchdog sees a live agent and starts nothing.
-func rescueLines(stage, dst, rescueBin string, args []string, why string) string {
+func (p otaPaths) rescueLines(stage, dst, rescueBin string, args []string, why string) string {
 	return fmt.Sprintf(`  { echo %[1]q > %[2]q; } 2>/dev/null
   killall -9 streborn-armv7l 2>/dev/null
   rm -f %[3]q %[4]q
@@ -260,15 +263,15 @@ func rescueLines(stage, dst, rescueBin string, args []string, why string) string
   if mkdir -p %[6]q 2>/dev/null && mv -f %[5]q %[7]q 2>/dev/null; then run=%[7]q; fi
   { echo "$$" > %[8]q; } 2>/dev/null
   sync
-%[9]s`, why, swapFailMarker, dst, dst+".new", stage, path.Dir(rescueBin), rescueBin, agentPIDFile,
-		superviseAgentLines(`"$run"`, args))
+%[9]s`, why, p.swapFailMarker, dst, dst+".new", stage, path.Dir(rescueBin), rescueBin, p.agentPIDFile,
+		p.superviseAgentLines(`"$run"`, args))
 }
 
-// swapFailMarker is where the swap helper records an aborted/failed tier-3
+// swapFailMarkerPath is where the swap helper records an aborted/failed tier-3
 // swap so the next agent start (and /api/agent/version) can surface it
-// instead of the failure staying invisible on a stickless box. A variable so
-// the shell tests can point it at a temp dir.
-var swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
+// instead of the failure staying invisible on a stickless box
+// (otaPaths.swapFailMarker on a speaker).
+const swapFailMarkerPath = "/mnt/nv/streborn/ota-swap-failed"
 
 // swapHelperWaitSec is how long the swap helper waits for the agent to exit
 // before it escalates to kill -9.
@@ -287,40 +290,42 @@ const swapHelperWaitSec = 90
 // helperPID before it exits, so the watchdog neither respawns the old binary
 // during the copy nor starts a second agent after it.
 func (s *Server) armRAMStagedSwap(dst string, size int64, sum string) (helperPID int, restartOnly bool, err error) {
-	fi, err := os.Stat(ramStageTarget)
+	fx := s.otaFx()
+	fi, err := os.Stat(fx.paths.ramStageTarget)
 	if err != nil {
-		return 0, false, fmt.Errorf("RAM stage %s: %w", ramStageTarget, err)
+		return 0, false, fmt.Errorf("RAM stage %s: %w", fx.paths.ramStageTarget, err)
 	}
 	if fi.Size() != size {
-		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", ramStageTarget, fi.Size(), size)
+		return 0, false, fmt.Errorf("RAM stage %s holds %d bytes, the upload was %d", fx.paths.ramStageTarget, fi.Size(), size)
 	}
 	finish, waitSec := "reboot", swapHelperWaitSec
 	restartOnly = s.otaRestartOnly(dst)
 	if restartOnly {
-		finish = superviseNewAgentLines(dst, agentArgs())
+		finish = fx.paths.superviseNewAgentLines(dst, agentArgs())
 		// The agent waits out run.sh's boot watchdog before it exits
 		// (waitOutBootWatchdog); the helper must not kill it for that.
-		waitSec += int(handOverDelay().Seconds()) + 1
+		waitSec += int(s.handOverDelay().Seconds()) + 1
 	}
 	script := swapHelper{
 		agentPID: os.Getpid(), waitSec: waitSec,
-		stage: ramStageTarget, dst: dst, size: size, sha: sum,
+		stage: fx.paths.ramStageTarget, dst: dst, size: size, sha: sum,
 		finish:    finish,
-		rescueBin: ramRescueBin, args: agentArgs(),
+		rescueBin: fx.paths.ramRescueBin, args: agentArgs(),
+		paths: fx.paths,
 	}.script()
 	// Own session: the helper must survive this agent's exit and any process-
 	// group teardown on the way down. Deliberately not Wait()ed: the helper
 	// outlives us by design.
-	helperPID, err = otaStartDetached(script)
+	helperPID, err = fx.startDetached(script)
 	if err != nil {
 		return 0, false, fmt.Errorf("start swap helper: %w", err)
 	}
-	swapArmed.Store(true)
+	s.otaSt().swapArmed.Store(true)
 	then := "the helper reboots the box"
 	if restartOnly {
 		then = "the helper starts the new agent, no box reboot"
 	}
 	s.logger.Warn("OTA: NAND cannot hold two agent copies; RAM-staged swap armed, agent will exit and "+then,
-		"stage", ramStageTarget, "bytes", size, "helperPID", helperPID)
+		"stage", fx.paths.ramStageTarget, "bytes", size, "helperPID", helperPID)
 	return helperPID, restartOnly, nil
 }

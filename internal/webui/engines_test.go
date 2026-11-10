@@ -91,17 +91,8 @@ func spotifyOptionalFields(s *Server) map[string]bool {
 	}
 }
 
-// saveEngineStopHook isolates the package-level OTA stop hook that WithSpotify
-// sets, so the test leaves it as it found it.
-func saveEngineStopHook(t *testing.T) {
-	t.Helper()
-	prev := engineStopHook
-	t.Cleanup(func() { engineStopHook = prev })
-}
-
 func TestWithSpotifyBaseOnlyLeavesOptionalFieldsNil(t *testing.T) {
-	saveEngineStopHook(t)
-	engineStopHook = nil
+	t.Parallel()
 	s := &Server{}
 	WithSpotify(baseSpotifyFake{})(s)
 
@@ -115,14 +106,10 @@ func TestWithSpotifyBaseOnlyLeavesOptionalFieldsNil(t *testing.T) {
 			t.Errorf("%s: set although the fake does not implement its sub-interface", name)
 		}
 	}
-	if engineStopHook != nil {
-		t.Error("engineStopHook: set although the fake has no lifecycle")
-	}
 }
 
 func TestWithSpotifyFullSetsOptionalFields(t *testing.T) {
-	saveEngineStopHook(t)
-	engineStopHook = nil
+	t.Parallel()
 	fake := &fullSpotifyFake{}
 	s := &Server{}
 	WithSpotify(fake)(s)
@@ -137,25 +124,41 @@ func TestWithSpotifyFullSetsOptionalFields(t *testing.T) {
 			t.Errorf("%s: nil although the fake implements its sub-interface", name)
 		}
 	}
-	// The fields reach the fake, and the OTA stop hook is the same Stop.
+	// The fields reach the fake.
 	if got, err := s.spotifyExportCred(); err != nil || string(got) != "cred" {
 		t.Errorf("spotifyExportCred = %q, %v; want cred", got, err)
 	}
 	if !s.spotifyReload() {
 		t.Error("spotifyReload did not reach the fake")
 	}
-	if engineStopHook == nil {
-		t.Fatal("engineStopHook: nil although the fake has a lifecycle")
-	}
 	s.spotifyStop()
-	engineStopHook()
-	if fake.stops != 2 {
-		t.Errorf("Stop called %d times via spotifyStop + engineStopHook, want 2", fake.stops)
+	if fake.stops != 1 {
+		t.Errorf("Stop called %d times via spotifyStop, want 1", fake.stops)
+	}
+}
+
+// The OTA write path stops the engine of the server it runs on. The stop used
+// to be a package variable WithSpotify overwrote, so with two servers in one
+// process the write of the first stopped the engine of the second.
+func TestOTAWriteStopsItsOwnServersEngine(t *testing.T) {
+	t.Parallel()
+	roomy := productionOTAEffects
+	roomy.nandHasRoom = func(string, int64) bool { return true }
+	first, second := &fullSpotifyFake{}, &fullSpotifyFake{}
+	s1 := &Server{ota: &otaState{}, otaEffects: &roomy}
+	WithSpotify(first)(s1)
+	s2 := &Server{ota: &otaState{}, otaEffects: &roomy}
+	WithSpotify(second)(s2)
+
+	st := s1.reclaimEngineForWrite(t.TempDir(), 1024)
+	if !st.engineStopped || first.stops != 1 || second.stops != 0 {
+		t.Errorf("stops: first=%d second=%d engineStopped=%v; want the first server's engine stopped once and the second left alone",
+			first.stops, second.stops, st.engineStopped)
 	}
 }
 
 func TestWithSpotifyNilLeavesFieldsUntouched(t *testing.T) {
-	saveEngineStopHook(t)
+	t.Parallel()
 	s := &Server{spotifyReady: func() bool { return true }}
 	WithSpotify(nil)(s)
 	if s.spotifyReady == nil {

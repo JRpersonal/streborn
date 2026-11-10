@@ -34,8 +34,7 @@ func TestUploadRefusalBodyTextMatchesTheWire(t *testing.T) {
 	if got := text.bodyText(); got != "NAND full" {
 		t.Errorf("text body = %q", got)
 	}
-	s := &Server{logger: slog.New(slog.DiscardHandler)}
-	updateInFlight.Store(false)
+	s := &Server{logger: slog.New(slog.DiscardHandler), ota: &otaState{}}
 	if ref := s.engineBlockedByUpdate(); ref != nil {
 		t.Fatalf("no update running, yet refused: %+v", ref)
 	}
@@ -104,9 +103,9 @@ func TestInstallDownloadedReportsTheRefusalAsStatusAndText(t *testing.T) {
 // code the handler sends, so the self-update's own engine fetch and the
 // desktop app's push see one answer.
 func TestInstallEngineUploadRefusesWhileAnUpdateIsInstalling(t *testing.T) {
-	updateInFlight.Store(true)
-	t.Cleanup(func() { updateInFlight.Store(false) })
-	s := &Server{logger: slog.New(slog.DiscardHandler)}
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.DiscardHandler), ota: &otaState{}}
+	s.ota.beginUpdate()
 	_, ref := s.installEngineUpload(upload{Body: bytes.NewReader(softfloatELF(2048)), Size: 2048, Remote: "127.0.0.1:1"})
 	if ref == nil || ref.Status != http.StatusConflict || !strings.Contains(ref.bodyText(), "update-in-flight") {
 		t.Fatalf("refusal = %+v, want 409 update-in-flight", ref)
@@ -170,10 +169,9 @@ func TestHandleAgentUpdateWire(t *testing.T) {
 	}
 }
 
-// The wire of POST /api/agent/sidecar for the exits before the NAND. Not
-// parallel: updateInFlight is package state the guard tests flip too.
+// The wire of POST /api/agent/sidecar for the exits before the NAND.
 func TestHandleAgentSidecarWire(t *testing.T) {
-	updateInFlight.Store(false)
+	t.Parallel()
 	cases := []struct {
 		name     string
 		method   string
@@ -190,9 +188,11 @@ func TestHandleAgentSidecarWire(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			updateInFlight.Store(c.inFlight)
-			t.Cleanup(func() { updateInFlight.Store(false) })
-			s := &Server{logger: slog.New(slog.DiscardHandler)}
+			t.Parallel()
+			s := &Server{logger: slog.New(slog.DiscardHandler), ota: &otaState{}}
+			if c.inFlight {
+				s.ota.beginUpdate()
+			}
 			r := httptest.NewRequest(c.method, "/api/agent/sidecar", bytes.NewReader(c.body))
 			r.RemoteAddr = "127.0.0.1:1"
 			w := httptest.NewRecorder()

@@ -47,6 +47,15 @@ type Server struct {
 	selfUpd selfUpdater
 	// fleet is the phone's "update all speakers" plan or run (selfupdate_fleet.go).
 	fleet fleetState
+	// ota is the agent update's state (otarestart.go); nil = processOTAState,
+	// the one of this process. Tests install their own.
+	ota *otaState
+	// otaEffects is the update's outside world: restart, helper, exit, clock,
+	// paths (otarestart.go); nil = productionOTAEffects.
+	otaEffects *otaEffects
+	// wlanClear is what "forget the Wi-Fi" reads off the speaker and does to
+	// it (wlanclear.go); nil = productionWLANClearEffects.
+	wlanClear *wlanClearEffects
 	// phoneRun is the claim of the phone that walks such a run itself
 	// (selfupdate_phone.go).
 	phoneRun phoneRun

@@ -31,6 +31,8 @@ type swapRig struct {
 	body                                 []byte
 	sum                                  string
 	env                                  []string
+	// paths are run.sh's files in the temp dir, as the helper is given them.
+	paths otaPaths
 }
 
 // slash is p as the shell sees it (Git Bash takes C:/... paths).
@@ -91,16 +93,14 @@ echo "ubi0:nv 26000 25000 ` + strconv.Itoa(dfAvailKB) + ` 96% /mnt/nv"`,
 	}
 	r.env = append(os.Environ(), "PATH="+filepath.Join(d, "fakebin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	oldPID, oldLog, oldSetup, oldCrash, oldHand, oldMarker := agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker, swapFailMarker
-	t.Cleanup(func() {
-		agentPIDFile, agentLogPath, agentSetupLogPath, agentCrashLogPath, agentHandOverMarker, swapFailMarker = oldPID, oldLog, oldSetup, oldCrash, oldHand, oldMarker
-	})
-	agentPIDFile = r.pidFile
-	agentLogPath = slash(filepath.Join(d, "agent.log"))
-	agentSetupLogPath = r.setupLog
-	agentCrashLogPath = slash(filepath.Join(d, "nv", "agent-crash.log"))
-	agentHandOverMarker = slash(filepath.Join(d, "handover"))
-	swapFailMarker = r.marker
+	r.paths = otaPaths{
+		agentPIDFile:        r.pidFile,
+		agentLogPath:        slash(filepath.Join(d, "agent.log")),
+		agentSetupLogPath:   r.setupLog,
+		agentCrashLogPath:   slash(filepath.Join(d, "nv", "agent-crash.log")),
+		agentHandOverMarker: slash(filepath.Join(d, "handover")),
+		swapFailMarker:      r.marker,
+	}
 	return r
 }
 
@@ -117,6 +117,7 @@ func (r *swapRig) helper() swapHelper {
 		stage: r.stage, dst: r.dst, size: int64(len(r.body)), sha: r.sum,
 		finish:    "echo finished > " + shQuote(r.finished),
 		rescueBin: r.rescue, args: []string{"--listen-webui", ":8888"},
+		paths: r.paths,
 	}
 }
 
@@ -271,16 +272,16 @@ func (r *swapRig) assertRescued(t *testing.T) {
 // clears the marker and lifts the reboot block.
 func TestRescueRetryWritesTheBuild(t *testing.T) {
 	r := newSwapRig(t, 0, 100)
-	rescueTestSeams(t, r)
+	st, fx := rescueTestSeams(t, r)
 	if err := os.MkdirAll(filepath.Dir(r.rescue), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, r.rescue, r.body, 0o755)
 	mustWrite(t, r.marker, []byte(swapFailedWhy+"\n"), 0o644)
-	if RebootUnsafe() == "" {
+	if rebootUnsafe(st, fx) == "" {
 		t.Fatal("the rescue agent must refuse its own reboots before the retry")
 	}
-	if !rescueRetry(t.Context(), discardLogger()) {
+	if !rescueRetry(t.Context(), st, fx, discardLogger()) {
 		t.Fatal("retry reported failure")
 	}
 	if got, _ := os.ReadFile(r.dst); string(got) != string(r.body) {
@@ -289,7 +290,7 @@ func TestRescueRetryWritesTheBuild(t *testing.T) {
 	if _, err := os.Stat(r.marker); err == nil {
 		t.Errorf("marker left after a verified retry")
 	}
-	if why := RebootUnsafe(); why != "" {
+	if why := rebootUnsafe(st, fx); why != "" {
 		t.Errorf("reboots still blocked after a verified retry: %s", why)
 	}
 }
@@ -298,12 +299,12 @@ func TestRescueRetryWritesTheBuild(t *testing.T) {
 // reboots blocked and leaves no unverified copy behind.
 func TestRescueRetryFailsAgain(t *testing.T) {
 	r := newSwapRig(t, 99, 100)
-	rescueTestSeams(t, r)
+	st, fx := rescueTestSeams(t, r)
 	if err := os.MkdirAll(filepath.Dir(r.rescue), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, r.rescue, r.body, 0o755)
-	if rescueRetry(t.Context(), discardLogger()) {
+	if rescueRetry(t.Context(), st, fx, discardLogger()) {
 		t.Fatal("retry reported success")
 	}
 	if _, err := os.Stat(r.dst); err == nil {
@@ -312,7 +313,7 @@ func TestRescueRetryFailsAgain(t *testing.T) {
 	if !strings.Contains(readFileTrim(r.marker), "own retry") {
 		t.Errorf("marker = %q, want the failed retry named", readFileTrim(r.marker))
 	}
-	if RebootUnsafe() == "" {
+	if rebootUnsafe(st, fx) == "" {
 		t.Errorf("reboots allowed although the NAND copy is not verified")
 	}
 	if _, err := os.Stat(r.rescue); err != nil {
@@ -323,10 +324,9 @@ func TestRescueRetryFailsAgain(t *testing.T) {
 // An update the app is pushing right now owns the write.
 func TestRescueRetryStandsBackForAnUpdate(t *testing.T) {
 	r := newSwapRig(t, 0, 100)
-	rescueTestSeams(t, r)
-	updateInFlight.Store(true)
-	t.Cleanup(func() { updateInFlight.Store(false) })
-	if rescueRetry(t.Context(), discardLogger()) {
+	st, fx := rescueTestSeams(t, r)
+	st.beginUpdate()
+	if rescueRetry(t.Context(), st, fx, discardLogger()) {
 		t.Fatal("retry ran during an update")
 	}
 	if got, _ := os.ReadFile(r.dst); string(got) == string(r.body) {
@@ -336,23 +336,18 @@ func TestRescueRetryStandsBackForAnUpdate(t *testing.T) {
 
 // rescueTestSeams makes this test process the rescue agent of rig r, with the
 // retry script run under the rig's PATH.
-func rescueTestSeams(t *testing.T, r *swapRig) {
+func rescueTestSeams(t *testing.T, r *swapRig) (*otaState, *otaEffects) {
 	t.Helper()
-	oldBin, oldDst, oldRun, oldSum, oldShell := ramRescueBin, rescueNANDDst, otaRunningBinary, rescueSum, rescueShell
-	oldProc := procRoot
-	t.Cleanup(func() {
-		ramRescueBin, rescueNANDDst, otaRunningBinary, rescueSum, rescueShell = oldBin, oldDst, oldRun, oldSum, oldShell
-		procRoot = oldProc
-		nandCopyVerified.Store(false)
-	})
-	nandCopyVerified.Store(false)
-	ramRescueBin, rescueNANDDst = r.rescue, r.dst
-	otaRunningBinary = func() string { return r.rescue }
-	rescueSum = func() string { return r.sum }
-	procRoot = filepath.Join(r.dir, "no-proc")
-	rescueShell = func(ctx context.Context, script string) ([]byte, error) {
+	fx := productionOTAEffects
+	fx.paths = r.paths
+	fx.paths.ramRescueBin, fx.paths.rescueNANDDst = r.rescue, r.dst
+	fx.paths.procRoot = filepath.Join(r.dir, "no-proc")
+	fx.runningBinary = func() string { return r.rescue }
+	fx.rescueSum = func() string { return r.sum }
+	fx.rescueShell = func(ctx context.Context, script string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, "sh", "-c", script)
 		cmd.Env = r.env
 		return cmd.CombinedOutput()
 	}
+	return &otaState{}, &fx
 }

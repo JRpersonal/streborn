@@ -146,12 +146,12 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// exit. Cleared again only on the paths that give up WITHOUT restarting,
 	// so a failed update does not leave the speaker refusing engine deliveries
 	// until its next reboot.
-	updateInFlight.Store(true)
+	s.otaSt().beginUpdate()
 	const dst = agentBinNANDPath
-	got, err := receiveAgentBinary(dst, br, up.Size, maxSize)
+	got, err := s.receiveAgentBinary(dst, br, up.Size, maxSize)
 	memAfter, _ := uploadMemKB()
 	if err != nil {
-		updateInFlight.Store(false)
+		s.otaSt().endUpdate()
 		var rerr uploadReadError
 		switch {
 		case errors.As(err, &rerr):
@@ -192,8 +192,8 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	if got.ramStaged {
 		helperPID, restartOnly, serr := s.armRAMStagedSwap(dst, got.size, got.sum)
 		if serr != nil {
-			updateInFlight.Store(false)
-			_ = os.Remove(ramStageTarget)
+			s.otaSt().endUpdate()
+			_ = os.Remove(s.otaFx().paths.ramStageTarget)
 			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
 			return agentInstalled{}, textUploadRefusal(http.StatusInsufficientStorage, errInsufficientNAND.Error()+": "+serr.Error())
 		}
@@ -206,7 +206,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 			// Refresh a still-inserted stick BEFORE exiting so the boot sync
 			// cannot revert this update (#381). Delaying our exit is safe: the
 			// swap helper waits for this PID.
-			refreshStickAgentBinary(ramStageTarget, got.sum, s.logger)
+			refreshStickAgentBinary(s.otaFx().paths.ramStageTarget, got.sum, s.logger)
 			// Same OTA-reboot marker as the normal reboot path, but fsync'd:
 			// os.Exit skips buffered flushes and the swap helper reboots the
 			// box right after us, so the marker must be on NAND before we go.
@@ -245,12 +245,12 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// stage for this verify: a mismatch is copied onto the NAND once more from
 	// RAM instead of making the app send the whole binary again over the link
 	// that was too weak for the deferred route. The stage goes either way.
-	defer releaseRAMFirstStage(got.ramFirstStage)
+	defer s.otaSt().releaseRAMFirstStage(got.ramFirstStage)
 	verifyStart := time.Now()
 	verr := verifyBinaryOnFlash(dst, got.sum)
 	if verr != nil && got.ramFirstStage != "" {
 		s.logger.Warn("agent update: flash verify failed, copying the RAM-first stage onto the NAND again", "err", verr)
-		if rerr := reinstallFromRAMFirstStage(got.ramFirstStage, dst); rerr != nil {
+		if rerr := s.reinstallFromRAMFirstStage(got.ramFirstStage, dst); rerr != nil {
 			s.logger.Warn("agent update: re-copy from the RAM-first stage failed", "err", rerr)
 		} else {
 			verr = verifyBinaryOnFlash(dst, got.sum)
@@ -258,12 +258,12 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	}
 	if verr != nil {
 		s.logger.Error("agent update: flash verify failed, refusing to reboot; the app will send it again", "err", verr)
-		updateInFlight.Store(false)
+		s.otaSt().endUpdate()
 		return agentInstalled{}, textUploadRefusal(http.StatusInternalServerError, "update did not persist to flash: "+verr.Error())
 	}
 
 	// A verified write supersedes any earlier tier-3 swap failure.
-	_ = os.Remove(swapFailMarker)
+	_ = os.Remove(s.otaFx().paths.swapFailMarker)
 	s.logger.Info("agent update written and flash-verified, restarting for a clean post-OTA state",
 		"size", got.size, "verifyMs", time.Since(verifyStart).Milliseconds())
 	rebooting = true
@@ -343,7 +343,7 @@ func (e engineInstalled) body() map[string]string {
 // so the answer has to come from here. Deliver it again once the new version
 // reports itself, which is what the update flow already does.
 func (s *Server) engineBlockedByUpdate() *uploadRefusal {
-	if !updateInFlight.Load() {
+	if !s.otaSt().updating() {
 		return nil
 	}
 	s.logger.Info("sidecar refused: an agent update is in flight, the engine would be reclaimed by it")
@@ -452,7 +452,7 @@ func (s *Server) streamELFUpload(up upload, logger *slog.Logger, what, dst strin
 	if err != nil || magic[0] != 0x7f || magic[1] != 'E' || magic[2] != 'L' || magic[3] != 'F' {
 		return "", 0, textUploadRefusal(http.StatusBadRequest, "not an ELF binary")
 	}
-	sum, size, werr := streamBinaryAtomic(dst, br, up.Size)
+	sum, size, werr := s.streamBinaryAtomic(dst, br, up.Size)
 	memAfter, _ := uploadMemKB()
 	if werr != nil {
 		logger.Warn("upload write failed", "endpoint", what, "bytes", size,

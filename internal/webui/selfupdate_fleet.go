@@ -564,7 +564,7 @@ func (s *Server) finishFleet() {
 // fleetUpdateSelf runs this speaker's own update as the run's last step. True
 // when the new agent is written and the reboot is under way.
 func (s *Server) fleetUpdateSelf(i int) bool {
-	if updateInFlight.Load() || !s.selfUpd.claim() {
+	if s.otaSt().updating() || !s.selfUpd.claim() {
 		s.fleet.edit(i, func(sp *fleetSpeaker) {
 			sp.State, sp.Reason = fleetFailed, "an update is already running on this speaker"
 		})

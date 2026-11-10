@@ -97,14 +97,15 @@ func TestFailedUpdateStartsTheEngineRestoreOnlyForANetworkError(t *testing.T) {
 // go through this path.
 func TestFailedSwapPutsTheDroppedEngineBack(t *testing.T) {
 	dir := t.TempDir()
-	origPending, origResult, origStart, origVer := selfUpdatePendingPath, selfUpdateResultPath, startEngineRestore, agentVersion
+	origPending, origResult, origVer := selfUpdatePendingPath, selfUpdateResultPath, agentVersion
 	t.Cleanup(func() {
-		selfUpdatePendingPath, selfUpdateResultPath, startEngineRestore, agentVersion = origPending, origResult, origStart, origVer
+		selfUpdatePendingPath, selfUpdateResultPath, agentVersion = origPending, origResult, origVer
 	})
 	selfUpdatePendingPath = filepath.Join(dir, "pending.json")
 	selfUpdateResultPath = filepath.Join(dir, "last.json")
 	var asked []string
-	startEngineRestore = func(_ *Server, _, version string, want updatesig.File, agentErr error) {
+	fx := productionOTAEffects
+	fx.engineRestoreFn = func(_, version string, want updatesig.File, agentErr error) {
 		asked = append(asked, version+" "+want.SHA256+" "+agentErr.Error())
 	}
 	engine := updatesig.File{Size: 2048, SHA256: "abc"}
@@ -115,7 +116,7 @@ func TestFailedSwapPutsTheDroppedEngineBack(t *testing.T) {
 	if err := writeJSONFile(selfUpdatePendingPath, selfUpdatePending{Version: "v1.5.5", From: "v1.5.4", Engine: &engine}); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ota: &otaState{}, otaEffects: &fx}
 	s.resumeSelfUpdate()
 	if len(asked) != 1 || !strings.Contains(asked[0], "v1.5.5 abc") || !strings.Contains(asked[0], "instead of v1.5.5") {
 		t.Fatalf("restore requests %q, want one for the v1.5.5 engine", asked)
@@ -126,7 +127,7 @@ func TestFailedSwapPutsTheDroppedEngineBack(t *testing.T) {
 	if err := writeJSONFile(selfUpdatePendingPath, selfUpdatePending{Version: "v1.5.5", From: "v1.5.4"}); err != nil {
 		t.Fatal(err)
 	}
-	s = &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	s = &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ota: &otaState{}, otaEffects: &fx}
 	s.resumeSelfUpdate()
 	if len(asked) != 0 {
 		t.Fatalf("restore asked for without an engine in the update: %q", asked)
