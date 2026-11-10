@@ -147,7 +147,8 @@ type swapHelper struct {
 	// args are the flags it gets (run.sh's, as for the restarted agent).
 	rescueBin string
 	args      []string
-	// paths are run.sh's files the rescue agent's supervision writes.
+	// paths are the swap-failed marker and run.sh's files the rescue agent's
+	// supervision writes.
 	paths otaPaths
 }
 
@@ -184,7 +185,7 @@ rm -f %[4]q %[3]q
 sync
 sleep 1
 %[7]s`,
-		h.agentPID, h.waitSec, swapFailMarker, h.stage,
+		h.agentPID, h.waitSec, h.paths.swapFailMarker, h.stage,
 		placeBinaryLines(h.stage, h.dst, h.size, h.sha),
 		h.paths.rescueLines(h.stage, h.dst, h.rescueBin, h.args, swapFailedWhy),
 		h.finish)
@@ -262,15 +263,15 @@ func (p otaPaths) rescueLines(stage, dst, rescueBin string, args []string, why s
   if mkdir -p %[6]q 2>/dev/null && mv -f %[5]q %[7]q 2>/dev/null; then run=%[7]q; fi
   { echo "$$" > %[8]q; } 2>/dev/null
   sync
-%[9]s`, why, swapFailMarker, dst, dst+".new", stage, path.Dir(rescueBin), rescueBin, p.agentPIDFile,
+%[9]s`, why, p.swapFailMarker, dst, dst+".new", stage, path.Dir(rescueBin), rescueBin, p.agentPIDFile,
 		p.superviseAgentLines(`"$run"`, args))
 }
 
-// swapFailMarker is where the swap helper records an aborted/failed tier-3
+// swapFailMarkerPath is where the swap helper records an aborted/failed tier-3
 // swap so the next agent start (and /api/agent/version) can surface it
-// instead of the failure staying invisible on a stickless box. A variable so
-// the shell tests can point it at a temp dir.
-var swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
+// instead of the failure staying invisible on a stickless box
+// (otaPaths.swapFailMarker on a speaker).
+const swapFailMarkerPath = "/mnt/nv/streborn/ota-swap-failed"
 
 // swapHelperWaitSec is how long the swap helper waits for the agent to exit
 // before it escalates to kill -9.

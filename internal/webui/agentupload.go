@@ -263,7 +263,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	}
 
 	// A verified write supersedes any earlier tier-3 swap failure.
-	_ = os.Remove(swapFailMarker)
+	_ = os.Remove(s.otaFx().paths.swapFailMarker)
 	s.logger.Info("agent update written and flash-verified, restarting for a clean post-OTA state",
 		"size", got.size, "verifyMs", time.Since(verifyStart).Milliseconds())
 	rebooting = true

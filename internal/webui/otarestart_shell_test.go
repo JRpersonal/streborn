@@ -51,6 +51,7 @@ func newHelperRun(t *testing.T, body string) *helperRun {
 	r.paths = otaPaths{
 		agentPIDFile: r.pidFile, agentLogPath: r.log, agentSetupLogPath: r.setupLog,
 		agentCrashLogPath: r.crashLog, agentHandOverMarker: r.marker,
+		swapFailMarker: filepath.Join(dir, "ota-swap-failed"),
 	}
 	script := "#!/bin/sh\necho \"$$ $*\" > " + shQuote(r.argsOut) + "\necho \"fake agent $$ says bye\"\n" + body + "\n"
 	if err := os.WriteFile(r.bin, []byte(script), 0o755); err != nil {

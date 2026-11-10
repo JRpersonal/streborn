@@ -28,12 +28,14 @@ func checkGolden(t *testing.T, name, got, want string) {
 
 // The restart helper of a coprocessor Wi-Fi speaker (otarestart.go).
 func TestAgentRestartScriptGolden(t *testing.T) {
+	t.Parallel()
 	checkGolden(t, "restart helper", productionOTAEffects.paths.agentRestartScript(4242, agentBinNANDPath, goldenArgs), goldenRestartScript)
 }
 
 // The RAM-staged swap helper (ota_lastresort.go), ending in a reboot and, on a
 // restart-only speaker, in the supervised start of the new agent.
 func TestSwapHelperScriptGolden(t *testing.T) {
+	t.Parallel()
 	reboot := swapHelper{
 		agentPID: 4242, waitSec: swapHelperWaitSec,
 		stage: productionOTAEffects.paths.ramStageTarget, dst: agentBinNANDPath, size: 18123456, sha: goldenSHA,
@@ -52,6 +54,7 @@ func TestSwapHelperScriptGolden(t *testing.T) {
 
 // The copy the rescue agent's own retry runs (ota_rescue.go).
 func TestPlaceBinaryLinesGolden(t *testing.T) {
+	t.Parallel()
 	checkGolden(t, "place_binary", placeBinaryLines(productionOTAEffects.paths.ramRescueBin, agentBinNANDPath, 18123456, goldenSHA), goldenPlaceBinary)
 }
 

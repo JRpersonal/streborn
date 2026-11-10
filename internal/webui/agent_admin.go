@@ -336,7 +336,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// A failed tier-3 RAM-staged swap leaves a marker instead of rebooting
 	// into a silently-old binary; surface it so the failure is visible on a
 	// stickless box where nothing else is.
-	if msg, err := os.ReadFile(swapFailMarker); err == nil && len(msg) > 0 {
+	if msg, err := os.ReadFile(s.otaFx().paths.swapFailMarker); err == nil && len(msg) > 0 {
 		out["otaSwapFailed"] = strings.TrimSpace(string(msg))
 	}
 	writeAgentVersion(w, out)

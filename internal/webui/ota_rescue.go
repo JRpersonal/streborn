@@ -135,7 +135,7 @@ func rescueRetry(ctx context.Context, st *otaState, fx *otaEffects, logger *slog
 	}
 	dst := fx.paths.rescueNANDDst
 	if verifyBinaryOnFlash(dst, sum) == nil {
-		rescueWritten(st, logger, dst, "it was already there")
+		rescueWritten(st, fx, logger, dst, "it was already there")
 		return true
 	}
 	src := fx.paths.ramRescueBin
@@ -172,28 +172,28 @@ place_binary`
 		// starts the agent from.
 		_ = os.Remove(dst)
 		_ = os.Remove(dst + ".new")
-		writeSwapFailMarker(swapFailedWhy + "; the agent's own retry at " +
-			time.Now().UTC().Format(time.RFC3339) + " failed too")
+		writeSwapFailMarker(fx.paths.swapFailMarker, swapFailedWhy+"; the agent's own retry at "+
+			time.Now().UTC().Format(time.RFC3339)+" failed too")
 		logger.Error("rescue agent: writing the update to the speaker's storage failed again; STR keeps running from RAM, a restart would lose it until the update is sent again",
 			"err", err, "out", strings.TrimSpace(string(out)), "ms", time.Since(start).Milliseconds())
 		return false
 	}
-	rescueWritten(st, logger, dst, "the retry wrote it")
+	rescueWritten(st, fx, logger, dst, "the retry wrote it")
 	return true
 }
 
 // rescueWritten records that the running build is proven on the NAND.
-func rescueWritten(st *otaState, logger *slog.Logger, dst, how string) {
+func rescueWritten(st *otaState, fx *otaEffects, logger *slog.Logger, dst, how string) {
 	st.nandCopyVerified.Store(true)
-	_ = os.Remove(swapFailMarker)
+	_ = os.Remove(fx.paths.swapFailMarker)
 	logger.Info("rescue agent: the update is on the speaker's storage now ("+how+"); still running from RAM until the next restart, which starts the same build from storage",
 		"dst", dst)
 }
 
 // writeSwapFailMarker replaces the marker text, synced. Best-effort: a full
 // NAND may refuse it.
-func writeSwapFailMarker(msg string) {
-	f, err := os.OpenFile(swapFailMarker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+func writeSwapFailMarker(marker, msg string) {
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return
 	}

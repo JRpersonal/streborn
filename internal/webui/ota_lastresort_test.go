@@ -76,6 +76,7 @@ func failureBranch(t *testing.T, script string) string {
 // Guard the script's load-bearing pieces so a refactor cannot silently drop
 // one.
 func TestSwapHelperScript(t *testing.T) {
+	t.Parallel()
 	script := testSwapHelper(swapHelperWaitSec, "reboot").script()
 	for _, want := range []string{
 		"/proc/4242",
@@ -95,8 +96,8 @@ func TestSwapHelperScript(t *testing.T) {
 		"12345678",
 		"killall -9 streborn-armv7l", // retry must clear a watchdog-respawned agent
 		"swap failed",                // failed verify -> marker, no reboot
-		swapFailMarker,
-		`rm -f "/dev/shm/streborn-ota.stage" "` + swapFailMarker + `"`, // success only
+		productionOTAEffects.paths.swapFailMarker,
+		`rm -f "/dev/shm/streborn-ota.stage" "` + productionOTAEffects.paths.swapFailMarker + `"`, // success only
 		"reboot",
 	} {
 		if !strings.Contains(script, want) {
@@ -120,6 +121,7 @@ func TestSwapHelperScript(t *testing.T) {
 // reaches finish, removes the unverified NAND copy and starts the staged build
 // from RAM under the helper's supervision with run.sh's flags.
 func TestSwapHelperFailureKeepsAnAgent(t *testing.T) {
+	t.Parallel()
 	for _, finish := range []string{"reboot", productionOTAEffects.paths.superviseNewAgentLines(testAgentBin, []string{"--tls=true"})} {
 		script := testSwapHelper(swapHelperWaitSec, finish).script()
 		fail := failureBranch(t, script)
@@ -155,6 +157,7 @@ func TestSwapHelperFailureKeepsAnAgent(t *testing.T) {
 // starts the new binary after a passing verify and never reboots; the abort
 // paths still come first.
 func TestSwapHelperScriptRestartOnly(t *testing.T) {
+	t.Parallel()
 	dst := testAgentBin
 	finish := productionOTAEffects.paths.superviseNewAgentLines(dst, []string{"--listen-webui", ":8888"})
 	script := testSwapHelper(150, finish).script()

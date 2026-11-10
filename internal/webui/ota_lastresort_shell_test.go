@@ -99,10 +99,8 @@ echo "ubi0:nv 26000 25000 ` + strconv.Itoa(dfAvailKB) + ` 96% /mnt/nv"`,
 		agentSetupLogPath:   r.setupLog,
 		agentCrashLogPath:   slash(filepath.Join(d, "nv", "agent-crash.log")),
 		agentHandOverMarker: slash(filepath.Join(d, "handover")),
+		swapFailMarker:      r.marker,
 	}
-	oldMarker := swapFailMarker
-	t.Cleanup(func() { swapFailMarker = oldMarker })
-	swapFailMarker = r.marker
 	return r
 }
 

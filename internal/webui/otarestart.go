@@ -148,6 +148,9 @@ type otaPaths struct {
 	// writes.
 	ramRescueBin  string
 	rescueNANDDst string
+	// swapFailMarker is where a failed or aborted tier-3 swap is recorded
+	// (ota_lastresort.go).
+	swapFailMarker string
 }
 
 // otaHandOverMinAgentAge is how old this agent must be before it hands over
@@ -222,6 +225,7 @@ var productionOTAEffects = otaEffects{
 		procRoot:            "/proc",
 		ramRescueBin:        ramRescueBinPath,
 		rescueNANDDst:       agentBinNANDPath,
+		swapFailMarker:      swapFailMarkerPath,
 	},
 	wlanMode:      readWlanMode,
 	runningBinary: runningAgentBinary,
