@@ -42,6 +42,12 @@ func (s *Server) setTitle(url, title string) {
 	title = strings.TrimRight(title, "\x00")
 	title = strings.TrimSpace(title)
 	title = titleToUTF8(title)
+	// An ad-insertion cue is not a title. It is dropped whole, so the display
+	// keeps what it showed before the break.
+	if isAdMarkerTitle(title) {
+		s.logger.Debug("stream proxy ICY title: ad marker ignored", "raw", title)
+		return
+	}
 	// A station the listener flagged as sending "Title - Artist" is turned
 	// round here, before anything reads it (titleswap.go).
 	raw := title
@@ -64,6 +70,23 @@ func (s *Server) setTitle(url, title string) {
 	if fire {
 		cb(title)
 	}
+}
+
+// isAdMarkerTitle reports whether an ICY StreamTitle is an ad-insertion cue
+// rather than something a listener should read. Some ad servers put their
+// cues into the title field: Bel RTL sends "adbreak_start_length_90000" and
+// "adbreak_end" around every break, and the speaker printed them under the
+// station name (issue #1838). Only the machine form is matched, a word
+// followed by an underscore or nothing, so a song called "Adbreak Blues"
+// still shows.
+func isAdMarkerTitle(title string) bool {
+	t := strings.ToLower(strings.TrimSpace(title))
+	for _, p := range []string{"adbreak", "ad_break"} {
+		if t == p || strings.HasPrefix(t, p+"_") {
+			return true
+		}
+	}
+	return false
 }
 
 // titleToUTF8 normalises an ICY StreamTitle to valid UTF-8. Shoutcast/Icecast
