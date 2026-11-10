@@ -119,14 +119,14 @@ describe('every flow that can be refused routes the refusal through the helper',
   // without the "Install failed:" / "SSH repair failed:" prefix, and the
   // install does not offer the failure report for it.
   it('the install, without the failure prefix and without the failure report', () => {
-    const src = read('views/setup.js');
+    const src = read('views/setup/install.js');
     expect(src).toMatch(/const busyMsg = busyRefusalText\(err, /);
     expect(src).toMatch(/escapeHtml\(busyMsg \|\| t\('setup\.installFailed', \{ msg: String\(err\) \}\)\)/);
     expect(src).toMatch(/\+ \(busyMsg \? '' : installFailureReportHtml\(\)\)\);/);
   });
 
   it('the SSH repair, without the failure prefix', () => {
-    const src = read('views/setup.js');
+    const src = read('views/setup/install.js');
     expect(src).toMatch(/escapeHtml\(busyRefusalText\(e, .*\) \|\| t\('setup\.repairSSHFailed', \{ msg: String\(e\) \}\)\)/);
   });
 });

@@ -343,7 +343,7 @@ describe('where it shows', () => {
   const single = src('./update/single.js').replace(/\r\n/g, '\n');
   const all = src('./update/all.js').replace(/\r\n/g, '\n');
   const otastuck = src('./update/otastuck.js').replace(/\r\n/g, '\n');
-  const setup = src('./views/setup.js').replace(/\r\n/g, '\n');
+  const setup = src('./views/setup/install.js').replace(/\r\n/g, '\n');
   // The checklist helper left setup.js for the install screens' help module.
   const setupHelp = src('./views/setup/installhelp.js').replace(/\r\n/g, '\n');
 
