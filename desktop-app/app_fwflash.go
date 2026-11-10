@@ -231,91 +231,40 @@ func (a *App) fetchBoseFileWith(ctx context.Context, host string, f bosefw.File,
 	}
 	path := filepath.Join(dir, f.Name)
 	a.emitFirmwareProgress(host, fwPhaseVerify, 0, f.Length)
-	if checkBoseFile(path, f.Length, f.CRC) == nil {
+	want := fileFingerprint{size: f.Length, crc: f.CRC, checkCRC: true}
+	if verifyFile(path, want) == nil {
 		a.fwLog().Info("bose firmware: using the copy already downloaded", "file", f.Name)
 		return path, nil
 	}
-
-	part := path + ".part"
-	_ = os.Remove(part)
-	out, err := os.Create(part)
-	if err != nil {
-		return "", err
-	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = out.Close()
-			_ = os.Remove(part)
-		}
-	}()
-	dctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	req, err := http.NewRequestWithContext(dctx, http.MethodGet, f.URL, nil)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-	}}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("download from Bose: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download from Bose: HTTP %d", resp.StatusCode)
-	}
 	if onProgress == nil {
-		onProgress = a.newPhaseProgress(host, fwPhaseDownload, f.Length).report
+		// Made on the first byte, as before: the rate it reports counts from
+		// the start of the body, not from the connection setup.
+		var pp *phaseProgress
+		onProgress = func(n int64) {
+			if pp == nil {
+				pp = a.newPhaseProgress(host, fwPhaseDownload, f.Length)
+			}
+			pp.report(n)
+		}
 	}
-	body, beat := beatingReader(io.LimitReader(resp.Body, f.Length+1))
-	go watchStall(dctx, cancel, beat, 60*time.Second)
 	crc := crc32.NewIEEE()
-	n, err := io.Copy(io.MultiWriter(out, crc), &countingReader{r: body, onProgress: onProgress})
+	n, err := fetchVerified(ctx, verifiedDownload{
+		url: f.URL, dst: path, size: f.Length, source: "Bose",
+		headerWait: 30 * time.Second, stallAfter: 60 * time.Second,
+		sum: crc, onProgress: onProgress,
+		alreadyThere: func() bool { return verifyFile(path, want) == nil },
+		check: func(n int64) error {
+			if n != f.Length || crc.Sum32() != f.CRC {
+				return fmt.Errorf("the downloaded file %w (%d bytes, CRC %08x; expected %d bytes, CRC %08x)", errBoseFileMismatch, n, crc.Sum32(), f.Length, f.CRC)
+			}
+			return nil
+		},
+	})
 	if err != nil {
-		return "", fmt.Errorf("download from Bose stopped after %d of %d bytes: %w", n, f.Length, err)
-	}
-	if n != f.Length || crc.Sum32() != f.CRC {
-		return "", fmt.Errorf("the downloaded file %w (%d bytes, CRC %08x; expected %d bytes, CRC %08x)", errBoseFileMismatch, n, crc.Sum32(), f.Length, f.CRC)
-	}
-	if err := out.Close(); err != nil {
 		return "", err
 	}
-	if err := os.Rename(part, path); err != nil {
-		return "", err
-	}
-	ok = true
 	a.fwLog().Info("bose firmware: downloaded and checked", "file", f.Name, "bytes", n)
 	return path, nil
-}
-
-// checkBoseFile reports whether the file at path has exactly the catalogue's
-// size and CRC-32.
-func checkBoseFile(path string, length int64, crc uint32) error {
-	fh, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer fh.Close()
-	st, err := fh.Stat()
-	if err != nil {
-		return err
-	}
-	if st.Size() != length {
-		return fmt.Errorf("size %d, expected %d", st.Size(), length)
-	}
-	h := crc32.NewIEEE()
-	if _, err := io.Copy(h, fh); err != nil {
-		return err
-	}
-	if h.Sum32() != crc {
-		return fmt.Errorf("CRC %08x, expected %08x", h.Sum32(), crc)
-	}
-	return nil
 }
 
 // firmwareUploadTarget picks where the file goes: the agent's hand-over
