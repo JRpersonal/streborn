@@ -40,10 +40,17 @@ function clearOTAStuck(box) {
 
 // otaStuck returns the record when the box is in the give-up state: one
 // "re-pushing the same bytes cannot help" verdict, or 2+ unconfirmed cycles.
+//
+// swap-failed is NOT such a verdict. It means the speaker could not write the
+// new agent to its storage and runs it from RAM (the rescue agent, #1810); a
+// second push is exactly what gets the agent onto the storage, and the app's
+// own pre-check sends the agent again to such a speaker (otaTarget in
+// desktop-app/otatarget.go). So it counts like any unconfirmed cycle: one more
+// push is offered, and only a second miss gives up.
 export function otaStuck(box) {
   const rec = readOTAStuck(box);
   if (!rec) return null;
-  if (rec.cls === 'landed-not-running' || rec.cls === 'swap-failed') return rec;
+  if (rec.cls === 'landed-not-running') return rec;
   if ((rec.count || 0) >= 2) return rec;
   return null;
 }
