@@ -58,6 +58,31 @@ func TestNetRecoveryIsNotADegradation(t *testing.T) {
 	}
 }
 
+// An address change is reported with both sides, and an unchanged or merely
+// reordered set is not a change.
+func TestLanAddrChange(t *testing.T) {
+	snap := func(addrs ...string) netForensicsSnapshot { return netForensicsSnapshot{LANAddrs: addrs} }
+	for _, c := range []struct {
+		name     string
+		last     netForensicsSnapshot
+		cur      netForensicsSnapshot
+		from, to string
+		changed  bool
+	}{
+		{"same address", snap("192.0.2.1"), snap("192.0.2.1"), "192.0.2.1", "192.0.2.1", false},
+		{"new lease on another address", snap("192.0.2.1"), snap("192.0.2.7"), "192.0.2.1", "192.0.2.7", true},
+		{"address lost", snap("192.0.2.1"), snap(), "192.0.2.1", "none", true},
+		{"address back", snap(), snap("192.0.2.1"), "none", "192.0.2.1", true},
+		{"still none", snap(), snap(), "none", "none", false},
+		{"same set, other order", snap("192.0.2.1", "198.51.100.2"), snap("198.51.100.2", "192.0.2.1"), "192.0.2.1,198.51.100.2", "192.0.2.1,198.51.100.2", false},
+	} {
+		from, to, changed := lanAddrChange(c.last, c.cur)
+		if from != c.from || to != c.to || changed != c.changed {
+			t.Errorf("%s: got (%q, %q, %v), want (%q, %q, %v)", c.name, from, to, changed, c.from, c.to, c.changed)
+		}
+	}
+}
+
 func TestIsRFC1918(t *testing.T) {
 	for _, ip := range []string{"192.168.1.21", "10.0.0.5", "172.16.0.1", "172.31.255.1"} {
 		if !isRFC1918(ip) {

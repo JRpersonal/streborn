@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -197,6 +198,23 @@ func netRecovered(last, cur netForensicsSnapshot) bool {
 		(last.GatewayARP != "reachable" && cur.GatewayARP == "reachable")
 }
 
+// lanAddrChange reports whether the LAN interface's IPv4 addresses differ from
+// the previous sample, with both sides spelled out for the log ("none" for an
+// interface without one). Order is ignored, so a kernel that lists the same
+// addresses the other way round is not a change. Pure, for the tests.
+func lanAddrChange(last, cur netForensicsSnapshot) (from, to string, changed bool) {
+	norm := func(addrs []string) string {
+		if len(addrs) == 0 {
+			return "none"
+		}
+		c := append([]string(nil), addrs...)
+		sort.Strings(c)
+		return strings.Join(c, ",")
+	}
+	from, to = norm(last.LANAddrs), norm(cur.LANAddrs)
+	return from, to, from != to
+}
+
 // checkNetworkReachability rides the resource-health tick. It logs the first
 // reading and any degradation or recovery at INFO so the evidence lands in the
 // NAND log that survives the recovery reboot; a quiet reading costs nothing
@@ -216,6 +234,19 @@ func checkNetworkReachability(logger *slog.Logger) {
 	if !have {
 		logger.Info("network forensics: baseline", attrs...)
 		return
+	}
+	// The address the LAN knows this speaker by, whenever it is not the one of
+	// the previous sample. The post-switch refresh (netrefresh.go) only watches
+	// the minutes after a live Wi-Fi switch, so a speaker that came back from a
+	// DHCP renewal on another address at any other time left no trace at all,
+	// and "unreachable while the agent log shows nothing" could not be told
+	// apart from a real fault (measured on an ST10, 2026-11-10). Logging only,
+	// and at most one line per tick: it compares two samples, so a change that
+	// reverts between two ticks is not seen.
+	if from, to, changed := lanAddrChange(last, cur); changed {
+		logger.Info("network forensics: LAN address changed since the previous sample",
+			"iface", cur.IfaceName, "prevIface", last.IfaceName, "from", from, "to", to,
+			"gateway", cur.GatewayIP, "gatewayARP", cur.GatewayARP)
 	}
 	if deg := netDegradations(last, cur); len(deg) > 0 {
 		logger.Info("network forensics: reachability DEGRADED - "+strings.Join(deg, "; ")+

@@ -254,7 +254,7 @@ address ranges.
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
 | `GET`    | `/api/box/wlan/networks` | - | The networks the speaker has stored (names in clear), the current one, `wired`, and two previews: `forgetOthers` (`removable`, `code`) and `forgetAll` (`{"allowed":bool,"code":"..."}`, see `DELETE /api/box/wlan`). |
-| `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). |
+| `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). A speaker that is already on that network with the password a confirmed switch recorded answers `"status":"unchanged"` with `"unchanged":true` and leaves its connection alone. |
 | `DELETE` | `/api/box/wlan` | `{"reboot":false}` (optional) | Forget the Wi-Fi altogether, for a speaker that should run on its network cable only (#969). See below. |
 | `POST`   | `/api/box/wlan/forget-others` | `{"reboot":false}` (optional) | Forget every stored network but the one the speaker is on. Wi-Fi speakers only. |
 

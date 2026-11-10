@@ -508,6 +508,13 @@ type Server struct {
 	// requests cannot run applyWLANChange concurrently and interleave their
 	// writes to wlan-creds / wpa_supplicant.conf.
 	wlanMu sync.Mutex
+	// Test seams of PUT /api/box/wlan, nil in production: which Wi-Fi stack
+	// the chassis has (detectWlanMechanism), whether the supplicant is
+	// associated to a network (wpaAssociatedTo), and the background switch
+	// itself (applyWLANChange).
+	wlanMechFn       func() (iface, mech string)
+	wlanAssociatedFn func(iface, ssid string) bool
+	wlanApplyFn      func(iface, mech, ssid, password string, hidden, forgetOthers bool)
 
 	// boxNowReadFn is THE test seam for "what does this speaker play right
 	// now": every own-box now_playing read in this package goes through

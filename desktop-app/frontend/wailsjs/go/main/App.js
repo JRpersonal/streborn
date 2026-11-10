@@ -366,6 +366,10 @@ export function LogClientError(arg1) {
   return window['go']['main']['App']['LogClientError'](arg1);
 }
 
+export function LogSetupWifiStep(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['LogSetupWifiStep'](arg1, arg2, arg3, arg4);
+}
+
 export function LogSpotifySaveGate(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['LogSpotifySaveGate'](arg1, arg2, arg3, arg4, arg5);
 }
