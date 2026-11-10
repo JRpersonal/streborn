@@ -10,6 +10,7 @@
 // confirmLoop and newStrHost are pure (vitest); confirmHTML is the markup.
 
 import { t } from '../../i18n/index.js';
+import { strBoxes } from '../../boxes.js';
 import { escapeHtml, escapeAttr } from '../../utils.js';
 import { darkChecklistApplies, darkChecklistHtml } from '../../darkafterupdate.js';
 
@@ -68,7 +69,7 @@ export function newStrHost(boxes, snapshot) {
   const snap = snapshot && snapshot.hosts instanceof Set
     ? snapshot
     : { hosts: snapshot instanceof Set ? snapshot : new Set(snapshot || []), ids: new Set() };
-  const fresh = (boxes || []).filter((b) => b && b.host && b.kind !== 'stock' && !b.offline
+  const fresh = strBoxes(boxes).filter((b) => b.host && !b.offline
     && !snap.hosts.has(b.host) && !(b.deviceID && snap.ids.has(String(b.deviceID).toUpperCase())));
   const hosts = [...new Set(fresh.map((b) => b.host))];
   return hosts.length === 1 ? hosts[0] : '';

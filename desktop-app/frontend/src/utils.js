@@ -7,6 +7,8 @@
 // circular-import risk.
 
 import { t } from './i18n/index.js';
+import { formatClock } from './format.js';
+import { labelOf as getBoxLabel } from './boxes.js';
 
 export const $ = (id) => document.getElementById(id);
 
@@ -30,7 +32,8 @@ export const GROUP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 // getBoxLabel returns a speaker's display name: its friendly name, else the agent
 // name (the backend always fills this with a "str-<ip>" fallback), else the host.
 // One place for the label that several views repeated inline.
-export function getBoxLabel(b) { return (b && (b.friendlyName || b.name || b.host)) || ''; }
+// The rule itself is boxes.js labelOf; this name is the one the views import.
+export { getBoxLabel };
 
 // compareVerBuild compares two (version, build) pairs and returns -1 if A<B,
 // 1 if A>B, 0 if equal. version is "vMAJOR.MINOR.PATCH" (a leading "v" and any
@@ -465,11 +468,10 @@ export function encodeURIStrict(s) {
     (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 }
 
+// formatRemaining renders a countdown from milliseconds as m:ss, rounded up so
+// it reads 0:01 until the time is really over.
 export function formatRemaining(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return formatClock(Math.ceil(ms / 1000));
 }
 
 // ---------- Modals ----------

@@ -7,6 +7,7 @@
 // module none of them has to import each other for.
 
 import { state } from '../../state.js';
+import { labelOf } from '../../boxes.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn } from '../../utils.js';
 import { t } from '../../i18n/index.js';
 import { revealSpeakerTabOf, speakerConfirmTitle } from '../../shell2/speakers/speaker.js';
@@ -225,7 +226,7 @@ export async function withButtonPending(btn, fn) {
 
 // settingsBoxLabel is the name the panels below address the speaker by.
 export function settingsBoxLabel(box) {
-  return (box && (box.friendlyName || box.name || box.host)) || '';
+  return labelOf(box);
 }
 
 // confirmFor is confirmWarn for an action on one speaker. In the UI 2.0

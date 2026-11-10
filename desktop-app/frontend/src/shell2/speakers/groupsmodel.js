@@ -19,8 +19,7 @@
 //   survive the live repaints.
 
 import { masterOf, stereoPairsOf, stereoPairKey, storedPermanentGroupsOf } from '../../groups.js';
-
-const up = (s) => String(s || '').toUpperCase();
+import { strBoxes, up } from '../../boxes.js';
 
 // How long the preview waits for the speakers' reports before it says they
 // did not confirm (four rounds of the 5 s poll), and how long a confirmed
@@ -216,7 +215,7 @@ export function pairUndoSplit(halves, nameOf = (b) => (b && (b.name || b.host)) 
 // liveLeaderOf is the speaker that leads a group right now, the one the
 // classic Ungroup takes apart (the hand-picked main first when it leads).
 export function liveLeaderOf(boxes, zoneLive, pickedID = '') {
-  const list = (boxes || []).filter((b) => b && b.kind !== 'stock' && b.deviceID);
+  const list = strBoxes(boxes).filter((b) => b.deviceID);
   const leads = (b) => masterOf(b.deviceID, zoneLive) === up(b.deviceID);
   const picked = list.find((b) => b.deviceID === pickedID);
   if (picked && leads(picked)) return picked;

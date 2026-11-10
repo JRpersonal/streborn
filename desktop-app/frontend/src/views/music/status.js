@@ -8,6 +8,7 @@ import { sourceAccountFrom } from '../../nowsourceaccount.js';
 import { acceptSpotifyReply, recallSettled, snapshotFromReply } from '../../spotifynowplaying.js';
 import { refusalFromReply } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
+import { isPlaying } from '../../boxes.js';
 import { statusTickScope } from '../../statusrefreshscope.js';
 import { keepsLiveTitle } from '../../stoppedstate.js';
 import { renderShellSpeakers } from '../../shell2/mount.js';
@@ -234,7 +235,7 @@ export async function refreshStatus() {
     // its reading so the bar does not stutter on an unrelated status change.
     const trackKey = newLoc + '|' + newName;
     if (trackKey !== trackPos.key) resetTrackProgress(trackKey);
-    else if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') && trackPos.at === 0) {
+    else if (isPlaying(ps) && trackPos.at === 0) {
       // Playing again with no reading yet (the same track resumed after a
       // stop): open the fast-poll window so the bar does not wait a full
       // status interval either.
@@ -383,7 +384,7 @@ export async function refreshStatus() {
       // agent has measured and then self-stops, so this does not re-trigger
       // on every poll once a value is in.
       if (!state.nowBitrate &&
-          (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
+          isPlaying(ps) &&
           (activeSlotFromLocation(newLoc) !== null || /\/spotify\/stream/.test(newLoc))) {
         scheduleLiveBitrate();
       }
@@ -392,7 +393,7 @@ export async function refreshStatus() {
       // calling it on every poll is safe; it no-ops while already polling.
       // Any proxied radio stream, not only a preset slot: a station started
       // from Find stations plays as /stream/raw and has no slot (#1190).
-      if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
+      if (isPlaying(ps) &&
           proxiedRadioPlaying(newLoc)) {
         scheduleLiveTitle();
       }

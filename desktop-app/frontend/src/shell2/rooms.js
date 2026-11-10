@@ -14,8 +14,9 @@ import { pairMasterBox, pairMemberBoxes } from '../groups.js';
 import { speakerTileState } from '../speakertile.js';
 import { speakerChipKinds, speakerPillKind } from './pill.js';
 import { t } from '../i18n/index.js';
+import { labelVia } from '../boxes.js';
 
-const label = (ctx, b) => (typeof ctx.label === 'function' ? ctx.label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+const label = (ctx, b) => labelVia(ctx.label, b);
 
 // roomItems turns the box list into rows, in the list's own order.
 //

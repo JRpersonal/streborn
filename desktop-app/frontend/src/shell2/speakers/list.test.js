@@ -3,7 +3,7 @@
 // (named actions, words for every state, the offline card's note).
 import { describe, it, expect } from 'vitest';
 import {
-  LIST_PILL_ORDER, agoText, fixedGroupRoles, listPillHTML, listPillKind, listPillLabel,
+  LIST_PILL_ORDER, fixedGroupRoles, listPillHTML, listPillKind, listPillLabel,
   speakerListHTML, speakerListModel,
 } from './list.js';
 import { setLocale } from '../../i18n/index.js';
@@ -261,15 +261,6 @@ describe('speakerListHTML', () => {
     expect(odd).toContain('Living &lt;Room&gt;');
     expect(speakerListHTML(speakerListModel([], ctx()))).toContain('No speakers found yet.');
     expect(speakerListHTML(null)).toContain('No speakers found yet.');
-  });
-});
-
-describe('agoText', () => {
-  it('says how long ago, in the app language', () => {
-    expect(agoText(600, 'en')).toBe('10 minutes ago');
-    expect(agoText(7200, 'en')).toBe('2 hours ago');
-    expect(agoText(30, 'en')).toBe('1 minute ago');
-    expect(agoText(600, 'de')).toBe('vor 10 Minuten');
   });
 });
 

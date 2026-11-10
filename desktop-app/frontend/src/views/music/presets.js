@@ -20,6 +20,7 @@ import { t } from '../../i18n/index.js';
 import { extractHost, stationLogoChain } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceLabel } from '../../nativeservice.js';
 import { state } from '../../state.js';
+import { strBoxes } from '../../boxes.js';
 import {
   $,
   appArtFromBoxArt,
@@ -448,7 +449,7 @@ async function healPresetLogos() {
   }
 }
 
-// ---------- Preset Render mit Long Press Support ----------
+// ---------- Preset rendering with long-press support ----------
 
 // BOX_LOOPBACK is the agent's own host:port as seen from the box (the agent runs
 // on the box). It is the single source for the loopback URLs the frontend builds
@@ -509,7 +510,7 @@ export function presetStateLabel(slot, isActive, hasErr) {
 function presetTransferTargets() {
   const box = state.currentBox;
   if (!box || box.kind === 'stock') return [];
-  return (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.host !== box.host);
+  return strBoxes(state.boxes).filter(b => b.host && b.host !== box.host);
 }
 
 export function updatePresetTransferRow() {

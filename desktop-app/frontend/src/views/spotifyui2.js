@@ -19,6 +19,7 @@
 import { $, escapeHtml, escapeAttr } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { state } from '../state.js';
+import { strBoxes } from '../boxes.js';
 import { SpotifyNowPlaying } from '../api.js';
 import { sameBoxIdentity } from '../groups.js';
 import { parsePresetConflict, presetConflictNote } from '../presetmove.js';
@@ -131,7 +132,7 @@ function keysHTML(m) {
   const title = `<h3 class="sp2-title" id="sp2KeysTitle">${escapeHtml(m.box ? t('ui2.spotify.keysTitle', { name: m.name }) : t('ui2.spotify.keysTitleNoSpeaker'))}</h3>`;
   if (!m.box) {
     // Phase 5: no speaker yet (Add speaker), or speakers but none chosen.
-    const has = (state.boxes || []).some((b) => b && b.kind !== 'stock' && b.host);
+    const has = strBoxes(state.boxes).some((b) => b.host);
     const st = listStateNow();
     const stock = (state.boxes || []).some((b) => b && b.kind === 'stock');
     let card;

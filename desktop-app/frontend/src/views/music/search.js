@@ -94,9 +94,9 @@ function listLoadingHTML() {
     : `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
 }
 
-// updateFilterIndicators setzt die has-filter CSS Klasse auf jene Filter
-// Dropdowns die einen anderen Wert als "alle" haben. Damit erkennt der
-// User sofort wo aktiv gefiltert wird.
+// updateFilterIndicators sets the has-filter CSS class on every filter
+// dropdown whose value is something other than "all", so the user sees at a
+// glance where a filter is active.
 export function updateFilterIndicators() {
   const cc = $('searchCountry');
   const lang = $('searchLang');

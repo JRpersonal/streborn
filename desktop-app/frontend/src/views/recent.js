@@ -15,6 +15,7 @@
 // app (App-First, keep the box light).
 
 import { state } from '../state.js';
+import { strBoxes } from '../boxes.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel, decodeXmlEntities, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
@@ -62,7 +63,7 @@ export function initRecentView(d) {
 
 // recentStrBoxes returns the discovered STR speakers (skip unflashed stock ones).
 function recentStrBoxes() {
-  return (state.boxes || []).filter((b) => b && b.kind !== 'stock' && b.host);
+  return strBoxes(state.boxes).filter((b) => b.host);
 }
 
 // recentBoxKey is the stable identity used both for the dropdown option values

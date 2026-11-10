@@ -46,6 +46,9 @@ import { chipHTML, pillLabel, statusPillHTML, CHIP_LABEL_KEYS } from '../pill.js
 import { connectBusy, connectFocus, connectHTML, listStateNow, noSpeakersState, restoreConnectFocus } from '../state.js';
 import { attentionItems, attentionNoteHTML, attentionSig, runAttentionAction } from '../attention.js';
 import { allowsInstallAgain, checkLeadText, checkResultHTML } from '../../speakercheck.js';
+import { liveRegion } from '../live.js';
+import { up } from '../../boxes.js';
+import { agoText } from '../../format.js';
 import './list.css';
 
 // The pills of the list, in precedence order: a card shows the first that
@@ -104,8 +107,6 @@ export function listPillHTML(kind) {
     + `<span class="u-pill-text">${escapeHtml(t(own.key))}</span></span>`;
 }
 
-const up = (s) => String(s || '').toUpperCase();
-
 // fixedGroupRoles maps the address of every speaker in a fixed (permanent)
 // group to its place in it: { role: 'main', members: [names] } on the main
 // speaker, { role: 'member', main: name } on each member. Live and stored
@@ -133,20 +134,6 @@ export function fixedGroupRoles(zoneLive, boxes, label = (b) => b.friendlyName |
     }
   }
   return out;
-}
-
-// agoText says how long ago a speaker was last seen, in the app's language
-// (Intl, the same wording as the classic picker's offline tooltip).
-export function agoText(sec, locale = getLocale()) {
-  const s = Math.max(0, Number(sec) || 0);
-  try {
-    const rtf = new Intl.RelativeTimeFormat(locale || 'en', { numeric: 'auto' });
-    if (s < 3600) return rtf.format(-Math.max(1, Math.round(s / 60)), 'minute');
-    if (s < 86400) return rtf.format(-Math.round(s / 3600), 'hour');
-    return rtf.format(-Math.round(s / 86400), 'day');
-  } catch {
-    return `${Math.max(1, Math.round(s / 60))} min`;
-  }
 }
 
 const ver = (v) => (v ? (/^v/i.test(String(v)) ? String(v) : `v${v}`) : '');
@@ -516,20 +503,10 @@ async function runCheck(root, host) {
 // The list's live region: one node outside the repainted markup, created
 // empty when the list first paints, so a screen reader has registered it
 // before the first result is written into it.
-let liveRegion = null;
-function ensureLiveRegion() {
-  if (liveRegion && document.body.contains(liveRegion)) return liveRegion;
-  liveRegion = document.createElement('div');
-  liveRegion.id = 'ui2SplLive';
-  liveRegion.className = 'u-sr-only';
-  liveRegion.setAttribute('role', 'status');
-  liveRegion.setAttribute('aria-live', 'polite');
-  document.body.appendChild(liveRegion);
-  return liveRegion;
-}
+const live = liveRegion('ui2SplLive');
 
 function announce(text) {
-  const region = ensureLiveRegion();
+  const region = live.ensure();
   // The same words twice in a row are a change too: clear first.
   region.textContent = '';
   setTimeout(() => { region.textContent = text; }, 50);
@@ -579,7 +556,7 @@ function onClick(root, e) {
 export function renderSpeakerList(root, ctx = {}) {
   if (!root) return;
   lastCtx = ctx;
-  ensureLiveRegion();
+  live.ensure();
   if (!wired.has(root)) {
     wired.add(root);
     root.addEventListener('click', (e) => onClick(root, e));

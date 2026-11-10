@@ -40,6 +40,7 @@
 //   says so and offers to go on (checkRunner returns null).
 
 import { state } from '../../state.js';
+import { labelVia } from '../../boxes.js';
 import { t } from '../../i18n/index.js';
 import { escapeHtml, escapeAttr, confirmWarn } from '../../utils.js';
 import { BoxAgentVersion, BrowserOpenURL } from '../../api.js';
@@ -225,7 +226,7 @@ const W = {
 
 const byId = (id) => (W.root && W.root.querySelector(`#${id}`)) || document.getElementById(id);
 const boxFor = (host) => (state.boxes || []).find((b) => b && b.host === host) || null;
-const label = (b) => (typeof W.ctx.label === 'function' ? W.ctx.label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+const label = (b) => labelVia(W.ctx.label, b);
 const strHosts = () => strSnapshot(state.boxes);
 
 function targetName() {

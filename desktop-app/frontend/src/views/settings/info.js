@@ -6,6 +6,7 @@
 // SSH port.
 
 import { state } from '../../state.js';
+import { strBoxes } from '../../boxes.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel } from '../../utils.js';
 import { t, tLookup, getLocale } from '../../i18n/index.js';
 // Firmware facts live in their own module: both views need them, and a view
@@ -244,8 +245,7 @@ async function fillMusicLib(box) {
   }
   // The other STR speakers, for the "add to all" action. Stock speakers have no
   // agent to tell, and this box is handled separately so it is never asked twice.
-  const otherBoxes = (state.boxes || []).filter(b =>
-    b && b.kind !== 'stock' && b.host && b.host !== box.host);
+  const otherBoxes = strBoxes(state.boxes).filter(b => b.host && b.host !== box.host);
   list.innerHTML = servers.map((srv, i) => {
     const name = srv.friendlyName || srv.modelName || srv.id;
     const where = srv.manufacturer ? `${srv.manufacturer}${srv.ip ? ' · ' + srv.ip : ''}` : (srv.ip || '');

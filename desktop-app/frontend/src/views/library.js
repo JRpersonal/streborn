@@ -3,7 +3,7 @@
 // Extracted from the main.js monolith, same pattern as views/recent.js and
 // views/settings.js: the module pulls shared things (state, utils, i18n, api)
 // from their own modules and receives the few main.js-local helpers it needs
-// (showSlotPicker, formatDuration) via initLibraryView, so it never imports
+// (showSlotPicker) via initLibraryView, so it never imports
 // back into main.js (which would create a cycle). New views should follow this
 // pattern so main.js stops growing.
 //
@@ -15,6 +15,8 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
+import { strBoxes } from '../boxes.js';
+import { formatClock } from '../format.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, hideToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
@@ -49,7 +51,6 @@ import { parsePresetConflict } from '../presetmove.js';
 // they are shared across views; the library code calls them as deps.<name>.
 let deps = {
   showSlotPicker() {},
-  formatDuration() {},
   // Resolves the box a play must go to (the group master when the selected
   // box is a zone follower, #70). Overridden by main.js; the fallback keeps
   // the old behavior if the dep is ever missing.
@@ -356,7 +357,7 @@ export async function libraryPutServerOnSpeakers(btn, server) {
   const msg = $('libOnSpeakersMsg');
   if (!srv) return;
   const id = String(srv.udn || '').replace(/^uuid:/i, '');
-  const boxes = (state.boxes || []).filter(b => b && b.host && b.kind !== 'stock' && !b.offline);
+  const boxes = strBoxes(state.boxes).filter(b => b.host && !b.offline);
   if (!boxes.length) {
     if (msg) msg.innerHTML = `<span class="setup-warn">${escapeHtml(t('library.onSpeakersNoBoxes'))}</span>`;
     return;
@@ -1272,7 +1273,7 @@ function libraryListInnerHTML() {
   const fromHere = playable > 1 && !libState.filter;
   const items = libraryFilteredItems().map((it) => {
     const meta = [it.artist, it.album].filter(Boolean).join(' — ');
-    const dur = it.durationSec > 0 ? ` <span class="library-duration">${deps.formatDuration(it.durationSec)}</span>` : '';
+    const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatClock(it.durationSec)}</span>` : '';
     return `
         <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
           <span class="library-icon">&#9835;</span>
@@ -1436,7 +1437,7 @@ function libraryWholeSearchBody() {
   if (s.loading) return head + `<p class="library-loading">${escapeHtml(t('library.wholeSearching'))}</p>`;
   const rows = s.items.map((it, idx) => {
     const meta = [it.artist, it.album, it.server].filter(Boolean).join(' · ');
-    const dur = it.durationSec > 0 ? ` <span class="library-duration">${deps.formatDuration(it.durationSec)}</span>` : '';
+    const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatClock(it.durationSec)}</span>` : '';
     return `
         <li class="library-row library-row-track">
           <span class="library-icon">&#9835;</span>
@@ -1537,7 +1538,7 @@ function ui2FolderRowsHTML() {
       value: it.id,
       speaker,
       meta: [it.artist, it.album].filter(Boolean).join(' · '),
-      duration: it.durationSec > 0 ? deps.formatDuration(it.durationSec) : '',
+      duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
       status: libState.ui2.status.get(statusKey(it)),
     })).join('');
   if (!rows && libState.filter) {
@@ -1634,7 +1635,7 @@ function ui2SearchHTML() {
     value: idx,
     speaker,
     meta: [it.artist, it.album, it.server].filter(Boolean).join(' · '),
-    duration: it.durationSec > 0 ? deps.formatDuration(it.durationSec) : '',
+    duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
     status: libState.ui2.status.get(statusKey(it)),
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;

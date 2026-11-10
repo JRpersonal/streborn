@@ -33,6 +33,7 @@
 
 import { t as defaultT } from './i18n/index.js';
 import { escapeHtml } from './utils.js';
+import { labelVia } from './boxes.js';
 
 export const CHECK_VERDICTS = Object.freeze(['ok', 'str-silent', 'pc-offline', 'hung', 'other-network', 'off-network', 'no-answer']);
 
@@ -183,7 +184,7 @@ export async function runSpeakerChecks(checkFn, targets) {
 // precheckHTML lists what the checks found, one block per speaker that needs
 // something, for the dialog before a report or a mail.
 export function precheckHTML(found, label, t = defaultT) {
-  const name = (b) => (typeof label === 'function' ? label(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+  const name = (b) => labelVia(label, b);
   return `<p>${escapeHtml(t('speakerCheck.beforeReport'))}</p>`
     + found.map(({ box, res }) => `<div class="spk-check-block"><p><b>${escapeHtml(name(box))}</b></p>${checkResultHTML(res, name(box), t, box)}</div>`).join('');
 }

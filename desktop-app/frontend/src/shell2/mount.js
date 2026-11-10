@@ -30,7 +30,8 @@ import { wirePopover } from './popover.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
-import { agoText } from './speakers/list.js';
+import { agoText } from '../format.js';
+import { labelVia } from '../boxes.js';
 import {
   configureStates, connectBusy, connectFocus, groupEditVerdict, notifyStates, restoreConnectFocus, paintPlayerState, playerStateModel,
   setReportHook, stateSearchBusy, transportErrorText, wireStates,
@@ -67,7 +68,7 @@ const CONFIRM_WITHIN_MS = 20000;
 let playerStatusHost = '';
 
 const byId = (id) => document.getElementById(id);
-const label = (b) => (typeof deps.getBoxLabel === 'function' ? deps.getBoxLabel(b) : '') || (b && (b.friendlyName || b.name || b.host)) || '';
+const label = (b) => labelVia(deps.getBoxLabel, b);
 
 export function shell2Mounted() {
   return !!state.ui2Shell;
