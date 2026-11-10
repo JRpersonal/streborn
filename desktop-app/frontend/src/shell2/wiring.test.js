@@ -55,7 +55,8 @@ describe('UI 2.0 hooks in the app', () => {
 
   it('chooses a speaker through pickBox from the picker and the sidebar', () => {
     const pick = srcOf('pickBox');
-    expect(pick).toContain("state.setupTarget = { kind: 'stock', box }; switchView('setup');");
+    // switchView is injected into views/boxpicker.js, hence deps.
+    expect(pick).toContain("state.setupTarget = { kind: 'stock', box }; deps.switchView('setup');");
     const sel = srcOf('renderBoxSelect');
     expect(sel.match(/pickBox\(/g).length).toBeGreaterThanOrEqual(2);
     expect(main).toMatch(/mountShell2\(\{[\s\S]*?pickBox: pickBoxFromShell,/);
@@ -285,7 +286,8 @@ describe('UI 2.0 states (phase 5)', () => {
 
   it('keeps the toast for an offline pick outside the preview', () => {
     const pick = srcOf('pickBox');
-    const branch = pick.indexOf('if (shell2Mounted() && shellOfflinePick(box, discoverBoxes())) return;');
+    // discoverBoxes is injected into views/boxpicker.js, hence deps.
+    const branch = pick.indexOf('if (shell2Mounted() && shellOfflinePick(box, deps.discoverBoxes())) return;');
     const toast = pick.indexOf("showToast(title || t('speaker.offlineTooltip', { ago: '' }));");
     expect(branch).toBeGreaterThan(0);
     expect(toast).toBeGreaterThan(branch);

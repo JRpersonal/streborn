@@ -8,7 +8,9 @@ import { masterBoxForKey, storedGroupHostsOf, pairBlockedHosts } from './groups.
 // Line endings normalised: the sources are checked out with CRLF on some
 // machines, and the source slices below key on a bare newline.
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const mainJS = read('./main.js');
+// The speaker picker (renderBoxSelect, dissolveGroupFrame) left main.js for
+// views/boxpicker.js.
+const pickerJS = read('./views/boxpicker.js');
 
 // Bundle 20260907-185945: three SoundTouch 10s, master .239.
 // The app's records are keyed on the mDNS-announced id (the FormZone call in
@@ -143,15 +145,15 @@ describe('the music-tab group frame survives the id mismatch', () => {
   });
 
   it('renderBoxSelect resolves through the helper and stars by host', () => {
-    expect(mainJS).toContain('masterBoxForKey(m, zlMap, state.boxes)');
-    expect(mainJS).toContain('const masterBox = masterBoxOfKey(m);');
-    expect(mainJS).toContain('resolved.host === b.host');
-    expect(mainJS).not.toContain("const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === m)");
+    expect(pickerJS).toContain('masterBoxForKey(m, zlMap, state.boxes)');
+    expect(pickerJS).toContain('const masterBox = masterBoxOfKey(m);');
+    expect(pickerJS).toContain('resolved.host === b.host');
+    expect(pickerJS).not.toContain("const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === m)");
   });
 
   it('the frame x aims through the same resolver instead of returning in silence', () => {
-    const start = mainJS.indexOf('async function dissolveGroupFrame(');
-    const fnSrc = mainJS.slice(start, mainJS.indexOf('\n}\n', start));
+    const start = pickerJS.indexOf('async function dissolveGroupFrame(');
+    const fnSrc = pickerJS.slice(start, pickerJS.indexOf('\n}\n', start));
     expect(fnSrc).toContain('masterBoxForKey(mk, state.zoneLive, state.boxes)');
     expect(fnSrc).toContain("t('multiroom.dissolveIncomplete')");
     expect(fnSrc).not.toContain("state.boxes.find(b => (b.deviceID || '').toUpperCase() === mk)");

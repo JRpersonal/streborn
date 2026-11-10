@@ -15,7 +15,8 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'main.js'), 'utf8');
+// Update all lives in update/all.js since it left main.js.
+const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'update', 'all.js'), 'utf8');
 
 // counts() as main.js defines it: the shape the strip has to consume.
 function counts(outcomes) {
