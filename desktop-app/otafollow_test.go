@@ -516,7 +516,7 @@ func TestEngineNotPushedWhenAddressTakenWhileQueued(t *testing.T) {
 	ident.hints = []string{idA}
 	u := &speakerUpdater{host: addrOld, port: 8888, deviceID: idA, name: "Kitchen",
 		seams: s, policy: otaProductionPolicy, gate: newUploadGate(1), ident: ident}
-	out := u.deliverEngine(UpdateOutcome{Host: addrOld, Attempts: 1}, mf.speakerANew(addrOld), testOldVer)
+	out := u.deliverEngine(UpdateOutcome{Host: addrOld, Attempts: 1}, mf.speakerANew(addrOld), u.seams.target("", testOldVer))
 	if len(mf.engines) != 0 {
 		t.Fatalf("engine pushed to %v after another speaker took the address in the queue", mf.engines)
 	}
