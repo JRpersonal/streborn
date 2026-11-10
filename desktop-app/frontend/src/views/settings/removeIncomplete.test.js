@@ -49,6 +49,80 @@ describe('a removal that left files behind', () => {
     expect(fn).toContain("escapeHtml(t('settingsView.removeSTRIncomplete', { paths: left.paths }))");
     expect(fn).toMatch(/\$\{leftover\}/);
   });
+
+  // The headline above that note said "STR was removed from this speaker",
+  // which is the one thing that did not fully happen.
+  it('gets its own headline on the removed panel instead of "STR was removed"', () => {
+    const shared = read('shared.js');
+    const fn = shared.slice(shared.indexOf('export function renderSTRRemovedPanel'), shared.indexOf('export function wireBackToList'));
+    expect(fn).toContain("const title = incomplete ? t('settingsView.strRemovedIncompleteTitle') : t('settingsView.strRemovedTitle');");
+    expect(fn).toMatch(/<div class="empty-state-title">\$\{escapeHtml\(title\)\}<\/div>/);
+    // The title and the note hang on the same condition.
+    expect(fn).toContain('const incomplete = !!(left && box && left.host === box.host);');
+    expect(fn).toMatch(/const leftover = incomplete\s*\?/);
+  });
+});
+
+describe('a removal after which STR is still installed', () => {
+  const src = read('actions.js');
+  const start = src.indexOf('await UninstallSTR(box.host)');
+  const handler = src.slice(start, src.indexOf('finally', start));
+
+  it('is told in its own translated sentence, with the paths', () => {
+    expect(handler).toMatch(
+      /\} else if \(r && r\.stillInstalled\) \{[\s\S]*?reportError\(rmBtn, t\('settingsView\.removeSTRStillInstalled', \{ paths: \(r\.leftoverFiles \|\| \[\]\)\.join\(', '\) \}\)\);/,
+    );
+  });
+
+  it('is an error on the settings page, never the removed panel', () => {
+    const still = handler.indexOf('} else if (r && r.stillInstalled) {');
+    const removed = handler.indexOf('if (r && (r.ok || r.incomplete)) {');
+    const generic = handler.indexOf("t('settingsView.removeSTRFailed'");
+    expect(still).toBeGreaterThan(removed);
+    expect(still).toBeLessThan(generic);
+    const branch = handler.slice(still, handler.indexOf('} else if', still + 10));
+    expect(branch).not.toContain('renderSTRRemovedPanel');
+    expect(branch).not.toContain('purgeSpeakerLocalState');
+  });
+});
+
+describe('the headline and the still-installed sentence', () => {
+  const dir = join(here, '../../i18n/bundles');
+  const bundles = readdirSync(dir).filter((f) => f.endsWith('.json'));
+  const load = (f) => JSON.parse(readFileSync(join(dir, f), 'utf8'));
+
+  it('exist in every bundle the app ships', () => {
+    expect(bundles.length).toBeGreaterThanOrEqual(13);
+    for (const f of bundles) {
+      const b = load(f);
+      const title = b['settingsView.strRemovedIncompleteTitle'];
+      expect(title, f).toBeTruthy();
+      expect(title, f).toContain('STR');
+      expect(title, f).not.toBe(b['settingsView.strRemovedTitle']);
+      const still = b['settingsView.removeSTRStillInstalled'];
+      expect(still, f).toBeTruthy();
+      expect(still, f).toContain('{{paths}}');
+      expect(still, f).toContain('STR');
+      expect(still, f).toContain('60');
+      expect(still, f).not.toBe(b['settingsView.removeSTRIncomplete']);
+    }
+  });
+
+  it('are translated, not the English text copied into the other bundles', () => {
+    const en = load('en.json');
+    for (const f of bundles.filter((x) => x !== 'en.json')) {
+      const b = load(f);
+      expect(b['settingsView.strRemovedIncompleteTitle'], f).not.toBe(en['settingsView.strRemovedIncompleteTitle']);
+      expect(b['settingsView.removeSTRStillInstalled'], f).not.toBe(en['settingsView.removeSTRStillInstalled']);
+    }
+  });
+
+  it('say what happened in English', () => {
+    const en = load('en.json');
+    expect(en['settingsView.strRemovedIncompleteTitle']).toContain('only partly removed');
+    expect(en['settingsView.removeSTRStillInstalled']).toContain('could not be removed');
+    expect(en['settingsView.removeSTRStillInstalled']).toContain('run Remove again');
+  });
 });
 
 describe('the leftover sentence', () => {

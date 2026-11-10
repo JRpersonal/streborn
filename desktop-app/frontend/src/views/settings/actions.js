@@ -351,6 +351,12 @@ export function wireActionSections(ctx) {
           return;
         } else if (r && r.stickPresent) {
           reportError(rmBtn, t('settingsView.removeSTRStickPresent'));
+        } else if (r && r.stillInstalled) {
+          // Nothing effective came off: the speaker restarts with STR still
+          // on it and stays the STR speaker it is in the app. Its own
+          // sentence, with the paths, instead of the backend's English text
+          // wrapped in "could not remove".
+          reportError(rmBtn, t('settingsView.removeSTRStillInstalled', { paths: (r.leftoverFiles || []).join(', ') }));
         } else if (busyRefusalText(r && r.message)) {
           // The one-write-per-speaker guard turned the removal away: an
           // install, update or flash is still running on this speaker.
