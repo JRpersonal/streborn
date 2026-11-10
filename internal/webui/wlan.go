@@ -393,6 +393,8 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 	defer s.wlanMu.Unlock()
 	switch mech {
 	case "wpa":
+		// Asked before the switch, because afterwards the answer is always yes.
+		wasOnTarget := s.wlanAssociated(iface, ssid)
 		switch s.applyWlanWPALive(iface, ssid, password, hidden) {
 		case wpaConfirmed:
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface, "wantTag", ssidTag(ssid))
@@ -441,7 +443,11 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden, for
 				rebootBox()
 				return
 			}
-			renewDHCPLease()
+			if leaseNeedsRenewal(wasOnTarget) {
+				renewDHCPLease()
+			} else {
+				s.logger.Info("WLAN: the speaker was already on this network, its DHCP lease is kept", "wantTag", ssidTag(ssid), "iface", iface)
+			}
 			// The switch can land the box on a NEW address (another subnet's
 			// DHCP), and everything derived from the old one goes stale: the
 			// mDNS announcers keep answering with the boot address, the peer
@@ -899,6 +905,17 @@ func renewDHCPLease() {
 	_ = exec.Command("killall", "-USR2", "udhcpc").Run()
 	time.Sleep(time.Second)
 	_ = exec.Command("killall", "-USR1", "udhcpc").Run()
+}
+
+// leaseNeedsRenewal decides whether a confirmed live switch gives the lease
+// back. A lease from the network the speaker was already on is still the right
+// one, and releasing it invites the router to hand out a different address
+// (measured on an ST10, 2026-11-10: one run of the same-network switch
+// released the lease three times in ten seconds, twice by NetManager and once
+// from here, and one run in seven came back on a new address). Only a move to
+// another network needs the fresh round.
+func leaseNeedsRenewal(wasOnTarget bool) bool {
+	return !wasOnTarget
 }
 
 // rebootBox triggers a detached reboot so BCO boxes apply the persisted creds
