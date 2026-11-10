@@ -90,10 +90,10 @@ func (c *Client) NowPlaying(ctx context.Context) (*NowPlaying, error) {
 }
 
 // GetRaw reads a :8090 endpoint and returns the body verbatim, for the
-// documents a caller parses itself (/sources and /presets feed
-// presets.NativeSourceAccounts and the preset reconcile, which want the
-// speaker's bytes, not a struct). The deadline is the caller's; a non-200
-// answer is a *BoxError carrying the body.
+// documents a caller parses itself (/sources feeds
+// presets.NativeSourceAccounts, which wants the speaker's bytes, not a
+// struct). The deadline is the caller's; a non-200 answer is a *BoxError
+// carrying the body.
 func (c *Client) GetRaw(ctx context.Context, path string) ([]byte, error) {
 	ctx, cancel := callCtx(ctx)
 	defer cancel()
