@@ -295,18 +295,7 @@ Privacy:
 			}
 			// Drive metadata for the manifest so the receiver knows
 			// which physical stick the files came from.
-			driveLabel := d.Label
-			if req.Anonymize {
-				driveLabel = ""
-			}
-			meta := map[string]any{
-				"drivePath":  d.Path,
-				"driveLabel": driveLabel,
-				"filesystem": d.Filesystem,
-				"totalBytes": d.TotalBytes,
-				"freeBytes":  d.FreeBytes,
-			}
-			mbBytes, _ := json.MarshalIndent(meta, "", "  ")
+			mbBytes, _ := json.MarshalIndent(stickMeta(d, req.Anonymize), "", "  ")
 			if err := writeZipEntry(zw, fmt.Sprintf("stick-%d/_meta.json", stickIndex), mbBytes); err != nil {
 				return LogExportResult{}, err
 			}
@@ -324,9 +313,96 @@ Privacy:
 		return LogExportResult{}, err
 	}
 
-	st, _ := f.Stat()
-	a.logger.Info("log export written", "path", req.SavePath, "bytes", st.Size(), "boxes", len(hosts), "sticksFromHost", stickIndex)
-	return LogExportResult{SavePath: req.SavePath, Bytes: st.Size()}, nil
+	size, err := closeZipFile(f, req.SavePath)
+	if err != nil {
+		a.logger.Warn("log export: the zip could not be completed", "path", req.SavePath, "err", err)
+		return LogExportResult{}, err
+	}
+	a.logger.Info("log export written", "path", req.SavePath, "bytes", size, "boxes", len(hosts), "sticksFromHost", stickIndex)
+	return LogExportResult{SavePath: req.SavePath, Bytes: size}, nil
+}
+
+// zipOutFile is the part of *os.File closeZipFile needs.
+type zipOutFile interface {
+	Stat() (os.FileInfo, error)
+	Close() error
+}
+
+// closeZipFile closes the finished bundle and returns its size. The close is
+// where a full disk or a vanished network share finally reports that the last
+// bytes never landed: dropped, the export claimed success for a zip that does
+// not open. A size that cannot be read from the open file is read from the
+// path instead.
+func closeZipFile(f zipOutFile, path string) (int64, error) {
+	st, statErr := f.Stat()
+	if err := f.Close(); err != nil {
+		return 0, fmt.Errorf("write zip: %w", err)
+	}
+	if statErr != nil {
+		if st, statErr = os.Stat(path); statErr != nil {
+			return 0, fmt.Errorf("the zip was written but cannot be read back: %w", statErr)
+		}
+	}
+	return st.Size(), nil
+}
+
+// stickMeta is the stick-<n>/_meta.json of one drive. Anonymised, it names
+// neither the volume label nor the mount path, which on Linux and macOS
+// contains that label and on Linux the account name too
+// (/media/<account>/<label>, /Volumes/<label>).
+func stickMeta(d sticksetup.Drive, anonymize bool) map[string]any {
+	drivePath, driveLabel := d.Path, d.Label
+	if anonymize {
+		drivePath, driveLabel = anonymizeDrivePath(d.Path), ""
+	}
+	return map[string]any{
+		"drivePath":  drivePath,
+		"driveLabel": driveLabel,
+		"filesystem": d.Filesystem,
+		"totalBytes": d.TotalBytes,
+		"freeBytes":  d.FreeBytes,
+	}
+}
+
+// drivePathRemoved stands where the personal part of a mount path was.
+const drivePathRemoved = "<removed>"
+
+// windowsDriveRootRegex matches a bare drive letter root ("E:", "E:\", "E:/").
+var windowsDriveRootRegex = regexp.MustCompile(`^[A-Za-z]:[\\/]?$`)
+
+// isMountParent reports whether el is one of the folders removable media are
+// mounted under. They say how the stick was mounted and nothing about its
+// owner, so they stay.
+func isMountParent(el string) bool {
+	switch el {
+	case "media", "mnt", "run", "Volumes":
+		return true
+	}
+	return false
+}
+
+// anonymizeDrivePath keeps what a mount path says about HOW the stick is
+// mounted and drops the rest: a Windows drive letter stays whole, a Unix path
+// keeps its leading mount folders ("/media", "/run/media", "/Volumes") and
+// loses everything from the first other element on. The last element is the
+// mount point itself and never stays, whatever it is called. A plain string
+// function, not filepath, so a bundle is scrubbed the same on every platform.
+func anonymizeDrivePath(p string) string {
+	if p == "" || windowsDriveRootRegex.MatchString(p) {
+		return p
+	}
+	if !strings.HasPrefix(p, "/") {
+		return drivePathRemoved
+	}
+	els := strings.Split(strings.Trim(p, "/"), "/")
+	kept := ""
+	for _, el := range els[:len(els)-1] {
+		if !isMountParent(el) {
+			break
+		}
+		kept += "/" + el
+	}
+	return kept + "/" + drivePathRemoved
 }
 
 // readTail returns the last cap bytes of the file at path. When the

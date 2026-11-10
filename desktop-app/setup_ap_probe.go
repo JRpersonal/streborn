@@ -132,10 +132,6 @@ var (
 	boseInfoDevIDRe = regexp.MustCompile(`deviceID="([0-9A-Fa-f]+)"`)
 )
 
-func fetchBoseInfo(ctx context.Context, host string) (name, model, deviceID string, ok bool) {
-	return fetchBoseInfoAt(ctx, host, 8090)
-}
-
 func fetchBoseInfoAt(ctx context.Context, host string, port int) (name, model, deviceID string, ok bool) {
 	url := fmt.Sprintf("http://%s:%d/info", host, port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

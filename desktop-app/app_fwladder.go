@@ -31,7 +31,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -311,7 +310,7 @@ func (a *App) runPrepareStick(ctx context.Context, step bosefw.Step, drivePath, 
 			stu, tempStu = out, true
 		case ".stu":
 			a.emitLadder(step.ID, fwPhaseVerify, 0, step.InnerSize)
-			if err := verifyStuFile(localPath, step.InnerSize, step.InnerCRC32, step.InnerSHA1); err != nil {
+			if err := verifyFile(localPath, fileFingerprint{size: step.InnerSize, crc: step.InnerCRC32, checkCRC: true, sha1: step.InnerSHA1}); err != nil {
 				return fail("fingerprint", err)
 			}
 			stu = localPath
@@ -493,37 +492,16 @@ func (a *App) fetchArchiveZip(ctx context.Context, step bosefw.Step) (string, er
 	}
 	dst := filepath.Join(dir, step.FileName)
 	a.emitLadder(step.ID, fwPhaseVerify, 0, step.ZipSize)
-	if checkZipFile(dst, step.ZipSize, step.ZipSHA1) == nil {
+	want := fileFingerprint{size: step.ZipSize, sha1: step.ZipSHA1}
+	if verifyFile(dst, want) == nil {
 		a.fwLog().Info("firmware ladder: using the zip already downloaded", "file", step.FileName)
 		return dst, nil
 	}
-	part := dst + ".part"
-	_ = os.Remove(part)
-	out, err := os.Create(part)
-	if err != nil {
-		return "", err
-	}
-	ok := false
-	defer func() {
-		if !ok {
-			_ = out.Close()
-			_ = os.Remove(part)
-		}
-	}()
-	dctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	req, err := http.NewRequestWithContext(dctx, http.MethodGet, step.URL, nil)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 60 * time.Second,
-		},
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+	h := sha1.New() // #nosec G401 -- matches the archive's published sha1
+	n, err := fetchVerified(ctx, verifiedDownload{
+		url: step.URL, dst: dst, size: step.ZipSize, source: "the Internet Archive",
+		headerWait: 60 * time.Second, stallAfter: 90 * time.Second,
+		checkRedirect: func(r *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("too many redirects")
 			}
@@ -532,82 +510,21 @@ func (a *App) fetchArchiveZip(ctx context.Context, step bosefw.Step) (string, er
 			}
 			return nil
 		},
-	}
-	resp, err := client.Do(req)
+		sum: h, onProgress: a.ladderProgress(step.ID, fwPhaseDownload, step.ZipSize),
+		alreadyThere: func() bool { return verifyFile(dst, want) == nil },
+		check: func(n int64) error {
+			got := hex.EncodeToString(h.Sum(nil))
+			if n != step.ZipSize || !strings.EqualFold(got, step.ZipSHA1) {
+				return fmt.Errorf("%w: the download has %d bytes, sha1 %s; expected %d bytes, sha1 %s", errFingerprint, n, got, step.ZipSize, step.ZipSHA1)
+			}
+			return nil
+		},
+	})
 	if err != nil {
-		return "", fmt.Errorf("download from the Internet Archive: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download from the Internet Archive: HTTP %d", resp.StatusCode)
-	}
-	prog := a.ladderProgress(step.ID, fwPhaseDownload, step.ZipSize)
-	body, beat := beatingReader(io.LimitReader(resp.Body, step.ZipSize+1))
-	go watchStall(dctx, cancel, beat, 90*time.Second)
-	h := sha1.New() // #nosec G401 -- matches the archive's published sha1
-	n, err := io.Copy(io.MultiWriter(out, h), &countingReader{r: body, onProgress: prog})
-	if err != nil {
-		return "", fmt.Errorf("download from the Internet Archive stopped after %d of %d bytes: %w", n, step.ZipSize, err)
-	}
-	got := hex.EncodeToString(h.Sum(nil))
-	if n != step.ZipSize || !strings.EqualFold(got, step.ZipSHA1) {
-		return "", fmt.Errorf("%w: the download has %d bytes, sha1 %s; expected %d bytes, sha1 %s", errFingerprint, n, got, step.ZipSize, step.ZipSHA1)
-	}
-	if err := out.Close(); err != nil {
 		return "", err
 	}
-	if err := os.Rename(part, dst); err != nil {
-		return "", err
-	}
-	ok = true
 	a.fwLog().Info("firmware ladder: zip downloaded and checked", "file", step.FileName, "bytes", n)
 	return dst, nil
-}
-
-// checkZipFile reports whether the file at p has exactly this size and sha1.
-func checkZipFile(p string, size int64, sha1hex string) error {
-	fh, err := os.Open(p)
-	if err != nil {
-		return err
-	}
-	defer fh.Close()
-	st, err := fh.Stat()
-	if err != nil {
-		return err
-	}
-	if st.Size() != size {
-		return fmt.Errorf("%w: size %d, expected %d", errFingerprint, st.Size(), size)
-	}
-	h := sha1.New() // #nosec G401 -- integrity check against the archive's sha1
-	if _, err := io.Copy(h, fh); err != nil {
-		return err
-	}
-	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, sha1hex) {
-		return fmt.Errorf("%w: sha1 %s, expected %s", errFingerprint, got, sha1hex)
-	}
-	return nil
-}
-
-// verifyStuFile checks a plain Update.stu: size, CRC-32 and, when known, sha1.
-func verifyStuFile(p string, size int64, crc uint32, sha1hex string) error {
-	fh, err := os.Open(p)
-	if err != nil {
-		return err
-	}
-	defer fh.Close()
-	st, err := fh.Stat()
-	if err != nil {
-		return err
-	}
-	if st.Size() != size {
-		return fmt.Errorf("%w: size %d, expected %d", errFingerprint, st.Size(), size)
-	}
-	c := crc32.NewIEEE()
-	s := sha1.New() // #nosec G401 -- integrity check
-	if _, err := io.Copy(io.MultiWriter(c, s), fh); err != nil {
-		return err
-	}
-	return matchInner(size, size, c, s, crc, sha1hex)
 }
 
 func matchInner(n, size int64, c hash.Hash32, s hash.Hash, crc uint32, sha1hex string) error {

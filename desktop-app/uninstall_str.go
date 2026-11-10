@@ -96,6 +96,17 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		res.Message = "host is required"
 		return res
 	}
+	// One writer per speaker, see boxbusy.go: removing STR under a running
+	// install or update deletes the folder that run is writing into, and the
+	// reboot at the end cuts off whatever is still going.
+	release, busyErr := writesInFlight.claim(host, "a removal")
+	if busyErr != nil {
+		res.Step = "busy"
+		res.Message = busyErr.Error()
+		a.logger.Info("uninstall_str: refused, the speaker is busy", "host", host, "err", busyErr)
+		return res
+	}
+	defer release()
 	a.logger.Info("uninstall_str: starting", "host", host)
 	// From here on no engine delivery may land on this speaker (see
 	// App.uninstalling). The mark stays after a successful removal; a failed
@@ -133,16 +144,8 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		// below, so pressing Remove again on an already-stock speaker returns at
 		// once. Without this the second Remove ran the whole unlock-then-SSH dance
 		// first and took as long as a real removal (shorty310, 2026-09-03).
-		if tcpReachable(host, 8090, 2*time.Second) &&
-			!tcpReachable(host, 8888, 1500*time.Millisecond) &&
-			!tcpReachable(host, 17008, 1500*time.Millisecond) {
-			a.purgeSpeakerState(host, "")
-			a.markHostStock(host)
-			res.Step = "already-stock"
-			res.OK = true
-			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
-				"so there was nothing to remove and nothing else is needed."
-			a.logger.Info("uninstall_str: speaker is already stock, nothing to remove (fast path)", "host", host)
+		if hostAnswersAsStock(host) {
+			a.finishAlreadyStock(host, &res, "uninstall_str: speaker is already stock, nothing to remove (fast path)")
 			return res
 		}
 		// FALLBACK: the STR agent was not reachable (e.g. a wedged box). Try the
@@ -165,16 +168,8 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		// (:8888 sm2, :17008 BCO) is open. A wedged STR box keeps its agent port
 		// open, so it never reaches this branch; a powered-off box answers nothing,
 		// so it keeps the reachability error rather than a false "already removed".
-		boseUp := tcpReachable(host, 8090, 2*time.Second)
-		strAgentUp := tcpReachable(host, 8888, 1500*time.Millisecond) || tcpReachable(host, 17008, 1500*time.Millisecond)
-		if boseUp && !strAgentUp {
-			a.purgeSpeakerState(host, "")
-			a.markHostStock(host)
-			res.Step = "already-stock"
-			res.OK = true
-			res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
-				"so there was nothing to remove and nothing else is needed."
-			a.logger.Info("uninstall_str: speaker is already stock, nothing to remove", "host", host)
+		if hostAnswersAsStock(host) {
+			a.finishAlreadyStock(host, &res, "uninstall_str: speaker is already stock, nothing to remove")
 			return res
 		}
 		res.Log = hello
@@ -273,6 +268,28 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	}
 	a.logger.Info("uninstall_str: done", "host", host, "removedCount", len(res.RemovedFiles))
 	return res
+}
+
+// hostAnswersAsStock reports whether host looks like a live speaker with no STR
+// on it: the Bose API answers on :8090 while neither STR agent port (:8888
+// sm2, :17008 BCO) is open.
+func hostAnswersAsStock(host string) bool {
+	return tcpReachable(host, 8090, 2*time.Second) &&
+		!tcpReachable(host, 8888, 1500*time.Millisecond) &&
+		!tcpReachable(host, 17008, 1500*time.Millisecond)
+}
+
+// finishAlreadyStock is the outcome of Remove on a speaker that has no STR on
+// it any more: the app's memory of it is rewritten to the stock speaker it is,
+// and res says so. logMsg tells the two places it is recognised apart.
+func (a *App) finishAlreadyStock(host string, res *UninstallSTRResult, logMsg string) {
+	a.purgeSpeakerState(host, "")
+	a.markHostStock(host)
+	res.Step = "already-stock"
+	res.OK = true
+	res.Message = "STR is already removed from this speaker. It is back to a stock Bose speaker, " +
+		"so there was nothing to remove and nothing else is needed."
+	a.logger.Info(logMsg, "host", host)
 }
 
 // enableSSHViaAgent asks the still-running STR agent to open root SSH: the agent
