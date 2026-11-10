@@ -129,6 +129,22 @@ releases later.
   reaches 3.6:1. Primary actions use `#1F6FB2` (5.3:1); STR blue `#6BD` stays
   the accent.
 - **Platform-neutral shortcuts.** Most users are on Windows: Ctrl, not Cmd.
+- **Quieter chrome** (10 November 2026). The frame was drawn with one strong
+  border colour around everything: every card, button, tab row and list row
+  had the 3:1 edge a text field needs. Now the neutral surfaces are layered
+  and parted by hairlines (see the colour tokens), and the strong edge is
+  left to what is told by its outline. In the same pass: the search field
+  sits next to the Radio title; the six keys take one row, like the six
+  buttons on the speaker (two rows of three in the smallest window or at a
+  larger text size); the player has one round primary button, Play or Pause,
+  with Stop and power as quiet round buttons beside it (their words stay as
+  names and tooltips, the glyphs are drawn); the notices about every speaker
+  or the computer are inline under the tabs instead of a band across the
+  window, the speaker update one as a quiet tinted row; Overview shows one
+  "About this speaker" card where Status, Speaker info and Network were
+  three; and the donate buttons at the foot of the sidebar are neutral in
+  colour, on screen as before, with the brand colours kept on Help and info.
+  No control left and no flow changed.
 
 ## What we add
 
@@ -153,14 +169,18 @@ every pairing is checked by `shell2/tokens.test.js`.
 
 | Token | Dark | Light | High contrast |
 |---|---|---|---|
-| `--u-bg` | `#17181B` | `#FFFFFF` | `#000000` |
-| `--u-sidebar` | `#1E1F23` | `#F3F3F5` | `#000000` |
-| `--u-surface` | `#1F2024` | `#F7F7F8` | `#0A0A0A` |
+| `--u-bg` | `#131417` | `#FFFFFF` | `#000000` |
+| `--u-sidebar` | `#17181C` | `#F7F7F9` | `#000000` |
+| `--u-surface` | `#1D1F24` | `#F3F4F6` | `#0A0A0A` |
+| `--u-raised` | `#262930` | `#E8E9ED` | `#1A1A1A` |
+| `--u-raised-edge` | `#262930` | `#E8E9ED` | `#FFFFFF` |
+| `--u-hairline` | `#2E3138` | `#DDDFE4` | `#FFFFFF` |
+| `--u-tint` | `#16222F` | `#E6F0F8` | `#001F3D` |
 | `--u-selected` | `#203955` | `#DCEAF6` | `#003A70` |
 | `--u-action` | `#1F6FB2` | `#1769AA` | `#4FC3FF` |
 | `--u-on-action` | `#FFFFFF` | `#FFFFFF` | `#000000` |
 | `--u-accent` | `#66BBDD` | `#1769AA` | `#7FD8FF` |
-| `--u-text` | `#E9EAEE` | `#16181D` | `#FFFFFF` |
+| `--u-text` | `#ECEDF0` | `#16181D` | `#FFFFFF` |
 | `--u-muted` | `#A9ADB6` | `#565B66` | `#E0E0E0` |
 | `--u-border` | `#6E727C` | `#767B85` | `#FFFFFF` |
 | `--u-ok` | `#5CC98A` | `#1A6B3C` | `#7CFFB2` |
@@ -169,6 +189,18 @@ every pairing is checked by `shell2/tokens.test.js`.
 | `--u-danger-fill` | `#CC3328` | `#B3261E` | `#FF8A80` |
 | `--u-on-danger` | `#FFFFFF` | `#FFFFFF` | `#000000` |
 | `--u-focus` | `#66BBDD` | `#1769AA` | `#FFFFFF` |
+
+The neutral surfaces are four layers, each a step apart: the page
+(`--u-bg`), the sidebar and the player (`--u-sidebar`), a card
+(`--u-surface`) and the fill of a quiet control (`--u-raised`).
+`--u-hairline` parts them: a card's edge, a divider, the line under the
+tabs. It is decoration and deliberately below 3:1 in the dark and the light
+theme, so it is never the only edge of something you type into or tell by its
+outline: text fields and selects keep `--u-border` (3:1). A quiet button is
+told by its words on `--u-raised`; `--u-raised-edge` is its outline, the
+fill's own colour in the dark and the light theme and a real line in the
+contrast theme. `--u-tint` is the accent-tinted ground of an inline notice
+(the speaker update notice under the tabs).
 
 `--u-on-action` is the label on a button filled with `--u-action`.
 `--u-danger` is the danger colour as text and as an edge; a danger button is
@@ -227,9 +259,10 @@ into a neighbour:
 Font weights: `--u-fw-regular` (400), `--u-fw-semibold` (600) and
 `--u-fw-bold` (700).
 
-Radii: `--u-radius` (8 px) for buttons, cards, rows and fields,
+Radii: `--u-radius` (8 px) for buttons, rows and fields,
+`--u-radius-card` (10 px) for cards, key tiles and the inline notice,
 `--u-radius-pill` (12 px) for the status pill, badges and state chips.
-Round marks use `50%`.
+Round marks and the player's transport buttons use `50%`.
 
 Focus: `--u-focus-ring` (`2px solid var(--u-focus)`) is the outline of every
 keyboard focus in the preview, set off from the control by
