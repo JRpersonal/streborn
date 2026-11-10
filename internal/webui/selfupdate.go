@@ -196,6 +196,17 @@ func (u *selfUpdater) endCheck(err error) {
 }
 
 // claim marks the updater busy; false when another check or install runs.
+// failIfRebooting turns a self-update that is waiting for its restart into a
+// failed one with msg. For the restart that never happened (otarestart.go);
+// any other state is left alone, a desktop push has no self-update to fail.
+func (u *selfUpdater) failIfRebooting(msg string) {
+	u.mu.Lock()
+	if u.state == "rebooting" {
+		u.state, u.err = "failed", msg
+	}
+	u.mu.Unlock()
+}
+
 func (u *selfUpdater) claim() bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()

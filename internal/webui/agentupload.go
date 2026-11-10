@@ -303,7 +303,10 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 		time.Sleep(2 * time.Second)
 		// The new binary is in place at dst. A reboot lets the boot path run
 		// it; a coprocessor Wi-Fi ST20 restarts only the agent (otarestart.go).
-		s.finishAgentOTA(dst)
+		// A hand-over that does not end this process puts the agent back
+		// into service instead of leaving it refusing engine deliveries and
+		// updates (otarestart.go).
+		s.settleOTAHandOver(s.finishAgentOTA(dst), stopSplash)
 	}}, nil
 }
 
