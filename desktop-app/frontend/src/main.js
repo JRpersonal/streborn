@@ -17,6 +17,7 @@ import {
   DiscoverBoxes,
   RefreshKnownBoxes,
   AddBoxByIP,
+  RemoveSpeakerFromList,
   RebootBox,
   CheckSpeaker,
   PendingUpdateIntent,
@@ -312,6 +313,7 @@ import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
 // and box issue banners, the update failure report); preview only.
 import { setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
 import { onSpeakerPurge } from './speakerPurge.js';
+import { removeEntry } from './speakerremove.js';
 // The Music view ("Listen": now playing, presets, volume, sources, search,
 // favourites, Pandora, the group panel and the status poll), extracted from
 // this monolith into src/views/music/. Same pattern as the views above:
@@ -443,7 +445,7 @@ initMusicView({ checkAppUpdate, checkSshBanner, discoverBoxes, maybeInviteWorldM
 initAppUpdate({ checkBoxUpdate });
 initBanners({ boxNeedsUpdate, discoverBoxes, speakerUpdateCardMuted, switchView });
 // Speaker picker deps (see views/boxpicker.js for what each one is used for).
-initBoxPicker({ boxNeedsUpdate, checkBoxIssueBanner, checkBoxUpdate, checkWedgeBanner, discoverBoxes, refreshMusicZones, renderFirewallBanner, switchView, updateBoxUiVisibility });
+initBoxPicker({ boxNeedsUpdate, checkBoxIssueBanner, checkBoxUpdate, checkWedgeBanner, discoverBoxes, refreshMusicZones, removeSpeakerEntry, renderFirewallBanner, switchView, updateBoxUiVisibility });
 // Speaker update deps (see update/deps.js for what each one is used for).
 initUpdateFlow({ boxNeedsUpdate, checkBoxUpdate, checkSshBanner, discoverBoxes });
 // Session maps this file keeps per speaker, cleared when STR is removed from
@@ -1421,6 +1423,8 @@ function safeMountShell2() {
       // The speaker check (speakercheck.js): the list's Check action and the
       // check in front of "Report a problem".
       checkSpeaker: CheckSpeaker,
+      // "Remove from list" on a speaker that is not reachable (#1852).
+      removeSpeaker: removeSpeakerEntry,
       reportProblem: reportProblemWithCheck,
       checkAppUpdate: (manual) => {
         try { clearNoticeDismissal('appUpdate'); } catch {}
@@ -1734,6 +1738,21 @@ function applyBoxList(list) {
   maybeShowSpeakerUpdateCard();
   // Self-heal a mid-reboot misclassification (see updateStockReprobe).
   updateStockReprobe();
+}
+
+// removeSpeakerEntry takes the entry of a speaker that is not reachable off
+// the list (speakerremove.js, #1852): the classic picker's x on a greyed tile
+// and the UI 2.0 list's "Remove from list" both end here. The list is applied
+// the way a search result is, so the tiles, the cached list painted at the
+// next start and every view that reads state.boxes follow.
+function removeSpeakerEntry(box) {
+  return removeEntry(box, {
+    remove: RemoveSpeakerFromList,
+    boxes: () => state.boxes,
+    applyList: applyBoxList,
+    state,
+    discover: discoverBoxes,
+  });
 }
 
 // Stock self-heal: a speaker captured mid-reboot classifies as "stock" (its
