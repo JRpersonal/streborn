@@ -20,6 +20,7 @@
 #                           command you run for everyday work.
 #   make wails-build        production build of the desktop app
 #                           with embedded helpers and version stamp.
+#   make rpm                build and package the Linux desktop app as an RPM
 #   make share-targets      pull the share target registry from
 #                           st-reborn.de into the desktop app and the
 #                           phone remote (checked against the website's
@@ -93,7 +94,7 @@ ENGINE_EMBED_OUT := desktop-app/agentbin/go-librespot-armv7l
 
 .PHONY: all build build-arm build-arm64 build-all \
         winformat-embed agent-embed engine-embed winres wails-dev wails-build \
-        share-targets display-font test vet tidy clean
+        rpm package-rpm share-targets display-font test vet tidy clean
 
 all: build
 
@@ -194,6 +195,18 @@ wails-build: winformat-embed agent-embed winres
 		-trimpath \
 		-clean \
 		-nopackage
+
+# Native Linux RPM build. package-rpm also accepts a prebuilt release binary:
+# make package-rpm RPM_BINARY=/path/to/app VERSION=v1.2.3
+RPM_ARCH ?= $(shell uname -m)
+RPM_BINARY ?= desktop-app/build/bin/ST Reborn
+RPM_OUT ?= dist/STR-Linux-$(if $(filter aarch64 arm64,$(RPM_ARCH)),arm64,x64).rpm
+
+rpm: wails-build
+	$(MAKE) package-rpm VERSION="$(VERSION)"
+
+package-rpm:
+	sh .github/scripts/build-rpm.sh "$(RPM_BINARY)" "$(VERSION)" "$(RPM_ARCH)" "$(RPM_OUT)"
 
 # Regenerate the supplemental root certificates the agent embeds, from the
 # tracked Mozilla bundle. The pinned list lives in the script, so every change

@@ -1,4 +1,4 @@
-# Package managers: winget, Homebrew and .deb
+# Package managers: winget, Homebrew, .deb and .rpm
 
 The desktop app is published to these package managers on top of the GitHub
 release and st-reborn.de:
@@ -7,6 +7,8 @@ release and st-reborn.de:
 |---|---|---|
 | Windows | winget (the Windows Package Manager) | `winget install JRpersonal.STReborn` |
 | macOS | Homebrew, own tap | `brew install --cask jrpersonal/tap/st-reborn` |
+| Fedora and compatible RPM distributions | `.rpm` on the release | `sudo dnf install ./STR-Linux-x64.rpm` |
+| openSUSE | `.rpm` on the release | `sudo zypper install ./STR-Linux-x64.rpm` |
 | Debian, Ubuntu, Mint, Raspberry Pi OS | `.deb` on the release | double click, or `sudo apt install ./STR-Linux-x64.deb` |
 
 After the one-time setup below, every real release updates both by itself
@@ -123,6 +125,45 @@ downloads the new .deb from the release manifest (`desktop_linux_deb`,
 which asks for the password and upgrades the package. It never swaps the
 binary behind dpkg's back. There is no apt repository, so `apt upgrade` does
 not see new versions; the in-app banner is the update path.
+
+## Linux .rpm
+
+Every release also carries `STR-Linux-x64.rpm` and `STR-Linux-arm64.rpm`.
+Install with `sudo dnf install ./STR-Linux-x64.rpm` on Fedora, or
+`sudo zypper install ./STR-Linux-x64.rpm` on openSUSE. Use the ARM64 file
+on aarch64 machines. These are unsigned local packages; if your installer
+asks about the missing signature, confirm only after verifying the download
+against the release's `SHA256SUMS`.
+
+RPM automatically records the binary's shared-library requirements, allowing
+each distribution to resolve its own GTK 3, WebKitGTK 4.1 and libsoup 3
+packages. The distribution must provide those libraries and the glibc versions
+required by the binary; older enterprise distributions may not. The package
+includes the application menu entry, icons, license and third-party notices.
+
+To upgrade, download the next RPM and install it with `dnf` or `zypper`.
+There is no RPM repository for automatic `dnf upgrade`. RPM-aware in-app
+updates will follow separately after the packages have shipped once.
+
+To build locally on Fedora:
+
+```sh
+sudo dnf install golang gcc gtk3-devel webkit2gtk4.1-devel libsoup3-devel rpm-build
+# Install Node.js/npm and the Wails CLI version used in release.yml as well.
+make engine-embed   # populate the Spotify engine for speaker updates (requires gh)
+make rpm VERSION=v1.2.3
+```
+
+`make rpm` builds the desktop app and packages it into `dist/`. To package an
+existing production binary instead, run:
+
+```sh
+make package-rpm VERSION=v1.2.3 RPM_BINARY=/path/to/app RPM_ARCH=x86_64
+```
+
+The release workflow builds both RPM architectures from the same binaries as
+the Debian packages and archives, and includes them in checksums, provenance
+attestations and release downloads.
 
 ## Flathub, ruled out
 
