@@ -1518,6 +1518,7 @@ export namespace main {
 	export class TrackPos {
 	    positionSec: number;
 	    durationSec: number;
+	    seekable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TrackPos(source);
@@ -1527,6 +1528,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.positionSec = source["positionSec"];
 	        this.durationSec = source["durationSec"];
+	        this.seekable = source["seekable"];
 	    }
 	}
 	export class TrueFactoryResetResult {

@@ -3599,6 +3599,28 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   background: var(--c-border, #d8d8d8);
   overflow: hidden;
 }
+/* A track the speaker can jump in (a music-library file, discussion #1207):
+   the bar is a slider. The 4px line stays what is drawn; the pseudo-element
+   only makes it reachable with a pointer. Radio never gets this class. */
+.track-bar.seekable {
+  position: relative;
+  overflow: visible;
+  cursor: pointer;
+  touch-action: none;
+}
+.track-bar.seekable::before {
+  content: "";
+  position: absolute;
+  inset: -10px 0;
+}
+.track-bar.seekable:hover,
+.track-bar.seekable:focus-visible { height: 6px; }
+.track-bar.seekable:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+/* While the bar is held the fill follows the pointer, not a 0.9 s glide. */
+.track-bar.seeking .track-bar-fill { transition: none; }
 .track-bar-fill {
   height: 100%;
   width: 0;

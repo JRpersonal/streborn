@@ -7,7 +7,7 @@ import { state } from '../../state.js';
 import { $, clearNoticeDismissal, showError } from '../../utils.js';
 import { renderStreamSource } from '../streamsource.js';
 import { deps } from './deps.js';
-import { action, queueAction, renderNowPlayingBar } from './nowplaying.js';
+import { action, mountTrackSeek, queueAction, renderNowPlayingBar } from './nowplaying.js';
 
 // stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
 // is deliberately excluded: nothing is loaded there, so Play would promise
@@ -58,6 +58,8 @@ export function mountWiring() {
   };
 
   $('stopBtn').onclick = () => action('stop');
+  // A click on the progress bar jumps inside a music-library track (#1207).
+  mountTrackSeek();
   // Track skip for a Spotify playlist (the DLNA folder queue has its own controls
   // in #queueControls). The agent's /api/next//api/prev are source-aware.
   $('trackNextBtn').onclick = () => action('next');

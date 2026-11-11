@@ -740,6 +740,10 @@ type Server struct {
 	activeFile       *activeDirectFile
 	fileRestartUntil time.Time
 
+	// userSeek is the listener's last jump inside the playing file, which the
+	// two end watches pick up (seek.go, own mutex).
+	userSeek userSeekState
+
 	// standbyStop is the power-off bookkeeping: the #197 standby-bounce
 	// stamps and rate limits, the last user play and the spontaneous-off
 	// recovery single-flight (standbystopstate.go, own mutex).
@@ -1748,6 +1752,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/save-slot", s.handleQueueSaveSlot)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
+	mux.HandleFunc("/api/seek", s.handleSeek)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves

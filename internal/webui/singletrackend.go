@@ -214,6 +214,10 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 		// not climbed past the paused second since. Where the listener paused
 		// says nothing about where the file ends (see resumeFreezeClock).
 		resumeUnmoved bool
+		// seekSeen and seekAt: the last jump of the listener this watch
+		// applied, and when it happened (seek.go).
+		seekSeen uint64
+		seekAt   time.Time
 	)
 	for {
 		select {
@@ -242,6 +246,27 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 			lastPos, lastPosAt, ranAhead = 0, time.Time{}, false
 			start = time.Now().Add(-s.pausePosition())
 			pausedSince, resumeUnmoved = time.Time{}, false
+			continue
+		}
+		// The listener jumped inside the track (seek.go). The track's clock and
+		// the highest position start over from where the jump landed, or a jump
+		// back would end the track early by the distance jumped and a jump
+		// forward would read as a position running ahead of real time.
+		if sk, ok := s.userSeek.after(seekSeen); ok {
+			seekSeen = sk.seq
+			if !sk.queue && sk.fileGen == gen {
+				seekAt = sk.at
+				start = sk.at.Add(-sk.pos)
+				lastPos, lastPosAt, ranAhead = sk.pos, sk.at, false
+				pausedSince, resumeUnmoved = time.Time{}, false
+				resume.jumped()
+				s.logger.Debug("single track: the listener jumped inside the track, timing its end from there",
+					"title", title, "toSec", int(sk.pos.Seconds()))
+			}
+		}
+		// Right after a jump the speaker re-opens the file; what it reports
+		// in that moment is not the track's state.
+		if !seekAt.IsZero() && time.Since(seekAt) < s.seekQuietTime() {
 			continue
 		}
 		// A pause from the app records a user stop as well, but the file stays
