@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"strings"
@@ -159,5 +160,129 @@ func TestLateConfirmationFindsTheSpeakerAtItsNewAddress(t *testing.T) {
 	a.confirmLateOTA(map[string]BoxInfo{newIP: {Host: newIP, Port: 8888, Kind: "str", Version: "v2", Build: "b5", DeviceID: idA}}, nil)
 	if n := strings.Count(readJournal(t, journal), "confirmed late by discovery"); n != 1 {
 		t.Errorf("corrective line written %d times, want exactly 1", n)
+	}
+}
+
+// A speaker found by the network search at a new address replaces its entry at
+// the old one, and nothing else: another speaker that is merely silent keeps
+// its entry (#1852).
+func TestSpeakerFoundAtANewAddressReplacesItsOldEntry(t *testing.T) {
+	const oldIP, newIP, otherIP = "192.0.2.60", "192.0.2.61", "192.0.2.62"
+	a := moveTestApp()
+	a.discCache[oldIP] = discEntry{box: BoxInfo{Host: oldIP, Port: 8888, Kind: "str", DeviceID: idA, FriendlyName: "Kitchen"}, seen: time.Now()}
+	a.discCache[otherIP] = discEntry{box: BoxInfo{Host: otherIP, Port: 8888, Kind: "str", DeviceID: idB, FriendlyName: "Bath"}, seen: time.Now()}
+
+	seen := map[string]BoxInfo{newIP: {Host: newIP, Port: 8888, Kind: "str", DeviceID: idA}}
+	a.mergeDiscoveryCache(seen)
+	if _, ok := seen[oldIP]; ok {
+		t.Error("the old address is still served next to the new one")
+	}
+	if _, ok := a.discCache[oldIP]; ok {
+		t.Error("the old address is still cached")
+	}
+	if seen[newIP].FriendlyName != "Kitchen" {
+		t.Errorf("name at the new address = %q, want it carried over", seen[newIP].FriendlyName)
+	}
+	if b, ok := seen[otherIP]; !ok || b.DeviceID != idB {
+		t.Errorf("another speaker that is only silent lost its entry: %+v (present %v)", b, ok)
+	}
+}
+
+// One sighting can carry the agent's own id and the next the id the firmware
+// calls the speaker. The old entry is tied to the new one by either.
+func TestSpeakerIsFollowedByItsFirmwareID(t *testing.T) {
+	const oldIP, newIP = "192.0.2.63", "192.0.2.64"
+	cases := []struct {
+		name        string
+		cached, now BoxInfo
+	}{
+		{"cached under the agent id, answers under the firmware id",
+			BoxInfo{Host: oldIP, Kind: "str", DeviceID: idA, BoxDeviceID: idB},
+			BoxInfo{Host: newIP, Kind: "str", DeviceID: idB, BoxDeviceID: idB}},
+		{"cached under the firmware id, answers under the agent id",
+			BoxInfo{Host: oldIP, Kind: "str", DeviceID: idB},
+			BoxInfo{Host: newIP, Kind: "str", DeviceID: idA, BoxDeviceID: idB}},
+	}
+	for _, c := range cases {
+		a := moveTestApp()
+		a.discCache[oldIP] = discEntry{box: c.cached, seen: time.Now()}
+		seen := map[string]BoxInfo{newIP: c.now}
+		a.mergeDiscoveryCache(seen)
+		if _, ok := seen[oldIP]; ok {
+			t.Errorf("%s: the old address is still served", c.name)
+		}
+		if _, ok := a.discCache[oldIP]; ok {
+			t.Errorf("%s: the old address is still cached", c.name)
+		}
+	}
+}
+
+// A record without any id is never tied to another speaker.
+func TestEntryWithoutAnIDIsNotReplaced(t *testing.T) {
+	const oldIP, newIP = "192.0.2.65", "192.0.2.66"
+	a := moveTestApp()
+	a.discCache[oldIP] = discEntry{box: BoxInfo{Host: oldIP, Kind: "stock"}, seen: time.Now()}
+	seen := map[string]BoxInfo{newIP: {Host: newIP, Kind: "str", DeviceID: idA, BoxDeviceID: idA}}
+	a.mergeDiscoveryCache(seen)
+	if _, ok := seen[oldIP]; !ok {
+		t.Error("a speaker without an id was dropped because another one was found")
+	}
+}
+
+// The routed-network case: the speaker was connected by its address, got a new
+// one, and was connected by that. Nothing but the refresh of the known speakers
+// sees it, so that refresh has to replace the old entry, in what it returns and
+// in the file the next start reads (#1852).
+func TestSpeakerConnectedByAddressReplacesItsOldEntry(t *testing.T) {
+	isolateConfigDir(t)
+	const oldIP, newIP, otherIP = "192.0.2.70", "192.0.2.71", "192.0.2.72"
+	a := moveTestApp()
+	moved := knownBoxFixture(oldIP, idA)
+	other := knownBoxFixture(otherIP, idB)
+	other.Kind = "stock"
+	a.discCache[oldIP] = discEntry{box: moved, seen: time.Now()}
+	a.discCache[otherIP] = discEntry{box: other, seen: time.Now()}
+	a.persistKnownSpeakers()
+	// What AddBoxByIP leaves behind for the address that was typed in.
+	atNew := knownBoxFixture(newIP, idA)
+	a.discCache[newIP] = discEntry{box: atNew, seen: time.Now()}
+
+	a.probeSTRFn = func(ctx context.Context, host string) (BoxInfo, bool) {
+		if host == newIP {
+			return atNew, true
+		}
+		return BoxInfo{}, false
+	}
+	a.portOpenFn = func(host string, port int, timeoutMs int) bool { return false }
+
+	out, err := a.RefreshKnownBoxes()
+	if err != nil {
+		t.Fatalf("RefreshKnownBoxes: %v", err)
+	}
+	hosts := map[string]bool{}
+	for _, b := range out {
+		hosts[b.Host] = true
+	}
+	if hosts[oldIP] {
+		t.Error("the refresh still returns the old address next to the new one")
+	}
+	if !hosts[newIP] || !hosts[otherIP] {
+		t.Errorf("returned hosts = %v, want the new address and the silent bystander", hosts)
+	}
+	if _, ok := a.discCache[oldIP]; ok {
+		t.Error("the old address is still cached")
+	}
+
+	a.persistKnownSpeakers()
+	list, ok := readKnownSpeakersFile(t)
+	if !ok {
+		t.Fatal("known-speakers.json is missing")
+	}
+	stored := map[string]bool{}
+	for _, k := range list {
+		stored[k.Host] = true
+	}
+	if stored[oldIP] || !stored[newIP] || !stored[otherIP] {
+		t.Errorf("known-speakers.json = %v, want the new address in place of the old one", list)
 	}
 }
