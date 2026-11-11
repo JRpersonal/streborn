@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -75,19 +76,23 @@ func (s *Server) setTitle(url, title string) {
 // isAdMarkerTitle reports whether an ICY StreamTitle is an ad-insertion cue
 // rather than something a listener should read. Some ad servers put their
 // cues into the title field: Bel RTL sends "adbreak_start_length_90000" and
-// "adbreak_end" around every break, and the speaker printed them under the
-// station name (issue #1838). Only the machine form is matched, a word
-// followed by an underscore or nothing, so a song called "Adbreak Blues"
+// "adbreak_end" around every break (issue #1838), another ad server sends
+// "ADINJECT_LENGTH_180000" (issue #1853), and the speaker printed them under
+// the station name. Only the machine form is matched: the bare word
+// "adbreak", or one unbroken token that starts with "ad" and joins letters
+// and digits with underscores. A song called "Adbreak Blues" has a space and
 // still shows.
 func isAdMarkerTitle(title string) bool {
 	t := strings.ToLower(strings.TrimSpace(title))
-	for _, p := range []string{"adbreak", "ad_break"} {
-		if t == p || strings.HasPrefix(t, p+"_") {
-			return true
-		}
+	if t == "adbreak" || t == "adinject" {
+		return true
 	}
-	return false
+	return adCueToken.MatchString(t)
 }
+
+// adCueToken is the machine form of an ad cue: "ad", optional letters, then
+// at least one "_part" of letters or digits, and nothing else.
+var adCueToken = regexp.MustCompile(`^ad[a-z]*(_[a-z0-9]+)+$`)
 
 // titleToUTF8 normalises an ICY StreamTitle to valid UTF-8. Shoutcast/Icecast
 // stations often send the title in Latin-1 (ISO-8859-1), not UTF-8, so an umlaut
