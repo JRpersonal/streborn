@@ -6759,6 +6759,14 @@ async function saveDisplay(kind, enabled) {
       show(fillAll(T.sfSummary, c), c.fail > 0);
     }
   }
+  /* suRecentDone: the speaker's stored result says an update to the version
+     it runs now finished well, at most half an hour ago. */
+  function suRecentDone(st) {
+    var l = st && st.last;
+    if (!l || !l.ok || !l.version || !l.at || !st.current || st.current.indexOf(l.version) !== 0) return false;
+    var age = Date.now() - Date.parse(l.at);
+    return age >= 0 && age < 30 * 60 * 1000;
+  }
   function render() {
     var sum = document.getElementById('suStatus'), lbl = document.getElementById('lblSuBtn');
     if (!st) { if (lbl) lbl.textContent = T.suCheck; renderFleet(); return; }
@@ -6819,6 +6827,11 @@ async function saveDisplay(kind, enabled) {
     else if (st.state === 'engine') show(T.suEngine, false, true);
     else if (st.state === 'failed') show(fill(T.suFail, humanErr(st.error)) + (engNote ? ' ' + engNote : ''), true);
     else if (target && st.current && st.current.indexOf(target) === 0) show(fill(T.suDone, target));
+    /* The page was reloaded, or the phone threw the tab away, while the
+       speaker restarted: target lived in this page only, so a finished run
+       said nothing and read as a failed one. The speaker keeps its last
+       result; a recent one for the version it runs now is that same news. */
+    else if (suRecentDone(st)) show(fill(T.suDone, st.last.version));
     else if (engNote) show(engNote, true);
     else if (otherPhone()) show(T.sfOther, true);
     else if (planning || probing) show(T.sfLoading);
