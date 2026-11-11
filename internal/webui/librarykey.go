@@ -66,7 +66,14 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	}); err != nil {
 		return err
 	}
-	gen := s.setLastPlay(directURL, p.Name, p.Art, mime)
+	// The artist and album the key was saved with, or what this agent still
+	// knows of the file for a key saved before they were kept (#1839).
+	artist, album, from := s.keyTrackLabel(p)
+	gen := s.recordLastPlay(&lastPlayInfo{boxURL: directURL, title: p.Name, art: p.Art, mime: mime,
+		artist: artist, album: album})
+	if from != "" {
+		go s.storeKeyTrackLabel(p.Slot, directURL, artist, album, from)
+	}
 	name, art := p.Name, p.Art
 	go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
 		_ = s.pushOverNativeStation(ctx, name, func() error {
@@ -88,6 +95,7 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	s.armSingleTrackEnd(singleTrack{
 		boxURL: directURL, title: name, art: art, mime: mime, meta: meta, dur: dur,
 		claimedLength: dur > 0 && !length.fromFile,
+		artist:        artist, album: album,
 	}, gen)
 	return nil
 }

@@ -31,13 +31,17 @@ export function libraryFavFields(c) {
   const out = { source: 'upnp' };
   if (c.mime) out.mime = c.mime;
   if (c.durationSec > 0) out.durationSec = Math.round(c.durationSec);
+  // A single track's artist and album, shown with the running song when the
+  // favourite is played (#1839). A folder card has none.
+  if (c.artist) out.artist = c.artist;
+  if (c.album) out.album = c.album;
   return out;
 }
 
 // libraryFavCard turns a library favourite back into the Recently-played card
 // shape replayLibraryCard plays.
 export function libraryFavCard(s) {
-  return {
+  const card = {
     source: 'upnp',
     cardKey: s.stationuuid || '',
     name: s.name || '',
@@ -46,4 +50,7 @@ export function libraryFavCard(s) {
     mime: s.mime || '',
     durationSec: s.durationSec || 0,
   };
+  if (s.artist) card.artist = s.artist;
+  if (s.album) card.album = s.album;
+  return card;
 }

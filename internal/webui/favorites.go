@@ -74,6 +74,12 @@ type Favorite struct {
 	Source      string `json:"source,omitempty"`
 	Mime        string `json:"mime,omitempty"`
 	DurationSec int    `json:"durationSec,omitempty"`
+	// Artist and Album are what the media server named for a starred library
+	// track, so playing the favourite labels the running song the way a
+	// Library play does (#1839). Bounded in sanitiseFavorites. Empty on a
+	// station, a folder, and a favourite starred before they were kept.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 	// Location and ItemType mark a Pandora station (#1663): Source is
 	// "pandora", Location the station reference the speaker listed, ItemType
 	// its item type. It has no stream address: the speaker's own Pandora
@@ -260,6 +266,12 @@ func sanitiseFavorites(in []Favorite) []Favorite {
 		f.Name = strings.TrimSpace(f.Name)
 		if f.Name == "" {
 			continue
+		}
+		// Only a library item carries them; short text either way (#1839).
+		if f.Source == "upnp" {
+			f.Artist, f.Album = cleanTrackText(f.Artist), cleanTrackText(f.Album)
+		} else {
+			f.Artist, f.Album = "", ""
 		}
 		if f.isPandora() {
 			// A Pandora station plays from its reference, not an address.

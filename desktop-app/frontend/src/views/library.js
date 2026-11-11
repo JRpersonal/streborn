@@ -1229,6 +1229,8 @@ function librarySaveAsPreset(item) {
         source, durationSec: item.durationSec || 0,
         // The track's object on its server (#919).
         ref: libraryTrackRef(item, libraryItemUDN(item)),
+        // Named next to the running song when the key is played (#1839).
+        artist: item.artist || '', album: item.album || '',
       });
       // A refusal (already on another key) stays with the key picker, which
       // offers the move; a save the speaker took is said in the track's row.

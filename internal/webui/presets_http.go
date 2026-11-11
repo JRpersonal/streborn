@@ -115,6 +115,9 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 		// Same art rule as the per-slot save: the store keeps the station's
 		// ORIGIN image URL, never this agent's own art-proxy wrapper (#696).
 		p.Art = healSelfArtProxy(p.Art)
+		// A copied or restored library key keeps its artist and album, bounded
+		// like a fresh save (#1839).
+		boundPresetTrackLabel(p)
 		if msg, code := bulkPresetRejection(*p); code != "" {
 			s.logger.Warn("bulk preset write refused: a preset in the set is not playable",
 				"slot", p.Slot, "name", p.Name, "code", code,

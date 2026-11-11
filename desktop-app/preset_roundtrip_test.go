@@ -103,3 +103,60 @@ func TestPresetRoundTripOmitsQueueFieldsForRadio(t *testing.T) {
 		t.Errorf("radio preset must not carry a shuffle field, got %s", out)
 	}
 }
+
+// A single library track's artist and album (#1839) ride on its key. The copy
+// to another speaker, the backup and a rename all decode the key into the
+// app-side Preset and write it back, so both must survive that, and a key
+// without them must not grow empty ones.
+func TestPresetRoundTripKeepsArtistAndAlbum(t *testing.T) {
+	src := `{"slot":6,"name":"Amanda","stream_url":"http://192.0.2.9:8200/MediaItems/42.flac","type":"radio",` +
+		`"source":"MiniDLNA","duration_sec":256,"artist":"Boston","album":"Third Stage"}`
+	var p Preset
+	if err := json.Unmarshal([]byte(src), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Artist != "Boston" || p.Album != "Third Stage" {
+		t.Fatalf("decoded key lost its label: %+v", p)
+	}
+	out, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want, got map[string]any
+	_ = json.Unmarshal([]byte(src), &want)
+	_ = json.Unmarshal(out, &got)
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("the key changed in the round trip: got %v, want %v", got, want)
+	}
+
+	bare, err := json.Marshal(Preset{Slot: 1, Name: "Radio X", StreamURL: "http://example.com/x.mp3", Type: "radio"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(bare, &m)
+	for _, k := range []string{"artist", "album"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("a key without a label carries %q: %s", k, bare)
+		}
+	}
+}
+
+// The Recently-played ring is redeclared in the app: a field missing here is
+// dropped before the frontend sees it, which is how the MIME was lost (#817).
+func TestRecentItemKeepsArtistAndAlbum(t *testing.T) {
+	var it RecentItem
+	if err := json.Unmarshal([]byte(`{"ts":"2026-11-11T10:00:00Z","source":"upnp","cardKey":"k","cardName":"Amanda",`+
+		`"cardURL":"http://192.0.2.9:8200/MediaItems/42.flac","mime":"audio/flac","artist":"Boston","album":"Third Stage"}`), &it); err != nil {
+		t.Fatal(err)
+	}
+	out, err := json.Marshal(it)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(out, &m)
+	if m["artist"] != "Boston" || m["album"] != "Third Stage" {
+		t.Fatalf("the app drops the card's label: %s", out)
+	}
+}

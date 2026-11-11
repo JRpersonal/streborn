@@ -29,6 +29,11 @@ type Preset struct {
 	// (#978). Mirrored so a rename or a box-to-box copy keeps it.
 	DurationSec int    `json:"duration_sec,omitempty"`
 	Homepage    string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
+	// Artist, Album: a single library song's artist and album, shown with the
+	// running song when the key is played (#1839). Mirrored so a rename, a
+	// box-to-box copy and a backup keep them.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 	// Queue presets (Type=="queue", a saved DLNA folder) carry the shuffle
 	// flag and the ordered track list. Items stays raw JSON on purpose: the
 	// agent owns that schema (internal/presets PresetItem), and the copy-

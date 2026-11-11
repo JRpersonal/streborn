@@ -63,6 +63,7 @@ func (f *fakeRenumberingServer) log() []string {
 func (f *fakeRenumberingServer) itemXML(id, title string) string {
 	return fmt.Sprintf(`<item id="%s" parentID="c-1"><dc:title>%s</dc:title>`+
 		`<upnp:class>object.item.audioItem.musicTrack</upnp:class>`+
+		`<upnp:artist>Some Artist</upnp:artist><upnp:album>Some Album</upnp:album>`+
 		`<res protocolInfo="http-get:*:audio/mpeg:*" duration="0:03:20">%s</res></item>`, id, title, f.newURL(id))
 }
 
@@ -175,6 +176,11 @@ func TestLibraryKeyFindsItsTrackAgainAfterTheServerRenumbered(t *testing.T) {
 	}
 	if got.DurationSec != 200 {
 		t.Errorf("length the server reported not kept: %d", got.DurationSec)
+	}
+	// The same answer names the artist and album a key saved before #1839
+	// never had.
+	if got.Artist != "Some Artist" || got.Album != "Some Album" {
+		t.Errorf("artist and album the server named not kept: %q, %q", got.Artist, got.Album)
 	}
 	if libraryFileMime(got) != "audio/mpeg" {
 		t.Fatalf("healed key lost its library shape")

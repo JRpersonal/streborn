@@ -269,6 +269,7 @@ export async function saveCurrentToSlot(slot, report = null) {
       await saveLibraryTrackPreset(state.currentBox.host, state.currentBox.port, slot, {
         name: lname, url: lib.url, art: lib.art || '', source: lib.source || '',
         durationSec: lib.durationSec || 0, ref: lib.ref || null,
+        artist: lib.artist || '', album: lib.album || '',
       });
       await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: lname }), report, lname);
     } catch (err) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -329,4 +330,47 @@ func itoa(i int) string {
 		b[p] = '-'
 	}
 	return string(b[p:])
+}
+
+// A single library track's card keeps the artist and album its play named
+// (#1839): a replay of the card labels the running song with them. A repeat
+// of the same card fills them in when the first row had none, and never
+// blanks what is there.
+func TestALibraryTrackCardKeepsItsArtistAndAlbum(t *testing.T) {
+	const url = "http://192.0.2.10:8200/MediaItems/42.flac"
+	s := New()
+	s.Add(Entry{Source: "upnp", CardKey: url, CardName: "Amanda", CardURL: url, Mime: "audio/flac"})
+	s.Add(Entry{Source: "upnp", CardKey: url, CardName: "Amanda", CardURL: url, Mime: "audio/flac",
+		Artist: "Boston", Album: "Third Stage"})
+	s.Add(Entry{Source: "upnp", CardKey: url, CardName: "Amanda", CardURL: url, Mime: "audio/flac"})
+	all := s.All()
+	if len(all) != 1 || all[0].Artist != "Boston" || all[0].Album != "Third Stage" {
+		t.Fatalf("ring = %+v, want one row with its label", all)
+	}
+
+	// Through the file and back, and absent from a row that has none.
+	path := filepath.Join(t.TempDir(), "recent.json")
+	p, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Add(all[0])
+	p.Add(Entry{Source: "radio", CardKey: "http://example/1live", CardName: "1LIVE", CardURL: "http://example/1live"})
+	if err := p.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(b), `"artist"`); n != 1 {
+		t.Errorf("the file names an artist %d times, want once (the station has none): %s", n, b)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.All(); len(got) != 2 || got[0].Artist != "Boston" || got[0].Album != "Third Stage" || got[1].Artist != "" {
+		t.Fatalf("reloaded ring = %+v", got)
+	}
 }

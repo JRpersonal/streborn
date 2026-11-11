@@ -1179,6 +1179,12 @@ type lastPlayInfo struct {
 	// "+" button would have stored (#1467). Empty for every other play.
 	homepage, codec string
 	bitrate         int
+	// artist and album are what the start of a single library file named
+	// for it (a Library play, a key, a favourite). Kept with the record so
+	// the label survives what the lone-file end watch does not: an agent
+	// restart and the power-on resume after it (#1839). Empty for every
+	// other play.
+	artist, album string
 }
 
 // resumeMaxAge bounds how stale the last station may be and still come back on a
