@@ -156,7 +156,9 @@ func TestLiveSSHEnginePushOnTightStorage(t *testing.T) {
 		return
 	}
 
-	run("rm -f " + dst + " " + dst + ".sha256 " + filler + "; sync")
+	// Stop the engine too: a deleted file keeps its space while the process
+	// has it open (see sshStopEngineCmd), and free would not move.
+	run("rm -f " + dst + " " + dst + ".sha256 " + filler + "; " + sshStopEngineCmd + " sync")
 	empty := freeKB()
 	t.Logf("free without the engine: %d kB", empty)
 	fillKB := empty - needKB - slackKB
