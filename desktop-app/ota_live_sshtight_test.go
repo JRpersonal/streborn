@@ -7,7 +7,7 @@ package main
 //	  go test . -run LiveSSHEnginePushOnTightStorage -v -timeout 15m
 //
 // It answers one question: when the speaker's free figure sits just above
-// sshPushNeedKB for the engine, does the engine really land? The need credits
+// sshEngineNeedKB for the engine, does the engine really land? The need credits
 // UBIFS compression against df's pessimistic free figure, so this is the case
 // where an estimate that is too optimistic would show as a short write.
 //
@@ -45,7 +45,7 @@ func TestLiveSSHEnginePushOnTightStorage(t *testing.T) {
 		t.Fatal("this build carries no Spotify engine; run make engine-embed first")
 	}
 	engine := agentbin.GoLibrespotBytes()
-	needKB := sshPushNeedKB(int64(len(engine)))
+	needKB := sshEngineNeedKB(int64(len(engine)))
 	const slackKB = 256 // how far above the need the free figure is set
 	const filler = "/mnt/nv/str-test-filler"
 	const dst = "/mnt/nv/streborn/bin/go-librespot"
