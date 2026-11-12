@@ -70,8 +70,8 @@ type faceSpec struct {
 }
 
 // textRunes is what the text faces cover: printable ASCII, Latin-1,
-// Latin Extended-A, the Romanian comma-below letters, the capital sharp s,
-// and the typographic marks that turn up in song titles and station names.
+// Latin Extended-A, the Romanian comma-below letters, Greek, Cyrillic, the
+// capital sharp s, and the typographic marks that turn up in song titles and station names.
 func textRunes() []rune {
 	var rs []rune
 	add := func(lo, hi rune) {
@@ -83,6 +83,16 @@ func textRunes() []rune {
 	add(0xa0, 0xff)
 	add(0x100, 0x17f)
 	add(0x218, 0x21b)
+	// Greek as it is written today (monotonic: the letters and the tonos
+	// forms), and Cyrillic for Russian, Ukrainian, Belarusian, Bulgarian,
+	// Serbian and Macedonian. A Greek or Ukrainian station's titles were
+	// left off the panel entirely before (discussion #1854).
+	add(0x384, 0x38a)
+	add(0x38c, 0x38c)
+	add(0x38e, 0x3a1)
+	add(0x3a3, 0x3ce)
+	add(0x400, 0x45f)
+	add(0x490, 0x491)
 	for _, r := range "\u1e9e\u2010\u2011\u2013\u2014\u2018\u2019\u201a\u201c\u201d\u201e\u2022\u2026\u2032\u2033\u2039\u203a\u20ac\u2122\u02bc" {
 		rs = append(rs, r)
 	}
