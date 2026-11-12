@@ -144,6 +144,33 @@ test.describe('actions', () => {
       .map((c) => new URL(c.url).pathname)).toEqual(['/api/play/1']);
     await expect(page.locator('#presets .preset').first()).toHaveClass(/\bactive\b/);
   });
+
+  // #1869: the start volume the desktop app has, on the phone page. The
+  // speaker's flash is written once, when the slider is let go.
+  test('More shows the start volume and writes it once on release', async ({ phone }) => {
+    const { page, handler } = phone;
+    await bootDone(page);
+    await openTab(page, 'More');
+    const slider = page.locator('#startVol');
+    await expect(page.locator('#svCard')).toBeVisible();
+    await expect(slider).toHaveValue('30');
+    await expect(page.locator('#startVolVal')).toHaveText('30');
+    const before = handler.calls.length;
+    // A drag is a run of input events and one change at the end.
+    const drag = (v) => slider.evaluate((el, val) => {
+      el.value = val;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, v);
+    await drag('0');
+    await expect(page.locator('#startVolVal')).toHaveText('off');
+    await drag('45');
+    await expect(page.locator('#startVolVal')).toHaveText('45');
+    await slider.dispatchEvent('change');
+    await expect(page.locator('#svMsg')).toHaveText('Saved.');
+    const posts = handler.calls.slice(before)
+      .filter((c) => c.method === 'POST' && new URL(c.url).pathname === '/api/box/start-volume');
+    expect(posts.length).toBe(1);
+  });
 });
 
 test.describe('grouped', () => {

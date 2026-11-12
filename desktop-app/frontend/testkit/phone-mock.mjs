@@ -80,6 +80,9 @@ export function phoneHandler({ indexHTML, iconPNG, view = '', grouped = false, o
     if (p === '/api/box/zone') return json(PHONE.zoneDoc(options.grouped));
     if (p === '/api/box/zone/volume') return json(PHONE.zoneVolume(options.grouped));
     if (p === '/api/box/sleep') return json({ active: false, minutes: 0 });
+    if (p === '/api/box/start-volume') {
+      return json(req.method() === 'POST' ? { ok: true } : { supported: true, volume: 30 });
+    }
     if (p === '/api/queue') return json({ active: false });
     if (p === '/api/position') return json({});
     if (p === '/api/library/servers') return json(PHONE.LIB_SERVERS);
