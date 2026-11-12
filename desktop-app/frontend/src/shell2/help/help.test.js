@@ -174,7 +174,7 @@ describe('About links', () => {
 
   it('opens the releases list from "What is new", so earlier versions are one scroll away (#1872)', () => {
     const src = fileSource('shell2/help/help.js');
-    expect(src).toContain('releaseNotes: `${repo}/releases`,');
+    expect(src).toContain('releaseNotes: `$' + '{repo}/releases`,');
     expect(src).not.toContain('releaseNotes: releaseNotesURL(i)');
   });
 

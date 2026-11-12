@@ -169,7 +169,7 @@ test.describe('UI 2.0 Help and info', () => {
     expect(urls[3]).toBe(VOTE);
     expect(urls[4]).toMatch(/^https:\/\/st-reborn\.de\/privacy\?utm_source=st-reborn-app/);
     expect(urls[5]).toMatch(/^https:\/\/st-reborn\.de\/imprint\?utm_source=st-reborn-app/);
-    expect(urls[6]).toBe(`${REPO}/releases/tag/v1.0.19`);
+    expect(urls[6]).toBe(`${REPO}/releases`);
     expect(urls[7]).toBe('https://st-reborn.de/?share&src=app#community');
 
     // The credits dialog, the share dialog.
