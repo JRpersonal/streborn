@@ -22,7 +22,9 @@ import (
 func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	// boxDo so the :8888<->:17008 self-heal applies (BCO/Portable boxes only
 	// answer on the REDIRECTed :17008; a baseURL+raw POST pinned to :8888 failed).
-	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/sync-presets", "application/json", "")
+	// Its own timeout: the speaker writes six keys one after the other, 5.5 to
+	// 5.9 s on a SoundTouch 20, and the shared 6 s client gave up on it.
+	resp, err := a.boxDoTimeout(host, port, http.MethodPost, "/api/box/sync-presets", "application/json", "", presetKeyWriteTimeout)
 	if err != nil {
 		return nil, err
 	}

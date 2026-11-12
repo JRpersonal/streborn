@@ -8,10 +8,13 @@ import (
 // The desktop app answers "how much free speaker storage does this write
 // need" in three places, all for a file landing on the same /mnt/nv:
 //
-//	nandNeedCompressed  raw*0.7 + 1 MB   the update preflight, the engine
-//	                                     delivery over HTTP, the OTA journal
-//	sshPushNeedKB       the same figure  the agent update and the engine push
-//	                    in df's kB       over SSH
+//	nandNeedCompressed  raw*0.7 + 1 MB   the update preflight, the pre-reboot
+//	                                     engine staging, the OTA journal
+//	sshPushNeedKB       the same figure  the agent update over SSH
+//	                    in df's kB
+//	engineNeedCompressed raw*0.6 + 1 MB  the engine delivery over HTTP
+//	sshEngineNeedKB     the same figure  the engine push over SSH
+//	                    in df's kB
 //	repairStageNeed     raw*0.6 + 2 MB   the SSH repair's /mnt/nv staging
 //	                                     (orders the targets, never refuses)
 //
@@ -120,10 +123,10 @@ func TestRepairStagingUsesItsNeedAtTheBoundary(t *testing.T) {
 // and refused it over SSH after the SSH preamble had deleted the old one.
 func TestTheSSHPushAsksForWhatTheHTTPGateAsksForTheSameFile(t *testing.T) {
 	const engine = 16 * mb
-	httpNeed := nandNeedCompressed(engine)
-	sshNeed := sshPushNeedKB(engine) * 1024
-	if httpNeed != 12792627 {
-		t.Fatalf("engine need over http = %d, want 12792627", httpNeed)
+	httpNeed := engineNeedCompressed(engine)
+	sshNeed := sshEngineNeedKB(engine) * 1024
+	if httpNeed != 11114905 {
+		t.Fatalf("engine need over http = %d, want 11114905", httpNeed)
 	}
 	// Rounded up to df's kB: never below the HTTP figure, less than 1 kB above.
 	if sshNeed < httpNeed || sshNeed-httpNeed >= 1024 {
@@ -133,13 +136,14 @@ func TestTheSSHPushAsksForWhatTheHTTPGateAsksForTheSameFile(t *testing.T) {
 		free      int64
 		http, ssh bool
 	}{
-		{12 * mb, false, false},
+		{10 * mb, false, false},
+		{11 * mb, true, true},
 		{13 * mb, true, true},
 		{17 * mb, true, true},
 		{18 * mb, true, true},
 	} {
 		// The SSH check runs on the speaker in kB: refused while free < need.
-		sshFits := c.free/1024 >= sshPushNeedKB(engine)
+		sshFits := c.free/1024 >= sshEngineNeedKB(engine)
 		if got := nandFits(c.free, 0, httpNeed); got != c.http || sshFits != c.ssh {
 			t.Errorf("%d MB free: http fits = %v ssh fits = %v, want %v and %v", c.free/mb, got, sshFits, c.http, c.ssh)
 		}
@@ -149,5 +153,27 @@ func TestTheSSHPushAsksForWhatTheHTTPGateAsksForTheSameFile(t *testing.T) {
 	// 0.27 MB apart.
 	if d := nandNeedCompressed(13303970) - repairStageNeed(13303970, repairNVCompress(t)); d != 281821 {
 		t.Errorf("http need minus repair need for a 13.3 MB file set = %d, want 281821", d)
+	}
+}
+
+// A SoundTouch 20 on v1.5.6 reported 12,455,936 B free without the engine
+// (2026-11-11). The engine takes about 8.9 MB of that figure, measured as the
+// difference to a second SoundTouch 20 that had it. The gate asked for
+// 12,655,130 B and left the speaker without Spotify after two update runs.
+func TestTheEngineIsDeliveredToASoundTouch20ThatHasRoomForIt(t *testing.T) {
+	const engine, free, taken = 16580792, 12455936, 12455936 - 3559424
+	need := engineNeedCompressed(engine)
+	if !nandFits(free, 0, need) {
+		t.Fatalf("engine need %d refuses a speaker with %d free that holds the engine in %d", need, free, taken)
+	}
+	if need <= taken {
+		t.Fatalf("engine need %d is below the %d the engine really takes", need, taken)
+	}
+	if got := sshEngineNeedKB(engine); got*1024 < need || got*1024-need >= 1024 {
+		t.Fatalf("engine need over ssh = %d kB, want %d B rounded up to a kB", got, need)
+	}
+	// A speaker with clearly too little room is still refused.
+	if nandFits(8*mb, 0, need) {
+		t.Fatal("8 MB free must not be offered a 16.6 MB engine")
 	}
 }

@@ -184,9 +184,21 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 	// Sync the hardware keys, same mapping as the per-slot save. Best-effort:
 	// the store already holds the set, and a failed box push is retried by the
 	// caller's own /api/box/sync-presets.
+	//
+	// Detached from the request and paced. Six key writes take 5.5 to 5.9 s
+	// on a SoundTouch 20, right at the desktop app's former 6 s timeout; a
+	// client that gave up cancelled the request context and the remaining
+	// keys were never written, so a copied set showed in the app while the
+	// speaker's keys stayed unregistered. And the firmware accepts writes
+	// that arrive back to back and keeps none of them (nativepresets.go), so
+	// each write waits the same gap the full sync uses.
 	if s.boxHost != "" {
-		for _, p := range in {
-			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		sweepCtx := context.WithoutCancel(r.Context())
+		for i, p := range in {
+			if i > 0 {
+				time.Sleep(boxcli.WriteGap)
+			}
+			boxCtx, cancel := context.WithTimeout(sweepCtx, 5*time.Second)
 			if err := s.writeStorePresetToBox(boxCtx, p); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", p.Slot, "err", err)
 			}

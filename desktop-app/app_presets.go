@@ -541,6 +541,13 @@ func parsePresetConflict(body []byte) *presetConflictError {
 	return &presetConflictError{Name: c.Name, Slot: c.Slot, PayloadSlot: c.PayloadSlot}
 }
 
+// presetKeyWriteTimeout bounds a request in which the speaker registers its
+// hardware keys before it answers (the bulk preset write and the key sync).
+// The speaker writes them one at a time with a pause in between, which takes
+// up to about 8 s for six keys; the shared 6 s client timeout cut that short
+// and the copy was reported as done with keys missing on the speaker.
+const presetKeyWriteTimeout = 30 * time.Second
+
 // putPresetsBulk PUTs the whole preset set to the target's collection endpoint.
 // supported is false when the target answers 404 or 405, i.e. it runs an agent
 // older than the bulk endpoint and the caller must fall back to the per-slot
@@ -551,7 +558,7 @@ func (a *App) putPresetsBulk(host string, port int, ps []Preset) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	resp, err := a.boxDo(host, port, http.MethodPut, presetAPIPath, "application/json", string(b))
+	resp, err := a.boxDoTimeout(host, port, http.MethodPut, presetAPIPath, "application/json", string(b), presetKeyWriteTimeout)
 	if err != nil {
 		return false, err
 	}

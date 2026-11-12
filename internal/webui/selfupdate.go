@@ -580,7 +580,11 @@ func (s *Server) runSelfUpdate() {
 	}
 	from := agentVersion()
 	if !updatesig.VersionLess(from, ix.Version) {
-		s.selfUpd.fail(fmt.Errorf("this speaker already runs %s, the latest release is %s", from, ix.Version))
+		// Not a failure: a second tap on a page that still showed the button,
+		// or a second phone, after the update had already finished. It used
+		// to answer "Update failed: this speaker already runs ..." in red.
+		s.logger.Info("self-update: nothing to install, the speaker already runs the latest version", "running", from, "latest", ix.Version)
+		s.selfUpd.set("idle", "")
 		return
 	}
 	agent := ix.Files[updatesig.AgentFile]

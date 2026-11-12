@@ -207,6 +207,33 @@ func nandNeedCompressed(rawLen int64) int64 {
 	return int64(float64(rawLen)*ubifsCompressedFraction) + nandNeedMargin
 }
 
+// engineCompressedFraction is the compression credit for the Spotify engine
+// alone. The general 0.7 is a guess that has to hold for any file; the engine
+// has been measured. Two SoundTouch 20 (scm, 27.4 MB volume) on v1.5.6,
+// 2026-11-11: 12,455,936 B reported free without the engine, 3,559,424 B with
+// it, so the 16,580,792 B engine took 8.9 MB of the reported figure, a ratio
+// of 0.54 (0.56 on a SoundTouch 30 in July). At 0.7 the gate asked for
+// 12,655,130 B and refused the engine on the first of those speakers by
+// 199 kB, with more than 3 MB to spare, and every agent release takes
+// another ~75 kB off that free figure, so each release pushed more of the
+// small-volume speakers below the line. 0.6 stays above both measurements.
+const engineCompressedFraction = 0.6
+
+// engineNeedCompressed is nandNeedCompressed for the Spotify engine: the
+// free space an engine delivery asks for on a speaker that has no engine, or
+// whose old engine is credited separately (reclaimableEngineBytes). Only the
+// engine-only gates use it (the delivery over HTTP and the engine push over
+// SSH); the agent update and the pre-reboot staging keep the general figure.
+func engineNeedCompressed(rawLen int64) int64 {
+	return int64(float64(rawLen)*engineCompressedFraction) + nandNeedMargin
+}
+
+// sshEngineNeedKB is engineNeedCompressed in df's kB, for the engine push
+// over SSH, so both routes ask the same for the same file.
+func sshEngineNeedKB(rawLen int64) int64 {
+	return (engineNeedCompressed(rawLen) + 1023) / 1024
+}
+
 // reclaimableEngineBytes is how much NAND the agent's sidecar write frees
 // before the new engine lands: a present engine is dropped first (the
 // reclaim cascade), so gating on the raw free figure alone would refuse an
@@ -850,14 +877,14 @@ func (a *App) pushSidecar(host string, port int) (delivered bool, err error) {
 	//
 	// A present-but-outdated engine counts as free space (see
 	// reclaimableEngineBytes): the agent's sidecar write drops the old engine
-	// before writing the new one. The need is compression-credited
-	// (nandNeedCompressed): UBIFS lands the write well below the raw size while
-	// its free figure is pessimistic, so gating on raw bytes refused engines
-	// that fit. This gate is only a cheap pre-filter - the agent-side write is
-	// the authoritative check.
+	// before writing the new one. The need is compression-credited with the
+	// engine's own measured ratio (engineNeedCompressed): UBIFS lands the
+	// write well below the raw size while its free figure is pessimistic, so
+	// gating on raw bytes refused engines that fit. This gate is only a cheap
+	// pre-filter - the agent-side write is the authoritative check.
 	freeN, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
 	reclaimable := reclaimableEngineBytes(ver, int64(len(bin)))
-	need := nandNeedCompressed(int64(len(bin)))
+	need := engineNeedCompressed(int64(len(bin)))
 	if !nandFits(freeN, reclaimable, need) {
 		totalKB := int64(0)
 		if t, e := strconv.ParseInt(ver["nandTotalBytes"], 10, 64); e == nil {
@@ -1908,7 +1935,7 @@ func (a *App) pushSidecarViaSSH(host string) {
 	// if the box still cannot hold it, skip instead of writing a truncated
 	// binary into ENOSPC (that is what happened live on a tight ST20). The
 	// post-OTA EnsureSpotifyEngine retries once space frees.
-	needKB := sshPushNeedKB(int64(len(bin)))
+	needKB := sshEngineNeedKB(int64(len(bin)))
 	preamble := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
 		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; %s fi; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+

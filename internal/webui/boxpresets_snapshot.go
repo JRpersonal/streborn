@@ -68,7 +68,9 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 			NativeLocation: s.nativePresetLocation(p.Name, stream, p.Art),
 		})
 	}
-	syncCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	// Detached from the request: a client that stops waiting must not leave
+	// the last keys unwritten (six writes take close to 6 s on a SoundTouch 20).
+	syncCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 	defer cancel()
 	errs := boxcli.SyncAllPresets(syncCtx, s.boxHost, specs)
 	var failed []int
