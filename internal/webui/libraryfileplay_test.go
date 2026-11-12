@@ -1,11 +1,15 @@
 package webui
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 )
@@ -13,7 +17,8 @@ import (
 // #1871: a third-party remote replayed a Recently-played album card by sending
 // the card's URL and name to POST /api/play, without the MIME that marks a
 // library file. The agent played it as a radio station and filed a new card
-// under Radio next to the album's Library card.
+// under Radio next to the album's Library card; with the music server off
+// nothing played and the Radio card was all that came of it.
 
 const (
 	albumFirstTrack = "http://192.0.2.82:9790/minimserver/*/Music/Album/01*20First.m4a"
@@ -102,5 +107,104 @@ func TestAStationPlayedWithoutAMimeStaysRadio(t *testing.T) {
 	ring := s.recent.All()
 	if got := ring[len(ring)-1]; got.Source != "radio" || got.CardKey != station {
 		t.Fatalf("a station was filed as %+v, want a radio card", got)
+	}
+}
+
+func TestALibraryFileIsRefusedAndNotFiledWhenItsServerIsOff(t *testing.T) {
+	for name, body := range map[string]string{
+		"a client that sends no MIME":  `{"url":"` + albumFirstTrack + `","title":"Album"}`,
+		"a client that sends the MIME": `{"url":"` + albumFirstTrack + `","title":"Album","mime":"audio/mp4"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, rec := albumReplayServer(t)
+			store, err := mediaservers.Load(filepath.Join(t.TempDir(), "mediaservers.json"))
+			if err != nil {
+				t.Fatalf("store: %v", err)
+			}
+			if err := store.Add(mediaservers.Server{ID: "uuid:AAAA-BBBB", Name: "MinimServer[example-mac.local]",
+				Location: "http://192.0.2.82:9791/AAAA-BBBB/Upnp/device.xml"}); err != nil {
+				t.Fatalf("seed store: %v", err)
+			}
+			s.mediaServers = store
+			var probed []string
+			s.queueHostAnswers = func(_ context.Context, raw string) bool {
+				probed = append(probed, raw)
+				return false
+			}
+			before := len(s.recent.All())
+
+			w := postPlayBody(t, s, body)
+			if w.Code != http.StatusBadGateway {
+				t.Fatalf("status = %d, want 502 (body %s)", w.Code, w.Body.String())
+			}
+			var got map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatalf("body is not JSON: %v (%s)", err, w.Body.String())
+			}
+			if got["code"] != libraryServerOfflineCode || got["offline"] != true {
+				t.Errorf("body = %v, want the library-server-offline refusal", got)
+			}
+			if got["server"] != "MinimServer[example-mac.local]" {
+				t.Errorf("server = %v, want the registered server at the file's address", got["server"])
+			}
+			if e, _ := got["error"].(string); !strings.Contains(e, "MinimServer[example-mac.local] is not answering") {
+				t.Errorf("error = %q, want the sentence that names the server", e)
+			}
+			if len(probed) != 1 || probed[0] != albumFirstTrack {
+				t.Errorf("probed %v, want the file's address once", probed)
+			}
+			if n := len(s.recent.All()); n != before {
+				t.Errorf("a play that never started filed %d Recently-played entries", n-before)
+			}
+			if rec.count() != 0 {
+				t.Errorf("the speaker was sent %v for a file nobody serves", rec.list())
+			}
+		})
+	}
+}
+
+// A media server addressed by name is not judged: a name this agent cannot
+// resolve says nothing about what the speaker reaches.
+func TestALibraryFileOnANamedHostIsNotProbed(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.queueHostAnswers = func(context.Context, string) bool {
+		t.Error("a host name was probed")
+		return false
+	}
+	w := postPlayBody(t, s, `{"url":"http://nas.example/music/1.flac","title":"Song","mime":"audio/flac"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("play: status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+}
+
+// A radio station is never probed either, whatever its address.
+func TestAStationOnAnIPAddressIsNotProbed(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	s.queueHostAnswers = func(context.Context, string) bool {
+		t.Error("a radio station was probed")
+		return false
+	}
+	w := postPlayBody(t, s, `{"url":"http://192.0.2.50:8000/live","title":"Relax FM"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("play: status = %d, want 200 (body %s)", w.Code, w.Body.String())
+	}
+}
+
+// The phone page says which server is off when a single library file is
+// refused, on every path that starts one: before the refusal existed these
+// paths either said nothing or a bare "Could not start".
+func TestPhoneRemoteSaysWhyASingleLibraryFileWasRefused(t *testing.T) {
+	if !strings.Contains(indexHTML, "function libPlayRefusal(res)") {
+		t.Fatal("the phone page lost libPlayRefusal")
+	}
+	for want, n := range map[string]int{
+		"searchMsg(libPlayRefusal(res) || findFail(res), true)": 1, // a search result
+		"searchMsg(libPlayRefusal(lr) || findFail(lr), true)":   1, // a library favourite
+		"browseMsgSet(libPlayRefusal(res) || T.cantStart)":      2, // the server browser
+		"libPlayRefusal(r)) showPlayNotice(libPlayRefusal(r))":  1, // Recently played
+	} {
+		if got := strings.Count(indexHTML, want); got != n {
+			t.Errorf("%q: found %d times, want %d", want, got, n)
+		}
 	}
 }

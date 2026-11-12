@@ -3349,6 +3349,14 @@ function playRefusal(detail) {
   return e ? String(e) : '';
 }
 
+// libPlayRefusal is the sentence for a single library file the agent refused
+// to start because its music server is off or no longer has it (#1871), ''
+// for any other failed play: those keep the caller's own line.
+function libPlayRefusal(res) {
+  var d = res && res.data;
+  return String((d && d.code) || '').indexOf('library-') === 0 ? playRefusal(d) : '';
+}
+
 // showPlayNotice puts a refusal in the card under the keys, where the 5 s
 // status poll cannot paint over it. The now-playing line can: that is where
 // the old message went, and it is why "no error message appears" is a fair
@@ -5382,7 +5390,7 @@ async function playLibTrack(idx, btn) {
     album: it.album || ''
   });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
-  else if (!res.handled) { searchMsg(findFail(res), true); }
+  else if (!res.handled) { searchMsg(libPlayRefusal(res) || findFail(res), true); }
 }
 
 // The starred stations, read from the SPEAKER.
@@ -5745,7 +5753,7 @@ async function playFavorite(idx, btn) {
       setTimeout(refreshStatus, 1500);
       setTimeout(refreshStatus, 3500);
     } else if (!lr.handled) {
-      searchMsg(findFail(lr), true);
+      searchMsg(libPlayRefusal(lr) || findFail(lr), true);
     }
     return;
   }
@@ -7866,11 +7874,11 @@ async function playRecent(idx, btn) {
      clears the queue, so a replayed folder played one song and then stopped with
      the indicator amber (#978). This page could never replay a folder at all
      before; now it asks the speaker to do it. */
-  var ok;
+  var ok, r;
   /* A folder card this page wrote before it used the app's key scheme,
      "folder:<server id>/<container>", is a folder too; the agent maps it. */
   if ((e.cardKey || '').indexOf('queue:') === 0 || /^folder:[^:\/]+\//.test(e.cardKey || '')) {
-    var r = await postPlay('/api/queue/replay-card', {
+    r = await postPlay('/api/queue/replay-card', {
       key: e.cardKey, name: e.cardName || '', art: e.cardArt || ''
     });
     if (r.handled) return;
@@ -7884,21 +7892,26 @@ async function playRecent(idx, btn) {
        sources (this page and the agent always ship together, so it is never a
        version gap). Replay the one track the card holds, as before. */
     if (!ok && r && r.status === 404) {
-      ok = (await postPlay('/api/play', {
+      r = await postPlay('/api/play', {
         url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
         mime: e.mime || '', homepage: e.homepage || '',
         duration_sec: e.durationSec || 0
-      })).ok;
+      });
+      ok = r.ok;
     }
   } else {
     /* A single library track's card keeps its artist and album (#1839). */
-    ok = (await postPlay('/api/play', {
+    r = await postPlay('/api/play', {
       url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
       mime: e.mime || '', homepage: e.homepage || '',
       duration_sec: e.durationSec || 0,
       artist: e.artist || '', album: e.album || ''
-    })).ok;
+    });
+    ok = r.ok;
   }
+  /* A library file whose music server is off is refused by the agent; say
+     which server instead of doing nothing (#1871). */
+  if (!ok && r && !r.handled && libPlayRefusal(r)) showPlayNotice(libPlayRefusal(r));
   if (ok) { forgetStationPlay(); setNow(T.starting + ' ' + (e.cardName || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(loadRecent, 4000); }
 }
 
@@ -8171,7 +8184,7 @@ async function playBrowseFolder(tracks, btn) {
                art: items[0].art || '' };
   var res = await postPlay('/api/queue', { items: items, start: 0, card: card });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (items[0].title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
-  else if (!res.handled) { browseMsgSet(T.cantStart); }
+  else if (!res.handled) { browseMsgSet(libPlayRefusal(res) || T.cantStart); }
 }
 
 /* playBrowseTree has the speaker play the open folder of folders
@@ -8221,7 +8234,7 @@ async function playBrowseTrack(it, btn) {
     artist: it.artist || '', album: it.album || ''
   });
   if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
-  else if (!res.handled) { browseMsgSet(T.cantStart); }
+  else if (!res.handled) { browseMsgSet(libPlayRefusal(res) || T.cantStart); }
 }
 (function wireBrowseBack(){
   var b = document.getElementById('btnBrowseBack');

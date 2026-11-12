@@ -177,6 +177,14 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if s.refuseIfStereoFollower(w) {
 		return
 	}
+	// A library file whose music server is off is refused before the speaker
+	// is woken and before anything is filed under Recently played (#1871).
+	if req.Mime != "" && isPlainHTTPURL(req.URL) {
+		if ref := s.libraryFileOfflineRefusal(r.Context(), req.URL, req.Title); ref != nil {
+			writePlayRefusal(w, ref)
+			return
+		}
+	}
 	// A sleeping speaker resumes its own last station on the wake; it is kept
 	// silent until this play has taken over (#1557, newplaywake.go). The
 	// speaker fetches this play through the proxy unless it is a plain-HTTP

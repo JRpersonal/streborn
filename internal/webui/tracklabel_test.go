@@ -131,7 +131,10 @@ func TestAKeySavedBeforeTheLabelRecoversItFromRecentlyPlayed(t *testing.T) {
 	if err := s.presets.SetSlot(old); err != nil {
 		t.Fatal(err)
 	}
+	// The media server answers while the Library play starts.
+	s.queueHostAnswers = func(context.Context, string) bool { return true }
 	playLoneFile(t, s, `{"url":"`+labelTrackURL+`","title":"Amanda","mime":"audio/flac","artist":"Boston","album":"Third Stage"}`)
+	s.queueHostAnswers = nil
 	// Something else plays in between, so only the ring still knows the label.
 	s.setLastPlay("http://192.0.2.1:8888/stream/1", "A Station", "", "audio/mpeg")
 	if a, _, from := s.knownTrackLabel(labelTrackURL); a != "Boston" || from != "recently played" {

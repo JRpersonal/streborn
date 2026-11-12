@@ -74,6 +74,9 @@ func newPlayTestServer(t *testing.T) (*Server, *soapRecorder) {
 		presets:  store,
 		queue:    newPlayQueue(),
 		renderer: &upnp.Renderer{ControlURL: box.URL, Client: box.Client()},
+		// The media servers of these tests are documentation addresses; a
+		// test that wants one switched off says so itself.
+		queueHostAnswers: func(context.Context, string) bool { return true },
 	}
 	t.Cleanup(func() { s.stopQueue("test cleanup") })
 	return s, rec

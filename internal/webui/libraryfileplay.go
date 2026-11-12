@@ -7,13 +7,25 @@
 // replays such a card sends only the card's URL and name (#1871, 2026-11-12).
 // The agent then took the file for a radio station: it handed it to the
 // speaker as a station, answered "playing", and filed a new card under Radio
-// next to the album's Library card.
+// next to the album's Library card. With the music server switched off
+// nothing played at all, and the Radio card was all that was left of it.
 //
-// So a URL the Recently-played ring or a folder key knows as a library file
-// is played and filed as one, whoever asks and whatever they leave out. Both
-// are in memory.
+// Two things follow here, both from what the agent already holds in memory:
+//
+//   - a URL the Recently-played ring or a folder key knows as a library file
+//     is played and filed as one, whoever asks and whatever they leave out;
+//   - a library file whose server accepts no connection is refused before the
+//     speaker is woken and before anything is filed, with the same
+//     library-server-offline answer a key gives (#1339).
 
 package webui
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"strings"
+)
 
 // knownLibraryFile reports whether this agent holds fileURL as a
 // music-library file, and the MIME and length it keeps for it: the newest
@@ -67,4 +79,50 @@ func (s *Server) adoptKnownLibraryFile(req *playRequest) {
 	if req.DurationSec <= 0 {
 		req.DurationSec = dur
 	}
+}
+
+// libraryFileOfflineRefusal is the answer to a play of a single library file
+// whose music server is off: nothing accepts a connection at the file's
+// address, so the speaker could only time out on it. nil when the server
+// answers, and when the address is a name rather than an IP: a name this
+// agent cannot resolve says nothing about what the speaker reaches, and a
+// media server hands out IP addresses anyway.
+//
+// The body is the library-server-offline one of a key (playrefusal.go)
+// without a slot: both apps and the phone page already read it.
+func (s *Server) libraryFileOfflineRefusal(ctx context.Context, fileURL, title string) *playRefusal {
+	host := urlHost(fileURL)
+	if net.ParseIP(host) == nil {
+		return nil
+	}
+	if s.queueTrackHostAnswers(ctx, fileURL) {
+		return nil
+	}
+	server := s.registeredServerAt(host)
+	msg := "The music server is not answering. Switch it on and try again."
+	if server != "" {
+		msg = "The music server " + server + " is not answering. Switch it on and try again."
+	}
+	s.logger.Warn("play request: the file's music server is off, the speaker is not handed the file",
+		"title", title, "server", server, "url", fileURL)
+	return jsonRefusal(http.StatusBadGateway, map[string]any{
+		"error": msg, "code": libraryServerOfflineCode,
+		"offline": true, "server": server,
+		"name": title, "url": fileURL,
+	})
+}
+
+// registeredServerAt names the registered music source that lives at host, ""
+// when none does. A media server serves its files from the address its device
+// description sits at; the port usually differs, so only the host is compared.
+func (s *Server) registeredServerAt(host string) string {
+	if s.mediaServers == nil || host == "" {
+		return ""
+	}
+	for _, reg := range s.mediaServers.List() {
+		if urlHost(reg.Location) == host {
+			return strings.TrimSpace(reg.Name)
+		}
+	}
+	return ""
 }
