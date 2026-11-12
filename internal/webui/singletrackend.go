@@ -55,9 +55,10 @@ type singleTrack struct {
 	// is no proof of the end while it still climbs: a file replaced under the
 	// same URL was cut at the old length every night (librarykey.go).
 	claimedLength bool
-	// artist and album are what the client that started the play named for
-	// the file, "" when it named none. Only reported back to clients
-	// (loneFileInfo); the speaker is never handed them.
+	// artist and album are what the start of the play named for the file (the
+	// client's request, or the key it was recalled from), "" when it named
+	// none. Only reported back to clients (loneFileInfo); the speaker is
+	// never handed them.
 	artist string
 	album  string
 }
@@ -107,7 +108,7 @@ func (s *Server) replaySingleTrack(tr singleTrack, gen uint64) (uint64, bool) {
 		s.logger.Warn("single track: repeat could not start the track again", "title", tr.title, "err", err)
 		return 0, false
 	}
-	newGen := s.setLastPlay(tr.boxURL, tr.title, tr.art, tr.mime)
+	newGen := s.setLastPlayFile(tr)
 	s.logger.Info("single track: repeat is on, playing it again", "title", tr.title)
 	return newGen, true
 }
@@ -143,7 +144,7 @@ func (s *Server) retrySingleTrackStart(tr singleTrack, gen uint64, playStart tim
 		s.logger.Warn("single track: the second start failed too", "title", tr.title, "err", err)
 		return 0, false
 	}
-	return s.setLastPlay(tr.boxURL, tr.title, tr.art, tr.mime), true
+	return s.setLastPlayFile(tr), true
 }
 
 func (s *Server) watchSingleTrackEnd(tr singleTrack, gen uint64) {
@@ -440,6 +441,7 @@ func (s *Server) watchOneSingleTrackPlay(tr singleTrack, gen uint64) (bool, uint
 				if !retried {
 					if next, ok := s.retrySingleTrackStart(tr, gen, start, "the speaker never started the track"); ok {
 						gen, start, retried = next, time.Now(), true
+						s.noteActiveFile(tr, gen)
 						continue
 					}
 				}

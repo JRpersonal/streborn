@@ -205,12 +205,13 @@ func (s *Server) currentLoneFile() (singleTrack, bool) {
 	return af.tr, true
 }
 
-// trackTextMax bounds an artist or album a client sends with a play, in runes.
+// trackTextMax bounds an artist, an album or a title this agent keeps or
+// hands out for a library file, in runes.
 const trackTextMax = 200
 
-// cleanTrackText makes a client's artist or album safe to keep and hand out
-// again: control characters become spaces, the ends are trimmed and the rest
-// is cut at trackTextMax runes. It is still untrusted text; every client
+// cleanTrackText makes a client's artist, album or title safe to keep and
+// hand out again: control characters become spaces, the ends are trimmed and
+// the rest is cut at trackTextMax runes. It is still untrusted text; every client
 // escapes it where it prints it.
 func cleanTrackText(v string) string {
 	v = strings.TrimSpace(strings.Map(func(r rune) rune {
@@ -244,9 +245,14 @@ type loneFileInfo struct {
 func (s *Server) loneFileInfo() *loneFileInfo {
 	tr, ok := s.currentLoneFile()
 	if !ok {
-		return nil
+		// No end watch follows it (the agent restarted, or the power-on
+		// resume pushed it again): the play record still names it.
+		if tr, ok = s.lastPlayLoneFile(); !ok {
+			return nil
+		}
 	}
-	return &loneFileInfo{URL: tr.boxURL, Title: tr.title, Artist: tr.artist, Album: tr.album}
+	// The title is a client's text as well, so it leaves bounded like the rest.
+	return &loneFileInfo{URL: tr.boxURL, Title: cleanTrackText(tr.title), Artist: tr.artist, Album: tr.album}
 }
 
 // fileRestarting reports whether STR is restarting a file right now, so the end

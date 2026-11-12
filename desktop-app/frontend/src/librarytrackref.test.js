@@ -7,6 +7,7 @@ vi.mock('./api.js', () => ({
 
 import { SaveFolderPreset, SaveLibraryPreset } from './api.js';
 import { libraryTrackRef, saveLibraryTrackPreset } from './librarytrackref.js';
+import { srcOf } from './test/source.js';
 
 // #919: a library key stores the track's object on its media server, so the
 // speaker can ask for the current address when the server renumbered its files.
@@ -45,5 +46,44 @@ describe('library track ref', () => {
     });
     expect(SaveFolderPreset).not.toHaveBeenCalled();
     expect(SaveLibraryPreset).toHaveBeenCalledWith('box', 8888, 2, 'Song', 'http://192.0.2.5/x.mp3', '', 0, 'NAS', 10);
+  });
+});
+
+// #1839: the key keeps the track's artist and album, so playing it names them
+// on the phone page and in the app.
+describe('library track artist and album on a key', () => {
+  beforeEach(() => {
+    SaveFolderPreset.mockClear();
+    SaveLibraryPreset.mockClear();
+  });
+
+  it('travel with the ref', async () => {
+    const ref = libraryTrackRef({ id: 'obj-7', parentID: 'c-1', title: 'Amanda' }, 'uuid:pc');
+    await saveLibraryTrackPreset('box', 8888, 6, {
+      name: 'Amanda', url: 'http://192.0.2.5/x.flac', source: 'NAS', durationSec: 256, ref,
+      artist: 'Boston', album: 'Third Stage',
+    });
+    expect(JSON.parse(SaveFolderPreset.mock.calls[0][3])).toEqual({
+      name: 'Amanda', stream_url: 'http://192.0.2.5/x.flac', type: 'radio', source: 'NAS',
+      duration_sec: 256, track: ref, artist: 'Boston', album: 'Third Stage',
+    });
+  });
+
+  it('and without one, as the whole preset and with no empty ref', async () => {
+    await saveLibraryTrackPreset('box', 8888, 2, {
+      name: 'Amanda', url: 'http://192.0.2.5/x.flac', source: 'NAS', durationSec: 0, ref: null,
+      artist: 'Boston', album: '',
+    });
+    expect(SaveLibraryPreset).not.toHaveBeenCalled();
+    const sent = JSON.parse(SaveFolderPreset.mock.calls[0][3]);
+    expect(sent).toEqual({
+      name: 'Amanda', stream_url: 'http://192.0.2.5/x.flac', type: 'radio', source: 'NAS', artist: 'Boston',
+    });
+    expect('track' in sent).toBe(false);
+  });
+
+  it('both saves of a track send them', () => {
+    expect(srcOf('librarySaveAsPreset')).toContain("artist: item.artist || '', album: item.album || '',");
+    expect(srcOf('saveCurrentToSlot')).toContain("artist: lib.artist || '', album: lib.album || '',");
   });
 });

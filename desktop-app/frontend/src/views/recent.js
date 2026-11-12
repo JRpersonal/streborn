@@ -162,6 +162,8 @@ export function groupRecentCards(entries) {
     if (card && card.boxKey === e._boxKey) {
       if (!card.homepage && e.homepage) card.homepage = e.homepage;
       if (!card.durationSec && e.durationSec > 0) card.durationSec = e.durationSec;
+      if (!card.artist && e.artist) card.artist = e.artist;
+      if (!card.album && e.album) card.album = e.album;
       // Dedup repeated titles within a session. Many stations flip the ICY title
       // between the song and talk/promo/contact lines (SWR3: "TALK mit ...",
       // "Kontakt zu SWR3: ..."), which otherwise fills the card with the same few
@@ -197,6 +199,8 @@ export function groupRecentCards(entries) {
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, mime: e.mime, durationSec: e.durationSec || 0, account: e.account, ts: e.ts,
+      // A single library track's artist and album (#1839); '' on every other card.
+      artist: e.artist || '', album: e.album || '',
       itemType: e.itemType || '',
       homepage: e.homepage || '', playSlot,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
@@ -606,10 +610,12 @@ async function replayFolderCard(c, box) {
 // its MIME and its length. The length is what makes the speaker report a total,
 // so without it a replayed track showed no progress bar while the same track
 // from the Library did (#845). 0 (a card recorded before the length was kept)
-// still plays, just without the bar.
+// still plays, just without the bar. The artist and album the card or the
+// favourite keeps go along for the line next to the title (#1839); one that
+// keeps none sends none, and the speaker's agent fills in what it still knows.
 async function replayLibraryTrack(c, box, art) {
   const dur = c.durationSec > 0 ? Math.round(c.durationSec) : 0;
-  await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur, '', '');
+  await PlayURL(box.host, box.port, c.url, c.name || '', art, '', c.mime || '', '', '', dur, c.artist || '', c.album || '');
   // The bar describes the selected speaker, so only a replay on that speaker
   // moves the line (a card can belong to another one). Same instant change as
   // a Library click (#1394).

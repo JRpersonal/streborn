@@ -43,3 +43,45 @@ func TestTrackRefRoundTripsThroughTheStore(t *testing.T) {
 		t.Fatalf("a preset without a ref writes one: %s", b)
 	}
 }
+
+// A single library track on a key keeps the artist and album its media server
+// named (#1839). A store written before the fields existed loads as it always
+// did, and a key without them writes neither.
+func TestArtistAndAlbumRoundTripThroughTheStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSlot(Preset{Slot: 6, Name: "Amanda", Type: "radio", Source: "MiniDLNA",
+		StreamURL: "http://192.0.2.10:8200/MediaItems/42.flac", Artist: "Boston", Album: "Third Stage"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSlot(Preset{Slot: 1, Name: "1LIVE", Type: "radio", StreamURL: "http://example/1live"}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := again.Get(6); got.Artist != "Boston" || got.Album != "Third Stage" {
+		t.Fatalf("reloaded key %+v, want its artist and album", got)
+	}
+	station, _ := again.Get(1)
+	b, err := json.Marshal(station)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"artist"`) || strings.Contains(string(b), `"album"`) {
+		t.Errorf("a key without a label marshals the keys: %s", b)
+	}
+
+	old, err := parse([]byte(`{"presets":[{"slot":3,"name":"Song","type":"radio","source":"NAS",` +
+		`"stream_url":"http://192.0.2.10:8200/MediaItems/7.mp3","duration_sec":200}]}`))
+	if err != nil || len(old) != 1 {
+		t.Fatalf("a store from before did not load: %v %+v", err, old)
+	}
+	if old[0].Artist != "" || old[0].Album != "" || old[0].DurationSec != 200 {
+		t.Errorf("old key = %+v", old[0])
+	}
+}

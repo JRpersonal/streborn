@@ -70,3 +70,30 @@ describe('library favourites (#1605)', () => {
     expect(r.indexOf('replayFolderCard(c, box)')).toBeLessThan(r.indexOf('replayLibraryTrack(c, box, art)'));
   });
 });
+
+// #1839: a starred library track keeps its artist and album, so playing the
+// favourite names them next to the running song like a Library play does.
+describe('a library favourite keeps the artist and album of its track (#1839)', () => {
+  const labelled = { ...trackCard, artist: 'Boston', album: 'Third Stage' };
+
+  it('from the card it is starred from', () => {
+    expect(libraryFavFields(labelled)).toEqual({
+      source: 'upnp', mime: 'audio/mpeg', durationSec: 187, artist: 'Boston', album: 'Third Stage',
+    });
+    // A card without them (a folder, a row from before) adds no empty keys.
+    expect(Object.keys(libraryFavFields({ ...trackCard, artist: '', album: '' }))).toEqual(['source', 'mime', 'durationSec']);
+  });
+
+  it('through the favourite store, for a library item only', () => {
+    const fm = srcOf('favMinimal');
+    expect(fm).toContain("artist: s.source === 'upnp' && s.artist ? s.artist : undefined,");
+    expect(fm).toContain("album: s.source === 'upnp' && s.album ? s.album : undefined,");
+  });
+
+  it('back onto the card the replay plays', () => {
+    const card = libraryFavCard({ stationuuid: trackCard.cardKey, name: 'Song', url: trackCard.url, source: 'upnp',
+      mime: 'audio/mpeg', artist: 'Boston', album: 'Third Stage' });
+    expect([card.artist, card.album]).toEqual(['Boston', 'Third Stage']);
+    expect(srcOf('replayLibraryTrack')).toContain("dur, c.artist || '', c.album || '');");
+  });
+});

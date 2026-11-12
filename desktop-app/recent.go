@@ -31,6 +31,11 @@ type RecentItem struct {
 	// unknown. A replay passes it to PlayURL so the speaker reports a total
 	// and the progress bar shows, as it does for a Library play (#845).
 	DurationSec int `json:"durationSec,omitempty"`
+	// Artist and Album are a single media-server track's artist and album, so
+	// a replay of its card, and a favourite starred from it, label the running
+	// song the way a Library play does (#1839). Empty for everything else.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 }
 
 // RecentPlayed reads one box's recently-played ring (GET /api/recent),

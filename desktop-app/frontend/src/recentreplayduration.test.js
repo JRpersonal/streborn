@@ -49,3 +49,29 @@ describe('grouping history into cards', () => {
     expect(cards[0].durationSec).toBe(180);
   });
 });
+
+// #1839: a single library track's card keeps the artist and album of its play,
+// and the replay hands them to the speaker's agent, which names them to the
+// phone page and to this app.
+describe('a Recently-played library track keeps its artist and album', () => {
+  const makeReplay = (PlayURL) => new Function('PlayURL', 'state', 'beginLibraryNowPlaying', 'deps',
+    `${srcOf('replayLibraryTrack')}\nreturn replayLibraryTrack;`)(PlayURL, { currentBox: null }, () => {}, {});
+  const group = new Function(`${srcOf('groupRecentCards')}\nreturn groupRecentCards;`)();
+
+  it('on the card, also from an older row of the same card', () => {
+    const cards = group([
+      { _boxKey: 'b', cardKey: 'k', source: 'upnp', cardURL: 'http://nas/a.flac', track: 'B', ts: '3' },
+      { _boxKey: 'b', cardKey: 'k', source: 'upnp', cardURL: 'http://nas/a.flac', track: 'A', artist: 'Boston', album: 'Third Stage', ts: '2' },
+      { _boxKey: 'b', cardKey: 'http://example/1live', source: 'radio', cardURL: 'http://example/1live', ts: '1' },
+    ]);
+    expect(cards).toHaveLength(2);
+    expect([cards[0].artist, cards[0].album]).toEqual(['Boston', 'Third Stage']);
+    expect([cards[1].artist, cards[1].album]).toEqual(['', '']);
+  });
+
+  it('in the replay', async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    await makeReplay(play)({ url: 'http://nas/a.flac', name: 'Amanda', mime: 'audio/flac', durationSec: 256, artist: 'Boston', album: 'Third Stage' }, BOX, '');
+    expect(play).toHaveBeenCalledWith('192.0.2.10', 17008, 'http://nas/a.flac', 'Amanda', '', '', 'audio/flac', '', '', 256, 'Boston', 'Third Stage');
+  });
+});

@@ -104,3 +104,13 @@ describe('the status line', () => {
     }
   });
 });
+
+// The same line for a track that was not started from the Library: a
+// favourite and a Recently-played card send the artist and album they keep.
+// A preset key needs nothing from the page, the agent reads its own store.
+describe('the other ways to start a library track', () => {
+  it('a favourite and a Recently-played card send artist and album', () => {
+    expect(phoneFn('playLibraryFav')).toContain("artist: st.artist || '', album: st.album || ''");
+    expect(phoneFn('playRecent')).toContain("artist: e.artist || '', album: e.album || ''");
+  });
+});

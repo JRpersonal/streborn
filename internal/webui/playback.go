@@ -272,6 +272,16 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if playDirect && req.DurationSec > 0 {
 		meta = upnp.TrackMeta{Duration: time.Duration(req.DurationSec) * time.Second, Seekable: true}
 	}
+	// The same for artist and album: a client that names neither (a replay
+	// from Recently played or Favourites recorded before they were kept, an
+	// older app) still gets what this agent knows of the file (#1839).
+	var artist, album string
+	if playDirect {
+		artist, album = cleanTrackText(req.Artist), cleanTrackText(req.Album)
+		if artist == "" && album == "" {
+			artist, album, _ = s.knownTrackLabel(req.URL)
+		}
+	}
 	playErr := s.playTrackWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime, meta)
 	if playErr != nil {
 		if isGroupedRejection(playErr) {
@@ -286,7 +296,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delivered = true
-	playGen := s.setLastPlayMeta(playURL, req.Title, req.Icon, mime, req.Homepage, req.Codec, req.Bitrate)
+	playGen := s.recordLastPlay(&lastPlayInfo{boxURL: playURL, title: req.Title, art: req.Icon, mime: mime,
+		homepage: req.Homepage, codec: req.Codec, bitrate: req.Bitrate, artist: artist, album: album})
 	// A library file is no radio stream: the song the stream proxy parsed out
 	// of the station before must not be served for it. Left to the proxy's
 	// own end-of-stream wipe it survived a few seconds, and the phone remote
@@ -308,7 +319,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		s.armSingleTrackEnd(singleTrack{
 			boxURL: playURL, title: req.Title, art: req.Icon, mime: mime, meta: meta,
 			dur:    time.Duration(req.DurationSec) * time.Second,
-			artist: cleanTrackText(req.Artist), album: cleanTrackText(req.Album),
+			artist: artist, album: album,
 		}, playGen)
 		// Remembered so a key saved from this play keeps the length even
 		// when the saving app does not send it (#978).
@@ -317,7 +328,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {
-		s.recentNoteLibraryCard(req.URL, req.Title, req.Icon, req.URL, mime, req.DurationSec)
+		s.recentNoteLibraryTrack(req.URL, req.Title, req.Icon, mime, req.DurationSec, artist, album)
 	} else {
 		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage, "")
 	}
@@ -714,7 +725,9 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		if err := s.playLibraryFilePresetLocked(playCtx, p, mime, length, recallStart); err != nil {
 			return playResult{}, playFailed("Track could not be played", err)
 		}
-		s.recentNoteLibraryCard(p.StreamURL, p.Name, p.Art, p.StreamURL, mime, int(length.d/time.Second)) // #135
+		// #135, with the artist and album the recall just played it under.
+		keyArtist, keyAlbum, _ := s.keyTrackLabel(p)
+		s.recentNoteLibraryTrack(p.StreamURL, p.Name, p.Art, mime, int(length.d/time.Second), keyArtist, keyAlbum)
 		recallDelivered = true
 		return playResult{Slot: slot, Name: p.Name}, nil
 	}
@@ -838,6 +851,11 @@ type persistedLastPlay struct {
 	Homepage string `json:"homepage,omitempty"`
 	Codec    string `json:"codec,omitempty"`
 	Bitrate  int    `json:"bitrate,omitempty"`
+	// Artist, Album: the label of a single library file (#1839), so the
+	// power-on resume after an agent restart still names it. Absent in files
+	// from older agents and for every other play.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 }
 
 // persistLastPlay writes the resume target to NAND durably (fsync + rename), so
@@ -851,7 +869,8 @@ func (s *Server) persistLastPlay(lp *lastPlayInfo, resumeAttempts int, lastResum
 	}
 	b, err := json.Marshal(persistedLastPlay{BoxURL: lp.boxURL, Title: lp.title, Art: lp.art, Mime: lp.mime, TS: lp.ts,
 		ResumeAttempts: resumeAttempts, LastResumeAt: lastResumeAt,
-		Homepage: lp.homepage, Codec: lp.codec, Bitrate: lp.bitrate})
+		Homepage: lp.homepage, Codec: lp.codec, Bitrate: lp.bitrate,
+		Artist: lp.artist, Album: lp.album})
 	if err != nil {
 		return
 	}
@@ -882,7 +901,8 @@ func (s *Server) loadLastPlay() {
 	// The auto-resume guard count comes back with it (#381): after a
 	// crash-caused reboot this is what tells the automatic resume it is looping.
 	s.play.restore(&lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS,
-		homepage: p.Homepage, codec: p.Codec, bitrate: p.Bitrate}, p.ResumeAttempts, p.LastResumeAt)
+		homepage: p.Homepage, codec: p.Codec, bitrate: p.Bitrate,
+		artist: cleanTrackText(p.Artist), album: cleanTrackText(p.Album)}, p.ResumeAttempts, p.LastResumeAt)
 	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()), "resumeAttempts", p.ResumeAttempts)
 }
 
@@ -1014,6 +1034,18 @@ func (s *Server) recentNoteLibraryCard(key, name, art, url, mime string, duratio
 		durationSec = 0
 	}
 	s.recentNoteEntry(recent.Entry{Source: "upnp", CardKey: key, CardName: name, CardArt: art, CardURL: url, Mime: mime, DurationSec: durationSec})
+}
+
+// recentNoteLibraryTrack is recentNoteLibraryCard for a single library file,
+// whose card is the track itself: it also keeps the artist and album the play
+// was labelled with, so a replay of the card names them again (#1839). Both
+// may be empty.
+func (s *Server) recentNoteLibraryTrack(fileURL, name, art, mime string, durationSec int, artist, album string) {
+	if durationSec < 0 {
+		durationSec = 0
+	}
+	s.recentNoteEntry(recent.Entry{Source: "upnp", CardKey: fileURL, CardName: name, CardArt: art, CardURL: fileURL,
+		Mime: mime, DurationSec: durationSec, Artist: artist, Album: album})
 }
 
 // recentNotePandora records a Pandora station as a Recently-played card. The

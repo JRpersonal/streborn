@@ -66,6 +66,15 @@ type Preset struct {
 	// (#978). Optional/additive: 0 means unknown, which is what every preset
 	// saved before this, and every station, carries.
 	DurationSec int `json:"duration_sec,omitempty"`
+	// Artist and Album are what the media server named for a single
+	// music-library track saved on a key. The speaker reports neither for a
+	// file it fetches itself, so a recall hands them to whoever shows the
+	// running song (the phone page, the desktop app) the way a Library play
+	// does (#1839). Short text, bounded where it is saved. Optional/additive:
+	// empty on every other type and on keys saved before this, which show the
+	// title alone.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 	// Homepage is the radio station website, kept so a preset recall can offer
 	// the same "website" link as the radio search rows in Recently-played (#135).
 	// Optional/additive: presets saved before this, or non-radio, leave it empty.
@@ -300,6 +309,8 @@ type rawPreset struct {
 	Account   string       `json:"account"`
 	Source    string       `json:"source"`
 	Duration  int          `json:"duration_sec"`
+	Artist    string       `json:"artist"`
+	Album     string       `json:"album"`
 	Homepage  string       `json:"homepage"`
 	Shuffle   bool         `json:"shuffle"`
 	Repeat    bool         `json:"repeat"`
@@ -429,6 +440,8 @@ func normalize(in []rawPreset) []Preset {
 			Account:     p.Account,
 			Source:      p.Source,
 			DurationSec: p.Duration,
+			Artist:      p.Artist,
+			Album:       p.Album,
 			Homepage:    p.Homepage,
 			Shuffle:     p.Shuffle,
 			Repeat:      p.Repeat,

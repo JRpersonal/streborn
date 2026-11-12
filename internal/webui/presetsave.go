@@ -371,6 +371,13 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		s.logger.Info("preset save: library track stored with the length learned from its play",
 			"slot", slot, "trackSec", p.DurationSec)
 	}
+	// Artist and album of a single library song: bounded like the same text of
+	// a play, never kept on a type that has none, and filled from what this
+	// agent knows of the file when the save names neither (#1839).
+	if filled := s.settlePresetTrackLabel(&p); filled != "" {
+		s.logger.Info("preset save: library track stored with the artist and album this agent knew",
+			"slot", slot, "from", filled)
+	}
 	// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 	// real name (the playlist title), so the box display and the tile show
 	// e.g. "Jens Chill" instead of a bare "Spotify". Only fills empties / a

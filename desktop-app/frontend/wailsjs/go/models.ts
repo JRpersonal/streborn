@@ -1023,6 +1023,8 @@ export namespace main {
 	    source?: string;
 	    duration_sec?: number;
 	    homepage?: string;
+	    artist?: string;
+	    album?: string;
 	    shuffle?: boolean;
 	    items?: number[];
 	    repeat?: boolean;
@@ -1048,6 +1050,8 @@ export namespace main {
 	        this.source = source["source"];
 	        this.duration_sec = source["duration_sec"];
 	        this.homepage = source["homepage"];
+	        this.artist = source["artist"];
+	        this.album = source["album"];
 	        this.shuffle = source["shuffle"];
 	        this.items = source["items"];
 	        this.repeat = source["repeat"];
@@ -1128,6 +1132,8 @@ export namespace main {
 	    homepage: string;
 	    mime?: string;
 	    durationSec?: number;
+	    artist?: string;
+	    album?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RecentItem(source);
@@ -1146,6 +1152,8 @@ export namespace main {
 	        this.homepage = source["homepage"];
 	        this.mime = source["mime"];
 	        this.durationSec = source["durationSec"];
+	        this.artist = source["artist"];
+	        this.album = source["album"];
 	    }
 	}
 	export class SavedPair {

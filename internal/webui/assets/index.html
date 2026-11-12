@@ -5717,9 +5717,13 @@ async function playLibraryFav(st) {
     // one track the favourite holds, as Recently played does.
     if (r.ok || r.status !== 404) return r;
   }
+  // Artist and album as the favourite keeps them, for the line under the
+  // title; one starred before they were kept sends none and the agent fills
+  // in what it still knows of the file (#1839).
   return postPlay('/api/play', {
     url: st.url_resolved || st.url, title: st.name || '', icon: st.favicon || '',
-    mime: st.mime || '', duration_sec: st.durationSec || 0
+    mime: st.mime || '', duration_sec: st.durationSec || 0,
+    artist: st.artist || '', album: st.album || ''
   });
 }
 
@@ -7887,10 +7891,12 @@ async function playRecent(idx, btn) {
       })).ok;
     }
   } else {
+    /* A single library track's card keeps its artist and album (#1839). */
     ok = (await postPlay('/api/play', {
       url: e.cardURL, title: e.cardName || '', icon: e.cardArt || '',
       mime: e.mime || '', homepage: e.homepage || '',
-      duration_sec: e.durationSec || 0
+      duration_sec: e.durationSec || 0,
+      artist: e.artist || '', album: e.album || ''
     })).ok;
   }
   if (ok) { forgetStationPlay(); setNow(T.starting + ' ' + (e.cardName || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(loadRecent, 4000); }

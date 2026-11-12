@@ -98,6 +98,10 @@ function favMinimal(s) {
     source: s.source === 'upnp' || s.source === 'pandora' ? s.source : undefined,
     mime: s.mime || undefined,
     durationSec: s.durationSec > 0 ? s.durationSec : undefined,
+    // A starred library track's artist and album (#1839), for the line next
+    // to the running song. Undefined, and so dropped, on everything else.
+    artist: s.source === 'upnp' && s.artist ? s.artist : undefined,
+    album: s.source === 'upnp' && s.album ? s.album : undefined,
     // A Pandora station (#1663): the station reference and item type the
     // speaker listed, which its own Pandora client plays. Undefined, and so
     // dropped, on everything else.

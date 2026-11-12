@@ -281,6 +281,11 @@ func (s *Server) reresolveLibraryKey(ctx context.Context, slot int, p *presets.P
 	if p.DurationSec == 0 && it.DurationSec > 0 {
 		p.DurationSec = it.DurationSec
 	}
+	// The server's answer names the artist and album too: a key saved before
+	// they were kept gets them here, at no extra question (#1839).
+	if p.Artist == "" && p.Album == "" {
+		p.Artist, p.Album = cleanTrackText(it.Artist), cleanTrackText(it.Album)
+	}
 	// A new pointer: the store hands out presets that share its own TrackRef.
 	if it.ID != "" {
 		ref.ObjectID = it.ID

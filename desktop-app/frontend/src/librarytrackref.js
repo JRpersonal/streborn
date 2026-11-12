@@ -27,10 +27,12 @@ export function libraryTrackRef(item, udn) {
 // saveLibraryTrackPreset stores a single library track on a key. With a ref
 // the preset goes to the speaker as a whole (SaveFolderPreset is the plain
 // "store this preset object" call) so the ref travels with it; an agent that
-// does not know the field ignores it. Without one it is the old save.
+// does not know the field ignores it. The track's artist and album travel the
+// same way, so the key can name them when it is played (#1839). Without any of
+// the three it is the old save.
 export function saveLibraryTrackPreset(host, port, slot, track) {
   const name = track.name || '(track)';
-  if (!track.ref) {
+  if (!track.ref && !track.artist && !track.album) {
     return SaveLibraryPreset(host, port, slot, name, track.url, track.art || '', 0,
       track.source || '', track.durationSec || 0);
   }
@@ -39,9 +41,11 @@ export function saveLibraryTrackPreset(host, port, slot, track) {
     stream_url: track.url,
     type: 'radio',
     source: track.source || '',
-    track: track.ref,
   };
+  if (track.ref) payload.track = track.ref;
   if (track.art) payload.art = track.art;
   if (track.durationSec > 0) payload.duration_sec = track.durationSec;
+  if (track.artist) payload.artist = track.artist;
+  if (track.album) payload.album = track.album;
   return SaveFolderPreset(host, port, slot, JSON.stringify(payload));
 }

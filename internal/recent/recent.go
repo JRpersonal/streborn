@@ -68,6 +68,13 @@ type Entry struct {
 	// without it the speaker reports no total and the app draws no progress bar
 	// (#845).
 	DurationSec int `json:"durationSec,omitempty"`
+	// Artist and Album are what the media server named for a single
+	// network-library file (the card IS the track), so a replay from history
+	// can label the running song the way a Library play does (#1839). Empty
+	// for every other source, for a folder card, and for rows written before
+	// they existed.
+	Artist string `json:"artist,omitempty"`
+	Album  string `json:"album,omitempty"`
 	// ItemType is the ContentItem type of a Pandora station ("stationurl",
 	// ...), so a replay from history can rebuild the item when the agent no
 	// longer holds the speaker's station list (#1101). Empty for every other
@@ -242,6 +249,12 @@ func (s *Store) Add(e Entry) {
 				}
 				if last.ItemType == "" && e.ItemType != "" {
 					last.ItemType = e.ItemType
+				}
+				if last.Artist == "" && e.Artist != "" {
+					last.Artist = e.Artist
+				}
+				if last.Album == "" && e.Album != "" {
+					last.Album = e.Album
 				}
 				s.markDirtyLocked()
 				return
