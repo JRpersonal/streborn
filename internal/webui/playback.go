@@ -165,6 +165,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
 		return
 	}
+	// A client that names no MIME for a file this agent knows as a
+	// music-library file (a third-party remote replaying a Recently-played
+	// card) still gets a library play, not a radio one (#1871).
+	s.adoptKnownLibraryFile(&req)
 	if s.refuseIfIncompletePair(w) {
 		return
 	}
@@ -172,6 +176,14 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// it is refused here, before the wake (stereofollower.go).
 	if s.refuseIfStereoFollower(w) {
 		return
+	}
+	// A library file whose music server is off is refused before the speaker
+	// is woken and before anything is filed under Recently played (#1871).
+	if req.Mime != "" && isPlainHTTPURL(req.URL) {
+		if ref := s.libraryFileOfflineRefusal(r.Context(), req.URL, req.Title); ref != nil {
+			writePlayRefusal(w, ref)
+			return
+		}
 	}
 	// A sleeping speaker resumes its own last station on the wake; it is kept
 	// silent until this play has taken over (#1557, newplaywake.go). The
