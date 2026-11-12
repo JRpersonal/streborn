@@ -759,8 +759,8 @@ html.ui2 .ui2-nav-item {
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  /* A 48px row: the six keys take one row of tiles now, so Radio shows its
-     first stations without scrolling in the default window all the same. */
+  /* A 48px row, so the six keys (two rows of three) and the first stations
+     of Radio fit the default window. */
   min-height: 48px;
   padding: 0 var(--u-space-3);
   border: 0;

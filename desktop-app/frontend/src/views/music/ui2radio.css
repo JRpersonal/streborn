@@ -130,14 +130,16 @@ html.ui2 #view-box .preset-transfer-btn {
   font-size: var(--u-fs-md);
 }
 
-/* The six keys in one row, like the six buttons on the speaker. Where the
-   window leaves less room (the smallest window, a larger text size) they take
-   two rows of three: a container query at the end of this file, because the
-   text size zooms the body and a media query cannot see that. */
+/* The six keys in two rows of three, the way they sit on the speaker: 1 2 3
+   over 4 5 6. One row of six read as a different thing than the keys in front
+   of the listener (Jens, 2026-11-12). The same three columns hold in the
+   smallest window and at a larger text size. */
 html.ui2 #view-box #presets {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: var(--u-space-5);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Tighter than one row was: two rows must still leave the first station
+     visible without scrolling in the default window. */
+  gap: var(--u-space-2);
+  margin-bottom: var(--u-space-3);
 }
 /* Compact tiles: "Key n" with rename and clear in the first line, the station
    under it across the whole tile, and the hold hint said once over the grid
@@ -150,9 +152,9 @@ html.ui2 #view-box .preset:not(.empty) {
   align-items: center;
   column-gap: var(--u-space-1);
   min-height: 0;
-  padding: 2px 2px 10px var(--u-space-3);
+  padding: 2px 2px 6px var(--u-space-3);
 }
-html.ui2 #view-box .preset.empty { min-height: 0; padding: 10px var(--u-space-3); }
+html.ui2 #view-box .preset.empty { min-height: 0; padding: var(--u-space-2) var(--u-space-3); }
 html.ui2 #view-box .preset:not(.empty) .preset-head { display: contents; }
 html.ui2 #view-box .preset:not(.empty) .num {
   grid-area: num;
@@ -405,12 +407,6 @@ html.ui2 .ui2-st-site { color: var(--u-accent); }
   html.ui2.a11y-scale-xl .ui2-st-text { flex-basis: calc(100% - 64px); }
   html.ui2.a11y-scale-l .ui2-st-actions,
   html.ui2.a11y-scale-xl .ui2-st-actions { flex-basis: 100%; }
-}
-
-/* Less room across (the smallest window, a larger text size): the keys in two
-   rows of three. The container is the shell (shell2.css). */
-@container (width < 1100px) {
-  html.ui2 #view-box #presets { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--u-space-2); }
 }
 
 /* ---------- Focus ---------- */
