@@ -759,10 +759,11 @@ async function libraryPlay(item) {
     // phone page, and for this app after a restart (#1839).
     // The following half of a stereo pair refuses the play and names the half
     // that leads; the track goes there instead (#1878).
-    target = await playOnMasterIfGrouped(target, state.boxes, (b) => PlayURL(b.host, b.port,
+    const send = (b) => PlayURL(b.host, b.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '',
       item.mimeType || guessAudioMime(item.streamURL), '', '', item.durationSec || 0,
-      item.artist || '', item.album || ''));
+      item.artist || '', item.album || '');
+    target = await playOnMasterIfGrouped(target, state.boxes, send);
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;
