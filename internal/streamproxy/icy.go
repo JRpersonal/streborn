@@ -49,6 +49,12 @@ func (s *Server) setTitle(url, title string) {
 		s.logger.Debug("stream proxy ICY title: ad marker ignored", "raw", title)
 		return
 	}
+	// A playout system's record number is not a title either (#1855).
+	if isRecordNumberTitle(title) {
+		s.logger.Debug("stream proxy ICY title: record number ignored", "raw", title)
+		return
+	}
+	title = stripRecordSuffix(title)
 	// A station the listener flagged as sending "Title - Artist" is turned
 	// round here, before anything reads it (titleswap.go).
 	raw := title
@@ -84,10 +90,37 @@ func (s *Server) setTitle(url, title string) {
 // still shows.
 func isAdMarkerTitle(title string) bool {
 	t := strings.ToLower(strings.TrimSpace(title))
-	if t == "adbreak" || t == "adinject" {
+	if t == "adbreak" || t == "adinject" || t == "ad" {
 		return true
 	}
 	return adCueToken.MatchString(t)
+}
+
+// isRecordNumberTitle reports whether a StreamTitle is a playout system's
+// record number sent on both sides of the dash, with no song in it: Nostalgie
+// sends "9999999 - 9999999", "755 - 755", "1991 - 1991" for every track
+// (#1855), and the speaker printed the digits under the station name. Only the
+// doubled form is matched, so a year or a number as a real title still shows.
+func isRecordNumberTitle(title string) bool {
+	a, b, ok := strings.Cut(strings.TrimSpace(title), " - ")
+	if !ok || a != b || a == "" {
+		return false
+	}
+	for _, c := range a {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// recordSuffix is the record number some stations append behind the song:
+// Skyrock sends "The Weeknd - Blinding Lights §6164181" (#1855).
+var recordSuffix = regexp.MustCompile(`\s*§\d{4,}$`)
+
+// stripRecordSuffix removes that appended number and leaves the song.
+func stripRecordSuffix(title string) string {
+	return strings.TrimSpace(recordSuffix.ReplaceAllString(title, ""))
 }
 
 // adCueToken is the machine form of an ad cue: "ad", optional letters, then
