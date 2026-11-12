@@ -540,6 +540,32 @@ engine process for the name alone (honouring the 429 quiet window). The
 `product` in that answer is ignored: the engine's report gates. Once the
 name is known, the engine path makes no Web API call at all.
 
+### Where a key's name and cover come from (`serve.go`, `webui/spotify_key_label.go`)
+
+A Spotify key stores a name and a cover URL beside its context URI. The apps
+send neither on a save (the desktop app sends the now-playing name or the
+placeholder "Spotify", the held hardware key always "Spotify"); the agent
+fills them in `savePresetSlot` from `PlaylistMeta`:
+
+1. Spotify's public oEmbed endpoint, no token.
+2. Whatever oEmbed left empty, from the Web API
+   (`/v1/playlists/<id>?fields=name,images`, likewise albums, tracks and
+   artists) with the engine's access token. oEmbed only knows public content;
+   a playlist it has no answer for was stored as "Spotify" with the green glyph
+   however often it was saved (discussion #1870, one playlist on two speakers).
+   Skipped without an engine and inside the Web API quiet window the plan read
+   keeps; a 429 here starts that window.
+3. Still no cover on a save of what plays: the playing song's album cover.
+
+A key that ended up without a cover, or still called "Spotify", is completed
+the first time it plays: the song hook (`NoteRecentSpotifyTrack`) finds the
+key holding the engine's context, repeats the lookup at most once per playlist
+per agent run, and otherwise takes the playing song's album cover. The store
+is written only when a field changed (at most twice in a key's life), a name
+the user typed is never replaced, and only a new name is pushed to the
+speaker's own key entry. The apps pick the change up through the preset
+revision. The live now-playing art is still never drawn on a key.
+
 ### Streaming quality: Premium defaults to 320 kbps (`quality.go`)
 
 The engine's Vorbis bitrate (`bitrate:` in `config.yml`) is decided per

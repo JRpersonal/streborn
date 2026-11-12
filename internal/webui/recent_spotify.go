@@ -77,10 +77,16 @@ type recentSpotifyMeta struct{ name, art string }
 // too. A playlist on no key, and the session card, stay history plus a save
 // button, exactly as the apps already treat a card without a slot.
 func (s *Server) NoteRecentSpotifyTrack(np SpotifyNowPlaying) {
-	if s.recent == nil || np.Track == "" {
+	if np.Track == "" {
 		return
 	}
 	ctxURI := normalizeSpotifyURI(np.ContextURI)
+	// Before the card: a key that gets its cover or name here hands them to
+	// the card opened below.
+	s.noteSpotifySongForKeys(np, ctxURI)
+	if s.recent == nil {
+		return
+	}
 	s.recentMu.Lock()
 	c := s.recentSpotifyCard
 	switch {
