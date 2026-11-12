@@ -345,7 +345,7 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
     const path = await DownloadUpdate(version);
     btn.textContent = t('banner.installing');
     await ApplyUpdate(path);
-    // Reached only on macOS and for a Linux .deb copy (Linux/Windows otherwise
+    // Reached only on macOS and for a Linux .deb or .rpm copy (Linux/Windows otherwise
     // relaunch+quit inside ApplyUpdate).
     //
     // The last step is the user's: drag the app out of the mounted .dmg. Saying
@@ -359,8 +359,8 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
       btn.disabled = false;
       btn.textContent = installLabel;
       showMacHandoff(path);
-    } else if (state.appInfo && state.appInfo.linuxPackage === 'deb') {
-      // A .deb copy: ApplyUpdate opened the package installer, which does the
+    } else if (state.appInfo && state.appInfo.linuxPackage) {
+      // A .deb or .rpm copy: ApplyUpdate opened the package installer, which does the
       // rest. The user confirms there and starts the new version.
       showDebHandoff();
     }

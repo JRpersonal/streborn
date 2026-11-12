@@ -968,12 +968,48 @@ jobs:
           sha256sum "STR-Linux-x64.deb" > "STR-Linux-x64.deb.sha256"
           cat "STR-Linux-x64.deb.sha256"
 
+      # The same binary as an .rpm for Fedora and openSUSE. Installed once in a
+      # Fedora container and checked for missing libraries, so a broken package
+      # fails the build instead of reaching a user. The package must carry the
+      # binary byte for byte and run no script on install.
+      - name: Package as .rpm
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        run: |
+          sudo apt-get install -y rpm
+          sh .github/scripts/build-rpm.sh "desktop-app/build/bin/ST Reborn" "${VERSION}" amd64 "release-out/STR-Linux-x64.rpm"
+          test "$(rpm -qp --queryformat '%{ARCH}' "release-out/STR-Linux-x64.rpm")" = "x86_64"
+          rpm -qpR "release-out/STR-Linux-x64.rpm" | grep -F 'libwebkit2gtk-4.1.so.0'
+          if [ -n "$(rpm -qp --scripts "release-out/STR-Linux-x64.rpm")" ]; then
+            echo "::error::the .rpm carries an install script"
+            exit 1
+          fi
+          want=$(sha256sum "desktop-app/build/bin/ST Reborn" | cut -d' ' -f1)
+          for try in 1 2 3; do
+            docker pull -q registry.fedoraproject.org/fedora:latest && break
+            sleep 20
+          done
+          docker run --rm -e WANT="$want" -v "$PWD/release-out:/pkg:ro" registry.fedoraproject.org/fedora:latest sh -c '
+            set -e
+            dnf install -y -q "/pkg/STR-Linux-x64.rpm"
+            test "$(rpm -qf --queryformat "%{NAME}" /usr/bin/st-reborn)" = "st-reborn"
+            test "$(sha256sum /usr/bin/st-reborn | cut -d" " -f1)" = "$WANT"
+            if ldd /usr/bin/st-reborn | grep "not found"; then
+              echo "::error::the installed .rpm is missing runtime libraries"
+              exit 1
+            fi
+          '
+          cd release-out
+          sha256sum "STR-Linux-x64.rpm" > "STR-Linux-x64.rpm.sha256"
+          cat "STR-Linux-x64.rpm.sha256"
+
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             release-out/STR-Linux-x64.tar.gz
             release-out/STR-Linux-x64.deb
+            release-out/STR-Linux-x64.rpm
 
       - name: Upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -984,6 +1020,8 @@ jobs:
             release-out/STR-Linux-x64.tar.gz.sha256
             release-out/STR-Linux-x64.deb
             release-out/STR-Linux-x64.deb.sha256
+            release-out/STR-Linux-x64.rpm
+            release-out/STR-Linux-x64.rpm.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -1184,12 +1222,48 @@ jobs:
           sha256sum "STR-Linux-arm64.deb" > "STR-Linux-arm64.deb.sha256"
           cat "STR-Linux-arm64.deb.sha256"
 
+      # The same binary as an .rpm for Fedora and openSUSE. Installed once in a
+      # Fedora container and checked for missing libraries, so a broken package
+      # fails the build instead of reaching a user. The package must carry the
+      # binary byte for byte and run no script on install.
+      - name: Package as .rpm
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        run: |
+          sudo apt-get install -y rpm
+          sh .github/scripts/build-rpm.sh "desktop-app/build/bin/ST Reborn" "${VERSION}" arm64 "release-out/STR-Linux-arm64.rpm"
+          test "$(rpm -qp --queryformat '%{ARCH}' "release-out/STR-Linux-arm64.rpm")" = "aarch64"
+          rpm -qpR "release-out/STR-Linux-arm64.rpm" | grep -F 'libwebkit2gtk-4.1.so.0'
+          if [ -n "$(rpm -qp --scripts "release-out/STR-Linux-arm64.rpm")" ]; then
+            echo "::error::the .rpm carries an install script"
+            exit 1
+          fi
+          want=$(sha256sum "desktop-app/build/bin/ST Reborn" | cut -d' ' -f1)
+          for try in 1 2 3; do
+            docker pull -q registry.fedoraproject.org/fedora:latest && break
+            sleep 20
+          done
+          docker run --rm -e WANT="$want" -v "$PWD/release-out:/pkg:ro" registry.fedoraproject.org/fedora:latest sh -c '
+            set -e
+            dnf install -y -q "/pkg/STR-Linux-arm64.rpm"
+            test "$(rpm -qf --queryformat "%{NAME}" /usr/bin/st-reborn)" = "st-reborn"
+            test "$(sha256sum /usr/bin/st-reborn | cut -d" " -f1)" = "$WANT"
+            if ldd /usr/bin/st-reborn | grep "not found"; then
+              echo "::error::the installed .rpm is missing runtime libraries"
+              exit 1
+            fi
+          '
+          cd release-out
+          sha256sum "STR-Linux-arm64.rpm" > "STR-Linux-arm64.rpm.sha256"
+          cat "STR-Linux-arm64.rpm.sha256"
+
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             release-out/STR-Linux-arm64.tar.gz
             release-out/STR-Linux-arm64.deb
+            release-out/STR-Linux-arm64.rpm
 
       - name: Upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1200,6 +1274,8 @@ jobs:
             release-out/STR-Linux-arm64.tar.gz.sha256
             release-out/STR-Linux-arm64.deb
             release-out/STR-Linux-arm64.deb.sha256
+            release-out/STR-Linux-arm64.rpm
+            release-out/STR-Linux-arm64.rpm.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -1876,6 +1952,20 @@ jobs:
                 "arch": "arm64",
                 "filename": "STR-Linux-arm64.deb"
               },
+              "desktop_linux_rpm": {
+                "url": "${BASE}/STR-Linux-x64.rpm",
+                "sha256": "$(sha STR-Linux-x64.rpm)",
+                "platform": "linux",
+                "arch": "amd64",
+                "filename": "STR-Linux-x64.rpm"
+              },
+              "desktop_linux_arm64_rpm": {
+                "url": "${BASE}/STR-Linux-arm64.rpm",
+                "sha256": "$(sha STR-Linux-arm64.rpm)",
+                "platform": "linux",
+                "arch": "arm64",
+                "filename": "STR-Linux-arm64.rpm"
+              },
               "agent_armv7l": {
                 "url": "${BASE}/streborn-armv7l",
                 "latest_url": "${LATEST_BASE}/streborn-armv7l",
@@ -2069,6 +2159,8 @@ jobs:
           | Linux desktop app (ARM64) | [STR-Linux-arm64.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-arm64.tar.gz) |
           | Linux .deb (Debian, Ubuntu, x86_64) | [STR-Linux-x64.deb](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64.deb) |
           | Linux .deb (Raspberry Pi OS, ARM64) | [STR-Linux-arm64.deb](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-arm64.deb) |
+          | Linux .rpm (Fedora, openSUSE, x86_64) | [STR-Linux-x64.rpm](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64.rpm) |
+          | Linux .rpm (Fedora, openSUSE, ARM64) | [STR-Linux-arm64.rpm](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-arm64.rpm) |
           | Stick agent (ARMv7l, real target) | [streborn-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-armv7l) |
           | Stick agent (ARM64, reserve) | [streborn-arm64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-arm64) |
           | Stick agent (amd64, test rig) | [streborn-amd64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-amd64) |
@@ -2221,6 +2313,8 @@ jobs:
             dist/STR-Linux-arm64.tar.gz
             dist/STR-Linux-x64.deb
             dist/STR-Linux-arm64.deb
+            dist/STR-Linux-x64.rpm
+            dist/STR-Linux-arm64.rpm
             dist/streborn-armv7l
             dist/streborn-arm64
             dist/streborn-amd64

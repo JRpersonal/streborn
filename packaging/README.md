@@ -1,4 +1,4 @@
-# Package managers: winget, Homebrew and .deb
+# Package managers: winget, Homebrew, .deb and .rpm
 
 The desktop app is published to these package managers on top of the GitHub
 release and st-reborn.de:
@@ -8,6 +8,7 @@ release and st-reborn.de:
 | Windows | winget (the Windows Package Manager) | `winget install JRpersonal.STReborn` |
 | macOS | Homebrew, own tap | `brew install --cask jrpersonal/tap/st-reborn` |
 | Debian, Ubuntu, Mint, Raspberry Pi OS | `.deb` on the release | double click, or `sudo apt install ./STR-Linux-x64.deb` |
+| Fedora, openSUSE | `.rpm` on the release | `sudo dnf install ./STR-Linux-x64.rpm`, or `sudo zypper install ./STR-Linux-x64.rpm` |
 
 After the one-time setup below, every real release updates both by itself
 (job `package-managers` in `.github/workflows/release.yml`). A preview release
@@ -123,6 +124,33 @@ downloads the new .deb from the release manifest (`desktop_linux_deb`,
 which asks for the password and upgrades the package. It never swaps the
 binary behind dpkg's back. There is no apt repository, so `apt upgrade` does
 not see new versions; the in-app banner is the update path.
+
+## Linux .rpm
+
+Every release carries `STR-Linux-x64.rpm` and `STR-Linux-arm64.rpm`, built by
+`.github/scripts/build-rpm.sh` from the same binary as the tar.gz and the
+.deb. Before it is published the package is installed once in a Fedora
+container on the build runner and checked: the installed binary has the same
+bytes as the release binary, no library is missing, and the package carries
+no install script.
+
+The package names no library package, because Fedora and openSUSE call GTK 3,
+WebKitGTK 4.1 and libsoup 3 differently. rpmbuild records the shared
+libraries the binary links, and dnf or zypper resolve them to the
+distribution's own packages. A distribution without WebKitGTK 4.1 (older
+enterprise releases) refuses the install with a clear dependency message.
+
+The packages are not GPG-signed. dnf installs a local file without asking;
+zypper asks once about the missing signature. The SHA256 sums and the
+Sigstore attestation of the release cover both files.
+
+A copy the .rpm installed updates through the next .rpm: the app asks rpm
+who owns its binary (`rpm -qf`, `desktop-app/linuxpkg.go`), downloads the new
+.rpm from the release manifest (`desktop_linux_rpm`,
+`desktop_linux_arm64_rpm`) and opens it in the system's package installer,
+which asks for the password and upgrades the package. It never swaps the
+binary behind rpm's back. There is no repository, so `dnf upgrade` does not
+see new versions; the in-app banner is the update path.
 
 ## Flathub, ruled out
 

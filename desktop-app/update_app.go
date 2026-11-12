@@ -156,7 +156,8 @@ func updateAssetKeys() []string {
 // has one archive per architecture, and an ARM64 app must never fall back to
 // the x86_64 one: it would swap itself for a binary its machine cannot run. A
 // release without the ARM64 archive then offers no update at all. A copy the
-// .deb installed updates from the next .deb only (see linuxpkg.go).
+// .deb or the .rpm installed updates from the next package of its kind only
+// (see linuxpkg.go).
 func updateAssetKeysFor(goos, goarch, pkg string) []string {
 	switch goos {
 	case "windows":
@@ -174,6 +175,12 @@ func updateAssetKeysFor(goos, goarch, pkg string) []string {
 				return []string{"desktop_linux_arm64_deb"}
 			}
 			return []string{"desktop_linux_deb"}
+		}
+		if pkg == linuxPkgRpm {
+			if goarch == "arm64" {
+				return []string{"desktop_linux_arm64_rpm"}
+			}
+			return []string{"desktop_linux_rpm"}
 		}
 		if goarch == "arm64" {
 			return []string{"desktop_linux_arm64"}
@@ -199,8 +206,8 @@ func canSelfReplace() bool {
 		// Same question macOS asks, for the same reason: a binary installed
 		// into /opt or /usr/local by root cannot be swapped by the user running
 		// it, and finding that out only when the rename fails means the user
-		// has already sat through a download and pressed Install. A .deb
-		// copy belongs to dpkg (linuxpkg.go).
+		// has already sat through a download and pressed Install. A .deb or
+		// .rpm copy belongs to the package manager (linuxpkg.go).
 		if linuxPackage() != linuxPkgNone {
 			return false
 		}
@@ -485,8 +492,11 @@ func assetExt() string {
 	case "darwin":
 		return ".dmg"
 	default:
-		if linuxPackage() == linuxPkgDeb {
+		switch linuxPackage() {
+		case linuxPkgDeb:
 			return ".deb"
+		case linuxPkgRpm:
+			return ".rpm"
 		}
 		return ".tar.gz"
 	}
@@ -506,8 +516,8 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 		a.logger.Info("app update: winget-managed install, refusing the in-place swap", "file", downloadedPath)
 		return errWingetManaged
 	}
-	if linuxPackage() == linuxPkgDeb {
-		return a.applyLinuxDeb(downloadedPath)
+	if pkg := linuxPackage(); pkg != linuxPkgNone {
+		return a.applyLinuxPackage(downloadedPath, pkg)
 	}
 	switch runtime.GOOS {
 	case "darwin":
@@ -618,16 +628,30 @@ func (a *App) applyLinux(tgz string) error {
 	return nil
 }
 
-// applyLinuxDeb hands the downloaded .deb to the system's package installer
-// (GNOME Software, Discover, gdebi, whatever opens .deb files here), which asks
-// for the password and upgrades the package over the running copy. The user
-// starts the new version afterwards; the banner says so.
-func (a *App) applyLinuxDeb(deb string) error {
-	if !strings.HasSuffix(strings.ToLower(deb), ".deb") {
-		return fmt.Errorf("expected a .deb for this installation, got %s", filepath.Base(deb))
+// applyLinuxPackage hands the downloaded .deb or .rpm to the system's package
+// installer (GNOME Software, Discover, gdebi, YaST, whatever opens such files
+// here), which asks for the password and upgrades the package over the running
+// copy. The user starts the new version afterwards; the banner says so. pkg is
+// what linuxPackage reported, and a file of the other kind is refused: a
+// package manager must never be handed the other one's format.
+func (a *App) applyLinuxPackage(file, pkg string) error {
+	if err := checkLinuxPackageFile(file, pkg); err != nil {
+		return err
 	}
-	a.logger.Info("app update: handing the .deb to the package installer", "file", deb)
-	return exec.Command("xdg-open", deb).Start()
+	a.logger.Info("app update: handing the package to the package installer", "file", file, "kind", pkg)
+	return exec.Command("xdg-open", file).Start()
+}
+
+// checkLinuxPackageFile reports whether file is a package of the kind this
+// copy was installed from.
+func checkLinuxPackageFile(file, pkg string) error {
+	if pkg != linuxPkgDeb && pkg != linuxPkgRpm {
+		return fmt.Errorf("this installation does not update through a package")
+	}
+	if !strings.HasSuffix(strings.ToLower(file), "."+pkg) {
+		return fmt.Errorf("expected a .%s for this installation, got %s", pkg, filepath.Base(file))
+	}
+	return nil
 }
 
 // relaunchAndQuit launches the replaced binary AFTER this process has fully
