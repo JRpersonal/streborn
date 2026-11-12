@@ -83,7 +83,7 @@ describe('Help and info sections', () => {
     const sec = sectionOf(page(), 'about');
     expect(sec).toContain('Version v1.2.1');
     expect(sec).toContain('(Build 2026-10-30)');
-    expect(sec).toContain('data-url="https://github.com/JRpersonal/streborn/releases/tag/v1.2.1"');
+    expect(sec).toContain('data-url="https://github.com/JRpersonal/streborn/releases"');
     expect(sec).toContain(">What's new<".replace("'", '&#39;'));
     expect(sec).toContain('data-act="checkUpdate"');
     expect(sec).toContain('data-act="credits"');
@@ -170,6 +170,12 @@ describe('About links', () => {
     expect(releaseNotesURL({ version: 'v1.2.1-2-gdeadbee' })).toBe('https://github.com/JRpersonal/streborn/releases');
     expect(repoURL('https://example.org/x/')).toBe('https://example.org/x');
     expect(websiteURL({})).toBe('https://st-reborn.de');
+  });
+
+  it('opens the releases list from "What is new", so earlier versions are one scroll away (#1872)', () => {
+    const src = fileSource('shell2/help/help.js');
+    expect(src).toContain('releaseNotes: `$' + '{repo}/releases`,');
+    expect(src).not.toContain('releaseNotes: releaseNotesURL(i)');
   });
 
   it('is used by renderFooter too', () => {

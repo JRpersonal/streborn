@@ -29,7 +29,7 @@ import { openShareModal } from '../../share.js';
 import { worldMapURL } from '../../worldmapinvite.js';
 import { VOTE_URL, SUGGEST_URL } from '../../views/wishes.js';
 import { strFaqURL } from '../../views/settings/info.js';
-import { imprintURL, privacyURL, releaseNotesURL, repoURL, websiteURL } from './about.js';
+import { imprintURL, privacyURL, repoURL, websiteURL } from './about.js';
 import './help.css';
 
 // The sections, top to bottom. Each one is a <section> labelled by its
@@ -68,7 +68,11 @@ export function helpModel({ appInfo, locale, faqUrl, logs, update } = {}) {
       suggest: SUGGEST_URL,
       vote: VOTE_URL,
       worldMap: worldMapURL(loc),
-      releaseNotes: releaseNotesURL(i),
+      // The releases list, not this version's own page: it opens on the
+      // newest notes and has every earlier version below them, for whoever
+      // skipped a few updates (#1872). The footer's version number still
+      // opens that version's page (releaseNotesURL).
+      releaseNotes: `${repo}/releases`,
       website: websiteURL(i),
       source: repo,
       privacy: privacyURL(loc),
