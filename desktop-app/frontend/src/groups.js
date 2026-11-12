@@ -261,6 +261,28 @@ export function resolveBoxByRef(ref, boxes) {
     && ((b.deviceID && String(b.deviceID).toUpperCase() === key) || b.host === s)) || null;
 }
 
+// playOnMasterIfGrouped runs a play on target and, when the speaker refuses it
+// as the following half of a pair or a group (409 box-grouped), runs it once
+// more on the master the refusal names. It resolves to the speaker that took
+// the play. A refusal without a master this app knows, and every other error,
+// is thrown as it came.
+//
+// A stereo pair lives in the speakers' own pairing, not in the zone map, so
+// effectivePlayTarget cannot see it ahead of the play: the right half of a
+// pair refused "Play folder" and the app showed the refusal's raw JSON (#1878).
+export async function playOnMasterIfGrouped(target, boxes, run) {
+  try {
+    await run(target);
+    return target;
+  } catch (err) {
+    const rej = parsePlayRejection(err);
+    const master = rej.grouped ? resolveBoxByRef(rej.master, boxes) : null;
+    if (!master || !target || master.host === target.host) throw err;
+    await run(master);
+    return master;
+  }
+}
+
 // ---- The one shared zoneLive poll ----
 
 let _fetchedAt = 0;

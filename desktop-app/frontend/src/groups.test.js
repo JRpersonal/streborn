@@ -22,6 +22,7 @@ import {
   applyOptimisticZone,
   sameBoxIdentity,
   parsePlayRejection,
+  playOnMasterIfGrouped,
   resolveBoxByRef,
   fetchZoneLive,
   resetZoneLivePoll,
@@ -329,6 +330,47 @@ describe('parsePlayRejection', () => {
     const r = parsePlayRejection('{"error":"box-grouped","master":broken}');
     expect(r.grouped).toBe(true);
     expect(r.master).toBe('');
+  });
+});
+
+describe('playOnMasterIfGrouped', () => {
+  const left = { host: '192.0.2.1', port: 8888, deviceID: 'AA11BB22CC01' };
+  const right = { host: '192.0.2.2', port: 8888, deviceID: 'AA11BB22CC02' };
+  const refusal = 'StartQueue: Error: {"error":"box-grouped","master":"AA11BB22CC01","stereo":true}';
+
+  it('plays on the speaker that was asked when it accepts', async () => {
+    const calls = [];
+    const got = await playOnMasterIfGrouped(right, [left, right], async (b) => { calls.push(b.host); });
+    expect(got).toBe(right);
+    expect(calls).toEqual(['192.0.2.2']);
+  });
+
+  it('plays once more on the leading half when the following half refuses', async () => {
+    const calls = [];
+    const got = await playOnMasterIfGrouped(right, [left, right], async (b) => {
+      calls.push(b.host);
+      if (b === right) throw new Error(refusal);
+    });
+    expect(got).toBe(left);
+    expect(calls).toEqual(['192.0.2.2', '192.0.2.1']);
+  });
+
+  it('throws the refusal when the app does not know the leading half', async () => {
+    await expect(playOnMasterIfGrouped(right, [right], async () => { throw new Error(refusal); }))
+      .rejects.toThrow('box-grouped');
+  });
+
+  it('throws the error of the leading half when that fails too', async () => {
+    await expect(playOnMasterIfGrouped(right, [left, right], async (b) => {
+      throw new Error(b === right ? refusal : 'library-server-offline');
+    })).rejects.toThrow('library-server-offline');
+  });
+
+  it('does not retry any other error', async () => {
+    let n = 0;
+    await expect(playOnMasterIfGrouped(right, [left, right], async () => { n++; throw new Error('timeout'); }))
+      .rejects.toThrow('timeout');
+    expect(n).toBe(1);
   });
 });
 
