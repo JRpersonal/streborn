@@ -245,8 +245,31 @@ shows a green tick over a group that is still playing.
 | ------ | ---- | ---- | ----- |
 | `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, and `"presetRows":"2"` on an agent with the second preset row (slots 7-12). The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
-| `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`. |
+| `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`, and for a music-library entry (`source` `upnp`) `mime` and `durationSec`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
+
+### Replaying a history entry
+
+How an entry is started again depends on its `source` and `cardKey`:
+
+| Entry | Request |
+| ----- | ------- |
+| `source` `radio` | `POST /api/play` with `{"url":cardURL,"title":cardName,"icon":cardArt}`. |
+| `source` `upnp`, `cardKey` starts with `queue:` (an album or folder) | `POST /api/queue/replay-card` with `{"key":cardKey,"name":cardName,"art":cardArt}`. The speaker plays the whole folder again. `cardURL` is only its first track. |
+| `source` `upnp`, any other `cardKey` (one track) | `POST /api/play` with `{"url":cardURL,"title":cardName,"icon":cardArt,"mime":mime,"duration_sec":durationSec}`. |
+
+A music-library play whose media server is switched off is refused with
+`502` and
+`{"code":"library-server-offline","error":"<sentence>","offline":true,"server":"<name>"}`.
+Nothing is started and nothing is added to the history; show `error` or your
+own text for `code`. A folder replay that cannot find its media server at all
+answers `200` with `"offline":true` and `"server"` instead of `"status":"ok"`,
+so check the body, not only the status.
+
+An agent up to v1.6.0 took a `upnp` entry sent to `/api/play` without `mime`
+for a radio station and filed it under `radio`. Later agents recognise the
+file, but only `/api/queue/replay-card` plays more than the first track of
+an album.
 
 ## Wi-Fi
 
