@@ -924,16 +924,23 @@ body {
 }
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 /* "Remove from list" on a greyed tile (#1852): an x left of the gear, or in the
-   gear's place on a Bose original, which has none. */
-.box-btn.has-remove { padding-right: 48px; }
-.box-btn.stock.has-remove { padding-right: 28px; }
+   gear's place on a Bose original, which has none. The x is a button beside
+   the tile, not inside it (a control inside a control is not reachable for a
+   screen reader), so a wrapper carries the positioning. 24px is the smallest
+   target WCAG 2.2 allows. */
+.box-wrap { position: relative; display: inline-block; }
+.box-btn.has-remove { padding-right: 54px; }
+.box-btn.stock.has-remove { padding-right: 32px; }
 .box-remove {
   position: absolute;
   right: 26px;
   top: 50%;
   transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -943,7 +950,7 @@ body {
   line-height: 1;
   border-radius: 3px;
 }
-.box-btn.stock .box-remove { right: 6px; }
+.box-btn.stock + .box-remove { right: 4px; }
 .box-remove:hover, .box-remove:focus-visible { color: var(--c-text); background: var(--c-border); }
 .box-ver { background: var(--c-surface-3); color: var(--c-muted); font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 /* Offline: die Version ist der letzte bestaetigte Stand, kein Live-Wert (#775).

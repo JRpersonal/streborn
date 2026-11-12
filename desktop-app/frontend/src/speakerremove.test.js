@@ -193,7 +193,11 @@ describe('classic speaker picker', () => {
 
   it('draws the x through the gate, on greyed tiles only', () => {
     expect(src).toContain("const removable = off && !tile.updateRunning && canRemoveFromList(b, { installHolds: state.installHolds });");
-    expect(src).toMatch(/const rmBtn = removable\s*\? `<span class="box-remove" role="button" tabindex="0"/);
+    expect(src).toMatch(/const rmBtn = removable\s*\? `<button type="button" class="box-remove"/);
+    // Beside the tile, never inside it: a button in a button fails axe's
+    // nested-interactive rule and is skipped by screen readers.
+    expect(src).toMatch(/<span class="box-wrap">[$][{]tileHTML[}][$][{]rmBtn[}]<[/]span>/);
+    expect(src).not.toMatch(/\$\{rmBtn\}<span class="box-edit"/);
   });
 
   it('does not select or search for the speaker when the x is pressed', () => {

@@ -323,12 +323,16 @@ export function renderBoxSelect() {
     // address the speaker no longer has, which nothing finds again across a
     // routed network (#1852). Only where the speaker is not reachable, and
     // never while an update from this app restarts it (speakerremove.js).
+    // It is a real button NEXT to the tile, inside a wrapper that carries the
+    // positioning: the tile is a button itself, and a control inside a control
+    // is skipped by screen readers.
     const removable = off && !tile.updateRunning && canRemoveFromList(b, { installHolds: state.installHolds });
     const rmTitle = removable ? t('speaker.removeFromListLabel', { name: getBoxLabel(b) }) : '';
     const rmCls = removable ? ' has-remove' : '';
     const rmBtn = removable
-      ? `<span class="box-remove" role="button" tabindex="0" data-host="${b.host}" title="${escapeAttr(rmTitle)}" aria-label="${escapeAttr(rmTitle)}">&times;</span>`
+      ? `<button type="button" class="box-remove" data-host="${b.host}" title="${escapeAttr(rmTitle)}" aria-label="${escapeAttr(rmTitle)}">&times;</button>`
       : '';
+    const withRemove = (tileHTML) => (removable ? `<span class="box-wrap">${tileHTML}${rmBtn}</span>` : tileHTML);
     // The main speaker of a group is named as such, not only starred: a lone
     // star did not read as "this one leads" (Jens, 2026-09-06).
     const groupMark = isFramedMaster(b)
@@ -373,7 +377,7 @@ export function renderBoxSelect() {
       const stockTitle = off ? offTitle
         : tile.updateRunning ? t('speaker.updateRunningHint')
           : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
-      return `<span class="box-btn${stockCls}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}${rmBtn}</span>`;
+      return withRemove(`<span class="box-btn${stockCls}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`);
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
     // stale: a fresh-looking version on an unreachable box is how #775's
@@ -408,7 +412,7 @@ export function renderBoxSelect() {
     const noNetChip = tile.noInternet
       ? `<span class="box-nointernet-chip" title="${escapeAttr(noInternetText(t))}">${escapeHtml(t('speaker.noInternetChip'))}</span>`
       : '';
-    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updRunning}${updDot}${noNetChip}${rmBtn}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    return withRemove(`<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updRunning}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`);
   };
   // "Add by IP" tile, always available once at least one speaker is listed.
   // On a routed network mDNS and the local /24 scan find only the speakers on
@@ -557,8 +561,8 @@ export function renderBoxSelect() {
       const box = (state.boxes || []).find(b => b.host === x.dataset.host);
       if (box) removeFromListDialog(box);
     };
+    // A real button: Enter and Space arrive as a click.
     x.onclick = ask;
-    x.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') ask(e); };
   });
   sel.querySelectorAll('.box-edit').forEach(icon => {
     icon.onclick = (e) => {
