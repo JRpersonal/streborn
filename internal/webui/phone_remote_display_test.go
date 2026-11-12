@@ -59,3 +59,33 @@ func TestPhoneRemoteLocalesCarryTheDisplayKeys(t *testing.T) {
 		}
 	}
 }
+
+// The phone page sets the start volume the desktop app has under Speaker
+// settings (#1869), against the same endpoint, and writes it once when the
+// slider is let go: every write lands on the speaker's flash.
+func TestPhoneRemoteStartVolumeCard(t *testing.T) {
+	for _, want := range []string{
+		`id="svCard" hidden`,
+		`id="startVol" min="0" max="100"`,
+		"api('/api/box/start-volume')",
+		"api('/api/box/start-volume', 'POST', { volume: v })",
+		"if (!r || r.supported !== true) return;",
+		"sl.addEventListener('change', function(){ saveStartVol(sl.value); });",
+		"['bassCard', 'identCard', 'svCard', 'dispCard']",
+		"if (name === 'More') loadStartVol();",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("start volume card: %q is gone", want)
+		}
+	}
+	if strings.Contains(indexHTML, "addEventListener('input', function(){ saveStartVol") {
+		t.Error("the start volume is written while the slider is dragged")
+	}
+	bundles := strings.Count(indexHTML, "now:\"")
+	for _, key := range []string{"svHead", "svSum", "svOff"} {
+		got := len(regexp.MustCompile(`[{,]`+key+`:"`).FindAllString(indexHTML, -1))
+		if got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
