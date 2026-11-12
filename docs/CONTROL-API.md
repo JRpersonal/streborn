@@ -50,6 +50,10 @@ All request and response bodies are JSON.
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/box/volume` | - | Returns `{"value":N,"target":N,"muted":bool}` (0-100). |
 | `PUT`  | `/api/box/volume` | `{"value":N}` | Set the absolute volume (0-100). |
+| `GET`  | `/api/box/max-volume` | - | The speaker's volume ceiling: `{"supported":true,"volume":N}`, `0` means off. This is the "Max volume" setting of the desktop app; read it from here so every remote shows the same value. |
+| `POST` | `/api/box/max-volume` | `{"volume":N}` | Set the ceiling (1-100) or switch it off (`0`). Stored on the speaker, so write it once when a slider is released, not while it moves. |
+| `GET`  | `/api/box/start-volume` | - | The level the speaker goes to when it is switched on and starts playing: `{"supported":true,"volume":N}`, `0` means off. |
+| `POST` | `/api/box/start-volume` | `{"volume":N}` | Set the start level (1-100) or switch it off (`0`). Stored on the speaker; write it once per change. |
 | `POST` | `/api/box/power` | `{"on":true}` / `{"on":false}` | Power on, or send to standby. |
 | `PUT`  | `/api/box/source` | `{"source":"AUX"}` | `AUX`, `BLUETOOTH` or `STANDBY`. |
 
