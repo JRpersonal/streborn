@@ -9,6 +9,7 @@
 import { t } from './i18n/index.js';
 import { formatClock } from './format.js';
 import { labelOf as getBoxLabel } from './boxes.js';
+import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from './libraryserveroff.js';
 
 export const $ = (id) => document.getElementById(id);
 
@@ -599,12 +600,27 @@ function wireError() {
 // https://91.98.4.78 - alarming-looking to users, field 2026-07-26). Show the
 // friendly localized message instead; the raw detail stays in app.log. Shared
 // by the error modal and the inline search error, which used to print the raw
-// text (#1065). Anything else passes through unchanged.
+// text (#1065).
+//
+// The agent's refusal of a music-library play whose server is off, or no
+// longer has the music, arrives as its raw JSON body (friendlyError on the Go
+// side passes it through so the server's name survives). The preset keys
+// already turn it into a sentence; a Recently-played card and a Library row
+// sent it to the error dialog as it came, braces and all (#1871). Here it
+// becomes the same localized sentence for every caller.
+//
+// Anything else passes through unchanged.
 export function friendlyErrorText(msg) {
   const text = String(msg == null ? '' : msg);
   if (text.includes('radio directory unreachable')) {
     return t('radio.mirrorsDown');
   }
+  // File-gone first: its check is exact on the body's code, the server-off
+  // one also answers for a bare code without a body.
+  const goneServer = libraryFileGoneName(text);
+  if (goneServer !== null) return libraryFileGoneNotice(goneServer, t);
+  const offServer = libraryServerOffName(text);
+  if (offServer !== null) return libraryServerOffNotice(offServer, t);
   return text;
 }
 

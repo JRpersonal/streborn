@@ -800,7 +800,7 @@ async function libraryPlay(item) {
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item, target);
   } catch (e) {
-    if (ui2()) setLibStatus(key, { tone: 'error', text: t('ui2.library.playFailed', { name, detail: String(e) }) });
+    if (ui2()) setLibStatus(key, { tone: 'error', text: t('ui2.library.playFailed', { name, detail: friendlyErrorText(String(e)) }) });
     else showError(`PlayURL: ${e}`);
   }
 }
