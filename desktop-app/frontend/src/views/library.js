@@ -17,6 +17,7 @@
 import { state } from '../state.js';
 import { strBoxes } from '../boxes.js';
 import { formatClock } from '../format.js';
+import { playOnMasterIfGrouped } from '../groups.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, hideToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
@@ -742,7 +743,7 @@ async function libraryPlay(item) {
   }
   // A play aimed at a zone follower must go to its master (#70): the follower's
   // own UPnP endpoint rejects control with 501 "Can't control member of group".
-  const target = deps.effectivePlayTarget() || state.currentBox;
+  let target = deps.effectivePlayTarget() || state.currentBox;
   const name = speakerName();
   // Sent is not playing: the preview says "Starting" until the speaker
   // reports that it plays (verifyLibraryPlayback).
@@ -756,10 +757,12 @@ async function libraryPlay(item) {
     // drew a bar and a single click never did.
     // Artist and album go to the speaker's agent too: it keeps them for the
     // phone page, and for this app after a restart (#1839).
-    await PlayURL(target.host, target.port,
+    // The following half of a stereo pair refuses the play and names the half
+    // that leads; the track goes there instead (#1878).
+    target = await playOnMasterIfGrouped(target, state.boxes, (b) => PlayURL(b.host, b.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '',
       item.mimeType || guessAudioMime(item.streamURL), '', '', item.durationSec || 0,
-      item.artist || '', item.album || '');
+      item.artist || '', item.album || ''));
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;
@@ -1020,12 +1023,14 @@ async function libraryPlayFolder(fromId) {
   // A queue aimed at a zone follower must start on its master (#70): the
   // follower's UPnP endpoint rejects control with 501 "Can't control member
   // of group" (that raw SOAP fault is exactly what users saw).
-  const target = deps.effectivePlayTarget() || state.currentBox;
+  let target = deps.effectivePlayTarget() || state.currentBox;
   const spk = speakerName();
   const folder = openFolderId();
   if (ui2()) setLibStatus('folder', { tone: 'busy', text: t('ui2.library.folderStarting', { name: spk }) });
   try {
-    await StartQueue(target.host, target.port, JSON.stringify(payload));
+    // A stereo pair is not in the zone map, so its following half is only
+    // known once it refuses: the folder then starts on the leading half (#1878).
+    target = await playOnMasterIfGrouped(target, state.boxes, (b) => StartQueue(b.host, b.port, JSON.stringify(payload)));
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
     state.lastLibraryPlay = null;
