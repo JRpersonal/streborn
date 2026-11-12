@@ -224,8 +224,10 @@ export function renderPresets() {
         // That image is fixed at save time, so it neither changes nor lags
         // with the track playing, which is why the live now-playing art is
         // still never adopted here. Unwrapped like any stored art; with no
-        // cover (a key saved before the fill, or oEmbed failed) or one that
-        // does not load, spotifyCoverImgTag keeps the Spotify glyph.
+        // cover or one that does not load, spotifyCoverImgTag keeps the
+        // Spotify glyph. A key stored without a cover (a playlist Spotify's
+        // lookup does not name) gets one from the agent the first time it
+        // plays, and the preset revision brings it here (#1870).
         addCands(appArtFromBoxArt(p.art));
       } else if (presetOwnArt(p)) {
         // Same unwrap on the STORED art: keys hold-saved by v0.9.56 and older

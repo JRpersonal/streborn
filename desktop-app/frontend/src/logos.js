@@ -228,9 +228,11 @@ export function stationLogoChain(s) {
 export const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
 
 // spotifyCoverImgTag renders a Spotify key's tile image: the playlist or album
-// cover the agent stored on the preset at save time (Spotify's oEmbed
-// thumbnail, filled once and never rewritten, so unlike the live now-playing
-// art it neither changes nor lags), with the Spotify glyph as the immediate
+// cover the agent stored on the preset (Spotify's own picture of the playlist
+// from the save, or, for a playlist Spotify's lookup does not name, the album
+// cover of a song the key played, #1870; stored once and then left alone, so
+// unlike the live now-playing art it neither changes nor lags), with the
+// Spotify glyph as the immediate
 // src and as the fallback. It rides the same Go-validated hydration as
 // logoImgTag (data-logo-mono is the glyph, data-logo-fav the cover; no hosts
 // and no brand, so the DuckDuckGo and brand-favicon lookups never run for it):

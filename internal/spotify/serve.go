@@ -15,19 +15,151 @@ import (
 	"time"
 )
 
+const (
+	// spotifyOEmbedURL is Spotify's public oEmbed endpoint (no token).
+	spotifyOEmbedURL = "https://open.spotify.com/oembed"
+	// spotifyWebAPIBase is the Spotify Web API root the account-bound lookup
+	// uses when oEmbed has no answer.
+	spotifyWebAPIBase = "https://api.spotify.com/v1"
+)
+
 // PlaylistMeta returns a stable cover image URL and the human title for a
-// Spotify context URI (playlist, album, ...) via Spotify's public oEmbed
-// endpoint, which needs no token. A saved preset uses the cover as its tile logo
-// (#24) and the title as its name, so the box display and the tile show e.g.
-// "Jens Chill" instead of a bare "Spotify". Returns "","" on any failure.
-// Best-effort, called off the play path (on preset save).
+// Spotify context URI (playlist, album, ...). A saved preset uses the cover as
+// its tile logo (#24) and the title as its name, so the box display and the
+// tile show e.g. "Jens Chill" instead of a bare "Spotify". Returns "","" on
+// any failure. Best-effort, called off the play path (on preset save, and
+// once per playlist when a key without a cover or a name plays).
+//
+// Spotify's public oEmbed endpoint is asked first: it needs no token. It only
+// knows what is public, though. A playlist its owner keeps private is answered
+// with an error there, so a key holding one was stored as "Spotify" with no
+// cover however often it was saved (discussion #1870: the same playlist saved
+// on two speakers, both times nameless, while a public playlist was named by
+// oEmbed minutes later on the same speaker). Whatever oEmbed leaves empty is
+// therefore asked once more through the Web API, with the token of the account
+// that is logged in on the speaker, which may read its own playlists.
 func (m *Manager) PlaylistMeta(ctx context.Context, uri string) (cover, title string) {
+	return m.playlistMetaAt(ctx, uri, spotifyOEmbedURL, spotifyWebAPIBase)
+}
+
+// playlistMetaAt is PlaylistMeta with both endpoints as parameters, so a test
+// can answer as Spotify.
+func (m *Manager) playlistMetaAt(ctx context.Context, uri, oembedURL, webAPIBase string) (cover, title string) {
+	cover, title = m.oembedMeta(ctx, uri, oembedURL)
+	if cover != "" && title != "" {
+		return cover, title
+	}
+	wc, wt := m.webAPIMeta(ctx, uri, webAPIBase)
+	if cover == "" {
+		cover = wc
+	}
+	if title == "" {
+		title = wt
+	}
+	return cover, title
+}
+
+// webAPIMeta asks the Spotify Web API for a context's name and cover with the
+// engine's own access token. "","" on any failure, without an engine (nobody
+// to ask for a token) and while Spotify has asked the speaker to leave its Web
+// API alone (the quiet window the plan read keeps, accounts.go): this lookup
+// is cosmetic and must not prolong a throttle the plan read is waiting out.
+func (m *Manager) webAPIMeta(ctx context.Context, uri, base string) (cover, title string) {
+	parts := strings.Split(uri, ":")
+	if len(parts) != 3 || parts[0] != "spotify" || parts[2] == "" {
+		return "", ""
+	}
+	var path string
+	switch parts[1] {
+	case "playlist":
+		// fields keeps the answer to a few hundred bytes; without it a
+		// playlist comes back with its first hundred tracks.
+		path = "/playlists/" + url.PathEscape(parts[2]) + "?fields=name,images"
+	case "album":
+		path = "/albums/" + url.PathEscape(parts[2])
+	case "track":
+		path = "/tracks/" + url.PathEscape(parts[2])
+	case "artist":
+		path = "/artists/" + url.PathEscape(parts[2])
+	default:
+		return "", ""
+	}
+	if !m.Ready() {
+		return "", ""
+	}
+	m.mu.Lock()
+	quiet := m.productQuietUntil
+	m.mu.Unlock()
+	if time.Now().Before(quiet) {
+		return "", ""
+	}
+	data, err := m.spotifyWebGet(ctx, base+path)
+	if err != nil {
+		var limited rateLimitError
+		if errors.As(err, &limited) {
+			// Honour the wait Spotify asked for, for the plan read as well. The
+			// plan read's own escalation (productQuietFor) is left alone.
+			until := time.Now().Add(min(max(limited.after, productRateLimitMin), productRateLimitMax))
+			m.mu.Lock()
+			if until.After(m.productQuietUntil) {
+				m.productQuietUntil = until
+			}
+			m.mu.Unlock()
+		}
+		// The URI is a public identifier, not an account detail.
+		m.logger.Info("spotify: could not read a playlist's name and cover from Spotify", "uri", uri, "err", err)
+		return "", ""
+	}
+	type image struct {
+		URL   string `json:"url"`
+		Width int    `json:"width"`
+	}
+	var doc struct {
+		Name   string  `json:"name"`
+		Images []image `json:"images"`
+		// A track carries its pictures on its album.
+		Album struct {
+			Images []image `json:"images"`
+		} `json:"album"`
+	}
+	if json.Unmarshal(data, &doc) != nil {
+		return "", ""
+	}
+	images := doc.Images
+	if len(images) == 0 {
+		images = doc.Album.Images
+	}
+	// The 300 px rendition is what oEmbed hands out and plenty for a key
+	// tile; a playlist with its own uploaded picture lists just one image,
+	// with no width at all.
+	for _, im := range images {
+		if cover == "" && im.URL != "" {
+			cover = im.URL
+		}
+		if im.Width == 300 && im.URL != "" {
+			cover = im.URL
+			break
+		}
+	}
+	if !strings.HasPrefix(cover, "https://") {
+		cover = ""
+	}
+	if doc.Name != "" || cover != "" {
+		m.logger.Info("spotify: read a playlist's name and cover with the account's own access, the public lookup had no answer",
+			"uri", uri, "named", doc.Name != "", "cover", cover != "")
+	}
+	return cover, strings.TrimSpace(doc.Name)
+}
+
+// oembedMeta is the public half of PlaylistMeta: Spotify's oEmbed endpoint,
+// which needs no token. "","" on any failure.
+func (m *Manager) oembedMeta(ctx context.Context, uri, endpoint string) (cover, title string) {
 	page := spotifyURItoURL(uri)
 	if page == "" {
 		return "", ""
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://open.spotify.com/oembed?url="+url.QueryEscape(page), nil)
+		endpoint+"?url="+url.QueryEscape(page), nil)
 	if err != nil {
 		return "", ""
 	}

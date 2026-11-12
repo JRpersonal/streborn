@@ -966,6 +966,14 @@ type Server struct {
 	// recentSpotifyMetaTimeout bounds one oEmbed lookup; the zero value means
 	// the default. Tests shorten it.
 	recentSpotifyMetaTimeout time.Duration
+	// spotifySongCtx / spotifySongCover are the normalised context and the
+	// album cover of the song the engine announced last, and
+	// spotifyKeyMetaTried the playlists whose name and cover were already
+	// looked up for a key in this agent run (spotify_key_label.go). All under
+	// recentMu.
+	spotifySongCtx      string
+	spotifySongCover    string
+	spotifyKeyMetaTried map[string]struct{}
 	// recentRadioLastTrack is the last ICY title recorded under the CURRENT
 	// radio card, and recentRadioStaleTrack is the PREVIOUS card's last title,
 	// carried across a station change so the first ICY title after the switch is

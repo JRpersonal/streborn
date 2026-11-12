@@ -394,6 +394,16 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		}
 		cancel()
 	}
+	// No cover from the lookup (a playlist Spotify's public lookup does not
+	// know, #1870): a key saved from what plays takes the playing song's album
+	// cover instead of staying on the Spotify glyph. Only for the live
+	// context, where the song is known to belong to what is being saved.
+	if p.Type == "spotify" && p.Art == "" && savingLiveContext {
+		if cover := s.spotifyPlayingSongCover(p.URI); cover != "" {
+			p.Art = cover
+			s.logger.Info("preset save: Spotify key stored with the playing song's cover, the playlist has none to look up", "slot", slot)
+		}
+	}
 	// A given playlist/station lives on at most ONE key. If the station being
 	// saved is already on ANOTHER slot, REFUSE rather than deleting that slot.
 	// The old behaviour silently removed the other slot, and that is what wiped
