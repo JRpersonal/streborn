@@ -7,6 +7,7 @@ import {
   speakerListHTML, speakerListModel,
 } from './list.js';
 import { setLocale } from '../../i18n/index.js';
+import { setUpdateRunning } from '../../updaterunning.js';
 
 setLocale('en');
 
@@ -330,5 +331,60 @@ describe('the speaker check on the cards', () => {
   it('carries no check on a speaker that answers', () => {
     const m = speakerListModel(BOXES, ctx({ checks: new Map([[LR.host, found('off-network')]]) }));
     expect(rowOf(m, LR.host).check).toBe('');
+  });
+});
+
+// "Remove from list" (#1852): only on a card whose speaker is not reachable.
+describe('remove from list', () => {
+  const rowOf = (m, host) => m.rows.find((r) => r.hosts.includes(host));
+  const REMOVE = 'data-act="remove" data-host="192.0.2.53" aria-label="Remove Office from the list">Remove from list</button>';
+
+  it('offers it on the offline card only', () => {
+    const m = speakerListModel(BOXES, ctx());
+    expect(m.rows.filter((r) => r.remove).map((r) => r.host)).toEqual([OFF.host]);
+    expect(rowOf(m, OFF.host).remove).toBe('offer');
+    const html = speakerListHTML(m);
+    expect(html).toContain(REMOVE);
+    expect(html.match(/data-act="remove"/g)).toHaveLength(1);
+  });
+
+  it('offers it on an offline Bose original too', () => {
+    const m = speakerListModel([{ ...KIT, offline: true }], ctx());
+    expect(m.rows[0].remove).toBe('offer');
+  });
+
+  it('does not offer it while an update from this app restarts the speaker', () => {
+    setUpdateRunning(OFF.host, true);
+    try {
+      const m = speakerListModel(BOXES, ctx());
+      expect(rowOf(m, OFF.host).pill).toBe('updateRunning');
+      expect(rowOf(m, OFF.host).remove).toBe('');
+      expect(speakerListHTML(m)).not.toContain('data-act="remove"');
+    } finally {
+      setUpdateRunning(OFF.host, false);
+    }
+    const pending = speakerListModel([{ ...OFF, otaPending: true }], ctx());
+    expect(pending.rows[0].remove).toBe('');
+    const held = speakerListModel([OFF], ctx({ installHolds: { [OFF.host]: { since: 1 } } }));
+    expect(held.rows[0].remove).toBe('');
+  });
+
+  it('does not offer it on a stereo pair\'s card', () => {
+    const m = speakerListModel([{ ...TL, offline: true }, { ...TR, offline: true }], ctx());
+    expect(m.rows[0].kind).toBe('pair');
+    expect(m.rows[0].offline).toBe(true);
+    expect(m.rows[0].remove).toBe('');
+  });
+
+  it('is busy while it runs, and says in the card why an entry stays', () => {
+    const busy = speakerListModel(BOXES, ctx({ removals: new Map([[OFF.host, 'busy']]) }));
+    expect(rowOf(busy, OFF.host).remove).toBe('busy');
+    expect(speakerListHTML(busy)).toContain('data-act="remove" data-host="192.0.2.53" aria-disabled="true" aria-busy="true"');
+    const stays = speakerListModel(BOXES, ctx({ removals: new Map([[OFF.host, 'Office answers again, so it stays in the list.']]) }));
+    expect(rowOf(stays, OFF.host).remove).toBe('offer');
+    expect(speakerListHTML(stays)).toContain('class="spl-note-result">Office answers again, so it stays in the list.</p>');
+    // A note for a speaker that answers is not shown.
+    const other = speakerListModel(BOXES, ctx({ removals: new Map([[LR.host, 'x']]) }));
+    expect(rowOf(other, LR.host).removeNote).toBe('');
   });
 });

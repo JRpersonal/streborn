@@ -278,6 +278,8 @@ export function RemoveGroupMember(arg1:string,arg2:number,arg3:string):Promise<R
 
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
+export function RemoveSpeakerFromList(arg1:string):Promise<string>;
+
 export function RenamePreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;

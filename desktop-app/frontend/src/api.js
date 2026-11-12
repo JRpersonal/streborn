@@ -9,6 +9,7 @@ export {
   DiscoverBoxes,
   RefreshKnownBoxes,
   AddBoxByIP,
+  RemoveSpeakerFromList,
   GetPresets,
   SetPreset,
   RenamePreset,

@@ -212,7 +212,34 @@ func freshDeviceHosts(seen map[string]BoxInfo) map[string]string {
 			freshDevices[b.DeviceID] = b.Host
 		}
 	}
+	// The id the firmware calls the speaker counts as well. One sighting can
+	// carry the agent's own id and the next the firmware's (BoxInfo.BoxDeviceID
+	// says why), and a record cached under the one was never tied to the
+	// speaker answering under the other: its old address stayed listed next to
+	// the new one for a day (#1852). A DeviceID entry is never overwritten.
+	for _, b := range seen {
+		if b.BoxDeviceID == "" {
+			continue
+		}
+		if _, taken := freshDevices[b.BoxDeviceID]; !taken {
+			freshDevices[b.BoxDeviceID] = b.Host
+		}
+	}
 	return freshDevices
+}
+
+// movedHost reports the address the speaker of a cached record answered on
+// this cycle, by either of its ids. ok is false when it was not seen.
+func movedHost(cached BoxInfo, freshDevices map[string]string) (host string, ok bool) {
+	for _, id := range []string{cached.DeviceID, cached.BoxDeviceID} {
+		if id == "" {
+			continue
+		}
+		if h, found := freshDevices[id]; found {
+			return h, true
+		}
+	}
+	return "", false
 }
 
 // readdOrEvictLocked is phase 2 of the cache merge: cached boxes this cycle
@@ -239,19 +266,17 @@ func (a *App) readdOrEvictLocked(now time.Time, seen map[string]BoxInfo, freshDe
 		// fallback ("STR-xxxxxx" / "str-<ip>") until the box could serve its
 		// name again (#709, triple-ST10 install). Then evict the dead IP so the
 		// speaker shows once, at its live address.
-		if e.box.DeviceID != "" {
-			if liveHost, moved := freshDevices[e.box.DeviceID]; moved && liveHost != key {
-				if cur, ok := a.discCache[liveHost]; ok {
-					cur.box = mergeBoxInfo(e.box, cur.box)
-					a.discCache[liveHost] = cur
-					if _, inSeen := seen[liveHost]; inSeen {
-						seen[liveHost] = cur.box
-					}
+		if liveHost, moved := movedHost(e.box, freshDevices); moved && liveHost != key {
+			if cur, ok := a.discCache[liveHost]; ok {
+				cur.box = mergeBoxInfo(e.box, cur.box)
+				a.discCache[liveHost] = cur
+				if _, inSeen := seen[liveHost]; inSeen {
+					seen[liveHost] = cur.box
 				}
-				delete(a.discCache, key)
-				movedAway[key] = true
-				continue
 			}
+			delete(a.discCache, key)
+			movedAway[key] = true
+			continue
 		}
 		ttl := discoveryStickyTTL
 		if e.box.Kind == "str" {
@@ -926,6 +951,18 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	// not exist (2026-09-28). Two reached, one did not.
 	reached := len(seen)
 	a.mergeDiscoveryCacheWith(seen, presenceOnly)
+	// The merge serves every silent speaker it still keeps (it writes them into
+	// seen). One it dropped in this very cycle must not be handed out once
+	// more from the list below: that is the old address of a speaker that just
+	// answered at a new one, and it showed up next to the new entry until the
+	// next full search replaced the list (#1852).
+	a.discMu.Lock()
+	for h := range offline {
+		if _, kept := a.discCache[h]; !kept {
+			delete(offline, h)
+		}
+	}
+	a.discMu.Unlock()
 	out := make([]BoxInfo, 0, len(seen)+len(offline))
 	for h, b := range seen {
 		// Served copy only, never cached: this cycle the stock :8090 answered

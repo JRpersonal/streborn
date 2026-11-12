@@ -181,6 +181,9 @@ function paintRoute(route, entry = false) {
       discoverBoxes: deps.discoverBoxes,
       // The Check action of a card whose speaker is not answering.
       checkSpeaker: deps.checkSpeaker,
+      // "Remove from list" on a card whose speaker is not reachable.
+      removeSpeaker: deps.removeSpeaker,
+      installHolds: state.installHolds || {},
     });
   } else if (route === 'speaker') {
     const tab = wantTab;

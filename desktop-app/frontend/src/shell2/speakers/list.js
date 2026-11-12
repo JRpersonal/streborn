@@ -21,7 +21,11 @@
 //     what to try, in the card. A speaker whose STR stopped gets "Set up STR"
 //     back only when the check finds its Bose firmware answering and STR
 //     gone; for a speaker off the network, in another network or hung, a new
-//     install cannot help.
+//     install cannot help;
+//   - "Remove from list" on an offline speaker (speakerremove.js): the way out
+//     for an entry at an address its speaker no longer has, which nothing
+//     finds again across a routed network (#1852). Not on a stereo pair's
+//     card, and not while an update from this app restarts the speaker.
 //
 // Below the cards: "Stereo pairs and groups: Set up" (open('groups')), "Update
 // every speaker: n waiting" (updateAllBoxes, the classic update-all path) and
@@ -49,6 +53,7 @@ import { allowsInstallAgain, checkLeadText, checkResultHTML } from '../../speake
 import { liveRegion } from '../live.js';
 import { up } from '../../boxes.js';
 import { agoText } from '../../format.js';
+import { canRemoveFromList, removeOutcomeText } from '../../speakerremove.js';
 import './list.css';
 
 // The pills of the list, in precedence order: a card shows the first that
@@ -154,6 +159,9 @@ const ver = (v) => (v ? (/^v/i.test(String(v)) ? String(v) : `v${v}`) : '');
 //        checks       Map host -> 'busy' | the CheckSpeaker result (the
 //                     speaker check of an offline card or of one whose STR
 //                     stopped)
+//        removals     Map host -> 'busy' | the words of a removal that did not
+//                     happen ("Remove from list" on an offline card)
+//        installHolds the speakers an update is still finishing on
 export function speakerListModel(boxes, ctx = {}) {
   const list = (boxes || []).filter((b) => b && b.host);
   const label = typeof ctx.label === 'function' ? ctx.label : (b) => b.friendlyName || b.name || b.host;
@@ -162,6 +170,7 @@ export function speakerListModel(boxes, ctx = {}) {
   const cur = ctx.currentBox;
   const search = ctx.search || new Map();
   const checks = ctx.checks || new Map();
+  const removals = ctx.removals || new Map();
   const rows = roomItems(list, ctx).map((r) => {
     const own = r.hosts.map(boxOf).filter(Boolean);
     const pick = boxOf(r.host) || own[0] || {};
@@ -227,6 +236,11 @@ export function speakerListModel(boxes, ctx = {}) {
       ? t('ui2.speakers.list.updateLine', { version: ver(pick.version), next: ver(ctx.appVersion) })
       : '';
     const since = own.map((b) => b.offlineSinceSec).filter((n) => typeof n === 'number' && n > 0);
+    // "Remove from list": only on an entry that is not reachable, never on
+    // one an update from this app is restarting (speakerremove.js).
+    const removable = offline && !pair && !updateRunning && !updateFinishing
+      && canRemoveFromList(pick, { installHolds: ctx.installHolds });
+    const removal = removable ? (removals.get(r.host) || '') : '';
     return {
       host: r.host,
       hosts: r.hosts,
@@ -250,6 +264,10 @@ export function speakerListModel(boxes, ctx = {}) {
       updateLine,
       offlineSince: offline && since.length ? Math.min(...since) : 0,
       search: offline ? (search.get(r.host) || '') : '',
+      // '' (not offered), 'offer', or 'busy' while the removal runs; removeNote
+      // is why a removal did not happen (the speaker answers again, an update).
+      remove: !removable ? '' : removal === 'busy' ? 'busy' : 'offer',
+      removeNote: removal && removal !== 'busy' ? String(removal) : '',
       check,
       // What the check's words depend on (speakercheck.js): a Bose original
       // STR was never on, and the Portable, which cannot be unplugged.
@@ -285,6 +303,17 @@ function checkBtnHTML(row) {
 function checkFoundHTML(row) {
   if (!row.check || row.check === 'busy') return '';
   return `<div class="spl-note-result spk-check">${checkResultHTML(row.check, row.name, t, row.checkBox)}</div>`;
+}
+
+// removeBtnHTML is "Remove from list" on an offline card, '' where it is not
+// offered.
+function removeBtnHTML(row) {
+  if (!row.remove) return '';
+  const busy = row.remove === 'busy';
+  return ` <button type="button" class="u-btn u-btn--secondary spl-act" data-act="remove" data-host="${escapeAttr(row.host)}"`
+    + `${busy ? ' aria-disabled="true" aria-busy="true"' : ''}`
+    + ` aria-label="${escapeAttr(t('speaker.removeFromListLabel', { name: row.name }))}">`
+    + `${escapeHtml(t('speaker.removeFromList'))}</button>`;
 }
 
 function actionHTML(row) {
@@ -324,9 +353,11 @@ function noteHTML(row) {
       + ` aria-label="${escapeAttr(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.searchLabel', { name: row.name }))}">`
       + `${escapeHtml(t(busy ? 'ui2.speakers.list.searching' : 'ui2.speakers.list.search', { name: row.name }))}</button>`
       + ` ${checkBtnHTML(row)}`
+      + removeBtnHTML(row)
       + (row.search === 'still'
         ? `<p class="spl-note-result">${escapeHtml(t('ui2.speakers.list.stillOffline', { name: row.name }))}</p>`
         : '')
+      + (row.removeNote ? `<p class="spl-note-result">${escapeHtml(row.removeNote)}</p>` : '')
       + checkFoundHTML(row)
       + '</div>';
   }
@@ -457,6 +488,10 @@ const search = new Map();
 // Run on a click only (Check), never by a repaint. Cleared when the speaker
 // answers with STR again.
 const checks = new Map();
+// The offline cards' "Remove from list": host -> 'busy' while it runs, then
+// the words of a removal that did not happen. Cleared when the speaker is
+// back, or gone from the list.
+const removals = new Map();
 
 const findBox = (host) => ((lastCtx.boxes || []).find((b) => b && b.host === host)) || null;
 
@@ -500,6 +535,26 @@ async function runCheck(root, host) {
   }
 }
 
+// removeFromList takes an offline speaker's entry off the list (the classic
+// path, main.js removeSpeakerEntry, without its question: the card names the
+// action in words). What came of it is said in the card when the entry stays,
+// and announced either way.
+async function removeFromList(root, host) {
+  if (!host || removals.get(host) === 'busy' || typeof lastCtx.removeSpeaker !== 'function') return;
+  const box = findBox(host);
+  if (!box) return;
+  const name = (lastCtx.label && lastCtx.label(box)) || box.friendlyName || box.name || host;
+  removals.set(host, 'busy');
+  repaint(root);
+  let res = null;
+  try { res = await lastCtx.removeSpeaker(box); } catch (e) { res = { status: 'failed', error: String((e && e.message) || e) }; }
+  const text = removeOutcomeText(res, name, t);
+  if (res && res.status === 'removed') removals.delete(host);
+  else removals.set(host, text);
+  repaint(root);
+  announce(text);
+}
+
 // The list's live region: one node outside the repainted markup, created
 // empty when the list first paints, so a screen reader has registered it
 // before the first result is written into it.
@@ -539,6 +594,7 @@ function onClick(root, e) {
       }
       case 'search': searchAgain(root, host); break;
       case 'check': runCheck(root, host); break;
+      case 'remove': removeFromList(root, host); break;
       default: break;
     }
     return;
@@ -572,7 +628,12 @@ export function renderSpeakerList(root, ctx = {}) {
     const b = findBox(h);
     if (checks.get(h) !== 'busy' && (!b || (!b.offline && !b.strNotRunning))) checks.delete(h);
   }
-  const model = speakerListModel(ctx.boxes, { ...ctx, search, checks });
+  // The note of a removal that did not happen goes with the speaker's return.
+  for (const h of [...removals.keys()]) {
+    const b = findBox(h);
+    if (removals.get(h) !== 'busy' && (!b || !b.offline)) removals.delete(h);
+  }
+  const model = speakerListModel(ctx.boxes, { ...ctx, search, checks, removals });
   const st = listStateNow();
   const sig = JSON.stringify([model, getLocale(), st, attentionSig()]);
   if (sig === lastSig && root.firstChild) return;

@@ -546,6 +546,10 @@ export function RemoveManualMediaServer(arg1) {
   return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
 }
 
+export function RemoveSpeakerFromList(arg1) {
+  return window['go']['main']['App']['RemoveSpeakerFromList'](arg1);
+}
+
 export function RenamePreset(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['RenamePreset'](arg1, arg2, arg3, arg4);
 }

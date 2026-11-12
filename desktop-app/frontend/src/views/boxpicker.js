@@ -25,6 +25,7 @@ import { holdFor, holdsByHost } from '../installhold.js';
 import { boxCannotReachInternet, noInternetText } from '../nointernet.js';
 import { shell2Mounted, shellOfflinePick } from '../shell2/mount.js';
 import { allowsInstallAgain, checkResultHTML, runSpeakerChecks } from '../speakercheck.js';
+import { canRemoveFromList, removeOutcomeText } from '../speakerremove.js';
 import { speakerTileState } from '../speakertile.js';
 import { loadLastBox, saveLastBox, state } from '../state.js';
 import { pairDisplayName } from '../stereoNames.js';
@@ -76,6 +77,8 @@ let deps = {
   discoverBoxes() {},
   // Dissolving a group from its frame re-reads the live zones.
   refreshMusicZones() {},
+  // The x on a greyed tile takes the speaker's entry off the list.
+  removeSpeakerEntry() { return Promise.resolve({ status: 'failed', error: '' }); },
   // A stock speaker is an invitation into Setup; the settings shortcut on a
   // tile opens Speaker settings.
   switchView() {},
@@ -316,6 +319,20 @@ export function renderBoxSelect() {
     const offMark = off
       ? `<span class="box-offline-mark" aria-label="${escapeAttr(offTitle)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>`
       : '';
+    // An x on the greyed tile takes the entry off the list: the way out for an
+    // address the speaker no longer has, which nothing finds again across a
+    // routed network (#1852). Only where the speaker is not reachable, and
+    // never while an update from this app restarts it (speakerremove.js).
+    // It is a real button NEXT to the tile, inside a wrapper that carries the
+    // positioning: the tile is a button itself, and a control inside a control
+    // is skipped by screen readers.
+    const removable = off && !tile.updateRunning && canRemoveFromList(b, { installHolds: state.installHolds });
+    const rmTitle = removable ? t('speaker.removeFromListLabel', { name: getBoxLabel(b) }) : '';
+    const rmCls = removable ? ' has-remove' : '';
+    const rmBtn = removable
+      ? `<button type="button" class="box-remove" data-host="${b.host}" title="${escapeAttr(rmTitle)}" aria-label="${escapeAttr(rmTitle)}">&times;</button>`
+      : '';
+    const withRemove = (tileHTML) => (removable ? `<span class="box-wrap">${tileHTML}${rmBtn}</span>` : tileHTML);
     // The main speaker of a group is named as such, not only starred: a lone
     // star did not read as "this one leads" (Jens, 2026-09-06).
     const groupMark = isFramedMaster(b)
@@ -360,7 +377,7 @@ export function renderBoxSelect() {
       const stockTitle = off ? offTitle
         : tile.updateRunning ? t('speaker.updateRunningHint')
           : t(finishing ? 'speaker.updateFinishingTooltip' : gone ? 'speaker.strNotRunningTooltip' : 'speaker.stockTooltip');
-      return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
+      return withRemove(`<span class="box-btn${stockCls}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`);
     }
     // An offline tile keeps showing the last CONFIRMED self-report, marked
     // stale: a fresh-looking version on an unreachable box is how #775's
@@ -395,7 +412,7 @@ export function renderBoxSelect() {
     const noNetChip = tile.noInternet
       ? `<span class="box-nointernet-chip" title="${escapeAttr(noInternetText(t))}">${escapeHtml(t('speaker.noInternetChip'))}</span>`
       : '';
-    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updRunning}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    return withRemove(`<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}${rmCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updRunning}${updDot}${noNetChip}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`);
   };
   // "Add by IP" tile, always available once at least one speaker is listed.
   // On a routed network mDNS and the local /24 scan find only the speakers on
@@ -503,7 +520,7 @@ export function renderBoxSelect() {
     btn.onclick = (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
-      if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip')) return;
+      if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip') || e.target.closest('.box-remove')) return;
       const host = btn.dataset.host;
       const port = parseInt(btn.dataset.port, 10);
       const box = state.boxes.find(b => b.host === host && b.port === port);
@@ -536,6 +553,17 @@ export function renderBoxSelect() {
     chip.onclick = open;
     chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); };
   });
+  // The x of a greyed tile: ask, then take the entry off the list.
+  sel.querySelectorAll('.box-remove').forEach(x => {
+    const ask = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const box = (state.boxes || []).find(b => b.host === x.dataset.host);
+      if (box) removeFromListDialog(box);
+    };
+    // A real button: Enter and Space arrive as a click.
+    x.onclick = ask;
+  });
   sel.querySelectorAll('.box-edit').forEach(icon => {
     icon.onclick = (e) => {
       e.stopPropagation();
@@ -561,6 +589,24 @@ export function renderBoxSelect() {
   deps.checkWedgeBanner();
   deps.checkBoxIssueBanner();
   deps.renderFirewallBanner();
+}
+
+// removeFromListDialog is the x on a greyed tile: it says what removing means
+// (the entry goes, the speaker is not touched, a speaker that is found again
+// comes back) and, on a yes, takes the entry off the list. The outcome is a
+// toast: removed, or why the entry stays (the speaker answers again, an update
+// from this app is restarting it).
+export async function removeFromListDialog(box) {
+  if (!box || !box.host) return;
+  const name = getBoxLabel(box);
+  const ok = await confirmWarn(
+    t('speaker.removeFromListLabel', { name }),
+    t('speaker.removeConfirmBody', { name: escapeHtml(name), host: escapeHtml(box.host) }),
+    { icon: null, calm: true, confirmLabel: t('speaker.removeFromList'), confirmClass: 'btn btn-primary' },
+  );
+  if (!ok) return;
+  const res = await deps.removeSpeakerEntry(box);
+  showToast(removeOutcomeText(res, name, t));
 }
 
 // pickBox is what choosing a speaker does, wherever it is chosen: the Music
