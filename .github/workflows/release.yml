@@ -1385,6 +1385,27 @@ jobs:
             -trimpath \
             -clean
 
+      # macOS ties the Local Network permission to the app's code signature and
+      # to the UUID of its main executable (TN3179). The linker derives that
+      # UUID from the binary's content, so every release was a different
+      # program to that bookkeeping, and Mac users lost the connection to their
+      # speakers after an in-app update until they switched the permission off
+      # and on. cmd/machouuid pins one fixed UUID per architecture. It has to
+      # run here, on the unsigned binary: touching it after codesign breaks the
+      # signature.
+      - name: Pin the executable's Mach-O UUID
+        run: |
+          set -euo pipefail
+          BIN="desktop-app/build/bin/ST Reborn.app/Contents/MacOS/ST Reborn"
+          go run ./cmd/machouuid -id de.st-reborn.app "$BIN"
+          dwarfdump --uuid "$BIN" | tee "$RUNNER_TEMP/uuid.txt"
+          for want in EC39CC91-D90D-827B-B636-938421FEBD32 F51AFE14-B55C-878C-B8FE-685989565A4E; do
+            if ! grep -q "$want" "$RUNNER_TEMP/uuid.txt"; then
+              echo "::error::the executable does not carry the pinned UUID $want"
+              exit 1
+            fi
+          done
+
       - name: Apple signing gate
         id: applegate
         # Job-level `if:` cannot read secrets, so the presence of the Apple
@@ -1485,6 +1506,8 @@ jobs:
             codesign --force --sign - "$APP"
           fi
           codesign --verify --strict --verbose=2 "$APP"
+          # The pinned UUID must have survived signing.
+          dwarfdump --uuid "$APP/Contents/MacOS/ST Reborn" | grep -q F51AFE14-B55C-878C-B8FE-685989565A4E
 
       - name: Notarize and staple the app
         if: steps.applegate.outputs.configured == 'true'

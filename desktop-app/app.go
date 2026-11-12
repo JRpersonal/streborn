@@ -322,6 +322,7 @@ func (a *App) startup(ctx context.Context) {
 		"appPath", selfPath,
 		"selfUpdate", selfOK,
 		"selfUpdateReason", selfReason,
+		"exeUUID", executableUUID(),
 		"wingetManaged", wingetManagedFlag(),
 		"agentbinAvailable", agentbin.Available())
 	a.fitWindowToScreen()
