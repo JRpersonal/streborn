@@ -29,6 +29,8 @@ func TestRenderDisplayPNG(t *testing.T) {
 	at := time.Date(2026, 10, 20, 15, 42, 0, 0, time.Local)
 	short := TrackText{Station: "WDR 2", Artist: "Herbert Grönemeyer", Title: "Männer"}
 	long := TrackText{Station: "FIP", Artist: "Ibrahim Maalouf", Title: "Beirut (Live à l'Olympia)"}
+	greek := TrackText{Station: "Μελωδία 99.2", Artist: "Γιάννης Πάριος", Title: "Θα με θυμηθείς"}
+	cyrillic := TrackText{Station: "Радіо Промінь", Artist: "Океан Ельзи", Title: "Обійми"}
 	withClock := func(t TrackText) TrackText { t.Clock = true; return t }
 	playing := trackAnim{playing: true, frame: 3}
 	for _, c := range []struct {
@@ -42,6 +44,8 @@ func TestRenderDisplayPNG(t *testing.T) {
 		{"paused", withClock(short), trackAnim{}},
 		{"long-track-clock", withClock(long), playing},
 		{"long-track-only", long, playing},
+		{"greek-track-clock", withClock(greek), playing},
+		{"cyrillic-track-clock", withClock(cyrillic), playing},
 	} {
 		buf := make([]byte, FrameSize)
 		renderTrack(c.t.sanitized(), at, c.a, 0, 0, 0, buf)

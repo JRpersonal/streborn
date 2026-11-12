@@ -24,6 +24,9 @@ func TestSmoothFontCoverage(t *testing.T) {
 		}
 	}
 	want = append(want, []rune("ẞȘșȚț‘’‚“”„…–—•€")...)
+	// Greek and Cyrillic titles (discussion #1854)
+	want = append(want, []rune("ΑΒΓΔΩαβγδωςάέήίόύώϊϋΐΰΆΈΏ")...)
+	want = append(want, []rune("АБВЯабвяЁёЄєІіЇїҐґЎўЂђЉљЊњЋћЏџЃѓЌќ")...)
 	for name, f := range map[string]*smoothFont{"small": smoothSmall, "large": smoothLarge} {
 		for _, r := range want {
 			if !f.has(r) {
@@ -93,6 +96,9 @@ func TestSanitizeSmooth(t *testing.T) {
 		{"Sơn Tùng – Lạc Trôi", 160, "Son Tùng – Lac Trôi"},
 		// soft hyphen, controls and emoji are dropped
 		{"Hy\u00adphen\x07 ok \U0001F3B5", 160, "Hyphen ok"},
+		// Greek and Cyrillic are drawn as written, not dropped
+		{"Γιάννης Πάριος – Θα με θυμηθείς", 160, "Γιάννης Πάριος – Θα με θυμηθείς"},
+		{"Океан Ельзи – Обійми", 160, "Океан Ельзи – Обійми"},
 		{"Männer und Frauen", 6, "Männer"},
 	} {
 		if got := sanitizeSmooth(c.in, c.limit); got != c.want {
