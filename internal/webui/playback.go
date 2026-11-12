@@ -165,6 +165,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
 		return
 	}
+	// A client that names no MIME for a file this agent knows as a
+	// music-library file (a third-party remote replaying a Recently-played
+	// card) still gets a library play, not a radio one (#1871).
+	s.adoptKnownLibraryFile(&req)
 	if s.refuseIfIncompletePair(w) {
 		return
 	}
