@@ -107,6 +107,11 @@ type fileResumeTiming struct {
 	// seconds of the episode on every resume). The pause lets the jump settle
 	// before the sound returns.
 	unmuteDelay time.Duration
+	// seekQuiet is how long the end watches ignore the speaker after the
+	// listener jumped inside the track (seek.go). What the speaker reports
+	// while it re-opens the file at the new position is not measured; a stop
+	// or a zero in that moment must not be read as the track ending.
+	seekQuiet time.Duration
 }
 
 // productionFileResumeTiming is the file restart's clock on a real speaker.
@@ -119,6 +124,7 @@ var productionFileResumeTiming = fileResumeTiming{
 	plainPlayWait: 4 * time.Second,
 	plainPlayStep: 500 * time.Millisecond,
 	unmuteDelay:   400 * time.Millisecond,
+	seekQuiet:     3 * time.Second,
 }
 
 // audioOffsetFresh is how old the syslog's audio-path offset may be and still
@@ -1009,6 +1015,15 @@ func (w *fileResumeWatch) observe(o fileResumeObs) fileResumeStep {
 	w.repaired = true
 	w.frozenSince = time.Time{}
 	return fileResumeStep{repair: true, at: at}
+}
+
+// jumped resets the watch after the listener jumped inside the track
+// (seek.go): the next reading is a new position, and whatever pause the watch
+// still held is over, since a jump is only taken while the file plays.
+func (w *fileResumeWatch) jumped() {
+	w.havePrev = false
+	w.frozenSince = time.Time{}
+	w.pausedSeen, w.pausedAt = false, 0
 }
 
 // restarted resets the watch after STR restarted the file: the next reading is

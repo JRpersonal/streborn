@@ -1075,6 +1075,13 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 		// and never polls the box.
 		wake = s.queueBadURLWake()
 		woke bool
+		// seekSeen, seekAt and seekBase: the last jump of the listener inside
+		// the current track that this watcher applied, when it happened, and
+		// the start the track would have had to be at that position now
+		// (seek.go). seekBase replaces the push time for this track.
+		seekSeen uint64
+		seekAt   time.Time
+		seekBase time.Time
 	)
 	for {
 		woke = false
@@ -1104,6 +1111,28 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 			gen, lastPos, lastPosAt, obsTotal, sawPlay, overrunWarned = curGen, 0, time.Time{}, 0, false, false
 			zoneChecked, inZone = false, false
 			ranAhead, aligned, hint = false, false, 0
+			seekAt, seekBase = time.Time{}, time.Time{}
+		}
+		// The listener jumped inside this track (seek.go). The watcher times a
+		// track from its push and follows the highest position it saw, so
+		// without this a jump back ends the track early by the distance jumped
+		// (the wall clock runs out while the position is still below its old
+		// maximum) and a jump forward reads as a position running ahead of real
+		// time, which leaves the jumped distance as silence at the end. Neither
+		// is a track end, a dropped track or a skip: the same track goes on,
+		// timed from where the jump landed.
+		if sk, ok := s.userSeek.after(seekSeen); ok {
+			seekSeen = sk.seq
+			if sk.queue && sk.queueGen == curGen {
+				seekAt, seekBase = sk.at, sk.at.Add(-sk.pos)
+				lastPos, lastPosAt = sk.pos, sk.at
+				ranAhead, aligned = false, false
+				s.logger.Debug("queue watcher: the listener jumped inside the track, timing its end from there",
+					"title", s.queueCurrentTitle(), "toSec", int(sk.pos.Seconds()), "trackSec", int(dur.Seconds()))
+			}
+		}
+		if !seekBase.IsZero() {
+			start = seekBase
 		}
 		// A track the media server no longer has, or the box could not
 		// fetch, ends now instead of after the stall timeout. Only before it
@@ -1118,6 +1147,11 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 			}
 		}
 		if woke {
+			continue
+		}
+		// Right after a jump the speaker re-opens the file; what it reports in
+		// that moment is not the track's state.
+		if !seekAt.IsZero() && time.Since(seekAt) < s.seekQuietTime() {
 			continue
 		}
 		if dur == 0 && hint == 0 {

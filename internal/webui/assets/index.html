@@ -175,6 +175,13 @@ header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; pa
 .sp-refused details p { margin:4px 0 0; }
 .trackprog .tbar { flex:1; height:4px; border-radius:2px; background:rgba(127,127,127,.35); overflow:hidden; }
 .trackprog .tfill { height:100%; width:0; border-radius:2px; background:var(--accent); transition:width .9s linear; }
+/* A track the speaker can jump in (a music-library file, discussion #1207):
+   the bar is a slider. The 4px line stays what is drawn; the pseudo-element
+   makes it big enough for a thumb. Radio never gets this class. */
+.trackprog .tbar.seek { position:relative; overflow:visible; cursor:pointer; touch-action:none; }
+.trackprog .tbar.seek::before { content:""; position:absolute; left:0; right:0; top:-12px; bottom:-12px; }
+.trackprog .tbar.seek:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.trackprog .tbar.seeking .tfill { transition:none; }
 @media (prefers-reduced-motion:no-preference) { .nowcard.loading { animation:pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.3; } } }
 .label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:8px; }
 /* The hidden attribute must win. The browser's own rule for it is a plain
@@ -3858,14 +3865,18 @@ async function refreshStatus() {
   if (playing && nowSig !== lastRecentSig) { lastRecentSig = nowSig; try { loadRecent(); } catch (e) {} }
   tp.playing = (state === 'PLAY_STATE' || state === 'BUFFERING_STATE');
   var key = name + '|' + src;
-  if (key !== tp.key) { tp.key = key; tp.sec = 0; tp.dur = 0; tp.at = 0; }
+  if (key !== tp.key) { tp.key = key; tp.sec = 0; tp.dur = 0; tp.at = 0; tp.seekable = false; tp.seekAt = 0; tp.undo = null; tp.drag = -1; }
   if (tp.playing) { pollProg(); } else { tp.at = 0; renderProg(); }
 }
 
 // Track progress (#399). The speaker's AVTransport clock is polled on the status
 // cadence and interpolated forward in between, so the bar moves like a clock.
 // Radio reports no length: then only the elapsed time is shown, with no bar.
-var tp = { sec: 0, dur: 0, at: 0, key: '', busy: false, playing: false };
+// seekable is the agent's answer on /api/position (a music-library file the
+// speaker fetches itself, discussion #1207), never a guess from the source.
+// seekAt and undo belong to a jump the user asked for, drag is the second
+// under the finger while the bar is held (-1 otherwise).
+var tp = { sec: 0, dur: 0, at: 0, key: '', busy: false, playing: false, seekable: false, seekAt: 0, undo: null, drag: -1 };
 // Last now-playing signature the Recently list was refreshed for (#761), so a
 // song/station change re-reads the ring exactly once.
 var lastRecentSig = '';
@@ -3877,7 +3888,8 @@ function renderProg() {
   var wrap = document.getElementById('trackProg');
   if (!wrap) return;
   if (!tp.playing || tp.at === 0) { wrap.style.display = 'none'; return; }
-  var shown = tp.sec + (tp.playing ? (Date.now() - tp.at) / 1000 : 0);
+  var shown = tp.drag >= 0 ? tp.drag : tp.sec + (tp.playing ? (Date.now() - tp.at) / 1000 : 0);
+  if (tp.dur > 0 && shown > tp.dur) shown = tp.dur;
   wrap.style.display = '';
   document.getElementById('trackEl').textContent = fmtClock(shown);
   var bar = document.getElementById('trackBar');
@@ -3889,7 +3901,97 @@ function renderProg() {
     bar.style.display = 'none';
     document.getElementById('trackTot').textContent = '';
   }
+  paintProgSeek(bar, shown);
 }
+// Jumping inside the track (discussion #1207). The bar is a slider only while
+// the speaker says the track is seekable; for radio and everything else it
+// stays the plain bar it was: no pointer cursor, no focus stop, no role, and
+// every handler below returns at once.
+function progSeekable() { return tp.seekable === true && tp.dur > 0 && tp.at !== 0 && tp.playing; }
+function paintProgSeek(bar, shown) {
+  var on = progSeekable();
+  bar.classList.toggle('seek', on);
+  bar.classList.toggle('seeking', on && tp.drag >= 0);
+  if (!on) {
+    tp.drag = -1;
+    ['role', 'tabindex', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext', 'aria-labelledby'].forEach(function(a){ bar.removeAttribute(a); });
+    return;
+  }
+  // Named by the now-playing line above it and read out as "1:05 / 3:40": no
+  // words of its own, so nothing to translate.
+  bar.setAttribute('role', 'slider');
+  bar.setAttribute('tabindex', '0');
+  bar.setAttribute('aria-labelledby', 'status');
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', String(tp.dur));
+  bar.setAttribute('aria-valuenow', String(Math.round(shown)));
+  bar.setAttribute('aria-valuetext', fmtClock(shown) + ' / ' + fmtClock(tp.dur));
+}
+// progSeekTarget turns a pointer position on the bar into a whole second of
+// the track; a finger that left the bar lands on the nearer end. rtl mirrors.
+function progSeekTarget(clientX, left, width, dur, rtl) {
+  if (!(width > 0) || !(dur > 0) || typeof clientX !== 'number' || isNaN(clientX)) return -1;
+  var frac = (clientX - left) / width;
+  if (rtl) frac = 1 - frac;
+  frac = Math.min(1, Math.max(0, frac));
+  return Math.round(frac * dur);
+}
+function progBarRTL(bar) { return getComputedStyle(bar).direction === 'rtl'; }
+function progPointerSec(bar, e) {
+  var r = bar.getBoundingClientRect();
+  return progSeekTarget(e.clientX, r.left, r.width, tp.dur, progBarRTL(bar));
+}
+// seekProg shows the target at once and asks the speaker; the next readings
+// follow the real position (pollProg). A refusal puts the clock back.
+async function seekProg(sec) {
+  if (sec < 0 || !progSeekable()) return;
+  var key = tp.key;
+  if (!tp.undo) tp.undo = { sec: tp.sec, at: tp.at };
+  tp.sec = sec; tp.at = Date.now(); tp.seekAt = tp.at;
+  renderProg();
+  var res = await apiDetail('/api/seek', 'POST', { positionSec: sec }, 15000);
+  if (!res.ok && tp.key === key) {
+    if (tp.undo) { tp.sec = tp.undo.sec; tp.at = tp.undo.at; }
+    tp.undo = null; tp.seekAt = 0;
+  }
+  renderProg();
+  pollProg();
+}
+(function wireProgSeek() {
+  var bar = document.getElementById('trackBar');
+  if (!bar) return;
+  bar.addEventListener('pointerdown', function(e) {
+    if (!progSeekable() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    try { bar.setPointerCapture(e.pointerId); } catch (err) {}
+    tp.drag = progPointerSec(bar, e);
+    renderProg();
+  });
+  bar.addEventListener('pointermove', function(e) {
+    if (tp.drag < 0) return;
+    tp.drag = progPointerSec(bar, e);
+    renderProg();
+  });
+  bar.addEventListener('pointerup', function(e) {
+    if (tp.drag < 0) return;
+    var sec = progPointerSec(bar, e);
+    tp.drag = -1;
+    seekProg(sec);
+  });
+  bar.addEventListener('pointercancel', function() { tp.drag = -1; renderProg(); });
+  bar.addEventListener('keydown', function(e) {
+    if (!progSeekable()) return;
+    var rtl = progBarRTL(bar), step = 0;
+    if (e.key === 'ArrowUp') step = 1;
+    else if (e.key === 'ArrowDown') step = -1;
+    else if (e.key === 'ArrowRight') step = rtl ? -1 : 1;
+    else if (e.key === 'ArrowLeft') step = rtl ? 1 : -1;
+    else if (e.key !== 'Home') return;
+    e.preventDefault();
+    var cur = tp.sec + (Date.now() - tp.at) / 1000;
+    seekProg(e.key === 'Home' ? 0 : Math.round(Math.min(tp.dur, Math.max(0, cur + step * 10))));
+  });
+})();
 async function pollProg() {
   if (tp.busy || !tp.playing) return;
   tp.busy = true;
@@ -3898,6 +4000,18 @@ async function pollProg() {
     if (!r.ok) return;
     var j = await r.json();
     if (!j.ok) return;
+    tp.seekable = j.seekable === true;
+    // A jump the user asked for (seekProg): a reading near the target confirms
+    // it, also backwards. One far from it is the speaker not having jumped yet
+    // and is ignored for five seconds; after that the speaker's reading wins.
+    if (tp.seekAt) {
+      var now = Date.now();
+      var expected = tp.sec + (now - tp.at) / 1000;
+      if (Math.abs(j.positionSec - expected) > 3 && now - tp.seekAt < 5000) return;
+      tp.seekAt = 0; tp.undo = null;
+      tp.sec = j.positionSec; if (j.durationSec > 0) tp.dur = j.durationSec; tp.at = now;
+      return;
+    }
     // Never let the bar run backwards on its own; only a track change resets it.
     var drifted = tp.sec + (Date.now() - tp.at) / 1000;
     if (tp.at !== 0 && j.positionSec + 2 < drifted && j.durationSec === tp.dur) return;

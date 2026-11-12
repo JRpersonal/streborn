@@ -224,6 +224,12 @@ export function RemoveGroupMember(masterHost, masterPort, memberIP) {
   return callOptionalBinding('RemoveGroupMember', [masterHost, masterPort, memberIP]);
 }
 
+// SeekTrack jumps to a second of the playing music-library track (discussion
+// #1207). Optional binding, per the note above.
+export function SeekTrack(host, port, positionSec) {
+  return callOptionalBinding('SeekTrack', [host, port, positionSec]);
+}
+
 // LibraryRefusedServers lists the media servers that refused to describe
 // themselves to this PC in the recent scans (a SOAP fault where the device
 // description belongs), so the Library can say why they are missing. Optional

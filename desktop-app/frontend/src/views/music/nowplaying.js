@@ -1,7 +1,7 @@
 // views/music/nowplaying.js: the transport actions, the DLNA queue controls, the
 // now-playing bar, the balance line and the track progress bar.
 
-import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, Stop, TrackPosition } from '../../api.js';
+import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, SeekTrack, Stop, TrackPosition } from '../../api.js';
 import { balanceSourceBox, inStereoPair, stereoPairsOf } from '../../groups.js';
 import { t } from '../../i18n/index.js';
 import { nowKeyTag } from '../../presetrows.js';
@@ -14,7 +14,15 @@ import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
 import { titleSwapOffered } from '../../titleswap.js';
-import { applyPositionReading, resetProgress } from '../../trackprogress.js';
+import {
+  applyPositionReading,
+  beginSeek,
+  canSeek,
+  failSeek,
+  resetProgress,
+  seekKeyTargetSec,
+  seekTargetSec,
+} from '../../trackprogress.js';
 import {
   $,
   balanceLabel,
@@ -411,8 +419,9 @@ export function renderTrackProgress() {
   const playing = isPlaying(state.nowPlayState);
   if (!playing || trackPos.at === 0) { wrap.classList.add('hidden'); return; }
   // Interpolate forward from the last reading while the speaker is playing.
+  // While the bar is being dragged it shows where the pointer is instead.
   const drift = state.nowPlayState === 'PLAY_STATE' ? (Date.now() - trackPos.at) / 1000 : 0;
-  const shown = trackPos.sec + drift;
+  const shown = seekDragSec >= 0 ? seekDragSec : trackPos.sec + drift;
   wrap.classList.remove('hidden');
   $('trackElapsed').textContent = formatClock(shown);
   const bar = $('trackBar');
@@ -427,6 +436,105 @@ export function renderTrackProgress() {
     bar.classList.add('hidden');
     $('trackTotal').textContent = '';
   }
+  paintSeekable(bar, shown);
+}
+
+// Jumping inside the track (discussion #1207). The bar is a slider only while
+// the speaker says the track is seekable (a music-library file it fetches
+// itself); for radio and everything else it stays the plain, inert bar it
+// was, with no pointer cursor, no focus stop and no role.
+//
+// seekDragSec is the second under the pointer while the bar is held, -1
+// otherwise.
+let seekDragSec = -1;
+
+function paintSeekable(bar, shown) {
+  const on = canSeek(trackPos);
+  bar.classList.toggle('seekable', on);
+  bar.classList.toggle('seeking', on && seekDragSec >= 0);
+  if (!on) {
+    seekDragSec = -1;
+    for (const a of ['role', 'tabindex', 'aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-valuetext', 'aria-labelledby']) {
+      bar.removeAttribute(a);
+    }
+    return;
+  }
+  // Named by the track line beside it, read out as "1:05 / 3:40": no words of
+  // its own, so nothing to translate.
+  bar.setAttribute('role', 'slider');
+  bar.setAttribute('tabindex', '0');
+  bar.setAttribute('aria-labelledby', 'statusMain');
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', String(trackPos.dur));
+  bar.setAttribute('aria-valuenow', String(Math.round(Math.min(shown, trackPos.dur))));
+  bar.setAttribute('aria-valuetext', formatClock(shown) + ' / ' + formatClock(trackPos.dur));
+}
+
+function barIsRTL(bar) {
+  return getComputedStyle(bar).direction === 'rtl';
+}
+
+function pointerSec(bar, e) {
+  const r = bar.getBoundingClientRect();
+  return seekTargetSec(e.clientX, r.left, r.width, trackPos.dur, barIsRTL(bar));
+}
+
+// seekTo shows the target at once and asks the speaker; the next readings
+// then follow the real position (applyPositionReading). A refusal puts the
+// clock back where the track really is.
+async function seekTo(sec) {
+  const box = state.currentBox;
+  if (!box || sec < 0 || !canSeek(trackPos)) return;
+  const key = trackPos.key;
+  beginSeek(trackPos, sec, Date.now());
+  renderTrackProgress();
+  try {
+    await SeekTrack(box.host, box.port, sec);
+  } catch {
+    // The speaker did not jump (it was paused meanwhile, the track changed,
+    // an older agent): no message, the bar simply goes back to the truth.
+    if (state.currentBox === box && trackPos.key === key) failSeek(trackPos);
+  }
+  if (state.currentBox !== box) return;
+  renderTrackProgress();
+  pollTrackPosition();
+}
+
+// mountTrackSeek wires the bar once. Every handler asks canSeek again, so the
+// same listeners are inert for radio.
+export function mountTrackSeek() {
+  const bar = $('trackBar');
+  if (!bar || bar.dataset.seekWired) return;
+  bar.dataset.seekWired = '1';
+  bar.addEventListener('pointerdown', (e) => {
+    if (!canSeek(trackPos) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault();
+    try { bar.setPointerCapture(e.pointerId); } catch { /* not capturable: the click still lands on release */ }
+    seekDragSec = pointerSec(bar, e);
+    renderTrackProgress();
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (seekDragSec < 0) return;
+    seekDragSec = pointerSec(bar, e);
+    renderTrackProgress();
+  });
+  bar.addEventListener('pointerup', (e) => {
+    if (seekDragSec < 0) return;
+    const sec = pointerSec(bar, e);
+    seekDragSec = -1;
+    seekTo(sec);
+  });
+  bar.addEventListener('pointercancel', () => {
+    seekDragSec = -1;
+    renderTrackProgress();
+  });
+  bar.addEventListener('keydown', (e) => {
+    if (!canSeek(trackPos)) return;
+    const sec = seekKeyTargetSec(trackPos, e.key, barIsRTL(bar), state.nowPlayState === 'PLAY_STATE', Date.now());
+    if (sec < 0) return;
+    e.preventDefault();
+    seekTo(sec);
+  });
 }
 
 export async function pollTrackPosition() {

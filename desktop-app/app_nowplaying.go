@@ -41,9 +41,15 @@ func (a *App) StreamBitrate(host string, port int) int {
 // bar (#399). Both are -1 when the speaker could not be asked at all, so the
 // caller can leave the previous reading alone instead of snapping the bar back
 // to zero on one missed poll.
+//
+// Seekable is the speaker's own answer to "can this track be jumped in": true
+// only for a music-library file it fetches itself (discussion #1207). The
+// frontend makes the bar clickable on this and never guesses it from the
+// source. An agent that predates the field leaves it false.
 type TrackPos struct {
-	PositionSec int `json:"positionSec"`
-	DurationSec int `json:"durationSec"`
+	PositionSec int  `json:"positionSec"`
+	DurationSec int  `json:"durationSec"`
+	Seekable    bool `json:"seekable"`
 }
 
 // TrackPosition reads both at once.
@@ -68,21 +74,36 @@ type TrackPos struct {
 func (a *App) TrackPosition(host string, port int) TrackPos {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/position", "", "")
 	if err != nil {
-		return TrackPos{-1, -1}
+		return TrackPos{PositionSec: -1, DurationSec: -1}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return TrackPos{-1, -1}
+		return TrackPos{PositionSec: -1, DurationSec: -1}
 	}
 	var out struct {
 		OK       bool `json:"ok"`
 		Position int  `json:"positionSec"`
 		Duration int  `json:"durationSec"`
+		Seekable bool `json:"seekable"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || !out.OK {
-		return TrackPos{-1, -1}
+		return TrackPos{PositionSec: -1, DurationSec: -1}
 	}
-	return TrackPos{out.Position, out.Duration}
+	return TrackPos{PositionSec: out.Position, DurationSec: out.Duration, Seekable: out.Seekable}
+}
+
+// SeekTrack jumps to positionSec inside the playing music-library track, for
+// a click on the progress bar (discussion #1207). The agent decides whether
+// what plays can be positioned at all and answers with a reason when not
+// (radio, Spotify, a paused speaker); that reason comes back as the error.
+// Routed through boxDo like every other box call, so it reaches a speaker on
+// :8888 and on :17008 alike.
+func (a *App) SeekTrack(host string, port int, positionSec int) error {
+	if positionSec < 0 {
+		return fmt.Errorf("position %d is before the start of the track", positionSec)
+	}
+	b, _ := json.Marshal(map[string]int{"positionSec": positionSec})
+	return a.queuePost(host, port, "/api/seek", string(b))
 }
 
 // SpotifyBitrate returns the bitrate the agent measured from the live

@@ -21,6 +21,9 @@ const positionTimeout = 3 * time.Second
 // that is not an error, it is the "position known, length unknown" case, and
 // the UI shows elapsed time without a bar. A firmware that does not implement
 // the query at all answers ok=false and the UI shows nothing, exactly as before.
+//
+// "seekable" says whether the bar may be clicked to jump (discussion #1207):
+// true only for a music-library file the speaker fetches itself, see seek.go.
 func (s *Server) handlePosition(w http.ResponseWriter, r *http.Request) {
 	if s.renderer == nil {
 		http.Error(w, "no renderer", http.StatusServiceUnavailable)
@@ -33,6 +36,9 @@ func (s *Server) handlePosition(w http.ResponseWriter, r *http.Request) {
 		"ok":          ok,
 		"positionSec": int(rel.Seconds()),
 		"durationSec": int(dur.Seconds()),
+		// Whether POST /api/seek would take a jump right now (seek.go). The
+		// clients make the bar clickable on this and on nothing else.
+		"seekable": ok && s.positionSeekable(dur),
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

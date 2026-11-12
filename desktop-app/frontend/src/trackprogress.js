@@ -29,11 +29,31 @@ export const FAST_POLL_WINDOW_MS = 15000;
 //   remembered by resetProgress is carried over instead.
 // - The bar never runs backwards on its own; only a track change, which the
 //   caller handles by resetting the record, may send it back to zero.
+// - A jump the user asked for (beginSeek) is the one exception: the record
+//   then shows the target at once, and readings are judged against it. One
+//   near the target confirms the jump. One far from it is the speaker not
+//   having jumped yet and is ignored for SEEK_SETTLE_MS; after that the
+//   speaker's reading wins in either direction, so a jump that never happened
+//   does not leave the bar on a position nothing plays at.
+// - Whether the bar may be clicked (seekable) is the speaker's answer, never a
+//   guess from the source or the track: only a reading can set it.
 export function applyPositionReading(tp, reading, keyAtStart, now) {
   const pos = reading && typeof reading.positionSec === 'number' ? reading.positionSec : -1;
   let dur = reading && typeof reading.durationSec === 'number' ? reading.durationSec : 0;
   if (pos < 0) return false;
   if (keyAtStart !== undefined && keyAtStart !== tp.key) return false;
+  tp.seekable = reading.seekable === true;
+  if (tp.seekAt) {
+    const expected = tp.sec + (now - tp.at) / 1000;
+    const near = Math.abs(pos - expected) <= SEEK_NEAR_SEC;
+    if (!near && now - tp.seekAt < SEEK_SETTLE_MS) return false;
+    tp.seekAt = 0;
+    tp.seekUndo = null;
+    tp.sec = pos;
+    if (dur > 0) tp.dur = dur;
+    tp.at = now;
+    return true;
+  }
   if (dur <= 0 && tp.dur > 0 && pos <= tp.dur + 2) dur = tp.dur;
   if (dur <= 0 && tp.dur <= 0 && continuesPrevious(tp, pos, now)) dur = tp.prevDur;
   const drifted = tp.sec + (now - tp.at) / 1000;
@@ -78,6 +98,11 @@ export function resetProgress(tp, key, now) {
   tp.at = now;
   tp.key = key || '';
   tp.resetAt = now;
+  // A new track is not seekable until the speaker says so, and a jump asked
+  // for in the old one is over.
+  tp.seekable = false;
+  tp.seekAt = 0;
+  tp.seekUndo = null;
 }
 
 // wantsFastPoll says whether the 1 s render tick should also ask the speaker
@@ -86,4 +111,77 @@ export function resetProgress(tp, key, now) {
 export function wantsFastPoll(tp, playing, now) {
   if (!playing || tp.dur > 0 || !tp.resetAt) return false;
   return now - tp.resetAt < FAST_POLL_WINDOW_MS;
+}
+
+// Jumping inside the track by clicking the bar (discussion #1207).
+
+// How long after a jump a reading far from the target is taken for the
+// speaker not having jumped yet, and how far "far" is.
+export const SEEK_SETTLE_MS = 5000;
+const SEEK_NEAR_SEC = 3;
+
+// How far one press of an arrow key moves.
+export const SEEK_KEY_STEP_SEC = 10;
+
+// canSeek is the gate for every way of jumping: the speaker said this track
+// is seekable, and its length is known. Radio, Spotify and a paused speaker
+// never pass, because the agent answers seekable=false for them.
+export function canSeek(tp) {
+  return !!tp && tp.seekable === true && tp.dur > 0 && tp.at !== 0;
+}
+
+// shownSec is where the bar stands now: the last reading plus the time since,
+// when the speaker is playing, capped at the track's length.
+export function shownSec(tp, playing, now) {
+  const drift = playing && tp.at ? (now - tp.at) / 1000 : 0;
+  const sec = tp.sec + drift;
+  return tp.dur > 0 ? Math.min(sec, tp.dur) : sec;
+}
+
+// seekTargetSec turns a pointer position on the bar into a whole second of
+// the track. left and width are the bar's box; rtl mirrors it, because the
+// bar fills from the right in a right-to-left language. A pointer outside the
+// bar (a drag that left it) lands on the nearer end. Returns -1 when there is
+// nothing to compute from.
+export function seekTargetSec(clientX, left, width, dur, rtl) {
+  if (!(width > 0) || !(dur > 0) || typeof clientX !== 'number' || Number.isNaN(clientX)) return -1;
+  let frac = (clientX - left) / width;
+  if (rtl) frac = 1 - frac;
+  frac = Math.min(1, Math.max(0, frac));
+  return Math.round(frac * dur);
+}
+
+// seekKeyTargetSec is the position an arrow key asks for, or -1 for any other
+// key. Right and Up go forward, Left and Down back; right-to-left swaps Left
+// and Right, as it does for every slider. Home goes to the start.
+export function seekKeyTargetSec(tp, key, rtl, playing, now) {
+  let step = 0;
+  if (key === 'ArrowUp') step = 1;
+  else if (key === 'ArrowDown') step = -1;
+  else if (key === 'ArrowRight') step = rtl ? -1 : 1;
+  else if (key === 'ArrowLeft') step = rtl ? 1 : -1;
+  else if (key === 'Home') return 0;
+  else return -1;
+  const to = shownSec(tp, playing, now) + step * SEEK_KEY_STEP_SEC;
+  return Math.round(Math.min(tp.dur, Math.max(0, to)));
+}
+
+// beginSeek shows the target at once, before the speaker has answered. It
+// remembers the clock it replaces so failSeek can put it back.
+export function beginSeek(tp, sec, now) {
+  if (!tp.seekUndo) tp.seekUndo = { sec: tp.sec, at: tp.at };
+  tp.sec = sec;
+  tp.at = now;
+  tp.seekAt = now;
+}
+
+// failSeek puts the clock back after the speaker refused the jump: the track
+// played on from where it was.
+export function failSeek(tp) {
+  if (tp.seekUndo) {
+    tp.sec = tp.seekUndo.sec;
+    tp.at = tp.seekUndo.at;
+  }
+  tp.seekUndo = null;
+  tp.seekAt = 0;
 }
