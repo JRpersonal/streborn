@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "durduruldu",
+  "status.musicServerGone": "Müzik sunucusu yanıt vermiyor",
   "status.unreachable": "erişilemiyor",
   "status.playlistLabel": "Çalma listesi",
   "status.albumLabel": "Albüm",

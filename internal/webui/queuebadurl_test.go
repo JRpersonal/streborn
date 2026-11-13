@@ -364,7 +364,9 @@ func TestStaleFolderKeyStopsAndTellsTheOwner(t *testing.T) {
 }
 
 // A server that does not answer at all is not a moved folder: the key is
-// not called stale, the dead-track limit stops the queue as before.
+// not called stale. Since #1890 the queue does not try two more tracks of it
+// either: no answer for this track and none for the next ends it at once, and
+// /api/queue says why.
 func TestAFolderKeyOnADeadServerIsNotCalledStale(t *testing.T) {
 	t.Parallel()
 	logs := &syncBuf{}
@@ -383,8 +385,14 @@ func TestAFolderKeyOnADeadServerIsNotCalledStale(t *testing.T) {
 	if notices.Load() != 0 {
 		t.Error("a server that does not answer was reported as a stale key")
 	}
-	if !strings.Contains(logs.String(), "the media server could not deliver several tracks in a row") {
-		t.Errorf("the dead-track limit did not stop the queue; log:\n%s", logs.String())
+	if !strings.Contains(logs.String(), queueEndServerGone) {
+		t.Errorf("the queue of a server that does not answer was not ended as such; log:\n%s", logs.String())
+	}
+	if strings.Contains(logs.String(), "skipping to the next") {
+		t.Errorf("tracks of a server that does not answer were still tried; log:\n%s", logs.String())
+	}
+	if le := s.queueSnapshotWithCard().LastEnd; le == nil || le.Reason != queueLastEndServerGone {
+		t.Errorf("/api/queue lastEnd = %+v, want reason %q", le, queueLastEndServerGone)
 	}
 }
 

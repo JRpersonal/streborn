@@ -1045,8 +1045,11 @@ type Server struct {
 	// newer watcher may have taken it after a cancel). queueStopWhy is the
 	// reason the last stopQueue gave, for the start that finds its queue
 	// cleared under it.
-	queueWatcherID  uint64
-	queueStopWhy    string
+	queueWatcherID uint64
+	queueStopWhy   string
+	// queueLastEnd is the queue end the app and the phone page explain to
+	// the listener (queueserver.go), under queueMu.
+	queueLastEnd    queueEndNote
 	queueGen        int
 	queueTrackStart time.Time
 	queueTrackDur   time.Duration

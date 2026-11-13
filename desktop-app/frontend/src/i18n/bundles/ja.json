@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "停止",
+  "status.musicServerGone": "音楽サーバーが応答しません",
   "status.unreachable": "接続できません",
   "status.playlistLabel": "プレイリスト",
   "status.albumLabel": "アルバム",

@@ -475,6 +475,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "已停止",
+  "status.musicServerGone": "音樂伺服器沒有回應",
   "status.unreachable": "無法連線",
   "status.playlistLabel": "播放清單",
   "status.albumLabel": "專輯",

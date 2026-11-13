@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "apturēts",
+  "status.musicServerGone": "Mūzikas serveris neatbild",
   "status.unreachable": "nav sasniedzams",
   "status.playlistLabel": "Atskaņošanas saraksts",
   "status.albumLabel": "Albums",

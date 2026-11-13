@@ -389,6 +389,10 @@ type queueSnapshot struct {
 	// GET /api/queue, never while Active, and omitted when there is none, so
 	// a reader that knows nothing of it sees the answer it always saw (#1839).
 	File *loneFileInfo `json:"file,omitempty"`
+	// LastEnd says why the last queue ended, while nothing has played since
+	// and only for an end the listener should be told about: today the
+	// media server that stopped answering (#1890). Omitted otherwise.
+	LastEnd *queueLastEnd `json:"lastEnd,omitempty"`
 }
 
 // queueSnapItem is one track of the snapshot. Artist and Album are what the
