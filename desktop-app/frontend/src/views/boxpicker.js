@@ -786,6 +786,7 @@ export function selectBox(box) {
     state.setupTarget = { kind: box.kind === 'stock' ? 'stock' : 'str', box };
   }
   state.presetErrors = {};
+  state.presetServerOff = {};
   if (switched) { resetNowPlaying(); renderNowPlayingBar(); }
   renderBoxSelect();
   loadPresets();

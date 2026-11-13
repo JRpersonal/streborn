@@ -2,7 +2,9 @@
 // pause/stop, track and queue buttons, the title-swap toggle, the stream
 // source fold). Attached once by mountWiring.
 
-import { QueueNext, QueuePrev, QueueRepeat, QueueShuffle, SetStreamTitleSwap } from '../../api.js';
+import { EventsOn, QueueNext, QueuePrev, QueueRepeat, QueueShuffle, SetStreamTitleSwap } from '../../api.js';
+import { clearForAliveServer, MEDIA_SERVER_ALIVE_EVENT } from '../../serveralive.js';
+import { renderPresets } from './presettiles.js';
 import { state } from '../../state.js';
 import { $, clearNoticeDismissal, showError } from '../../utils.js';
 import { renderStreamSource } from '../streamsource.js';
@@ -17,6 +19,15 @@ export function stoppedOrPaused(ps) { return ps === 'PAUSE_STATE' || ps === 'STO
 // mountWiring attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
 export function mountWiring() {
+  // A music server that announces itself again clears the red "not
+  // answering" mark of its keys (#1890, serveralive.js).
+  try {
+    EventsOn(MEDIA_SERVER_ALIVE_EVENT, (ev) => {
+      const cleared = clearForAliveServer(state.presetErrors, state.presetServerOff, state.presets, ev);
+      if (cleared.length > 0) renderPresets();
+    });
+  } catch { /* no Wails runtime (tests, plain browser): nothing to hear */ }
+
   $('streamSourceDetails').addEventListener('toggle', () => {
     if ($('streamSourceDetails').open) renderStreamSource();
   });

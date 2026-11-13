@@ -297,6 +297,9 @@ func (a *App) startup(ctx context.Context) {
 	// Library tab never finds it (#341). DiscoverServers merges what
 	// the listener has heard into every scan.
 	dlna.StartAnnounceListener(ctx)
+	// A media server coming back clears the red mark its keys got while it
+	// was off (#1890, mediaserveralive.go).
+	watchMediaServerAlives(ctx)
 	// Same for sticksetup, so USB-stick discovery timing (a slow search
 	// while Windows finishes mounting a freshly inserted stick) is visible
 	// in the diagnostic bundle instead of an unexplained UI hang.

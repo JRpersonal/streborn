@@ -56,6 +56,7 @@ export const state = {
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
   optimisticQueueInFlight: 0, // play() generation of a library key press still waiting for PlaySlot (#1767)
   presetErrors: {},    // slot → last error message (rendered red)
+  presetServerOff: {}, // slot → true when that error is the server-off refusal (serveralive.js)
   searchOrder: 'votes',
   // searchCountry is the user's pinned country filter on the Music
   // tab. We persist the last pick across app restarts so the choice
