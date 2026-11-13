@@ -347,6 +347,12 @@ type queueSnapshot struct {
 	Shuffle bool            `json:"shuffle"`
 	Repeat  string          `json:"repeat"`
 	Items   []queueSnapItem `json:"items"`
+	// URL is the media server address of the track at Pos, the one this agent
+	// handed the speaker last, while the queue is active. The desktop app marks
+	// the Library row that plays by it: the speaker's own now-playing names the
+	// previous track for seconds after a skip (#1874). Only the running track
+	// carries it, so the reply every status tick reads stays small.
+	URL string `json:"url,omitempty"`
 	// Card is the Recently-played card key of the folder this queue plays
 	// ("queue:<udn>:<container>" or "queue:slot:N"), set while the queue is
 	// active. The app matches its folder card against it: the card itself only
@@ -411,6 +417,9 @@ func (q *playQueue) snapshot() queueSnapshot {
 	}
 	if q.active && q.pos >= 0 && q.pos < len(q.order) {
 		snap.Pos = q.order[q.pos]
+		if snap.Pos >= 0 && snap.Pos < len(q.items) {
+			snap.URL = q.items[snap.Pos].URL
+		}
 	}
 	return snap
 }
