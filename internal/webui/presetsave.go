@@ -11,6 +11,7 @@ package webui
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/anonymise"
@@ -328,6 +329,9 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		}
 	}
 	if p.Type == "spotify" {
+		// A playlist title can end in spaces ("Mj Lenderman universe  ", #1870),
+		// which the tile and the speaker's display then carry along.
+		p.Name = strings.TrimSpace(p.Name)
 		// Which account a key ends up on was invisible in a diagnostic, so
 		// "this key was saved from the other account" could not be checked
 		// once the save had left the log window (ST30, 2026-10-09). Logged before
@@ -402,6 +406,15 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		if cover := s.spotifyPlayingSongCover(p.URI); cover != "" {
 			p.Art = cover
 			s.logger.Info("preset save: Spotify key stored with the playing song's cover, the playlist has none to look up", "slot", slot)
+		}
+	}
+	// The same when the speaker's own Spotify plays what is being saved: the
+	// engine knows no song then, so the cover is the one the speaker shows
+	// (spotify_box_cover.go). Only for a real save gesture.
+	if p.Type == "spotify" && p.Art == "" && liveSave && !savingLiveContext {
+		if cover := s.boxSpotifyCover(p.URI); cover != "" {
+			p.Art = cover
+			s.logger.Info("preset save: Spotify key stored with the cover the speaker shows, its own Spotify plays it", "slot", slot)
 		}
 	}
 	// A given playlist/station lives on at most ONE key. If the station being

@@ -45,6 +45,9 @@ type boxNowItem struct {
 	Location string
 	Name     string
 	Art      string
+	// ContainerArt is the ContentItem's own picture (a Spotify playlist's
+	// cover), "" when the firmware names none.
+	ContainerArt string
 }
 
 // parseBoxNowItem pulls source, location, a name and the art out of a
@@ -56,6 +59,7 @@ func parseBoxNowItem(b []byte) (boxNowItem, bool) {
 			Source   string `xml:"source,attr"`
 			Location string `xml:"location,attr"`
 			ItemName string `xml:"itemName"`
+			Art      string `xml:"containerArt"`
 		} `xml:"ContentItem"`
 		Station string `xml:"stationName"`
 		Track   string `xml:"track"`
@@ -76,10 +80,11 @@ func parseBoxNowItem(b []byte) (boxNowItem, bool) {
 		name = strings.TrimSpace(doc.Track)
 	}
 	return boxNowItem{
-		Source:   strings.ToUpper(src),
-		Location: strings.TrimSpace(doc.Item.Location),
-		Name:     name,
-		Art:      strings.TrimSpace(doc.Art),
+		Source:       strings.ToUpper(src),
+		Location:     strings.TrimSpace(doc.Item.Location),
+		Name:         name,
+		Art:          strings.TrimSpace(doc.Art),
+		ContainerArt: strings.TrimSpace(doc.Item.Art),
 	}, true
 }
 
