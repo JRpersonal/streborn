@@ -38,6 +38,9 @@ package oled
 // the /proc reads only when the panel is stuck, and the box is asked only
 // then. A newer release, a new standby or a new STR hold of the panel ends a
 // running watch.
+//
+// A clock can also stop hours into a standby, long after these looks are
+// over; longstandby.go runs the same watch now and then for that.
 
 import (
 	"context"
@@ -327,7 +330,7 @@ func (w darkWatch) run(ctx context.Context, reason string) darkVerdict {
 
 // watchAfterRelease starts the look at the panel after a track overlay
 // release, ending any older watch. Returns at once.
-func watchAfterRelease(reason string) { startDarkWatch(reason, false) }
+func watchAfterRelease(reason string) { startDarkWatch(reason, false, longStandbyVerdict) }
 
 // WatchStandbyPanel starts the look at the panel for a speaker that just went
 // to standby, unless STR holds the panel (its release starts its own watch)
@@ -342,7 +345,7 @@ func WatchStandbyPanel(reason string) {
 		time.Unix(0, darkWatchStarted.Load()), time.Now()) {
 		return
 	}
-	startDarkWatch(reason, true)
+	startDarkWatch(reason, true, longStandbyVerdict)
 }
 
 // standbyMayStartWatch is the rule for a standby: a watch that is still in
@@ -357,7 +360,9 @@ func standbyMayStartWatch(live, gen uint64, started, now time.Time) bool {
 	return now.Sub(started) > darkSecondLook
 }
 
-func startDarkWatch(reason string, standby bool) {
+// startDarkWatch runs one watch in the background; done, when set, hears how
+// it ended.
+func startDarkWatch(reason string, standby bool, done func(darkVerdict)) {
 	h := currentDarkHooks()
 	if h.ClockExpected == nil {
 		return
@@ -388,7 +393,10 @@ func startDarkWatch(reason string, standby bool) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), darkWatchLimit)
 		defer cancel()
-		w.run(ctx, reason)
+		v := w.run(ctx, reason)
+		if done != nil {
+			done(v)
+		}
 	}()
 }
 

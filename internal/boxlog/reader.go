@@ -107,6 +107,9 @@ type Reader struct {
 	webKeyHandler  Handler
 	// comboHandler hears the firmware's key combination countdown.
 	comboHandler func(at time.Time)
+	// minuteHandler hears the firmware's once-a-minute Wi-Fi quality line
+	// (minute.go).
+	minuteHandler func(at time.Time)
 }
 
 // New returns a reader that will call handler for every key event.
@@ -271,6 +274,7 @@ func (r *Reader) handleLine(line string, now time.Time) {
 		}
 		r.firePower(fev)
 		r.firePlayFailure(fev)
+		r.fireMinute(fev)
 	}
 	if r.handleGestureLines(line, now) {
 		return

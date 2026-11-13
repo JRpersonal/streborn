@@ -27,6 +27,9 @@ var (
 	// even when STR did not hold the panel before (#1784). Without the
 	// dark-panel hooks (tests, a speaker without a panel) it does nothing.
 	watchStandbyPanel = oled.WatchStandbyPanel
+	// notePanelStandby tells the panel code whether the speaker is in
+	// standby, for the look at the clock in a long standby (#841).
+	notePanelStandby = oled.NotePanelStandby
 )
 
 // trackSourceKeeps reports whether a source switch to to can still be STR's
@@ -107,6 +110,7 @@ func trackOnSourceChanged(from, to string, wake *wakeCheck) {
 	k := currentTrackHooks()
 	ours := trackSourceKeeps(to)
 	verify := ours && wake != nil
+	notePanelStandby(to == "STANDBY")
 	if to == "STANDBY" {
 		// Before the track lets go: while it still holds the panel, its own
 		// release starts the look instead, with the overlay's reason.
@@ -158,6 +162,7 @@ func trackAfterWakeCheck(k trackHooks, gen uint64, to string, w *wakeCheck) {
 // track leaves the panel whatever the gabbo stream last said. Non-blocking.
 func trackOnBoxStandby() {
 	k := currentTrackHooks()
+	notePanelStandby(true)
 	watchStandbyPanel("standby (syslog)")
 	trackMu.Lock()
 	defer trackMu.Unlock()
@@ -172,6 +177,7 @@ func trackOnBoxStandby() {
 // it woke to and STR's screen comes back if it is STR's. newCheck starts
 // that read; it runs only when needed. Non-blocking.
 func trackOnBoxWake(newCheck func() *wakeCheck) {
+	notePanelStandby(false)
 	k := currentTrackHooks()
 	trackMu.Lock()
 	down, gen := trackDownByBox, trackGen
