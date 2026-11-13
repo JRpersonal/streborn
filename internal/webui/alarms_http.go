@@ -1,10 +1,14 @@
 package webui
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/alarm"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // alarmView is what GET and PUT answer with: the stored document plus a
@@ -76,8 +80,19 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 		}
 		// Past days drop off on every save, so they never use up the cap.
 		d.DropPastSkipDates(s.alarmNowTime())
+		// Which alarms arrived without an id, taken before Validate hands
+		// them one: those are new, whatever id they end up with.
+		fresh := make([]bool, len(d.Alarms))
+		for i, a := range d.Alarms {
+			fresh[i] = strings.TrimSpace(a.ID) == ""
+		}
 		if err := d.Validate(); err != nil {
 			// The message reaches the user verbatim.
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.checkAlarmKeys(d, s.alarms.Get(), fresh); err != nil {
+			s.logger.Info("alarms: save refused, an alarm is on an empty key", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -94,6 +109,49 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, PUT")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// checkAlarmKeys refuses an enabled alarm on a key with nothing stored on it
+// (discussion #1897). fireAlarm skips such an alarm when it comes due, so the
+// save that set it up is the last moment anyone can be told: an alarm accepted
+// here and then silently skipped is a user who oversleeps.
+//
+// Only what this save changes is checked: an alarm that is new, or whose key or
+// on/off switch differs from the stored copy with the same id. An alarm stored
+// earlier whose key was cleared since passes unchanged, or that one alarm would
+// make every other alarm on the speaker uneditable. fresh marks the alarms that
+// arrived without an id. Without a preset store there is nothing to check
+// against, and nothing is refused.
+func (s *Server) checkAlarmKeys(d, stored alarm.Document, fresh []bool) error {
+	if s.presets == nil {
+		return nil
+	}
+	before := make(map[string]alarm.Alarm, len(stored.Alarms))
+	for _, a := range stored.Alarms {
+		before[a.ID] = a
+	}
+	for i, a := range d.Alarms {
+		if !a.Enabled {
+			continue
+		}
+		if old, ok := before[a.ID]; ok && (i >= len(fresh) || !fresh[i]) &&
+			old.Slot == a.Slot && old.Enabled == a.Enabled {
+			continue
+		}
+		if _, ok := s.presets.Get(a.Slot); !ok {
+			return fmt.Errorf("key %s is empty, so this alarm would not ring: save a station on that key first or pick another one", alarmKeyLabel(a.Slot))
+		}
+	}
+	return nil
+}
+
+// alarmKeyLabel names a slot the way the user presses it: "2" for the key,
+// "2 pressed twice" for the second row (#1110).
+func alarmKeyLabel(slot int) string {
+	if presets.IsRow2(slot) {
+		return strconv.Itoa(presets.KeyOf(slot)) + " pressed twice"
+	}
+	return strconv.Itoa(slot)
 }
 
 func (s *Server) alarmView() alarmView {
