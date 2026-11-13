@@ -1579,6 +1579,9 @@ func (a *agent) buildBoxLink() error {
 	// the two origins (cmd/agent/powergate.go); the standby gate is the
 	// dispatcher's own (STR's source was the active one).
 	keyTrace.SetPowerHandler(wsHandler.OnBoxPowerEvent)
+	// The firmware's once-a-minute line carries the look at the standby
+	// clock in a long standby, so it needs no timer of its own (#841).
+	keyTrace.SetMinuteHandler(oled.StandbyMinute)
 	// A held preset key while STR's own stream plays (#1217): the firmware
 	// refuses to store a UPnP push, so the agent pairs the key line with the
 	// firmware's own hold verdict and saves what plays (holdsave.go).
