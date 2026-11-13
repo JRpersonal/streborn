@@ -1207,6 +1207,12 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 		// then logs the dead track as a natural end (11 m 43 s of silence inside one
 		// 33-minute queue, 2026-09-28), and with repeat=all that never stops.
 		if tornDown && sawPlay {
+			if s.queueNextServerGone() {
+				s.logger.Info("queue watcher: the speaker dropped the track and the media server of the next one does not answer, stopping the queue",
+					"deadInARow", deadInARow)
+				s.stopQueueServerGone()
+				return
+			}
 			if queueDeadTrackStops(&deadInARow) {
 				s.logger.Info("queue watcher: the speaker dropped several tracks in a row without playing them, stopping the queue",
 					"deadInARow", deadInARow)
@@ -1316,6 +1322,12 @@ func (s *Server) runQueueWatcher(ctx context.Context, id uint64) {
 				// that never takes the stream (a Wave left on its own source,
 				// #1322) otherwise walked the whole folder in silence and filled
 				// Recently played with tracks nobody heard.
+				if s.queueNextServerGone() {
+					s.logger.Info("queue watcher: the track never started and the media server of the next one does not answer, stopping the queue",
+						"deadInARow", deadInARow)
+					s.stopQueueServerGone()
+					return
+				}
 				if queueDeadTrackStops(&deadInARow) {
 					s.logger.Info("queue watcher: several tracks in a row never started playing, stopping the queue",
 						"deadInARow", deadInARow)
@@ -2407,6 +2419,7 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 		snap.SlotChecked = true
 	} else {
 		snap.File = s.loneFileInfo()
+		snap.LastEnd = s.queueLastEndShown()
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

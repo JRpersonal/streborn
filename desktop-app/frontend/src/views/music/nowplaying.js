@@ -14,6 +14,7 @@ import { nowLine, playingLibraryURLs, queueNowItem } from '../../librarynow.js';
 import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
+import { queueEndLabelKey } from '../../queueend.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import {
   applyPositionReading,
@@ -311,6 +312,10 @@ export function renderNowPlayingBar() {
   const label = nowStateLabel(ps, srcU);
   let stateLabel = label.key ? t(label.key) : '';
   let stateClass = label.cls;
+  // A folder that ended because its music server stopped answering says so
+  // where "stopped" would stand, until anything plays again (#1890).
+  const endKey = queueEndLabelKey(state.queue, ps, srcU);
+  if (endKey) { stateLabel = t(endKey); stateClass = 'idle'; }
   // LOCAL is what a Cinemate calls the very same analogue input, so it gets
   // the same line rather than falling through to the generic "some source is
   // active" case, which is why a speaker playing through it showed nothing

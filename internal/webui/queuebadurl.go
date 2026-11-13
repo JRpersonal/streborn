@@ -346,6 +346,12 @@ func (s *Server) queueFailFast(gen int, start time.Time, dur time.Duration, ev b
 			"title", it.Title, "status", code, "waitedMs", time.Since(start).Milliseconds())
 		return false
 	}
+	if !answers && isHTTPURL(it.URL) && s.queueNextServerGone() {
+		s.logger.Info("queue watcher: the media server answers neither for this track nor for the next, stopping the queue",
+			"title", it.Title, "boxBadURL", ev.box, "waitedMs", time.Since(start).Milliseconds())
+		s.stopQueueServerGone()
+		return true
+	}
 	if goneStatus(code) {
 		s.badURL.mu.Lock()
 		s.noteGoneLocked(it.URL, code)

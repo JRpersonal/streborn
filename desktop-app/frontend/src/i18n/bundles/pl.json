@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "zatrzymano",
+  "status.musicServerGone": "Serwer muzyki nie odpowiada",
   "status.unreachable": "niedostępny",
   "status.playlistLabel": "Playlista",
   "status.albumLabel": "Album",

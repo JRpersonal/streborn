@@ -68,7 +68,7 @@ func SearchHost(ctx context.Context, host string, timeout time.Duration) ([]Serv
 			break
 		}
 		if loc := headerValue(buf[:n], "LOCATION"); loc != "" {
-			Logger.Info("dlna: unicast SSDP response", "src", raddr.String(), "location", loc)
+			Logger.Debug("dlna: unicast SSDP response", "src", raddr.String(), "location", loc)
 			locations[loc] = struct{}{}
 		}
 	}

@@ -294,6 +294,9 @@ func runAnnounceListener(ctx context.Context) {
 						Logger.Debug("dlna: SSDP NOTIFY", "action", action,
 							"src", raddr.String(), "location", headerValue(buf[:n], "LOCATION"),
 							"usn", headerValue(buf[:n], "USN"))
+						if action == "alive" {
+							noteMediaServerAlive(buf[:n])
+						}
 					}
 				}
 			}()

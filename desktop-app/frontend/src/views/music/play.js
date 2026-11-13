@@ -7,6 +7,7 @@ import { parsePlayRejection, resolveBoxByRef, sameBoxIdentity } from '../../grou
 import { t } from '../../i18n/index.js';
 import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from '../../libraryserveroff.js';
 import { isNativeServicePreset } from '../../nativeservice.js';
+import { isServerOffRefusal } from '../../serveralive.js';
 import { beginRecall } from '../../spotifynowplaying.js';
 import { staleNoticeText } from '../../stalestereo.js';
 import { state } from '../../state.js';
@@ -219,6 +220,9 @@ export async function play(slot) {
     state.presetErrors[slot] = goneServer !== null
       ? t('play.errMusicFileGone')
       : friendlyPlayError(errStr, (state.currentBox && state.currentBox.host) || "");
+    // A server-off mark clears itself when that server announces itself
+    // again (#1890, serveralive.js).
+    state.presetServerOff[slot] = isServerOffRefusal(errStr);
     renderPresets();
     // The tile label is too small for the multi-step Spotify Connect how-to, so
     // also show it as a (localized) toast. Use the i18n help text, not the raw

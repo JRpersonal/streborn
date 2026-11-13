@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "зупинено",
+  "status.musicServerGone": "Музичний сервер не відповідає",
   "status.unreachable": "недоступний",
   "status.playlistLabel": "Плейлист",
   "status.albumLabel": "Альбом",

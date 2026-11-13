@@ -302,12 +302,16 @@ func discoverServers(ctx context.Context, timeout time.Duration, match func(Serv
 			// answer ssdp:all with an ST of ContentDirectory or a vendor URN and
 			// were silently dropped here despite serving a valid MediaServer
 			// device.xml. The real gate is the post-fetch CDSControlURL check (#110).
+			// At DEBUG since #1890: on a network with many UPnP devices one lookup
+			// wrote about a hundred of these lines, and on a speaker they pushed
+			// the minute that mattered out of the 32 KB NAND log. The "SSDP probe
+			// done" line below keeps the counts at INFO.
 			responses++
 			// Keyed WITHOUT the source port: the port is a fresh ephemeral one
 			// per answer and would make every repeat look distinct.
 			if key := raddr.IP.String() + "|" + st + "|" + loc; !seen[key] {
 				seen[key] = true
-				Logger.Info("dlna: SSDP response", "src", raddr.IP.String(), "st", st, "location", loc)
+				Logger.Debug("dlna: SSDP response", "src", raddr.IP.String(), "st", st, "location", loc)
 			}
 			if enqueue(loc) {
 				localHits++

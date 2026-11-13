@@ -1678,6 +1678,7 @@ function applyBoxList(list) {
         state.nowLocation = '';
         state.nowPlayState = '';
         state.presetErrors = {};
+        state.presetServerOff = {};
         $('searchResults').innerHTML = '';
         syncSearchModeButtons();
         loadPresets();

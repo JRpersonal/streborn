@@ -449,6 +449,7 @@
   "status.bluetooth": "Bluetooth",
   "status.airplay": "AirPlay",
   "status.stopped": "متوقف",
+  "status.musicServerGone": "خادم الموسيقى لا يستجيب",
   "status.unreachable": "غير متاح",
   "status.playlistLabel": "قائمة التشغيل",
   "status.albumLabel": "ألبوم",
