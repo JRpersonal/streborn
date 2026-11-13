@@ -224,9 +224,62 @@ func TestStandbyMayStartWatch(t *testing.T) {
 		{"switched off again minutes later", 7, 7, 9 * time.Minute, true},
 	}
 	for _, tc := range cases {
-		if got := standbyMayStartWatch(tc.live, tc.gen, t0, t0.Add(tc.after)); got != tc.want {
+		if got := standbyMayStartWatch(tc.live, tc.gen, t0, time.Time{}, t0.Add(tc.after)); got != tc.want {
 			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// #841, 2026-11-13: the nudge at 65 s is a standby, and the speaker answers it
+// with a standby line about a second later. That echo must not start a new
+// watch, or the running one never gets to its look after the nudge and the
+// speaker is nudged once a minute for as long as the display stays stuck.
+func TestStandbyMayStartWatchNudgeEcho(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 13, 48, 57, 0, time.UTC)
+	nudge := t0.Add(darkSecondLook)
+	cases := []struct {
+		name  string
+		after time.Duration // from the nudge
+		want  bool
+	}{
+		{"the nudge's own standby a second later", time.Second, false},
+		{"the echo arriving slowly", 10 * time.Second, false},
+		{"switched off by hand well after the nudge", 2 * time.Minute, true},
+	}
+	for _, tc := range cases {
+		if got := standbyMayStartWatch(7, 7, t0, nudge, nudge.Add(tc.after)); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	// a superseded watch's nudge shields nothing
+	if !standbyMayStartWatch(6, 7, t0, nudge, nudge.Add(time.Second)) {
+		t.Error("a newer watch is running; the old nudge must not block")
+	}
+}
+
+func TestDarkWatchReportsItsNudge(t *testing.T) {
+	var heard int
+	w := darkWatch{
+		hooks: DarkPanelHooks{
+			ClockExpected: func(context.Context) (bool, error) { return true, nil },
+			Recover:       func(context.Context) bool { return true },
+		},
+		readFrame:  func() (panelSample, bool) { return panelSample{dark: true, fill: 1}, true },
+		panelOurs:  func() bool { return false },
+		threadInfo: func() []any { return nil },
+		current:    func() bool { return true },
+		nudged:     func() { heard++ },
+		sleep:      func(context.Context, time.Duration) bool { return true },
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		first:      darkFirstLook,
+		second:     darkSecondLook,
+		afterNudge: darkAfterNudge,
+	}
+	if v := w.run(context.Background(), "standby (syslog)"); v != darkStuck {
+		t.Fatalf("verdict %q, want %q", v, darkStuck)
+	}
+	if heard != 1 {
+		t.Fatalf("nudge reported %d times, want 1", heard)
 	}
 }
 
