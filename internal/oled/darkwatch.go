@@ -98,6 +98,9 @@ const (
 	darkRestartAfter = 10 * time.Minute
 	// darkWatchLimit bounds one watch from start to end.
 	darkWatchLimit = 15 * time.Minute
+	// darkNudgeEcho is how long after a watch's own nudge a standby is that
+	// nudge coming back, not somebody switching the speaker off.
+	darkNudgeEcho = 15 * time.Second
 	// darkFillMax is the brightest value a uniform frame may have and still
 	// count as dark: STR's lowest grey level (0x11) and everything below it,
 	// BoseApp's 0x01 blank included.
@@ -105,13 +108,15 @@ const (
 )
 
 // darkWatchGen makes a newer release or standby end the watch of an older
-// one; darkWatchLive is the generation of the watch still running (0: none)
-// and darkWatchStarted when it started, so a standby does not restart a
-// watch that is already on it.
+// one; darkWatchLive is the generation of the watch still running (0: none),
+// darkWatchStarted when it started, so a standby does not restart a watch
+// that is already on it, and darkWatchNudged when it sent its nudge (0: not
+// yet), so the nudge's own standby does not either.
 var (
 	darkWatchGen     atomic.Uint64
 	darkWatchLive    atomic.Uint64
 	darkWatchStarted atomic.Int64
+	darkWatchNudged  atomic.Int64
 )
 
 // panelSample is one look at the framebuffer.
@@ -187,10 +192,12 @@ type darkWatch struct {
 	threadInfo func() []any
 	// current reports whether this watch is still the newest one.
 	current func() bool
-	sleep   func(ctx context.Context, d time.Duration) bool
-	logger  *slog.Logger
-	first   time.Duration
-	second  time.Duration
+	// nudged hears that the nudge went out (nil: nobody listens).
+	nudged func()
+	sleep  func(ctx context.Context, d time.Duration) bool
+	logger *slog.Logger
+	first  time.Duration
+	second time.Duration
 	// afterNudge and restartAfter time the steps after the nudge.
 	afterNudge   time.Duration
 	restartAfter time.Duration
@@ -284,6 +291,9 @@ func (w darkWatch) run(ctx context.Context, reason string) darkVerdict {
 	if w.hooks.Recover == nil || !w.hooks.Recover(ctx) {
 		return darkLeft
 	}
+	if w.nudged != nil {
+		w.nudged()
+	}
 
 	if !w.sleep(ctx, w.afterNudge) {
 		return darkSuperseded
@@ -342,7 +352,7 @@ func WatchStandbyPanel(reason string) {
 		return
 	}
 	if !standbyMayStartWatch(darkWatchLive.Load(), darkWatchGen.Load(),
-		time.Unix(0, darkWatchStarted.Load()), time.Now()) {
+		time.Unix(0, darkWatchStarted.Load()), unixOrZero(darkWatchNudged.Load()), time.Now()) {
 		return
 	}
 	startDarkWatch(reason, true, longStandbyVerdict)
@@ -353,11 +363,30 @@ func WatchStandbyPanel(reason string) {
 // speaker flapping in and out of standby all arrive within seconds), while an
 // older one gives way, so a restart never comes sooner than the full wait
 // after the latest switch-off.
-func standbyMayStartWatch(live, gen uint64, started, now time.Time) bool {
+//
+// The one exception is the watch's own nudge. It is a standby sent to a
+// sleeping speaker, and the speaker answers it with the same lines as a
+// switch-off, about a second later and just past the first minute. Taken as
+// a new switch-off it started a new watch, which ended the old one before its
+// look after the nudge: an ST20 with a stuck display got a nudge every 66 s
+// for five hours, never went into deep standby and never reached the restart
+// (#841, 2026-11-13). nudged is zero while the live watch has not nudged.
+func standbyMayStartWatch(live, gen uint64, started, nudged, now time.Time) bool {
 	if live == 0 || live != gen {
 		return true
 	}
+	if !nudged.IsZero() && now.Sub(nudged) < darkNudgeEcho {
+		return false
+	}
 	return now.Sub(started) > darkSecondLook
+}
+
+// unixOrZero turns a stored UnixNano into a time, 0 into the zero time.
+func unixOrZero(ns int64) time.Time {
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns)
 }
 
 // startDarkWatch runs one watch in the background; done, when set, hears how
@@ -368,14 +397,20 @@ func startDarkWatch(reason string, standby bool, done func(darkVerdict)) {
 		return
 	}
 	darkWatchStarted.Store(time.Now().UnixNano())
+	darkWatchNudged.Store(0)
 	gen := darkWatchGen.Add(1)
 	darkWatchLive.Store(gen)
 	w := darkWatch{
-		hooks:        h,
-		readFrame:    panelFrameSample,
-		panelOurs:    panelHeldBySTR,
-		threadInfo:   flipThreadInfo,
-		current:      func() bool { return darkWatchGen.Load() == gen },
+		hooks:      h,
+		readFrame:  panelFrameSample,
+		panelOurs:  panelHeldBySTR,
+		threadInfo: flipThreadInfo,
+		current:    func() bool { return darkWatchGen.Load() == gen },
+		nudged: func() {
+			if darkWatchGen.Load() == gen {
+				darkWatchNudged.Store(time.Now().UnixNano())
+			}
+		},
 		sleep:        sleepFor,
 		logger:       noticeLogger(),
 		first:        darkFirstLook,
