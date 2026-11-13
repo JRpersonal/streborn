@@ -47,6 +47,7 @@ import {
 import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 import { parsePresetConflict } from '../presetmove.js';
+import { libraryRowStatus } from '../librarynow.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -628,12 +629,48 @@ export function statusKey(item) {
 // clears it. Only the preview draws these lines.
 function setLibStatus(key, st) {
   if (st) libState.ui2.status.set(key, st); else libState.ui2.status.delete(key);
+  paintLibStatus(key);
+}
+
+// paintLibStatus writes the line of one status key into the rows on screen.
+function paintLibStatus(key) {
   if (typeof document === 'undefined') return;
+  const st = rowStatusFor(key);
   document.querySelectorAll('#view-library .lib2-status').forEach((el) => {
     if (el.dataset.skey !== key) return;
     el.className = `lib2-status${st && st.tone ? ` lib2-status--${st.tone}` : ''}`;
     el.textContent = (st && st.text) || '';
   });
+}
+
+// libNowURLs are the URLs that count as playing on the selected speaker, as
+// the now-playing line last handed them over (libraryNowPlaying).
+let libNowURLs = [];
+
+// rowStatusFor is the line a status key shows: a track row's own feedback,
+// or the marker of the track that plays now (#1874). The folder lines
+// ('folder', 'folderCut') are feedback only.
+function rowStatusFor(key) {
+  const stored = libState.ui2.status.get(key) || null;
+  if (!key.startsWith('u:')) return stored;
+  const url = key.slice(2);
+  return libraryRowStatus(stored, !!url && libNowURLs.includes(url), speakerName(), t);
+}
+
+// libraryNowPlaying is told by the now-playing line which URLs play now
+// (nowplaying.js renderNowPlayingBar, through the music view's deps). The
+// marker under the rows follows it in place, without redrawing the list:
+// after a skip it moves to the new track, and a Library drawn again later
+// draws it from the same list. The marker used to be the one-off answer to a
+// click on a row, so it stayed on that row while a folder played on, and was
+// gone once the Library was drawn again (#1874).
+export function libraryNowPlaying(urls) {
+  const next = Array.isArray(urls) ? urls.filter(Boolean) : [];
+  if (next.length === libNowURLs.length && next.every((u, i) => u === libNowURLs[i])) return;
+  const touched = new Set([...libNowURLs, ...next].map((u) => `u:${u}`));
+  libNowURLs = next;
+  if (!ui2()) return;
+  for (const key of touched) paintLibStatus(key);
 }
 
 // libraryContainers and libraryItems are the open folder's sub-folders and
@@ -794,8 +831,10 @@ async function libraryPlay(item) {
     setTimeout(deps.refreshStatus, 1500);
     if (ui2()) {
       verifyLibraryPlayback(item, target, (r) => {
-        if (!r) setLibStatus(key, null);
-        else if (r.ok) setLibStatus(key, { tone: 'ok', text: t('ui2.library.playingOn', { name }) });
+        // Once the speaker plays it, the live marker says "Playing on X"
+        // (libraryNowPlaying) and moves on with the music; a stored line
+        // here stayed on this row after the next track had started (#1874).
+        if (!r || r.ok) setLibStatus(key, null);
         else setLibStatus(key, { tone: 'error', text: r.msg });
       });
       return;
@@ -1550,7 +1589,7 @@ function ui2FolderRowsHTML() {
       speaker,
       meta: [it.artist, it.album].filter(Boolean).join(' · '),
       duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
-      status: libState.ui2.status.get(statusKey(it)),
+      status: rowStatusFor(statusKey(it)),
     })).join('');
   if (!rows && libState.filter) {
     return `<li class="lib2-none">${escapeHtml(t('ui2.library.filterNone', { q: libState.filter.trim() }))}</li>`;
@@ -1647,7 +1686,7 @@ function ui2SearchHTML() {
     speaker,
     meta: [it.artist, it.album, it.server].filter(Boolean).join(' · '),
     duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
-    status: libState.ui2.status.get(statusKey(it)),
+    status: rowStatusFor(statusKey(it)),
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);

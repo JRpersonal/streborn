@@ -10,6 +10,7 @@ import { spotifySongText } from '../../spotifynowplaying.js';
 import { refusalFor, refusalHTML } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
 import { isPlaying } from '../../boxes.js';
+import { nowLine, playingLibraryURLs, queueNowItem } from '../../librarynow.js';
 import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
@@ -37,6 +38,7 @@ import {
   showError,
   spotifyURIFromContainer,
 } from '../../utils.js';
+import { deps } from './deps.js';
 import { decodeProxyUrl, refreshPresetsIfChanged } from './presets.js';
 import { applyTrackScroll, renderPresets } from './presettiles.js';
 import { sourceListCache } from './sources.js';
@@ -53,6 +55,10 @@ export async function action(kind) {
           : Stop;
   const box = state.currentBox;
   try { await fn(box.host, box.port); } catch (e) { transportFailed(kind === 'pause' || kind === 'resume' || kind === 'next' || kind === 'prev' ? kind : 'stop', e, box); }
+  // A skip inside a folder: the agent answers once it has handed the speaker
+  // the new track, so its queue names that track now, seconds before the
+  // speaker's own now-playing does (#1874).
+  if (kind === 'next' || kind === 'prev') refreshQueue();
   // Skip lands on a new track fast; poll a touch sooner so the title updates.
   setTimeout(refreshStatus, (kind === 'next' || kind === 'prev') ? 600 : 1000);
 }
@@ -64,6 +70,10 @@ export async function queueAction(fn) {
   if (!state.currentBox) return;
   const box = state.currentBox;
   try { await fn(box.host, box.port); } catch (e) { transportFailed('queue', e, box); }
+  // The agent answers a skip once the speaker has the new track, so the queue
+  // read right now names it, and the line follows at once instead of with the
+  // speaker's own now-playing, which lags by seconds (#1874).
+  refreshQueue();
   setTimeout(refreshStatus, 600);
 }
 
@@ -119,6 +129,10 @@ export async function refreshQueue() {
     // leave the last known queue state on screen
   }
   renderQueueControls();
+  // The player line names a folder's running track from the queue, so it
+  // follows a new reply at once (#1874). Cheap: it rewrites the DOM only when
+  // the line changed.
+  renderNowPlayingBar();
 }
 
 // renderQueueControls shows/hides the queue transport controls and reflects the
@@ -217,6 +231,10 @@ export function renderNowPlayingBar() {
   if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
   if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
   let displayName = name;
+  // The app's own play that the speaker has not confirmed yet: the queue reply
+  // on hand may still be the folder it replaced.
+  const optimistic = Date.now() < (state.optimisticUntil || 0);
+  const queueItem = queueNowItem(state.queue, { location: loc, optimistic });
   // Either Spotify: the one STR serves through its own proxy, or the one the
   // speaker serves itself after a phone picked it in Connect. Same line, two
   // sources for the song.
@@ -234,6 +252,13 @@ export function renderNowPlayingBar() {
     // one: fixing only the poll would fetch a title that this line then refused
     // to print (#922).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
+  } else if (queueItem) {
+    // A folder playing as a queue: the track the agent handed the speaker,
+    // with its artist and album, as its Library row names them. Not the
+    // speaker's own title, which names the previous track for seconds after
+    // a skip, and not the bare title with the artist and album only on the
+    // queue line, which the UI 2.0 player folds away (#1874).
+    displayName = nowLine(queueItem.title || name, queueTrackMeta(state.queue));
   } else {
     // A single library track: its artist and album, as the Library row named
     // them, next to the title the speaker reports, the way the queue line
@@ -244,6 +269,15 @@ export function renderNowPlayingBar() {
       || libraryTrackMeta(agentLoneFile(state.queue), loc, decodeProxyUrl(loc));
     if (libMeta) displayName = name ? `${name} · ${libMeta}` : libMeta;
   }
+  // The Library marks the row of the track that plays (#1874); it follows
+  // this line, which is redrawn on every change of what plays.
+  deps.libraryNowPlaying(playingLibraryURLs({
+    queue: state.queue,
+    location: loc,
+    decodedLocation: decodeProxyUrl(loc),
+    playState: ps,
+    optimistic,
+  }));
   // The per-station "artist and title are the wrong way round" switch, only
   // while a proxied station plays a two-part title (titleswap.js).
   const swapRow = $('titleSwapRow');

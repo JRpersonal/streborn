@@ -295,7 +295,7 @@ import {
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
 // showSlotPicker is a main.js-local helper it reuses, injected below.
-import { openLibrary, initLibraryView } from './views/library.js';
+import { openLibrary, initLibraryView, libraryNowPlaying } from './views/library.js';
 // USB stick setup / install wizard view (extracted from this monolith, same
 // pattern as the views above). renderSetupTargetPicker is the entry point
 // switchView calls; refreshDrives + loadWifiProfiles are also called from
@@ -440,7 +440,7 @@ initStreamSourceView({
 initWishesView();
 // Music view deps: the shell helpers the Music modules call (see
 // views/music/deps.js for what each one is used for).
-initMusicView({ checkAppUpdate, checkSshBanner, discoverBoxes, maybeInviteWorldMap, refreshMusicZones, renderBoxSelect, speakerPickedInTab, stereoStaleForError, switchView });
+initMusicView({ checkAppUpdate, checkSshBanner, discoverBoxes, libraryNowPlaying, maybeInviteWorldMap, refreshMusicZones, renderBoxSelect, speakerPickedInTab, stereoStaleForError, switchView });
 // App update and banner deps (see appupdate.js and banners/deps.js).
 initAppUpdate({ checkBoxUpdate });
 initBanners({ boxNeedsUpdate, discoverBoxes, speakerUpdateCardMuted, switchView });

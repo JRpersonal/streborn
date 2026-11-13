@@ -80,3 +80,35 @@ func TestQueueItemsKeepAlbum(t *testing.T) {
 		t.Fatalf("old preset item must load with an empty album: %+v", got)
 	}
 }
+
+// The app marks the Library row of the running track by its address, which
+// the speaker's own now-playing still names wrong for seconds after a skip
+// (#1874). Only the running track carries it, and only while the queue runs.
+func TestQueueSnapshotNamesTheRunningTrackURL(t *testing.T) {
+	q := newPlayQueue()
+	q.load([]queueItem{
+		{URL: "http://192.0.2.1/a.mp3", Title: "Amanda"},
+		{URL: "http://192.0.2.1/b.mp3", Title: "Hobo"},
+	}, 0, false, repeatOff)
+	if got := q.snapshot().URL; got != "http://192.0.2.1/a.mp3" {
+		t.Fatalf("first track: url = %q", got)
+	}
+	if _, ok := q.next(); !ok {
+		t.Fatal("next did not advance")
+	}
+	snap := q.snapshot()
+	if snap.URL != "http://192.0.2.1/b.mp3" || snap.Items[snap.Pos].Title != "Hobo" {
+		t.Fatalf("after next: url = %q, pos = %d", snap.URL, snap.Pos)
+	}
+	b, err := json.Marshal(snap.Items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"url"`) {
+		t.Fatalf("items must not grow a url each: %s", b)
+	}
+	q.clear()
+	if got := q.snapshot().URL; got != "" {
+		t.Fatalf("an ended queue still names a track: %q", got)
+	}
+}
