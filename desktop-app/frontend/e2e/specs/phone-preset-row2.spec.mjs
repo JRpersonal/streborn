@@ -165,6 +165,10 @@ test.describe('saving onto row 2', () => {
 });
 
 test.describe('alarm', () => {
+  // The row-2 keys of the mock: 2x 3 holds Jazz Lounge, 2x 4 is empty. An
+  // alarm only saves on a key that holds something (#1897).
+  test.use({ phoneRow2: true });
+
   test('an alarm can wake on a row-2 key', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
@@ -178,7 +182,7 @@ test.describe('alarm', () => {
     await expect(page.locator('#alarmTime')).toHaveValue('07:15');
     await page.locator('#alarmSlots [data-alarm-slot="9"]').click();
     await expect(page.locator('#alarmSlots [data-alarm-slot="9"]')).toHaveClass(/armed/);
-    await expect(page.locator('#alarmList')).toContainText('Preset 3 · 2×');
+    await expect(page.locator('#alarmList')).toContainText('Jazz Lounge');
     const put = page.waitForRequest((r) => r.method() === 'PUT' && new URL(r.url()).pathname === '/api/alarms');
     await page.locator('#btnAlarmSave').click();
     const body = (await put).postDataJSON();
@@ -192,7 +196,8 @@ test.describe('alarm', () => {
     test('the editor opens on row 2', async ({ phone }) => {
       const { page } = phone;
       await bootDone(page);
-      await expect(page.locator('#alarmList')).toContainText('Preset 4 · 2×');
+      // An alarm stored on a key that was emptied later says so (#1897).
+      await expect(page.locator('#alarmList')).toContainText('Key 4 · 2× (empty)');
       await page.locator('#alarmList [data-alarm-edit="0"]').click();
       await expect(page.locator('#alarmRowSw button[data-row="2"]')).toHaveAttribute('aria-pressed', 'true');
       await expect(page.locator('#alarmSlots [data-alarm-slot="10"]')).toHaveClass(/armed/);
