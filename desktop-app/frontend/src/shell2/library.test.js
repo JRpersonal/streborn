@@ -219,7 +219,11 @@ describe('the view keeps one copy and both layouts', () => {
   it('says done only once the speaker plays', () => {
     const play = srcOf('libraryPlay');
     expect(play).toContain("t('ui2.library.starting', { name })");
-    expect(play.indexOf("t('ui2.library.playingOn'")).toBeGreaterThan(play.indexOf('verifyLibraryPlayback(item, target, (r)'));
+    // "Starting" stays until the speaker plays the track; then the live
+    // marker of the playing row says "Playing on" (#1874), and a click still
+    // starting keeps its own line before that marker (libraryRowStatus).
+    expect(play.indexOf('if (!r || r.ok) setLibStatus(key, null);')).toBeGreaterThan(play.indexOf('verifyLibraryPlayback(item, target, (r)'));
+    expect(srcOf('libraryRowStatus')).toMatch(/if \(stored && \(stored\.tone === 'busy'[^\n]*return stored;\n\s*if \(playing\)/);
     expect(srcOf('libraryPlayFolder')).toContain("if (v === 'gone')");
     expect(srcOf('waitForPlayState')).toContain("if (!expect || playConfirmed(xml, expect, moved)) return 'playing';");
   });

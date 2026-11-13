@@ -14,6 +14,10 @@ export let deps = {
   // The refresh button, and the status poll when a speaker has stopped
   // answering (wiring.js, status.js).
   discoverBoxes() {},
+  // The Library marks the row of the track that plays; the now-playing line
+  // hands it the URLs that count as playing whenever it is redrawn
+  // (nowplaying.js, #1874).
+  libraryNowPlaying() {},
   // The world map invite rides the status poll (status.js).
   maybeInviteWorldMap() {},
   // The group panel re-reads the live zones after a member toggle (group.js).

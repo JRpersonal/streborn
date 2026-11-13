@@ -363,6 +363,12 @@ export function beginLibraryNowPlaying(st, play, now) {
   st.spotifyRecall = null;
   st.spotifyNowGen = (st.spotifyNowGen || 0) + 1;
   st.nowBoxSpotify = null;
+  // The queue reply on hand describes what this play replaces (a single track
+  // ends a running folder, a folder starts a new one), and the line names a
+  // running folder's track from it: dropped here so a shuffled folder, which
+  // opens no optimistic window, does not show the old folder's track until
+  // the next GET /api/queue (#1874).
+  st.queue = null;
   st.optimisticUntil = url ? now + 6000 : 0;
 }
 
