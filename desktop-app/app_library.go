@@ -30,6 +30,8 @@ import (
 // can read the HTTP status: 200 means a real icon, 404 means placeholder
 // (skip it). Results are cached per (favicon, hosts) for the app run, except a
 // media-server cover that failed: that miss is kept only for lanArtMissTTL.
+// Neither is an answer reached while a lookup got no reply at all: it is kept
+// only for logoSoftTTL (see softLogo).
 func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []string) string {
 	key := faviconURL + "\x1f" + brandHost + "\x1f" + strings.Join(hosts, ",")
 	a.logoMu.Lock()
@@ -47,7 +49,25 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 		}
 		delete(a.lanArtMiss, key)
 	}
+	if s, ok := a.logoSoft[key]; ok {
+		if time.Now().Before(s.until) {
+			a.logoMu.Unlock()
+			return s.url
+		}
+		delete(a.logoSoft, key)
+	}
 	a.logoMu.Unlock()
+
+	// unanswered records that a lookup got no HTTP reply at all (timeout,
+	// network down), so the answer below is not the final word on this logo.
+	unanswered := false
+	probe := func(u string) (int, string) {
+		status, ctype := a.headStatusType(u)
+		if status == 0 {
+			unanswered = true
+		}
+		return status, ctype
+	}
 
 	best := ""
 	// 0. A media server's album art on the LAN (upnp:albumArtURI). Always
@@ -60,7 +80,7 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 	//    HTTP favicons are skipped: the secure webview blocks them as
 	//    mixed content anyway.
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(faviconURL)), "https://") {
-		if status, ctype := a.headStatusType(faviconURL); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
+		if status, ctype := probe(faviconURL); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
 			best = faviconURL
 		}
 	}
@@ -76,7 +96,7 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 				continue
 			}
 			u := "https://icons.duckduckgo.com/ip3/" + h + ".ico"
-			if status, _ := a.headStatusType(u); status == http.StatusOK {
+			if status, _ := probe(u); status == http.StatusOK {
 				best = u
 				break
 			}
@@ -90,7 +110,7 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 	//    that the favicon field and DuckDuckGo both missed.
 	if best == "" && strings.TrimSpace(brandHost) != "" {
 		u := "https://" + strings.TrimSpace(brandHost) + "/favicon.ico"
-		if status, ctype := a.headStatusType(u); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
+		if status, ctype := probe(u); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
 			best = u
 		}
 	}
@@ -110,10 +130,37 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 		return best
 	}
 	a.logoMu.Lock()
+	defer a.logoMu.Unlock()
+	if unanswered {
+		// A lookup that timed out says nothing about the logo. Caching its
+		// outcome for the run left a key on a lower-ranked icon (or none) until
+		// the app restarted, while the phone page showed the station's own logo
+		// (#1898: the network was slow right after the app started).
+		if a.logoSoft == nil {
+			a.logoSoft = map[string]softLogo{}
+		}
+		if _, seen := a.logoSoft[key]; !seen && a.logger != nil {
+			a.logger.Debug("station logo: a lookup got no reply, asking again later",
+				"favicon", faviconURL, "brand", brandHost, "got", best)
+		}
+		a.logoSoft[key] = softLogo{url: best, until: time.Now().Add(logoSoftTTL)}
+		return best
+	}
 	a.logoCache[key] = best
-	a.logoMu.Unlock()
 	return best
 }
+
+// softLogo is a ResolveStationLogo answer that is not final, because one of
+// its lookups got no reply. It is reused until until, then looked up again.
+type softLogo struct {
+	url   string
+	until time.Time
+}
+
+// logoSoftTTL is how long a softLogo stands. Long enough that the tiles redrawn
+// while the network is down do not each wait for the timeouts again, short
+// enough that the next redraw after it is back shows the right logo.
+const logoSoftTTL = 60 * time.Second
 
 // headStatusType fetches just enough of url to learn the HTTP status and
 // Content-Type, with a short timeout so a slow host never stalls logo
