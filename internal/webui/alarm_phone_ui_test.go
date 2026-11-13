@@ -97,6 +97,34 @@ func TestPhoneRemoteLocalesCarryTheAlarm(t *testing.T) {
 	}
 }
 
+// An alarm on an empty key is skipped when it comes due (discussion #1897), so
+// the editor marks the key, refuses the save, and shows the speaker's reason
+// when the speaker refuses one the page could not know about.
+func TestPhoneRemoteAlarmWarnsAboutAnEmptyKey(t *testing.T) {
+	for _, want := range []string{
+		"function alarmKeyEmpty(slot)",
+		"if (alarmKeyEmpty(slot)) return fmt(T.alarmKeyEmpty, { n: keyName(slot) });",
+		"var empty = alarmKeyEmpty(i);",
+		"if (alarmKeyEmpty(alarmDraft.slot)) {",
+		"if (c.checked && alarmKeyEmpty(a.slot)) {",
+		"apiDetail('/api/alarms', 'PUT', body)",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the alarm editor is missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`alarmKeyEmpty:"Key {n} (empty)"`,
+		`alarmKeyEmpty:"Taste {n} (leer)"`,
+		`alarmKeyEmptyFail:"Key {n} is empty`,
+		`alarmKeyEmptyFail:"Taste {n} ist leer`,
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the EN or DE bundle is missing %s", want)
+		}
+	}
+}
+
 // alarmDow is one key holding seven names, split on whitespace at render time.
 // A bundle that lost one would silently paint "undefined" on a day chip.
 func TestPhoneRemoteAlarmDayNamesAreSeven(t *testing.T) {

@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/alarm"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 func newAlarmServer(t *testing.T) *Server {
@@ -150,5 +152,108 @@ func TestAlarmsEndpointEmptyIsAnArray(t *testing.T) {
 func TestAlarmsSnapshotIsSafeWithoutAStore(t *testing.T) {
 	if got := (&Server{}).AlarmsSnapshot(); got != nil {
 		t.Errorf("an unwired server has no snapshot, got %v", got)
+	}
+}
+
+// alarmPresetStore is a preset store holding exactly the given slots.
+func alarmPresetStore(t *testing.T, slots ...int) *presets.Store {
+	t.Helper()
+	ps, err := presets.Load(filepath.Join(t.TempDir(), "presets.json"))
+	if err != nil {
+		t.Fatalf("preset store: %v", err)
+	}
+	for _, n := range slots {
+		if err := ps.SetSlot(presets.Preset{Slot: n, Name: "Radio", StreamURL: "http://example.invalid/s"}); err != nil {
+			t.Fatalf("seed slot %d: %v", n, err)
+		}
+	}
+	return ps
+}
+
+// An enabled alarm on a key with nothing on it is skipped when it comes due, so
+// the save is refused and the message names the key (discussion #1897).
+func TestAlarmsEndpointRefusesAnEmptyKey(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"new alarm with an id", `{"zone":"Europe/Berlin","alarms":[{"id":"wake","enabled":true,"hour":6,"minute":30,"days":[1],"slot":2}]}`, "key 2 is empty"},
+		{"new alarm without an id", `{"zone":"Europe/Berlin","alarms":[{"enabled":true,"hour":6,"minute":30,"days":[1],"slot":2}]}`, "key 2 is empty"},
+		{"second row", `{"zone":"Europe/Berlin","alarms":[{"id":"wake","enabled":true,"hour":6,"minute":30,"days":[1],"slot":8}]}`, "key 2 pressed twice is empty"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newAlarmServer(t)
+			s.presets = alarmPresetStore(t, 1, 3)
+			w := alarmRequest(t, s, http.MethodPut, tc.body, "192.168.1.20:5000")
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("got %d, want 400", w.Code)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Errorf("body %q does not mention %q", strings.TrimSpace(w.Body.String()), tc.want)
+			}
+			if n := len(s.alarms.Get().Alarms); n != 0 {
+				t.Errorf("a refused save stored %d alarms", n)
+			}
+		})
+	}
+}
+
+// A key that is filled saves as before.
+func TestAlarmsEndpointAcceptsAFilledKey(t *testing.T) {
+	s := newAlarmServer(t)
+	s.presets = alarmPresetStore(t, 3)
+	if w := alarmRequest(t, s, http.MethodPut, goodAlarmDoc, "192.168.1.20:5000"); w.Code != http.StatusOK {
+		t.Fatalf("PUT = %d, body %q", w.Code, w.Body.String())
+	}
+}
+
+// A switched-off alarm never rings, so its key may be empty.
+func TestAlarmsEndpointAcceptsADisabledAlarmOnAnEmptyKey(t *testing.T) {
+	s := newAlarmServer(t)
+	s.presets = alarmPresetStore(t)
+	body := `{"zone":"Europe/Berlin","alarms":[{"id":"wake","enabled":false,"hour":6,"minute":30,"days":[1],"slot":2}]}`
+	if w := alarmRequest(t, s, http.MethodPut, body, "192.168.1.20:5000"); w.Code != http.StatusOK {
+		t.Fatalf("PUT = %d, body %q", w.Code, w.Body.String())
+	}
+}
+
+// An alarm stored while its key was filled must not lock the whole document
+// once that key is cleared: the other alarms stay editable. Switching it back
+// on or moving it to another empty key is a change, and is checked.
+func TestAlarmsEndpointKeepsAStoredAlarmWhoseKeyWasCleared(t *testing.T) {
+	s := newAlarmServer(t)
+	s.presets = alarmPresetStore(t, 2, 3)
+	stored := `{"zone":"Europe/Berlin","alarms":[` +
+		`{"id":"old","enabled":true,"hour":6,"minute":30,"days":[1],"slot":2},` +
+		`{"id":"off","enabled":false,"hour":7,"minute":0,"days":[1],"slot":2}]}`
+	if w := alarmRequest(t, s, http.MethodPut, stored, "192.168.1.20:5000"); w.Code != http.StatusOK {
+		t.Fatalf("seed PUT = %d, body %q", w.Code, w.Body.String())
+	}
+	if err := s.presets.RemoveSlot(2); err != nil {
+		t.Fatalf("clear key 2: %v", err)
+	}
+
+	// The stored alarm changed only in its time, plus a new one on a filled
+	// key: accepted.
+	edit := `{"zone":"Europe/Berlin","alarms":[` +
+		`{"id":"old","enabled":true,"hour":6,"minute":45,"days":[1],"slot":2},` +
+		`{"id":"off","enabled":false,"hour":7,"minute":0,"days":[1],"slot":2},` +
+		`{"id":"new","enabled":true,"hour":8,"minute":0,"days":[6],"slot":3}]}`
+	if w := alarmRequest(t, s, http.MethodPut, edit, "192.168.1.20:5000"); w.Code != http.StatusOK {
+		t.Fatalf("PUT with an unchanged alarm on a cleared key = %d, body %q", w.Code, w.Body.String())
+	}
+
+	// Switching the disabled one on is a change: refused.
+	on := strings.Replace(edit, `"id":"off","enabled":false`, `"id":"off","enabled":true`, 1)
+	if w := alarmRequest(t, s, http.MethodPut, on, "192.168.1.20:5000"); w.Code != http.StatusBadRequest {
+		t.Errorf("switching an alarm on onto an empty key = %d, want 400", w.Code)
+	}
+
+	// Moving the stored one to another empty key is a change: refused.
+	moved := strings.Replace(edit, `"minute":45,"days":[1],"slot":2`, `"minute":45,"days":[1],"slot":5`, 1)
+	if w := alarmRequest(t, s, http.MethodPut, moved, "192.168.1.20:5000"); w.Code != http.StatusBadRequest {
+		t.Errorf("moving an alarm onto another empty key = %d, want 400", w.Code)
 	}
 }
