@@ -29,11 +29,12 @@ func TestResolveStationLogoUnansweredNotCachedForever(t *testing.T) {
 			Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
 	})}}
 
-	if got := a.ResolveStationLogo(fav, "", []string{"station.example"}); got != ddg {
-		t.Fatalf("while the logo times out: got %q, want the icon-service fallback", got)
+	// The window tries the station's own logo first, the fallback behind it.
+	if got := a.ResolveStationLogo(fav, "", []string{"station.example"}); got != fav+"|"+ddg {
+		t.Fatalf("while the logo times out: got %q, want the logo, then the icon-service fallback", got)
 	}
-	if got := a.ResolveStationLogo(fav, "", []string{"station.example"}); got != ddg || calls != 2 {
-		t.Fatalf("inside the soft window: got %q after %d lookups, want the fallback after 2", got, calls)
+	if got := a.ResolveStationLogo(fav, "", []string{"station.example"}); got != fav+"|"+ddg || calls != 2 {
+		t.Fatalf("inside the soft window: got %q after %d lookups, want the same answer after 2", got, calls)
 	}
 
 	// The window has passed and the station's server answers now.

@@ -207,6 +207,10 @@ type App struct {
 	// only until logoSoftTTL, then the logo is looked up again (#1898).
 	// Guarded by logoMu.
 	logoSoft map[string]softLogo
+	// logoUnconfirmed records the station logos whose failed check was logged
+	// already (noteUnconfirmedLogo), so each is logged once per run. Guarded
+	// by logoMu.
+	logoUnconfirmed map[string]bool
 
 	// lanArtLog remembers which media-server covers already logged their
 	// failure, so a broken cover is explained once, not on every redraw.
