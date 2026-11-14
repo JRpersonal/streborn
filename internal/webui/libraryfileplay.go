@@ -25,6 +25,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // knownLibraryFile reports whether this agent holds fileURL as a
@@ -125,4 +127,39 @@ func (s *Server) registeredServerAt(host string) string {
 		}
 	}
 	return ""
+}
+
+// radioKeyOfflineServerRefusal is the answer to an app or phone press on a key
+// saved as a radio station whose stream is a file on a registered music server
+// that is off. Such a key exists when a library file was saved to a key from a
+// card that filed it under Radio, the mistake v1.6.1 stopped making for new
+// plays (#1871, 2026-11-13): it holds the file's URL and nothing that names it
+// a library file, so the library-key check (healLibraryKeyIfMoved) passes it by.
+// Pressed with the server off, the speaker was woken, answered the dead file
+// with BAD_URL, and the press still filed a Radio card and answered "playing".
+//
+// Only a key whose address is the host of a registered music server is asked,
+// and only with a connect to that address: an internet station is never
+// probed, and a server that accepts the connection is left to play. It runs
+// before the wake and needs nothing from the speaker. A hardware press has no
+// screen and goes ahead, as for every library key.
+func (s *Server) radioKeyOfflineServerRefusal(ctx context.Context, slot int, p presets.Preset) *playRefusal {
+	switch strings.ToLower(strings.TrimSpace(p.Type)) {
+	case "spotify", "queue", presets.TypeNative:
+		return nil
+	}
+	if isLibraryTrackKey(p) || !isPlainHTTPURL(p.StreamURL) {
+		return nil
+	}
+	host := urlHost(p.StreamURL)
+	if net.ParseIP(host) == nil {
+		return nil
+	}
+	server := s.registeredServerAt(host)
+	if server == "" || s.queueTrackHostAnswers(ctx, p.StreamURL) {
+		return nil
+	}
+	s.logger.Warn("preset slot recall (app): a key saved as a station points at a music server that is off, not waking the speaker",
+		"slot", slot, "name", p.Name, "server", server, "url", p.StreamURL)
+	return s.libraryServerOfflineRefusal(slot, p.Name, &libraryKeyUnplayable{Server: server})
 }

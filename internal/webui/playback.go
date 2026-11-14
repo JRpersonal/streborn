@@ -451,6 +451,11 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 	if ref := s.stereoFollowerRefusal(); ref != nil {
 		return playResult{}, ref
 	}
+	// A key saved as a station whose stream is a file on a music server that
+	// is off: refused before the wake, and nothing is filed (#1871).
+	if ref := s.radioKeyOfflineServerRefusal(ctx, slot, p); ref != nil {
+		return playResult{}, ref
+	}
 	// An explicit preset recall overrides any earlier stop latch and anchors the
 	// standby-flip discriminator (#419). Before the wake: the wake itself can
 	// flip the source states around.
