@@ -274,7 +274,7 @@ func TestPhoneRemoteCanFormAndUndoGroups(t *testing.T) {
 	}
 	// The tap on the name must keep switching to that speaker: the join control
 	// is additive, and overloading the tap was the thing this design rejected.
-	if !strings.Contains(indexHTML, "if (online) { a.href = p.url; }") {
+	if !strings.Contains(indexHTML, "if (online) { if (p.url) a.href = String(p.url).split('#')[0] + '#classic'; }") {
 		t.Error("tapping a peer no longer switches the remote to it")
 	}
 }

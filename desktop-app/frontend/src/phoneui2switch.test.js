@@ -8,9 +8,10 @@ import { fileURLToPath } from 'node:url';
 // off the served page, the way phonepairfollower.test.js lifts its functions,
 // and run against a fake window, so these check the code the speaker serves.
 //
-// The switch is off unless this phone stored exactly '1' under
-// str.ui2Preview, a page without storage works and never offers the choice,
-// and a speaker opened from the preview's list (#ui2) keeps the layout.
+// UI 2.0 is the default since phase 6 (#1290): classic only when this phone
+// stored exactly '0' under str.ui2Preview, a page without storage gets the
+// default and never offers the choice, and a speaker opened from another
+// speaker's list (#ui2 or #classic) keeps the layout it was opened from.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const page = readFileSync(join(here, '..', '..', '..', 'internal', 'webui', 'assets', 'index.html'), 'utf8')
@@ -69,17 +70,20 @@ function run({ store = fakeStorage(), hash = '', storageThrows = false } = {}) {
 }
 
 describe('phone remote UI 2.0 switch', () => {
-  it('is off by default: no stored key means the current layout', () => {
+  it('is on by default: no stored key means the new layout', () => {
     const r = run();
-    expect(r.window.ui2Get()).toBe(false);
-    expect(r.classes.has('ui2')).toBe(false);
+    expect(r.window.ui2Get()).toBe(true);
+    expect(r.classes.has('ui2')).toBe(true);
   });
 
-  it('is off for anything but exactly "1"', () => {
-    for (const v of ['0', 'true', 'on', '', ' 1', '2']) {
+  it('is classic only for exactly "0", which somebody who picked it has stored', () => {
+    const classic = run({ store: fakeStorage({ 'str.ui2Preview': '0' }) });
+    expect(classic.window.ui2Get()).toBe(false);
+    expect(classic.classes.has('ui2')).toBe(false);
+    for (const v of ['1', 'true', 'off', '', ' 0', '2']) {
       const r = run({ store: fakeStorage({ 'str.ui2Preview': v }) });
-      expect(r.window.ui2Get(), JSON.stringify(v)).toBe(false);
-      expect(r.classes.has('ui2'), JSON.stringify(v)).toBe(false);
+      expect(r.window.ui2Get(), JSON.stringify(v)).toBe(true);
+      expect(r.classes.has('ui2'), JSON.stringify(v)).toBe(true);
     }
   });
 
@@ -89,14 +93,14 @@ describe('phone remote UI 2.0 switch', () => {
     expect(r.classes.has('ui2')).toBe(true);
   });
 
-  it('is off when reading storage throws, and the page still applies its theme', () => {
-    const r = run({ store: fakeStorage({ 'str.ui2Preview': '1' }, { throwGet: true }) });
-    expect(r.window.ui2Get()).toBe(false);
-    expect(r.classes.has('ui2')).toBe(false);
+  it('gets the default when reading storage throws, and the page still applies its theme', () => {
+    const r = run({ store: fakeStorage({ 'str.ui2Preview': '0' }, { throwGet: true }) });
+    expect(r.window.ui2Get()).toBe(true);
+    expect(r.classes.has('ui2')).toBe(true);
     expect(typeof r.window.a11yApply).toBe('function');
     const gone = run({ storageThrows: true });
-    expect(gone.window.ui2Get()).toBe(false);
-    expect(gone.classes.has('ui2')).toBe(false);
+    expect(gone.window.ui2Get()).toBe(true);
+    expect(gone.classes.has('ui2')).toBe(true);
   });
 
   it('ui2Set reports whether the choice was really kept', () => {
@@ -127,7 +131,7 @@ describe('phone remote UI 2.0 switch', () => {
     // Full storage, or a private mode that throws on setItem only: a tap on
     // the preview could never be kept there.
     const ro = run({ store: fakeStorage({}, { throwSet: true }) });
-    expect(ro.window.ui2Get()).toBe(false);
+    expect(ro.window.ui2Get()).toBe(true);
     expect(ro.window.ui2CanKeep()).toBe(false);
     // And a write refused after the menu was shown takes the group away.
     expect(page).toContain('if (window.ui2Set && window.ui2Set(on)) { location.reload(); return; }');
@@ -142,16 +146,26 @@ describe('phone remote UI 2.0 switch', () => {
     expect(r.location.hash).toBe('');
   });
 
+  it('a page opened as #classic keeps the classic layout and drops the hash', () => {
+    const r = run({ hash: '#classic' });
+    expect(r.classes.has('ui2')).toBe(false);
+    expect(r.store.data['str.ui2Preview']).toBe('0');
+    expect(r.replaced).toEqual(['/']);
+    expect(r.location.hash).toBe('');
+    // The classic peer list is where #classic comes from.
+    expect(page).toContain("if (online) { if (p.url) a.href = String(p.url).split('#')[0] + '#classic'; }");
+  });
+
   it('any other hash changes nothing', () => {
     const r = run({ hash: '#play' });
-    expect(r.classes.has('ui2')).toBe(false);
+    expect(r.classes.has('ui2')).toBe(true);
     expect(r.store.data).toEqual({});
     expect(r.replaced).toEqual([]);
   });
 
-  it('a #ui2 page on a phone without storage stays on the current layout', () => {
-    const r = run({ hash: '#ui2', storageThrows: true });
-    expect(r.classes.has('ui2')).toBe(false);
+  it('a #classic page on a phone without storage gets the default', () => {
+    const r = run({ hash: '#classic', storageThrows: true });
+    expect(r.classes.has('ui2')).toBe(true);
   });
 
   it('carries the Layout labels in every language of the Aa menu', () => {
