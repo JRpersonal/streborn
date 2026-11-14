@@ -79,9 +79,28 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 	// 1. The station's own HTTPS favicon, if it really serves an image.
 	//    HTTP favicons are skipped: the secure webview blocks them as
 	//    mixed content anyway.
+	//
+	//    A logo the check could not confirm, for any reason but a definite
+	//    "not there" (404, 410, or a page that is not an image), is still
+	//    handed to the window to try first, with the fallback found below
+	//    behind it (favTry). The check runs in Go and the phone page's runs in
+	//    a browser; they do not reach every host alike. On one PC the station's
+	//    own logo failed the check on every restart while the phone page drew
+	//    it, and the keys wore the stream host's icon instead (#1898).
+	favTry := ""
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(faviconURL)), "https://") {
-		if status, ctype := probe(faviconURL); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
+		status, ctype, err := a.headStatusTypeErr(faviconURL)
+		if status == 0 {
+			unanswered = true
+		}
+		switch {
+		case status == http.StatusOK && strings.HasPrefix(ctype, "image/"):
 			best = faviconURL
+		case status == http.StatusNotFound || status == http.StatusGone || status == http.StatusOK:
+			// Definitely not a logo at this address.
+		default:
+			favTry = faviconURL
+			a.noteUnconfirmedLogo(faviconURL, status, ctype, err)
 		}
 	}
 	// 2. DuckDuckGo per host. 200 = real icon; 404 = grey placeholder, so
@@ -129,6 +148,13 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 		a.logoMu.Unlock()
 		return best
 	}
+	if favTry != "" {
+		if best != "" {
+			best = favTry + "|" + best
+		} else {
+			best = favTry
+		}
+	}
 	a.logoMu.Lock()
 	defer a.logoMu.Unlock()
 	if unanswered {
@@ -167,19 +193,47 @@ const logoSoftTTL = 60 * time.Second
 // resolution. The body is not read. A GET (not HEAD) is used because
 // some icon hosts mishandle HEAD; the response is closed immediately.
 func (a *App) headStatusType(url string) (int, string) {
+	status, ctype, _ := a.headStatusTypeErr(url)
+	return status, ctype
+}
+
+// headStatusTypeErr is headStatusType with the error of a request that got no
+// HTTP answer, for the log.
+func (a *App) headStatusTypeErr(url string) (int, string, error) {
 	ctx, cancel := context.WithTimeout(a.appCtx(), 4*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, ""
+		return 0, "", err
 	}
 	req.Header.Set("User-Agent", "STReborn-Desktop")
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return 0, ""
+		return 0, "", err
 	}
 	resp.Body.Close()
-	return resp.StatusCode, resp.Header.Get("Content-Type")
+	return resp.StatusCode, resp.Header.Get("Content-Type"), nil
+}
+
+// noteUnconfirmedLogo logs, once per URL and run, why a station's own logo did
+// not pass the check, so a bundle says what the window had to try (#1898).
+func (a *App) noteUnconfirmedLogo(url string, status int, ctype string, err error) {
+	a.logoMu.Lock()
+	if a.logoUnconfirmed == nil {
+		a.logoUnconfirmed = map[string]bool{}
+	}
+	seen := a.logoUnconfirmed[url]
+	a.logoUnconfirmed[url] = true
+	a.logoMu.Unlock()
+	if seen || a.logger == nil {
+		return
+	}
+	reason := ""
+	if err != nil {
+		reason = err.Error()
+	}
+	a.logger.Info("station logo: the station's own logo did not pass the check, the window tries it first",
+		"url", url, "status", status, "contentType", ctype, "err", reason)
 }
 
 // EjectDrive ejects the stick so the user can remove it.
