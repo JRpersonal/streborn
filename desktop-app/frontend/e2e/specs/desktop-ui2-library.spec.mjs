@@ -353,6 +353,32 @@ test.describe('UI 2.0 Library', () => {
     await expect(status).toHaveText('');
   });
 
+  test('19. an album longer than one page lists in track order once every page is in (#1487)', async ({ app, mock }) => {
+    const { page } = app;
+    await openLibrary(page);
+    await folder(page, 'Music').click();
+    await expect(heading(page)).toHaveText('Music');
+    // 230 chapters the server sends last to first, in two pages. Only the
+    // first page names the folder's class (app_library.go).
+    const ch = (no) => ({ ...LIBRARY_TREE.c1a.items[0], id: `ch${no}`, title: `Chapter ${no}`, trackNumber: no, streamURL: `http://192.0.2.60:8200/MediaItems/ch${no}.mp3` });
+    const all = Array.from({ length: 230 }, (_, i) => ch(230 - i));
+    await mock.set('BrowseLibrary', {
+      sequence: [
+        { value: { containers: [], items: all.slice(0, 200), totalMatches: 230, returned: 200, containerClass: 'object.container.album.musicAlbum' } },
+        { value: { containers: [], items: all.slice(200), totalMatches: 230, returned: 30 } },
+      ],
+    });
+    await folder(page, 'Evening Sessions').click();
+    await expect(heading(page)).toHaveText('Evening Sessions');
+    await settle(page, 1_000);
+    // Both pages were read: the second asks from 200 on.
+    expect((await mock.last('BrowseLibrary')).args.slice(1, 3)).toEqual(['c1a', 200]);
+    const names = lib(page).locator('.lib2-track .lib2-name');
+    await expect(names.first()).toHaveText('Chapter 1');
+    await expect(names.nth(1)).toHaveText('Chapter 2');
+    await expect(names.last()).toHaveText('Chapter 230');
+  });
+
   for (const theme of ['dark', 'light', 'contrast']) {
     test.describe(`axe, ${theme}`, () => {
       test.use({ theme });
