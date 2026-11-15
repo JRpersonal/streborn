@@ -15,10 +15,12 @@
 import { t, tLookup } from '../i18n/index.js';
 import { decodeXmlEntities, escapeAttr, escapeHtml } from '../utils.js';
 
-// The field shows once the list has MORE rows than this. Eight rows fit the
-// sidebar of the default window; beyond that the list scrolls and finding a
-// name by eye starts to take a while.
-export const SEARCH_AFTER_ROWS = 8;
+// The field shows once the list has MORE rows than this. Ten rows fit the
+// sidebar of the default window whole (screenshots/ui2-check.mjs holds it to
+// that), so up to ten the field would only cost a row and hide a speaker;
+// beyond that the list scrolls anyway and finding a name by eye starts to
+// take a while.
+export const SEARCH_AFTER_ROWS = 10;
 
 const rowsOf = (model) => [...((model && model.pinned) || []), ...((model && model.others) || [])];
 

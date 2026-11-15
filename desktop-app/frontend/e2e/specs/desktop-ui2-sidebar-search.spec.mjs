@@ -1,13 +1,13 @@
 // Finding a speaker in the UI 2.0 sidebar (src/shell2/spksearch.js): with more
-// than eight rows a search field shows above the speaker list. It narrows the
+// than ten rows a search field shows above the speaker list. It narrows the
 // other speakers by name, model and what they play, leaves the pinned group
 // as it is, clears on Escape, and says inline when nothing matches. With a
 // short list there is no field, and the classic layout has none at all. Keys
 // an input method composes with stay with it, and a list that shrinks to
-// eight rows takes the field and its search with it.
+// ten rows takes the field and its search with it.
 //
-// The network is the phase 3 fixture (testkit/demo-data.mjs SPEAKERS3): ten
-// speakers, nine rows (the stereo pair is one). Bedroom is made to play a
+// The network is the phase 3 fixture (testkit/demo-data.mjs SPEAKERS3) plus two
+// idle speakers: twelve speakers, eleven rows (the stereo pair is one). Bedroom is made to play a
 // Spotify playlist so the search has a source and a station to find.
 //
 //   E2E_PORT=4187 npx playwright test specs/desktop-ui2-sidebar-search.spec.mjs --project=desktop
@@ -25,11 +25,19 @@ const others = (page) => page.locator('#ui2SpkLists .ui2-spk-scroll .ui2-spk-pic
 const pinned = (page) => page.locator('#ui2SpkLists .ui2-spk-pinned .ui2-spk-pick');
 const hostsOf = (loc) => loc.evaluateAll((els) => els.map((e) => e.dataset.host));
 
+// Two idle SoundTouch 20s on top of the phase 3 network, so the list has
+// eleven rows: one more than the default window shows whole.
+const EXTRA = [
+  { ...R.dining, name: 'Studio', friendlyName: 'Studio', host: '192.0.2.76', deviceID: 'E6F7A8B9CADB' },
+  { ...R.dining, name: 'Attic', friendlyName: 'Attic', host: '192.0.2.77', deviceID: 'E7F8A9BACBDC' },
+];
+const LONG = mergeScenario(speakersScenario(), { boxes: [...speakersScenario().boxes, ...EXTRA] });
+
 const SPOTIFY_BEDROOM = statusXml({ deviceID: R.bedroom.deviceID, source: 'SPOTIFY', itemName: 'Morning Mix', art: '' });
 
 // The every-speaker poll has read Bedroom once its row says it plays.
 async function ready(page) {
-  await expect(rows(page)).toHaveCount(9);
+  await expect(rows(page)).toHaveCount(11);
   await expect(pick(page, R.bedroom.host)).toHaveAttribute('aria-label', /Playing/);
   await expect(field(page)).toBeVisible();
 }
@@ -37,12 +45,12 @@ async function ready(page) {
 test.describe('UI 2.0 sidebar search', () => {
   test.use({
     ui2: true,
-    scenario: mergeScenario(speakersScenario(), {
+    scenario: mergeScenario(LONG, {
       bindings: { Status: { byHost: { [R.bedroom.host]: { value: SPOTIFY_BEDROOM } } } },
     }),
   });
 
-  test('1. a named field above the list once there are more than eight rows', async ({ app }) => {
+  test('1. a named field above the list once there are more than ten rows', async ({ app }) => {
     const { page } = app;
     await ready(page);
     await expect(field(page)).toHaveAccessibleName('Find a speaker by name, model or what it plays');
@@ -102,7 +110,7 @@ test.describe('UI 2.0 sidebar search', () => {
     await page.keyboard.press('Escape');
     await expect(field(page)).toHaveValue('');
     await expect(field(page)).toBeFocused();
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(11);
     // On a row: the search goes and the keyboard stays on that row.
     await field(page).fill('portable');
     await expect(rows(page)).toHaveCount(2);
@@ -111,7 +119,7 @@ test.describe('UI 2.0 sidebar search', () => {
     await expect(pick(page, R.nursery.host)).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(field(page)).toHaveValue('');
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(11);
     await expect(pick(page, R.nursery.host)).toBeFocused();
   });
 
@@ -134,7 +142,7 @@ test.describe('UI 2.0 sidebar search', () => {
     await page.keyboard.press('Enter');
     await expect(field(page)).toHaveValue('');
     await expect(field(page)).toBeFocused();
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(11);
     await expect(none).toHaveCount(0);
   });
 
@@ -142,7 +150,7 @@ test.describe('UI 2.0 sidebar search', () => {
     const { page } = app;
     await ready(page);
     await field(page).fill('soundtouch 10');
-    await expect(page.locator('#ui2SpkLive')).toHaveText(/^Speakers shown: \d of 9$/);
+    await expect(page.locator('#ui2SpkLive')).toHaveText(/^Speakers shown: \d+ of 11$/);
   });
 
   test('6b. keys an input method is composing with stay with it', async ({ app }) => {
@@ -160,7 +168,7 @@ test.describe('UI 2.0 sidebar search', () => {
     // Once the composition ends, the same keys work again.
     await page.keyboard.press('Escape');
     await expect(field(page)).toHaveValue('');
-    await expect(rows(page)).toHaveCount(9);
+    await expect(rows(page)).toHaveCount(11);
   });
 });
 
@@ -168,12 +176,12 @@ test.describe('UI 2.0 sidebar search, a speaker leaves', () => {
   test.use({
     ui2: true,
     fakeClock: true,
-    scenario: mergeScenario(speakersScenario(), {
+    scenario: mergeScenario(LONG, {
       bindings: { Status: { byHost: { [R.bedroom.host]: { value: SPOTIFY_BEDROOM } } } },
     }),
   });
 
-  test('9. down to eight rows: the field and its search go, every row is back, the keyboard is on the list', async ({ app, mock }) => {
+  test('9. down to ten rows: the field and its search go, every row is back, the keyboard is on the list', async ({ app, mock }) => {
     const { page } = app;
     await ready(page);
     await field(page).fill('portable');
@@ -181,7 +189,7 @@ test.describe('UI 2.0 sidebar search, a speaker leaves', () => {
     await expect(field(page)).toBeFocused();
     // The Bose original (one row of its own) is gone from the next search.
     const left = await page.evaluate((gone) => window.__strMock.scenario.boxes.filter((b) => b.host !== gone), R.kitchen.host);
-    expect(left).toHaveLength(9);
+    expect(left).toHaveLength(11);
     await mock.set('DiscoverBoxes', { value: left });
     await mock.set('RefreshKnownBoxes', { value: left });
     await settle(page, 70_000);
@@ -189,7 +197,7 @@ test.describe('UI 2.0 sidebar search, a speaker leaves', () => {
     await expect(field(page)).toBeHidden();
     await expect(field(page)).toHaveValue('');
     // The search hid speakers; with no field left to clear it, it went.
-    await expect(rows(page)).toHaveCount(8);
+    await expect(rows(page)).toHaveCount(10);
     await expect(page.locator('#ui2SpkLists .ui2-spk-nomatch')).toHaveCount(0);
     await expect(page.locator('#ui2SpkLists .ui2-spk-pick:focus')).toHaveCount(1);
   });
@@ -198,10 +206,10 @@ test.describe('UI 2.0 sidebar search, a speaker leaves', () => {
 test.describe('UI 2.0 sidebar search, short list', () => {
   test.use({ ui2: true });
 
-  test('7. eight rows or fewer: no field', async ({ app }) => {
+  test('7. ten rows or fewer: no field', async ({ app }) => {
     const { page } = app;
     await expect(rows(page).first()).toBeVisible();
-    expect(await rows(page).count()).toBeLessThanOrEqual(8);
+    expect(await rows(page).count()).toBeLessThanOrEqual(10);
     await expect(field(page)).toBeHidden();
   });
 });

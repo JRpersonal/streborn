@@ -204,7 +204,8 @@ releases later.
   there instead of a dialog, and a refusal in plain words
   (`shell2/speakers/keyeditor.js`).
 - **Finding a speaker in the sidebar** (15 November 2026). Once the list has
-  more than eight rows, a search field sits above it. It narrows the other
+  more than ten rows (ten fit the default window whole), a search field
+  sits above it. It narrows the other
   speakers by name (a stereo pair also by the name of either half), model and
   what they play (the source, named in the app's language and in English, and
   the station, from the every-speaker poll); the pinned group stays as it

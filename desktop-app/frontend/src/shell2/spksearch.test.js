@@ -37,10 +37,13 @@ const terms = (h) => NOW[h] || [];
 const hosts = (rows) => rows.map((r) => r.host);
 
 describe('sidebar search: when it shows', () => {
-  it('shows only once the list has more than eight rows, pinned rows counted', () => {
-    expect(SEARCH_AFTER_ROWS).toBe(8);
-    expect(searchShown(MODEL)).toBe(true);
-    expect(searchShown({ pinned: [LR], others: OTHERS })).toBe(false);
+  it('shows only once the list has more than ten rows, pinned rows counted', () => {
+    expect(SEARCH_AFTER_ROWS).toBe(10);
+    const more = (n) => Array.from({ length: n }, (_, i) => row(40 + i, `Room ${i}`, { model: 'SoundTouch 10' }));
+    // Ten rows fit the default window whole: no field. Eleven: the field.
+    expect(searchShown({ pinned: [LR, KI], others: [...OTHERS, ...more(10 - 2 - OTHERS.length)] })).toBe(false);
+    expect(searchShown({ pinned: [LR, KI], others: [...OTHERS, ...more(11 - 2 - OTHERS.length)] })).toBe(true);
+    expect(searchShown(MODEL)).toBe(false);
     expect(searchShown({ pinned: [], others: [] })).toBe(false);
     expect(searchShown(null)).toBe(false);
   });

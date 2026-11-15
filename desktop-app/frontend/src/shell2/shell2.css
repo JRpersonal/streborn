@@ -691,9 +691,13 @@ html.ui2 .ui2-spk-row.is-current .ui2-spk-pick::before {
   background: var(--u-accent);
 }
 /* One line when the name and the pill fit, the pill drops below the name when
-   they do not: a name is never cut to a few letters for a pill. */
+   they do not: a name is never cut to a few letters for a pill. The basis is
+   the name's own width, so the line breaks before the name shrinks: a 6em
+   basis let the pill keep the line and cut the name once a playing row's
+   Play/Pause took its width (sessionplay.js). Only a name longer than the
+   whole row is cut, with an ellipsis. */
 html.ui2 .ui2-spk-name {
-  flex: 1 1 6em;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-weight: var(--u-fw-semibold);
@@ -754,7 +758,7 @@ html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
 
 /* Finding a speaker (spksearch.js): a field above the lists once there are
-   more than eight rows. It is something you type into, so its edge is the
+   more than ten rows. It is something you type into, so its edge is the
    3:1 border, never the hairline. */
 html.ui2 .ui2-spk-find {
   flex: 0 0 auto;
