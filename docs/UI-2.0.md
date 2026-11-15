@@ -75,8 +75,12 @@ releases later.
   different clicks. A speaker that plays something else of its own gets a
   `+` too, but joining ends that music, so its `+` first opens a review in
   its own row that names what stops and what plays instead ("Kitchen stops
-  Jazz24 and plays FluxFM"), with Add and Cancel (Escape cancels); an idle
-  speaker or one in standby joins at once. A stereo pair is one row,
+  Jazz24 and plays FluxFM"), with Add and Cancel (Escape cancels). A paused
+  speaker gets the same review, worded for what it holds ("Kitchen ends its
+  paused Jazz24 and plays FluxFM", Cancel leaves it paused), since joining
+  ends a paused session just as silently; until 15 November it counted as
+  idle. An idle speaker or one in standby joins at once, and so does one
+  that plays or paused the very station the group plays. A stereo pair is one row,
   "Living room (stereo)", because it only plays as a whole. The playing group stays pinned on
   top (the one you control first when several play; with nothing playing,
   the speaker you control, so a group can be put together before Play);

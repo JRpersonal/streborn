@@ -120,6 +120,28 @@ describe('join review', () => {
     expect(joinReview()).toBe(null);
   });
 
+  // Joining ends a paused session as silently as a playing one.
+  it('reviews a paused speaker, worded for what it paused', () => {
+    const r = joinReview({ name: 'Bedroom', playing: false, paused: true, stops: radio('Jazz24'), plays: radio('Best Of Rock.FM'), master: 'Living room' });
+    expect(r.text).toBe('Bedroom ends its paused Jazz24 and plays Best Of Rock.FM.');
+    expect(r.paused).toBe(true);
+    expect(joinReview({ name: 'Bedroom', paused: true, stops: radio('Jazz24'), plays: { name: '' }, master: 'Living room' }).text)
+      .toBe('Bedroom ends its paused Jazz24 and plays along with Living room.');
+    expect(joinReview({ name: 'Bedroom', paused: true, stops: { name: '' }, plays: radio('FluxFM'), master: 'Living room' }).text)
+      .toBe('Bedroom ends what it has paused and plays FluxFM.');
+    expect(joinReview({ name: 'Bedroom', paused: true, master: 'Living room' }).text)
+      .toBe('Bedroom ends what it has paused and plays along with Living room.');
+    // The same name on other music names the main speaker instead.
+    const aux = { name: 'AUX IN', source: 'AUX', location: '' };
+    expect(joinReview({ name: 'Bedroom', paused: true, stops: aux, plays: { ...aux }, master: 'Living room' }).text)
+      .toBe('Bedroom ends what it has paused and plays along with Living room.');
+    // Paused on the very station the group plays: nothing is lost.
+    expect(joinReview({ name: 'Bedroom', paused: true, stops: radio('FluxFM'), plays: radio('FluxFM') })).toBe(null);
+    // Playing wins over a stale paused flag.
+    expect(joinReview({ name: 'Bedroom', playing: true, paused: true, stops: radio('Jazz24'), plays: radio('FluxFM') }))
+      .toMatchObject({ text: 'Bedroom stops Jazz24 and plays FluxFM.', paused: false });
+  });
+
   // The name alone is not the music: AUX names the input, Bluetooth the
   // phone, and family Spotify accounts share playlist names.
   it('still reviews when both speakers report the same name from a different source or stream', () => {

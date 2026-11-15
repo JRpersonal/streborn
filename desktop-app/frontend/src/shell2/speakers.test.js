@@ -454,4 +454,49 @@ describe('join review in the sidebar', () => {
     expect(out).not.toContain('<b>x</b>');
     expect(out).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
+
+  // A paused speaker counted as idle and joined at once, ending its paused
+  // session without a word.
+  describe('a paused speaker', () => {
+    const paused = (over = {}) => model({
+      nowName: 'FluxFM',
+      nowSource: 'INTERNET_RADIO',
+      nowLocation: FLUX,
+      boxPaused: { II1: true },
+      boxNow: { II1: radio('Jazz24') },
+      ...over,
+    });
+
+    it('gets the review too, worded for a paused session', () => {
+      const m = paused();
+      expect(byHost(m, I1).action).toBe('add');
+      expect(byHost(m, I1).review).toBe('Office ends its paused Jazz24 and plays FluxFM.');
+      expect(byHost(m, I1).reviewPaused).toBe(true);
+      // Nothing named: the main speaker it plays along with.
+      expect(byHost(paused({ boxNow: {}, nowName: '' }), I1).review).toBe('Office ends what it has paused and plays along with Living room.');
+      // A playing speaker keeps its own wording.
+      expect(byHost(busy(), I1).reviewPaused).toBeUndefined();
+    });
+
+    it('says Cancel leaves it paused', () => {
+      const open = sidebarHTML(paused({ review: I1.host }));
+      expect(open).toContain('<p class="ui2-spk-join-text" id="ui2SpkJoin-192-0-2-26-text">Office ends its paused Jazz24 and plays FluxFM.</p>');
+      expect(open).toContain(`data-join="cancel" data-host="${I1.host}" aria-label="Cancel, Office stays paused">Cancel</button>`);
+    });
+
+    it('reads the speaker you control from its own status poll', () => {
+      // You control Office (paused) while the living room plays: the "+" on
+      // Office adds it to the living room's music.
+      const ctx = { currentBox: I1, nowPlayState: 'PAUSE_STATE', nowSource: 'INTERNET_RADIO', nowName: 'Jazz24', nowLocation: 'http://radio.example/jazz24', boxPaused: {}, boxNow: { MMM: radio('FluxFM', FLUX) } };
+      expect(byHost(model(ctx), I1).review).toBe('Office ends its paused Jazz24 and plays FluxFM.');
+      // Paused in standby is asleep: it joins at once.
+      expect(byHost(model({ ...ctx, nowSource: 'STANDBY' }), I1).review).toBeUndefined();
+    });
+
+    it('joins at once when it paused the very station the group plays, or is idle', () => {
+      expect(byHost(paused({ boxNow: { II1: radio('FluxFM', FLUX) } }), I1).review).toBeUndefined();
+      expect(byHost(paused({ boxPaused: {} }), I1).review).toBeUndefined();
+      expect(byHost(paused(), I2).review).toBeUndefined();
+    });
+  });
 });

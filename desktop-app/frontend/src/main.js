@@ -1947,6 +1947,8 @@ async function refreshBoxPlaying(force) {
     // the UI 2.0 sidebar's join review says what a speaker stops before "+"
     // takes it into a group, and the name alone cannot tell whether that is
     // the group's own music (shell2/playclaim.js joinReview, sameMusic).
+    // A paused speaker keeps its entry too: joining ends its paused session,
+    // and the review names what it paused.
     const items = {};
     // What each speaker plays (source and station), read from the same
     // answer: the UI 2.0 sidebar search finds a speaker by it.
@@ -1961,7 +1963,7 @@ async function refreshBoxPlaying(force) {
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
         isPaused = ps === 'PAUSE_STATE' && src !== 'STANDBY';
-        if (playing) items[polled[i].deviceID] = statusNowItem(xml);
+        if (playing || isPaused) items[polled[i].deviceID] = statusNowItem(xml);
         const line = nowLineOf(xml);
         if (line) lines[polled[i].deviceID] = line;
       }

@@ -26,7 +26,7 @@ import { groupCandidates, groupMemberBoxes, groupMembersOf, inAnyStereoPair, mas
 import { roomItems } from './rooms.js';
 import { CHIP_LABEL_KEYS, chipHTML, pillLabel, statusPillHTML } from './pill.js';
 import { discoveryPhase, noSpeakersState } from './state.js';
-import { rowTransport, rowTransportLabel } from './sessionplay.js';
+import { pausedNow, rowTransport, rowTransportLabel } from './sessionplay.js';
 import { joinReview } from './playclaim.js';
 import { labelVia } from '../boxes.js';
 import { noMatchHTML } from './spksearch.js';
@@ -52,7 +52,8 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //                    without it
 //        connectOpen the empty state's Connect by address block is open
 //        boxPaused   { deviceID: bool } from the every-speaker poll: a paused
-//                    row offers Play (sessionplay.js)
+//                    row offers Play (sessionplay.js), and its "+" opens
+//                    the join review, since joining ends the paused session
 //        transportPending  Map or object host -> 'pause' | 'resume': a row's
 //                    own Play/Pause press that waits for the speaker
 //        nowName     what the speaker you control plays (state.nowName), with
@@ -175,11 +176,19 @@ export function sidebarModel(boxes, ctx = {}) {
           action = 'add';
           // A speaker that plays music of its own may join too, but joining
           // ends that music: its "+" first opens a review in the row that
-          // says what stops and what plays instead (joinReview). Idle and
-          // standby speakers join at once, as before.
+          // says what stops and what plays instead (joinReview). So does a
+          // paused one, whose paused session joining ends just as silently
+          // (sessionplay.js pausedNow, the same read as its Play button).
+          // Idle and standby speakers join at once, as before.
           review = joinReview({
             name: r.name,
             playing: r.playing,
+            paused: !r.playing && pausedNow(b, {
+              currentBox: ctx.currentBox,
+              nowPlayState: ctx.nowPlayState,
+              nowSource: ctx.nowSource,
+              boxPaused: ctx.boxPaused,
+            }),
             stops: nowOf(b),
             plays: nowOf(master),
             master: master ? labelVia(ctx.label, master) : '',
@@ -213,6 +222,7 @@ export function sidebarModel(boxes, ctx = {}) {
     }
     if (review) {
       row.review = review.text;
+      if (review.paused) row.reviewPaused = true;
       row.reviewOpen = !!ctx.review && ctx.review === r.host;
     }
     const note = r.hosts.map(noteOf).find(Boolean) || null;
@@ -370,7 +380,8 @@ function joinId(host) {
 function joinHTML(row) {
   const id = joinId(row.host);
   const add = t('ui2.side.joinAddLabel', { name: row.name });
-  const cancel = t('ui2.side.joinCancelLabel', { name: row.name });
+  // Cancel leaves the speaker as it was: playing, or paused.
+  const cancel = t(row.reviewPaused ? 'ui2.side.joinPausedCancelLabel' : 'ui2.side.joinCancelLabel', { name: row.name });
   return `<div class="ui2-spk-join" id="${escapeAttr(id)}" role="group" aria-labelledby="${escapeAttr(id)}-text">`
     + `<p class="ui2-spk-join-text" id="${escapeAttr(id)}-text">${escapeHtml(row.review)}</p>`
     + '<div class="ui2-spk-join-acts">'

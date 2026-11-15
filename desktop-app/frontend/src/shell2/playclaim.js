@@ -144,31 +144,37 @@ export function sameMusic(a, b) {
 //
 //   name    the speaker that would join
 //   playing it plays right now
+//   paused  it holds a paused session (it plays nothing right now, but
+//           joining ends what it paused, so it gets the review too)
 //   stops   what it plays ({ name, source, location } from statusNowItem;
 //           a name '' when the speaker names nothing)
 //   plays   what the group plays (the same shape; a name '' when unknown)
 //   master  the name of the group's main speaker
 //
 // null when there is nothing to review: an idle speaker or one in standby
-// joins at once, as before, and so does one that already plays the very
-// station the group plays (sameMusic), since joining changes nothing anyone
-// hears.
-export function joinReview({ name, playing, stops, plays, master } = {}) {
-  if (!playing || !name) return null;
+// joins at once, as before, and so does one that already plays (or paused)
+// the very station the group plays (sameMusic), since joining changes nothing
+// anyone hears and loses nothing. A paused speaker's sentence says that what
+// ends is a paused session ("Bedroom ends its paused Jazz24 and plays FluxFM"):
+// "stops" would read as if it were sounding now.
+export function joinReview({ name, playing, paused, stops, plays, master } = {}) {
+  if ((!playing && !paused) || !name) return null;
   if (sameMusic(stops, plays)) return null;
+  const held = !playing && !!paused;
   const s = nowItem(stops).name;
   const p = nowItem(plays).name;
   // The same name on different music ("Kitchen stops AUX IN and plays AUX
   // IN") would read as if nothing changed, so the sentence names the main
   // speaker it plays along with instead.
   const alike = !!s && !!p && s.toLowerCase() === p.toLowerCase();
+  const key = (k) => `ui2.side.join${held ? 'Paused' : ''}${k}`;
   let text;
-  if (alike) text = t('ui2.side.joinJoins', { name, master: master || '' });
-  else if (s && p) text = t('ui2.side.joinStopsPlays', { name, stops: s, plays: p });
-  else if (s) text = t('ui2.side.joinStopsJoins', { name, stops: s, master: master || '' });
-  else if (p) text = t('ui2.side.joinPlays', { name, plays: p });
-  else text = t('ui2.side.joinJoins', { name, master: master || '' });
-  return { text, stops: s, plays: p };
+  if (alike) text = t(key('Joins'), { name, master: master || '' });
+  else if (s && p) text = t(key('StopsPlays'), { name, stops: s, plays: p });
+  else if (s) text = t(key('StopsJoins'), { name, stops: s, master: master || '' });
+  else if (p) text = t(key('Plays'), { name, plays: p });
+  else text = t(key('Joins'), { name, master: master || '' });
+  return { text, stops: s, plays: p, paused: held };
 }
 
 // resetPlayClaims empties the claims and listeners (tests only).

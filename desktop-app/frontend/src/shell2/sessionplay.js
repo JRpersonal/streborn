@@ -57,8 +57,9 @@ export function rowTransport(row, ctx = {}) {
 
 // pausedNow: the speaker you control is read from the status poll (no lag),
 // every other one from the every-speaker poll. A paused speaker in standby is
-// asleep, not paused.
-function pausedNow(b, ctx) {
+// asleep, not paused. ctx is rowTransport's. The sidebar's join review asks
+// it too (speakers.js): "+" on a paused speaker ends its paused session.
+export function pausedNow(b, ctx = {}) {
   if (!b) return false;
   const cur = ctx.currentBox;
   if (cur && cur.host === b.host && ctx.nowPlayState) {

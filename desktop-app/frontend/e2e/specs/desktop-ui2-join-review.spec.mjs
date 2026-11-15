@@ -3,8 +3,11 @@
 // that speaker's own row, what it stops and what it plays instead ("Bedroom
 // stops Jazz24 and plays Best Of Rock.FM."), with Add and Cancel. Joining a
 // group ends the speaker's own music, and before this the "+" was simply not
-// offered on a speaker that played. An idle or standby speaker still joins at
-// once. Inline in the row, never a toast or a dialog across the window.
+// offered on a speaker that played. A paused speaker gets the review too,
+// worded for its paused session ("Bedroom ends its paused Jazz24 and plays
+// Best Of Rock.FM."), since joining ends that just as silently. An idle or
+// standby speaker still joins at once. Inline in the row, never a toast or a
+// dialog across the window.
 //
 //   E2E_PORT=4183 npx playwright test specs/desktop-ui2-join-review.spec.mjs --project=desktop
 
@@ -219,6 +222,52 @@ test.describe('UI 2.0 join review', () => {
       await expect(plus(page, DR.host)).toHaveAttribute('aria-expanded', 'true');
       await runFor(page, 1_000);
       expect(await mock.count('FormZone')).toBe(0);
+    });
+  });
+
+  test.describe('a paused speaker', () => {
+    // Bedroom holds a paused Jazz24 of its own. Before, a paused speaker
+    // counted as idle and its "+" ended the paused session at once.
+    const BR_JAZZ_PAUSED = statusXml({ deviceID: BR.deviceID, playState: 'PAUSE_STATE', itemName: 'Jazz24', location: 'http://radio.example/jazz24' });
+    const PAUSED = 'Bedroom ends its paused Jazz24 and plays Best Of Rock.FM.';
+    test.use({
+      scenario: {
+        playing: { livingRoom: 'PLAY_STATE', bedroom: 'PAUSE_STATE' },
+        bindings: { Status: { byHost: { [BR.host]: { value: BR_JAZZ_PAUSED } } } },
+      },
+    });
+
+    test('8. "+" opens the review worded for the paused session, Cancel leaves it paused, Add joins', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 10_000);
+      const add = plus(page, BR.host);
+      await expect(add).toBeVisible();
+      await expect(add).toHaveAttribute('aria-expanded', 'false');
+      // The row's own Play is still there: the paused session is the row's.
+      await expect(row(page, BR.host).locator('.ui2-spk-tp[data-tp="play"]')).toHaveCount(1);
+      await mock.resetCalls();
+      await add.click();
+      const box = review(page, BR.host);
+      await expect(box).toBeVisible();
+      await expect(box).toHaveAccessibleName(PAUSED);
+      await expect(box.locator('.ui2-spk-join-text')).toHaveText(PAUSED);
+      await expect(box.locator('.ui2-spk-join-btn[data-join="add"]')).toBeFocused();
+      const cancel = box.locator('.ui2-spk-join-btn[data-join="cancel"]');
+      await expect(cancel).toHaveAccessibleName('Cancel, Bedroom stays paused');
+      await cancel.click();
+      await expect(review(page, BR.host)).toHaveCount(0);
+      await expect(add).toBeFocused();
+      await runFor(page, 1_000);
+      expect(await mock.count('FormZone')).toBe(0);
+      expect(await mock.count('Resume')).toBe(0);
+
+      await add.click();
+      await review(page, BR.host).locator('.ui2-spk-join-btn[data-join="add"]').click();
+      await runFor(page, 1_000);
+      await mock.expectCalled('FormZone', { times: 1 });
+      const call = await mock.last('FormZone');
+      expect(call.args[0]).toBe(LR.host);
+      expect(JSON.stringify(call.args)).toContain(BR.host);
     });
   });
 
