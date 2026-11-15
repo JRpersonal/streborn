@@ -73,6 +73,16 @@ func (a *App) TrueFactoryReset(host string) TrueFactoryResetResult {
 	res.Step = "ssh-handshake"
 	hello, helloErr := sshHandshake(host, 4)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		// Since v0.8.1 an installed speaker keeps SSH closed unless the stick
+		// is in, so this reset failed on nearly every speaker with "SSH
+		// handshake failed" (2026-11-15, a fresh ST20). The STR agent is root
+		// there and opens SSH on request, exactly as Remove STR does; the
+		// reboot at the end closes it again (the marker lives in /tmp).
+		if a.enableSSHViaAgent(host) {
+			hello, helloErr = sshHandshake(host, 4)
+		}
+	}
+	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Message = "SSH handshake to speaker failed: " + classifySSHError(hello, helloErr)
 		// Every failed step must land in the log: a field bundle showed only

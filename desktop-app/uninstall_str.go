@@ -603,21 +603,21 @@ func (a *App) enableSSHViaAgent(host string) bool {
 	if !ok {
 		return false
 	}
-	a.logger.Info("uninstall_str: SSH closed but the STR agent is reachable; asking it to open SSH", "host", host, "port", bi.Port)
+	a.logger.Info("ssh via agent: SSH closed but the STR agent is reachable; asking it to open SSH", "host", host, "port", bi.Port)
 	resp, err := a.boxDo(host, bi.Port, http.MethodPost, "/api/agent/enable-ssh", "", "")
 	if err != nil {
-		a.logger.Warn("uninstall_str: agent enable-ssh request failed", "host", host, "err", err)
+		a.logger.Warn("ssh via agent: enable-ssh request failed", "host", host, "err", err)
 		return false
 	}
 	_ = resp.Body.Close()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if tcpReachable(host, 22, 2*time.Second) {
-			a.logger.Info("uninstall_str: the STR agent opened SSH", "host", host)
+			a.logger.Info("ssh via agent: the STR agent opened SSH", "host", host)
 			return true
 		}
 		time.Sleep(2 * time.Second)
 	}
-	a.logger.Info("uninstall_str: agent enable-ssh did not open :22 within budget", "host", host)
+	a.logger.Info("ssh via agent: enable-ssh did not open :22 within budget", "host", host)
 	return false
 }
