@@ -105,11 +105,26 @@ func (a *App) recordNANDHeadroom(host string, port int, need int64) {
 		return
 	}
 	freeN, _ := strconv.ParseInt(free, 10, 64)
+	a.recordOTA(host, nandHeadroomLine(free, total, freeN, need))
+}
+
+// nandHeadroomLine words the journal's headroom line. It names the figure the
+// gate actually compares (the compression-credited on-flash need) next to the
+// raw binary size. Until 2026-11-15 it printed only the raw size as "need", so
+// "free=20900000B need=19660960B -> ok" read like 1.2 MB of headroom on a
+// speaker that had more than 6 MB to spare.
+func nandHeadroomLine(free, total string, freeN, rawNeed int64) string {
+	onFlash := nandNeedCompressed(rawNeed)
 	fits := "ok"
-	if !nandFits(freeN, 0, nandNeedCompressed(need)) {
+	if !nandFits(freeN, 0, onFlash) {
 		fits = "TIGHT (a second copy for the atomic write may not fit)"
 	}
-	a.recordOTA(host, fmt.Sprintf("nand: free=%sB total=%sB need=%dB -> %s", free, total, need, fits))
+	head := ""
+	if freeN > 0 {
+		head = fmt.Sprintf(", headroom=%dB", freeN-onFlash)
+	}
+	return fmt.Sprintf("nand: free=%sB total=%sB binary=%dB on-flash need=%dB (compression-credited, the figure the gate compares%s) -> %s",
+		free, total, rawNeed, onFlash, head, fits)
 }
 
 // nandFits is the single "will it fit on the box's writable volume" decision
