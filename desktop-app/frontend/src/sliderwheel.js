@@ -27,9 +27,11 @@ const PAGE_PX = 400;
 // after the last event the gesture counts as released (the `change` event).
 export const WHEEL_GESTURE_GAP_MS = 400;
 // At most one step per this many ms. A free-spinning wheel or a hard flick can
-// send dozens of notches in a blink, and the classic slider's comment says why
-// that must not become a volume blast: it moves one at a time, quickly.
-export const WHEEL_MIN_STEP_MS = 40;
+// send dozens of notches in a blink, and that must not become a volume blast:
+// the level moves one at a time, quickly. The classic Music slider
+// (views/music/volume.js) uses this same cap and steppedValue below, so both
+// layouts share one step and one rate.
+export const WHEEL_MIN_STEP_MS = 60;
 
 // The two events a slider can listen for to treat a wheel gesture like a drag:
 // start comes before the first value change (so a baseline can be taken from
@@ -142,25 +144,29 @@ function defaultEvent(type) {
 // slider inside root, now and later (one delegated listener, so sliders that a
 // re-render creates are covered without wiring each).
 //
-// Which wheel turns a slider and which scrolls the page: a slider with focus
-// always takes the wheel. Otherwise a gesture that BEGINS with the pointer on
-// a slider adjusts it, while a page scroll that is still going (a wheel event
-// elsewhere less than a gesture gap ago) carries on scrolling when the page
-// slides a slider under the pointer. Scrolling the page past the player or a
-// Levels row must never change a level by accident; that is the accident the
-// classic slider guards against by asking for a click first.
+// Which wheel turns a slider and which scrolls the page: a gesture that BEGINS
+// with the pointer on a slider adjusts it, while a page scroll that is still
+// going (a wheel event elsewhere less than a gesture gap ago) carries on
+// scrolling when the page slides a slider under the pointer. Focus makes no
+// exception: a range input keeps focus after a click or a drag, so a later
+// page scroll across the Sound tab would otherwise grab that slider on its way
+// past. Scrolling the page past the player or a Levels row must never change a
+// level by accident; that is the accident the classic slider guards against
+// by asking for a click first.
+//
+// Ctrl or Cmd with the wheel is a zoom, and a touchpad pinch arrives as wheel
+// events with ctrlKey set: neither is meant for the slider, so both pass.
 //
 // While a slider takes the wheel the page does not scroll, also at its ends,
 // so reaching 100 does not suddenly move the page instead.
 //
 // opts (all optional, for the tests): now, setTimer, clearTimer,
-// activeElement (a function), makeEvent(type).
+// makeEvent(type).
 export function wireSliderWheel(root, opts = {}) {
   if (!root || typeof root.addEventListener !== 'function') return () => {};
   const now = opts.now || (() => Date.now());
   const setTimer = opts.setTimer || ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = opts.clearTimer || ((id) => clearTimeout(id));
-  const activeElement = opts.activeElement || (() => (typeof document !== 'undefined' ? document.activeElement : null));
   const makeEvent = opts.makeEvent || defaultEvent;
 
   let lastAt = -Infinity;
@@ -208,8 +214,8 @@ export function wireSliderWheel(root, opts = {}) {
     const continuing = t - lastAt < WHEEL_GESTURE_GAP_MS;
     const prev = lastSlider;
     lastAt = t;
-    if (!el) { lastSlider = null; return; }
-    if (activeElement() !== el && continuing && prev !== el) {
+    if (!el || e.ctrlKey || e.metaKey) { lastSlider = null; return; }
+    if (continuing && prev !== el) {
       // A page scroll that the page itself slid this slider under.
       lastSlider = null;
       return;

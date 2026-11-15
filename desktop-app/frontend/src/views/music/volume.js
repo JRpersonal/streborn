@@ -16,7 +16,7 @@ import {
 import { state } from '../../state.js';
 import { playerOnScreen } from '../../statusrefreshscope.js';
 import { pairDisplayName } from '../../stereoNames.js';
-import { WHEEL_END, WHEEL_START } from '../../sliderwheel.js';
+import { WHEEL_END, WHEEL_MIN_STEP_MS, WHEEL_START, steppedValue } from '../../sliderwheel.js';
 import { $ } from '../../utils.js';
 import { throttledSetVolume } from '../settings.js';
 
@@ -325,12 +325,14 @@ export function mountVolume() {
     // by exactly one, sharing one clamped helper. stepVolume mirrors what an
     // oninput drag does (move the thumb, update the label, push to the box) and
     // holds off the periodic auto-refresh for the same grace period so it does not
-    // snap the thumb back before the box has applied the change.
+    // snap the thumb back before the box has applied the change. The step itself
+    // is sliderwheel.js steppedValue, the one UI 2.0's wheel uses on every
+    // slider, so both layouts clamp and round a step the same way.
     const stepVolume = (delta) => {
       const box = state.currentBox;
       if (!box) return;
       const cur = parseInt(musicVolEl.value, 10) || 0;
-      const next = Math.max(0, Math.min(100, cur + delta));
+      const next = steppedValue(musicVolEl, delta);
       if (next === cur) return;
       liftMuteForVolumeGesture();
       musicVolEl.value = String(next);
@@ -352,7 +354,8 @@ export function mountVolume() {
     // the page with the cursor merely passing over the slider must never change
     // the volume: that accidental blast is exactly what we are guarding against.
     // When not engaged we do not preventDefault, so the page scrolls as usual.
-    // Rate-limited to one step per notch so a fast flick moves one at a time.
+    // Rate-limited to one step per notch so a fast flick moves one at a time, at
+    // the rate cap UI 2.0's sliders share (sliderwheel.js WHEEL_MIN_STEP_MS).
     let volWheelAt = 0;
     musicVolEl.addEventListener('wheel', (e) => {
       // UI 2.0 hands every slider's wheel to sliderwheel.js (shell2/mount.js),
@@ -361,7 +364,7 @@ export function mountVolume() {
       if (document.activeElement !== musicVolEl) return;
       e.preventDefault();
       const now = Date.now();
-      if (now - volWheelAt < 60) return;
+      if (now - volWheelAt < WHEEL_MIN_STEP_MS) return;
       volWheelAt = now;
       stepVolume(e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
