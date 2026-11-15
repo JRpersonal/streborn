@@ -120,7 +120,9 @@ test.describe('classic layout', () => {
 });
 
 test.describe('UI 2.0', () => {
-  test.use({ ui2: true });
+  // Bedroom's key 2 is empty, so the copy has something to do (the review
+  // before it, desktop-ui2-copy-keys-review.spec.mjs, offers no Copy otherwise).
+  test.use({ ui2: true, scenario: { presets: { bedroom: PRESETS.filter((p) => p.slot !== 2) } } });
 
   test('the line under Transfer names the speaker and the key', async ({ app, mock }) => {
     const { page } = app;
@@ -129,6 +131,8 @@ test.describe('UI 2.0', () => {
     await chooseOnly(page, [2, 7]);
     await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
     await page.locator('#warnConfirm').click();
+    // UI 2.0 reviews the copy first; nothing is copied before Copy.
+    await page.locator('#ui2XferReviewCopy').click();
     await mock.expectCalled('CopyPresetKeysAcrossBoxes', { pred: (c) => c.args[0] === LR.host && c.args[2] === BR.host });
     const status = page.locator('#ui2XferStatus');
     await expect(status).toHaveAttribute('role', 'status');

@@ -26,8 +26,12 @@ export function keyCopyOutcomeLines(outcome, t) {
   const copied = r.copied || [];
   const skipped = r.skipped || [];
   const notKept = r.notKept || [];
+  const same = r.same || [];
   const lines = [];
   if (copied.length) lines.push(t('presets.keyCopyCopied', { target, keys: keyList(copied, t) }));
+  // Keys the speaker already had exactly like this were left alone (not
+  // written again); that is a finished key, not a failure.
+  if (same.length) lines.push(t('presets.keyCopySame', { target, keys: keyList(same, t) }));
   for (const s of skipped) {
     if (s.onSlot) {
       lines.push(t('presets.keyCopyOnOtherKey', { target, key: keyLabel(s.slot, t), name: s.name, n: keyNum(s.onSlot, t) }));
@@ -41,8 +45,9 @@ export function keyCopyOutcomeLines(outcome, t) {
 }
 
 // summarizeKeyCopy is the whole report: text (one line per speaker, joined
-// with a space) and kind: 'ok' when every speaker took every chosen key,
-// 'error' when no speaker took any, 'warn' in between.
+// with a space) and kind: 'ok' when every speaker took every chosen key (or
+// already had it exactly like this), 'error' when no speaker took any, 'warn'
+// in between.
 export function summarizeKeyCopy(outcomes, t) {
   const list = outcomes || [];
   let anyCopied = false;
@@ -51,12 +56,21 @@ export function summarizeKeyCopy(outcomes, t) {
   for (const o of list) {
     lines.push(...keyCopyOutcomeLines(o, t));
     const r = o.result || {};
-    const copied = (r.copied || []).length;
-    if (copied) anyCopied = true;
-    if (o.error != null || !copied || (r.skipped || []).length || (r.notKept || []).length) allClean = false;
+    const done = (r.copied || []).length + (r.same || []).length;
+    if (done) anyCopied = true;
+    if (o.error != null || !done || (r.skipped || []).length || (r.notKept || []).length) allClean = false;
   }
   const kind = allClean ? 'ok' : (anyCopied ? 'warn' : 'error');
   return { text: lines.join(' '), lines, kind };
+}
+
+// classicKeyCopyResult is a result in the classic layout's words: a key the
+// speaker already had counts as copied, as it did before the copy learned to
+// leave such a key alone. The classic layout keeps its report unchanged.
+export function classicKeyCopyResult(result) {
+  const r = result || {};
+  const copied = [...(r.copied || []), ...(r.same || [])].sort((a, b) => a - b);
+  return { ...r, copied, same: [] };
 }
 
 // chosenSlots reads the ticked keys of the transfer dialog's checkboxes

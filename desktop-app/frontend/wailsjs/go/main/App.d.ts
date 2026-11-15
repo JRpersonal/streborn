@@ -226,6 +226,8 @@ export function PrepareFirmwareStickFromFile(arg1:string,arg2:string,arg3:string
 
 export function Prev(arg1:string,arg2:number):Promise<void>;
 
+export function PreviewPresetKeyCopy(arg1:string,arg2:number,arg3:string,arg4:number,arg5:Array<number>):Promise<main.KeyCopyPreview>;
+
 export function ProbeSetupAP():Promise<main.SetupAPProbe>;
 
 export function ProbeTrackDelivery(arg1:string):Promise<main.TrackDelivery>;

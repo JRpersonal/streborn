@@ -26,6 +26,7 @@ import { state } from '../../state.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
 import { claimPlay, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop } from '../../shell2/playclaim.js';
+import { closeKeyCopyReview, keyCopyReviewSource } from '../../shell2/keycopyreview.js';
 import { isFav, loadFavorites, loadFavStore, moveFavorite, toggleFav } from './favorites.js';
 import { isPandoraFav, pandoraRowFromFav } from '../../pandorafav.js';
 import { openPandoraPick, playPandoraRow } from './pandora.js';
@@ -208,6 +209,11 @@ export function syncUi2Keys() {
   ensureUi2Radio();
   const box = state.currentBox;
   const speaker = speakerName(box);
+  // A review of a copy of keys belongs to the speaker it was opened for. Any
+  // path that changed the chosen speaker (the sidebar, a speaker removed, the
+  // setup flow) repaints the keys, so this is where a stale one goes.
+  const reviewing = keyCopyReviewSource();
+  if (reviewing && (!box || box.host !== reviewing)) closeKeyCopyReview();
   const title = $('ui2KeysTitle');
   if (title) title.textContent = speaker ? t('ui2.radio.keysOn', { name: speaker }) : '';
   const grid = $('presets');

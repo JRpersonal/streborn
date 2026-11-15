@@ -158,18 +158,30 @@ test.describe('UI 2.0 key tiles', () => {
     await expect(page.locator('#toast')).not.toHaveClass(/show/);
   });
 
-  test('5. Transfer reports under its button, naming both speakers', async ({ app, mock }) => {
-    const { page } = app;
-    await mock.resetCalls();
-    await page.locator('#presetTransferBtn').click();
-    await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
-    await page.locator('#warnConfirm').click();
-    await mock.expectCalled('CopyPresetsAcrossBoxes', { pred: (c) => c.args[0] === LR.host && c.args[2] === BR.host });
-    const status = page.locator('#ui2XferStatus');
-    await expect(status).toHaveAttribute('role', 'status');
-    await expect(status).toHaveText(new RegExp(`^${BR.friendlyName} took \\d+ keys of ${LR.friendlyName}\\.`));
-    await expect(status).toHaveClass(/is-ok/);
-    await expect(page.locator('#toast')).not.toHaveClass(/show/);
+  test.describe('Transfer to a speaker without keys', () => {
+    test.use({ scenario: { presets: { bedroom: [] } } });
+
+    test('5. Transfer reports under its button, naming both speakers', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await page.locator('#presetTransferBtn').click();
+      await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
+      await page.locator('#warnConfirm').click();
+      // UI 2.0 first reviews the copy (desktop-ui2-copy-keys-review.spec.mjs),
+      // naming the speaker the keys come from, and copies those keys on Copy.
+      await expect(page.locator('#ui2XferReview')).toContainText(en('ui2.keyReview.intro', { source: LR.friendlyName }));
+      await page.locator('#ui2XferReviewCopy').click();
+      await mock.expectCalled('CopyPresetKeysAcrossBoxes', { pred: (c) => c.args[0] === LR.host && c.args[2] === BR.host });
+      const status = page.locator('#ui2XferStatus');
+      await expect(status).toHaveAttribute('role', 'status');
+      // Bedroom keeps one row: keys 1 to 6 go, the two keys pressed twice cannot.
+      await expect(status).toHaveText(
+        en('presets.keyCopyCopied', { target: BR.friendlyName, keys: [1, 2, 3, 4, 5, 6].map((n) => en('preset.key', { n })).join(', ') }) + ' '
+        + en('presets.keyCopyNotKept', { target: BR.friendlyName, keys: [1, 3].map((n) => en('preset.row2.key', { n })).join(', ') }),
+      );
+      await expect(status).toHaveClass(/is-warn/);
+      await expect(page.locator('#toast')).not.toHaveClass(/show/);
+    });
   });
 });
 

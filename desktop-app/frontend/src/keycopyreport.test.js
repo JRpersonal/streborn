@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chosenSlots, keyCopyOutcomeLines, summarizeKeyCopy } from './keycopyreport.js';
+import { chosenSlots, classicKeyCopyResult, keyCopyOutcomeLines, summarizeKeyCopy } from './keycopyreport.js';
 import en from './i18n/bundles/en.json';
 
 // A t() over the real English bundle, so the sentences checked are the ones
@@ -89,5 +89,19 @@ describe('chosenSlots', () => {
     ];
     expect(chosenSlots(boxes)).toEqual([1, 8]);
     expect(chosenSlots(null)).toEqual([]);
+  });
+});
+
+describe('keys the speaker already had', () => {
+  it('are named as left alone, and a copy of only those is ok', () => {
+    const r = summarizeKeyCopy([{ target: 'A', result: { copied: [], same: [2], skipped: [], notKept: [] } }], t);
+    expect(r.text).toBe(en['presets.keyCopySame'].replace('{{target}}', 'A').replace('{{keys}}', 'Key 2'));
+    expect(r.kind).toBe('ok');
+  });
+
+  it('count as copied in the classic layout, which keeps its words', () => {
+    expect(classicKeyCopyResult({ copied: [3], same: [1], skipped: [], notKept: [] }))
+      .toEqual({ copied: [1, 3], same: [], skipped: [], notKept: [] });
+    expect(classicKeyCopyResult(null)).toEqual({ copied: [], same: [] });
   });
 });
