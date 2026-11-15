@@ -12,7 +12,7 @@
 // a lookup (mount.js builds it from the every-speaker poll), so vitest covers
 // all of it without a DOM or a speaker.
 
-import { t } from '../i18n/index.js';
+import { t, tLookup } from '../i18n/index.js';
 import { decodeXmlEntities, escapeAttr, escapeHtml } from '../utils.js';
 
 // The field shows once the list has MORE rows than this. Eight rows fit the
@@ -56,9 +56,70 @@ export function nowLineOf(xml) {
   return { source, station: String(station || '').trim() };
 }
 
+// The translated source names (the source.label.* table the settings' source
+// list reads) per raw enum. Most enums have an entry under their own name; a
+// few share one: the old Bose INTERNET_RADIO is the same internet radio, and
+// STORED_MUSIC is the media server that the key tiles call "Library".
+const SOURCE_NAME_KEYS = {
+  INTERNET_RADIO: ['LOCAL_INTERNET_RADIO'],
+  LOCAL_MUSIC: ['STORED_MUSIC_MEDIA_RENDERER'],
+  STORED_MUSIC: ['STORED_MUSIC', 'STORED_MUSIC_MEDIA_RENDERER'],
+  LOCAL: ['AUX'],
+};
+
+// sourceNames is what a source is called: in the app's language (so a German
+// user finds the internet radio by "Internetradio"), and by englishLabel, the
+// name the key tiles show (views/music/presets.js boxSourceLabel), which is
+// English. The raw enum is the caller's to add.
+export function sourceNames(source, englishLabel) {
+  const src = String(source || '').toUpperCase();
+  if (!src) return [];
+  const out = [];
+  if (typeof englishLabel === 'function') {
+    try { out.push(englishLabel(src)); } catch (_) { /* the localised names still count */ }
+  }
+  for (const k of SOURCE_NAME_KEYS[src] || [src]) out.push(tLookup('source.label', k));
+  return [...new Set(out.filter((w) => typeof w === 'string' && w))];
+}
+
+// nowLineFor is what one speaker plays. The speaker you control reads its own
+// status poll (fresh on every round); every other one, and the controlled one
+// before its first status answer (nowSource '' after a reset), reads the
+// every-speaker poll (s.boxNow, main.js refreshBoxPlaying).
+function nowLineFor(box, s) {
+  const cur = s.currentBox;
+  if (cur && cur.host === box.host && typeof s.nowSource === 'string' && s.nowSource) {
+    if (IDLE_SOURCES.has(s.nowSource.toUpperCase())) return null;
+    return { source: s.nowSource, station: s.nowName || '' };
+  }
+  return (s.boxNow && box.deviceID && s.boxNow[box.deviceID]) || null;
+}
+
+// speakerTerms is what one speaker of a row can be found by, besides the row's
+// own name and model: the speaker's own name (a stereo pair stored under a
+// name of its own is still found by the name of either half), and what it
+// plays (the raw source, its names, the station). An unreachable speaker
+// plays nothing worth finding it by, but keeps its name.
+//
+//   s     the app state: boxes, currentBox, nowSource, nowName, boxNow
+//   opts  label(box) the display name, sourceLabel(src) the key tiles' name
+export function speakerTerms(host, s, opts = {}) {
+  const st = s || {};
+  const box = (st.boxes || []).find((b) => b && b.host === host);
+  if (!box) return [];
+  const words = [];
+  if (typeof opts.label === 'function') words.push(opts.label(box));
+  if (!box.offline) {
+    const line = nowLineFor(box, st);
+    if (line) words.push(line.source, ...sourceNames(line.source, opts.sourceLabel), line.station);
+  }
+  return words.filter((w) => typeof w === 'string' && w);
+}
+
 // rowWords is everything a row can be found by: its name (a pair's "(stereo)"
 // name included), its model, and per speaker of the row the words terms(host)
-// returns (the source, its friendly name, the station).
+// returns (speakerTerms: the speaker's name, the source, its names, the
+// station).
 function rowWords(row, terms) {
   const words = [row.name, row.model];
   if (typeof terms === 'function') {

@@ -1427,8 +1427,9 @@ function safeMountShell2() {
       // Phase 5: the issues of one speaker (shell2/attention.js), for the
       // sidebar chip; filled where the wedge and issue banners render.
       speakerAttention,
-      // The sidebar search names a source the way the key tiles do
-      // ("Internet radio" for LOCAL_INTERNET_RADIO).
+      // The sidebar search also finds a source by the name the key tiles
+      // show ("Internet radio" for LOCAL_INTERNET_RADIO), next to its name
+      // in the app's language (spksearch.js sourceNames).
       sourceLabel: boxSourceLabel,
       // Help and info (shell2/help): the credits dialog, and a manual app
       // update check like the version line's own link (which also forgets a

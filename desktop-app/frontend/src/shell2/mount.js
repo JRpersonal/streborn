@@ -29,7 +29,7 @@ import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
-import { filterSidebarModel, searchShown, searchStatusText } from './spksearch.js';
+import { filterSidebarModel, searchShown, searchStatusText, speakerTerms } from './spksearch.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 import { agoText } from '../format.js';
@@ -651,25 +651,10 @@ function searchField() {
   return box && !box.hidden ? byId('ui2SpkQ') : null;
 }
 
-// nowTerms is what a speaker can be found by besides its name and model:
-// its source (raw and as the key tiles name it) and its station. The speaker
-// you control reads its own status poll (fresh on every round), the others
-// the every-speaker poll (state.boxNow, main.js refreshBoxPlaying). An
-// unreachable speaker plays nothing worth finding it by.
-function nowTerms(host) {
-  const box = (state.boxes || []).find((b) => b && b.host === host);
-  if (!box || box.offline) return [];
-  let line = null;
-  const cur = state.currentBox;
-  if (cur && cur.host === host && typeof state.nowSource === 'string' && state.nowSource) {
-    const src = state.nowSource;
-    line = src && src !== 'STANDBY' && src !== 'INVALID_SOURCE' ? { source: src, station: state.nowName || '' } : null;
-  } else if (state.boxNow && box.deviceID) {
-    line = state.boxNow[box.deviceID] || null;
-  }
-  if (!line) return [];
-  const friendly = typeof deps.sourceLabel === 'function' ? deps.sourceLabel(line.source) : '';
-  return [line.source, friendly, line.station].filter(Boolean);
+// findTerms is what one speaker can be found by besides its row's name and
+// model (spksearch.js speakerTerms, pure, so vitest covers it).
+function findTerms(host) {
+  return speakerTerms(host, state, { label, sourceLabel: deps.sourceLabel });
 }
 
 // syncSpeakerSearch shows the field only while the list is long enough
@@ -680,9 +665,11 @@ function syncSpeakerSearch(shown) {
   const box = byId('ui2SpkFind');
   const field = byId('ui2SpkQ');
   if (!box || !field) return false;
+  // Read before hiding: a hidden field may lose focus right away (the
+  // browser's focus fixup), and the keyboard would then land on the page.
+  const hadFocus = document.activeElement === field;
   if (box.hidden === shown) box.hidden = !shown;
   if (!shown && (spkQuery || field.value)) {
-    const hadFocus = document.activeElement === field;
     spkQuery = '';
     field.value = '';
     if (hadFocus) setTimeout(focusSpeakerList, 0);
@@ -724,6 +711,10 @@ function wireSpeakerSearch(field) {
     sayFind();
   });
   field.addEventListener('keydown', (e) => {
+    // While an input method composes (Japanese, Chinese), Down picks a
+    // candidate and Escape cancels the composition: both belong to the IME,
+    // not to the search. keyCode 229 is how WebKit marks such a key.
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Escape' && field.value) {
       e.preventDefault();
       e.stopPropagation();
@@ -976,7 +967,7 @@ function paintSpeakers(force) {
   // The search (spksearch.js) only narrows what the list shows; the player's
   // Levels keep reading the whole model.
   const findShown = syncSpeakerSearch(searchShown(full));
-  const model = filterSidebarModel(full, findShown ? spkQuery : '', nowTerms);
+  const model = filterSidebarModel(full, findShown ? spkQuery : '', findTerms);
   lastFindSearch = model.search;
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,

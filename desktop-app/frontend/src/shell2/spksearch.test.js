@@ -1,11 +1,11 @@
 // Finding a speaker in the UI 2.0 sidebar (spksearch.js): the field shows once
 // the list is long, narrows the other speakers by name, model and what they
 // play, keeps the pinned group whole, and says so when nothing matches.
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   SEARCH_AFTER_ROWS, filterSidebarModel, foldText, noMatchHTML, nowLineOf, rowMatches, searchFieldHTML, searchShown,
-  searchStatusText,
+  searchStatusText, sourceNames, speakerTerms,
 } from './spksearch.js';
 import { sidebarHTML } from './speakers.js';
 import { setLocale } from '../i18n/index.js';
@@ -167,6 +167,91 @@ describe('sidebar search: what a speaker plays', () => {
   });
 });
 
+describe('sidebar search: what one speaker is found by (speakerTerms)', () => {
+  afterEach(() => setLocale('en'));
+
+  const box = (n, name, extra = {}) => ({ host: `192.0.2.${n}`, port: 8888, deviceID: `DEV${n}`, friendlyName: name, ...extra });
+  const label = (b) => b.friendlyName;
+  // The key tiles' English names, as main.js hands in boxSourceLabel.
+  const sourceLabel = (s) => ({ LOCAL_INTERNET_RADIO: 'Internet radio', SPOTIFY: 'Spotify', STORED_MUSIC: 'Library' })[s] || s;
+  const CUR = box(1, 'Living room');
+  const OTHER = box(2, 'Bedroom');
+  const OFF = box(3, 'Office', { offline: true });
+  const base = (extra = {}) => ({
+    boxes: [CUR, OTHER, OFF],
+    currentBox: CUR,
+    nowSource: 'LOCAL_INTERNET_RADIO',
+    nowName: 'Jazz24',
+    boxNow: {
+      DEV1: { source: 'SPOTIFY', station: 'Stale poll' },
+      DEV2: { source: 'SPOTIFY', station: 'Morning Mix' },
+      DEV3: { source: 'SPOTIFY', station: 'Before it went' },
+    },
+    ...extra,
+  });
+  const termsOf = (host, s) => speakerTerms(host, s, { label, sourceLabel });
+
+  it('the speaker you control reads its own status poll, not the every-speaker poll', () => {
+    expect(termsOf(CUR.host, base())).toEqual(['Living room', 'LOCAL_INTERNET_RADIO', 'Internet radio', 'Jazz24']);
+  });
+
+  it('another speaker reads the every-speaker poll', () => {
+    expect(termsOf(OTHER.host, base())).toEqual(['Bedroom', 'SPOTIFY', 'Spotify', 'Spotify Connect', 'Morning Mix']);
+  });
+
+  it('a controlled speaker in standby or without a source plays nothing to find it by', () => {
+    expect(termsOf(CUR.host, base({ nowSource: 'STANDBY' }))).toEqual(['Living room']);
+    expect(termsOf(CUR.host, base({ nowSource: 'INVALID_SOURCE' }))).toEqual(['Living room']);
+  });
+
+  it('before its first status answer (nowSource reset to empty) it falls back to the every-speaker poll', () => {
+    expect(termsOf(CUR.host, base({ nowSource: '', nowName: '' }))).toEqual(['Living room', 'SPOTIFY', 'Spotify', 'Spotify Connect', 'Stale poll']);
+    expect(termsOf(CUR.host, base({ nowSource: undefined, boxNow: undefined }))).toEqual(['Living room']);
+  });
+
+  it('an unreachable speaker keeps its name and nothing it played', () => {
+    expect(termsOf(OFF.host, base())).toEqual(['Office']);
+  });
+
+  it('an unknown host has nothing, and no state is no crash', () => {
+    expect(termsOf('192.0.2.99', base())).toEqual([]);
+    expect(speakerTerms(CUR.host, null)).toEqual([]);
+    expect(speakerTerms(CUR.host, base())).toEqual(['LOCAL_INTERNET_RADIO', 'Internet radio', 'Jazz24']);
+  });
+
+  it('names a source in the app language as well as in English', () => {
+    setLocale('de');
+    expect(sourceNames('LOCAL_INTERNET_RADIO', sourceLabel)).toEqual(['Internet radio', 'Internetradio']);
+    expect(sourceNames('INTERNET_RADIO')).toEqual(['Internetradio']);
+    expect(sourceNames('STORED_MUSIC', sourceLabel)).toEqual(['Library', 'Musikserver', 'Mediathek']);
+    expect(sourceNames('')).toEqual([]);
+    // A German user finds the speaker on internet radio by the German word.
+    const row1 = row(1, 'Living room');
+    expect(rowMatches(row1, 'internetradio', (h) => termsOf(h, base()))).toBe(true);
+    expect(rowMatches(row1, 'internet radio', (h) => termsOf(h, base()))).toBe(true);
+    expect(rowMatches(row1, 'local_internet_radio', (h) => termsOf(h, base()))).toBe(true);
+    setLocale('ja');
+    expect(rowMatches(row1, 'インターネットラジオ', (h) => termsOf(h, base()))).toBe(true);
+  });
+
+  it('survives a throwing English label', () => {
+    expect(sourceNames('LOCAL_INTERNET_RADIO', () => { throw new Error('boom'); })).toEqual(['Internet radio']);
+  });
+
+  it('finds a stereo pair stored under its own name by the name of either half', () => {
+    const L = box(40, 'Kitchen left');
+    const Rt = box(41, 'Window');
+    const s = { boxes: [L, Rt], currentBox: null, boxNow: {} };
+    const pair = row(40, 'Terrace (stereo)', { kind: 'pair', hosts: [L.host, Rt.host] });
+    const model = { pinned: [], others: [pair, row(42, 'Hall')] };
+    const t2 = (h) => termsOf(h, s);
+    expect(hosts(filterSidebarModel(model, 'kitchen', t2).others)).toEqual([L.host]);
+    expect(hosts(filterSidebarModel(model, 'window', t2).others)).toEqual([L.host]);
+    expect(hosts(filterSidebarModel(model, 'terrace', t2).others)).toEqual([L.host]);
+    expect(filterSidebarModel(model, 'garage', t2).search.noMatch).toBe(true);
+  });
+});
+
 describe('sidebar search: wiring', () => {
   const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 
@@ -179,7 +264,10 @@ describe('sidebar search: wiring', () => {
 
   it('filters only what the list draws; Escape clears in the field and on a row', () => {
     const mount = src('./mount.js');
-    expect(mount).toContain("filterSidebarModel(full, findShown ? spkQuery : '', nowTerms)");
+    expect(mount).toContain("filterSidebarModel(full, findShown ? spkQuery : '', findTerms)");
+    expect(mount).toContain('speakerTerms(host, state, { label, sourceLabel: deps.sourceLabel })');
+    // An input method's keys (Down picks a candidate, Escape cancels) stay with it.
+    expect(mount).toContain('if (e.isComposing || e.keyCode === 229) return;');
     expect(mount).toContain('levelsText(full)');
     expect(mount).toMatch(/e\.key === 'Escape' && field\.value/);
     expect(mount).toMatch(/e\.key === 'Escape' && spkQuery/);

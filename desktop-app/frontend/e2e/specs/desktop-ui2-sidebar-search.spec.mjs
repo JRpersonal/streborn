@@ -2,7 +2,9 @@
 // than eight rows a search field shows above the speaker list. It narrows the
 // other speakers by name, model and what they play, leaves the pinned group
 // as it is, clears on Escape, and says inline when nothing matches. With a
-// short list there is no field, and the classic layout has none at all.
+// short list there is no field, and the classic layout has none at all. Keys
+// an input method composes with stay with it, and a list that shrinks to
+// eight rows takes the field and its search with it.
 //
 // The network is the phase 3 fixture (testkit/demo-data.mjs SPEAKERS3): ten
 // speakers, nine rows (the stereo pair is one). Bedroom is made to play a
@@ -11,6 +13,7 @@
 //   E2E_PORT=4187 npx playwright test specs/desktop-ui2-sidebar-search.spec.mjs --project=desktop
 
 import { test, expect } from '../fixtures.mjs';
+import { settle } from '../helpers/clock.mjs';
 import { ROSTER, statusXml } from '../../testkit/demo-data.mjs';
 import { mergeScenario, speakersScenario } from '../../testkit/scenario.mjs';
 
@@ -140,6 +143,55 @@ test.describe('UI 2.0 sidebar search', () => {
     await ready(page);
     await field(page).fill('soundtouch 10');
     await expect(page.locator('#ui2SpkLive')).toHaveText(/^Speakers shown: \d of 9$/);
+  });
+
+  test('6b. keys an input method is composing with stay with it', async ({ app }) => {
+    const { page } = app;
+    await ready(page);
+    await field(page).fill('portable');
+    await expect(rows(page)).toHaveCount(2);
+    // Down picks a conversion candidate and Escape cancels the composition:
+    // neither moves the keyboard nor wipes the search.
+    await field(page).dispatchEvent('keydown', { key: 'ArrowDown', isComposing: true, bubbles: true, cancelable: true });
+    await field(page).dispatchEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    await expect(field(page)).toBeFocused();
+    await expect(field(page)).toHaveValue('portable');
+    await expect(rows(page)).toHaveCount(2);
+    // Once the composition ends, the same keys work again.
+    await page.keyboard.press('Escape');
+    await expect(field(page)).toHaveValue('');
+    await expect(rows(page)).toHaveCount(9);
+  });
+});
+
+test.describe('UI 2.0 sidebar search, a speaker leaves', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: mergeScenario(speakersScenario(), {
+      bindings: { Status: { byHost: { [R.bedroom.host]: { value: SPOTIFY_BEDROOM } } } },
+    }),
+  });
+
+  test('9. down to eight rows: the field and its search go, every row is back, the keyboard is on the list', async ({ app, mock }) => {
+    const { page } = app;
+    await ready(page);
+    await field(page).fill('portable');
+    await expect(rows(page)).toHaveCount(2);
+    await expect(field(page)).toBeFocused();
+    // The Bose original (one row of its own) is gone from the next search.
+    const left = await page.evaluate((gone) => window.__strMock.scenario.boxes.filter((b) => b.host !== gone), R.kitchen.host);
+    expect(left).toHaveLength(9);
+    await mock.set('DiscoverBoxes', { value: left });
+    await mock.set('RefreshKnownBoxes', { value: left });
+    await settle(page, 70_000);
+    await expect(pick(page, R.kitchen.host)).toHaveCount(0);
+    await expect(field(page)).toBeHidden();
+    await expect(field(page)).toHaveValue('');
+    // The search hid speakers; with no field left to clear it, it went.
+    await expect(rows(page)).toHaveCount(8);
+    await expect(page.locator('#ui2SpkLists .ui2-spk-nomatch')).toHaveCount(0);
+    await expect(page.locator('#ui2SpkLists .ui2-spk-pick:focus')).toHaveCount(1);
   });
 });
 
