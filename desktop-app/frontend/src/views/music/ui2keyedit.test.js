@@ -14,6 +14,7 @@ vi.mock('./save.js', () => ({ saveCurrentToSlot: vi.fn() }));
 
 const {
   HOLD_TO_EDIT_MS,
+  choiceToKeep,
   KEY_KINDS,
   isKeyEditGesture,
   keyEditActions,
@@ -32,6 +33,19 @@ describe('the hold', () => {
   it('opens the choices after about 700 ms, sooner than the current layout saves', () => {
     expect(HOLD_TO_EDIT_MS).toBe(700);
     expect(src('./presettiles.js')).toContain('const LONG_PRESS_MS = 1100;');
+  });
+
+  it('a context menu ends the press it interrupts, so the release does not also play', () => {
+    const body = src('./presettiles.js');
+    const menu = body.slice(body.indexOf("el.addEventListener('contextmenu'"));
+    expect(menu.indexOf('cancel();')).toBeGreaterThan(-1);
+    expect(menu.indexOf('cancel();')).toBeLessThan(menu.indexOf('opts.onHold();'));
+    // Only one listener opens the choices on a context menu (the press path's).
+    expect(src('./ui2radio.js')).not.toContain("addEventListener('contextmenu'");
+  });
+
+  it('drops a hold whose tile a rebuilt grid replaced, instead of opening later', () => {
+    expect(src('./presettiles.js')).toContain('if (opts.onHold && !el.isConnected) { cancel(); return; }');
   });
 
   it('never also plays: a hold that fired returns before the play', () => {
@@ -91,6 +105,22 @@ describe('the choices of a key', () => {
   });
 });
 
+describe('a repaint while the choices are open', () => {
+  it('keeps the keyboard on the choice it was on, also when save appears before it', () => {
+    expect(choiceToKeep('find', ['save', 'find', 'favorites'])).toBe('find');
+    expect(choiceToKeep('rename', ['save', 'find', 'favorites', 'rename', 'clear'])).toBe('rename');
+    expect(choiceToKeep('close', ['save', 'find'])).toBe('close');
+  });
+
+  it('never lands on save when that choice is gone', () => {
+    expect(choiceToKeep('save', ['find', 'favorites'])).toBe('find');
+    expect(choiceToKeep('rename', ['save', 'find', 'favorites'])).toBe('find');
+    expect(choiceToKeep('', ['save', 'find'])).toBe('find');
+    expect(choiceToKeep('clear', ['save'])).toBe('close');
+    expect(choiceToKeep(undefined, [])).toBe('close');
+  });
+});
+
 describe('the words', () => {
   it('names the key and the speaker, and what is on it', () => {
     const w = keyEditWords({ kind: 'station', slot: 3, speaker: 'Kitchen', name: 'Jazz24', actions: ['save', 'rename'] });
@@ -124,7 +154,14 @@ describe('the assignment', () => {
     expect(takeKeyAssignTarget(null)).toBeNull();
   });
 
-  it('is the picker the station rows already use', () => {
-    expect(src('./picker.js')).toContain('takeKeyAssignTarget(target)');
+  it('is the picker the station rows already use, opened on the row of that key', () => {
+    const picker = src('./picker.js');
+    expect(picker).toContain('takeKeyAssignTarget(target)');
+    expect(picker).toContain('clampRow(want ? slotRow(want) : state.presetRow, rows)');
+  });
+
+  it('ends with the Radio view and with another speaker', () => {
+    expect(src('../../main.js')).toContain("if (view !== 'box') leaveKeyEditView();");
+    expect(src('./ui2keyedit.js')).toContain('if (assign && (!box || box.host !== assign.host)) dropAssign();');
   });
 });

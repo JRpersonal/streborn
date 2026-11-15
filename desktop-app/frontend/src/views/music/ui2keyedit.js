@@ -183,6 +183,22 @@ function focusFirst(el) {
   if (first) first.focus();
 }
 
+// choiceToKeep is where the keyboard goes after a redraw the user did not ask
+// for (the status poll repainted the grid): the choice it was on (was) when
+// the panel still has it, else the first one that writes nothing, else the
+// close button. Never "save" by itself: Enter pressed right after the repaint
+// would put the playing station on the key.
+export function choiceToKeep(was, actions) {
+  if (was && (was === 'close' || actions.includes(was))) return was;
+  return actions.find((id) => id !== 'save') || 'close';
+}
+
+function refocusChoice(el, was) {
+  const actions = [...el.querySelectorAll('.ui2-key-edit-act')].map((b) => b.dataset.ke);
+  const target = el.querySelector(`[data-ke="${choiceToKeep(was, actions)}"]`);
+  if (target) target.focus();
+}
+
 // openKeyEditor opens the choices of key slot on the speaker in control and
 // puts the keyboard on the first one. Opening it for the key it is already
 // open for only moves the keyboard back into it.
@@ -219,22 +235,35 @@ export function keyEditorSlot() {
 }
 
 // syncKeyEditor follows the grid after renderPresets rebuilt it: another
-// speaker chosen closes the panel, a key whose station or choices changed
-// (cleared from the speaker's own button, something started playing) is
-// redrawn, with the keyboard kept inside when it was there.
+// speaker chosen closes the panel (and forgets a search started for one of
+// its keys), a key whose station or choices changed (cleared from the
+// speaker's own button, something started playing) is redrawn, with the
+// keyboard kept on the choice it was on.
 export function syncKeyEditor() {
+  const box = state.currentBox;
+  // A station search started for a key of another speaker has nothing to put
+  // on this one; its line stays with that speaker and is taken off.
+  if (assign && (!box || box.host !== assign.host)) dropAssign();
   if (!edit) { syncTriggers(); return; }
   const el = $('ui2KeyEdit');
-  const box = state.currentBox;
   if (!el || el.hidden || !box || box.host !== edit.host || !tileOf(edit.slot)) { closeKeyEditor(false); return; }
   const { kind, name } = keyFromTile(tileOf(edit.slot));
   const sig = `${kind}|${name}|${keyEditActions(kind, playingNow()).join(',')}`;
   if (sig !== edit.sig) {
-    const inside = el.contains(document.activeElement);
+    const active = document.activeElement;
+    const inside = el.contains(active);
+    const was = inside && active.dataset ? active.dataset.ke : '';
     edit.sig = draw(el, edit.slot, box);
-    if (inside) focusFirst(el);
+    if (inside) refocusChoice(el, was);
   }
   syncTriggers();
+}
+
+// leaveKeyEditView is called when the user leaves the Radio view: a station
+// search started for a key ends there, so a later "Put on key" (also the one
+// in Library or Recent) no longer starts on that key.
+export function leaveKeyEditView() {
+  dropAssign();
 }
 
 // syncTriggers tells an empty key, whose press opens the panel, whether it

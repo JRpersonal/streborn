@@ -756,7 +756,8 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (bar) bar.style.width = pct + '%';
   };
   const animateBar = () => {
-    if (!armed) return;
+    // A rebuilt grid (renderPresets) replaced this tile: nothing to fill.
+    if (!armed || !el.isConnected) return;
     const elapsed = Date.now() - startedAt;
     // The bar only represents the deliberate-hold window: it fills 0 -> 100%
     // between VISUAL_HOLD_DELAY and holdMs, so it never shows for the
@@ -785,6 +786,11 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (onHold) {
       timer = setTimeout(async () => {
         if (!armed) return;
+        // The preview's hold: when the status poll rebuilt the grid while the
+        // key was held, the release landed on the new tile and never reached
+        // this one, so it may have been a short press. Opening the choices
+        // then, out of nowhere, would take the focus; the hold is dropped.
+        if (opts.onHold && !el.isConnected) { cancel(); return; }
         firedLong = true;
         // The save reports in the preview's key line (keyReport is null in
         // the current layout, which keeps its toasts); the preview's own hold
@@ -819,4 +825,16 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   el.addEventListener('touchstart', (e) => { start(e); }, { passive: true });
   el.addEventListener('touchend', (e) => { finish(e); });
   el.addEventListener('touchcancel', cancel);
+  if (opts.onHold) {
+    // The preview's other way to a key's choices: a right click, a long touch
+    // (Chromium fires this before HOLD_TO_EDIT_MS) and macOS Ctrl+click (a
+    // mousedown with button 0 first). It ends the press it interrupts, so
+    // lifting the finger or the button afterwards does not also play the key.
+    // The browser's own menu has nothing to offer on a key.
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      cancel();
+      opts.onHold();
+    });
+  }
 }

@@ -313,19 +313,16 @@ export function syncUi2Keys() {
   }
 }
 
-// wireKeyEdit gives a key tile the keyboard's and the context menu's way to
-// its choices (ui2keyedit.js): Shift+Enter, the context-menu key, Shift+F10,
-// and a right click or a long touch, which the browser reports as a context
-// menu. The browser's own menu has nothing to offer on a key.
+// wireKeyEdit gives a key tile the keyboard's way to its choices
+// (ui2keyedit.js): Shift+Enter, the context-menu key or Shift+F10. A right
+// click or a long touch (the browser's context menu) is the tile's press
+// path's own (presettiles.js attachPresetHandlers), because it has to end the
+// press it interrupts or the release would also play the key.
 function wireKeyEdit(tile, slot) {
   tile.addEventListener('keydown', (e) => {
     if (!isKeyEditGesture(e)) return;
     e.preventDefault();
     e.stopPropagation();
-    openKeyEditor(slot);
-  });
-  tile.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
     openKeyEditor(slot);
   });
 }

@@ -35,6 +35,40 @@ const focusedKey = (page) => page.evaluate(() => {
 // Key 5 empty: the rest as the demo speaker has them.
 const EMPTY5 = { presets: { livingRoom: PRESETS.filter((p) => p.slot !== 5) } };
 
+// Key 6 is not one of STR's keys with a station: the speaker's own (a Deezer
+// mix, which a press recalls) or one STR wrote that its store lost.
+const KEY6 = {
+  native: { name: 'Deezer Mix', source: 'DEEZER', location: 'deezer:mix' },
+  lost: { name: 'Old Station', source: 'INTERNET_RADIO', location: 'http://demobox.local:8888/stream/6', strOrigin: true, lost: true },
+};
+const key6Scenario = (bp) => ({
+  presets: { livingRoom: PRESETS.filter((p) => p.slot !== 6) },
+  bindings: { BoxPresets: { value: [{ slot: 6, ...bp }] }, RecallBoxPreset: { value: null } },
+});
+
+// fire sends synthetic events to a key's body in one go, in the order a
+// browser sends them for a gesture the run cannot make with a real pointer (a
+// long touch, macOS Ctrl+click): each entry is [type, init].
+const fire = (page, slot, events) => page.evaluate(([s, list]) => {
+  const el = document.querySelector(`#presets .preset[data-slot="${s}"] .preset-body`);
+  for (const [type, init] of list) {
+    let ev;
+    if (type.startsWith('touch')) {
+      ev = typeof TouchEvent === 'function'
+        ? new TouchEvent(type, { bubbles: true, cancelable: true })
+        : new Event(type, { bubbles: true, cancelable: true });
+    } else {
+      ev = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
+    }
+    el.dispatchEvent(ev);
+  }
+}, [slot, events]);
+
+// setPlaying makes the mock speaker play (or stand by) from the next poll on.
+const setPlaying = (page, host, ps) => page.evaluate(([h, p]) => { window.__strMock.state.playing[h] = p; }, [host, ps]);
+const keyLine = (page, slot) => tile(page, slot).locator('.ui2-key-status');
+const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
+
 test.describe('UI 2.0: hold a key to change it', () => {
   test.use({ ui2: true });
 
@@ -103,6 +137,164 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await mock.expectCalled('PlaySlot', { pred: (c) => c.args[2] === 4, times: 1 });
       await expect(panel(page)).toBeHidden();
     });
+
+    test('10. a long touch opens the choices on its context menu, and lifting the finger does not play', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await mock.resetCalls();
+      await fire(page, 4, [['touchstart']]);
+      // Chromium reports a long touch as a context menu at about 500 ms,
+      // before the hold itself would open the choices.
+      await runFor(page, 550);
+      await fire(page, 4, [['contextmenu', { button: 2 }]]);
+      await expect(panel(page)).toBeVisible();
+      await fire(page, 4, [['touchend']]);
+      await runFor(page, 1_500);
+      expect(await mock.count('PlaySlot')).toBe(0);
+      await expect(panel(page).locator('#ui2KeyEditTitle')).toHaveText(en('ui2.radio.keyEditTitle', { n: 4, speaker: LR.friendlyName }));
+      await expect(tile(page, 4)).not.toHaveClass(/long-press/);
+    });
+
+    test('11. macOS Ctrl+click opens the choices and does not play', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await mock.resetCalls();
+      // WKWebView sends a left mousedown with Ctrl, then the context menu,
+      // then the mouseup.
+      await fire(page, 2, [['mousedown', { ctrlKey: true }], ['contextmenu', { ctrlKey: true }], ['mouseup', { ctrlKey: true }]]);
+      await runFor(page, 1_500);
+      await expect(panel(page)).toBeVisible();
+      expect(await mock.count('PlaySlot')).toBe(0);
+    });
+
+    test('12. a press the grid is rebuilt under does not open the choices later', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await mock.resetCalls();
+      await body(page, 4).hover();
+      await page.mouse.down();
+      await runFor(page, 200);
+      // The grid is drawn again while the key is held (here by the row tab;
+      // the status poll does the same on a cover or a station change), so
+      // the release lands on the new grid.
+      await page.evaluate(() => document.getElementById('presetRowTab2').click());
+      await page.mouse.up();
+      await runFor(page, 1_500);
+      await expect(panel(page)).toBeHidden();
+      expect(await mock.count('PlaySlot')).toBe(0);
+    });
+
+    test('13. a repaint by the status poll keeps the panel and the keyboard on its choice', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await setPlaying(page, LR.host, 'STANDBY');
+      await runFor(page, 8_000);
+      await body(page, 3).focus();
+      await page.keyboard.press('Shift+Enter');
+      await expect(panel(page)).toBeVisible();
+      // Nothing plays: no save offered.
+      expect(await ids(page)).toEqual(['find', 'favorites', 'rename', 'clear']);
+      await choice(page, 'find').focus();
+      // Playback starts: the poll redraws the panel with save first, and the
+      // keyboard stays on Find a station instead of moving onto the save.
+      await setPlaying(page, LR.host, 'PLAY_STATE');
+      // A speaker in standby is read every 15 s (main.js STATUS_IDLE_MS).
+      await runFor(page, 16_000);
+      await expect.poll(() => ids(page)).toEqual(['save', 'find', 'favorites', 'rename', 'clear']);
+      await expect(panel(page)).toBeVisible();
+      await expect(choice(page, 'find')).toBeFocused();
+      // It stops again: the save goes, the keyboard stays where it was.
+      await choice(page, 'rename').focus();
+      await setPlaying(page, LR.host, 'STANDBY');
+      await runFor(page, 8_000);
+      await expect.poll(() => ids(page)).toEqual(['find', 'favorites', 'rename', 'clear']);
+      await expect(choice(page, 'rename')).toBeFocused();
+    });
+
+    for (const kind of ['native', 'lost']) {
+      test.describe(`the speaker's ${kind} key`, () => {
+        test.use({ scenario: key6Scenario(KEY6[kind]) });
+
+        test(`14. ${kind}: a hold fills the bar and opens the choices, without a save over the speaker's own key, and does not recall`, async ({ app, mock }) => {
+          const { page } = app;
+          await settle(page, 9_000);
+          await expect(body(page, 6)).toContainText(KEY6[kind].name);
+          await mock.resetCalls();
+          await body(page, 6).hover();
+          await page.mouse.down();
+          await runFor(page, 400);
+          await expect(tile(page, 6)).toHaveClass(/long-press/);
+          expect(await barWidth(page, 6)).toBe(100);
+          await runFor(page, 400);
+          await expect(panel(page)).toBeVisible();
+          await page.mouse.up();
+          await runFor(page, 1_500);
+          expect(await ids(page)).toEqual(kind === 'native' ? ['find', 'favorites'] : ['save', 'find', 'favorites']);
+          expect(await mock.count('PlaySlot')).toBe(0);
+          expect(await mock.count('RecallBoxPreset')).toBe(0);
+          await expect(keyLine(page, 6)).toHaveText('');
+        });
+      });
+    }
+  });
+
+  test('15. choosing another speaker closes the choices and ends a search started for a key', async ({ app }) => {
+    const { page } = app;
+    await body(page, 3).focus();
+    await page.keyboard.press('Shift+Enter');
+    await expect(panel(page)).toBeVisible();
+    await pick(page, ROSTER.bedroom.host).click();
+    await expect(pick(page, ROSTER.bedroom.host)).toHaveAttribute('aria-current', 'true');
+    await expect(panel(page)).toBeHidden();
+    await pick(page, LR.host).click();
+    await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+    await expect(panel(page)).toBeHidden();
+    // A search started for key 3 ends with the speaker.
+    await expect(body(page, 3)).toContainText('NPR News');
+    await body(page, 3).focus();
+    await page.keyboard.press('Shift+Enter');
+    await choice(page, 'find').click();
+    await expect(keyLine(page, 3)).toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
+    await pick(page, ROSTER.bedroom.host).click();
+    await expect(pick(page, ROSTER.bedroom.host)).toHaveAttribute('aria-current', 'true');
+    await pick(page, LR.host).click();
+    await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
+    await expect(body(page, 3)).toContainText('NPR News');
+    await expect(keyLine(page, 3)).not.toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
+    await row(page, JAZZ.name).locator('[data-act="key"]').click();
+    await expect(page.locator('#pickModal')).toBeVisible();
+    await expect(page.locator('#pickGrid .pick-slot').first()).toBeFocused();
+  });
+
+  test('16. leaving the Radio view ends a search started for a key', async ({ app }) => {
+    const { page } = app;
+    await body(page, 3).focus();
+    await page.keyboard.press('Shift+Enter');
+    await choice(page, 'find').click();
+    await expect(keyLine(page, 3)).toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="recent"]').click();
+    await expect(page.locator('#ui2Main')).toHaveAttribute('data-view', 'recent');
+    await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').click();
+    await expect(page.locator('#ui2Main')).toHaveAttribute('data-view', 'box');
+    await expect(keyLine(page, 3)).not.toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
+  });
+
+  test('17. a key of the second row: Put on key opens on that row and that key, also after the grid went back', async ({ app, mock }) => {
+    const { page } = app;
+    await page.locator('#presetRowTab2').click();
+    await expect(tile(page, 8)).toHaveClass(/empty/);
+    await tile(page, 8).click();
+    await expect(panel(page)).toBeVisible();
+    await choice(page, 'find').click();
+    await page.locator('#presetRowTab1').click();
+    await expect(tile(page, 1)).toBeVisible();
+    await mock.resetCalls();
+    await row(page, JAZZ.name).locator('[data-act="key"]').click();
+    await expect(page.locator('#pickModal')).toBeVisible();
+    await expect(page.locator('#pickRowTab2')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#pickGrid .pick-slot[data-slot="8"]')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 8 && c.args[3] === JAZZ.name, times: 1 });
   });
 
   test('4. Shift+Enter opens the choices from the keyboard; Rename is the key\'s own rename', async ({ app, mock }) => {
