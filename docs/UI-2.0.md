@@ -162,10 +162,15 @@ releases later.
   Shift+Enter, the context-menu key or Shift+F10, said in the hint over the
   keys. Until then a 1.1 s hold saved what was playing straight onto the key,
   the only way to change a key from the grid and easy to do by accident; that
-  save is now the first choice, and a hold never also plays. Every choice is
-  the flow the key already had (`views/music/ui2keyedit.js`); "Find a station"
-  and a favourite lead to a station's "Put on key", whose window then starts
-  on that key. The classic layout keeps its hold-to-save.
+  save is now the first choice, and a hold never also plays. Save, rename and
+  clear are done in the card, through the flows the key already had
+  (`views/music/ui2keyedit.js`). "Find a station" and "Choose a favorite"
+  open the one key editor instead, Speakers > the speaker > Keys and alarms
+  (see "Assigning keys in one place" below), with that key chosen and the
+  Radio source in front: the keyboard in the station search, or on the first
+  favourite. Until 15 November they led to a station's "Put on key" on Radio,
+  a second way to write a key from a choice. The classic layout keeps its
+  hold-to-save.
 
 ## What we add
 
@@ -200,7 +205,9 @@ releases later.
   next to a source browser: Radio (favourites and a station search), Library
   (folder by folder: a folder or a song) and Spotify (the playlists, albums
   and artists the speaker played lately). One key is chosen, the first empty
-  one to start with, and the hint says what a save would replace. "Put
+  one to start with, and the hint says what a save would replace; coming from
+  a hold on a Radio key, that key is chosen (`openSpeakers('speaker', { key })`,
+  `aimKeyEditor`). "Put
   what's playing on key N" keeps every source the speaker agent can keep
   (`POST /api/box/save-playing`; Spotify, Pandora and iHeartRadio through
   their own saves). The outcome stays in the editor's own line: done only

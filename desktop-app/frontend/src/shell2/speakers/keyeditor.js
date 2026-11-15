@@ -83,6 +83,16 @@ let box = null;
 let parts = {};
 // Bumped on every switch of speaker: an answer for the previous one is dropped.
 let gen = 0;
+// The key and the source a hold on a Radio key asked for (aimKeyEditor), or
+// null: { host, slot, mode, at }. Taken by the first paint for that speaker,
+// once.
+let aim = null;
+// What gets the keyboard after the paint that took an aim: 'find' (the
+// station search field) or 'favorites' (the first favourite).
+let aimFocus = '';
+// AIM_MS is how long an aim waits for its speaker's editor. The page opens
+// at once; a visit much later must not land on an old choice.
+export const AIM_MS = 30000;
 
 const L = (k, v) => t(`ui2.speakers.keyEditor.${k}`, v);
 const n = () => keyNum(ed.slot, t);
@@ -128,11 +138,63 @@ export function resetKeyEditor() {
   ed = fresh();
   source = EDITOR_SOURCES[0];
   parts = {};
+  aim = null;
+  aimFocus = '';
   gen++;
+}
+
+// aimKeyEditor is how the hold on a Radio key (views/music/ui2keyedit.js)
+// hands its "Find a station" and "Choose a favorite" to this editor: the
+// next paint for host chooses key slot and opens the Radio source, mode
+// 'find' with the keyboard in the station search, 'favorites' on the
+// favourites list. The caller then opens the page on Keys and alarms
+// (speakers/index.js openSpeakers with { key }). One editor writes keys from
+// a choice, not a second picker.
+export function aimKeyEditor({ host, slot, mode } = {}) {
+  const s = Number(slot);
+  aim = host && s > 0 ? { host, slot: s, mode: mode === 'favorites' ? 'favorites' : 'find', at: Date.now() } : null;
+}
+
+// keyEditorAim is the aim still waiting, or null (tests).
+export function keyEditorAim() {
+  return aim ? { ...aim } : null;
+}
+
+// takeAim applies a waiting aim when the editor shows its speaker: the key,
+// the Radio tab and, for favourites, the list instead of earlier search
+// hits. A save under way keeps it waiting, as a click on a key waits; an aim
+// past AIM_MS is dropped.
+function takeAim() {
+  const a = aim;
+  if (!a) return;
+  if (Date.now() - a.at > AIM_MS) { aim = null; return; }
+  if (a.host !== ed.host || ed.busy) return;
+  aim = null;
+  ed.slot = a.slot;
+  ed.result = null;
+  source = 'radio';
+  if (a.mode === 'favorites') ed.radio = { ...ed.radio, q: '', hits: null, err: '', shownQ: '' };
+  aimFocus = a.mode;
+}
+
+// focusAim puts the keyboard where the aim asked, once the page is on screen
+// (the paint that takes an aim runs while the page is being switched to).
+function focusAim() {
+  const mode = aimFocus;
+  aimFocus = '';
+  const go = () => {
+    if (!root) return;
+    const el = mode === 'favorites'
+      ? (root.querySelector('#kaePanelBody .kae-put[data-kind="fav"]') || root.querySelector('#kaePanel'))
+      : root.querySelector('#kaeRadioQ');
+    if (el && typeof el.focus === 'function') el.focus();
+  };
+  setTimeout(go, 0);
 }
 
 function paint(force = false) {
   if (!root || !box) return;
+  takeAim();
   const doc = typeof document !== 'undefined' ? document : null;
   const active = doc ? doc.activeElement : null;
   const keep = active && root.contains(active) && active.dataset ? active.dataset.kf || '' : '';
@@ -164,6 +226,7 @@ function paint(force = false) {
       || root.querySelector(`[data-kf="key-${ed.slot}"]`);
     if (again && typeof again.focus === 'function') again.focus();
   }
+  if (aimFocus) focusAim();
 }
 
 // part redraws one part of the frame when what it shows changed.

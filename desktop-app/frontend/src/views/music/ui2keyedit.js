@@ -6,10 +6,13 @@
 // accident and the only way to change a key from the grid. In the preview a
 // hold of HOLD_TO_EDIT_MS opens the key's choices instead, in one panel under
 // the grid: save what is playing, find a station, pick a favourite, rename,
-// clear. Every choice is the flow the key already had (saveCurrentToSlot,
-// the rename and clear icons, the station rows' "Put on key" picker), so
-// there is no second way to write a key. An empty key has nothing to play and
-// opens the same panel on a short press.
+// clear. Every choice is a flow the app already has, so there is no second
+// way to write a key: the quick ones stay here (saveCurrentToSlot, the rename
+// and clear icons), and "Find a station" and "Choose a favorite" open the one
+// key editor, Speakers > the speaker > Keys and alarms
+// (shell2/speakers/keyeditor.js), on that key and on its station search or
+// its favourites. An empty key has nothing to play and opens the same panel
+// on a short press.
 //
 // From the keyboard Shift+Enter, the context-menu key or Shift+F10 open it
 // (the grid's hint says so); Escape closes it and puts the keyboard back on
@@ -24,7 +27,7 @@ import { keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, getBoxLabel } from '../../utils.js';
 import { saveCurrentToSlot } from './save.js';
-import { keyReport, keyStatusOf, openUi2RadioTab, restoreKeyFocus } from './ui2radio.js';
+import { keyReport, restoreKeyFocus } from './ui2radio.js';
 
 // HOLD_TO_EDIT_MS is how long a press must last to open the choices instead
 // of playing. Shorter than the current layout's 1.1 s save: opening a panel
@@ -75,7 +78,7 @@ export function keyEditWords({ kind, slot, speaker, name, actions }) {
   return {
     title: t(kind === 'empty' ? 'ui2.radio.keyAssignTitle' : 'ui2.radio.keyEditTitle', { n, speaker }),
     now: kind === 'empty' || !name ? t('ui2.radio.keyEditEmpty') : t('ui2.radio.keyEditNow', { name }),
-    note: actions.includes('find') ? t('ui2.radio.keyEditNote', { n }) : '',
+    note: actions.includes('find') ? t('ui2.radio.keyEditNoteEditor', { n, speaker }) : '',
     close: t('ui2.popover.close'),
     actions: actions.map((id) => ({ id, label: t(ACTION_KEYS[id]) })),
   };
@@ -91,35 +94,6 @@ export function keyEditHTML(words) {
     + `<p class="ui2-key-edit-now" id="ui2KeyEditNow">${escapeHtml(words.now)}</p>`
     + `<div class="ui2-key-edit-acts" role="group" aria-labelledby="ui2KeyEditTitle">${acts}</div>`
     + (words.note ? `<p class="ui2-key-edit-note">${escapeHtml(words.note)}</p>` : '');
-}
-
-// ---------- The assignment a "Find a station" or a favourite leads to ----------
-
-// assign is the key the user chose "Find a station" or "From favorites" for:
-// the next "Put on key" picker on that speaker starts on it.
-let assign = null;
-
-// takeKeyAssignTarget hands the picker the key to start on, once: the target
-// is for the speaker the picker writes to, and it is used up by that picker.
-export function takeKeyAssignTarget(box) {
-  const a = assign;
-  if (!a || !box || a.host !== box.host) return null;
-  dropAssign();
-  return a.slot;
-}
-
-// dropAssign forgets the target and takes its line off the key, unless the
-// key has said something else since.
-function dropAssign() {
-  const a = assign;
-  assign = null;
-  if (!a) return;
-  // The key line is kept per speaker address; the host is all it needs.
-  const box = { host: a.host };
-  const st = keyStatusOf(a.slot, box);
-  if (!st || st.kind !== 'hint') return;
-  const report = keyReport(a.slot, box);
-  if (report) report(null);
 }
 
 // ---------- The panel ----------
@@ -208,9 +182,6 @@ export function openKeyEditor(slot) {
   const el = box ? panel() : null;
   if (!el) return;
   if (!edit || edit.host !== box.host || edit.slot !== slot || el.hidden) {
-    // A key chosen to be changed again replaces a station search started
-    // from it or from another key.
-    dropAssign();
     edit = { host: box.host, slot, sig: draw(el, slot, box) };
   }
   el.hidden = false;
@@ -235,15 +206,11 @@ export function keyEditorSlot() {
 }
 
 // syncKeyEditor follows the grid after renderPresets rebuilt it: another
-// speaker chosen closes the panel (and forgets a search started for one of
-// its keys), a key whose station or choices changed (cleared from the
-// speaker's own button, something started playing) is redrawn, with the
-// keyboard kept on the choice it was on.
+// speaker chosen closes the panel, a key whose station or choices changed
+// (cleared from the speaker's own button, something started playing) is
+// redrawn, with the keyboard kept on the choice it was on.
 export function syncKeyEditor() {
   const box = state.currentBox;
-  // A station search started for a key of another speaker has nothing to put
-  // on this one; its line stays with that speaker and is taken off.
-  if (assign && (!box || box.host !== assign.host)) dropAssign();
   if (!edit) { syncTriggers(); return; }
   const el = $('ui2KeyEdit');
   if (!el || el.hidden || !box || box.host !== edit.host || !tileOf(edit.slot)) { closeKeyEditor(false); return; }
@@ -257,13 +224,6 @@ export function syncKeyEditor() {
     if (inside) refocusChoice(el, was);
   }
   syncTriggers();
-}
-
-// leaveKeyEditView is called when the user leaves the Radio view: a station
-// search started for a key ends there, so a later "Put on key" (also the one
-// in Library or Recent) no longer starts on that key.
-export function leaveKeyEditView() {
-  dropAssign();
 }
 
 // syncTriggers tells an empty key, whose press opens the panel, whether it
@@ -297,16 +257,25 @@ function runAction(id) {
     return;
   }
   if (id === 'find' || id === 'favorites') {
+    // The speaker's key editor, on this key, with the station search or the
+    // favourites in front: one place that writes a key from a choice. The
+    // page is the speaker you control, which is the one these keys belong to.
     closeKeyEditor(false);
-    assign = { host, slot };
-    const report = keyReport(slot, box);
-    if (report) report(t('ui2.radio.keyAssignPending', { n: keyNum(slot, t) }), 'hint');
-    openUi2RadioTab(id === 'find' ? 'discover' : 'favorites');
-    if (id === 'find') {
-      const q = $('searchQ');
-      if (q && q.offsetParent !== null) q.focus();
-    }
+    openKeyTab(host, slot, id);
   }
+}
+
+// openKeyTab opens Speakers > the speaker > Keys and alarms with key slot
+// chosen in its editor, mode 'find' or 'favorites'. The router is imported on
+// use, as views/settings/shared.js does: a static import would pull the whole
+// Speakers area (and the settings view) into every music view. When the page
+// cannot open, the keyboard goes back to the key.
+async function openKeyTab(host, slot, mode) {
+  try {
+    const { openSpeakers } = await import('../../shell2/speakers/index.js');
+    if (openSpeakers('speaker', { host, tab: 'keys', key: { slot, mode } })) return;
+  } catch { /* fall through: back to the key */ }
+  restoreKeyFocus({ slot: String(slot), part: 'body' });
 }
 
 // ui2KeyHoldOpts is what renderPresets hands attachPresetHandlers for one

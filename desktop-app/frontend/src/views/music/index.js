@@ -48,7 +48,6 @@ export {
   updateFavModeBtn,
 } from './favorites.js';
 export { openPandoraPick, updatePandoraModeBtn } from './pandora.js';
-export { leaveKeyEditView } from './ui2keyedit.js';
 export { openPick, putStationOnKey, showSlotPicker } from './picker.js';
 export { presetMoveOffer, saveCurrentToSlot, saveSpotifyToSlot } from './save.js';
 export { loadFavStore } from './favorites.js';

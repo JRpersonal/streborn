@@ -5,7 +5,8 @@
 // the agent keeps (POST /api/box/save-playing). Every outcome is said in the
 // editor's own line, done only after the speaker's read-back; the agent's 409
 // already-on-slot offers the move right there and a 422 reads in plain words,
-// never in the error dialog. The last test checks the classic layout.
+// never in the error dialog. A hold on a Radio key opens this editor on that
+// key (test 16). The last test checks the classic layout.
 //
 //   E2E_PORT=4185 npx playwright test specs/desktop-ui2-assignment-editor.spec.mjs --project=desktop
 
@@ -143,6 +144,39 @@ test.describe('UI 2.0 key assignment editor', () => {
     await page.locator('#ui2SpkTab-sound').click();
     await page.locator('#ui2SpkTab-keys').click();
     await expect(key(page, 6)).toContainText('Classic FM');
+  });
+
+  // The hold on a Radio key (views/music/ui2keyedit.js): its "Find a station"
+  // and "Choose a favorite" open this editor, on that key, instead of a
+  // picker of their own.
+  test('16. a hold on a Radio key opens the editor on that key, in the mode it asked for', async ({ app }) => {
+    const { page } = app;
+    const radioKey = (slot) => page.locator(`#presets .preset[data-slot="${slot}"]`);
+    const holdChoice = (id) => page.locator(`#ui2KeyEdit [data-ke="${id}"]`);
+    await openKeys(page);
+    // On its own the editor chooses the first empty key.
+    await expect(key(page, 5)).toHaveAttribute('aria-pressed', 'true');
+    // Key 2's "Choose a favorite", from Radio.
+    await nav(page, 'box').click();
+    await radioKey(2).locator('.preset-body').focus();
+    await page.keyboard.press('Shift+Enter');
+    await holdChoice('favorites').click();
+    await expect(page.locator('#ui2SpkTab-keys')).toHaveAttribute('aria-selected', 'true');
+    await expect(key(page, 2)).toHaveAttribute('aria-pressed', 'true');
+    await expect(key(page, 5)).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#kaeHint')).toHaveText(L('hintReplace', { n: 2, current: 'Best Of Rock.FM' }));
+    // No favourites yet: the keyboard is on the Radio source, which says so.
+    await expect(editor(page).locator('.kae-state')).toHaveText(L('radioNoFavs'));
+    await expect(page.locator('#kaePanel')).toBeFocused();
+    // Key 6's "Find a station", with the Library source chosen here meanwhile.
+    await editor(page).getByRole('tab', { name: L('srcLibrary') }).click();
+    await nav(page, 'box').click();
+    await radioKey(6).click();
+    await holdChoice('find').click();
+    await expect(editor(page).getByRole('tab', { name: L('srcRadio') })).toHaveAttribute('aria-selected', 'true');
+    await expect(key(page, 6)).toHaveAttribute('aria-pressed', 'true');
+    await expect(editor(page).getByLabel(L('radioSearchLabel'))).toBeFocused();
+    await expect(page.locator('#pickModal')).toBeHidden();
   });
 
   test.describe('Spotify', () => {

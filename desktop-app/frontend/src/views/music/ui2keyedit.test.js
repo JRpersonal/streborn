@@ -6,11 +6,10 @@ import { readFileSync } from 'node:fs';
 
 vi.mock('./ui2radio.js', () => ({
   keyReport: () => null,
-  keyStatusOf: () => null,
-  openUi2RadioTab: vi.fn(),
   restoreKeyFocus: vi.fn(),
 }));
 vi.mock('./save.js', () => ({ saveCurrentToSlot: vi.fn() }));
+vi.mock('../../shell2/speakers/index.js', () => ({ openSpeakers: vi.fn(() => true) }));
 
 const {
   HOLD_TO_EDIT_MS,
@@ -20,7 +19,6 @@ const {
   keyEditActions,
   keyEditHTML,
   keyEditWords,
-  takeKeyAssignTarget,
   ui2KeyHoldOpts,
 } = await import('./ui2keyedit.js');
 const { setLocale } = await import('../../i18n/index.js');
@@ -130,11 +128,11 @@ describe('the words', () => {
     expect(w.actions).toEqual([{ id: 'save', label: 'Save what is playing' }, { id: 'rename', label: 'Rename' }]);
   });
 
-  it('asks to fill an empty key and says where Put on key starts', () => {
+  it('asks to fill an empty key and says where Find and a favourite lead', () => {
     const w = keyEditWords({ kind: 'empty', slot: 5, speaker: 'Kitchen', name: '', actions: ['find', 'favorites'] });
     expect(w.title).toBe('Fill key 5 on Kitchen');
     expect(w.now).toBe('This key is empty.');
-    expect(w.note).toContain('key 5 is selected first');
+    expect(w.note).toBe('Find a station and Choose a favorite open Keys and alarms for Kitchen, with key 5 chosen.');
   });
 
   it('draws one primary choice, escaped, in a named group, with a named close', () => {
@@ -148,20 +146,28 @@ describe('the words', () => {
   });
 });
 
-describe('the assignment', () => {
-  it('has no key to start the picker on until one was chosen', () => {
-    expect(takeKeyAssignTarget({ host: '192.0.2.1' })).toBeNull();
-    expect(takeKeyAssignTarget(null)).toBeNull();
+// "Find a station" and "Choose a favorite" open the one key editor (Speakers
+// > the speaker > Keys and alarms) on the key, instead of the Radio "Put on
+// key" picker with a key to start on.
+describe('find and favourites', () => {
+  const body = src('./ui2keyedit.js');
+
+  it('open the Keys tab of the speaker, on the key, in the right mode', () => {
+    expect(body).toContain("openKeyTab(host, slot, id);");
+    expect(body).toContain("openSpeakers('speaker', { host, tab: 'keys', key: { slot, mode } })");
+    // On use, so the music views do not load the Speakers area with them.
+    expect(body).toContain("await import('../../shell2/speakers/index.js')");
+    expect(body).not.toMatch(/^import .*shell2\/speakers/m);
+    // The quick choices stay in the card.
+    expect(body).toContain('saveCurrentToSlot(slot, keyReport(slot, box))');
+    expect(body).toContain("id === 'rename' ? '.ren' : '.del'");
   });
 
-  it('is the picker the station rows already use, opened on the row of that key', () => {
+  it('left no second way to the picker behind', () => {
+    expect(body).not.toMatch(/takeKeyAssignTarget|leaveKeyEditView|dropAssign|keyAssignPending|openUi2RadioTab/);
     const picker = src('./picker.js');
-    expect(picker).toContain('takeKeyAssignTarget(target)');
-    expect(picker).toContain('clampRow(want ? slotRow(want) : state.presetRow, rows)');
-  });
-
-  it('ends with the Radio view and with another speaker', () => {
-    expect(src('../../main.js')).toContain("if (view !== 'box') leaveKeyEditView();");
-    expect(src('./ui2keyedit.js')).toContain('if (assign && (!box || box.host !== assign.host)) dropAssign();');
+    expect(picker).not.toContain('takeKeyAssignTarget');
+    expect(picker).toContain('const row = clampRow(state.presetRow, rows);');
+    expect(src('../../main.js')).not.toContain('leaveKeyEditView');
   });
 });

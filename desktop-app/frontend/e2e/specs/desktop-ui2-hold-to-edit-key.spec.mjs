@@ -2,10 +2,12 @@
 // a short press plays the key, a hold of about 700 ms opens its choices under
 // the grid instead (and never also plays), an empty key opens them on a short
 // press, and the keyboard gets there with Shift+Enter or the context-menu
-// key. Every choice is the flow the key already had: the rename and clear
-// icons, the save of what plays, and the station rows' "Put on key" picker,
-// which then starts on the key the user came from. The last block checks that
-// the current layout kept its hold-to-save.
+// key. The quick choices stay in the card (the save of what plays, the rename
+// and clear icons); "Find a station" and "Choose a favorite" open the one key
+// editor, Speakers > the speaker > Keys and alarms
+// (shell2/speakers/keyeditor.js), with that key chosen and the station search
+// or the favourites in front. The last block checks that the current layout
+// kept its hold-to-save.
 //
 //   E2E_PORT=4184 npx playwright test specs/desktop-ui2-hold-to-edit-key.spec.mjs --project=desktop
 
@@ -68,6 +70,21 @@ const fire = (page, slot, events) => page.evaluate(([s, list]) => {
 const setPlaying = (page, host, ps) => page.evaluate(([h, p]) => { window.__strMock.state.playing[h] = p; }, [host, ps]);
 const keyLine = (page, slot) => tile(page, slot).locator('.ui2-key-status');
 const pick = (page, host) => page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${host}"]`);
+// The key editor on Keys and alarms.
+const editor = (page) => page.locator('#ui2KeyEditor');
+const editorKey = (page, slot) => editor(page).locator(`.kae-key[data-slot="${slot}"]`);
+const KE = (k, v) => en(`ui2.speakers.keyEditor.${k}`, v);
+
+// onKeysTab: the hold card handed over to the speaker's Keys and alarms, with
+// key slot chosen in its editor and the Radio source open.
+async function onKeysTab(page, slot) {
+  await expect(page.locator('#ui2Main')).toHaveAttribute('data-view', 'settings');
+  await expect(page.locator('#ui2SpkPageName')).toHaveText(LR.friendlyName);
+  await expect(page.locator('#ui2SpkTab-keys')).toHaveAttribute('aria-selected', 'true');
+  await expect(editorKey(page, slot)).toHaveAttribute('aria-pressed', 'true');
+  await expect(editor(page).locator('.kae-key[aria-pressed="true"]')).toHaveCount(1);
+  await expect(page.locator('#kaeTab-radio')).toHaveAttribute('aria-selected', 'true');
+}
 
 test.describe('UI 2.0: hold a key to change it', () => {
   test.use({ ui2: true });
@@ -238,7 +255,7 @@ test.describe('UI 2.0: hold a key to change it', () => {
     }
   });
 
-  test('15. choosing another speaker closes the choices and ends a search started for a key', async ({ app }) => {
+  test('15. choosing another speaker closes the choices', async ({ app }) => {
     const { page } = app;
     await body(page, 3).focus();
     await page.keyboard.press('Shift+Enter');
@@ -249,52 +266,51 @@ test.describe('UI 2.0: hold a key to change it', () => {
     await pick(page, LR.host).click();
     await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
     await expect(panel(page)).toBeHidden();
-    // A search started for key 3 ends with the speaker.
-    await expect(body(page, 3)).toContainText('NPR News');
-    await body(page, 3).focus();
-    await page.keyboard.press('Shift+Enter');
-    await choice(page, 'find').click();
-    await expect(keyLine(page, 3)).toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
-    await pick(page, ROSTER.bedroom.host).click();
-    await expect(pick(page, ROSTER.bedroom.host)).toHaveAttribute('aria-current', 'true');
-    await pick(page, LR.host).click();
-    await expect(pick(page, LR.host)).toHaveAttribute('aria-current', 'true');
-    await expect(body(page, 3)).toContainText('NPR News');
-    await expect(keyLine(page, 3)).not.toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
-    await row(page, JAZZ.name).locator('[data-act="key"]').click();
-    await expect(page.locator('#pickModal')).toBeVisible();
-    await expect(page.locator('#pickGrid .pick-slot').first()).toBeFocused();
   });
 
-  test('16. leaving the Radio view ends a search started for a key', async ({ app }) => {
+  test('16. Choose a favorite opens the key editor on that key with the favourites, also after a search there', async ({ app, mock }) => {
     const { page } = app;
-    await body(page, 3).focus();
+    // A favourite, starred on Radio.
+    await row(page, JAZZ.name).locator('[data-act="fav"]').click();
+    // A search in the editor first, from key 1's "Find a station".
+    await body(page, 1).focus();
     await page.keyboard.press('Shift+Enter');
     await choice(page, 'find').click();
-    await expect(keyLine(page, 3)).toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
-    await page.locator('#ui2Tabs .ui2-nav-item[data-view="recent"]').click();
-    await expect(page.locator('#ui2Main')).toHaveAttribute('data-view', 'recent');
+    await onKeysTab(page, 1);
+    await expect(page.locator('#kaeRadioQ')).toBeFocused();
+    await page.keyboard.type('kexp');
+    await page.keyboard.press('Enter');
+    await expect(editor(page).getByRole('heading', { name: KE('radioHits', { q: 'kexp' }) })).toBeVisible();
+    // Back on Radio, key 3 (NPR News): its favourites, not the old hits.
     await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').click();
-    await expect(page.locator('#ui2Main')).toHaveAttribute('data-view', 'box');
-    await expect(keyLine(page, 3)).not.toHaveText(en('ui2.radio.keyAssignPending', { n: 3 }));
+    await expect(body(page, 3)).toContainText('NPR News');
+    await body(page, 3).focus();
+    await page.keyboard.press('Shift+Enter');
+    await choice(page, 'favorites').click();
+    await expect(panel(page)).toBeHidden();
+    await onKeysTab(page, 3);
+    await expect(page.locator('#kaeHint')).toHaveText(KE('hintReplace', { n: 3, current: 'NPR News' }));
+    await expect(editor(page).getByRole('heading', { name: en('ui2.radio.favorites') })).toBeVisible();
+    await expect(page.locator('#kaeRadioQ')).toHaveValue('');
+    const put = editor(page).getByRole('button', { name: KE('putName', { what: JAZZ.name, n: 3, name: LR.friendlyName }) });
+    await expect(put).toBeFocused();
+    await mock.resetCalls();
+    await page.keyboard.press('Enter');
+    await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 3 && c.args[3] === JAZZ.name, times: 1 });
+    await expect(page.locator('#kaeResult')).toHaveText(en('ui2.radio.saved', { n: 3, speaker: LR.friendlyName }));
   });
 
-  test('17. a key of the second row: Put on key opens on that row and that key, also after the grid went back', async ({ app, mock }) => {
+  test('17. a key of the second row: the key editor opens on that key of that row', async ({ app }) => {
     const { page } = app;
     await page.locator('#presetRowTab2').click();
     await expect(tile(page, 8)).toHaveClass(/empty/);
     await tile(page, 8).click();
     await expect(panel(page)).toBeVisible();
     await choice(page, 'find').click();
-    await page.locator('#presetRowTab1').click();
-    await expect(tile(page, 1)).toBeVisible();
-    await mock.resetCalls();
-    await row(page, JAZZ.name).locator('[data-act="key"]').click();
-    await expect(page.locator('#pickModal')).toBeVisible();
-    await expect(page.locator('#pickRowTab2')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('#pickGrid .pick-slot[data-slot="8"]')).toBeFocused();
-    await page.keyboard.press('Enter');
-    await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 8 && c.args[3] === JAZZ.name, times: 1 });
+    // Row one is full, so the editor would have chosen key 1 on its own.
+    await onKeysTab(page, 8);
+    await expect(page.locator('#kaeHint')).toHaveText(KE('hintEmpty', { n: en('preset.row2.num', { n: 2 }) }));
+    await expect(page.locator('#kaeRadioQ')).toBeFocused();
   });
 
   test('4. Shift+Enter opens the choices from the keyboard; Rename is the key\'s own rename', async ({ app, mock }) => {
@@ -362,7 +378,7 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await expect(panel(page)).toBeVisible();
       await expect(panel(page).locator('#ui2KeyEditTitle')).toHaveText(en('ui2.radio.keyAssignTitle', { n: 5, speaker: LR.friendlyName }));
       await expect(panel(page).locator('.ui2-key-edit-now')).toHaveText(en('ui2.radio.keyEditEmpty'));
-      await expect(panel(page).locator('.ui2-key-edit-note')).toHaveText(en('ui2.radio.keyEditNote', { n: 5 }));
+      await expect(panel(page).locator('.ui2-key-edit-note')).toHaveText(en('ui2.radio.keyEditNoteEditor', { n: 5, speaker: LR.friendlyName }));
       expect(await ids(page)).toEqual(['save', 'find', 'favorites']);
       await expect(tile(page, 5)).toHaveAttribute('aria-expanded', 'true');
       await page.keyboard.press('Escape');
@@ -374,24 +390,25 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await expect(choice(page, 'save')).toBeFocused();
     });
 
-    test('8. Find a station leads to Put on key, which starts on that key', async ({ app, mock }) => {
+    test('8. Find a station opens the key editor on that key with the station search, and only it writes the key', async ({ app, mock }) => {
       const { page } = app;
       await tile(page, 5).click();
       await choice(page, 'find').click();
       await expect(panel(page)).toBeHidden();
-      await expect(page.locator('.ui2-radio-tab[data-tab="discover"]')).toHaveAttribute('aria-selected', 'true');
-      await expect(tile(page, 5).locator('.ui2-key-status')).toHaveText(en('ui2.radio.keyAssignPending', { n: 5 }));
-      await expect(page.locator('#searchQ')).toBeFocused();
+      await onKeysTab(page, 5);
+      await expect(page.locator('#kaeRadioQ')).toBeFocused();
+      await page.keyboard.type('kexp');
+      await page.keyboard.press('Enter');
       await mock.resetCalls();
+      await editor(page).getByRole('button', { name: KE('putName', { what: 'KEXP', n: 5, name: LR.friendlyName }) }).click();
+      await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 5 && c.args[3] === 'KEXP', times: 1 });
+      await expect(page.locator('#kaeResult')).toHaveText(en('ui2.radio.saved', { n: 5, speaker: LR.friendlyName }));
+      await expect(editorKey(page, 5)).toContainText('KEXP');
+      // Radio's own Put on key was never aimed: it starts on the first key.
+      await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').click();
+      await expect(tile(page, 5).locator('.name')).toHaveText('KEXP');
       await row(page, JAZZ.name).locator('[data-act="key"]').click();
       await expect(page.locator('#pickModal')).toBeVisible();
-      await expect(page.locator('#pickGrid .pick-slot[data-slot="5"]')).toBeFocused();
-      await page.keyboard.press('Enter');
-      await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 5 && c.args[3] === JAZZ.name, times: 1 });
-      await expect(tile(page, 5).locator('.name')).toHaveText(JAZZ.name);
-      await expect(tile(page, 5).locator('.ui2-key-status')).not.toHaveText(en('ui2.radio.keyAssignPending', { n: 5 }));
-      // Used once: the next picker starts on the first key again.
-      await row(page, JAZZ.name).locator('[data-act="key"]').click();
       await expect(page.locator('#pickGrid .pick-slot').first()).toBeFocused();
     });
   });

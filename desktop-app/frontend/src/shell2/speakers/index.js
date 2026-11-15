@@ -27,8 +27,10 @@
 // Routing API:
 //   openSpeakers(route = 'list', { host, tab })  go to a place; host picks the
 //       speaker for 'speaker' (a Bose original goes to 'add' instead) and the
-//       setup target for 'add'; tab picks the speaker page's tab. Returns
-//       false (and does nothing) without the preview shell.
+//       setup target for 'add'; tab picks the speaker page's tab. On
+//       'speaker', key { slot, mode } opens Keys and alarms with that key
+//       chosen in the key editor ('find' or 'favorites'). Returns false (and
+//       does nothing) without the preview shell.
 //   speakersRoute()            { route, host, tab } of what is on screen; route
 //                              is '' outside the area.
 //   syncSpeakersArea(view)     mount.js syncShellNav: shows or hides the head,
@@ -47,6 +49,7 @@ import { stereoPairsOf } from '../../groups.js';
 import { routeOfView, ROUTE_VIEW, SPEAKER_ROUTES, normalizeTab, subnavCurrent } from './routes.js';
 import { renderSpeakerList } from './list.js';
 import { currentSpeakerTab, renderSpeakerPage } from './speaker.js';
+import { aimKeyEditor } from './keyeditor.js';
 import { mountGroups } from './groups.js';
 import { paintSetupWizard } from '../setup/wizard.js';
 import './speakers.css';
@@ -90,6 +93,12 @@ export function openSpeakers(route = 'list', opts = {}) {
   if (r === 'speaker' && box && box.kind === 'stock') r = 'add';
   if (r === 'speaker') {
     if (opts.tab) wantTab = normalizeTab(opts.tab);
+    // A key to change, from a hold on a Radio key: the Keys tab's editor
+    // opens on it (keyeditor.js aimKeyEditor).
+    if (opts.key && box) {
+      wantTab = 'keys';
+      aimKeyEditor({ host: box.host, slot: opts.key.slot, mode: opts.key.mode });
+    }
     if (box) {
       const prev = state.settingsBox;
       // Lock-step, as the classic Settings dropdown: the page's speaker is the
