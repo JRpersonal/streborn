@@ -174,6 +174,8 @@ export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallRes
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
 
+export function KeepSpeakerWiFiCopy(arg1:string,arg2:number,arg3:string):Promise<main.WiFiCopyResult>;
+
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
 export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
@@ -417,6 +419,8 @@ export function StickInstallFirmwareGate(arg1:string):Promise<main.StickFirmware
 export function StickVersion(arg1:string):Promise<string>;
 
 export function Stop(arg1:string,arg2:number):Promise<void>;
+
+export function StoreSpeakerWiFiCopy(arg1:string,arg2:number,arg3:string,arg4:string):Promise<main.WiFiCopyResult>;
 
 export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
 
