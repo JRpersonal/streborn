@@ -29,6 +29,8 @@ import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
+import { TRANSPORT_WITHIN_MS, transportVerdict } from './sessionplay.js';
+import { Pause, Resume } from '../api.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 import { agoText } from '../format.js';
@@ -65,6 +67,13 @@ const rowNotes = new Map();
 const awaiting = new Map();
 const CONFIRM_AFTER_MS = 1000;
 const CONFIRM_WITHIN_MS = 20000;
+// A row's own Play/Pause press (sessionplay.js) that waits for the speaker:
+// host -> { want: 'pause' | 'resume', at, sent, name }. The row stays pending
+// until the poll shows the change (honest feedback, as a group edit).
+const transportWait = new Map();
+// The buttons of one sidebar row, in their order on screen: the name (pick),
+// the row's own Play/Pause, "+" or "-".
+const ROW_BUTTONS = '.ui2-spk-pick, .ui2-spk-tp, .ui2-spk-act';
 // The speaker the player's error line spoke about.
 let playerStatusHost = '';
 
@@ -528,6 +537,81 @@ function confirmAwaiting() {
   }
 }
 
+// rowTransportPress is a row's own Play/Pause: Pause or Resume on that row's
+// host and port (a group's master, a pair's master, a single speaker), never
+// through the speaker you control, which stays the one it was. The row waits
+// for the speaker (settleTransport); a refusal is an alert in the row itself
+// ("Kitchen did not pause: ..."), never a toast across the window.
+function rowTransportPress(host, port, want, name) {
+  if (!host || transportWait.has(host)) return;
+  // The note of an earlier failed press goes with the next one.
+  const old = rowNotes.get(host);
+  if (old && old.kind === 'transport') rowNotes.delete(host);
+  const w = { want, at: Date.now(), sent: false, name };
+  transportWait.set(host, w);
+  paintSpeakers(true);
+  const fn = want === 'pause' ? Pause : Resume;
+  Promise.resolve().then(() => fn(host, port)).then(() => {
+    if (transportWait.get(host) !== w) return;
+    w.sent = true;
+    askWhoPlays();
+    paintSpeakers(true);
+  }, (err) => {
+    if (transportWait.get(host) !== w) return;
+    transportWait.delete(host);
+    const text = transportErrorText(want, name, err);
+    rowNotes.set(host, { tone: 'error', text, kind: 'transport', host });
+    paintSpeakers(true);
+    // News about one press: it goes after a while, unless something newer
+    // took its place.
+    setTimeout(() => {
+      const n = rowNotes.get(host);
+      if (n && n.kind === 'transport' && n.text === text) { rowNotes.delete(host); paintSpeakers(true); }
+    }, CONFIRM_WITHIN_MS);
+  });
+  // A repaint after the deadline, in case nothing else repaints then.
+  setTimeout(() => paintSpeakers(false), TRANSPORT_WITHIN_MS + 100);
+}
+
+// askWhoPlays reads every speaker's play state soon after a press instead of
+// on the next 15 s round. The speaker takes a moment to report the change,
+// and a read finds a round in flight now and then: a second one later.
+function askWhoPlays() {
+  if (typeof deps.refreshBoxPlaying !== 'function') return;
+  setTimeout(() => { try { deps.refreshBoxPlaying(); } catch (_) { /* best effort */ } }, 800);
+  setTimeout(() => { try { deps.refreshBoxPlaying(); } catch (_) { /* best effort */ } }, 3000);
+}
+
+// settleTransport checks the waiting presses against the rows as the poll
+// draws them now (sessionplay.js transportVerdict). Confirmed: said once
+// through the sidebar's live region. Not confirmed in time: a note in the
+// row, which then shows what the speaker reports. Returns whether anything
+// changed, so the model is built again without the pending mark.
+function settleTransport(model) {
+  if (!transportWait.size) return false;
+  const rows = [...(model.pinned || []), ...(model.others || [])];
+  const now = Date.now();
+  let changed = false;
+  for (const [h, w] of [...transportWait]) {
+    const verdict = transportVerdict(w, rows.find((r) => r.host === h) || null, now);
+    if (verdict === 'wait') continue;
+    transportWait.delete(h);
+    changed = true;
+    if (verdict === 'confirmed') {
+      announceSpeakers(t(w.want === 'pause' ? 'ui2.side.paused' : 'ui2.side.resumed', { name: w.name }));
+    } else if (verdict === 'timeout') {
+      const text = t('ui2.side.noConfirm', { name: w.name });
+      rowNotes.set(h, { tone: 'warn', text, kind: 'transport', host: h });
+      announceSpeakers(text);
+      setTimeout(() => {
+        const n = rowNotes.get(h);
+        if (n && n.kind === 'transport' && n.text === text) { rowNotes.delete(h); paintSpeakers(true); }
+      }, CONFIRM_WITHIN_MS);
+    }
+  }
+  return changed;
+}
+
 // wireSpeakerList handles the sidebar list, delegated, so a repaint never
 // loses a handler. A row's pick button chooses the speaker you control
 // (pickBox: an offline speaker explains itself and rediscovers, a Bose
@@ -563,6 +647,17 @@ function wireSpeakerList(root) {
       }
       return;
     }
+    // A row's own Play/Pause: never a pick, so the speaker you control stays.
+    const tp = e.target.closest('.ui2-spk-tp');
+    if (tp) {
+      rovingHost = tp.dataset.host;
+      const li = tp.closest('li');
+      const nameEl = li && li.querySelector('.ui2-spk-name');
+      const box = boxFor(tp);
+      const name = (nameEl && nameEl.textContent) || (box ? label(box) : tp.dataset.host);
+      rowTransportPress(tp.dataset.host, parseInt(tp.dataset.port, 10), tp.dataset.tp === 'play' ? 'resume' : 'pause', name);
+      return;
+    }
     const act = e.target.closest('.ui2-spk-act');
     if (act) {
       rovingHost = act.dataset.host;
@@ -583,25 +678,21 @@ function wireSpeakerList(root) {
     }).catch(() => {});
   });
   root.addEventListener('focusin', (e) => {
-    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    const btn = e.target.closest(ROW_BUTTONS);
     if (btn) setRoving(root, btn.dataset.host);
   });
   root.addEventListener('keydown', (e) => {
-    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    const btn = e.target.closest(ROW_BUTTONS);
     if (!btn) return;
     const li = btn.closest('li');
-    const isAct = btn.classList.contains('ui2-spk-act');
     const rtl = getComputedStyle(root).direction === 'rtl';
     const toAct = rtl ? 'ArrowLeft' : 'ArrowRight';
     const toPick = rtl ? 'ArrowRight' : 'ArrowLeft';
-    if (!isAct && e.key === toAct) {
-      const a = li && li.querySelector('.ui2-spk-act');
-      if (a) { e.preventDefault(); a.focus(); }
-      return;
-    }
-    if (isAct && e.key === toPick) {
-      const p = li && li.querySelector('.ui2-spk-pick');
-      if (p) { e.preventDefault(); p.focus(); }
+    // Right and Left move along the row: the name, Play/Pause, "+" or "-".
+    if (e.key === toAct || e.key === toPick) {
+      const inRow = li ? [...li.querySelectorAll(ROW_BUTTONS)] : [];
+      const next = inRow[inRow.indexOf(btn) + (e.key === toAct ? 1 : -1)];
+      if (next) { e.preventDefault(); next.focus(); }
       return;
     }
     // Up, Down, Home and End move through every row, the pinned group and the
@@ -622,7 +713,7 @@ function wireSpeakerList(root) {
 // from every other row.
 function setRoving(root, host) {
   rovingHost = host || '';
-  root.querySelectorAll('.ui2-spk-pick, .ui2-spk-act').forEach((b) => {
+  root.querySelectorAll(ROW_BUTTONS).forEach((b) => {
     b.tabIndex = b.dataset.host === rovingHost ? 0 : -1;
   });
 }
@@ -847,8 +938,17 @@ function paintSpeakers(force) {
     label,
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
+    boxPaused: state.boxPaused,
   };
-  const model = sidebarModel(state.boxes, ctx);
+  const waiting = () => new Map([...transportWait].map(([h, w]) => [h, w.want]));
+  ctx.transportPending = waiting();
+  let model = sidebarModel(state.boxes, ctx);
+  // A row's Play/Pause press the poll has now confirmed (or given up on)
+  // is no longer pending: the model again, without the mark.
+  if (settleTransport(model)) {
+    ctx.transportPending = waiting();
+    model = sidebarModel(state.boxes, ctx);
+  }
   const levels = levelsText(model);
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,
@@ -869,7 +969,11 @@ function paintSpeakers(force) {
     const active = document.activeElement;
     const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
     const keepHost = inList ? active.dataset.host : '';
-    const keepAct = inList && active.classList.contains('ui2-spk-act');
+    // On "+" or "-", or on the row's Play/Pause: the same button again (a
+    // Play/Pause that left with the music falls back to the name).
+    let keepCls = '';
+    if (inList && active.classList.contains('ui2-spk-act')) keepCls = '.ui2-spk-act';
+    else if (inList && active.classList.contains('ui2-spk-tp')) keepCls = '.ui2-spk-tp';
     const scrolls = [...lists.querySelectorAll(SPK_LISTS)].map((el) => el.scrollTop);
     const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
@@ -880,7 +984,7 @@ function paintSpeakers(force) {
     });
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
-      const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
+      const again = (keepCls && sel(keepCls)) || sel('.ui2-spk-pick');
       if (again) again.focus();
     }
   }

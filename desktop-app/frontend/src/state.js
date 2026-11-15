@@ -145,6 +145,7 @@ export const state = {
   discovery: null,            // { phase: 'searching' | 'done' | 'failed', error, at, last | found }; null before the first search
   boxPlaying: undefined,      // deviceID -> plays right now, replaced by every refreshBoxPlaying round
   boxPlayingBusy: false,      // a refreshBoxPlaying round is in flight
+  boxPaused: undefined,       // deviceID -> paused (not in standby), read in the same round; the UI 2.0 sidebar offers Play on it
   speakerIssueParts: null,    // the parts speakerIssues is built from, merged per reporter
   speakerIssues: undefined,   // per-speaker attention items (shell2/attention.js speakerIssuesFrom)
   speakerIssuesSig: undefined, // JSON of speakerIssues at the last repaint

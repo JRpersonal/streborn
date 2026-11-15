@@ -26,6 +26,7 @@ import { groupCandidates, groupMemberBoxes, groupMembersOf, inAnyStereoPair, mas
 import { roomItems } from './rooms.js';
 import { CHIP_LABEL_KEYS, chipHTML, pillLabel, statusPillHTML } from './pill.js';
 import { discoveryPhase, noSpeakersState } from './state.js';
+import { rowTransport, rowTransportLabel } from './sessionplay.js';
 
 const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 
@@ -47,6 +48,10 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //                    { items, chip }, chip null when nothing is wrong); none
 //                    without it
 //        connectOpen the empty state's Connect by address block is open
+//        boxPaused   { deviceID: bool } from the every-speaker poll: a paused
+//                    row offers Play (sessionplay.js)
+//        transportPending  Map or object host -> 'pause' | 'resume': a row's
+//                    own Play/Pause press that waits for the speaker
 //
 // The pinned group is the group that plays (#1284: "the playing group stays
 // pinned on top", "`+` on the idle ones ... adding it to what's playing"):
@@ -101,6 +106,14 @@ export function sidebarModel(boxes, ctx = {}) {
   const candidates = new Set(groupable ? groupCandidates(master, zl, list).map((b) => b.host) : []);
   const playing = ctx.boxPlaying || {};
   const pending = ctx.pending || new Set();
+  // A sidebar Play/Pause press that waits for the speaker: Map or object host
+  // -> 'pause' | 'resume'.
+  const transportPendingOf = (host) => {
+    const tw = ctx.transportPending;
+    if (!tw || !host) return '';
+    const v = typeof tw.get === 'function' ? tw.get(host) : tw[host];
+    return v === 'pause' || v === 'resume' ? v : '';
+  };
   const notes = ctx.notes || null;
   const noteOf = (host) => {
     if (!notes || !host) return null;
@@ -144,6 +157,22 @@ export function sidebarModel(boxes, ctx = {}) {
       pending: r.hosts.some((h) => pending.has(h)),
       master: action && master ? master.host : '',
     };
+    // Play/Pause of the session this row plays (sessionplay.js): on a single
+    // speaker, a group's master and a stereo pair, never on a follower.
+    const tp = rowTransport(r, {
+      boxes: list,
+      zoneLive: zl,
+      currentBox: ctx.currentBox,
+      nowPlayState: ctx.nowPlayState,
+      nowSource: ctx.nowSource,
+      boxPaused: ctx.boxPaused,
+    });
+    if (tp.kind) {
+      row.transport = tp.kind;
+      row.transportGroup = tp.group;
+      const want = transportPendingOf(r.host);
+      if (want) row.transportPending = want;
+    }
     const note = r.hosts.map(noteOf).find(Boolean) || null;
     if (note) {
       row.note = {
@@ -255,6 +284,17 @@ function rowHTML(row, tabHost) {
     + `<span class="ui2-spk-name">${escapeHtml(row.name)}</span>`
     + (pill || chips ? `<span class="ui2-room-badges">${pill}${chips}</span>` : '')
     + '</button>';
+  // The row's own Play/Pause: its own host and port, never the pick (it
+  // does not change the speaker you control). The glyph is drawn in CSS
+  // (shell2.css), the words are its name and tooltip.
+  let tp = '';
+  if (row.transport) {
+    const name = rowTransportLabel(row);
+    tp = `<button type="button" class="u-btn u-btn--icon ui2-spk-tp${row.transportPending ? ' pending' : ''}" data-tp="${row.transport}"`
+      + ` data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" tabindex="${tab}"`
+      + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.transportPending ? ' aria-busy="true"' : ''}>`
+      + '<span class="ui2-spk-tp-glyph" aria-hidden="true"></span></button>';
+  }
   let act = '';
   if (row.action) {
     const name = actionLabel(row);
@@ -263,7 +303,7 @@ function rowHTML(row, tabHost) {
       + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.pending ? ' aria-busy="true"' : ''}>`
       + `<span aria-hidden="true">${row.action === 'add' ? '+' : '&minus;'}</span></button>`;
   }
-  return `<li class="${cls}">${pick}${act}${noteHTML(row)}</li>`;
+  return `<li class="${cls}">${pick}${tp}${act}${noteHTML(row)}</li>`;
 }
 
 // noteHTML is what happened to a row, under its name: an offline pick that
@@ -291,7 +331,8 @@ function noteHTML(row) {
 
 // sidebarHTML renders both lists: the pinned group with its heading, and the
 // other speakers, which scroll on their own. One pick button takes Tab (plus
-// the action next to it); the arrow keys move between rows (rovingIndex).
+// the Play/Pause and the action next to it); Up and Down move between rows
+// (rovingIndex), Right and Left along one row.
 export function sidebarHTML(model, opts = {}) {
   const m = model || { pinned: [], others: [] };
   const rows = [...(m.pinned || []), ...(m.others || [])];

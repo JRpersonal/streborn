@@ -1408,6 +1408,9 @@ function safeMountShell2() {
       pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
       toggleGroupMember,
       groupEditPendingHosts,
+      // The sidebar's own Play/Pause on a playing row asks who plays now
+      // right after its press, so the row confirms without the 15 s wait.
+      refreshBoxPlaying: () => refreshBoxPlaying(true),
       // The Speakers area (shell2/speakers): opening one speaker's page picks
       // it the way the classic Settings dropdown does (lock-step).
       speakerPicked: speakerPickedInTab,
@@ -1871,30 +1874,41 @@ async function refreshMusicZones(force) {
 // on their tile). Debounced to at most once per 8s, same cadence and best-effort
 // contract as refreshMusicZones. The currently-selected box is also marked live
 // from state.nowPlayState in the pill renderer, so its icon never lags the poll.
+// force skips the 8 s debounce (never a round already in flight): the UI 2.0
+// sidebar's Play/Pause asks right after its press, so its row confirms in
+// about a second instead of on the next 15 s round.
 let _boxPlayingFetchAt = 0;
-async function refreshBoxPlaying() {
+async function refreshBoxPlaying(force) {
   // Offline tiles are excluded: every Status() against them just times out
   // and would delay the whole Promise.allSettled round for nothing.
   const polled = strBoxes(state.boxes).filter(b => b.deviceID && b.host && !b.offline);
   if (!polled.length) return;
   const now = Date.now();
-  if (state.boxPlayingBusy || now - _boxPlayingFetchAt < 8000) return;
+  if (state.boxPlayingBusy || (!force && now - _boxPlayingFetchAt < 8000)) return;
   _boxPlayingFetchAt = now;
   state.boxPlayingBusy = true;
   try {
     const results = await Promise.allSettled(polled.map(b => Status(b.host, b.port)));
     const map = {};
+    // Paused is read in the same round: the UI 2.0 sidebar offers Play on a
+    // paused speaker, so its row keeps a way back to the music. The classic
+    // picker does not read it.
+    const paused = {};
     results.forEach((r, i) => {
       let playing = false;
+      let isPaused = false;
       if (r.status === 'fulfilled' && typeof r.value === 'string') {
         const xml = r.value;
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
+        isPaused = ps === 'PAUSE_STATE' && src !== 'STANDBY';
       }
       map[polled[i].deviceID] = playing;
+      paused[polled[i].deviceID] = isPaused;
     });
     state.boxPlaying = map;
+    state.boxPaused = paused;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }
