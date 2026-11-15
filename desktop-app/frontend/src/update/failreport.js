@@ -44,10 +44,10 @@ export function showSt300PowerCycleNotice(box) {
 // speaker whose update ended with nothing answering at its address. Same host
 // as the failure report: the speaker's own page in the UI 2.0 preview, the
 // overlay in the classic layout. It stays until the user closes it.
-export function showDarkAfterUpdate(box) {
+export function showDarkAfterUpdate(box, { unplugFirst = false } = {}) {
   const host = ui2ReportHost(box) || $('updateFailureReport');
   if (!host) { showToast(t('update.tookLongerToast')); return; }
-  host.innerHTML = darkChecklistHtml({ name: getBoxLabel(box), box, context: 'update', framed: true });
+  host.innerHTML = darkChecklistHtml({ name: getBoxLabel(box), box, context: 'update', framed: true, unplugFirst });
   host.classList.remove('hidden');
   focusUi2Report(host);
   wireDarkChecklist(host, {

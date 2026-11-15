@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Nog niet terug: wat je kunt doen",
   "darkCheck.waitHead": "Geef hem tijd.",
   "darkCheck.wait": "Sommige speakers hebben na een update of installatie tot 30 minuten nodig. Laat hem aangesloten en aan staan, en vernieuw de speakerlijst om de paar minuten.",
+  "darkCheck.unplugHead": "Haal de stekker er 30 seconden uit.",
+  "darkCheck.unplug": "Dit type speaker kan blijven hangen terwijl hij na een update herstart, en wachten helpt dan niet. Haal de stekker eruit, wacht 30 seconden, steek hem er weer in en geef hem 3 minuten. Vernieuw daarna de speakerlijst.",
   "darkCheck.powerHead": "Controleer de stroom.",
   "darkCheck.power": "Haal een USB-stick eruit als die nog in de speaker zit. Haal de stekker 10 seconden uit de speaker en steek hem er weer in. Blijft hij donker, probeer dan een ander stopcontact en, als je die hebt, een andere adapter van hetzelfde type: een versleten adapter kan het juist bij een herstart begeven.",
   "darkCheck.powerBattery": "Haal een USB-stick eruit als die nog in de speaker zit. Laat hem een tijdje aan zijn adapter, want een lege accu kan hem donker houden. Start hem daarna opnieuw met zijn knoppen: houd AUX ingedrukt, of AUX en Volume omlaag (-) samen, tot hij opnieuw opstart. Blijft hij donker, probeer dan een ander stopcontact en, als je die hebt, een andere adapter van hetzelfde type.",

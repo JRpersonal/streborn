@@ -38,10 +38,12 @@ function usedKeys() {
     'darkCheck.rowSummary', 'darkCheck.usbLink', 'darkCheck.filesLink', 'darkCheck.hardware', 'darkCheck.allDark',
     'update.st300PowerCycle']);
   for (const m of ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch 30', 'SoundTouch Portable', 'SoundTouch 300', 'Wave SoundTouch', '']) {
-    for (const s of darkChecklistSteps(m)) {
-      keys.add(s.head);
-      s.lines.forEach((k) => keys.add(k));
-      s.links.forEach((l) => keys.add(l.key));
+    for (const unplugFirst of [false, true]) {
+      for (const s of darkChecklistSteps(m, { unplugFirst })) {
+        keys.add(s.head);
+        s.lines.forEach((k) => keys.add(k));
+        s.links.forEach((l) => keys.add(l.key));
+      }
     }
   }
   return [...keys];
@@ -149,6 +151,24 @@ describe('an Update all run', () => {
 describe('the stages', () => {
   it('go wait, power, Bose app, then resets and the firmware by stick, in that order', () => {
     expect(darkChecklistSteps('SoundTouch 10').map((s) => s.id)).toEqual(['wait', 'power', 'wifi', 'dark']);
+  });
+
+  // A coprocessor Wi-Fi speaker that hung in its own restart (every port
+  // closed): waiting does nothing for it, unplugging it does.
+  it('lead with unplugging for 30 seconds instead of waiting when the verdict says so', () => {
+    expect(darkChecklistSteps('SoundTouch 20', { unplugFirst: true }).map((s) => s.id)).toEqual(['unplug', 'power', 'wifi', 'dark']);
+    expect(darkChecklistSteps('SoundTouch 20', { unplugFirst: false }).map((s) => s.id)).toEqual(['wait', 'power', 'wifi', 'dark']);
+    const en = bundle('en');
+    expect(en['darkCheck.unplug']).toMatch(/30 seconds/);
+    expect(en['darkCheck.unplug']).toMatch(/3 minutes/);
+    setLocale('en');
+    const html = darkChecklistHtml({ name: 'Kitchen', box: { model: 'SoundTouch 20' }, context: 'update', framed: true, unplugFirst: true });
+    expect(html).toContain('data-step="unplug"');
+    expect(html).not.toContain('data-step="wait"');
+    expect(html).toContain(en['darkCheck.unplugHead']);
+    const row = darkChecklistRowHtml({ name: 'Kitchen', box: { model: 'SoundTouch 20' }, unplugFirst: true });
+    expect(row).toContain('data-step="unplug"');
+    expect(darkChecklistRowHtml({ name: 'Kitchen', box: { model: 'SoundTouch 20' } })).toContain('data-step="wait"');
   });
 
   it('say up to 30 minutes, another socket and another matching power supply', () => {
@@ -372,7 +392,7 @@ describe('where it shows', () => {
   it('replaces the bare "took longer" toast after a single update, except on the 300', () => {
     const at = single.indexOf('darkAfterUpdate(result) && darkChecklistApplies(targetBox)');
     expect(at).toBeGreaterThan(0);
-    expect(single.indexOf('showDarkAfterUpdate(targetBox)', at)).toBeGreaterThan(at);
+    expect(single.indexOf('showDarkAfterUpdate(targetBox, { unplugFirst: !!result.unplugFirst })', at)).toBeGreaterThan(at);
     // Still before the generic toast, which stays for every other timeout.
     expect(single.indexOf("showToast(t('update.tookLongerToast'))", at)).toBeGreaterThan(at);
     // A computer without network gets its own notice first, not the checklist.

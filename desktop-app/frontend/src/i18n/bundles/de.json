@@ -1492,6 +1492,8 @@
   "darkCheck.rowSummary": "Noch nicht zurück: Das kannst du tun",
   "darkCheck.waitHead": "Gib ihm Zeit.",
   "darkCheck.wait": "Manche Lautsprecher brauchen nach einem Update oder einer Installation bis zu 30 Minuten. Lass ihn eingesteckt und eingeschaltet und aktualisiere die Lautsprecherliste alle paar Minuten.",
+  "darkCheck.unplugHead": "Zieh den Stecker für 30 Sekunden.",
+  "darkCheck.unplug": "Diese Bauart kann beim Neustart nach einem Update hängen bleiben, und Warten hilft dann nicht. Zieh den Stecker, warte 30 Sekunden, steck ihn wieder ein und gib ihm 3 Minuten. Aktualisiere dann die Lautsprecherliste.",
   "darkCheck.powerHead": "Prüf den Strom.",
   "darkCheck.power": "Zieh einen USB-Stick ab, falls noch einer im Lautsprecher steckt. Zieh den Stecker für 10 Sekunden und steck ihn wieder ein. Bleibt er dunkel, probier eine andere Steckdose und, falls du eins hast, ein anderes Netzteil vom gleichen Typ: Ein abgenutztes Netzteil kann genau beim Neustart aufgeben.",
   "darkCheck.powerBattery": "Zieh einen USB-Stick ab, falls noch einer im Lautsprecher steckt. Lass ihn eine Weile am Netzteil, denn ein leerer Akku kann ihn dunkel halten. Starte ihn dann mit seinen Tasten neu: Halte AUX gedrückt, oder AUX und Leiser (-) zusammen, bis er neu startet. Bleibt er dunkel, probier eine andere Steckdose und, falls du eins hast, ein anderes Netzteil vom gleichen Typ.",

@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Pas encore revenue : ce que tu peux faire",
   "darkCheck.waitHead": "Laisse-lui du temps.",
   "darkCheck.wait": "Certaines enceintes ont besoin de jusqu'à 30 minutes après une mise à jour ou une installation. Laisse-la branchée et allumée, et actualise la liste des enceintes toutes les quelques minutes.",
+  "darkCheck.unplugHead": "Débranche-la 30 secondes.",
+  "darkCheck.unplug": "Ce type d'enceinte peut rester bloqué pendant son redémarrage après une mise à jour, et attendre n'y change rien. Débranche-la, attends 30 secondes, rebranche-la et laisse-lui 3 minutes. Actualise ensuite la liste des enceintes.",
   "darkCheck.powerHead": "Vérifie l'alimentation.",
   "darkCheck.power": "Retire toute clé USB encore branchée sur l'enceinte. Débranche l'enceinte 10 secondes puis rebranche-la. Si elle reste éteinte, essaie une autre prise et, si tu en as une, une autre alimentation du même type : une alimentation usée peut lâcher justement au moment d'un redémarrage.",
   "darkCheck.powerBattery": "Retire toute clé USB encore branchée sur l'enceinte. Laisse-la un moment sur son adaptateur, car une batterie vide peut la garder éteinte. Redémarre-la ensuite avec ses boutons : maintiens AUX, ou AUX et Volume moins (-) ensemble, jusqu'à ce qu'elle redémarre. Si elle reste éteinte, essaie une autre prise et, si tu en as un, un autre adaptateur du même type.",

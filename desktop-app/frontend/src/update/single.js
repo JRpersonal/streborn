@@ -387,7 +387,9 @@ async function runSingleBoxUpdate(targetBox) {
       // the restart with a dark box and no plan, so this gets the staged
       // checklist (darkafterupdate.js). The SoundTouch 300 is left to its own
       // power-cycle notice below, which is the one step it needs.
-      showDarkAfterUpdate(targetBox);
+      // A coprocessor Wi-Fi speaker with every port closed hung in its own
+      // restart: the checklist leads with unplugging it (unplugFirst).
+      showDarkAfterUpdate(targetBox, { unplugFirst: !!result.unplugFirst });
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually

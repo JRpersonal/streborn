@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Dar negrįžo: ką gali padaryti",
   "darkCheck.waitHead": "Duok jai laiko.",
   "darkCheck.wait": "Kai kurioms kolonėlėms po atnaujinimo ar įdiegimo reikia iki 30 minučių. Palik ją prijungtą ir įjungtą, o kas kelias minutes atnaujink kolonėlių sąrašą.",
+  "darkCheck.unplugHead": "Atjunk ją nuo maitinimo 30 sekundžių.",
+  "darkCheck.unplug": "Šio tipo kolonėlė po atnaujinimo gali užstrigti persikraudama, ir tada laukti nepadeda. Atjunk ją, palauk 30 sekundžių, vėl prijunk ir duok jai 3 minutes. Tada atnaujink kolonėlių sąrašą.",
   "darkCheck.powerHead": "Patikrink maitinimą.",
   "darkCheck.power": "Ištrauk USB atmintinę, jei ji vis dar įkišta į kolonėlę. Atjunk kolonėlę nuo maitinimo 10 sekundžių ir vėl prijunk. Jei ji lieka tamsi, išbandyk kitą lizdą ir, jei turi, kitą tokio paties tipo maitinimo adapterį: susidėvėjęs adapteris gali sugesti būtent perkrovimo metu.",
   "darkCheck.powerBattery": "Ištrauk USB atmintinę, jei ji vis dar įkišta į kolonėlę. Palik ją kurį laiką prijungtą prie adapterio, nes tuščia baterija gali ją laikyti tamsią. Tada paleisk ją iš naujo mygtukais: laikyk AUX arba AUX ir Garsumas žemyn (-) kartu, kol ji persikraus. Jei ji lieka tamsi, išbandyk kitą lizdą ir, jei turi, kitą tokio paties tipo adapterį.",

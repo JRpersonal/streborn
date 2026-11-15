@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Aún no ha vuelto: qué puedes hacer",
   "darkCheck.waitHead": "Dale tiempo.",
   "darkCheck.wait": "Algunos altavoces necesitan hasta 30 minutos después de una actualización o una instalación. Déjalo enchufado y encendido, y actualiza la lista de altavoces cada pocos minutos.",
+  "darkCheck.unplugHead": "Desenchúfalo 30 segundos.",
+  "darkCheck.unplug": "Este tipo de altavoz puede quedarse colgado al reiniciarse tras una actualización, y esperar no sirve entonces. Desenchúfalo, espera 30 segundos, vuelve a enchufarlo y dale 3 minutos. Después actualiza la lista de altavoces.",
   "darkCheck.powerHead": "Revisa la alimentación.",
   "darkCheck.power": "Saca cualquier memoria USB que siga en el altavoz. Desenchúfalo 10 segundos y vuelve a enchufarlo. Si sigue apagado, prueba otro enchufe y, si tienes una, otra fuente de alimentación del mismo tipo: una fuente desgastada puede fallar justo en un reinicio.",
   "darkCheck.powerBattery": "Saca cualquier memoria USB que siga en el altavoz. Déjalo un rato conectado a su adaptador, porque una batería vacía puede mantenerlo apagado. Luego reinícialo con sus botones: mantén pulsado AUX, o AUX y Bajar volumen (-) a la vez, hasta que se reinicie. Si sigue apagado, prueba otro enchufe y, si tienes uno, otro adaptador del mismo tipo.",

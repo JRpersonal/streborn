@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Jeszcze nie wrócił: co możesz zrobić",
   "darkCheck.waitHead": "Daj mu czas.",
   "darkCheck.wait": "Niektóre głośniki potrzebują po aktualizacji lub instalacji nawet 30 minut. Zostaw go podłączonego i włączonego, a co kilka minut odśwież listę głośników.",
+  "darkCheck.unplugHead": "Odłącz go od zasilania na 30 sekund.",
+  "darkCheck.unplug": "Ten typ głośnika może zawiesić się podczas ponownego uruchamiania po aktualizacji i wtedy czekanie nie pomaga. Odłącz go, odczekaj 30 sekund, podłącz ponownie i daj mu 3 minuty. Potem odśwież listę głośników.",
   "darkCheck.powerHead": "Sprawdź zasilanie.",
   "darkCheck.power": "Wyjmij pendrive, jeśli nadal jest w głośniku. Odłącz głośnik od zasilania na 10 sekund i podłącz ponownie. Jeśli dalej jest ciemny, spróbuj innego gniazdka i, jeśli masz, innego zasilacza tego samego typu: zużyty zasilacz potrafi zawieść właśnie przy ponownym uruchomieniu.",
   "darkCheck.powerBattery": "Wyjmij pendrive, jeśli nadal jest w głośniku. Zostaw go na chwilę podłączonego do zasilacza, bo rozładowana bateria może trzymać go wyłączonym. Potem uruchom go ponownie przyciskami: przytrzymaj AUX albo AUX i Ciszej (-) razem, aż się zrestartuje. Jeśli dalej jest ciemny, spróbuj innego gniazdka i, jeśli masz, innego zasilacza tego samego typu.",

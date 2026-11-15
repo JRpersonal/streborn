@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Henüz geri gelmedi: neler yapabilirsin",
   "darkCheck.waitHead": "Ona zaman tanı.",
   "darkCheck.wait": "Bazı hoparlörler bir güncelleme veya kurulumdan sonra 30 dakikaya kadar zamana ihtiyaç duyar. Fişte ve açık bırak, birkaç dakikada bir hoparlör listesini yenile.",
+  "darkCheck.unplugHead": "Fişini 30 saniye çek.",
+  "darkCheck.unplug": "Bu tür hoparlör bir güncellemeden sonra yeniden başlarken takılıp kalabilir ve o zaman beklemek işe yaramaz. Fişini çek, 30 saniye bekle, tekrar tak ve ona 3 dakika ver. Sonra hoparlör listesini yenile.",
   "darkCheck.powerHead": "Elektriği kontrol et.",
   "darkCheck.power": "Hoparlörde hâlâ bir USB bellek takılıysa çıkar. Hoparlörün fişini 10 saniye çekip tekrar tak. Karanlık kalırsa başka bir priz ve, varsa, aynı tipte başka bir adaptör dene: yıpranmış bir adaptör tam yeniden başlatma sırasında pes edebilir.",
   "darkCheck.powerBattery": "Hoparlörde hâlâ bir USB bellek takılıysa çıkar. Bir süre adaptörüne takılı bırak, çünkü boş bir pil onu karanlıkta tutabilir. Sonra tuşlarıyla yeniden başlat: AUX'a ya da AUX ile Ses kısma (-) tuşlarına birlikte, yeniden başlayana kadar basılı tut. Karanlık kalırsa başka bir priz ve, varsa, aynı tipte başka bir adaptör dene.",

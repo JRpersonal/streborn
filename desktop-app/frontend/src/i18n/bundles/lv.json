@@ -1357,6 +1357,8 @@
   "darkCheck.rowSummary": "Vēl nav atpakaļ: ko vari darīt",
   "darkCheck.waitHead": "Dod tam laiku.",
   "darkCheck.wait": "Dažiem skaļruņiem pēc atjauninājuma vai instalēšanas vajag līdz 30 minūtēm. Atstāj to pievienotu un ieslēgtu un ik pēc dažām minūtēm atsvaidzini skaļruņu sarakstu.",
+  "darkCheck.unplugHead": "Atvieno to no strāvas uz 30 sekundēm.",
+  "darkCheck.unplug": "Šī tipa skaļrunis pēc atjauninājuma var iestrēgt restarta laikā, un tad gaidīšana nelīdz. Atvieno to, pagaidi 30 sekundes, pievieno atkal un dod tam 3 minūtes. Pēc tam atsvaidzini skaļruņu sarakstu.",
   "darkCheck.powerHead": "Pārbaudi barošanu.",
   "darkCheck.power": "Izņem USB zibatmiņu, ja tā joprojām ir skaļrunī. Atvieno skaļruni no strāvas uz 10 sekundēm un pievieno atkal. Ja tas paliek tumšs, izmēģini citu kontaktligzdu un, ja tev ir, citu tāda paša tipa barošanas bloku: nolietots barošanas bloks var padoties tieši restarta brīdī.",
   "darkCheck.powerBattery": "Izņem USB zibatmiņu, ja tā joprojām ir skaļrunī. Atstāj to kādu laiku pie adaptera, jo tukšs akumulators var to turēt tumšu. Tad restartē to ar pogām: turi AUX vai AUX un Skaļums uz leju (-) kopā, līdz tas restartējas. Ja tas paliek tumšs, izmēģini citu kontaktligzdu un, ja tev ir, citu tāda paša tipa adapteri.",

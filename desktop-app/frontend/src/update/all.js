@@ -478,7 +478,9 @@ async function runUpdateAllBoxes(onStart) {
     const r = rowState.get(host);
     const slot = r && updateAllRowReport(host);
     if (slot) {
-      slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), box: r.box });
+      const entry = darkEntries.find((e) => e.host === host);
+      const unplugFirst = !!(entry && entry.result && entry.result.unplugFirst);
+      slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), box: r.box, unplugFirst });
       wireDarkChecklist(slot, { openURL: (url) => { try { BrowserOpenURL(url); } catch {} } });
     }
   }

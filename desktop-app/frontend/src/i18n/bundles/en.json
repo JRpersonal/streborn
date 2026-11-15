@@ -1492,6 +1492,8 @@
   "darkCheck.rowSummary": "Not back yet: what you can do",
   "darkCheck.waitHead": "Give it time.",
   "darkCheck.wait": "Some speakers need up to 30 minutes after an update or an install. Leave it plugged in and switched on, and refresh the speaker list every few minutes.",
+  "darkCheck.unplugHead": "Unplug it for 30 seconds.",
+  "darkCheck.unplug": "This type of speaker can hang while it restarts after an update, and waiting does not help then. Unplug it, wait 30 seconds, plug it back in and give it 3 minutes. Then refresh the speaker list.",
   "darkCheck.powerHead": "Check the power.",
   "darkCheck.power": "Pull out any USB stick that is still in the speaker. Unplug the speaker for 10 seconds and plug it back in. If it stays dark, try another wall socket and, if you have one, another power supply of the same type: a worn power supply can give out right at a restart.",
   "darkCheck.powerBattery": "Pull out any USB stick that is still in the speaker. Leave it on its power adapter for a while, since an empty battery can keep it dark. Then restart it with its buttons: press and hold AUX, or AUX and Volume minus (-) together, until it restarts. If it stays dark, try another wall socket and, if you have one, another power adapter of the same type.",
