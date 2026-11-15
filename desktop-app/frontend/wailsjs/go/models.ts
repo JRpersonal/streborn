@@ -551,6 +551,7 @@ export namespace main {
 	    unmet: string;
 	    attempts: number;
 	    err: string;
+	    unplugFirst: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateOutcome(source);
@@ -571,6 +572,7 @@ export namespace main {
 	        this.unmet = source["unmet"];
 	        this.attempts = source["attempts"];
 	        this.err = source["err"];
+	        this.unplugFirst = source["unplugFirst"];
 	    }
 	}
 	export class FleetOutcome {
@@ -1154,6 +1156,24 @@ export namespace main {
 	        this.durationSec = source["durationSec"];
 	        this.artist = source["artist"];
 	        this.album = source["album"];
+	    }
+	}
+	export class RestartPlan {
+	    mode: string;
+	    chassis: string;
+	    agentVersion: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RestartPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.chassis = source["chassis"];
+	        this.agentVersion = source["agentVersion"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class SavedPair {

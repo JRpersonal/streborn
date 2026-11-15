@@ -46,6 +46,10 @@ export function BoxPresets(arg1, arg2) {
   return window['go']['main']['App']['BoxPresets'](arg1, arg2);
 }
 
+export function BoxRestartPlan(arg1, arg2) {
+  return window['go']['main']['App']['BoxRestartPlan'](arg1, arg2);
+}
+
 export function BoxSSHStatus(arg1, arg2) {
   return window['go']['main']['App']['BoxSSHStatus'](arg1, arg2);
 }

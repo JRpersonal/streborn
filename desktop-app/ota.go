@@ -499,6 +499,22 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// flow would know a group had ever existed (otazonerestore.go).
 	a.noteZoneBeforeOTA(host, port)
 
+	// Which chassis this is, from the speaker's own /info, remembered for the
+	// verdict at the end of the verify window (a coprocessor speaker that hung
+	// in its restart answers nothing by then). A fresh update starts with no
+	// unplug advice on record.
+	unplugAdviceLedger.Delete(host)
+	chassis, chassisWhy := a.readChassis(host)
+
+	// Phase zero: an agent older than v1.3.0 on the coprocessor Wi-Fi chassis
+	// ends every update with a box reboot that this chassis often does not
+	// come back from. Go around it: SSH, then restart only the agent
+	// (ota_oldbco.go). Ahead of the pre-v0.9.26 detour below, whose SSH path
+	// reboots as well. A failure there falls through to the normal path.
+	if verr == nil && p.restartOnlyOldBCOAgent(ver, chassis, chassisWhy) {
+		return nil
+	}
+
 	// Phase one: an agent too old to survive the HTTP push gets the update
 	// over SSH. A failure there falls through to the normal path.
 	if verr == nil && p.oldAgentViaSSH(ver) {
@@ -788,7 +804,23 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 		// other port in an "also tried" clause. A box that is off the network
 		// for the whole window and then turns up in discovery on the new build
 		// gets a corrective line from confirmLateOTA.
-		a.recordOTA(host, "outcome: NOT CONFIRMED - box unreachable after the verify window (a later discovery sighting on the new build adds a corrective line): "+err.Error())
+		//
+		// A coprocessor Wi-Fi speaker (scm, wlan-mode "bco") that hung in its
+		// own restart looks like this from outside: its Wi-Fi chip answers
+		// ping, every port is closed, and only a power cut brings it back.
+		// Waiting the half hour the generic checklist suggests does nothing
+		// for it, so its owner is told to unplug it (UpdateOutcome.UnplugFirst).
+		bcoAllClosed := false
+		if otaChassisOf(host) == chassisBCO {
+			open := openPorts(host, darkProbePorts, 2*time.Second)
+			bcoAllClosed = len(open) == 0
+			if bcoAllClosed {
+				unplugAdviceLedger.Store(host, time.Now())
+			} else {
+				a.recordOTA(host, "coprocessor Wi-Fi speaker unreachable on the agent ports, but these ports still answer: "+portList(open))
+			}
+		}
+		a.recordOTA(host, unreachableVerdictLine(bcoAllClosed, err.Error()))
 		a.noteOTAUnconfirmed(host, "unreachable")
 		return "unreachable"
 	}
@@ -1862,11 +1894,7 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// EnsureSpotifyEngine re-delivers it). Gated on a df check so a roomy box keeps
 	// its engine and does not re-fetch it every SSH update (#119). Mirrors the
 	// on-box reclaimSpotifyEngine second tier.
-	needKB := sshPushNeedKB(int64(len(bin)))
-	preamble := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
-		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
-		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
-		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; %s fi; ", needKB, sshStopEngineCmd)
+	preamble := sshAgentPushPreamble(sshPushNeedKB(int64(len(bin))))
 	// sshPushFile streams to .new, reads the on-box byte count back (the
 	// session can end "successfully" while the file never landed: stream cut,
 	// ENOSPC, or a reboot racing the write; live 2026-07-31), content-verifies
