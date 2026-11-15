@@ -915,6 +915,42 @@ html.ui2 .ui2-player .status-bar .now {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* The title line and the button that opens where the music comes from
+   (gotosource.js) share one row: the line takes what the button leaves, the
+   button keeps its 40px target and gives up its words to an ellipsis before
+   it squeezes the title away. The arrow is drawn, so the button's name is
+   only its words and its label. */
+html.ui2 .ui2-now-row {
+  display: flex;
+  align-items: center;
+  gap: var(--u-space-2);
+  min-width: 0;
+}
+html.ui2 .ui2-now-line { flex: 1 1 auto; min-width: 0; }
+html.ui2 .ui2-go-source {
+  flex: 0 1 auto;
+  gap: var(--u-space-1);
+  max-width: 40%;
+  min-width: 0;
+  padding: 0 var(--u-space-3);
+  font-size: var(--u-fs-sm);
+}
+html.ui2 .ui2-go-source[hidden] { display: none; }
+html.ui2 .ui2-go-source-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-go-source::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7'/%3E%3Cpath d='M9 7h8v8'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The arrow points the way the line reads. */
+html.ui2:dir(rtl) .ui2-go-source::after { transform: scaleX(-1); }
 /* The label is the target of the title-swap checkbox: 40px tall, like every
    other control in the player. */
 html.ui2 .ui2-player .title-swap-row {

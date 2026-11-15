@@ -295,7 +295,7 @@ import {
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
 // showSlotPicker is a main.js-local helper it reuses, injected below.
-import { openLibrary, initLibraryView, libraryNowPlaying } from './views/library.js';
+import { openLibrary, initLibraryView, libraryNowPlaying, showLibraryFolder } from './views/library.js';
 // USB stick setup / install wizard view (extracted from this monolith, same
 // pattern as the views above). renderSetupTargetPicker is the entry point
 // switchView calls; refreshDrives + loadWifiProfiles are also called from
@@ -1399,6 +1399,9 @@ function safeMountShell2() {
   try {
     const ok = mountShell2({
       switchView,
+      // The player's "Show in Library" opens the folder that plays
+      // (shell2/gotosource.js).
+      showLibraryFolder,
       pickBox: pickBoxFromShell,
       boxNeedsUpdate,
       boxCannotReachInternet,

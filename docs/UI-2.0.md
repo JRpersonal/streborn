@@ -156,6 +156,11 @@ releases later.
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
+- **Back to where it plays from.** Next to the player's title a small button
+  names the tab the music comes from (Radio, Library or Spotify) and opens
+  it; a music-library folder opens at that folder, under its trail. Inputs
+  without a tab of their own (Bluetooth, AUX, TV, AirPlay) get no button
+  (`shell2/gotosource.js`).
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.

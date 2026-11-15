@@ -48,6 +48,7 @@ import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 import { parsePresetConflict } from '../presetmove.js';
 import { libraryRowStatus } from '../librarynow.js';
+import { folderStack, splitCardFolder } from '../shell2/gotosource.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -191,9 +192,62 @@ export async function openLibrary() {
   renderLibrary();
   if (libState.servers.length === 0) {
     await loadMediaServers();
-  } else if (libState.currentUDN) {
+  } else if (placePendingFolder() || libState.currentUDN) {
     await libraryBrowseCurrent();
   }
+}
+
+// The folder the UI 2.0 player's "Show in Library" asked for, taken by the
+// next openLibrary (shell2/gotosource.js): { card } from a running queue's
+// card, or { udn, id } from a single track's place on its server, each with a
+// title for the trail.
+let pendingFolder = null;
+
+// The trails walked this session, by "<udn>|<container id>", so a folder the
+// player leads back to gets its whole trail of crumbs and not only the server
+// root above it. Bounded: the oldest walk goes first.
+const walkedTrails = new Map();
+const WALKED_TRAILS_MAX = 100;
+
+function rememberTrail() {
+  const top = libState.stack[libState.stack.length - 1];
+  if (!libState.currentUDN || !top) return;
+  const key = `${libState.currentUDN}|${top.id}`;
+  walkedTrails.delete(key);
+  walkedTrails.set(key, libState.stack.map((s) => ({ ...s })));
+  if (walkedTrails.size > WALKED_TRAILS_MAX) walkedTrails.delete(walkedTrails.keys().next().value);
+}
+
+// showLibraryFolder asks the Library to open folder the next time it opens
+// (switchView('library') right after). Only the preview's player calls it.
+export function showLibraryFolder(folder) {
+  pendingFolder = folder && (folder.card || (folder.udn && folder.id)) ? { ...folder } : null;
+}
+
+// placePendingFolder puts the Library on the asked-for folder: its server and
+// the trail to it. False (and the Library opens where it would have) when
+// nothing was asked or its server is not in the list.
+function placePendingFolder() {
+  const f = pendingFolder;
+  pendingFolder = null;
+  if (!f) return false;
+  const udns = libState.servers.map((s) => s.udn);
+  const where = f.card ? splitCardFolder(f.card, udns) : { udn: f.udn, id: f.id };
+  const srv = where && libState.servers.find((s) => s.udn === where.udn);
+  if (!srv) return false;
+  const known = [
+    libState.currentUDN === srv.udn ? libState.stack : null,
+    walkedTrails.get(`${srv.udn}|${where.id}`),
+    rememberedPathFor(srv.udn),
+  ];
+  const stack = folderStack(where.id, known, f.title || '');
+  if (!stack) return false;
+  if (!stack[0].title) stack[0] = { ...stack[0], title: srv.friendlyName || '' };
+  libState.currentUDN = srv.udn;
+  libState.stack = stack;
+  libState.restoredPath = false;
+  libState.search.active = false;
+  return true;
 }
 
 // The queue's shuffle/repeat mode is sticky on the SPEAKER: the agent persists
@@ -245,6 +299,12 @@ async function loadMediaServers(opts = {}) {
     // nothing set up, it is right from the second visit, and a server that
     // disappears simply falls back to the list instead of leaving a stale
     // exclusion behind that nobody remembers making.
+    // The player asked for the folder that plays: it wins over the
+    // remembered one.
+    if (autoOpen && placePendingFolder()) {
+      await libraryBrowseCurrent();
+      return;
+    }
     const preferred = rememberedServerUDN();
     const auto = !autoOpen ? null : libState.servers.length === 1
       ? libState.servers[0]
@@ -578,7 +638,10 @@ async function libraryBrowseCurrent() {
       libState.loadingMore = false;
       libState.page = acc.returned ? acc : (libState.page || null);
       renderLibrary();
-      if (!libState.loading && acc.returned >= 0 && libState.currentUDN) rememberPath();
+      if (!libState.loading && acc.returned >= 0 && libState.currentUDN) {
+        rememberPath();
+        rememberTrail();
+      }
     }
   }
 }

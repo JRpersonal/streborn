@@ -25,7 +25,8 @@ import { state } from '../state.js';
 import { t } from '../i18n/index.js';
 import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
-import { navStep } from './nav.js';
+import { navEntryFor, navStep } from './nav.js';
+import { goSourceLabelKey, goSourceTarget } from './gotosource.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
@@ -112,6 +113,7 @@ function collect(frame) {
     fAppSettings: q('#ui2AppSettings'),
     fMainInner: q('#ui2MainInner'),
     fNow: q('.ui2-player-now'),
+    fNowLine: q('#ui2NowLine'),
     fTransport: q('.ui2-player-transport'),
     fVolume: q('.ui2-player-volume'),
     fMoreBody: q('#ui2MoreBody'),
@@ -188,7 +190,9 @@ export function mountShell2(d) {
     n.speakerUpdateCard.setAttribute('aria-label', t('speakerUpdate.title'));
     n.views.forEach((v) => move(v, n.fMainInner));
     move(n.footer, n.fMainInner);
-    move(n.statusBar, n.fNow);
+    // The title line shares a row with the button that opens where the music
+    // comes from (wireGoSource).
+    move(n.statusBar, n.fNowLine);
     move(n.titleSwapRow, n.fNow);
     move(n.spotifyRefusedRow, n.fNow);
     move(n.controls, n.fTransport);
@@ -346,6 +350,7 @@ function wireStatesEnv(frame) {
   // The transport and the queue report their failures in the player, naming
   // the speaker (nowplaying.js asks for this hook; without it, the dialog).
   setReportHook('transport', reportTransport);
+  wireGoSource(frame);
   const transport = frame.querySelector('.ui2-player-transport');
   const more = frame.querySelector('#ui2MoreBody');
   // A new press clears the last failure; its own result writes a new one.
@@ -353,6 +358,62 @@ function wireStatesEnv(frame) {
     if (el) el.addEventListener('click', () => setPlayerStatus(''), true);
   }
   ensureSpeakerLive(frame);
+}
+
+// The player's "Show in Radio / Library / Spotify" button (gotosource.js).
+// goSourceNow is what the speaker plays, as the last now-playing line handed
+// it over (nowplaying.js renderNowPlayingBar, through the 'nowPlaying' hook);
+// goTarget is where the button leads for it.
+let goSourceNow = null;
+let goTarget = null;
+
+// wireGoSource follows the now-playing line and opens the source's tab on a
+// press: the same switch a tab does, and for a music-library folder the
+// folder too (main.js hands in the Library's showLibraryFolder).
+function wireGoSource(frame) {
+  const btn = frame.querySelector('#ui2GoSource');
+  if (!btn) return;
+  setReportHook('nowPlaying', (np) => {
+    goSourceNow = np || null;
+    paintGoSource();
+  });
+  btn.addEventListener('click', () => {
+    const tgt = goTarget;
+    if (!tgt) return;
+    if (tgt.view === 'library' && tgt.folder && typeof deps.showLibraryFolder === 'function') deps.showLibraryFolder(tgt.folder);
+    if (typeof deps.switchView === 'function') deps.switchView(tgt.view);
+  });
+  // What plays already when the shell comes up, before the next status poll
+  // draws the line again.
+  goSourceNow = {
+    source: state.nowSource || '',
+    location: state.nowLocation || '',
+    queue: state.queue,
+    lastLibraryPlay: state.lastLibraryPlay,
+  };
+  paintGoSource();
+}
+
+// paintGoSource shows the button for a source a tab holds and names it: the
+// tab's name as its words, "Show in <tab>" as its name and tooltip. No button
+// for an input without a tab, with no speaker, or for one that is offline
+// (what it played last is not what plays).
+function paintGoSource() {
+  const btn = byId('ui2GoSource');
+  if (!btn) return;
+  const box = state.currentBox;
+  const tgt = box && !box.offline && goSourceNow ? goSourceTarget(goSourceNow) : null;
+  goTarget = tgt;
+  btn.hidden = !tgt;
+  if (!tgt) return;
+  const entry = navEntryFor(tgt.view);
+  const words = entry ? t(entry.labelKey) : '';
+  const name = t(goSourceLabelKey(tgt.view));
+  const text = btn.querySelector('.ui2-go-source-text');
+  if (text && text.textContent !== words) text.textContent = words;
+  if (btn.getAttribute('aria-label') !== name) btn.setAttribute('aria-label', name);
+  if (btn.title !== name) btn.title = name;
+  btn.dataset.view = tgt.view;
 }
 
 // focusSpeakerList is "Go to the speaker list": the keyboard lands on the row
@@ -743,6 +804,9 @@ export function syncShellPlayer(hasBox = !!state.currentBox) {
   if (!live && pops.more) pops.more.close(false);
   playerLive = live;
   applyPlayerGroup();
+  // A speaker that went offline (or another one chosen) takes the source
+  // button with it until its line is drawn again.
+  paintGoSource();
 }
 
 // syncShellGroupPanel is how group.js tells the player whether the selected

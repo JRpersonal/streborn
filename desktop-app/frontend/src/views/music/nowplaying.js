@@ -397,6 +397,20 @@ export function renderNowPlayingBar() {
     if (main) main.innerHTML = statusHTML;
     requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
   }
+  // The UI 2.0 player's "Show in Radio / Library / Spotify" button follows
+  // what plays, from the same state this line was drawn from
+  // (shell2/gotosource.js). The classic layout sets no hook.
+  const goSource = reportHook('nowPlaying');
+  if (goSource) {
+    goSource({
+      source: src,
+      location: loc,
+      decodedLocation: decodeProxyUrl(loc),
+      queue: state.queue,
+      lastLibraryPlay: state.lastLibraryPlay,
+      optimistic,
+    });
+  }
 }
 
 // Stereo balance, read-only.
