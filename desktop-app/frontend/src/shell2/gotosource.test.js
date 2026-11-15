@@ -3,10 +3,10 @@
 // Library opens it with, and how the button is wired into the player.
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { fileSource, srcOf } from '../test/source.js';
+import { fileSource, srcBetween, srcOf } from '../test/source.js';
 import { navEntryFor } from './nav.js';
 import {
-  GO_SOURCE_LABEL_KEYS, folderFromCard, folderStack, goSourceLabelKey, goSourceTarget, splitCardFolder,
+  GO_SOURCE_LABEL_KEYS, folderFromCard, folderStack, goSourceLabelKey, goSourceTarget, sharedAlbum, splitCardFolder,
 } from './gotosource.js';
 
 const dir = new URL('../i18n/bundles/', import.meta.url);
@@ -55,6 +55,40 @@ describe('goSourceTarget: the tab a source belongs to', () => {
     expect(view({ source: 'UPNP', location: 'http://192.0.2.50:8888/stream/raw?u=aHR0cHM6Ly94', queue: queue() })).toBe('library');
   });
 
+  it('titles the folder only after an album all of the queue shares', () => {
+    // A genre folder, an "All tracks" container or a playlist holds several
+    // albums: the one that plays now does not name it.
+    const mixed = queue({ items: [{ title: 'Opening', album: 'Evening Sessions' }, { title: 'Late Train', album: 'Night Lines' }] });
+    expect(goSourceTarget({ source: 'UPNP', location: FILE, queue: mixed }))
+      .toEqual({ view: 'library', folder: { card: `${UDN}:c1a`, title: '' } });
+  });
+
+  it('lets the speaker\'s own source win over a queue still running', () => {
+    // A station or the speaker's own library started over a folder: the agent
+    // ends its queue only a few polls later, and never while that is paused.
+    expect(view({ source: 'TUNEIN', location: '/v1/playback/station/s1', queue: queue() })).toBe('box');
+    expect(view({ source: 'PANDORA', location: '', queue: queue() })).toBe('box');
+    expect(view({ source: 'IHEART', location: 'http://example.com/live', queue: queue() })).toBe('box');
+    expect(goSourceTarget({ source: 'STORED_MUSIC', location: '1$4$12', queue: queue() }))
+      .toEqual({ view: 'library', folder: null });
+    expect(view({ source: 'DEEZER', location: 'deezer:track:1', queue: queue() })).toBe(null);
+    // A queue left over from another speaker or from before standby.
+    expect(view({ source: 'STANDBY', location: '', queue: queue() })).toBe(null);
+    expect(view({ source: 'INVALID_SOURCE', location: '', queue: queue() })).toBe(null);
+    expect(view({ source: 'STANDBY', location: FILE, queue: queue() })).toBe(null);
+    // A single track the app or the phone page started counts only while the
+    // speaker plays its very address, and never on a sleeping speaker.
+    const lastLibraryPlay = { url: FILE, ref: { server_udn: UDN, parent_id: 'c1a' } };
+    expect(view({ source: 'TUNEIN', location: '/v1/playback/station/s1', lastLibraryPlay })).toBe('box');
+    expect(view({ source: 'STANDBY', location: FILE, lastLibraryPlay })).toBe(null);
+    expect(view({ source: 'STANDBY', location: FILE, queue: { active: false, file: { url: FILE } } })).toBe(null);
+  });
+
+  it('takes a file before the speaker names its source', () => {
+    expect(view({ source: '', location: FILE, queue: queue() })).toBe('library');
+    expect(view({ source: '', location: '1$4$12', queue: queue() })).toBe(null);
+  });
+
   it('sends a folder started from a key to the Library, without a folder', () => {
     const tgt = goSourceTarget({ source: 'UPNP', location: FILE, queue: queue({ card: 'queue:slot:3' }) });
     expect(tgt).toEqual({ view: 'library', folder: null });
@@ -65,8 +99,11 @@ describe('goSourceTarget: the tab a source belongs to', () => {
       url: FILE, album: 'Evening Sessions',
       ref: { server_udn: UDN, object_id: 't1', parent_id: 'c1a', title: 'Opening' },
     };
+    // The track's album does not name its folder: the Library asks the server.
     expect(goSourceTarget({ source: 'UPNP', location: FILE, lastLibraryPlay }))
-      .toEqual({ view: 'library', folder: { udn: UDN, id: 'c1a', title: 'Evening Sessions' } });
+      .toEqual({ view: 'library', folder: { udn: UDN, id: 'c1a', title: '' } });
+    // Right after the app started it the speaker may still name the station.
+    expect(view({ source: 'TUNEIN', location: FILE, lastLibraryPlay, optimistic: true })).toBe('library');
     // Without its place on the server (an older play): the Library itself.
     expect(goSourceTarget({ source: 'UPNP', location: FILE, lastLibraryPlay: { url: FILE } }))
       .toEqual({ view: 'library', folder: null });
@@ -141,10 +178,23 @@ describe('the trail the Library opens a folder with', () => {
     expect(walked[2].title).toBe('Evening Sessions');
   });
 
-  it('falls back to the server root and the folder', () => {
-    expect(folderStack('c1a', [], 'Evening Sessions')).toEqual([{ id: '0', title: '' }, { id: 'c1a', title: 'Evening Sessions' }]);
+  it('falls back to the server root and the folder, marked for the server to name', () => {
+    expect(folderStack('c1a', [], 'Evening Sessions'))
+      .toEqual([{ id: '0', title: '' }, { id: 'c1a', title: 'Evening Sessions', provisional: true }]);
+    // A known trail is the user's own walk: nothing in it is a guess.
+    expect(folderStack('c1a', [walked]).some((s) => s.provisional)).toBe(false);
     expect(folderStack('0', [])).toEqual([{ id: '0', title: '' }]);
     expect(folderStack('', [walked])).toBe(null);
+  });
+});
+
+describe('the album a folder is titled after', () => {
+  it('is the album all tracks share, and none when they differ', () => {
+    expect(sharedAlbum([{ album: 'A' }, { album: ' A ' }])).toBe('A');
+    expect(sharedAlbum([{ album: 'A' }, { album: 'B' }])).toBe('');
+    expect(sharedAlbum([{ album: 'A' }, { title: 'no album' }])).toBe('');
+    expect(sharedAlbum([])).toBe('');
+    expect(sharedAlbum(null)).toBe('');
   });
 });
 
@@ -211,6 +261,33 @@ describe('the button in the player', () => {
     expect(load.indexOf('placePendingFolder()')).toBeGreaterThan(0);
     expect(load.indexOf('placePendingFolder()')).toBeLessThan(load.indexOf('rememberedServerUDN()'));
     // The search across every server gives way to the folder.
-    expect(srcOf('placePendingFolder')).toContain('libState.search.active = false');
+    const place = srcOf('placePendingFolder');
+    expect(place).toContain('libState.search.active = false');
+    // The server it lands on is the one the next start opens, with its path.
+    expect(place).toContain('rememberServerUDN(srv.udn)');
+    // A folder no walked trail leads to is named by its server.
+    expect(place).toContain('fillPlacedCrumb(srv.udn, top)');
+    expect(srcOf('fillPlacedCrumb')).toContain('LibraryFolder(udn, crumb.id)');
+  });
+
+  it('opens the folder once however often it is asked while the servers load', () => {
+    const open = srcOf('openLibrary');
+    // A search on its way is joined, not raced by a second one.
+    expect(open.indexOf('await serversLoad')).toBeGreaterThan(0);
+    expect(open.indexOf('await serversLoad')).toBeLessThan(open.indexOf('await loadMediaServers()'));
+    const load = srcOf('loadMediaServers');
+    expect(load).toContain('serversLoad = run');
+    expect(load.indexOf('serversLoad = run')).toBeLessThan(load.indexOf('await ListMediaServers'));
+  });
+
+  it('drops a request the Library never got to', () => {
+    // A failed search ends it, and an old one is not taken.
+    expect(srcBetween('} catch (e) {\n    // No list', 'renderLibrary();')).toContain('pendingFolder = null');
+    expect(srcOf('placePendingFolder')).toContain('PENDING_FOLDER_MS');
+    expect(srcOf('showLibraryFolder')).toContain('at: Date.now()');
+  });
+
+  it('keeps no queue over a speaker switch', () => {
+    expect(srcOf('resetNowPlaying')).toContain('state.queue = null');
   });
 });

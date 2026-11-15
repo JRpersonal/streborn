@@ -338,6 +338,10 @@ export function IsBoseStick(arg1) {
   return window['go']['main']['App']['IsBoseStick'](arg1);
 }
 
+export function LibraryFolder(arg1, arg2) {
+  return window['go']['main']['App']['LibraryFolder'](arg1, arg2);
+}
+
 export function LibraryRefusedServers() {
   return window['go']['main']['App']['LibraryRefusedServers']();
 }

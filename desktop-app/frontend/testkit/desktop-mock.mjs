@@ -36,7 +36,7 @@ export const MODELLED_BINDINGS = [
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
-  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
+  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'LibraryFolder', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
@@ -348,6 +348,16 @@ export function installDesktopMock({ scenario, demo }) {
     // A known container id answers its folder (demo-data LIBRARY_TREE), any
     // other the root page.
     BrowseLibrary: ([, id]) => clone((demo.libraryTree && demo.libraryTree[id]) || demo.libraryPage),
+    // A folder as its server describes it: the entry it has in the page that
+    // lists it (the root page or a LIBRARY_TREE folder).
+    LibraryFolder: ([, id]) => {
+      const pages = [demo.libraryPage, ...Object.values(demo.libraryTree || {})];
+      for (const pg of pages) {
+        const hit = ((pg && pg.containers) || []).find((c) => c.id === id);
+        if (hit) return clone(hit);
+      }
+      throw new Error(`browse metadata: no container ${id}`);
+    },
     SearchLibrary: () => clone(demo.librarySearch),
     // A folder play: the speaker plays its first track.
     StartQueue: ([h, , payloadJSON]) => {

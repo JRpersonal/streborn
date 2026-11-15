@@ -139,23 +139,33 @@ func ContainerClass(ctx context.Context, srv Server, objectID string) (string, e
 	if objectID == "" || objectID == "0" {
 		return "object.container", nil
 	}
-	raw, status, err := browseRaw(ctx, srv, objectID, browseMetadata, 0, 0)
+	c, err := ContainerMetadata(ctx, srv, objectID)
 	if err != nil {
 		return "", err
 	}
+	return c.Class, nil
+}
+
+// ContainerMetadata returns one container by a BrowseMetadata call: its own
+// title, class and cover, as the server describes it, without its children.
+func ContainerMetadata(ctx context.Context, srv Server, objectID string) (Container, error) {
+	raw, status, err := browseRaw(ctx, srv, objectID, browseMetadata, 0, 0)
+	if err != nil {
+		return Container{}, err
+	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("browse metadata failed: %s", soapFaultMessage(raw, status))
+		return Container{}, fmt.Errorf("browse metadata failed: %s", soapFaultMessage(raw, status))
 	}
 	res, err := parseBrowseResponse(raw)
 	if err != nil {
-		return "", err
+		return Container{}, err
 	}
 	for _, c := range res.Containers {
 		if c.ID == objectID || len(res.Containers) == 1 {
-			return c.Class, nil
+			return c, nil
 		}
 	}
-	return "", fmt.Errorf("browse metadata: no container %q in the answer", objectID)
+	return Container{}, fmt.Errorf("browse metadata: no container %q in the answer", objectID)
 }
 
 // firstNumber returns the first value among the lists that parses to a

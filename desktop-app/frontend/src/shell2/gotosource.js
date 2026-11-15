@@ -25,6 +25,9 @@ export const GO_SOURCE_LABEL_KEYS = Object.freeze({
 // Inputs and receivers the speaker plays on its own: no tab of the app holds
 // them, so a stale location left over from before must not name one.
 const NO_TAB = /^(BLUETOOTH|AUX|LOCAL|PRODUCT|HDMI|TV|OPTICAL|AIRPLAY.*|NOTIFICATION|ALEXA)$/;
+// A speaker asleep or between sources plays nothing a tab could hold, whatever
+// queue the agent still reports.
+const NOTHING = new Set(['STANDBY', 'INVALID_SOURCE']);
 // The speaker's names for a station. Pandora and iHeartRadio sit in Radio too.
 const RADIO_SOURCES = new Set(['TUNEIN', 'LOCAL_INTERNET_RADIO', 'INTERNET_RADIO', 'RADIOPLAYER', 'PANDORA', 'IHEART']);
 // The speaker's own music-library sources (a media server it browses itself).
@@ -57,6 +60,9 @@ export function splitCardFolder(rest, udns = []) {
 // known trails (the open one, the ones walked this session, the remembered
 // one) that passes through it, cut after it. A folder no trail passes through
 // gets the server root and the folder, so Back still leads somewhere real.
+// That last crumb is marked provisional: its title is at best a guess and its
+// class and cover are unknown, so the Library asks the server for the folder's
+// own metadata before it trusts it (views/library.js fillPlacedCrumb).
 export function folderStack(id, known = [], title = '') {
   const want = String(id || '');
   if (!want) return null;
@@ -66,7 +72,23 @@ export function folderStack(id, known = [], title = '') {
     if (at >= 0) return stack.slice(0, at + 1).map((s) => ({ ...s }));
   }
   if (want === '0') return [{ id: '0', title: '' }];
-  return [{ id: '0', title: '' }, { id: want, title: title || '' }];
+  return [{ id: '0', title: '' }, { id: want, title: title || '', provisional: true }];
+}
+
+// sharedAlbum is the album every track of a list names, or '' when they name
+// more than one (or none). A folder is titled after its tracks' album only
+// then: a genre folder, an "All tracks" container or a playlist holds several
+// albums, and naming it after the one that plays now would be wrong.
+export function sharedAlbum(items) {
+  if (!Array.isArray(items) || items.length === 0) return '';
+  let album = '';
+  for (const it of items) {
+    const a = String((it && it.album) || '').trim();
+    if (!a) return '';
+    if (album && a !== album) return '';
+    album = a;
+  }
+  return album;
 }
 
 // goSourceTarget is where the button leads for what the speaker plays now:
@@ -87,22 +109,33 @@ export function goSourceTarget({
   const src = String(source || '').toUpperCase();
   const loc = String(location || '');
   const decoded = String(decodedLocation || '');
-  if (NO_TAB.test(src)) return null;
+  if (NO_TAB.test(src) || NOTHING.has(src)) return null;
   if (src === 'SPOTIFY' || /\/spotify\//.test(loc) || /\/playback\/container\//.test(loc)) {
     return { view: 'spotify', folder: null };
   }
   // A folder that plays as a queue, before the radio tests: a file from an
-  // HTTPS media server is relayed through /stream/raw like a station.
-  const item = queueNowItem(queue, { location: loc, optimistic });
-  if (item) {
-    const folder = folderFromCard(queue.card);
-    return { view: 'library', folder: folder ? { ...folder, title: item.album || '' } : null };
+  // HTTPS media server is relayed through /stream/raw like a station. The
+  // queue says which track runs, not that the speaker plays it: a station or
+  // the speaker's own library started over a running folder leaves the queue
+  // active for a few polls (and for good while paused), and must still lead
+  // to its own tab. So the queue counts only while the speaker plays what a
+  // queue pushes (UPnP), or a file's address before it names a source.
+  const http = /^https?:\/\//i.test(loc);
+  if (src === 'UPNP' || (src === '' && http)) {
+    const item = queueNowItem(queue, { location: loc, optimistic });
+    if (item) {
+      const folder = folderFromCard(queue.card);
+      return { view: 'library', folder: folder ? { ...folder, title: sharedAlbum(queue.items) } : null };
+    }
   }
+  // A single track names its own address, so the speaker playing exactly
+  // that address is proof enough, whatever source it still reports right
+  // after the start.
   if (libraryPlayMatches(lastLibraryPlay, loc, decoded)) {
+    // The track's own album does not name the folder it was listed in (a
+    // genre or "All tracks" folder holds many): the Library names it.
     const ref = lastLibraryPlay.ref;
-    const folder = ref && ref.parent_id
-      ? { udn: ref.server_udn || '', id: ref.parent_id, title: lastLibraryPlay.album || '' }
-      : null;
+    const folder = ref && ref.parent_id ? { udn: ref.server_udn || '', id: ref.parent_id, title: '' } : null;
     return { view: 'library', folder };
   }
   const lone = agentLoneFile(queue);
@@ -111,7 +144,7 @@ export function goSourceTarget({
   // A station by the speaker's own word. Right after the app started a library
   // file the source still names what played before, while the location is
   // already the file's address: no button until the speaker catches up.
-  if (RADIO_SOURCES.has(src) && !(optimistic && /^https?:\/\//i.test(loc))) return { view: 'box', folder: null };
+  if (RADIO_SOURCES.has(src) && !(optimistic && http)) return { view: 'box', folder: null };
   if (LIBRARY_SOURCES.has(src)) return { view: 'library', folder: null };
   return null;
 }

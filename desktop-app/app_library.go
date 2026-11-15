@@ -539,6 +539,34 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	return page, nil
 }
 
+// LibraryFolder describes one folder on the server identified by udn, as the
+// server itself names it: title, class and cover, without its children. The
+// UI 2.0 player leads to the folder a queue or a track came from by its id
+// alone, and when no trail walked this session passes through it, a heading
+// guessed from the playing track named a genre folder or a playlist after one
+// album, and A to Z sorted a playlist it could not tell from a plain folder.
+func (a *App) LibraryFolder(udn, objectID string) (LibraryContainer, error) {
+	a.libraryMu.Lock()
+	srv, ok := a.libraryServers[udn]
+	a.libraryMu.Unlock()
+	if !ok {
+		return LibraryContainer{}, fmt.Errorf("unknown media server %q, call ListMediaServers first", udn)
+	}
+	if objectID == "" || objectID == "0" {
+		return LibraryContainer{}, fmt.Errorf("browse metadata: the server root is no folder")
+	}
+	ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
+	defer cancel()
+	c, err := dlna.ContainerMetadata(ctx, srv, objectID)
+	if err != nil {
+		return LibraryContainer{}, err
+	}
+	return LibraryContainer{
+		ID: c.ID, ParentID: c.ParentID, Title: c.Title,
+		ChildCount: c.ChildCount, AlbumArtURL: c.AlbumArtURL, Class: c.Class,
+	}, nil
+}
+
 // LibrarySearchResult is one whole-library search across every media server
 // the app knows: the merged tracks, plus the servers that could not answer.
 type LibrarySearchResult struct {

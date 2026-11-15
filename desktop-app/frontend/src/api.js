@@ -246,6 +246,13 @@ export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
 }
 
+// LibraryFolder is one folder of a media server as the server describes it:
+// its title, class and cover, for a folder the UI 2.0 player leads to without
+// a trail walked to it. Optional binding, per the note above.
+export function LibraryFolder(udn, objectID) {
+  return callOptionalBinding('LibraryFolder', [udn, objectID]);
+}
+
 // SearchLibrary searches the whole library of every media server the app
 // knows, narrowed to any, album, artist or title (#1325). Optional binding,
 // per the note above.

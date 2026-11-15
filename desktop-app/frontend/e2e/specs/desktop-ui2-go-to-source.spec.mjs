@@ -8,7 +8,7 @@
 import { test, expect } from '../fixtures.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
-import { LIBRARY_TREE, MEDIA_SERVERS, statusXml } from '../../testkit/demo-data.mjs';
+import { LIBRARY_TREE, MEDIA_SERVERS, ROSTER, statusXml } from '../../testkit/demo-data.mjs';
 
 const NAS = MEDIA_SERVERS[0];
 const [OPENING, BLUE] = LIBRARY_TREE.c1a.items;
@@ -104,27 +104,25 @@ test.describe('UI 2.0 go to source: Spotify', () => {
   });
 });
 
+// The folder Evening Sessions plays as a queue on the current speaker, its
+// second track now. albums overrides what the queue says each track's album is.
+const FOLDER_STATUS = { value: statusXml({ source: 'UPNP', itemName: BLUE.title, location: BLUE.streamURL }) };
+const folderQueue = (albums = [OPENING.album, BLUE.album]) => ({
+  active: true,
+  pos: 1,
+  shuffle: false,
+  repeat: 'off',
+  items: [OPENING, BLUE].map((it, i) => ({ url: it.streamURL, title: it.title, artist: it.artist, album: albums[i] })),
+  url: BLUE.streamURL,
+  card: `queue:${NAS.udn}:c1a`,
+  preset_rev: 1,
+});
+
 test.describe('UI 2.0 go to source: a folder that plays as a queue', () => {
   test.use({
     ui2: true,
     fakeClock: true,
-    scenario: {
-      bindings: {
-        Status: { value: statusXml({ source: 'UPNP', itemName: BLUE.title, location: BLUE.streamURL }) },
-        GetQueue: {
-          value: {
-            active: true,
-            pos: 1,
-            shuffle: false,
-            repeat: 'off',
-            items: [OPENING, BLUE].map((it) => ({ url: it.streamURL, title: it.title, artist: it.artist, album: it.album })),
-            url: BLUE.streamURL,
-            card: `queue:${NAS.udn}:c1a`,
-            preset_rev: 1,
-          },
-        },
-      },
-    },
+    scenario: { bindings: { Status: FOLDER_STATUS, GetQueue: { value: folderQueue() } } },
   });
 
   test('5. opens the folder it was started from, under its trail', async ({ app, mock }) => {
@@ -163,10 +161,90 @@ test.describe('UI 2.0 go to source: a folder that plays as a queue', () => {
   });
 });
 
+test.describe('UI 2.0 go to source: a folder of many albums', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: { bindings: { Status: FOLDER_STATUS, GetQueue: { value: folderQueue(['Night Lines', 'Live in Demo City']) } } },
+  });
+
+  test('7. names the folder as its server does, not after the album that plays', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 2_000);
+    await goBtn(page).click();
+    await expectOn(page, 'library');
+    await mock.expectCalled('LibraryFolder', { pred: (c) => c.args[0] === NAS.udn && c.args[1] === 'c1a' });
+    await expect(heading(page)).toHaveText('Evening Sessions');
+    await expect(crumbs(page)).toHaveText([en('ui2.library.servers'), NAS.friendlyName, 'Evening Sessions']);
+  });
+});
+
+test.describe('UI 2.0 go to source: pressed twice while the servers load', () => {
+  // The Library was last left in another folder of the same server, and the
+  // search for servers takes a while.
+  const remembered = [{ id: '0', title: NAS.friendlyName }, { id: 'c6', title: 'File Index' }, { id: 'c6a', title: 'Ada Demo Trio' }];
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      seed: {
+        extraStorage: {
+          'str.library.lastServerUDN': NAS.udn,
+          'str.library.lastPath': JSON.stringify({ udn: NAS.udn, stack: remembered }),
+        },
+      },
+      bindings: { Status: FOLDER_STATUS, GetQueue: { value: folderQueue() }, ListMediaServers: { delayMs: 3_000 } },
+    },
+  });
+
+  test('8. opens the folder that plays, not the one the Library was left in', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 2_000);
+    const btn = goBtn(page);
+    await expect(btn).toHaveText(en('nav.library'));
+    await btn.click();
+    await expectOn(page, 'library');
+    await btn.press('Enter');
+    await runFor(page, 4_000);
+    await expect(heading(page)).toHaveText('Evening Sessions');
+    await runFor(page, 2_000);
+    await expect(heading(page)).toHaveText('Evening Sessions');
+    // One search for the servers, joined by the second press.
+    expect(await mock.count('ListMediaServers')).toBe(1);
+    expect((await mock.last('BrowseLibrary')).args).toEqual(expect.arrayContaining([NAS.udn, 'c1a']));
+  });
+});
+
+test.describe('UI 2.0 go to source: another speaker chosen', () => {
+  // The bedroom speaker has no queue to read (its reads fail) and plays a
+  // file another app sent it.
+  const BR = ROSTER.bedroom.host;
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      bindings: {
+        Status: { ...FOLDER_STATUS, byHost: { [BR]: { value: statusXml({ source: 'UPNP', itemName: 'Elsewhere', location: 'http://192.0.2.70/other.mp3' }) } } },
+        GetQueue: { value: folderQueue(), byHost: { [BR]: { error: 'not found' } } },
+      },
+    },
+  });
+
+  test('9. does not lead to the folder the speaker before it plays', async ({ app }) => {
+    const { page } = app;
+    await settle(page, 2_000);
+    await expect(goBtn(page)).toHaveText(en('nav.library'));
+    await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR}"]`).click();
+    await runFor(page, POLL_MS);
+    await expect(page.locator('#ui2Player #statusMain')).toContainText('Elsewhere');
+    await expect(goBtn(page)).toBeHidden();
+  });
+});
+
 test.describe('UI 2.0 go to source: a single track from the Library', () => {
   test.use({ ui2: true, fakeClock: true });
 
-  test('7. leads back to the folder the track was listed in', async ({ app, mock }) => {
+  test('10. leads back to the folder the track was listed in', async ({ app, mock }) => {
     const { page } = app;
     await settle(page, 2_000);
     await nav(page, 'library').click();
@@ -189,7 +267,7 @@ test.describe('UI 2.0 go to source: a single track from the Library', () => {
 });
 
 test.describe('the classic layout', () => {
-  test('8. has no go to source button', async ({ app }) => {
+  test('11. has no go to source button', async ({ app }) => {
     const { page } = app;
     await expect(page.locator('#statusBar')).toBeVisible();
     await expect(page.locator('#ui2GoSource')).toHaveCount(0);
