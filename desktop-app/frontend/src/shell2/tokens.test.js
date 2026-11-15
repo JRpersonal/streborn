@@ -149,7 +149,7 @@ describe('UI 2.0 tokens', () => {
   // quietly stay behind when the step moves.
   const UI2_SHEETS = ['./shell2.css', './banners.css', './library.css', './recent.css', './state.css', './help/help.css',
     './setup/check.css', './setup/setup.css', './speakers/groups.css', './speakers/list.css', './speakers/speaker.css',
-    './speakers/speakers.css', '../views/music/ui2radio.css'];
+    './speakers/speakers.css', './speakers/keyeditor.css', '../views/music/ui2radio.css'];
   const SPACE_STEPS = new Set(['4px', '8px', '12px', '16px', '24px', '32px']);
   const SPACING = /^(?:padding|margin|inset)(?:-[a-z-]+)?$|^(?:row-|column-)?gap$/;
 
@@ -212,7 +212,8 @@ describe('UI 2.0 phase 5 banners and section messages', () => {
   });
 
   it('banners.css and speaker.css use no hex colours, only tokens shell2.css defines', () => {
-    for (const [name, text] of [['banners.css', bannersCss], ['speaker.css', speakerCss]]) {
+    const keyEditorCss = readFileSync(new URL('./speakers/keyeditor.css', import.meta.url), 'utf8');
+    for (const [name, text] of [['banners.css', bannersCss], ['speaker.css', speakerCss], ['keyeditor.css', keyEditorCss]]) {
       const body = declarationsOf(text);
       expect(body, name).not.toMatch(/#[0-9a-fA-F]{3,8}\b(?![\w-]*\s*[{,])/);
       expect(body, name).not.toMatch(/rgba?\(|hsla?\(/);

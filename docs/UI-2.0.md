@@ -156,6 +156,18 @@ releases later.
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
+- **Assigning keys in one place** (15 November 2026). Keys and alarms opens
+  with the speaker's keys (both rows where the speaker keeps a second one)
+  next to a source browser: Radio (favourites and a station search), Library
+  (folder by folder: a folder or a song) and Spotify (the playlists, albums
+  and artists the speaker played lately). One key is chosen, the first empty
+  one to start with, and the hint says what a save would replace. "Put
+  what's playing on key N" keeps every source the speaker agent can keep
+  (`POST /api/box/save-playing`; Spotify, Pandora and iHeartRadio through
+  their own saves). The outcome stays in the editor's own line: done only
+  after the read-back, "already on key 2" with "Move it to key N" right
+  there instead of a dialog, and a refusal in plain words
+  (`shell2/speakers/keyeditor.js`).
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.

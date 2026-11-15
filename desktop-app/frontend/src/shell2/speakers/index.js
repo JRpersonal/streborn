@@ -197,6 +197,10 @@ function paintRoute(route, entry = false) {
       // The head's state pill reads the sidebar's own checks.
       needsUpdate: deps.boxNeedsUpdate,
       cannotReachInternet: deps.boxCannotReachInternet,
+      // The music views' save paths the Keys tab's assignment editor reuses,
+      // and whether the page was just opened (the editor reads the keys again).
+      keyEditor: deps.keyEditor,
+      entry,
     });
   } else if (route === 'groups') {
     mountGroups({ root: byId('view-multiroom'), open: openSpeakers, label });

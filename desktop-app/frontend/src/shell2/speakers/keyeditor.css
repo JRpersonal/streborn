@@ -1,0 +1,224 @@
+/* UI 2.0 preview: the key assignment editor on a speaker's Keys and alarms tab
+   (keyeditor.js). The keys on the left, the source browser on the right, one
+   column under each other in a narrow window or at a larger text size. Only
+   the --u-* tokens, under html.ui2 only. */
+
+html.ui2 #ui2KeyEditor:empty { display: none; }
+html.ui2 #ui2KeyEditor { margin-bottom: var(--u-space-4); }
+html.ui2 #ui2KeyEditor .kae-title {
+  margin: 0;
+  color: var(--u-text);
+  font-size: var(--u-fs-xl);
+  font-weight: var(--u-fw-bold);
+}
+html.ui2 #ui2KeyEditor .kae-intro,
+html.ui2 #ui2KeyEditor .kae-note,
+html.ui2 #ui2KeyEditor .kae-hint {
+  margin: var(--u-space-1) 0 var(--u-space-3);
+  color: var(--u-muted);
+  font-size: var(--u-fs-md);
+  line-height: 1.45;
+}
+html.ui2 #ui2KeyEditor .kae-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--u-space-4) var(--u-space-5);
+  align-items: start;
+}
+html.ui2 #ui2KeyEditor .kae-sub {
+  margin: 0 0 var(--u-space-2);
+  color: var(--u-text);
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2KeyEditor .kae-row-label {
+  margin: var(--u-space-3) 0 var(--u-space-1);
+  color: var(--u-muted);
+  font-size: var(--u-fs-sm);
+}
+
+/* The keys: a toggle each, the chosen one in the selected colour with a strong
+   edge and aria-pressed, so the choice never rests on colour alone. */
+html.ui2 #ui2KeyEditor .kae-keylist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--u-space-2);
+}
+html.ui2 #ui2KeyEditor .kae-key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: var(--u-target);
+  padding: var(--u-space-2) var(--u-space-3);
+  border: 1px solid var(--u-raised-edge);
+  border-radius: var(--u-radius);
+  background: var(--u-raised);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: var(--u-fs-md);
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 #ui2KeyEditor .kae-key.is-chosen {
+  border: 2px solid var(--u-accent);
+  background: var(--u-selected);
+}
+html.ui2 #ui2KeyEditor .kae-key-n { font-weight: var(--u-fw-semibold); }
+html.ui2 #ui2KeyEditor .kae-key-name {
+  color: var(--u-muted);
+  font-size: var(--u-fs-sm);
+  overflow-wrap: anywhere;
+}
+html.ui2 #ui2KeyEditor .kae-key.is-chosen .kae-key-name { color: var(--u-text); }
+
+html.ui2 #ui2KeyEditor .kae-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--u-space-2) var(--u-space-3);
+  padding-top: var(--u-space-3);
+  border-top: 1px solid var(--u-hairline);
+}
+html.ui2 #ui2KeyEditor .kae-now-text {
+  flex: 1 1 12rem;
+  margin: 0;
+  color: var(--u-text);
+  font-size: var(--u-fs-md);
+  overflow-wrap: anywhere;
+}
+
+/* The outcome line: the words say what happened, the bar's colour repeats it. */
+html.ui2 #ui2KeyEditor .kae-result:empty { display: none; }
+html.ui2 #ui2KeyEditor .kae-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--u-space-2) var(--u-space-3);
+  margin-top: var(--u-space-3);
+  padding: var(--u-space-2) var(--u-space-3);
+  border: 1px solid var(--u-hairline);
+  border-inline-start: 4px solid var(--u-accent);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-size: var(--u-fs-md);
+  line-height: 1.45;
+}
+html.ui2 #ui2KeyEditor .kae-result--ok { border-inline-start-color: var(--u-ok); }
+html.ui2 #ui2KeyEditor .kae-result--warn { border-inline-start-color: var(--u-warn); }
+html.ui2 #ui2KeyEditor .kae-result--error { border-inline-start-color: var(--u-danger); color: var(--u-danger); }
+html.ui2 #ui2KeyEditor .kae-result-text { flex: 1 1 14rem; min-width: 0; overflow-wrap: anywhere; }
+
+/* The source browser: a tab row like the page's own, then its panel. */
+html.ui2 #ui2KeyEditor .kae-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--u-space-1);
+  margin-bottom: var(--u-space-3);
+  border-bottom: 1px solid var(--u-hairline);
+}
+html.ui2 #ui2KeyEditor .kae-tab {
+  min-height: var(--u-target);
+  padding: 0 var(--u-space-3);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--u-muted);
+  font-family: var(--u-font);
+  font-size: var(--u-fs-md);
+  cursor: pointer;
+}
+html.ui2 #ui2KeyEditor .kae-tab[aria-selected="true"] {
+  border-bottom-color: var(--u-accent);
+  color: var(--u-text);
+  font-weight: var(--u-fw-bold);
+}
+html.ui2 #ui2KeyEditor .kae-search { margin-bottom: var(--u-space-3); }
+html.ui2 #ui2KeyEditor .kae-label {
+  display: block;
+  margin-bottom: var(--u-space-1);
+  color: var(--u-text);
+  font-size: var(--u-fs-md);
+}
+html.ui2 #ui2KeyEditor .kae-search-row { display: flex; flex-wrap: wrap; gap: var(--u-space-2); }
+html.ui2 #ui2KeyEditor .kae-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: var(--u-target);
+  padding: 0 var(--u-space-3);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-bg);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: var(--u-fs-md);
+}
+html.ui2 #ui2KeyEditor .kae-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--u-space-1);
+  max-height: 24rem;
+  margin: 0 0 var(--u-space-3);
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+html.ui2 #ui2KeyEditor .kae-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--u-space-2);
+  padding: var(--u-space-1) 0;
+  border-bottom: 1px solid var(--u-hairline);
+}
+html.ui2 #ui2KeyEditor .kae-item-text { display: flex; flex: 1 1 10rem; flex-direction: column; min-width: 0; }
+html.ui2 #ui2KeyEditor .kae-item-name { color: var(--u-text); font-size: var(--u-fs-md); overflow-wrap: anywhere; }
+html.ui2 #ui2KeyEditor .kae-item-sub { color: var(--u-muted); font-size: var(--u-fs-sm); }
+html.ui2 #ui2KeyEditor .kae-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--u-space-2);
+  min-height: var(--u-target);
+  padding: 0 var(--u-space-2);
+  border: 0;
+  border-radius: var(--u-radius);
+  background: transparent;
+  color: var(--u-text);
+  font-family: var(--u-font);
+  text-align: start;
+  cursor: pointer;
+}
+html.ui2 #ui2KeyEditor .kae-open .kae-item-name { flex: 1 1 auto; }
+html.ui2 #ui2KeyEditor .kae-chev { color: var(--u-muted); font-size: var(--u-fs-xl); }
+html.ui2 #ui2KeyEditor .kae-lib-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u-space-2) var(--u-space-3); margin-bottom: var(--u-space-2); }
+html.ui2 #ui2KeyEditor .kae-lib-title { margin: 0; }
+html.ui2 #ui2KeyEditor .kae-folder-act { margin-bottom: var(--u-space-3); }
+html.ui2 #ui2KeyEditor .kae-state {
+  margin: 0 0 var(--u-space-3);
+  color: var(--u-muted);
+  font-size: var(--u-fs-md);
+}
+html.ui2 #ui2KeyEditor .kae-state p { margin: 0 0 var(--u-space-2); }
+html.ui2 #ui2KeyEditor .kae-state--error { color: var(--u-danger); }
+
+/* A put that waits for a save in flight: refused (aria-disabled), told by its
+   dashed edge, its words still readable. */
+html.ui2 #ui2KeyEditor .u-btn[aria-disabled="true"] {
+  border-style: dashed;
+  border-color: var(--u-border);
+  background: var(--u-surface);
+  color: var(--u-muted);
+  cursor: not-allowed;
+}
+html.ui2 #ui2KeyEditor .kae-key:focus-visible,
+html.ui2 #ui2KeyEditor .kae-tab:focus-visible,
+html.ui2 #ui2KeyEditor .kae-open:focus-visible,
+html.ui2 #ui2KeyEditor .kae-input:focus-visible,
+html.ui2 #ui2KeyEditor .kae-panel:focus-visible,
+html.ui2 #ui2KeyEditor .u-btn:focus-visible {
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
+}
