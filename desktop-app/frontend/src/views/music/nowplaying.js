@@ -223,14 +223,16 @@ export function renderNowPlayingBar() {
       ? '&#9205; ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
-  // Track skip/previous: only for a Spotify playlist (the DLNA folder queue has
-  // its own prev/next in #queueControls). The buttons flank Play/Pause and hide
-  // for radio and single sources, which have nothing to skip.
-  const isSpotify = /\/spotify\/stream/.test(loc);
+  // Track skip/previous: for a Spotify playlist, and for Bluetooth or AirPlay
+  // from a phone, where the agent sends the speaker the remote's Next/Prev key
+  // (#1903). The DLNA folder queue has its own prev/next in #queueControls. The
+  // buttons flank Play/Pause and hide for radio and single sources, which have
+  // nothing to skip.
+  const canSkip = /\/spotify\/stream/.test(loc) || /^(BLUETOOTH|AIRPLAY)$/i.test(src);
   const nextBtn = $('trackNextBtn');
   const prevBtn = $('trackPrevBtn');
-  if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
-  if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
+  if (nextBtn) nextBtn.classList.toggle('hidden', !canSkip);
+  if (prevBtn) prevBtn.classList.toggle('hidden', !canSkip);
   let displayName = name;
   // The app's own play that the speaker has not confirmed yet: the queue reply
   // on hand may still be the folder it replaced.
