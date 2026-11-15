@@ -336,6 +336,8 @@ export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, an
 
 export function SearchLibrary(arg1:string,arg2:string):Promise<main.LibrarySearchResult>;
 
+export function QueueServerAlive(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function SeekTrack(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;

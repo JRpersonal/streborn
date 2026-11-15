@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -127,5 +129,49 @@ func TestPhonePageNamesTheGoneMusicServer(t *testing.T) {
 		if !strings.Contains(indexHTML, code) {
 			t.Errorf("the phone page lost %q", code)
 		}
+	}
+}
+
+// The note clears when its music server announces itself again, as the red key
+// mark does (#1890 retest): another server's alive leaves it standing, and an
+// empty host (Stop) drops it outright.
+func TestQueueLastEndClearsWhenItsServerIsBack(t *testing.T) {
+	t.Parallel()
+	s := &Server{queue: newPlayQueue(), logger: discardLogger()}
+	s.queue.load(badURLTracks("http://192.0.2.10:49200", 3), 0, false, repeatOff)
+	s.stopQueueServerGone()
+
+	post := func(body string) map[string]bool {
+		w := httptest.NewRecorder()
+		s.handleQueueServerAlive(w, httptest.NewRequest(http.MethodPost, "/api/queue/server-alive", strings.NewReader(body)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status %d (%s)", body, w.Code, w.Body.String())
+		}
+		var out map[string]bool
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	if post(`{"location":"http://192.0.2.99:8200/desc.xml"}`)["cleared"] {
+		t.Error("another server's alive cleared the note")
+	}
+	if s.queueSnapshotWithCard().LastEnd == nil {
+		t.Fatal("note gone after another server's alive")
+	}
+	if !post(`{"location":"http://192.0.2.10:49200/rootDesc.xml"}`)["cleared"] {
+		t.Error("its own server's alive did not clear the note")
+	}
+	if le := s.queueSnapshotWithCard().LastEnd; le != nil {
+		t.Errorf("lastEnd %+v survived its server's alive", le)
+	}
+
+	s.queue.load(badURLTracks("http://192.0.2.10:49200", 3), 0, false, repeatOff)
+	s.stopQueueServerGone()
+	if !s.clearQueueLastEnd("") {
+		t.Error("Stop did not drop the note")
+	}
+	w := httptest.NewRecorder()
+	s.handleQueueServerAlive(w, httptest.NewRequest(http.MethodPost, "/api/queue/server-alive", strings.NewReader(`{}`)))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("an alive without a host answered %d, want 400", w.Code)
 	}
 }
