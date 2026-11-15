@@ -145,6 +145,7 @@ export const state = {
   discovery: null,            // { phase: 'searching' | 'done' | 'failed', error, at, last | found }; null before the first search
   boxPlaying: undefined,      // deviceID -> plays right now, replaced by every refreshBoxPlaying round
   boxNow: undefined,          // deviceID -> { name, source, location } of what it plays, from the same refreshBoxPlaying round
+  boxNowLine: undefined,      // deviceID -> { source, station } of what it plays, from the same round (UI 2.0 sidebar search)
   boxPlayingBusy: false,      // a refreshBoxPlaying round is in flight
   boxPaused: undefined,       // deviceID -> paused (not in standby), read in the same round; the UI 2.0 sidebar offers Play on it
   boxPlayReadAt: undefined,   // deviceID -> start (ms) of the last refreshBoxPlaying round that read it successfully

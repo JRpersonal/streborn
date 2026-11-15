@@ -29,6 +29,7 @@ import { discoveryPhase, noSpeakersState } from './state.js';
 import { rowTransport, rowTransportLabel } from './sessionplay.js';
 import { joinReview } from './playclaim.js';
 import { labelVia } from '../boxes.js';
+import { noMatchHTML } from './spksearch.js';
 
 const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 
@@ -421,8 +422,13 @@ export function sidebarHTML(model, opts = {}) {
   }
   const others = (m.others || []).map((r) => rowHTML(r, tabHost)).join('');
   // A model without the phase (an older caller) keeps the one-line text.
+  // A search that leaves no row says so (spksearch.js); it never reads as
+  // "no speakers found", which is about the network, not the search.
+  const search = m.search && m.search.query ? m.search : null;
   let empty = '';
-  if (!rows.length) {
+  if (search && search.noMatch) {
+    empty = noMatchHTML(search.query);
+  } else if (!rows.length && !search) {
     empty = m.emptyPhase
       ? noSpeakersState(m.emptyPhase, { id: 'ui2SpkState', error: m.emptyError, connectOpen: m.connectOpen, level: 3 })
       : `<p class="ui2-spk-empty">${escapeHtml(t(m.searching ? 'speaker.searching' : 'ui2.side.empty'))}</p>`;

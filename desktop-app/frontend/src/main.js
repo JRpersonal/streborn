@@ -365,6 +365,8 @@ import {
   updateFilterIndicators,
   updatePandoraModeBtn,
 } from './views/music/index.js';
+import { boxSourceLabel } from './views/music/presets.js';
+import { nowLineOf } from './shell2/spksearch.js';
 // The speaker update (one speaker and Update all), extracted from this monolith
 // into src/update/. Same pattern again: initUpdateFlow injects the main.js-local
 // helpers the runners call (see update/deps.js).
@@ -1446,6 +1448,10 @@ function safeMountShell2() {
       // Phase 5: the issues of one speaker (shell2/attention.js), for the
       // sidebar chip; filled where the wedge and issue banners render.
       speakerAttention,
+      // The sidebar search also finds a source by the name the key tiles
+      // show ("Internet radio" for LOCAL_INTERNET_RADIO), next to its name
+      // in the app's language (spksearch.js sourceNames).
+      sourceLabel: boxSourceLabel,
       // Help and info (shell2/help): the credits dialog, and a manual app
       // update check like the version line's own link (which also forgets a
       // dismissed notice); the result shows where it always does.
@@ -1942,6 +1948,9 @@ async function refreshBoxPlaying(force) {
     // takes it into a group, and the name alone cannot tell whether that is
     // the group's own music (shell2/playclaim.js joinReview, sameMusic).
     const items = {};
+    // What each speaker plays (source and station), read from the same
+    // answer: the UI 2.0 sidebar search finds a speaker by it.
+    const lines = {};
     results.forEach((r, i) => {
       let playing = false;
       let isPaused = false;
@@ -1953,6 +1962,8 @@ async function refreshBoxPlaying(force) {
         playing = isPlaying(ps) && src !== 'STANDBY';
         isPaused = ps === 'PAUSE_STATE' && src !== 'STANDBY';
         if (playing) items[polled[i].deviceID] = statusNowItem(xml);
+        const line = nowLineOf(xml);
+        if (line) lines[polled[i].deviceID] = line;
       }
       map[polled[i].deviceID] = playing;
       paused[polled[i].deviceID] = isPaused;
@@ -1961,6 +1972,7 @@ async function refreshBoxPlaying(force) {
     state.boxPaused = paused;
     state.boxPlayReadAt = readAt;
     state.boxNow = items;
+    state.boxNowLine = lines;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }

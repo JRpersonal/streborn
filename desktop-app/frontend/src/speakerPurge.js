@@ -132,7 +132,7 @@ function deleteKeysMatching(obj, ids) {
 function purgeState(state, host, deviceID, ids) {
   if (!state || typeof state !== 'object') return;
   // Per-speaker maps keyed by deviceID (or host).
-  for (const name of ['pendingNames', 'zoneLive', 'zoneSlaves', 'zoneMaster', 'boxPlaying', 'boxNow']) {
+  for (const name of ['pendingNames', 'zoneLive', 'zoneSlaves', 'zoneMaster', 'boxPlaying', 'boxNow', 'boxNowLine', 'boxPaused', 'boxPlayReadAt']) {
     deleteKeysMatching(state[name], ids);
   }
   // Selections that point at this speaker. state.boxes is left alone: the

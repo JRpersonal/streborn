@@ -17,6 +17,7 @@ import { escapeAttr, escapeHtml } from '../utils.js';
 import { donateButtonsHTML } from '../donate.js';
 import { NAV } from './nav.js';
 import { SUBNAV } from './speakers/routes.js';
+import { searchFieldHTML } from './spksearch.js';
 
 function navItemHTML(item) {
   const badge = item.badgeId
@@ -65,6 +66,7 @@ export function shellMarkup() {
     </div>
     <section class="ui2-spk" id="ui2Speakers" aria-labelledby="ui2SpkHead">
       <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
+      ${searchFieldHTML()}
       <div class="ui2-spk-lists" id="ui2SpkLists"></div>
     </section>
     <section class="ui2-support" id="ui2Support" aria-label="${escapeAttr(t('ui2.help.support'))}">
