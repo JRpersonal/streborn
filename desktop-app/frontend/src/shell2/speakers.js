@@ -49,9 +49,12 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //                    { items, chip }, chip null when nothing is wrong); none
 //                    without it
 //        connectOpen the empty state's Connect by address block is open
-//        nowName     what the speaker you control plays (state.nowName)
-//        boxNowName  { deviceID: name } of what every other speaker plays,
-//                    from the every-speaker poll (state.boxNowName)
+//        nowName     what the speaker you control plays (state.nowName), with
+//        nowSource   its source (state.nowSource) and
+//        nowLocation its stream (state.nowLocation)
+//        boxNow      { deviceID: { name, source, location } } of what every
+//                    other speaker plays, from the every-speaker poll
+//                    (state.boxNow, shell2/playclaim.js statusNowItem)
 //        review      the host whose join review is open ('' for none)
 //
 // The pinned group is the group that plays (#1284: "the playing group stays
@@ -113,13 +116,19 @@ export function sidebarModel(boxes, ctx = {}) {
     const n = typeof notes.get === 'function' ? notes.get(host) : notes[host];
     return n && n.text ? n : null;
   };
-  // What a speaker plays, by name: the speaker you control from its own
-  // status poll (fresher), every other one from the every-speaker poll.
-  const nowNameOf = (b) => {
-    if (!b) return '';
-    if (ctx.currentBox && b.host === ctx.currentBox.host && ctx.nowName) return String(ctx.nowName);
-    const names = ctx.boxNowName || {};
-    return has(names, b.deviceID) ? String(names[b.deviceID] || '') : '';
+  // What a speaker plays ({ name, source, location }): the speaker you
+  // control from its own status poll (fresher), every other one from the
+  // every-speaker poll. The source and the stream come along because the
+  // name alone does not say two speakers play the same music (sameMusic).
+  const nowOf = (b) => {
+    const none = { name: '', source: '', location: '' };
+    if (!b) return none;
+    if (ctx.currentBox && b.host === ctx.currentBox.host && ctx.nowName) {
+      return { name: String(ctx.nowName), source: String(ctx.nowSource || ''), location: String(ctx.nowLocation || '') };
+    }
+    const items = ctx.boxNow || {};
+    const it = has(items, b.deviceID) ? items[b.deviceID] : null;
+    return it && typeof it === 'object' ? it : none;
   };
   const attentionOf = (host) => {
     if (typeof ctx.attention !== 'function' || !host) return '';
@@ -157,8 +166,8 @@ export function sidebarModel(boxes, ctx = {}) {
           review = joinReview({
             name: r.name,
             playing: r.playing,
-            stops: nowNameOf(b),
-            plays: nowNameOf(master),
+            stops: nowOf(b),
+            plays: nowOf(master),
             master: master ? labelVia(ctx.label, master) : '',
           });
         }

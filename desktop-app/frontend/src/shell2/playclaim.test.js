@@ -3,7 +3,7 @@
 // station at once, and one station could be listed twice).
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { claimPlay, joinReview, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop, resetPlayClaims, statusNowName } from './playclaim.js';
+import { claimPlay, joinReview, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop, resetPlayClaims, sameMusic, statusNowItem } from './playclaim.js';
 import { setLocale } from '../i18n/index.js';
 
 setLocale('en');
@@ -93,34 +93,69 @@ describe('station rows', () => {
 // zone ends that speaker's own music, so the row first says what stops and
 // what plays instead.
 describe('join review', () => {
+  const radio = (name, location = `http://radio.example/${name.toLowerCase()}`) => ({ name, source: 'INTERNET_RADIO', location });
+
   it('names what stops and what plays instead', () => {
-    const r = joinReview({ name: 'Kitchen', playing: true, stops: 'Jazz24', plays: 'FluxFM', master: 'Living room' });
+    const r = joinReview({ name: 'Kitchen', playing: true, stops: radio('Jazz24'), plays: radio('FluxFM'), master: 'Living room' });
     expect(r.text).toBe('Kitchen stops Jazz24 and plays FluxFM.');
     expect(r).toMatchObject({ stops: 'Jazz24', plays: 'FluxFM' });
   });
 
   it('names the main speaker when the group music has no name, and says so when the speaker names nothing', () => {
-    expect(joinReview({ name: 'Kitchen', playing: true, stops: 'Jazz24', plays: '', master: 'Living room' }).text)
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: radio('Jazz24'), plays: { name: '' }, master: 'Living room' }).text)
       .toBe('Kitchen stops Jazz24 and plays along with Living room.');
-    expect(joinReview({ name: 'Kitchen', playing: true, stops: '', plays: 'FluxFM', master: 'Living room' }).text)
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: { name: '' }, plays: radio('FluxFM'), master: 'Living room' }).text)
       .toBe('Kitchen stops what it is playing and plays FluxFM.');
     expect(joinReview({ name: 'Kitchen', playing: true, master: 'Living room' }).text)
       .toBe('Kitchen stops what it is playing and plays along with Living room.');
   });
 
   it('asks nothing of an idle speaker, one in standby or one that already plays the same station', () => {
-    expect(joinReview({ name: 'Kitchen', playing: false, stops: 'Jazz24', plays: 'FluxFM' })).toBe(null);
-    expect(joinReview({ name: 'Kitchen', playing: true, stops: 'FluxFM', plays: ' fluxfm ' })).toBe(null);
-    expect(joinReview({ name: '', playing: true, stops: 'Jazz24', plays: 'FluxFM' })).toBe(null);
+    expect(joinReview({ name: 'Kitchen', playing: false, stops: radio('Jazz24'), plays: radio('FluxFM') })).toBe(null);
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: radio('FluxFM', 'http://flux.example/live'), plays: { ...radio(' fluxfm ', 'http://flux.example/live'), source: 'internet_radio' } })).toBe(null);
+    // STR's own station stream on the agent, which the speaker reports as UPNP.
+    const str = { name: 'FluxFM', source: 'UPNP', location: 'http://127.0.0.1:8888/stream/raw?u=aHR0cDovL3g' };
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: str, plays: { ...str } })).toBe(null);
+    expect(joinReview({ name: '', playing: true, stops: radio('Jazz24'), plays: radio('FluxFM') })).toBe(null);
     expect(joinReview()).toBe(null);
   });
 
-  it('reads the name from a now_playing answer, station first, entities decoded', () => {
-    expect(statusNowName('<nowPlaying source="INTERNET_RADIO"><ContentItem><itemName>Jazz &amp; Soul</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>'))
-      .toBe('Jazz & Soul');
-    expect(statusNowName('<nowPlaying><ContentItem><itemName>Song title</itemName></ContentItem><stationName>Jazz24</stationName></nowPlaying>'))
-      .toBe('Jazz24');
-    expect(statusNowName('<nowPlaying source="STANDBY"><ContentItem source="STANDBY" /></nowPlaying>')).toBe('');
-    expect(statusNowName(null)).toBe('');
+  // The name alone is not the music: AUX names the input, Bluetooth the
+  // phone, and family Spotify accounts share playlist names.
+  it('still reviews when both speakers report the same name from a different source or stream', () => {
+    const cases = [
+      // The same station name on another stream (or another source).
+      [radio('FluxFM', 'http://flux.example/a'), radio('FluxFM', 'http://flux.example/b')],
+      [radio('FluxFM'), { name: 'FluxFM', source: 'TUNEIN', location: '/v1/playback/station/s1' }],
+      // Each speaker on its own AUX input.
+      [{ name: 'AUX IN', source: 'AUX', location: '' }, { name: 'AUX IN', source: 'AUX', location: '' }],
+      [{ name: 'AUX IN', source: 'AUX', location: 'AUX' }, { name: 'AUX IN', source: 'AUX', location: 'AUX' }],
+      // Two phones with the same name over Bluetooth.
+      [{ name: 'iPhone', source: 'BLUETOOTH', location: '' }, { name: 'iPhone', source: 'BLUETOOTH', location: '' }],
+      // Two accounts, one playlist name, even on the same container path.
+      [{ name: 'Liked Songs', source: 'SPOTIFY', location: '/playback/container/c3BvdGlmeQ==' },
+        { name: 'Liked Songs', source: 'SPOTIFY', location: '/playback/container/c3BvdGlmeQ==' }],
+      // STR's Spotify stream is the same address on every speaker.
+      [{ name: 'Daily Mix 1', source: 'UPNP', location: 'http://127.0.0.1:8888/spotify/stream' },
+        { name: 'Daily Mix 1', source: 'UPNP', location: 'http://127.0.0.1:8888/spotify/stream' }],
+      // A bare name has no source and no stream to compare.
+      ['FluxFM', 'FluxFM'],
+    ];
+    for (const [stops, plays] of cases) {
+      expect(sameMusic(stops, plays)).toBe(false);
+      const r = joinReview({ name: 'Kitchen', playing: true, stops, plays, master: 'Living room' });
+      expect(r).not.toBe(null);
+      // Not "stops AUX IN and plays AUX IN", which reads as if nothing changed.
+      expect(r.text).toBe('Kitchen stops what it is playing and plays along with Living room.');
+    }
+  });
+
+  it('reads name, source and stream from a now_playing answer, station first, entities decoded', () => {
+    expect(statusNowItem('<nowPlaying deviceID="x" source="INTERNET_RADIO"><ContentItem source="INTERNET_RADIO" location="http://radio.example/?a=1&amp;b=2"><itemName>Jazz &amp; Soul</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>'))
+      .toEqual({ name: 'Jazz & Soul', source: 'INTERNET_RADIO', location: 'http://radio.example/?a=1&b=2' });
+    expect(statusNowItem('<nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"><itemName>Song title</itemName></ContentItem><stationName>Jazz24</stationName></nowPlaying>'))
+      .toEqual({ name: 'Jazz24', source: 'UPNP', location: 'http://127.0.0.1:8888/stream/2' });
+    expect(statusNowItem('<nowPlaying source="STANDBY"><ContentItem source="STANDBY" /></nowPlaying>')).toEqual({ name: '', source: 'STANDBY', location: '' });
+    expect(statusNowItem(null)).toEqual({ name: '', source: '', location: '' });
   });
 });

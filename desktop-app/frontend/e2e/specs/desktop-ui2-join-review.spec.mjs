@@ -10,10 +10,11 @@
 
 import { test, expect } from '../fixtures.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
-import { ROSTER } from '../../testkit/demo-data.mjs';
+import { ROSTER, statusXml } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
+const DR = ROSTER.dining;
 
 // Bedroom's own /now_playing while it plays a station of its own (the
 // mock's model names every playing speaker "Best Of Rock.FM", the station
@@ -24,6 +25,10 @@ const BR_JAZZ = '<?xml version="1.0" encoding="UTF-8"?>'
   + '<itemName>Jazz24</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>';
 
 const SENTENCE = 'Bedroom stops Jazz24 and plays Best Of Rock.FM.';
+
+// The every-speaker poll runs every 15 s (main.js refreshEverySpeaker), so
+// one poll round is a little more than that on the page clock.
+const POLL_MS = 16_000;
 
 const row = (page, host) => page.locator('#ui2SpkLists .ui2-spk-row')
   .filter({ has: page.locator(`.ui2-spk-pick[data-host="${host}"]`) });
@@ -126,6 +131,91 @@ test.describe('UI 2.0 join review', () => {
       await page.keyboard.press('Enter');
       await runFor(page, 1_000);
       await mock.expectCalled('FormZone', { times: 1 });
+    });
+
+    test('5. the review closes by itself once the speaker stops, and "+" then joins at once', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 10_000);
+      const add = plus(page, BR.host);
+      await add.click();
+      await expect(review(page, BR.host).locator('.ui2-spk-join-btn[data-join="add"]')).toBeFocused();
+      // Bedroom goes to standby while its review is open.
+      const standby = { byHost: { [BR.host]: { value: statusXml({ deviceID: BR.deviceID, playState: 'STANDBY' }) } } };
+      await mock.set('Status', standby);
+      await runFor(page, POLL_MS);
+      await expect(review(page, BR.host)).toHaveCount(0);
+      await expect(page.locator('#ui2SpkLists .ui2-spk-join')).toHaveCount(0);
+      // The keyboard falls back to the row's "+", which is a plain button again.
+      await expect(add).toBeFocused();
+      await expect(add).not.toHaveAttribute('aria-expanded', /.*/);
+      // The review was closed, not hidden: when Bedroom plays again it stays
+      // shut until "+" is pressed.
+      await mock.set('Status', { byHost: { [BR.host]: { value: BR_JAZZ } } });
+      await runFor(page, POLL_MS);
+      await expect(add).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.locator('#ui2SpkLists .ui2-spk-join')).toHaveCount(0);
+      await mock.set('Status', standby);
+      await runFor(page, POLL_MS);
+      await expect(add).not.toHaveAttribute('aria-expanded', /.*/);
+      await mock.resetCalls();
+      await add.click();
+      await expect(page.locator('#ui2SpkLists .ui2-spk-join')).toHaveCount(0);
+      await runFor(page, 1_000);
+      await mock.expectCalled('FormZone', { times: 1 });
+      expect(JSON.stringify((await mock.last('FormZone')).args)).toContain(BR.host);
+    });
+
+    test('6. a repaint while the review is open keeps the keyboard on Cancel', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 10_000);
+      await mock.resetCalls();
+      await plus(page, BR.host).click();
+      const cancel = review(page, BR.host).locator('.ui2-spk-join-btn[data-join="cancel"]');
+      await cancel.focus();
+      // Living Room moves on to another station: the review's sentence is
+      // drawn again from the next poll, with the review still open.
+      await mock.set('Status', {
+        byHost: {
+          [BR.host]: { value: BR_JAZZ },
+          [LR.host]: { value: statusXml({ deviceID: LR.deviceID, itemName: 'Radio Paradise', location: 'http://radio.example/paradise' }) },
+        },
+      });
+      await runFor(page, POLL_MS);
+      await expect(review(page, BR.host).locator('.ui2-spk-join-text')).toHaveText('Bedroom stops Jazz24 and plays Radio Paradise.');
+      await expect(review(page, BR.host).locator('.ui2-spk-join-btn[data-join="cancel"]')).toBeFocused();
+      expect(await mock.count('FormZone')).toBe(0);
+    });
+  });
+
+  test.describe('two speakers that play something else', () => {
+    // Dining room plays a station of its own too.
+    const DR_SOUL = '<?xml version="1.0" encoding="UTF-8"?>'
+      + `<nowPlaying deviceID="${DR.deviceID}" source="INTERNET_RADIO">`
+      + '<ContentItem source="INTERNET_RADIO" location="http://radio.example/soul" isPresetable="true">'
+      + '<itemName>Soul Radio</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>';
+    test.use({
+      scenario: {
+        boxes: ['livingRoom', 'bedroom', 'dining', 'office', 'kitchen'],
+        playing: { livingRoom: 'PLAY_STATE', bedroom: 'PLAY_STATE', dining: 'PLAY_STATE' },
+        bindings: { Status: { byHost: { [BR.host]: { value: BR_JAZZ }, [DR.host]: { value: DR_SOUL } } } },
+      },
+    });
+
+    test('7. opening a second review closes the first, one review at a time', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 10_000);
+      await mock.resetCalls();
+      await plus(page, BR.host).click();
+      await expect(review(page, BR.host)).toBeVisible();
+      await plus(page, DR.host).click();
+      await expect(page.locator('#ui2SpkLists .ui2-spk-join')).toHaveCount(1);
+      await expect(review(page, BR.host)).toHaveCount(0);
+      await expect(review(page, DR.host).locator('.ui2-spk-join-text')).toHaveText('Dining room stops Soul Radio and plays Best Of Rock.FM.');
+      await expect(review(page, DR.host).locator('.ui2-spk-join-btn[data-join="add"]')).toBeFocused();
+      await expect(plus(page, BR.host)).toHaveAttribute('aria-expanded', 'false');
+      await expect(plus(page, DR.host)).toHaveAttribute('aria-expanded', 'true');
+      await runFor(page, 1_000);
+      expect(await mock.count('FormZone')).toBe(0);
     });
   });
 
