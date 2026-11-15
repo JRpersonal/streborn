@@ -120,10 +120,13 @@ test.describe('UI 2.0 join review', () => {
       const { page } = app;
       await settle(page, 10_000);
       await mock.resetCalls();
-      // Into the list, down to Bedroom, over to its "+".
+      // Into the list, down to Bedroom, over its own Play/Pause (it plays,
+      // so the row carries one between the name and "+") to its "+".
       await row(page, LR.host).locator('.ui2-spk-pick').focus();
       await page.keyboard.press('ArrowDown');
       await expect(row(page, BR.host).locator('.ui2-spk-pick')).toBeFocused();
+      await page.keyboard.press('ArrowRight');
+      await expect(row(page, BR.host).locator('.ui2-spk-tp')).toBeFocused();
       await page.keyboard.press('ArrowRight');
       await expect(plus(page, BR.host)).toBeFocused();
       await page.keyboard.press('Enter');
