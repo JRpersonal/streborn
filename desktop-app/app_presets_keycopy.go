@@ -35,8 +35,9 @@ type KeyCopyResult struct {
 	// NotKept are chosen keys pressed twice (7..12) that the target cannot
 	// hold, because its agent keeps one row of keys only.
 	NotKept []int `json:"notKept"`
-	// Same are chosen keys the target already held exactly like the source,
-	// so they were left as they were instead of being written again.
+	// Same are chosen keys the target already held exactly like the source.
+	// Their station did not change; they are still sent along so the speaker's
+	// own button for that key is set again (see keyStepSame).
 	Same []int `json:"same"`
 }
 
@@ -50,9 +51,13 @@ const (
 	// keyStepReplace: the target's key holds a different station, which the
 	// copy replaces.
 	keyStepReplace = "replace"
-	// keyStepSame: the target's key is already exactly the source key. It is
-	// left out of the write, which spares the speaker a NAND write and a
-	// hardware key registration for nothing.
+	// keyStepSame: the target's agent already holds exactly the source key.
+	// It is still sent with the write: the agent registers every key it
+	// writes on the speaker's own button, and that button can be stale while
+	// the agent's store is right (a Bose-side reset, a box push that failed
+	// and was only logged). Copying the key again used to be the repair for
+	// that, and it must stay one. Sent along with the other keys it costs no
+	// extra NAND write, since the set goes in one bulk write.
 	keyStepSame = "same"
 	// keyStepOnOtherKey: the station already sits on another key of the
 	// target that the copy does not rewrite (the duplicate guard, #836).
@@ -84,11 +89,19 @@ type KeyCopyPreview struct {
 }
 
 // keyCopyPlan is the decision a copy of chosen keys acts on: one step per
-// chosen key and the presets that are actually written.
+// chosen key and the presets that are actually written, in slot order. The
+// written set includes the "same" keys that can be sent again (refresh).
 type keyCopyPlan struct {
-	steps []KeyCopyStep
-	write []Preset
+	steps   []KeyCopyStep
+	write   []Preset
+	refresh map[int]bool
 }
+
+// keyCopySourceErrPrefix starts the error of a preview or copy whose SOURCE
+// speaker could not be read. The UI 2.0 review (shell2/keycopyreview.js)
+// matches it to show one error about the source instead of blaming every
+// target, so it must not change without that file.
+const keyCopySourceErrPrefix = "read source presets"
 
 // validateKeyCopy is the argument check the preview and the copy share.
 func validateKeyCopy(srcHost, dstHost string, slots []int) error {
@@ -121,16 +134,17 @@ func (a *App) PreviewPresetKeyCopy(srcHost string, srcPort int, dstHost string, 
 	}
 	src, err := a.GetPresets(srcHost, srcPort)
 	if err != nil {
-		return out, fmt.Errorf("read source presets: %w", err)
+		return out, fmt.Errorf("%s: %w", keyCopySourceErrPrefix, err)
 	}
 	dst, err := a.GetPresets(dstHost, dstPort)
 	if err != nil {
 		return out, fmt.Errorf("read target presets: %w", err)
 	}
-	plan := planKeyCopy(src, dst, slots, a.boxPresetMaxSlot(dstHost, dstPort))
+	perSlot := !a.presetBulkSupported(dstHost, dstPort)
+	plan := planKeyCopy(src, dst, slots, a.boxPresetMaxSlot(dstHost, dstPort), perSlot)
 	out.Steps = append(out.Steps, plan.steps...)
 	a.logger.Info("copy keys: preview", "src", srcHost, "dst", dstHost, "chosen", slots,
-		"steps", len(plan.steps), "writes", len(plan.write))
+		"steps", len(plan.steps), "writes", len(plan.write), "perSlot", perSlot)
 	return out, nil
 }
 
@@ -138,15 +152,26 @@ func (a *App) PreviewPresetKeyCopy(srcHost string, srcPort int, dstHost string, 
 // holding dst that keeps keys up to maxSlot. Pure, so the preview and the copy
 // share it and it is tested without a speaker.
 //
-// The duplicate rule is the agent's bulk rule (#882): a station collides with
-// a target key the write does not rewrite, and keys that swap places do not
-// collide with each other. A key left out (same, or a collision) is not
-// rewritten either, so it can make another chosen key collide in turn; the
-// loop runs until nothing new collides. Collisions only grow as keys drop
-// out, so the result does not depend on the order, and it is the set the
-// agent's own one-at-a-time refusals arrive at.
-func planKeyCopy(src, dst []Preset, slots []int, maxSlot int) keyCopyPlan {
+// With the bulk endpoint the duplicate rule is the agent's bulk rule (#882):
+// a station collides with a target key the write does not rewrite, and keys
+// that swap places do not collide with each other. A key left out (a
+// collision) is not rewritten either, so it can make another chosen key
+// collide in turn; the loop runs until nothing new collides. Collisions only
+// grow as keys drop out, so the result does not depend on the order, and it
+// is the set the agent's own one-at-a-time refusals arrive at.
+//
+// perSlot is a target agent without the bulk endpoint: it gets one write per
+// key in slot order (putKeysPerSlot), each judged against the store as the
+// earlier writes left it, so two keys that swap places DO collide there. The
+// plan then walks the keys in that same order, so the review shows what that
+// agent is going to answer.
+//
+// A "same" key is sent again (keyStepSame). If sending it would collide, which
+// only a target already holding the station twice can cause, it is left out of
+// the write and stays "same": the station is on that key either way.
+func planKeyCopy(src, dst []Preset, slots []int, maxSlot int, perSlot bool) keyCopyPlan {
 	set, notKept := chosenKeys(src, slots, maxSlot)
+	sort.SliceStable(set, func(i, j int) bool { return set[i].Slot < set[j].Slot })
 	onTarget := make(map[int]Preset, len(dst))
 	var targetKeys []Preset
 	for _, p := range dst {
@@ -166,33 +191,62 @@ func planKeyCopy(src, dst []Preset, slots []int, maxSlot int) keyCopyPlan {
 	for _, s := range notKept {
 		stepOf[s] = KeyCopyStep{Slot: s, Name: srcName[s], Action: keyStepNotKept}
 	}
-	pending := make([]Preset, 0, len(set))
+	refresh := make(map[int]bool, len(set))
 	for _, p := range set {
 		if cur, ok := onTarget[p.Slot]; ok && sameKeyContent(p, cur) {
 			stepOf[p.Slot] = KeyCopyStep{Slot: p.Slot, Name: p.Name, Action: keyStepSame}
-			continue
+			refresh[p.Slot] = true
 		}
-		pending = append(pending, p)
 	}
-	for {
-		rewritten := make(map[int]bool, len(pending))
-		for _, p := range pending {
-			rewritten[p.Slot] = true
+	// leaveOut takes a colliding key out of the write: a new key is reported
+	// as on the other key, a "same" key just is not sent again.
+	leaveOut := func(p Preset, on int) {
+		if refresh[p.Slot] {
+			delete(refresh, p.Slot)
+			return
+		}
+		stepOf[p.Slot] = KeyCopyStep{Slot: p.Slot, Name: p.Name, Action: keyStepOnOtherKey, OnSlot: on}
+	}
+	pending := append([]Preset(nil), set...)
+	if perSlot {
+		store := make(map[int]Preset, len(onTarget)+len(set))
+		for s, p := range onTarget {
+			store[s] = p
 		}
 		kept := pending[:0:0]
 		for _, p := range pending {
-			if on := collidingKey(p, targetKeys, rewritten); on > 0 {
-				stepOf[p.Slot] = KeyCopyStep{Slot: p.Slot, Name: p.Name, Action: keyStepOnOtherKey, OnSlot: on}
+			if on := collidingKey(p, keysBySlot(store), nil); on > 0 {
+				leaveOut(p, on)
 				continue
 			}
+			store[p.Slot] = p
 			kept = append(kept, p)
 		}
-		if len(kept) == len(pending) {
-			break
-		}
 		pending = kept
+	} else {
+		for {
+			rewritten := make(map[int]bool, len(pending))
+			for _, p := range pending {
+				rewritten[p.Slot] = true
+			}
+			kept := pending[:0:0]
+			for _, p := range pending {
+				if on := collidingKey(p, targetKeys, rewritten); on > 0 {
+					leaveOut(p, on)
+					continue
+				}
+				kept = append(kept, p)
+			}
+			if len(kept) == len(pending) {
+				break
+			}
+			pending = kept
+		}
 	}
 	for _, p := range pending {
+		if refresh[p.Slot] {
+			continue
+		}
 		step := KeyCopyStep{Slot: p.Slot, Name: p.Name, Action: keyStepCopy}
 		if cur, ok := onTarget[p.Slot]; ok && !sameKeyStation(p, cur) {
 			step.Action = keyStepReplace
@@ -200,12 +254,38 @@ func planKeyCopy(src, dst []Preset, slots []int, maxSlot int) keyCopyPlan {
 		}
 		stepOf[p.Slot] = step
 	}
-	plan := keyCopyPlan{steps: make([]KeyCopyStep, 0, len(stepOf)), write: pending}
+	plan := keyCopyPlan{steps: make([]KeyCopyStep, 0, len(stepOf)), write: pending, refresh: refresh}
 	for _, st := range stepOf {
 		plan.steps = append(plan.steps, st)
 	}
 	sort.Slice(plan.steps, func(i, j int) bool { return plan.steps[i].Slot < plan.steps[j].Slot })
 	return plan
+}
+
+// keysBySlot is a store's keys in slot order, so a collision names the same
+// key on every run.
+func keysBySlot(store map[int]Preset) []Preset {
+	out := make([]Preset, 0, len(store))
+	for _, p := range store {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
+	return out
+}
+
+// presetBulkSupported says whether the target's agent knows PUT /api/presets
+// (#882), without writing anything: that endpoint refuses an empty set with
+// 400 before it touches the store, and an agent without it answers 404 or 405.
+// No answer or any other status counts as bulk, the endpoint every current
+// agent has; the copy then finds out for real and falls back on its own.
+func (a *App) presetBulkSupported(host string, port int) bool {
+	resp, err := a.boxDo(host, port, http.MethodPut, presetAPIPath, "application/json", "[]")
+	if err != nil {
+		return true
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed
 }
 
 // collidingKey is the first target key (by slot) that already holds p's
@@ -299,7 +379,8 @@ func (p keyCopyPlan) result() KeyCopyResult {
 // room, #836), and the result names that key so the app can say so. Unlike the
 // whole-set copy, such a collision does not stop the other chosen keys: they
 // are copied, and the colliding one is reported. A key the target already
-// holds exactly like this is left as it is (Same). The error is reserved for a
+// holds exactly like this is sent again so the speaker's own button is set,
+// and reported as Same (its station did not change). The error is reserved for a
 // target that took nothing at all (unreadable source, a target that never
 // answered, a refusal that is not a collision).
 //
@@ -314,7 +395,7 @@ func (a *App) CopyPresetKeysAcrossBoxes(srcHost string, srcPort int, dstHost str
 	}
 	presets, err := a.GetPresets(srcHost, srcPort)
 	if err != nil {
-		return res, fmt.Errorf("read source presets: %w", err)
+		return res, fmt.Errorf("%s: %w", keyCopySourceErrPrefix, err)
 	}
 	// Same reason as the whole-set copy: a target that has just rebooted after
 	// an update answers pings before its agent listens.
@@ -331,27 +412,47 @@ func (a *App) CopyPresetKeysAcrossBoxes(srcHost string, srcPort int, dstHost str
 			"dst", dstHost, "err", derr)
 		dstPresets = nil
 	}
-	plan := planKeyCopy(presets, dstPresets, slots, maxSlot)
+	plan := planKeyCopy(presets, dstPresets, slots, maxSlot, !a.presetBulkSupported(dstHost, dstPort))
 	res = plan.result()
 	set := plan.write
 	if len(set) == 0 {
 		a.logger.Info("copy keys: nothing to write to this target",
 			"src", srcHost, "dst", dstHost, "chosen", slots, "same", res.Same,
 			"skipped", len(res.Skipped), "notKept", res.NotKept)
-		return res, nil
-	}
-	copied, skipped, err := a.putChosenKeys(dstHost, dstPort, set)
-	res.Copied = append(res.Copied, copied...)
-	res.Skipped = append(res.Skipped, skipped...)
-	a.logger.Info("copy keys: done", "src", srcHost, "dst", dstHost,
-		"chosen", slots, "copied", res.Copied, "same", res.Same, "skipped", len(res.Skipped), "notKept", res.NotKept, "err", err)
-	if err != nil && len(res.Copied) == 0 {
-		return res, err
+	} else {
+		copied, skipped, err := a.putChosenKeys(dstHost, dstPort, set)
+		// A "same" key that went along stays reported as Same whatever its
+		// write answered: the target held it exactly like this before, and
+		// only the speaker's own button was being set again.
+		for _, s := range copied {
+			if !plan.refresh[s] {
+				res.Copied = append(res.Copied, s)
+			}
+		}
+		for _, s := range skipped {
+			if plan.refresh[s.Slot] {
+				a.logger.Warn("copy keys: setting the speaker's button of an unchanged key again was refused",
+					"dst", dstHost, "slot", s.Slot, "onKey", s.OnSlot, "reason", s.Reason)
+				continue
+			}
+			res.Skipped = append(res.Skipped, s)
+		}
+		a.logger.Info("copy keys: done", "src", srcHost, "dst", dstHost,
+			"chosen", slots, "copied", res.Copied, "same", res.Same, "skipped", len(res.Skipped), "notKept", res.NotKept, "err", err)
+		if err != nil && len(res.Copied) == 0 && len(set) > len(plan.refresh) {
+			return res, err
+		}
 	}
 	// The target's agent writes each accepted key to the speaker's own hardware
 	// key itself (bulk and per-slot alike), so no extra full key sync here: it
 	// would rewrite the six keys the user chose to leave alone.
-	if hasSpotifyPreset(presetsOnSlots(set, res.Copied)) {
+	//
+	// The Spotify login goes along for every chosen Spotify key that is on the
+	// target now, the unchanged ones included. A target can hold the key and
+	// still lack the login (an earlier transfer failed, the speaker was set up
+	// again), and copying the key again is how a user repairs that.
+	landed := append(append([]int{}, res.Copied...), res.Same...)
+	if hasSpotifyPreset(presetsOnSlots(presets, landed)) {
 		a.transferSpotifyCredential(srcHost, srcPort, dstHost, dstPort)
 	}
 	return res, nil

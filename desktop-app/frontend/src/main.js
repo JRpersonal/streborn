@@ -309,6 +309,7 @@ import {
   installRunActive,
 } from './views/setup.js';
 import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
+import { closeKeyCopyReview } from './shell2/keycopyreview.js';
 // UI 2.0 phase 5: what one speaker needs is said on that speaker (the wedge
 // and box issue banners, the update failure report); preview only.
 import { setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
@@ -946,6 +947,9 @@ function switchView(view) {
   // action, not to greet the user on every return to the tab (#882, the
   // "stereo pair cannot be grouped" note that survived every screen change).
   if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
+  // A UI 2.0 review of a copy of keys lives under the Radio view's keys; it
+  // does not wait, unseen, on another view for an answer.
+  if (view !== 'box') closeKeyCopyReview();
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-wishes').classList.toggle('hidden', view !== 'wishes');
   // The UI 2.0 Speakers list is a view of the preview shell only

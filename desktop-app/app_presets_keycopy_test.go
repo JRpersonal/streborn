@@ -31,6 +31,14 @@ type keyBox struct {
 	bulkPuts   int
 	slotPuts   int
 	syncs      int
+	// probes counts the app's write-free bulk probes (an empty set).
+	probes int
+	// credential is the Spotify login this box hands out as a copy source;
+	// credPosts counts the logins it received as a copy target.
+	credential []byte
+	credPosts  int
+	// slotsWritten records each write's slots in order, bulk and per slot.
+	slotsWritten [][]int
 }
 
 func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
@@ -73,14 +81,35 @@ func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
 			b.syncs++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte("{}"))
+		case r.Method == http.MethodGet && r.URL.Path == "/spotify/credential":
+			if len(b.credential) == 0 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(b.credential)
+		case r.Method == http.MethodPost && r.URL.Path == "/spotify/credential":
+			b.credPosts++
+			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPut && r.URL.Path == presetAPIPath:
+			var set []Preset
+			_ = json.NewDecoder(r.Body).Decode(&set)
+			if len(set) == 0 {
+				// The app's bulk probe: the agent's handler refuses an empty
+				// set before it touches the store; an older agent knows no PUT.
+				b.probes++
+				if !b.bulk {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				http.Error(w, "empty preset set", http.StatusBadRequest)
+				return
+			}
 			b.bulkPuts++
 			if !b.bulk {
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			var set []Preset
-			_ = json.NewDecoder(r.Body).Decode(&set)
 			in := map[int]bool{}
 			for _, p := range set {
 				in[p.Slot] = true
@@ -96,9 +125,12 @@ func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
 					}
 				}
 			}
+			written := []int{}
 			for _, p := range set {
 				b.store[p.Slot] = p
+				written = append(written, p.Slot)
 			}
+			b.slotsWritten = append(b.slotsWritten, written)
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, presetAPIPath+"/"):
 			b.slotPuts++
@@ -112,6 +144,7 @@ func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
 				}
 			}
 			b.store[slot] = p
+			b.slotsWritten = append(b.slotsWritten, []int{slot})
 			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusOK)

@@ -1,10 +1,12 @@
 // desktop-ui2-copy-keys-review: in the UI 2.0 preview, copying keys to other
 // speakers first shows what will happen, per speaker and per key (copied,
-// skipped because that speaker already has it exactly like this, replacing
-// another station, skipped because the station is on another key there, not
-// possible on a speaker with one row of keys), and copies only after Copy.
-// Cancel copies nothing. The review sits in the page under the keys' heading,
-// not in a dialog, and works by keyboard. The classic layout copies as before.
+// already there exactly like this so only the speaker's button is set again,
+// replacing another station, skipped because the station is on another key
+// there, not possible on a speaker with one row of keys), and copies only
+// after Copy. Cancel copies nothing, and so does leaving the review behind
+// (another speaker, another view). The review sits in the page under the
+// keys' heading, not in a dialog, and works by keyboard. The classic layout
+// copies as before.
 //
 //   E2E_PORT=4186 npx playwright test specs/desktop-ui2-copy-keys-review.spec.mjs --project=desktop
 
@@ -136,22 +138,112 @@ test.describe('UI 2.0', () => {
       expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
       expect(await mock.count('CopyPresetsAcrossBoxes')).toBe(0);
     });
+
+    test('4b. choosing another speaker closes the review and copies nothing', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await startCopy(page, { slots: CHOSEN });
+      await expect(line(page, 1)).toBeVisible();
+      await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
+      await expect(page.locator('#ui2KeysTitle')).toHaveText(en('ui2.radio.keysOn', { name: BR.friendlyName }));
+      await expect(review(page)).toHaveCount(0);
+      expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
+      expect(await mock.count('CopyPresetsAcrossBoxes')).toBe(0);
+      expect((await mock.state()).presets[BR.host].map((p) => p.slot)).toEqual([2, 3, 5]);
+    });
+
+    test('4c. leaving Radio closes the review and copies nothing', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await startCopy(page, { slots: CHOSEN });
+      await expect(line(page, 1)).toBeVisible();
+      await page.locator('#ui2Tabs .ui2-nav-item[data-view="library"]').click();
+      await expect(review(page)).toHaveCount(0);
+      await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').click();
+      await expect(page.locator('#presetTransferBtn')).toBeEnabled();
+      await expect(review(page)).toHaveCount(0);
+      expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
+    });
   });
 
   test.describe('a speaker that already has the chosen keys', () => {
     test.use({ scenario: { presets: { bedroom: PRESETS.slice(0, 2) } } });
 
-    test('5. says nothing would change and offers no Copy', async ({ app, mock }) => {
+    // The speaker's own buttons can be stale while its keys in STR are right;
+    // copying the keys again is how a user repairs that, so Copy stays.
+    test('5. says the keys are already there and still offers Copy, which sets the buttons again', async ({ app, mock }) => {
       const { page } = app;
       await mock.resetCalls();
       await startCopy(page, { slots: [1, 2] });
       await expect(line(page, 1)).toHaveText(en('ui2.keyReview.same', { key: en('preset.key', { n: 1 }), name: PRESETS[0].name }));
-      await expect(review(page).locator('[role="status"]')).toHaveText(en('ui2.keyReview.nothing'));
+      await expect(review(page).locator('.ui2-xfer-review-status')).toHaveText('');
+      const copy = page.locator('#ui2XferReviewCopy');
+      await expect(copy).toBeVisible();
+      await copy.click();
+      await mock.expectCalled('CopyPresetKeysAcrossBoxes', { times: 1 });
+      await expect(page.locator('#ui2XferStatus')).toHaveText(en('presets.keyCopySame', {
+        target: BR.friendlyName, keys: `${en('preset.key', { n: 1 })}, ${en('preset.key', { n: 2 })}`,
+      }));
+      await expect(page.locator('#ui2XferStatus')).toHaveClass(/is-ok/);
+    });
+  });
+
+  test.describe('a copy where nothing can go', () => {
+    // Living Room's key 1 station already sits on Bedroom's key 6.
+    test.use({ scenario: { presets: { bedroom: [{ ...PRESETS[0], slot: 6 }] } } });
+
+    test('5b. says nothing would change and offers no Copy', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await startCopy(page, { slots: [1] });
+      await expect(line(page, 1)).toHaveText(en('ui2.keyReview.onOtherKey', { key: en('preset.key', { n: 1 }), name: PRESETS[0].name, n: 6 }));
+      await expect(review(page).locator('.ui2-xfer-review-status')).toHaveText(en('ui2.keyReview.nothing'));
       await expect(page.locator('#ui2XferReviewCopy')).toBeHidden();
-      const close = review(page).getByRole('button', { name: en('common.close'), exact: true });
-      await close.click();
+      await review(page).getByRole('button', { name: en('common.close'), exact: true }).click();
       await expect(review(page)).toHaveCount(0);
       expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
+    });
+  });
+
+  test.describe('a source speaker that cannot be read', () => {
+    test.use({ scenario: { bindings: { PreviewPresetKeyCopy: { error: 'read source presets: timeout' } } } });
+
+    test('6b. says so once about the source, asks no other speaker and offers no Copy', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await startCopy(page, { target: '__ALL__' });
+      await expect(review(page).locator('.ui2-xfer-review-source')).toHaveText(en('ui2.keyReview.sourceUnchecked', {
+        source: LR.friendlyName, reason: 'read source presets: timeout',
+      }));
+      await expect(review(page).locator('h4')).toHaveCount(0);
+      await expect(review(page).locator('.ui2-xfer-review-status')).toHaveText('');
+      await expect(page.locator('#ui2XferReviewCopy')).toBeHidden();
+      expect(await mock.count('PreviewPresetKeyCopy')).toBe(1);
+      await review(page).getByRole('button', { name: en('common.close'), exact: true }).click();
+      expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
+      expect(await mock.count('CopyPresetsAcrossBoxes')).toBe(0);
+    });
+  });
+
+  test.describe('while the speakers are still being checked', () => {
+    test.use({ scenario: { bindings: { PreviewPresetKeyCopy: { never: true } } } });
+
+    test('6c. the keyboard is in the review, Transfer stays off, and Escape cancels', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await startCopy(page, { slots: [1] });
+      await expect(review(page).locator('.ui2-xfer-review-status')).toHaveText(en('ui2.keyReview.checking', { target: BR.friendlyName }));
+      await expect(page.locator('#ui2XferReviewTitle')).toBeFocused();
+      await expect(page.locator('#presetTransferBtn')).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await expect(review(page)).toHaveCount(0);
+      await expect(page.locator('#presetTransferBtn')).toBeEnabled();
+      await expect(page.locator('#presetTransferBtn')).toBeFocused();
+      await expect(page.locator('#ui2XferStatus')).toHaveText(en('ui2.keyReview.cancelled'));
+      expect(await mock.count('CopyPresetKeysAcrossBoxes')).toBe(0);
+      // Transfer works again: the dialog opens on the next press.
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#presetXferKeys')).toBeVisible();
     });
   });
 

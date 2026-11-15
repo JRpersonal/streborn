@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import {
-  REVIEW_ACTIONS, gatherKeyCopyPreviews, reviewKeys, reviewModel, reviewStepLine,
+  REVIEW_ACTIONS, SOURCE_ERROR_PREFIX, closeKeyCopyReview, gatherKeyCopyPreviews, keyCopyReviewSource,
+  reviewKeys, reviewModel, reviewStepLine,
 } from './keycopyreview.js';
 import en from '../i18n/bundles/en.json';
 
@@ -55,9 +56,24 @@ describe('reviewModel', () => {
     expect(m.canCopy).toBe(true);
   });
 
-  it('offers no copy when nothing would change anywhere', () => {
+  it('still offers the copy when every key is already there, to set the speaker\'s buttons again', () => {
     const m = reviewModel([{ target: 'Bedroom', steps: [{ slot: 1, name: 'A', action: 'same' }, { slot: 8, name: 'B', action: 'notKept' }] }], t);
     expect(m.writes).toBe(0);
+    expect(m.refreshes).toBe(1);
+    expect(m.canCopy).toBe(true);
+  });
+
+  it('offers no copy when nothing would change or be sent anywhere', () => {
+    const m = reviewModel([{ target: 'Bedroom', steps: [{ slot: 1, name: 'A', action: 'onOtherKey', onSlot: 4 }, { slot: 8, name: 'B', action: 'notKept' }] }], t);
+    expect(m.writes).toBe(0);
+    expect(m.refreshes).toBe(0);
+    expect(m.canCopy).toBe(false);
+  });
+
+  it('says once that the source could not be read, and offers no copy', () => {
+    const m = reviewModel([{ target: 'Kitchen', error: 'x' }], t, { name: 'Living Room', error: 'timeout' });
+    expect(m.sourceError).toBe(fill('ui2.keyReview.sourceUnchecked', { source: 'Living Room', reason: 'timeout' }));
+    expect(m.blocks).toEqual([]);
     expect(m.canCopy).toBe(false);
   });
 
@@ -93,12 +109,32 @@ describe('gatherKeyCopyPreviews', () => {
     expect(got.outcomes[1]).toEqual({ target: '192.0.2.53', steps: [] });
   });
 
+  it('stops at a source that cannot be read instead of blaming every target', async () => {
+    const preview = vi.fn().mockRejectedValue(new Error(`${SOURCE_ERROR_PREFIX}: timeout`));
+    const got = await gatherKeyCopyPreviews({ box, targets, slots: [1], preview, isMissing: () => false, explain: (s) => `[${s}]` });
+    expect(got.sourceError).toBe(`[${SOURCE_ERROR_PREFIX}: timeout]`);
+    expect(got.outcomes).toEqual([]);
+    expect(preview).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches the source error the Go side sends', () => {
+    const goSrc = readFileSync(new URL('../../../app_presets_keycopy.go', import.meta.url), 'utf8');
+    expect(goSrc).toContain(`const keyCopySourceErrPrefix = "${SOURCE_ERROR_PREFIX}"`);
+  });
+
   it('reports a build without the preview, so the copy runs as before', async () => {
     const missing = new Error('STR_MISSING_BINDING');
     const preview = vi.fn().mockRejectedValue(missing);
     const got = await gatherKeyCopyPreviews({ box, targets, slots: [1], preview, isMissing: (e) => e === missing });
     expect(got.unavailable).toBe(true);
     expect(preview).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('closeKeyCopyReview', () => {
+  it('is safe with no review open and no page', () => {
+    expect(keyCopyReviewSource()).toBe('');
+    expect(() => closeKeyCopyReview()).not.toThrow();
   });
 });
 
