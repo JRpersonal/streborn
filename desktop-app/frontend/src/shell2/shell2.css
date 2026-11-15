@@ -716,6 +716,40 @@ html.ui2 .ui2-spk-act { border-color: transparent; color: var(--u-muted); }
 html.ui2.a11y-contrast .ui2-spk-act { border-color: var(--u-border); color: var(--u-text); }
 html.ui2 .ui2-spk-act:hover { background: var(--u-raised); color: var(--u-text); }
 html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
+/* A playing row's own Play/Pause (sessionplay.js): pauses or resumes that
+   row's session without choosing the speaker. Quiet like "+" and "-", and
+   out of sight until the pointer or the keyboard is on the row, so eleven
+   playing rows do not turn the list into a transport bar. It keeps its place
+   while hidden (opacity, never display or visibility), so the keyboard still
+   reaches it and the name never jumps under the pointer. A touch screen has
+   no hover: there it always shows. The glyph is drawn like the player's
+   (shell2.css, the transport) and the words are the button's name. */
+html.ui2 .ui2-spk-tp {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--u-text);
+}
+html.ui2.a11y-contrast .ui2-spk-tp { border-color: var(--u-border); }
+html.ui2 .ui2-spk-tp:hover { background: var(--u-raised); }
+html.ui2 .ui2-spk-tp-glyph {
+  width: 16px;
+  height: 16px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5' y='4' width='5' height='16' rx='1'/%3E%3Crect x='14' y='4' width='5' height='16' rx='1'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html.ui2 .ui2-spk-tp[data-tp="play"] .ui2-spk-tp-glyph {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 4v16l13-8z'/%3E%3C/svg%3E");
+}
+/* Waiting for the speaker: a dotted ring, and the button says it in words
+   (speakers.js). It stays in sight until the speaker answered. */
+html.ui2 .ui2-spk-tp.pending { cursor: progress; border-style: dotted; border-color: var(--u-border); color: var(--u-muted); }
+@media not (pointer: coarse) {
+  html.ui2 .ui2-spk-row:not(:hover, :focus-within) > .ui2-spk-tp:not(.pending) { opacity: 0; }
+}
 html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
 
