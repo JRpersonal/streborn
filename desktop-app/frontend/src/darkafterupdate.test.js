@@ -329,6 +329,28 @@ describe('the words', () => {
     }
   });
 
+  it('warn before the update in all 13 languages, naming the speaker, 30 seconds and 3 minutes', () => {
+    const en = bundle('en');
+    for (const l of LANGS) {
+      const b = bundle(l);
+      for (const k of ['update.darkRiskTitle', 'update.darkRiskBody', 'updateAll.noteDarkRisk']) {
+        expect(typeof b[k], `${l}: ${k}`).toBe('string');
+        expect(b[k].trim(), `${l}: ${k}`).not.toBe('');
+        if (l !== 'en') expect(b[k], `${l}: ${k} is untranslated`).not.toBe(en[k]);
+        expect(b[k], `${l}: ${k}`).not.toMatch(/[–—]| - /);
+      }
+      for (const k of ['update.darkRiskBody', 'updateAll.noteDarkRisk']) {
+        expect(b[k], `${l}: ${k}`).toContain('{{name}}');
+        expect(b[k], `${l}: ${k}`).toMatch(/30/);
+        expect(b[k], `${l}: ${k}`).toMatch(/3/);
+      }
+    }
+    const de = bundle('de');
+    for (const k of ['update.darkRiskTitle', 'update.darkRiskBody', 'updateAll.noteDarkRisk']) {
+      expect(de[k], k).not.toMatch(/\b(Sie|Ihr|Ihren|Ihre)\b/);
+    }
+  });
+
   it('talk to the user as du in German', () => {
     const de = bundle('de');
     for (const k of Object.keys(de).filter((x) => x.startsWith('darkCheck.'))) {
