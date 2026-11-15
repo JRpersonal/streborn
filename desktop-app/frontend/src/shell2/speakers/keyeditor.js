@@ -24,6 +24,13 @@
 // 409 already-on-slot as the note plus "Move it to key 3" right there (no
 // dialog), and a 422 in plain words. Nothing here is a toast.
 //
+// The page repaints it on every sidebar and status refresh, so it is drawn as
+// a frame that stays (title, the "what plays" line, the outcome line, the tab
+// row, the station search field) and parts that are redrawn only when what
+// they show changed (the keys, the open source's list, the outcome's words).
+// A poll never rebuilds the search field under the user's fingers, and the
+// outcome line stays one live region that a screen reader hears change.
+//
 // The editor sits in its own slot of the Keys panel (speaker.js), outside the
 // classic settings body, so a reload of the settings never takes it down. It
 // acts on the page's speaker, which is always the speaker you control
@@ -47,7 +54,7 @@ import { errorText } from './sectionmsg.js';
 import { tabIndexFor } from './routes.js';
 import {
   EDITOR_SOURCES, SOURCE_LABEL_KEYS, defaultSlot, editorKeys, folderPayload, keyHintText,
-  nowPlayingWhat, radioStations, savePlan, saveOutcome, spotifyRecentItems,
+  nowPlayingWhat, radioStations, refusalCode, savePlan, saveOutcome, spotifyRecentItems,
 } from './keyeditormodel.js';
 
 // The editor's model, about one speaker at a time.
@@ -71,7 +78,9 @@ let root = null;
 let deps = {};
 let speaker = '';
 let box = null;
-let sig = '';
+// The last picture of each redrawn part (paint), so a repaint touches only
+// the parts whose content changed.
+let parts = {};
 // Bumped on every switch of speaker: an answer for the previous one is dropped.
 let gen = 0;
 
@@ -94,7 +103,7 @@ export function paintKeyEditor(el, ctx = {}) {
   if (!b || !b.host) {
     box = null;
     if (el.innerHTML) el.innerHTML = '';
-    sig = '';
+    parts = {};
     return;
   }
   if (!ed.host || b.host !== ed.host || b.port !== ed.port) {
@@ -118,62 +127,157 @@ export function paintKeyEditor(el, ctx = {}) {
 export function resetKeyEditor() {
   ed = fresh();
   source = EDITOR_SOURCES[0];
-  sig = '';
+  parts = {};
   gen++;
 }
 
 function paint(force = false) {
   if (!root || !box) return;
-  const what = nowPlayingWhat(sameBoxIdentity(state.currentBox, box) ? state : {}, L('nowUnnamed'));
-  // The favourites live in this computer's storage and change on Radio.
-  const s = JSON.stringify([speaker, ed, source, what, source === 'radio' ? favStations().length : 0]);
-  if (!force && s === sig) return;
-  sig = s;
-  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  const doc = typeof document !== 'undefined' ? document : null;
+  const active = doc ? doc.activeElement : null;
   const keep = active && root.contains(active) && active.dataset ? active.dataset.kf || '' : '';
-  root.innerHTML = editorHTML(what);
-  if (keep) {
+  // The frame's own words are the language's: a switch of language draws it
+  // anew (the page usually rebuilds then anyway).
+  const lang = L('intro');
+  if (force || parts.frame !== lang || !root.querySelector('.kae')) {
+    root.innerHTML = frameHTML();
+    parts = { frame: lang };
+    wire();
+  }
+  const what = nowPlayingWhat(sameBoxIdentity(state.currentBox, box) ? state : {}, L('nowUnnamed'));
+  setText('#kaeTitle', L('title', { name: speaker }));
+  setText('#kaeKeysLabel', L('keysLabel', { name: speaker }));
+  part('keys', [speaker, ed.presets, ed.keysErr, ed.slot], '#kaeKeyArea', keyAreaHTML);
+  paintNow(what);
+  paintResult();
+  paintTabs();
+  paintSearchForm();
+  // The favourites live in this computer's storage and change on Radio. The
+  // query being typed is not part of it: the field is the frame's.
+  const r = ed.radio;
+  part('panel', [speaker, source, ed.slot, ed.busy, r.shownQ, r.busy, r.hits, r.err, ed.lib, ed.spotify,
+    source === 'radio' ? favStations().length : 0], '#kaePanelBody', panelHTML);
+  if (keep && doc && !root.contains(doc.activeElement)) {
     // A control that went with the repaint (Move, once the move is done)
     // hands the keyboard to the chosen key, the one the outcome is about.
     const again = root.querySelector(`[data-kf="${cssEscape(keep)}"]`)
       || root.querySelector(`[data-kf="key-${ed.slot}"]`);
     if (again && typeof again.focus === 'function') again.focus();
   }
-  wire();
+}
+
+// part redraws one part of the frame when what it shows changed.
+function part(name, what, sel, html) {
+  const s = JSON.stringify(what);
+  if (parts[name] === s) return;
+  const el = root.querySelector(sel);
+  if (!el) return;
+  parts[name] = s;
+  el.innerHTML = html();
+}
+
+function setText(sel, text) {
+  const el = root.querySelector(sel);
+  if (el && el.textContent !== text) el.textContent = text;
+}
+
+function setAttr(el, name, value) {
+  if (!el) return;
+  if (value === null) {
+    if (el.hasAttribute(name)) el.removeAttribute(name);
+  } else if (el.getAttribute(name) !== value) {
+    el.setAttribute(name, value);
+  }
 }
 
 function cssEscape(s) {
   return String(s).replace(/["\\]/g, '\\$&');
 }
 
+// paintNow updates the "what plays" line and its button in place: what plays
+// changes with every song, and a rebuild would cost the button its focus and
+// its pressed state.
+function paintNow(what) {
+  setText('#kaeNowText', what ? L('nowPlays', { name: speaker, what }) : L('nowNothing', { name: speaker }));
+  const b = root.querySelector('#kaeSaveNow');
+  if (!b) return;
+  const label = ed.slot ? L('nowPut', { n: n() }) : L('nowPutNoKey');
+  if (b.textContent !== label) b.textContent = label;
+  setAttr(b, 'aria-disabled', ed.busy || !ed.slot ? 'true' : null);
+  setAttr(b, 'aria-describedby', ed.presets ? 'kaeHint' : null);
+}
+
+// paintResult changes the words inside the outcome line, never the line: it
+// is the live region, and one that is replaced arrives with its words already
+// in it, which screen readers do not reliably announce.
+function paintResult() {
+  const el = root.querySelector('#kaeResult');
+  if (!el) return;
+  const r = ed.result;
+  const cls = `kae-result${r && r.tone ? ` kae-result--${r.tone}` : ''}`;
+  if (el.className !== cls) el.className = cls;
+  const s = JSON.stringify([r, ed.busy, ed.slot]);
+  if (parts.result === s) return;
+  parts.result = s;
+  el.innerHTML = resultInnerHTML();
+}
+
+function paintTabs() {
+  root.querySelectorAll('.kae-tab').forEach((b) => {
+    const on = b.dataset.src === source;
+    setAttr(b, 'aria-selected', String(on));
+    setAttr(b, 'tabindex', on ? '0' : '-1');
+  });
+  setAttr(root.querySelector('#kaePanel'), 'aria-labelledby', `kaeTab-${source}`);
+}
+
+// paintSearchForm shows the station search on Radio only, and puts a query
+// the editor changed itself (cleared by "Show favourites") into the field,
+// never while the user types in it.
+function paintSearchForm() {
+  const form = root.querySelector('#kaeRadioForm');
+  if (!form) return;
+  form.hidden = source !== 'radio';
+  const q = form.querySelector('#kaeRadioQ');
+  const typing = q && typeof document !== 'undefined' && document.activeElement === q;
+  if (q && !typing && q.value !== ed.radio.q) q.value = ed.radio.q;
+}
+
 // ---------- markup ----------
 
-function editorHTML(what) {
-  const keys = ed.presets ? editorKeys(box, ed.presets, t) : [];
+// frameHTML is the part of the editor that stays across repaints; paint fills
+// its slots.
+function frameHTML() {
   return `
     <section class="u-card kae" aria-labelledby="kaeTitle">
-      <h3 class="kae-title" id="kaeTitle">${escapeHtml(L('title', { name: speaker }))}</h3>
+      <h3 class="kae-title" id="kaeTitle"></h3>
       <p class="kae-intro">${escapeHtml(L('intro'))}</p>
       <div class="kae-grid">
         <div class="kae-keys">
-          <h4 class="kae-sub" id="kaeKeysLabel">${escapeHtml(L('keysLabel', { name: speaker }))}</h4>
-          ${keysHTML(keys)}
-          ${ed.presets ? `<p class="kae-hint" id="kaeHint">${escapeHtml(keyHintText(keys, ed.slot, t))}</p>` : ''}
+          <h4 class="kae-sub" id="kaeKeysLabel"></h4>
+          <div class="kae-keyarea" id="kaeKeyArea"></div>
           <div class="kae-now">
-            <p class="kae-now-text">${escapeHtml(what ? L('nowPlays', { name: speaker, what }) : L('nowNothing', { name: speaker }))}</p>
-            <button type="button" class="u-btn u-btn--primary kae-now-put" id="kaeSaveNow" data-kf="savenow"${busyAttr()}${ed.presets ? ' aria-describedby="kaeHint"' : ''}>${escapeHtml(ed.slot ? L('nowPut', { n: n() }) : L('nowPutNoKey'))}</button>
+            <p class="kae-now-text" id="kaeNowText"></p>
+            <button type="button" class="u-btn u-btn--primary kae-now-put" id="kaeSaveNow" data-kf="savenow"></button>
           </div>
-          ${resultHTML()}
+          <div class="kae-result" id="kaeResult" role="status" aria-live="polite"></div>
         </div>
         <div class="kae-src">
           <div class="kae-tabs" role="tablist" aria-label="${escapeAttr(L('srcLabel'))}">${tabsHTML()}</div>
-          <div class="kae-panel" role="tabpanel" id="kaePanel" aria-labelledby="kaeTab-${source}" tabindex="0">${panelHTML()}</div>
+          <div class="kae-panel" role="tabpanel" id="kaePanel" aria-labelledby="kaeTab-${source}" tabindex="0">${searchFormHTML()}<div id="kaePanelBody"></div></div>
         </div>
       </div>
     </section>`;
 }
 
 const busyAttr = () => (ed.busy || !ed.slot ? ' aria-disabled="true"' : '');
+
+// keyAreaHTML is the keys and the hint under them.
+function keyAreaHTML() {
+  const keys = ed.presets ? editorKeys(box, ed.presets, t) : [];
+  return keysHTML(keys)
+    + (ed.presets ? `<p class="kae-hint" id="kaeHint">${escapeHtml(keyHintText(keys, ed.slot, t))}</p>` : '');
+}
 
 function keysHTML(keys) {
   if (ed.keysErr) {
@@ -195,15 +299,16 @@ function keysHTML(keys) {
   return `<div class="kae-keyrows" role="group" aria-labelledby="kaeKeysLabel">${rows}</div>`;
 }
 
-function resultHTML() {
+// resultInnerHTML is the words of the outcome line and, after a 409, the move.
+// The line itself (#kaeResult) is the frame's, so a screen reader hears it
+// change.
+function resultInnerHTML() {
   const r = ed.result;
-  const tone = r ? r.tone : '';
-  const move = r && r.move
+  if (!r) return '';
+  const move = r.move
     ? `<button type="button" class="u-btn u-btn--secondary kae-move" data-kf="move"${busyAttr()}>${escapeHtml(t('preset.moveButton', { n: keyNum(r.move.to, t) }))}</button>`
     : '';
-  // The line is always there, so a screen reader hears it change.
-  return `<div class="kae-result${tone ? ` kae-result--${escapeAttr(tone)}` : ''}" id="kaeResult" role="status" aria-live="polite">`
-    + `${r ? `<span class="kae-result-text">${escapeHtml(r.text)}</span>${move}` : ''}</div>`;
+  return `<span class="kae-result-text">${escapeHtml(r.text)}</span>${move}`;
 }
 
 function tabsHTML() {
@@ -236,12 +341,18 @@ function stateLine(text, tone = 'info') {
   return `<p class="kae-state${tone === 'error' ? ' kae-state--error' : ''}" role="${tone === 'error' ? 'alert' : 'status'}">${escapeHtml(text)}</p>`;
 }
 
+// searchFormHTML is the station search of the Radio tab. It is part of the
+// frame (paintSearchForm hides it on the other tabs), so what is typed, the
+// caret and an input method's composition survive every repaint.
+function searchFormHTML() {
+  return `<form class="kae-search" role="search" id="kaeRadioForm"${source === 'radio' ? '' : ' hidden'}>`
+    + `<label class="kae-label" for="kaeRadioQ">${escapeHtml(L('radioSearchLabel'))}</label>`
+    + `<span class="kae-search-row"><input type="search" class="kae-input" id="kaeRadioQ" data-kf="radioq" value="${escapeAttr(ed.radio.q)}" autocomplete="off">`
+    + `<button type="submit" class="u-btn u-btn--secondary" data-kf="radiogo">${escapeHtml(L('search'))}</button></span></form>`;
+}
+
 function radioHTML() {
   const r = ed.radio;
-  const form = `<form class="kae-search" role="search" id="kaeRadioForm">`
-    + `<label class="kae-label" for="kaeRadioQ">${escapeHtml(L('radioSearchLabel'))}</label>`
-    + `<span class="kae-search-row"><input type="search" class="kae-input" id="kaeRadioQ" data-kf="radioq" value="${escapeAttr(r.q)}" autocomplete="off">`
-    + `<button type="submit" class="u-btn u-btn--secondary" data-kf="radiogo">${escapeHtml(L('search'))}</button></span></form>`;
   let body;
   if (r.busy) body = stateLine(L('searching'));
   else if (r.err) body = stateLine(L('searchFailed', { detail: r.err }), 'error');
@@ -258,7 +369,7 @@ function radioHTML() {
         ? `<ul class="kae-items">${favs.map((s, i) => itemHTML(s.name, stationSub(s), putButton('fav', i, s.name))).join('')}</ul>`
         : stateLine(L('radioNoFavs')));
   }
-  return form + body;
+  return body;
 }
 
 function stationSub(s) {
@@ -317,19 +428,26 @@ function spotifyHTML() {
 
 // ---------- wiring ----------
 
+// wire attaches the editor's handlers once per frame (paint): the parts that
+// are redrawn inside it are reached by delegation, so they need none of their
+// own.
 function wire() {
-  root.querySelectorAll('.kae-key').forEach((b) => b.addEventListener('click', () => {
-    if (ed.busy) return;
-    ed.slot = Number(b.dataset.slot) || ed.slot;
-    ed.result = null;
-    paint();
-  }));
-  const retry = root.querySelector('.kae-keys-retry');
-  if (retry) retry.addEventListener('click', () => loadKeys());
-  const now = root.querySelector('#kaeSaveNow');
-  if (now) now.addEventListener('click', () => { if (!ed.busy) saveWhatPlays(); });
-  const move = root.querySelector('.kae-move');
-  if (move) move.addEventListener('click', () => { if (!ed.busy) moveHere(); });
+  const keysCol = root.querySelector('.kae-keys');
+  if (keysCol) {
+    keysCol.addEventListener('click', (e) => {
+      const k = e.target.closest('.kae-key');
+      if (k) {
+        if (ed.busy) return;
+        ed.slot = Number(k.dataset.slot) || ed.slot;
+        ed.result = null;
+        paint();
+        return;
+      }
+      if (e.target.closest('.kae-keys-retry')) { loadKeys(); return; }
+      if (e.target.closest('#kaeSaveNow')) { if (!ed.busy) saveWhatPlays(); return; }
+      if (e.target.closest('.kae-move')) { if (!ed.busy) moveHere(); }
+    });
+  }
   const tabs = root.querySelector('.kae-tabs');
   if (tabs) {
     tabs.addEventListener('click', (e) => {
@@ -352,11 +470,14 @@ function wire() {
   const form = panel.querySelector('#kaeRadioForm');
   if (form) {
     const q = form.querySelector('#kaeRadioQ');
-    // Kept as typed, so a repaint does not throw the words away.
-    if (q) q.addEventListener('input', () => { ed.radio.q = q.value; sig = ''; });
+    // Kept as typed, for a search started later and for the next speaker's
+    // editor. Nothing is redrawn: the field is the frame's.
+    if (q) q.addEventListener('input', () => { ed.radio.q = q.value; });
     form.addEventListener('submit', (e) => { e.preventDefault(); searchRadio(q ? q.value : ''); });
   }
-  panel.addEventListener('click', (e) => {
+  const body = panel.querySelector('#kaePanelBody');
+  if (!body) return;
+  body.addEventListener('click', (e) => {
     const put = e.target.closest('.kae-put');
     if (put) { if (!ed.busy) putItem(put.dataset.kind, Number(put.dataset.i)); return; }
     const srv = e.target.closest('.kae-open[data-srv]');
@@ -635,28 +756,76 @@ function putItem(kind, i) {
 // or the Spotify and Pandora / iHeartRadio saves the agent leaves to the app.
 function saveWhatPlays() {
   runSave(async (b, slot) => {
-    // What plays now, not what the last poll saw.
-    try { if (typeof deps.refreshStatus === 'function') await deps.refreshStatus(); } catch { /* the agent reads the speaker itself */ }
-    if (!sameBoxIdentity(state.currentBox, b)) return { result: { tone: 'error', text: t('ui2.spotify.speakerChanged', { name: speaker }) } };
-    const plan = savePlan(state);
+    const plan = await planNow(b);
+    if (plan.result) return plan;
     if (plan === 'spotify') return saveSpotifyPlaying(b, slot);
-    if (plan === 'native') {
-      const name = state.nowName || nativeServiceLabel(state.nowSource);
-      await SaveNativePreset(b.host, b.port, slot, name);
-      return { name };
-    }
+    if (plan === 'native') return saveNativePlaying(b, slot);
     try {
       const saved = (await SavePlayingPreset(b.host, b.port, slot)) || {};
       return { name: saved.name || '' };
     } catch (err) {
+      // The agent read the speaker itself and found Spotify, Pandora or
+      // iHeartRadio, which the app's state did not show yet: their own saves,
+      // once a fresh read agrees. A read that still disagrees keeps the
+      // agent's answer.
+      const code = refusalCode(err);
+      if (code === 'spotify-playing' || code === 'native-playing') {
+        const again = await planNow(b);
+        if (again.result) return again;
+        if (again === 'spotify') return saveSpotifyPlaying(b, slot);
+        if (again === 'native') return saveNativePlaying(b, slot);
+        throw err;
+      }
       if (!savePlayingFallsThrough(err) || typeof deps.saveCurrentToSlot !== 'function') throw err;
     }
-    // An agent (or an app build) without save-playing: the app's own save of
-    // what plays, which reports through the same kind of line.
-    let last = null;
-    await deps.saveCurrentToSlot(slot, (text, kind) => { last = text == null ? null : { tone: kind, text }; });
-    return { result: last || { tone: 'warn', text: keyVerdict(keyNum(slot, t), speaker, false).text } };
+    return saveThroughApp(b, slot);
   });
+}
+
+// planNow reads what the speaker plays now, not what the last poll saw, and
+// says how it is kept (savePlan), or { result } when the speaker you control
+// changed meanwhile.
+async function planNow(b) {
+  try { if (typeof deps.refreshStatus === 'function') await deps.refreshStatus(); } catch { /* the agent reads the speaker itself */ }
+  if (!sameBoxIdentity(state.currentBox, b)) return { result: { tone: 'error', text: t('ui2.spotify.speakerChanged', { name: speaker }) } };
+  return savePlan(state);
+}
+
+// saveNativePlaying keeps the Pandora or iHeartRadio station that plays: the
+// agent reads the item from the speaker, the app sends only the name.
+async function saveNativePlaying(b, slot) {
+  const name = state.nowName || nativeServiceLabel(state.nowSource);
+  await SaveNativePreset(b.host, b.port, slot, name);
+  return { name };
+}
+
+// saveThroughApp is the save of what plays for an agent (or an app build)
+// without save-playing, or one that could not read the speaker for a moment:
+// the music views' own save, which reports through the same kind of line. Its
+// 409 comes back here (onConflict) instead of the move dialog, so the editor
+// offers the move in its own line.
+async function saveThroughApp(b, slot) {
+  let last = null;
+  let cleared = false;
+  let conflict = null;
+  await deps.saveCurrentToSlot(slot, (text, kind) => {
+    if (text == null) { cleared = true; last = null; return; }
+    last = { tone: kind, text };
+  }, { onConflict: (err) => { conflict = err; } });
+  if (conflict) throw conflict;
+  // A cleared line is a speaker switched while the save was out: it said
+  // nothing about this speaker's key, so the editor says nothing false either.
+  if (cleared && !last) return { result: { tone: 'error', text: t('ui2.spotify.speakerChanged', { name: speaker }) } };
+  // No verdict of its own (only the busy line, or nothing): not confirmed. A
+  // read-back cannot tell, the key may have held something before.
+  if (!last || last.tone === 'busy') return { result: { tone: 'warn', text: keyVerdict(keyNum(slot, t), speaker, false).text } };
+  // The music views read the keys into their own list; the editor's list
+  // follows, so the keys show what the verdict says.
+  try {
+    const list = await GetPresets(b.host, b.port);
+    if (Array.isArray(list) && same(b)) ed.presets = list;
+  } catch { /* the verdict stands; the keys are read again on the next visit */ }
+  return { result: last };
 }
 
 // saveSpotifyPlaying is the Spotify case: the Spotify view's own save of the

@@ -89,8 +89,11 @@ html.ui2 #ui2KeyEditor .kae-now-text {
   overflow-wrap: anywhere;
 }
 
-/* The outcome line: the words say what happened, the bar's colour repeats it. */
-html.ui2 #ui2KeyEditor .kae-result:empty { display: none; }
+/* The outcome line: the words say what happened, the bar's colour repeats it.
+   Empty, it folds to nothing but stays rendered: it is the editor's live
+   region, and one taken out of the accessibility tree (display: none) is not
+   reliably heard when its words arrive. */
+html.ui2 #ui2KeyEditor .kae-result:empty { margin: 0; padding: 0; border: 0; }
 html.ui2 #ui2KeyEditor .kae-result {
   display: flex;
   flex-wrap: wrap;

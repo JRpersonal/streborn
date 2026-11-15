@@ -11,6 +11,7 @@
 
 import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
+import { runFor, settle } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
 import { PRESETS, PRESETS_ROW2, ROSTER } from '../../testkit/demo-data.mjs';
 import { mergeScenario, speakersScenario } from '../../testkit/scenario.mjs';
@@ -48,6 +49,21 @@ async function putOnSpeaker(page, slot, name) {
     list.sort((a, b) => a.slot - b.slot);
   }, [LR.host, slot, name, ROCK_ART]);
 }
+
+// playOnSpeaker makes the mock speaker play item, the way its now-playing
+// reports it; "Put what's playing" reads it fresh before it saves.
+async function playOnSpeaker(page, item) {
+  await page.evaluate(([h, it]) => {
+    window.__strMock.state.playing[h] = 'PLAY_STATE';
+    window.__strMock.state.item[h] = it;
+  }, [LR.host, item]);
+}
+
+const PLAYLIST = 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M';
+// The speaker's own Spotify entry: source SPOTIFY, a container location that
+// carries the playlist's URI.
+const SPOTIFY_ITEM = { source: 'SPOTIFY', location: `/playback/container/${Buffer.from(PLAYLIST).toString('base64')}`, name: 'Discover Weekly', art: '' };
+const CONFLICT_2 = 'status 409: {"code":"already-on-slot","slot":2,"name":"Best Of Rock.FM","error":"already on key 2"}';
 
 test.describe('UI 2.0 key assignment editor', () => {
   test.use({ ui2: true, scenario: scenario() });
@@ -216,6 +232,134 @@ test.describe('UI 2.0 key assignment editor', () => {
       await expect(result(page)).toHaveClass(/kae-result--warn/);
       await expect(page.locator('#errorModal')).toBeHidden();
       await expect(key(page, 5)).toContainText(L('keyEmpty'));
+    });
+  });
+
+  test.describe('a station refused for a reason of its own', () => {
+    const WEBPAGE = 'This address is a web page, not a stream.';
+    test.use({
+      scenario: scenario({
+        bindings: { SetPreset: { error: `status 422: {"code":"stream-url-is-webpage","error":"${WEBPAGE}"}` } },
+      }),
+    });
+
+    test("10. says the agent's reason, not that what plays cannot be kept", async ({ app }) => {
+      const { page } = app;
+      await openKeys(page);
+      await editor(page).getByLabel(L('radioSearchLabel')).fill('kexp');
+      await editor(page).getByRole('button', { name: L('search'), exact: true }).click();
+      await editor(page).getByRole('button', { name: L('putName', { what: 'KEXP', n: 5, name: NAME }) }).click();
+      await expect(result(page)).toHaveText(en('ui2.radio.saveFailed', { n: 5, speaker: NAME, error: WEBPAGE }));
+      await expect(result(page)).not.toContainText(L('nothingSaveable', { name: NAME }));
+      await expect(result(page)).toHaveClass(/kae-result--error/);
+      await expect(page.locator('#errorModal')).toBeHidden();
+    });
+  });
+
+  test.describe("what's playing on Spotify", () => {
+    test.use({
+      scenario: scenario({
+        // The speaker was never picked in Spotify: the key stores, and the
+        // notice joins the verdict.
+        bindings: { SpotifyNowPlaying: { value: { bitrate: 0, track: '', artist: '', cover: '', context: '', account: 'acct', canRecall: false, premiumRequired: false, audioKeyRefused: false, product: 'premium' } } },
+      }),
+    });
+
+    test("11. goes onto the key through the Spotify save, with its notice in the editor's line", async ({ app, mock }) => {
+      const { page } = app;
+      await openKeys(page);
+      await playOnSpeaker(page, SPOTIFY_ITEM);
+      await mock.resetCalls();
+      await page.locator('#kaeSaveNow').click();
+      await mock.expectCalled('SaveSpotifyPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 5 && c.args[4] === PLAYLIST });
+      await expect(result(page)).toHaveText(`${en('ui2.radio.saved', { n: 5, speaker: NAME })} ${en('preset.spotifyKeyNeedsLogin')}`);
+      await expect(result(page)).toHaveClass(/kae-result--warn/);
+      await expect(key(page, 5)).toContainText('Discover Weekly');
+      // The agent's save-playing leaves Spotify to the app: not asked.
+      expect(await mock.count('SavePlayingPreset')).toBe(0);
+    });
+  });
+
+  test.describe("what's playing on Spotify, already on another key", () => {
+    test.use({ scenario: scenario({ bindings: { SaveSpotifyPreset: { error: CONFLICT_2 } } }) });
+
+    test('12. offers the move in the editor, not the dialog', async ({ app }) => {
+      const { page } = app;
+      await openKeys(page);
+      await playOnSpeaker(page, SPOTIFY_ITEM);
+      await page.locator('#kaeSaveNow').click();
+      await expect(result(page)).toContainText(L('conflict', { what: 'Best Of Rock.FM', n: 2, name: NAME }));
+      await expect(result(page).getByRole('button', { name: en('preset.moveButton', { n: 5 }) })).toBeVisible();
+      await expect(page.locator('#warnModal')).toBeHidden();
+      await expect(page.locator('#errorModal')).toBeHidden();
+    });
+  });
+
+  test("13. a Pandora station that plays goes onto the key as the speaker's own item", async ({ app, mock }) => {
+    const { page } = app;
+    await openKeys(page);
+    await playOnSpeaker(page, { source: 'PANDORA', location: '111', name: 'Jazz Radio', art: '' });
+    await mock.resetCalls();
+    await page.locator('#kaeSaveNow').click();
+    await mock.expectCalled('SaveNativePreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 5 && c.args[3] === 'Jazz Radio' });
+    await expect(result(page)).toHaveText(en('ui2.radio.saved', { n: 5, speaker: NAME }));
+    await expect(key(page, 5)).toContainText('Jazz Radio');
+    expect(await mock.count('SavePlayingPreset')).toBe(0);
+  });
+
+  test.describe('an agent without save-playing', () => {
+    test.use({
+      scenario: scenario({
+        bindings: {
+          SavePlayingPreset: { error: 'status 404: 404 page not found' },
+          // The app's own save copies key 2, which the agent refuses to keep twice.
+          SetPreset: { error: CONFLICT_2 },
+        },
+      }),
+    });
+
+    test("14. falls back to the app's own save, and its 409 still offers the move in the editor", async ({ app, mock }) => {
+      const { page } = app;
+      await openKeys(page);
+      await mock.resetCalls();
+      await page.locator('#kaeSaveNow').click();
+      await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 5 && c.args[3] === 'Best Of Rock.FM' });
+      await expect(result(page)).toContainText(L('conflict', { what: 'Best Of Rock.FM', n: 2, name: NAME }));
+      await expect(result(page)).toHaveClass(/kae-result--warn/);
+      // No dialog, and no "not confirmed" under it.
+      await expect(page.locator('#warnModal')).toBeHidden();
+      await expect(result(page)).not.toContainText(en('ui2.radio.notConfirmed', { n: 5, speaker: NAME }));
+      await result(page).getByRole('button', { name: en('preset.moveButton', { n: 5 }) }).click();
+      await mock.expectCalled('MovePreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 2 && c.args[3] === 5 });
+      await expect(result(page)).toHaveText(en('ui2.radio.saved', { n: 5, speaker: NAME }));
+    });
+  });
+
+  test.describe('while the station search is typed in', () => {
+    test.use({ fakeClock: true });
+
+    test('15. a repaint of the page keeps the field, its words, the caret and the outcome line', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await openKeys(page);
+      const q = editor(page).getByLabel(L('radioSearchLabel'));
+      await q.click();
+      await page.keyboard.type('kexp radio');
+      // Marks on the very nodes: a rebuilt field or line would come back without.
+      await q.evaluate((el) => {
+        el.setSelectionRange(2, 4);
+        el.dataset.e2eMark = 'field';
+        document.getElementById('kaeResult').dataset.e2eMark = 'line';
+      });
+      // The song changes, and the every-speaker poll repaints the page.
+      await playOnSpeaker(page, { source: 'INTERNET_RADIO', location: 'http://demobox.local:8888/stream/2', name: 'Next Song', art: '' });
+      await runFor(page, 16_000);
+      await expect(editor(page).locator('.kae-now-text')).toHaveText(L('nowPlays', { name: NAME, what: 'Next Song' }));
+      const now = await q.evaluate((el) => ({
+        mark: el.dataset.e2eMark, value: el.value, start: el.selectionStart, end: el.selectionEnd,
+        focused: document.activeElement === el, line: document.getElementById('kaeResult').dataset.e2eMark,
+      }));
+      expect(now).toEqual({ mark: 'field', value: 'kexp radio', start: 2, end: 4, focused: true, line: 'line' });
     });
   });
 });

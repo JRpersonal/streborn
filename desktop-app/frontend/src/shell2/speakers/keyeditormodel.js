@@ -14,6 +14,7 @@ import { nativeServiceSaveable } from '../../nativeservice.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { ROW_SIZE, boxPresetRows, keyLabel, keyNum } from '../../presetrows.js';
 import { spotifyPlaying } from '../../views/spotifyui2model.js';
+import { keyFailedVerdict } from '../feedback.js';
 
 // The three sources of the browser, in the order of its tabs.
 export const EDITOR_SOURCES = Object.freeze(['radio', 'library', 'spotify']);
@@ -66,8 +67,11 @@ export function keyHintText(keys, slot, t) {
   return t('ui2.speakers.keyEditor.hintReplace', { n, current: k.name });
 }
 
-// The agent's 422 codes of a save, and the plain words for each. The speaker
-// name goes into the ones that talk about what it plays.
+// The agent's 422 codes of a save of what plays, and the plain words for each.
+// The speaker name goes into the ones that talk about what it plays. Only these:
+// every save of the editor ends in saveOutcome, and a station, a folder or a
+// Pandora station refused for a reason of its own (stream-url-is-webpage,
+// queue-empty, native-item-invalid, ...) is not "what plays cannot be kept".
 const REFUSALS = Object.freeze({
   'nothing-playing': 'ui2.speakers.keyEditor.nothingPlaying',
   'nothing-saveable': 'ui2.speakers.keyEditor.nothingSaveable',
@@ -83,9 +87,27 @@ export function refusalCode(err) {
   return m ? m[1] : '';
 }
 
+// refusalDetail is the agent's own reason of a 422 answer (the "error" field of
+// its body), '' when the body carries none. The agent words each refusal for a
+// person ("This preset has no playable stream."), so it is the detail a
+// refusal the app has no words of its own for is shown with.
+export function refusalDetail(err) {
+  const s = String((err && err.message) || err || '');
+  const at = s.indexOf('status 422: ');
+  if (at < 0) return '';
+  try {
+    const body = JSON.parse(s.slice(at + 'status 422: '.length));
+    return body && typeof body.error === 'string' ? body.error.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 // saveOutcome sorts a failed save: the agent's 409 already-on-slot is a
-// question with a way out (move it here), a known 422 is a plain-words note,
-// and everything else is an error with its detail. slot is the chosen key.
+// question with a way out (move it here), a 422 of a save of what plays is a
+// plain-words note, any other 422 says the key was refused with the agent's
+// own reason, and everything else is left to the caller (an error with its
+// detail). slot is the chosen key.
 export function saveOutcome(err, slot, t, speaker = '') {
   const conflict = parsePresetConflict(err);
   if (conflict) {
@@ -98,9 +120,13 @@ export function saveOutcome(err, slot, t, speaker = '') {
     return { tone: 'warn', text, move };
   }
   const code = refusalCode(err);
+  if (code && Object.hasOwn(REFUSALS, code)) {
+    return { tone: 'warn', text: t(REFUSALS[code], { name: speaker }) };
+  }
   if (code) {
-    const key = REFUSALS[code] || 'ui2.speakers.keyEditor.nothingSaveable';
-    return { tone: 'warn', text: t(key, { name: speaker }) };
+    // The code itself is the last resort: it still names the reason.
+    const reason = refusalDetail(err) || code;
+    return { tone: 'error', text: keyFailedVerdict(keyNum(slot, t), speaker, reason).text };
   }
   return null;
 }

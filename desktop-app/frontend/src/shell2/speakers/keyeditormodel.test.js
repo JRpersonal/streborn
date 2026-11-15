@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   EDITOR_SOURCES, MAX_FOLDER_ITEMS, SOURCE_LABEL_KEYS, defaultSlot, editorKeys, folderPayload, keyHintText,
-  nowPlayingWhat, radioStations, refusalCode, saveOutcome, savePlan, spotifyRecentItems,
+  nowPlayingWhat, radioStations, refusalCode, refusalDetail, saveOutcome, savePlan, spotifyRecentItems,
 } from './keyeditormodel.js';
 import { setLocale, t } from '../../i18n/index.js';
 import en from '../../i18n/bundles/en.json';
@@ -91,8 +91,35 @@ describe('saveOutcome', () => {
     expect(saveOutcome('status 422: {"code":"nothing-saveable"}', 1, t, 'Kitchen').text).toContain('cannot be kept on a key');
     expect(saveOutcome('status 422: {"code":"source-preset-empty"}', 1, t, 'Kitchen').text).toBe(en['preset.sourceKeyEmpty']);
     expect(saveOutcome('status 422: {"code":"spotify-uri-unplayable"}', 1, t, 'Kitchen').text).toBe(en['preset.spotifyNotSaveable']);
-    // A 422 code the app does not know yet still reads as "cannot be kept".
-    expect(saveOutcome('status 422: {"code":"brand-new"}', 1, t, 'Kitchen')).toMatchObject({ tone: 'warn' });
+  });
+
+  it('says a station refused for its own reason with the agent\'s words, not "what plays cannot be kept"', () => {
+    const webpage = 'status 422: {"code":"stream-url-is-webpage","error":"This address is a web page, not a stream."}';
+    expect(saveOutcome(new Error(webpage), 4, t, 'Kitchen')).toEqual({
+      tone: 'error',
+      text: t('ui2.radio.saveFailed', { n: '4', speaker: 'Kitchen', error: 'This address is a web page, not a stream.' }),
+    });
+    expect(saveOutcome(new Error(webpage), 4, t, 'Kitchen').text).not.toContain('cannot be kept');
+  });
+
+  it('gives a 422 code it has no words for to the failure line, with the agent\'s reason or the code', () => {
+    for (const code of ['queue-empty', 'native-item-invalid', 'spotify-playing', 'brand-new']) {
+      const out = saveOutcome(`status 422: {"code":"${code}","error":"Agent says no."}`, 2, t, 'Kitchen');
+      expect(out.tone, code).toBe('error');
+      expect(out.text, code).toContain('Agent says no.');
+      expect(out.text, code).not.toBe(t('ui2.speakers.keyEditor.nothingSaveable', { name: 'Kitchen' }));
+    }
+    // Without a reason of the agent's the code still names it.
+    expect(saveOutcome('status 422: {"code":"stream-url-self-proxy"}', 2, t, 'Kitchen').text).toContain('stream-url-self-proxy');
+    // A code that is a property name of every object is no known refusal.
+    expect(saveOutcome('status 422: {"code":"constructor"}', 2, t, 'Kitchen').tone).toBe('error');
+  });
+
+  it('reads the agent\'s reason out of a 422 body', () => {
+    expect(refusalDetail('status 422: {"code":"queue-empty","error":" No tracks. "}')).toBe('No tracks.');
+    expect(refusalDetail(new Error('status 422: {"code":"queue-empty"}'))).toBe('');
+    expect(refusalDetail('status 422: not json')).toBe('');
+    expect(refusalDetail('status 500: {"error":"x"}')).toBe('');
   });
 
   it('leaves every other failure to the caller', () => {
