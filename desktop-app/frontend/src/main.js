@@ -1409,7 +1409,9 @@ function safeMountShell2() {
       toggleGroupMember,
       groupEditPendingHosts,
       // The sidebar's own Play/Pause on a playing row asks who plays now
-      // right after its press, so the row confirms without the 15 s wait.
+      // right after its press, so the row confirms without the 15 s wait
+      // (skipped during a speaker update or an install: the press then
+      // falls back to its deadline).
       refreshBoxPlaying: () => refreshBoxPlaying(true),
       // The Speakers area (shell2/speakers): opening one speaker's page picks
       // it the way the classic Settings dropdown does (lock-step).
@@ -1874,17 +1876,27 @@ async function refreshMusicZones(force) {
 // on their tile). Debounced to at most once per 8s, same cadence and best-effort
 // contract as refreshMusicZones. The currently-selected box is also marked live
 // from state.nowPlayState in the pill renderer, so its icon never lags the poll.
-// force skips the 8 s debounce (never a round already in flight): the UI 2.0
-// sidebar's Play/Pause asks right after its press, so its row confirms in
-// about a second instead of on the next 15 s round.
+// force skips the 8 s debounce: the UI 2.0 sidebar's Play/Pause asks right
+// after its press, so its row confirms in about a second instead of on the
+// next 15 s round. A round already in flight started before the press and
+// cannot show it, so a forced call that meets one runs one more round right
+// after it (one slow speaker keeps a round open for the whole Status timeout).
+// Never during a speaker update or an install, the same rule as
+// refreshEverySpeaker: nothing should poll a speaker that is about to restart.
 let _boxPlayingFetchAt = 0;
+let _boxPlayingRerun = false;
 async function refreshBoxPlaying(force) {
+  if (force && (state.otaInProgress || installRunActive())) return;
   // Offline tiles are excluded: every Status() against them just times out
   // and would delay the whole Promise.allSettled round for nothing.
   const polled = strBoxes(state.boxes).filter(b => b.deviceID && b.host && !b.offline);
   if (!polled.length) return;
   const now = Date.now();
-  if (state.boxPlayingBusy || (!force && now - _boxPlayingFetchAt < 8000)) return;
+  if (state.boxPlayingBusy) {
+    if (force) _boxPlayingRerun = true;
+    return;
+  }
+  if (!force && now - _boxPlayingFetchAt < 8000) return;
   _boxPlayingFetchAt = now;
   state.boxPlayingBusy = true;
   try {
@@ -1894,10 +1906,15 @@ async function refreshBoxPlaying(force) {
     // paused speaker, so its row keeps a way back to the music. The classic
     // picker does not read it.
     const paused = {};
+    // When this round started, per speaker it read successfully. A failed
+    // read lands as "not playing" here, so the UI 2.0 sidebar confirms a
+    // pause only with a read that worked (shell2/sessionplay.js).
+    const readAt = { ...(state.boxPlayReadAt || {}) };
     results.forEach((r, i) => {
       let playing = false;
       let isPaused = false;
       if (r.status === 'fulfilled' && typeof r.value === 'string') {
+        readAt[polled[i].deviceID] = now;
         const xml = r.value;
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
@@ -1909,11 +1926,16 @@ async function refreshBoxPlaying(force) {
     });
     state.boxPlaying = map;
     state.boxPaused = paused;
+    state.boxPlayReadAt = readAt;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }
   renderBoxSelect();
   renderShellSpeakers();
+  if (_boxPlayingRerun) {
+    _boxPlayingRerun = false;
+    refreshBoxPlaying(true);
+  }
 }
 
 // Windows Firewall banner (firewallbanner.js). firewallState holds the last

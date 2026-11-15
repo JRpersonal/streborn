@@ -29,7 +29,7 @@ import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
-import { TRANSPORT_WITHIN_MS, transportVerdict } from './sessionplay.js';
+import { TRANSPORT_SEND_MS, TRANSPORT_WITHIN_MS, transportVerdict } from './sessionplay.js';
 import { Pause, Resume } from '../api.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
@@ -68,9 +68,13 @@ const awaiting = new Map();
 const CONFIRM_AFTER_MS = 1000;
 const CONFIRM_WITHIN_MS = 20000;
 // A row's own Play/Pause press (sessionplay.js) that waits for the speaker:
-// host -> { want: 'pause' | 'resume', at, sent, name }. The row stays pending
-// until the poll shows the change (honest feedback, as a group edit).
+// host -> { want: 'pause' | 'resume', at, sent, sentAt, name, verdict }. The
+// row stays pending until the poll shows the change (honest feedback, as a
+// group edit).
 const transportWait = new Map();
+// The latest press per row, settled or not: a binding that answers after its
+// press timed out only speaks for the row while no newer press replaced it.
+const lastTransportPress = new Map();
 // The buttons of one sidebar row, in their order on screen: the name (pick),
 // the row's own Play/Pause, "+" or "-".
 const ROW_BUTTONS = '.ui2-spk-pick, .ui2-spk-tp, .ui2-spk-act';
@@ -547,18 +551,37 @@ function rowTransportPress(host, port, want, name) {
   // The note of an earlier failed press goes with the next one.
   const old = rowNotes.get(host);
   if (old && old.kind === 'transport') rowNotes.delete(host);
-  const w = { want, at: Date.now(), sent: false, name };
+  const w = { want, at: Date.now(), sent: false, sentAt: 0, name, verdict: '' };
   transportWait.set(host, w);
+  lastTransportPress.set(host, w);
   paintSpeakers(true);
   const fn = want === 'pause' ? Pause : Resume;
+  // A press that settleTransport already gave up on while the binding had
+  // not answered yet, with no newer press on the row since: its late answer
+  // still belongs to it.
+  const lateOwn = () => !transportWait.has(host) && lastTransportPress.get(host) === w && w.verdict === 'timeout';
   Promise.resolve().then(() => fn(host, port)).then(() => {
-    if (transportWait.get(host) !== w) return;
+    if (transportWait.get(host) !== w) {
+      if (!lateOwn()) return;
+      // Accepted after all: the press waits for the speaker again instead of
+      // leaving its warning standing next to a speaker that did what it was
+      // told.
+      dropTransportNote(host, 'warn');
+      w.verdict = '';
+      transportWait.set(host, w);
+    }
     w.sent = true;
+    w.sentAt = Date.now();
     askWhoPlays();
+    // The confirm window counts from here, so its deadline repaint does too.
+    setTimeout(() => paintSpeakers(false), TRANSPORT_WITHIN_MS + 100);
     paintSpeakers(true);
   }, (err) => {
-    if (transportWait.get(host) !== w) return;
-    transportWait.delete(host);
+    const own = transportWait.get(host) === w;
+    if (!own && !lateOwn()) return;
+    if (own) transportWait.delete(host);
+    // A late refusal takes the place of the "has not confirmed it yet"
+    // warning: the speaker did answer, and with a no (rule 3).
     const text = transportErrorText(want, name, err);
     rowNotes.set(host, { tone: 'error', text, kind: 'transport', host });
     paintSpeakers(true);
@@ -569,13 +592,30 @@ function rowTransportPress(host, port, want, name) {
       if (n && n.kind === 'transport' && n.text === text) { rowNotes.delete(host); paintSpeakers(true); }
     }, CONFIRM_WITHIN_MS);
   });
-  // A repaint after the deadline, in case nothing else repaints then.
-  setTimeout(() => paintSpeakers(false), TRANSPORT_WITHIN_MS + 100);
+  // A repaint once the binding should have answered, in case nothing else
+  // repaints then.
+  setTimeout(() => paintSpeakers(false), TRANSPORT_SEND_MS + 100);
+}
+
+function dropTransportNote(host, tone) {
+  const n = rowNotes.get(host);
+  if (n && n.kind === 'transport' && n.tone === tone) rowNotes.delete(host);
+}
+
+// playReadAt is when the last every-speaker round that read this speaker
+// successfully started (main.js refreshBoxPlaying, state.boxPlayReadAt), 0
+// when none did. A failed read marks a speaker as not playing, so a pause is
+// only confirmed by a read that worked (sessionplay.js transportVerdict).
+function playReadAt(host) {
+  const b = (state.boxes || []).find((x) => x && x.host === host);
+  const at = b && b.deviceID && state.boxPlayReadAt ? state.boxPlayReadAt[b.deviceID] : 0;
+  return typeof at === 'number' ? at : 0;
 }
 
 // askWhoPlays reads every speaker's play state soon after a press instead of
-// on the next 15 s round. The speaker takes a moment to report the change,
-// and a read finds a round in flight now and then: a second one later.
+// on the next 15 s round. The speaker takes a moment to report the change, so
+// a second read follows. A round already in flight started before the press:
+// refreshBoxPlaying then runs one more round right after it.
 function askWhoPlays() {
   if (typeof deps.refreshBoxPlaying !== 'function') return;
   setTimeout(() => { try { deps.refreshBoxPlaying(); } catch (_) { /* best effort */ } }, 800);
@@ -593,9 +633,11 @@ function settleTransport(model) {
   const now = Date.now();
   let changed = false;
   for (const [h, w] of [...transportWait]) {
-    const verdict = transportVerdict(w, rows.find((r) => r.host === h) || null, now);
+    const row = rows.find((r) => r.host === h) || null;
+    const verdict = transportVerdict(w, row && { ...row, readAt: playReadAt(h) }, now);
     if (verdict === 'wait') continue;
     transportWait.delete(h);
+    w.verdict = verdict;
     changed = true;
     if (verdict === 'confirmed') {
       announceSpeakers(t(w.want === 'pause' ? 'ui2.side.paused' : 'ui2.side.resumed', { name: w.name }));

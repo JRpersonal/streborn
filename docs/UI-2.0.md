@@ -164,7 +164,11 @@ releases later.
   stays the click on the name. A group is paused through its master, so a
   member's row has none; the master's says it pauses the speakers playing
   along too. The button waits for the speaker before it says done, and a
-  refusal is a note in its own row. `shell2/sessionplay.js`.
+  refusal is a note in its own row. It waits for the binding as long as the
+  binding itself may take (Resume up to 15 s, #830), counts the confirm
+  window from its answer, and confirms a pause only from a play-state read
+  that worked. A stereo pair whose master is offline has no button: the
+  other half does not own the pair's transport. `shell2/sessionplay.js`.
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.

@@ -37,6 +37,10 @@ const NONE = Object.freeze({ kind: '', group: false });
 // it a group: the pair is one row and plays as a whole.
 export function rowTransport(row, ctx = {}) {
   if (!row || row.kind === 'stock' || row.offline || !row.host) return NONE;
+  // A stereo pair plays through its master. With the master offline the row
+  // picks the half that answers (rooms.js), which does not own the pair's
+  // transport: no button rather than a press aimed at the wrong half.
+  if (row.kind === 'pair' && row.pairMaster !== row.host) return NONE;
   const list = (ctx.boxes || []).filter(Boolean);
   const zl = ctx.zoneLive || {};
   const boxOf = (h) => list.find((b) => b.host === h) || null;
@@ -75,27 +79,47 @@ export function rowTransportLabel(row) {
   return t(row.transportGroup ? 'ui2.side.playGroup' : 'ui2.side.play', { name });
 }
 
-// TRANSPORT_WITHIN_MS is how long a press waits for the speaker before the
-// row simply shows what the speaker reports again (two forced reads and a
-// regular every-speaker round fit in it).
+// TRANSPORT_WITHIN_MS is how long a press waits for the speaker to report
+// the change, counted from the moment the binding answered (two forced reads
+// and a regular every-speaker round fit in it).
 export const TRANSPORT_WITHIN_MS = 15000;
 
-// transportVerdict decides a press the speaker accepted (rule 2: sent is not
-// arrived).
+// TRANSPORT_SEND_MS is how long a press waits for the binding itself. Resume
+// may take up to 15 s on its own (app_boxops.go resumeCallTimeout, #830: Play,
+// up to 4 s watching, then Stop, Play, 2 s, Seek), so a slow but successful
+// resume must not be called unconfirmed before it even answered. The binding
+// always answers within its own deadline; the margin covers the round trip.
+export const TRANSPORT_SEND_MS = 20000;
+
+// transportVerdict decides a press (rule 2: sent is not arrived).
 //
-//   w    { want: 'pause' | 'resume', at, sent }: sent once the binding
-//        answered without an error
-//   row  the row as the poll draws it now, or null when it left the list
+//   w    { want: 'pause' | 'resume', at, sent, sentAt }: sent once the
+//        binding answered without an error, at sentAt
+//   row  the row as the poll draws it now, or null when it left the list;
+//        readAt is the start of the last every-speaker round that read the
+//        row's speaker successfully (a failed read says nothing)
 //
-// 'confirmed' once the row shows the change: a pause when it no longer plays,
-// a resume when it plays again. 'gone' when the row left the list or went
-// offline (nothing to confirm on), 'timeout' after within ms without it,
-// 'wait' until then.
+// 'confirmed' once the row shows the change: a resume when it plays again, a
+// pause when it offers Play, or when a read that started after the binding
+// answered finds it no longer playing. A failed read also leaves a row
+// without its Pause, so that alone is no proof. 'gone' when the row left the
+// list or went offline (nothing to confirm on; the row says offline itself),
+// 'timeout' when the binding has not answered in TRANSPORT_SEND_MS or the
+// speaker has not shown the change within ms after it answered, 'wait' until
+// then.
 export function transportVerdict(w, row, now, within = TRANSPORT_WITHIN_MS) {
   if (!w) return 'gone';
   if (!row || row.offline || row.kind === 'stock') return 'gone';
-  const shows = w.want === 'pause' ? row.transport !== 'pause' : row.transport === 'pause';
-  if (w.sent && shows) return 'confirmed';
-  if (now - w.at > within) return 'timeout';
+  if (!w.sent) return now - w.at > TRANSPORT_SEND_MS ? 'timeout' : 'wait';
+  const since = typeof w.sentAt === 'number' ? w.sentAt : w.at;
+  let shows;
+  if (w.want === 'pause') {
+    const freshRead = typeof row.readAt === 'number' && row.readAt >= since;
+    shows = row.transport === 'play' || (row.transport !== 'pause' && freshRead);
+  } else {
+    shows = row.transport === 'pause';
+  }
+  if (shows) return 'confirmed';
+  if (now - since > within) return 'timeout';
   return 'wait';
 }

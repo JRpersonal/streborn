@@ -2,7 +2,7 @@
 // what it acts on, what it says, and when a press counts as done.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { rowTransport, rowTransportLabel, transportVerdict, TRANSPORT_WITHIN_MS } from './sessionplay.js';
+import { rowTransport, rowTransportLabel, transportVerdict, TRANSPORT_SEND_MS, TRANSPORT_WITHIN_MS } from './sessionplay.js';
 import { sidebarHTML, sidebarModel } from './speakers.js';
 import { stereoPairsOf } from '../groups.js';
 import { setLocale } from '../i18n/index.js';
@@ -148,14 +148,46 @@ describe('the Play/Pause button', () => {
 
 describe('when a press counts as done', () => {
   const now = 1_000_000;
-  const row = (transport) => ({ host: 'h', kind: 'str', transport });
-  it('a pause once the row no longer plays, a resume once it plays again, only after the binding answered', () => {
-    expect(transportVerdict({ want: 'pause', at: now, sent: true }, row('play'), now + 900)).toBe('confirmed');
-    expect(transportVerdict({ want: 'pause', at: now, sent: true }, row(undefined), now + 900)).toBe('confirmed');
-    expect(transportVerdict({ want: 'pause', at: now, sent: true }, row('pause'), now + 900)).toBe('wait');
+  const row = (transport, readAt) => ({ host: 'h', kind: 'str', transport, readAt });
+  const sent = (want, sentAt = now + 300) => ({ want, at: now, sent: true, sentAt });
+  it('a pause once the row offers Play, a resume once it plays again, only after the binding answered', () => {
+    expect(transportVerdict(sent('pause'), row('play'), now + 900)).toBe('confirmed');
+    expect(transportVerdict(sent('pause'), row('pause'), now + 900)).toBe('wait');
     expect(transportVerdict({ want: 'pause', at: now, sent: false }, row('play'), now + 900)).toBe('wait');
-    expect(transportVerdict({ want: 'resume', at: now, sent: true }, row('pause'), now + 900)).toBe('confirmed');
-    expect(transportVerdict({ want: 'resume', at: now, sent: true }, row('play'), now + 900)).toBe('wait');
+    expect(transportVerdict(sent('resume'), row('pause'), now + 900)).toBe('confirmed');
+    expect(transportVerdict(sent('resume'), row('play'), now + 900)).toBe('wait');
+  });
+
+  it('a row without its Pause confirms a pause only through a read that worked and started after the press was sent', () => {
+    // The Status read failed (no read stamp) or is older than the answer:
+    // "not playing" says nothing, the speaker may well play on.
+    expect(transportVerdict(sent('pause'), row(undefined), now + 900)).toBe('wait');
+    expect(transportVerdict(sent('pause'), row(undefined, now + 100), now + 900)).toBe('wait');
+    // A good read after the answer: stopped is stopped (radio has no pause).
+    expect(transportVerdict(sent('pause'), row(undefined, now + 300), now + 900)).toBe('confirmed');
+    expect(transportVerdict(sent('pause'), row(undefined, now + 1100), now + 1500)).toBe('confirmed');
+    // Still playing on a good read: no confirmation.
+    expect(transportVerdict(sent('pause'), row('pause', now + 1100), now + 1500)).toBe('wait');
+  });
+
+  it('a slow binding is waited for, and the confirm window counts from its answer', () => {
+    // Resume may take 15 s on its own (app_boxops.go resumeCallTimeout).
+    const slow = { want: 'resume', at: now, sent: false };
+    expect(transportVerdict(slow, row('play'), now + TRANSPORT_WITHIN_MS + 100)).toBe('wait');
+    expect(transportVerdict(slow, row('play'), now + TRANSPORT_SEND_MS + 1)).toBe('timeout');
+    expect(TRANSPORT_SEND_MS).toBeGreaterThan(15000);
+    // Sent late, at +14.5 s: past the old deadline it still waits, and the
+    // speaker's report then confirms it.
+    const late = sent('resume', now + 14_500);
+    expect(transportVerdict(late, row('play'), now + TRANSPORT_WITHIN_MS + 100)).toBe('wait');
+    expect(transportVerdict(late, row('pause'), now + 15_300)).toBe('confirmed');
+    expect(transportVerdict(late, row('play'), now + 14_500 + TRANSPORT_WITHIN_MS + 1)).toBe('timeout');
+  });
+
+  it('a press refused after the old 15 s deadline is still waiting, so its refusal lands in the row', () => {
+    // The binding has not answered at +15.1 s: the press is not settled as
+    // "not confirmed", and the refusal that follows belongs to it.
+    expect(transportVerdict({ want: 'resume', at: now, sent: false }, row('play'), now + 15_100)).toBe('wait');
   });
 
   it('gives up after the deadline, and drops a row that left or went offline', () => {
@@ -163,5 +195,27 @@ describe('when a press counts as done', () => {
     expect(transportVerdict({ want: 'pause', at: now, sent: true }, null, now)).toBe('gone');
     expect(transportVerdict({ want: 'pause', at: now, sent: true }, { ...row('pause'), offline: true }, now)).toBe('gone');
     expect(transportVerdict(null, row('pause'), now)).toBe('gone');
+  });
+});
+
+describe('a stereo pair whose master is offline', () => {
+  it('gets no Play/Pause: the half that answers does not own the pair\'s transport', () => {
+    const boxes = NET.map((b) => (b === P1 ? { ...P1, offline: true } : b));
+    const m = model({ boxes });
+    const pair = byHost(m, P2);
+    expect(pair.kind).toBe('pair');
+    // The row picks the half that is there, as before.
+    expect(pair.host).toBe(P2.host);
+    expect(pair.offline).toBe(false);
+    expect(pair.transport).toBeUndefined();
+    expect(sidebarHTML(m)).not.toMatch(/ui2-spk-tp[^>]*data-host="192\.0\.2\.23"/);
+  });
+
+  it('rowTransport refuses a pair row aimed at anything but its master', () => {
+    const ctx = { boxes: NET, zoneLive: ZONES };
+    const r = { host: P2.host, hosts: [P1.host, P2.host], kind: 'pair', playing: true };
+    expect(rowTransport({ ...r, pairMaster: '' }, ctx).kind).toBe('');
+    expect(rowTransport({ ...r, pairMaster: P1.host }, ctx).kind).toBe('');
+    expect(rowTransport({ ...r, host: P1.host, pairMaster: P1.host }, ctx).kind).toBe('pause');
   });
 });

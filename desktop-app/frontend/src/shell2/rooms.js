@@ -65,6 +65,10 @@ export function roomItems(boxes, ctx = {}) {
       out.push({
         ...rowOf(rec.pick, tile, named || rec.members.map((m) => label(ctx, m)).join(' + '), ctx, rec.members.map((m) => m.host)),
         kind: 'pair',
+        // The half that owns the pair's transport. With it offline the row
+        // picks the other half, which must never get the pair's Play/Pause
+        // (sessionplay.js rowTransport).
+        pairMaster: rec.master.offline ? '' : rec.master.host,
       });
       continue;
     }

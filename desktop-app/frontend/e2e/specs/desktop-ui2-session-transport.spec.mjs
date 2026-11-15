@@ -185,6 +185,136 @@ test.describe('UI 2.0 sidebar: a refused Play/Pause', () => {
   });
 });
 
+test.describe('UI 2.0 sidebar: a speaker that never reports the change', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      playing: { livingRoom: 'PLAY_STATE', bedroom: 'PLAY_STATE' },
+      // Pause answers fine, but the speaker keeps playing.
+      bindings: { Pause: { byHost: { [BR.host]: { value: null } } } },
+    },
+  });
+
+  test('8. warns in its row after the deadline and never says "paused"', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await tp(page, BR.host).click();
+    await mock.expectCalled('Pause', { pred: onHost(BR.host), times: 1 });
+    // The forced reads and a regular round all find it playing: still waiting.
+    await runFor(page, 10_000);
+    await expect(tp(page, BR.host)).toHaveAttribute('aria-busy', 'true');
+    await runFor(page, 6_000);
+    const note = row(page, BR.host).locator('.ui2-spk-rownote');
+    await expect(note).toHaveText(en('ui2.side.noConfirm', { name: 'Bedroom' }));
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.side.noConfirm', { name: 'Bedroom' }));
+    await expect(page.locator('#ui2SpkLive')).not.toHaveText(en('ui2.side.paused', { name: 'Bedroom' }));
+    // The row shows what the speaker reports: it plays, so Pause is back.
+    await expect(tp(page, BR.host)).not.toHaveAttribute('aria-busy', 'true');
+    await expect(tp(page, BR.host)).toHaveAttribute('data-tp', 'pause');
+    await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
+  });
+
+  test('9. a failed play-state read after Pause is no proof the speaker paused', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    // From now on the speaker does not answer its play-state read.
+    await mock.set('Status', { byHost: { [BR.host]: { error: 'context deadline exceeded' } } });
+    await tp(page, BR.host).click();
+    await mock.expectCalled('Pause', { pred: onHost(BR.host), times: 1 });
+    await runFor(page, 3_500);
+    // The failed reads mark it not playing, yet the press is not confirmed.
+    await expect(page.locator('#ui2SpkLive')).not.toHaveText(en('ui2.side.paused', { name: 'Bedroom' }));
+    await runFor(page, 13_000);
+    await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveText(en('ui2.side.noConfirm', { name: 'Bedroom' }));
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.side.noConfirm', { name: 'Bedroom' }));
+  });
+});
+
+test.describe('UI 2.0 sidebar: a paused group', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      playing: { livingRoom: 'PAUSE_STATE', bedroom: 'PAUSE_STATE' },
+      zones: { livingRoom: LR_BR_GROUP, bedroom: LR_BR_GROUP },
+    },
+  });
+
+  test('10. the master row offers Play for the group and resumes through the master only', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await expect(tp(page, BR.host)).toHaveCount(0);
+    await expect(tp(page, LR.host)).toHaveAttribute('data-tp', 'play');
+    await expect(tp(page, LR.host)).toHaveAttribute('aria-label', en('ui2.side.playGroup', { name: 'Living Room' }));
+    await mock.resetCalls();
+    await tp(page, LR.host).click();
+    await mock.expectCalled('Resume', { pred: onHost(LR.host), times: 1 });
+    expect(await mock.count('Resume', onHost(BR.host))).toBe(0);
+    expect(await mock.count('Pause')).toBe(0);
+    await runFor(page, 3_500);
+    await expect(tp(page, LR.host)).toHaveAttribute('data-tp', 'pause');
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.side.resumed', { name: 'Living Room' }));
+  });
+});
+
+test.describe('UI 2.0 sidebar: a slow Resume', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      playing: { livingRoom: 'PLAY_STATE', bedroom: 'PAUSE_STATE' },
+      // A paused music file: the agent watches, then restarts at the paused
+      // position, and answers after 14.5 s (resumeCallTimeout is 15 s).
+      bindings: { Resume: { byHost: { [BR.host]: { delayMs: 14_500 } } } },
+    },
+  });
+
+  test('11. waits for the answer past 15 s and then confirms, without a warning', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await expect(tp(page, BR.host)).toHaveAttribute('data-tp', 'play');
+    await tp(page, BR.host).click();
+    await mock.expectCalled('Resume', { pred: onHost(BR.host), times: 1 });
+    await runFor(page, 15_200);
+    // The binding has answered at 14.5 s; the row still waits for the report.
+    await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveCount(0);
+    await runFor(page, 3_500);
+    await expect(tp(page, BR.host)).toHaveAttribute('data-tp', 'pause');
+    await expect(tp(page, BR.host)).not.toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('#ui2SpkLive')).toHaveText(en('ui2.side.resumed', { name: 'Bedroom' }));
+    await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveCount(0);
+  });
+});
+
+test.describe('UI 2.0 sidebar: a Resume refused after 15 s', () => {
+  test.use({
+    ui2: true,
+    fakeClock: true,
+    scenario: {
+      playing: { livingRoom: 'PLAY_STATE', bedroom: 'PAUSE_STATE' },
+      bindings: { Resume: { byHost: { [BR.host]: { error: 'context deadline exceeded', delayMs: 15_500 } } } },
+    },
+  });
+
+  test('12. the late refusal is still said in the row', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await tp(page, BR.host).click();
+    await mock.expectCalled('Resume', { pred: onHost(BR.host), times: 1 });
+    await runFor(page, 15_200);
+    // Not answered yet: no "has not confirmed it yet" in its place.
+    await expect(tp(page, BR.host)).toHaveAttribute('aria-busy', 'true');
+    await expect(row(page, BR.host).locator('.ui2-spk-rownote')).toHaveCount(0);
+    await runFor(page, 1_000);
+    const note = row(page, BR.host).locator('.ui2-spk-rownote');
+    await expect(note).toHaveAttribute('role', 'alert');
+    await expect(note).toHaveText(en('ui2.state.player.failResume', { name: 'Bedroom', err: 'context deadline exceeded' }));
+    await expect(tp(page, BR.host)).toHaveAttribute('data-tp', 'play');
+    await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
+  });
+});
+
 test.describe('classic layout', () => {
   test.use({ ui2: false, scenario: { playing: { livingRoom: 'PLAY_STATE', bedroom: 'PLAY_STATE' } } });
 
