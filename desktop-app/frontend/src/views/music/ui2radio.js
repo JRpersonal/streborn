@@ -32,6 +32,7 @@ import { openPandoraPick, playPandoraRow } from './pandora.js';
 import { putStationOnKey, showSlotPicker } from './picker.js';
 import { doRefilter, openBoxWifiSetup, playStation, preferMp3SiblingForBox, renderSearchResults } from './search.js';
 import { keyHoldsStation, stationKey, stationRowHTML, tabFor } from './ui2stations.js';
+import { isKeyEditGesture, keyEditorSlot, openKeyEditor, syncKeyEditor } from './ui2keyedit.js';
 import './ui2radio.css';
 import { noSpeakersState, onStatesChange, speakersPhase } from '../../shell2/state.js';
 
@@ -105,7 +106,7 @@ export function ensureUi2Radio() {
   const keys = document.createElement('div');
   keys.className = 'ui2-keys-head';
   keys.innerHTML = '<h2 class="ui2-keys-title" id="ui2KeysTitle"></h2>'
-    + `<span class="ui2-keys-hint" id="ui2KeysHint">${escapeHtml(t('ui2.radio.keysHint'))}<span class="ui2-keys-sep"> · </span>${escapeHtml(t('ui2.radio.keysHoldHint'))}</span>`;
+    + `<span class="ui2-keys-hint" id="ui2KeysHint">${escapeHtml(t('ui2.radio.keysHint'))}<span class="ui2-keys-sep"> · </span>${escapeHtml(t('ui2.radio.keysEditHint'))}</span>`;
   // A speaker with the second row of keys (#1110) shows its Once | Twice tabs
   // in this same line, after the heading, so the second row costs no height;
   // the empty-row explainer stays between the line and the keys.
@@ -227,11 +228,26 @@ export function syncUi2Keys() {
     // "3" on the first row, "3 · 2×" on the second (#1110).
     const n = keyNum(slot, t);
     const body = tile.querySelector('.preset-body');
-    tile.setAttribute('role', 'group');
+    if (fresh) wireKeyEdit(tile, slot);
     if (!body) {
+      // An empty key has nothing to play: it is one button that opens its
+      // choices (ui2keyedit.js), the panel it controls.
+      tile.setAttribute('role', 'button');
       tile.setAttribute('aria-label', t('ui2.radio.keyEmpty', { n, speaker }));
+      tile.setAttribute('aria-describedby', 'ui2KeysHint');
+      tile.setAttribute('aria-controls', 'ui2KeyEdit');
+      tile.setAttribute('aria-expanded', keyEditorSlot() === slot ? 'true' : 'false');
+      tile.tabIndex = 0;
+      if (fresh) {
+        tile.addEventListener('keydown', (e) => {
+          if (e.target !== tile || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          openKeyEditor(slot);
+        });
+      }
       return;
     }
+    tile.setAttribute('role', 'group');
     tile.setAttribute('aria-label', keyLabel(slot, t));
     // The logo only repeats the name.
     body.querySelectorAll('img').forEach((img) => { if (!img.hasAttribute('alt')) img.alt = ''; });
@@ -241,9 +257,22 @@ export function syncUi2Keys() {
     body.setAttribute('aria-label', t('ui2.radio.keyLabel', { n, speaker, name: shown }));
     if (!fresh) return;
     body.setAttribute('role', 'button');
+    // The hint over the grid says how to change the key; it is read with
+    // the key, not only on the way into the grid.
+    body.setAttribute('aria-describedby', 'ui2KeysHint');
+    body.setAttribute('aria-keyshortcuts', 'Shift+Enter');
     body.tabIndex = 0;
+    // The tile is drawn before syncUi2Keys runs, and a speaker's own key has
+    // no hold bar in its markup; the preview's hold fills one on every key.
+    if (!tile.querySelector('.long-press-bar')) {
+      const bar = document.createElement('div');
+      bar.className = 'long-press-bar';
+      tile.appendChild(bar);
+    }
     body.addEventListener('keydown', (e) => {
       if (e.target !== body || (e.key !== 'Enter' && e.key !== ' ')) return;
+      // Shift+Enter is the keyboard's hold (wireKeyEdit), never a play.
+      if (e.shiftKey) return;
       e.preventDefault();
       // The tile's own press path (presettiles.js attachPresetHandlers): a
       // short press plays, a box-native key recalls, a lost key explains.
@@ -267,6 +296,8 @@ export function syncUi2Keys() {
       });
     }
   });
+  // The choices of a key follow the rebuilt grid (another speaker closes them).
+  syncKeyEditor();
   // A row that was sent but not yet playing turns "Playing" once the status
   // poll (which rebuilt these tiles) says the speaker plays it.
   upgradeSentRows();
@@ -280,6 +311,23 @@ export function syncUi2Keys() {
     discoverLoaded = true;
     doRefilter();
   }
+}
+
+// wireKeyEdit gives a key tile the keyboard's and the context menu's way to
+// its choices (ui2keyedit.js): Shift+Enter, the context-menu key, Shift+F10,
+// and a right click or a long touch, which the browser reports as a context
+// menu. The browser's own menu has nothing to offer on a key.
+function wireKeyEdit(tile, slot) {
+  tile.addEventListener('keydown', (e) => {
+    if (!isKeyEditGesture(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openKeyEditor(slot);
+  });
+  tile.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    openKeyEditor(slot);
+  });
 }
 
 // keyFocusMark notes which control of the key tiles has the keyboard before
@@ -307,6 +355,9 @@ export function restoreKeyFocus(mark) {
   if (!tile) return;
   const sel = mark.part === 'ren' ? '.ren' : mark.part === 'del' ? '.del' : '.preset-body[role="button"]';
   let el = tile.querySelector(sel) || tile.querySelector('.preset-body[role="button"]');
+  // An empty key is a button of its own in the Tab order; any other tile
+  // without a control only takes the focus back.
+  if (!el && tile.getAttribute('role') === 'button') el = tile;
   if (!el) { tile.tabIndex = -1; el = tile; }
   try { el.focus({ preventScroll: true }); } catch { el.focus(); }
 }

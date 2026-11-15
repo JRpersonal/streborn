@@ -14,7 +14,8 @@ const bundles = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.j
 // be forgotten here.
 const used = new Set();
 for (const f of ['shell2/markup.js', 'shell2/mount.js', 'shell2/rooms.js', 'shell2/speakers.js', 'shell2/pill.js', 'main.js',
-  'shell2/speakers/routes.js', 'shell2/speakers/index.js', 'shell2/speakers/list.js', 'shell2/speakers/speaker.js', 'shell2/speakers/groups.js']) {
+  'shell2/speakers/routes.js', 'shell2/speakers/index.js', 'shell2/speakers/list.js', 'shell2/speakers/speaker.js', 'shell2/speakers/groups.js',
+  'views/music/ui2keyedit.js']) {
   for (const m of fileSource(f).matchAll(/'(ui2\.[a-zA-Z.]+)'/g)) used.add(m[1]);
 }
 const KEYS = [...new Set([

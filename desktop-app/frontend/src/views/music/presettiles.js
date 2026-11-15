@@ -59,6 +59,7 @@ import {
 } from './presets.js';
 import { saveCurrentToSlot } from './save.js';
 import { keyFocusMark, keyReport, restoreKeyFocus, syncUi2Keys } from './ui2radio.js';
+import { reducedMotion, ui2KeyHoldOpts } from './ui2keyedit.js';
 
 export function renderPresets() {
   const grid = $('presets');
@@ -388,13 +389,16 @@ export function renderPresets() {
           if (report) lostKeyNotice(i, report);
           else showToast(t('preset.lostOnSpeakerToast'));
         },
+        ...ui2KeyHoldOpts(div, i, 'lost'),
       });
     } else if (bp) {
       // Box-native preset: click recalls it; no long-press save so the user's
       // own (e.g. Deezer) preset can't be clobbered by STR's current station.
-      attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i, keyReport(i)), allowSave: false });
+      attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i, keyReport(i)), allowSave: false, ...ui2KeyHoldOpts(div, i, 'native') });
     } else {
-      attachPresetHandlers(div, i, p);
+      // The UI 2.0 preview opens the key's choices on a hold (and on a short
+      // press of an empty key) instead of saving (ui2keyedit.js).
+      attachPresetHandlers(div, i, p, ui2KeyHoldOpts(div, i, p ? 'station' : 'empty'));
     }
     grid.appendChild(div);
   }
@@ -717,6 +721,9 @@ export function applyTrackScroll(selector = '.status-bar .now') {
 // opts.onPlay overrides the short-click action (box-native presets recall the
 // box's hardware key instead of STR's play). opts.allowSave=false disables the
 // long-press save so a box-native preset can't be overwritten by a hold.
+// The UI 2.0 preview passes opts.holdMs and opts.onHold (its hold opens the
+// key's choices instead of saving) and opts.onEmptyPress (a short press on an
+// empty key opens them too). A hold that fired never also plays.
 const LONG_PRESS_MS = 1100;
 const VISUAL_HOLD_DELAY = 180;
 // isKeyChrome reports whether an event landed on one of the small icons in a
@@ -728,22 +735,36 @@ const VISUAL_HOLD_DELAY = 180;
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
   const allowSave = opts.allowSave !== false;
+  const holdMs = opts.holdMs || LONG_PRESS_MS;
+  // The preview's hold opens the key's choices (ui2keyedit.js); the current
+  // layout's hold saves what plays, where saving is allowed.
+  const onHold = opts.onHold || (allowSave ? () => saveCurrentToSlot(slot, keyReport(slot)) : null);
+  const onEmptyPress = opts.onEmptyPress || null;
+  // Without motion (the preview only, the current layout is left as it was)
+  // the bar does not grow: it stands full once the hold is deliberate, so the
+  // key still shows that it is being held.
+  let still = false;
   let timer = null;
   let visualTimer = null;
   let armed = false;
   let firedLong = false;
   let startedAt = 0;
-  const bar = el.querySelector('.long-press-bar');
+  // Looked up on each use: the preview adds a bar to a speaker's own key
+  // after this runs (ui2radio.js syncUi2Keys).
+  const setBar = (pct) => {
+    const bar = el.querySelector('.long-press-bar');
+    if (bar) bar.style.width = pct + '%';
+  };
   const animateBar = () => {
     if (!armed) return;
     const elapsed = Date.now() - startedAt;
     // The bar only represents the deliberate-hold window: it fills 0 -> 100%
-    // between VISUAL_HOLD_DELAY and LONG_PRESS_MS, so it never shows for the
+    // between VISUAL_HOLD_DELAY and holdMs, so it never shows for the
     // first 180 ms (a normal click). Starting it at elapsed/LONG_PRESS_MS made
     // a quick click flash the "save station" bar before mouseup.
-    const pct = Math.min(100, Math.max(0,
-      ((elapsed - VISUAL_HOLD_DELAY) / (LONG_PRESS_MS - VISUAL_HOLD_DELAY)) * 100));
-    if (bar) bar.style.width = pct + '%';
+    const pct = still ? 100 : Math.min(100, Math.max(0,
+      ((elapsed - VISUAL_HOLD_DELAY) / (holdMs - VISUAL_HOLD_DELAY)) * 100));
+    setBar(pct);
     if (armed) requestAnimationFrame(animateBar);
   };
   const start = (e) => {
@@ -753,6 +774,7 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     armed = true; // we start the hold
     firedLong = false; // true once long press fires
     startedAt = Date.now();
+    still = !!opts.holdMs && reducedMotion();
     visualTimer = setTimeout(() => {
       if (!armed) return;
       el.classList.add('long-press');
@@ -760,17 +782,18 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
       // a normal short click never flashes it.
       requestAnimationFrame(animateBar);
     }, VISUAL_HOLD_DELAY);
-    if (allowSave) {
+    if (onHold) {
       timer = setTimeout(async () => {
         if (!armed) return;
         firedLong = true;
-        // The preview reports the save in the key's own line (keyReport is
-        // null in the current layout, which keeps its toasts).
-        await saveCurrentToSlot(slot, keyReport(slot));
+        // The save reports in the preview's key line (keyReport is null in
+        // the current layout, which keeps its toasts); the preview's own hold
+        // opens the key's choices instead.
+        await onHold();
         armed = false;
         el.classList.remove('long-press');
-        if (bar) bar.style.width = '0%';
-      }, LONG_PRESS_MS);
+        setBar(0);
+      }, holdMs);
     }
   };
   const cancel = () => {
@@ -779,7 +802,7 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (timer) { clearTimeout(timer); timer = null; }
     if (visualTimer) { clearTimeout(visualTimer); visualTimer = null; }
     el.classList.remove('long-press');
-    if (bar) bar.style.width = '0%';
+    setBar(0);
   };
   const finish = (e) => {
     if (isKeyChrome(e.target)) return;
@@ -788,6 +811,7 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     if (!wasArmed) return;
     if (firedLong) return;
     if (preset) onPlay();
+    else if (onEmptyPress) onEmptyPress();
   };
   el.addEventListener('mousedown', start);
   el.addEventListener('mouseup', finish);

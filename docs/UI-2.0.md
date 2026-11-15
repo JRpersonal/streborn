@@ -145,6 +145,19 @@ releases later.
   three; and the donate buttons at the foot of the sidebar are neutral in
   colour, on screen as before, with the brand colours kept on Help and info.
   No control left and no flow changed.
+- **Hold a key to change it** (15 November 2026). A short press plays a key,
+  as on the speaker. Holding it for about 0.7 s (a bar fills along its foot;
+  with less motion asked for it stands full at once) opens the key's choices
+  in one card under the keys, named with key and speaker: save what is
+  playing, find a station, choose a favourite, rename, clear. An empty key has
+  nothing to play and opens them on a short press. From the keyboard:
+  Shift+Enter, the context-menu key or Shift+F10, said in the hint over the
+  keys. Until then a 1.1 s hold saved what was playing straight onto the key,
+  the only way to change a key from the grid and easy to do by accident; that
+  save is now the first choice, and a hold never also plays. Every choice is
+  the flow the key already had (`views/music/ui2keyedit.js`); "Find a station"
+  and a favourite lead to a station's "Put on key", whose window then starts
+  on that key. The classic layout keeps its hold-to-save.
 
 ## What we add
 

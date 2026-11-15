@@ -13,6 +13,7 @@ import { loadPresets } from './presets.js';
 import { wireRowTabs } from './presettiles.js';
 import { presetMoveOffer } from './save.js';
 import { preferMp3SiblingForBox } from './search.js';
+import { takeKeyAssignTarget } from './ui2keyedit.js';
 
 // showSlotPicker renders the shared preset slot-picker modal (six keys per row). Callers pass
 // the title, subtitle and an onPick(slot) that does the actual save; closing the
@@ -48,7 +49,10 @@ export function showSlotPicker({ title, subtitle, onPick, box, report = null }) 
   const modal = $('pickModal');
   modal.classList.remove('hidden');
   dialogSemantics(modal);
-  const first = $('pickGrid').querySelector('.pick-slot');
+  // A key the user chose to fill from its choices in the UI 2.0 preview
+  // (ui2keyedit.js) is where the keyboard starts; otherwise the first key.
+  const want = takeKeyAssignTarget(target);
+  const first = (want && $('pickGrid').querySelector(`.pick-slot[data-slot="${want}"]`)) || $('pickGrid').querySelector('.pick-slot');
   if (first) first.focus();
 }
 
