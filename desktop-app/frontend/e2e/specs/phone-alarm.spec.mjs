@@ -4,6 +4,7 @@
 // where seven would not fit: a 320px phone, the extra-large text setting.
 
 import { test, expect } from '../fixtures.mjs';
+import { PHONE } from '../../testkit/demo-data.mjs';
 
 async function openEditor(page) {
   await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
@@ -119,6 +120,8 @@ test('switch-off at a set time is saved as offAt, and dropped again', async ({ p
   await page.locator('#alarmOffAt').fill('20:00');
   await page.locator('#btnAlarmSave').click();
   await expect.poll(() => saves.length).toBe(1);
+  // This mock agent has no revisions, like one from before #1918: no rev goes along.
+  expect(saves[0].rev).toBeUndefined();
   expect(saves[0].alarms[0].offAt).toBe('20:00');
   expect(saves[0].alarms[0].autoOff).toBe(0);
 
@@ -167,3 +170,83 @@ for (const w of [390, 320]) {
     await expect(chips).toHaveCount(3);
   });
 }
+
+// fakeAlarmAgent answers /api/alarms the way the agent does since discussion
+// #1918: GET carries a rev; a PUT at a stale rev answers 409 with the current
+// document; a PUT at the current rev, or without one, is stored and bumps it.
+async function fakeAlarmAgent(page, doc) {
+  const st = { doc: structuredClone(doc), puts: [], gets: 0 };
+  await page.route('**/api/alarms', async (route) => {
+    const req = route.request();
+    const answer = (status) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(st.doc) });
+    if (req.method() === 'GET') { st.gets++; return answer(200); }
+    if (req.method() !== 'PUT') return route.fallback();
+    const body = JSON.parse(req.postData() || '{}');
+    st.puts.push(body);
+    if (body.rev !== undefined && body.rev !== st.doc.rev) return answer(409);
+    st.doc = { ...st.doc, zone: body.zone, alarms: body.alarms, skipDates: body.skipDates, rev: st.doc.rev + 1 };
+    return answer(200);
+  });
+  return st;
+}
+
+// The other app (the STR Remote iOS app in #1918) switches alarm a1 off.
+function switchedOffElsewhere(st) {
+  st.doc = { ...st.doc, rev: st.doc.rev + 1, alarms: st.doc.alarms.map((a) => (a.id === 'a1' ? { ...a, enabled: false } : a)) };
+}
+
+// The page re-reads at most every two seconds; a test does not wait that out.
+async function pastRereadGuard(page) {
+  await page.evaluate(() => { window.alarmReadAt = 0; });
+}
+
+test('the Play tab shows an alarm switched off from another app (#1918)', async ({ phone }) => {
+  const { page } = phone;
+  const st = await fakeAlarmAgent(page, { ...PHONE.ALARMS, rev: 1 });
+  await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+  const a1 = page.locator('#alarmList [data-alarm-on="0"]');
+  await expect(a1).toBeChecked();
+  switchedOffElsewhere(st);
+  await page.locator('#tabBrowse').click();
+  await pastRereadGuard(page);
+  await page.locator('#tabPlay').click();
+  await expect(a1).not.toBeChecked();
+  expect(st.puts).toEqual([]);
+});
+
+test('a window brought back to the front re-reads the alarms (#1918)', async ({ phone }) => {
+  const { page } = phone;
+  const st = await fakeAlarmAgent(page, { ...PHONE.ALARMS, rev: 1 });
+  await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+  const a1 = page.locator('#alarmList [data-alarm-on="0"]');
+  await expect(a1).toBeChecked();
+  switchedOffElsewhere(st);
+  await pastRereadGuard(page);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(a1).not.toBeChecked();
+  expect(st.puts).toEqual([]);
+});
+
+// The worse half of #1918: a page still showing a1 on saved its whole stale
+// copy and switched it back on. Now the speaker answers 409, and the page puts
+// its own one change (a2 on) on top of the current document instead.
+test('a save from a stale page keeps the other app\'s change (#1918)', async ({ phone }) => {
+  const { page } = phone;
+  const st = await fakeAlarmAgent(page, { ...PHONE.ALARMS, rev: 1 });
+  await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+  await pastRereadGuard(page);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => page.evaluate(() => window.alarmDoc.rev)).toBe(1);
+  switchedOffElsewhere(st); // the page does not hear of it
+  await page.locator('#alarmList [data-alarm-on="1"]').check();
+  await expect.poll(() => st.puts.length).toBe(2);
+  expect(st.puts[0].rev).toBe(1);
+  expect(st.puts[1].rev).toBe(2);
+  const sent = Object.fromEntries(st.puts[1].alarms.map((a) => [a.id, a.enabled]));
+  expect(sent).toEqual({ a1: false, a2: true });
+  expect(st.doc.rev).toBe(3);
+  await expect(page.locator('#alarmList [data-alarm-on="0"]')).not.toBeChecked();
+  await expect(page.locator('#alarmList [data-alarm-on="1"]')).toBeChecked();
+  const fail = await page.evaluate(() => window.T.alarmFail);
+  expect(await page.locator('#alarmSum').textContent()).not.toContain(fail);
+});

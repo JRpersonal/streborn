@@ -4368,6 +4368,11 @@ function refreshAll(){
 document.addEventListener('visibilitychange', function(){
   if (document.visibilityState === 'visible') refreshAll();
 });
+// A desktop browser window brought back to the front stays "visible" all
+// along, so it never counts as returning to the foreground. The alarms are the
+// part another app may have changed meanwhile (discussion #1918), and
+// re-reading them is one cheap GET.
+window.addEventListener('focus', function(){ alarmReread(); });
 // Pull-to-refresh: in standalone PWA mode there is no browser reload button, so a
 // pull down from the very top re-fetches everything. Touch-only; ignores pulls
 // that start on a control or when the page is already scrolled.
@@ -4699,6 +4704,9 @@ function showTab(name) {
   // Each destination starts at its own top; carrying the previous panel's
   // scroll offset over lands the user halfway down a list they never scrolled.
   window.scrollTo(0, 0);
+  // The alarm card lives on Play, and another app may have switched an alarm
+  // off since the page read it (discussion #1918).
+  if (name === 'Play') alarmReread();
   if (name === 'Speakers') loadZone();
   if (ui2On && name === 'Speakers') loadDisplayCard();
   // The update card on More warns when this speaker is grouped, so it needs the
@@ -6057,11 +6065,18 @@ async function setSleep(minutes) {
    that preset. The schedule lives on the speaker; this card only edits it, so
    the phone can be off at 06:30.
 
-   Read once when the page opens and once after a save, like the sleep timer:
-   a page left open on a bedside table must not be the reason a speaker never
-   reaches deep standby.
+   Read when the page opens, after a save, and whenever the user comes back to
+   it (the Play tab shown, the window focused or visible again), never on a
+   timer: a page left open on a bedside table must not be the reason a speaker
+   never reaches deep standby. Another app may have changed the alarms in the
+   meantime (discussion #1918), so a save names the revision it read and, when
+   the speaker answers 409, re-applies its one change to the current document.
    =========================================================================== */
-var alarmDoc = { zone: '', alarms: [], skipDates: [] };
+var alarmDoc = { zone: '', alarms: [], skipDates: [], rev: null };
+var alarmSaving = false; // a save is on its way: a background read must not paint over it
+var alarmSaves = 0;      // saves started so far: a read that a save overtook is dropped
+var alarmSig = '';       // the answer last read, so an unchanged re-read does not redraw
+var alarmReadAt = 0;     // when the alarms were last read, see alarmReread
 var alarmState = null;   // the status block: clock, zone, next fire
 var alarmDraft = null;   // the alarm being edited, null = the list is showing
 var alarmDraftIdx = -1;  // -1 = a new alarm
@@ -6186,8 +6201,12 @@ function renderAlarms() {
         alarmKeyEmptyMsg(a.slot);
         return;
       }
-      a.enabled = c.checked;
-      saveAlarms();
+      var id = a.id, on = c.checked;
+      alarmCommit(function(doc) {
+        var x = doc.alarms[alarmIndexById(doc, id)];
+        if (!x) return false; // deleted from another app meanwhile
+        x.enabled = on;
+      });
     });
   });
 }
@@ -6261,18 +6280,26 @@ function wireAlarmSkip(root) {
       if (msg) msg.textContent = fmt(T.alarmSkipFull, { n: max });
       return;
     }
-    days.push(iso);
-    days.sort();
-    alarmDoc.skipDates = days;
-    saveAlarms();
+    alarmCommit(function(doc) {
+      var list = (doc.skipDates || []).slice();
+      if (list.indexOf(iso) >= 0) return false;
+      list.push(iso);
+      list.sort();
+      doc.skipDates = list;
+    });
   });
   [].forEach.call(root.querySelectorAll('[data-skip-del]'), function(b) {
     b.addEventListener('click', function() {
       press(b);
-      var days = (alarmDoc.skipDates || []).slice();
-      days.splice(Number(b.getAttribute('data-skip-del')), 1);
-      alarmDoc.skipDates = days;
-      saveAlarms();
+      // By the day, not its position: after a 409 the list may be another.
+      var iso = (alarmDoc.skipDates || [])[Number(b.getAttribute('data-skip-del'))];
+      alarmCommit(function(doc) {
+        var list = (doc.skipDates || []).slice();
+        var i = list.indexOf(iso);
+        if (i < 0) return false;
+        list.splice(i, 1);
+        doc.skipDates = list;
+      });
     });
   });
 }
@@ -6462,10 +6489,16 @@ function wireAlarmEditor() {
       alarmKeyEmptyMsg(alarmDraft.slot);
       return;
     }
-    if (alarmDraftIdx >= 0) alarmDoc.alarms[alarmDraftIdx] = alarmDraft;
-    else alarmDoc.alarms.push(alarmDraft);
+    var draft = alarmDraft, isNew = alarmDraftIdx < 0;
     alarmDraft = null; alarmDraftIdx = -1;
-    saveAlarms();
+    alarmCommit(function(doc) {
+      var copy = JSON.parse(JSON.stringify(draft));
+      var i = isNew ? -1 : alarmIndexById(doc, draft.id);
+      // An alarm deleted from another app while it was being edited comes
+      // back: saving it is what the user just asked for.
+      if (i >= 0) doc.alarms[i] = copy;
+      else doc.alarms.push(copy);
+    });
   });
   var cancel = document.getElementById('btnAlarmCancel');
   if (cancel) cancel.addEventListener('click', function() {
@@ -6476,9 +6509,13 @@ function wireAlarmEditor() {
   var del = document.getElementById('btnAlarmDel');
   if (del) del.addEventListener('click', function() {
     press(del);
-    alarmDoc.alarms.splice(alarmDraftIdx, 1);
+    var id = alarmDraft.id;
     alarmDraft = null; alarmDraftIdx = -1;
-    saveAlarms();
+    alarmCommit(function(doc) {
+      var i = alarmIndexById(doc, id);
+      if (i < 0) return false; // already gone
+      doc.alarms.splice(i, 1);
+    });
   });
 }
 
@@ -6487,33 +6524,101 @@ function alarmApply(d) {
   // handler and answers 200 with the whole web UI AS A STRING. Without this
   // guard the card renders empty and looks like a speaker with no alarms.
   if (!d || typeof d !== 'object' || !Array.isArray(d.alarms)) return false;
-  alarmDoc = { zone: d.zone || '', alarms: d.alarms, skipDates: Array.isArray(d.skipDates) ? d.skipDates : [] };
+  // rev stays null against an agent from before revisions (#1918): the page
+  // then saves without one, the way it always did.
+  alarmDoc = { zone: d.zone || '', alarms: d.alarms, skipDates: Array.isArray(d.skipDates) ? d.skipDates : [],
+    rev: typeof d.rev === 'number' ? d.rev : null };
   alarmState = d.status || null;
+  alarmSig = JSON.stringify(d);
   return true;
 }
 
+// alarmIndexById finds an alarm by its id, -1 when the document has none such.
+function alarmIndexById(doc, id) {
+  if (!id) return -1;
+  for (var i = 0; i < doc.alarms.length; i++) {
+    if (doc.alarms[i] && doc.alarms[i].id === id) return i;
+  }
+  return -1;
+}
+
 async function loadAlarms() {
+  alarmReadAt = Date.now();
+  var saves = alarmSaves;
   var d = await api('/api/alarms');
-  if (!alarmApply(d)) {
+  if (!d || typeof d !== 'object' || !Array.isArray(d.alarms)) {
     // Not an error worth shouting about: a speaker that has not been updated
     // yet simply has no alarm clock.
     var card = document.getElementById('alarmSum');
     if (card) card.textContent = T.alarmNone;
     return;
   }
+  // A save on its way answers with the newer document itself; a read that
+  // started before it (or overtook it) must not paint the old one back.
+  if (alarmSaving || saves !== alarmSaves) return;
+  // Nothing changed: no redraw, so a re-read on every tab switch and window
+  // focus neither flickers nor wipes a message the card is showing.
+  if (JSON.stringify(d) === alarmSig) return;
+  alarmApply(d);
+  // An editor that is open keeps what is typed into it; its save applies the
+  // edit to this newer document by the alarm's id.
+  if (alarmDraft) return;
   renderAlarms();
 }
 
-async function saveAlarms() {
+// alarmReread re-reads the alarms when the user comes back to them: the Play
+// tab shown, the window focused. At most once every two seconds, because a
+// window focus and a visibility change (which re-reads everything) tend to
+// arrive together.
+function alarmReread() {
+  if (Date.now() - alarmReadAt < 2000) return;
+  loadAlarms().catch(function(){});
+}
+
+// alarmCommit saves ONE change the user made. change(doc) applies it to a
+// document by alarm id or by day, never by position, and returns false when
+// there is nothing left to apply it to (the alarm was deleted elsewhere).
+//
+// It is applied to the page's copy and saved with the revision that copy was
+// read at. When another app saved in between (discussion #1918: an alarm
+// switched off from the STR Remote app came back on when the page saved its
+// stale copy), the speaker answers 409 with its current document; the change
+// is applied to that one instead and saved once more.
+async function alarmCommit(change) {
+  if (change(alarmDoc) === false) { renderAlarms(); return; }
+  // The page's copy no longer is what was read: should this save get lost,
+  // the next read has to redraw the card even when the speaker is unchanged.
+  alarmSig = '';
+  alarmSaving = true;
+  alarmSaves++;
+  var r;
+  try {
+    r = await alarmPut();
+    if (r.status === 409 && alarmApply(r.data)) {
+      if (change(alarmDoc) === false) { renderAlarms(); return; }
+      r = await alarmPut();
+    }
+  } finally {
+    alarmSaving = false;
+  }
+  await alarmSaved(r);
+}
+
+// alarmPut sends the page's copy of the document.
+function alarmPut() {
   // skipDates always goes along, [] included: the speaker keeps its stored
   // list only when the field is missing (an editor from before it existed).
   var body = { zone: alarmDoc.zone, alarms: alarmDoc.alarms, skipDates: alarmDoc.skipDates || [] };
+  if (typeof alarmDoc.rev === 'number') body.rev = alarmDoc.rev;
   // The phone only volunteers its own zone when the speaker has none, so two
   // phones in different places cannot keep re-homing each other's alarms.
   if (!body.zone) {
     try { body.zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { body.zone = ''; }
   }
-  var r = await apiDetail('/api/alarms', 'PUT', body);
+  return apiDetail('/api/alarms', 'PUT', body);
+}
+
+async function alarmSaved(r) {
   if (!r.ok || !alarmApply(r.data)) {
     // A save that failed must never look like a save that worked: the card
     // goes back to what the speaker really holds, and a refusal says why (the
