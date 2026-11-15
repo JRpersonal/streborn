@@ -14,6 +14,13 @@
 // (claimPlay); every view drops the tagged lines of its other rows for that
 // speaker (onPlayClaim + playLinesToDrop). A play whose answer arrives after
 // another row took the speaker over says nothing (ownsPlay).
+//
+// Joining a group is a claim too: "+" on a speaker that plays something else
+// takes it over for the group's music, so joinReview says beforehand what
+// stops and what plays instead.
+
+import { t } from '../i18n/index.js';
+import { decodeXmlEntities } from '../utils.js';
 
 const listeners = new Set();
 // host -> owner of the newest play on that speaker.
@@ -73,6 +80,43 @@ export function playLineOutdated(st, now) {
   if (st.playUrl && now.location === st.playUrl) return false;
   if (st.playName && now.name === st.playName) return false;
   return true;
+}
+
+// statusNowName is what a speaker's /now_playing answer names: the station
+// when it reports one, else the item (status.js reads the speaker you control
+// the same way). '' for a speaker in standby or one that names nothing (AUX,
+// Bluetooth without metadata).
+export function statusNowName(xml) {
+  if (typeof xml !== 'string' || !xml) return '';
+  const raw = (xml.match(/<stationName>([^<]+)<\/stationName>/) || [])[1]
+    || (xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '';
+  return String(decodeXmlEntities(raw) || '').trim();
+}
+
+// joinReview is the sentence the sidebar shows before "+" takes a speaker
+// that plays something of its own into the group: joining a zone ends that
+// music without a word, so the row first says what stops and what follows.
+//
+//   name    the speaker that would join
+//   playing it plays right now
+//   stops   what it plays ('' when the speaker names nothing)
+//   plays   what the group plays ('' when unknown)
+//   master  the name of the group's main speaker
+//
+// null when there is nothing to review: an idle speaker or one in standby
+// joins at once, as before, and so does one that already plays the very
+// station the group plays, since joining changes nothing anyone hears.
+export function joinReview({ name, playing, stops, plays, master } = {}) {
+  if (!playing || !name) return null;
+  const s = String(stops || '').trim();
+  const p = String(plays || '').trim();
+  if (s && p && s.toLowerCase() === p.toLowerCase()) return null;
+  let text;
+  if (s && p) text = t('ui2.side.joinStopsPlays', { name, stops: s, plays: p });
+  else if (s) text = t('ui2.side.joinStopsJoins', { name, stops: s, master: master || '' });
+  else if (p) text = t('ui2.side.joinPlays', { name, plays: p });
+  else text = t('ui2.side.joinJoins', { name, master: master || '' });
+  return { text, stops: s, plays: p };
 }
 
 // resetPlayClaims empties the claims and listeners (tests only).

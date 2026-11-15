@@ -3,7 +3,10 @@
 // station at once, and one station could be listed twice).
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { claimPlay, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop, resetPlayClaims } from './playclaim.js';
+import { claimPlay, joinReview, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop, resetPlayClaims, statusNowName } from './playclaim.js';
+import { setLocale } from '../i18n/index.js';
+
+setLocale('en');
 import { uniqueStations } from '../views/music/ui2radio.js';
 
 const ok = (text = 'Playing on Kitchen') => ({ kind: 'ok', text });
@@ -83,5 +86,41 @@ describe('station rows', () => {
       expect(src, f).toMatch(/onPlayClaim\(/);
       expect(src, f).toMatch(/ownsPlay\(host, owner\)/);
     }
+  });
+});
+
+// "+" on a speaker that plays something else (the join review): joining a
+// zone ends that speaker's own music, so the row first says what stops and
+// what plays instead.
+describe('join review', () => {
+  it('names what stops and what plays instead', () => {
+    const r = joinReview({ name: 'Kitchen', playing: true, stops: 'Jazz24', plays: 'FluxFM', master: 'Living room' });
+    expect(r.text).toBe('Kitchen stops Jazz24 and plays FluxFM.');
+    expect(r).toMatchObject({ stops: 'Jazz24', plays: 'FluxFM' });
+  });
+
+  it('names the main speaker when the group music has no name, and says so when the speaker names nothing', () => {
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: 'Jazz24', plays: '', master: 'Living room' }).text)
+      .toBe('Kitchen stops Jazz24 and plays along with Living room.');
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: '', plays: 'FluxFM', master: 'Living room' }).text)
+      .toBe('Kitchen stops what it is playing and plays FluxFM.');
+    expect(joinReview({ name: 'Kitchen', playing: true, master: 'Living room' }).text)
+      .toBe('Kitchen stops what it is playing and plays along with Living room.');
+  });
+
+  it('asks nothing of an idle speaker, one in standby or one that already plays the same station', () => {
+    expect(joinReview({ name: 'Kitchen', playing: false, stops: 'Jazz24', plays: 'FluxFM' })).toBe(null);
+    expect(joinReview({ name: 'Kitchen', playing: true, stops: 'FluxFM', plays: ' fluxfm ' })).toBe(null);
+    expect(joinReview({ name: '', playing: true, stops: 'Jazz24', plays: 'FluxFM' })).toBe(null);
+    expect(joinReview()).toBe(null);
+  });
+
+  it('reads the name from a now_playing answer, station first, entities decoded', () => {
+    expect(statusNowName('<nowPlaying source="INTERNET_RADIO"><ContentItem><itemName>Jazz &amp; Soul</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>'))
+      .toBe('Jazz & Soul');
+    expect(statusNowName('<nowPlaying><ContentItem><itemName>Song title</itemName></ContentItem><stationName>Jazz24</stationName></nowPlaying>'))
+      .toBe('Jazz24');
+    expect(statusNowName('<nowPlaying source="STANDBY"><ContentItem source="STANDBY" /></nowPlaying>')).toBe('');
+    expect(statusNowName(null)).toBe('');
   });
 });

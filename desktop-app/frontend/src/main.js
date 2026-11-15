@@ -179,6 +179,7 @@ import {
   clearNoticeDismissal,
 } from './utils.js';
 import { isPlaying, strBoxes } from './boxes.js';
+import { statusNowName } from './shell2/playclaim.js';
 import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -1884,6 +1885,10 @@ async function refreshBoxPlaying() {
   try {
     const results = await Promise.allSettled(polled.map(b => Status(b.host, b.port)));
     const map = {};
+    // What each speaker plays, by name, from the same answers: the UI 2.0
+    // sidebar's join review says what a speaker stops before "+" takes it
+    // into a group (shell2/playclaim.js joinReview).
+    const names = {};
     results.forEach((r, i) => {
       let playing = false;
       if (r.status === 'fulfilled' && typeof r.value === 'string') {
@@ -1891,10 +1896,12 @@ async function refreshBoxPlaying() {
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
+        if (playing) names[polled[i].deviceID] = statusNowName(xml);
       }
       map[polled[i].deviceID] = playing;
     });
     state.boxPlaying = map;
+    state.boxNowName = names;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }

@@ -110,13 +110,17 @@ describe('sidebar speaker model', () => {
     expect(byHost(both, M).pinned).toBe(false);
   });
 
-  it('offers "+" only on idle, online, known STR speakers outside the group', () => {
+  it('offers "+" only on free, online, known STR speakers outside the group', () => {
     const m = model();
     expect([...m.pinned, ...m.others].filter((r) => r.action === 'add').map((r) => r.host)).toEqual([I1.host, I2.host, I3.host]);
     for (const b of [P1, O, S]) expect(byHost(m, b).action, b.friendlyName).toBe('');
-    // Playing elsewhere, play state not read yet, or in another zone: no "+".
+    // An idle speaker joins at once: no review.
+    expect(byHost(m, I1).review).toBeUndefined();
+    // Playing on its own: "+" too, behind a review (the join review).
     const busy = model({ boxPlaying: { ...PLAYING, II1: true } });
-    expect(byHost(busy, I1).action).toBe('');
+    expect(byHost(busy, I1).action).toBe('add');
+    expect(byHost(busy, I1).review).toBeTruthy();
+    // Play state not read yet, or in another zone: no "+".
     const { II2: _unknown, ...noI2 } = PLAYING;
     expect(byHost(model({ boxPlaying: noI2 }), I2).action).toBe('');
     const zoned = model({ zoneLive: { ...ZONES, II3: { master: 'XXX' } } });
@@ -373,5 +377,63 @@ describe('sidebar states (phase 5)', () => {
     const html = sidebarHTML(model({ notes }));
     expect(html).toContain('data-tone="error" role="alert">The group did not change.</p>');
     expect(html).toContain(`data-note-act="retry" data-host="${I1.host}" data-port="8888" data-master="${M.host}" aria-label="Try again for Office">Try again</button>`);
+  });
+});
+
+// The join review: "+" on a speaker that plays something else of its own
+// first says, in that row, what it stops and what it plays instead.
+describe('join review in the sidebar', () => {
+  const busy = (over = {}) => model({
+    boxPlaying: { ...PLAYING, II1: true },
+    nowName: 'FluxFM',
+    boxNowName: { II1: 'Jazz24' },
+    ...over,
+  });
+
+  it('builds the sentence from what the speaker and the group play', () => {
+    expect(byHost(busy(), I1).review).toBe('Office stops Jazz24 and plays FluxFM.');
+    // The group's music from the every-speaker poll when you control an idle one.
+    const other = busy({ currentBox: I2, nowName: '', boxNowName: { II1: 'Jazz24', MMM: 'Radio Paradise' } });
+    expect(byHost(other, I1).review).toBe('Office stops Jazz24 and plays Radio Paradise.');
+    // Unnamed group music: the main speaker is named instead.
+    expect(byHost(busy({ nowName: '' }), I1).review).toBe('Office stops Jazz24 and plays along with Living room.');
+    // The very station the group plays: nothing to review, "+" acts at once.
+    expect(byHost(busy({ boxNowName: { II1: 'FluxFM' } }), I1).review).toBeUndefined();
+    // Idle and standby speakers never get one.
+    expect(byHost(busy(), I2).review).toBeUndefined();
+  });
+
+  it('marks the "+" as a disclosure and draws the review only while it is open', () => {
+    const closed = sidebarHTML(busy());
+    expect(closed).toMatch(/ui2-spk-act"[^>]*data-host="192\.0\.2\.26"[^>]*data-review="1" aria-expanded="false"/);
+    expect(closed).not.toContain('ui2-spk-join');
+    // An idle speaker's "+" is a plain button.
+    expect(closed).not.toMatch(/data-host="192\.0\.2\.27"[^>]*data-review/);
+    const m = busy({ review: I1.host });
+    expect(byHost(m, I1).reviewOpen).toBe(true);
+    const open = sidebarHTML(m);
+    expect(open).toMatch(/data-review="1" aria-expanded="true" aria-controls="ui2SpkJoin-192-0-2-26"/);
+    expect(open).toMatch(/<li class="ui2-spk-row[^"]*has-join[^"]*">/);
+    expect(open).toContain('<div class="ui2-spk-join" id="ui2SpkJoin-192-0-2-26" role="group" aria-labelledby="ui2SpkJoin-192-0-2-26-text">');
+    expect(open).toContain('<p class="ui2-spk-join-text" id="ui2SpkJoin-192-0-2-26-text">Office stops Jazz24 and plays FluxFM.</p>');
+    // Add makes exactly the edit the "+" would: same host, port and master.
+    expect(open).toContain(`data-join="add" data-host="${I1.host}" data-port="8888" data-master="${M.host}" aria-label="Add Office">Add</button>`);
+    expect(open).toContain(`data-join="cancel" data-host="${I1.host}" aria-label="Cancel, Office keeps playing">Cancel</button>`);
+    // The primary action uses the action colour.
+    expect(open).toMatch(/class="u-btn u-btn--primary ui2-spk-join-btn" data-join="add"/);
+    // Only one review, on its own row.
+    expect(open.match(/class="ui2-spk-join"/g)).toHaveLength(1);
+  });
+
+  it('closes while the edit runs: a pending "+" is a plain toggle again', () => {
+    const out = sidebarHTML(busy({ review: I1.host, pending: new Set([I1.host]) }));
+    expect(out).not.toContain('ui2-spk-join');
+    expect(out).not.toMatch(/data-host="192\.0\.2\.26"[^>]*data-review/);
+  });
+
+  it('escapes what the speakers report', () => {
+    const out = sidebarHTML(busy({ boxNowName: { II1: '<b>x</b>' }, review: I1.host }));
+    expect(out).not.toContain('<b>x</b>');
+    expect(out).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
 });

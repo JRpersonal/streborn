@@ -67,6 +67,10 @@ const CONFIRM_AFTER_MS = 1000;
 const CONFIRM_WITHIN_MS = 20000;
 // The speaker the player's error line spoke about.
 let playerStatusHost = '';
+// The sidebar row whose join review is open (host, '' for none): "+" on a
+// speaker that plays something else first says, in that row, what it stops
+// and what it plays instead. One at a time; part of the row model.
+let joinReviewHost = '';
 
 const byId = (id) => document.getElementById(id);
 const label = (b) => labelVia(deps.getBoxLabel, b);
@@ -541,7 +545,29 @@ function wireSpeakerList(root) {
     const port = parseInt(btn.dataset.port, 10);
     return (state.boxes || []).find((b) => b && b.host === host && b.port === port) || null;
   };
+  // focusRow puts the keyboard back on a row's "+" (or its pick button when
+  // the "+" is gone), after the join review closed under it.
+  const focusRow = (host) => {
+    const find = (cls) => [...root.querySelectorAll(cls)].find((b) => b.dataset.host === host);
+    const target = find('.ui2-spk-act') || find('.ui2-spk-pick');
+    if (target) target.focus();
+  };
+  const closeJoin = (host, add) => {
+    const btn = [...root.querySelectorAll('.ui2-spk-join-btn[data-join="add"]')].find((b) => b.dataset.host === host);
+    joinReviewHost = '';
+    rovingHost = host;
+    if (add && btn && typeof deps.toggleGroupMember === 'function') {
+      deps.toggleGroupMember(host, parseInt(btn.dataset.port, 10), btn.dataset.master || '', groupReport);
+    }
+    paintSpeakers(true);
+    focusRow(host);
+  };
   root.addEventListener('click', (e) => {
+    const join = e.target.closest('.ui2-spk-join-btn');
+    if (join) {
+      closeJoin(join.dataset.host, join.dataset.join === 'add');
+      return;
+    }
     const note = e.target.closest('.ui2-spk-note-act');
     if (note) {
       const host = note.dataset.host;
@@ -566,6 +592,20 @@ function wireSpeakerList(root) {
     const act = e.target.closest('.ui2-spk-act');
     if (act) {
       rovingHost = act.dataset.host;
+      // A speaker that plays something else: the first press opens the
+      // review in its row (a second one closes it again), and only Add there
+      // makes the edit.
+      if (act.dataset.review === '1') {
+        const host = act.dataset.host;
+        joinReviewHost = joinReviewHost === host ? '' : host;
+        paintSpeakers(true);
+        const add = joinReviewHost
+          ? [...root.querySelectorAll('.ui2-spk-join-btn[data-join="add"]')].find((b) => b.dataset.host === host)
+          : null;
+        if (add) add.focus();
+        else focusRow(host);
+        return;
+      }
       if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10), act.dataset.master || '', groupReport);
       return;
     }
@@ -587,6 +627,17 @@ function wireSpeakerList(root) {
     if (btn) setRoving(root, btn.dataset.host);
   });
   root.addEventListener('keydown', (e) => {
+    // Escape in the join review (or on the "+" that opened it) is Cancel.
+    if (e.key === 'Escape' && joinReviewHost) {
+      const inJoin = e.target.closest('.ui2-spk-join');
+      const opener = e.target.closest('.ui2-spk-act');
+      if (inJoin || (opener && opener.dataset.host === joinReviewHost)) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeJoin(joinReviewHost, false);
+        return;
+      }
+    }
     const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
     if (!btn) return;
     const li = btn.closest('li');
@@ -843,12 +894,20 @@ function paintSpeakers(force) {
     // Phase 5: the empty list says why from the discovery itself.
     discovery: typeof deps.discovery === 'function' ? discoveryNow() : undefined,
     notes: rowNotes,
+    nowName: state.nowName,
+    boxNowName: state.boxNowName || {},
+    review: joinReviewHost,
     attention: deps.speakerAttention,
     label,
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
   };
   const model = sidebarModel(state.boxes, ctx);
+  // A review whose row no longer asks for one (the speaker stopped, joined,
+  // went offline, left the list) closes by itself; "+" then acts at once.
+  if (joinReviewHost && ![...model.pinned, ...model.others].some((r) => r.host === joinReviewHost && r.reviewOpen)) {
+    joinReviewHost = '';
+  }
   const levels = levelsText(model);
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,
@@ -870,6 +929,7 @@ function paintSpeakers(force) {
     const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
     const keepHost = inList ? active.dataset.host : '';
     const keepAct = inList && active.classList.contains('ui2-spk-act');
+    const keepJoin = inList && active.classList.contains('ui2-spk-join-btn') ? active.dataset.join : '';
     const scrolls = [...lists.querySelectorAll(SPK_LISTS)].map((el) => el.scrollTop);
     const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
@@ -880,7 +940,8 @@ function paintSpeakers(force) {
     });
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
-      const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
+      const again = (keepJoin && sel(`.ui2-spk-join-btn[data-join="${keepJoin}"]`))
+        || ((keepAct || keepJoin) && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
       if (again) again.focus();
     }
   }

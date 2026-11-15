@@ -110,6 +110,28 @@ html.ui2 .ui2-spk-rownote[data-tone="warn"] { color: var(--u-warn); }
 html.ui2 .ui2-spk-row > .ui2-spk-note-act { margin: 0 var(--u-space-2) 6px var(--u-space-4); min-height: 32px; font-size: var(--u-fs-sm); }
 html.ui2 .ui2-spk-attn { color: var(--u-warn); border-color: currentcolor; }
 
+/* The join review: "+" on a speaker that plays something else first says, in
+   its own row, what it stops and what it plays instead, with Add and Cancel.
+   A card under the name, the width of the row, never a layer over the list. */
+html.ui2 .ui2-spk-row.has-join { flex-wrap: wrap; }
+html.ui2 .ui2-spk-row > .ui2-spk-join {
+  flex: 1 0 100%;
+  margin: 2px var(--u-space-2) var(--u-space-2) var(--u-space-4);
+  padding: var(--u-space-2) var(--u-space-3);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+}
+html.ui2 .ui2-spk-join-text {
+  margin: 0 0 var(--u-space-2);
+  color: var(--u-text);
+  font-size: var(--u-fs-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+html.ui2 .ui2-spk-join-acts { display: flex; flex-wrap: wrap; gap: var(--u-space-2); }
+html.ui2 .ui2-spk-join-btn { padding: 0 var(--u-space-3); font-size: var(--u-fs-sm); }
+
 /* The player without a live speaker: the line and its buttons. With an
    offline speaker it sits next to what was playing. */
 html.ui2 .ui2-player-empty {
