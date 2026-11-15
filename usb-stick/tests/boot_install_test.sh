@@ -283,7 +283,8 @@ SANDBOX="$WORK/box"
 sandbox_paths() {
     sed -e "s#/media/sda1#$SANDBOX/stick#g" \
         -e "s#/media/sd[b-d]1#$SANDBOX/nostick#g" \
-        -e "s#/mnt/nv#$SANDBOX/nv#g"
+        -e "s#/mnt/nv#$SANDBOX/nv#g" \
+        -e "s#/sys/#$SANDBOX/sys/#g"
 }
 reset_sandbox() {
     rm -rf "$SANDBOX"
@@ -303,6 +304,91 @@ if cmp -s "$RC" "$SANDBOX/nv/rc.local"; then ok; else fail "rc.local did not red
 if cmp -s "$RUN" "$SANDBOX/nv/streborn/run-override.sh"; then ok; else fail "rc.local did not redeploy run-override.sh from the stick"; fi
 if grep -q "nv/rc.local redeployed from stick" "$SANDBOX/nv/streborn/boot.log" 2>/dev/null; then ok; else fail "rc.local did not log the rc.local redeploy as a success"; fi
 if grep -q "run-override.sh redeployed from stick" "$SANDBOX/nv/streborn/boot.log" 2>/dev/null; then ok; else fail "rc.local did not log the run-override.sh redeploy as a success"; fi
+
+# ---- rc.local waits for a stick only when one can still appear -------------
+#
+# Bose's shelby_local runs rc.local synchronously and only brings the network
+# up (and lets BoseApp start) once it returns. The wait used to be an
+# unconditional 30s, so every stickless boot of every installed speaker was 30s
+# slower. It must now be zero when there is a NAND override and no USB mass
+# storage at all, and stay bounded otherwise. The shipped 30s cap is swapped
+# for a small one so the bounded cases stay fast.
+
+BOOTLOG="$SANDBOX/nv/streborn/boot.log"
+rc_wait_run() {
+    # $1 = the wait cap to substitute for the shipped STICK_WAIT_MAX=30
+    awk '$0 ~ /^# The NAND override wins\./ { exit } { print }' "$RC" | sandbox_paths \
+        | sed -e "s#^STICK_WAIT_MAX=30\$#STICK_WAIT_MAX=$1#" > "$WORK/rc_wait.sh"
+    _t0=$(date +%s)
+    sh "$WORK/rc_wait.sh" >/dev/null 2>&1
+    RC_WAIT_RC=$?
+    RC_WAIT_SECS=$(( $(date +%s) - _t0 ))
+}
+# An installed speaker without a stick: NAND override present, no stick files,
+# sysfs visible with only the root hub on the USB bus. Directory names without
+# the real "1-0:1.0" colon so this also runs on a Windows checkout; the probe
+# only looks at */bInterfaceClass.
+stickless_box() {
+    reset_sandbox
+    rm -f "$SANDBOX/stick/"*
+    cp "$RUN" "$SANDBOX/nv/streborn/run-override.sh"
+    chmod +x "$SANDBOX/nv/streborn/run-override.sh"
+    mkdir -p "$SANDBOX/sys/block/mtdblock0" "$SANDBOX/sys/bus/usb/devices/usb1-hub-if0"
+    echo 09 > "$SANDBOX/sys/bus/usb/devices/usb1-hub-if0/bInterfaceClass"
+}
+logged() { grep -q "$1" "$BOOTLOG" 2>/dev/null; }
+
+if grep -q '^STICK_WAIT_MAX=30$' "$RC"; then ok; else fail "rc.local no longer sets STICK_WAIT_MAX=30 (the cap the tests below swap out)"; fi
+
+stickless_box
+rc_wait_run 5
+check "a stickless boot runs cleanly" 0 "$RC_WAIT_RC"
+if [ "$RC_WAIT_SECS" -le 2 ]; then ok; else fail "a stickless boot without USB storage still waited ${RC_WAIT_SECS}s"; fi
+if logged "no USB storage, not waiting for a stick"; then ok; else fail "the no-wait decision was not logged"; fi
+if logged "no stick after"; then fail "a stickless boot without USB storage went through the wait"; else ok; fi
+
+stickless_box
+mkdir -p "$SANDBOX/sys/block/sda"
+rc_wait_run 2
+check "a boot with an unmounted USB disk runs cleanly" 0 "$RC_WAIT_RC"
+if [ "$RC_WAIT_SECS" -ge 2 ]; then ok; else fail "a present but unmounted USB disk was not waited for (${RC_WAIT_SECS}s)"; fi
+if logged "USB storage present (sda), waiting up to 2s"; then ok; else fail "the wait for a present USB disk was not logged with its reason"; fi
+if logged "no stick after 2s, going on without it"; then ok; else fail "the bounded wait did not end at its cap"; fi
+
+stickless_box
+mkdir -p "$SANDBOX/sys/bus/usb/devices/usb1-port1-if0"
+echo 08 > "$SANDBOX/sys/bus/usb/devices/usb1-port1-if0/bInterfaceClass"
+rc_wait_run 1
+if logged "USB storage present (USB interface usb1-port1-if0)"; then ok; else fail "a mass-storage interface without a block device yet was not waited for"; fi
+
+# The stick mounts while rc.local waits: found, and the wait ends right there.
+stickless_box
+mkdir -p "$SANDBOX/sys/block/sda"
+( sleep 2; cp "$RUN" "$SANDBOX/stick/run.sh" ) &
+LATE=$!
+rc_wait_run 10
+wait "$LATE" 2>/dev/null
+if [ "$RC_WAIT_SECS" -lt 8 ]; then ok; else fail "the wait did not end when the stick mounted (${RC_WAIT_SECS}s)"; fi
+if grep -q "stick detected at $SANDBOX/stick after [1-9][0-9]*s" "$BOOTLOG" 2>/dev/null; then ok; else fail "a stick that mounted during the wait was not detected"; fi
+
+# A stick that is already mounted is found even when nothing calls for a wait.
+stickless_box
+cp "$RUN" "$SANDBOX/stick/run.sh"
+rc_wait_run 5
+if grep -q "stick detected at $SANDBOX/stick after 0s" "$BOOTLOG" 2>/dev/null; then ok; else fail "an already mounted stick was missed on the no-wait path"; fi
+
+# No NAND override yet: the stick is the only way to start, so wait anyway.
+stickless_box
+rm -f "$SANDBOX/nv/streborn/run-override.sh"
+rc_wait_run 1
+if logged "no NAND override yet, waiting up to 1s"; then ok; else fail "a box without a NAND override did not wait for the stick"; fi
+if logged "no stick after 1s"; then ok; else fail "the wait without a NAND override did not run to its cap"; fi
+
+# sysfs not visible: we cannot tell, so behave as before and wait.
+stickless_box
+rm -rf "$SANDBOX/sys"
+rc_wait_run 1
+if logged "/sys/block not visible, waiting up to 1s"; then ok; else fail "a box without a visible /sys/block did not fall back to waiting"; fi
 
 # run.sh is far too box-bound to run from the top. Instead: every top-level
 # function run.sh has DEFINED by the time it reaches a section (which is what
