@@ -340,6 +340,14 @@ function wireSliders(frame) {
   frame.addEventListener('pointerover', (e) => {
     const el = e.target && typeof e.target.closest === 'function' ? e.target.closest('input[type="range"]') : null;
     if (!el) return;
+    // A disabled slider (bass on a speaker without it) ignores the wheel
+    // (sliderwheel.js), so it must not promise it; a hint written while it was
+    // still enabled goes too.
+    if (el.disabled) {
+      if (el.dataset.ui2WheelHint && el.title === el.dataset.ui2WheelHint) el.removeAttribute('title');
+      delete el.dataset.ui2WheelHint;
+      return;
+    }
     // Only a title this code wrote is replaced (it follows the language); a
     // slider whose own code names it (balance, the player volume) keeps that.
     if (el.title && el.title !== el.dataset.ui2WheelHint) return;

@@ -1,10 +1,12 @@
 // The mouse wheel and the touchpad on every UI 2.0 slider (src/sliderwheel.js,
 // wired in shell2/mount.js): the player volume, a speaker's level under
-// Levels, and the Sound tab's volume and bass. A notch is one step, small
-// touchpad deltas add up to whole steps on both axes, the page stays still
-// while a slider takes the wheel, a page scroll that slides a slider under the
-// pointer changes nothing, and every step goes through the slider's own write
-// path, so the volume ceiling holds. The classic layout keeps its slider,
+// Levels, the group volume, and the Sound tab's volume, bass and balance. A
+// notch is one step, small touchpad deltas add up to whole steps on both axes,
+// the page stays still while a slider takes the wheel, a page scroll that
+// slides a slider under the pointer changes nothing (also when that slider
+// kept focus from a click), and every step goes through the slider's own
+// write path, so the volume ceiling holds, the group keeps its spacing and the
+// balance writes once on release. The classic layout keeps its slider,
 // which takes the wheel only after a click.
 //
 //   E2E_PORT=4188 npx playwright test specs/desktop-ui2-slider-wheel.spec.mjs --project=desktop
@@ -13,7 +15,7 @@ import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
-import { ROSTER } from '../../testkit/demo-data.mjs';
+import { ROSTER, SETTINGS } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
@@ -63,6 +65,36 @@ const pad = (loc, dx, dy) => loc.evaluate((el, [x, y]) => {
 async function lastVolume(mock, host) {
   const c = await mock.last('SetBoxVolume', onHost(host));
   return c ? c.args[2] : null;
+}
+
+// soundScroller finds the scroll box the Sound tab sits in, scrolls it so there
+// is room both ways with the slider still on screen, and returns a reader for
+// its scrollTop plus the position it starts from.
+async function soundScroller(slider) {
+  const scroller = await slider.evaluateHandle((el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const o = getComputedStyle(p).overflowY;
+      if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    }
+    return document.scrollingElement;
+  });
+  const top = () => scroller.evaluate((el) => el.scrollTop);
+  await scroller.evaluate((el) => { el.scrollTop = 40; });
+  await slider.scrollIntoViewIfNeeded();
+  return { top, before: await top() };
+}
+
+// passingScroll scrolls the page from just above the slider, then on across it
+// with the pointer over it, the way a page scroll slides a slider under the
+// pointer; resolves once the page has moved.
+async function passingScroll(page, slider, top, before) {
+  const box = await slider.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y - 60);
+  await page.mouse.wheel(0, 40);
+  await expect.poll(top).toBeGreaterThan(before);
+  await slider.hover();
+  await page.mouse.wheel(0, 40);
+  await page.mouse.wheel(0, 40);
 }
 
 test.describe('UI 2.0 sliders take the wheel and the touchpad', () => {
@@ -129,19 +161,7 @@ test.describe('UI 2.0 sliders take the wheel and the touchpad', () => {
     await openSound(page);
     const slider = page.locator('#boxVolume');
     await expect(slider).toHaveValue(String(LR_VOLUME));
-    // The scroll box the Sound tab sits in.
-    const scroller = await slider.evaluateHandle((el) => {
-      for (let p = el.parentElement; p; p = p.parentElement) {
-        const o = getComputedStyle(p).overflowY;
-        if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
-      }
-      return document.scrollingElement;
-    });
-    const top = () => scroller.evaluate((el) => el.scrollTop);
-    // Room to scroll both ways, with the slider still on screen.
-    await scroller.evaluate((el) => { el.scrollTop = 40; });
-    await slider.scrollIntoViewIfNeeded();
-    const before = await top();
+    const { top, before } = await soundScroller(slider);
     // Above the top, so a wheel up that reached the page would show.
     expect(before).toBeGreaterThan(0);
     await mock.resetCalls();
@@ -158,16 +178,82 @@ test.describe('UI 2.0 sliders take the wheel and the touchpad', () => {
 
     // A page scroll that starts next to the slider and then runs over it
     // scrolls the page and leaves the level alone.
-    const box = await slider.boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y - 60);
     const sent = await mock.count('SetBoxVolume');
-    await page.mouse.wheel(0, 40);
-    await expect.poll(top).toBeGreaterThan(before);
-    await slider.hover();
-    await page.mouse.wheel(0, 40);
-    await page.mouse.wheel(0, 40);
+    await passingScroll(page, slider, top, before);
     await expect(slider).toHaveValue(String(LR_VOLUME + 3));
     expect(await mock.count('SetBoxVolume')).toBe(sent);
+  });
+
+  test('7. a slider that keeps focus after a click does not grab a page scroll that passes over it', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await openSound(page);
+    const slider = page.locator('#boxVolume');
+    const { top, before } = await soundScroller(slider);
+    expect(before).toBeGreaterThan(0);
+    // A click on the slider sets a level and leaves the slider focused.
+    await slider.click();
+    await expect(slider).toBeFocused();
+    await runFor(page, 3_000);
+    const level = await slider.inputValue();
+    const sent = await mock.count('SetBoxVolume');
+
+    await passingScroll(page, slider, top, before);
+    await runFor(page, RELEASE_MS);
+    await expect(slider).toBeFocused();
+    await expect(slider).toHaveValue(level);
+    expect(await mock.count('SetBoxVolume')).toBe(sent);
+  });
+
+  test.describe('on a speaker without adjustable bass', () => {
+    const NO_BASS = { ...SETTINGS, bass: { ...SETTINGS.bass, available: false } };
+    test.use({ scenario: { bindings: { BoxSettings: { value: NO_BASS } } } });
+
+    test('10. the greyed bass slider neither moves nor promises the wheel in its tooltip', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await openSound(page);
+      const bass = page.locator('#boxBass');
+      await expect(bass).toBeDisabled();
+      const start = await bass.inputValue();
+      await mock.resetCalls();
+      await bass.hover();
+      await notches(page, 2);
+      await runFor(page, RELEASE_MS);
+      await expect(bass).toHaveValue(start);
+      expect(await mock.count('SetBoxBass')).toBe(0);
+      await expect(bass).not.toHaveAttribute('title', en('ui2.slider.wheelHint'));
+      // The enabled volume next to it still says it.
+      await page.locator('#boxVolume').hover();
+      await expect(page.locator('#boxVolume')).toHaveAttribute('title', en('ui2.slider.wheelHint'));
+    });
+  });
+
+  test.describe('with a balance to set', () => {
+    // A balance the speaker reports as settable; the write answers ok.
+    const BALANCE = { available: true, settable: true, actual: 0, min: -7, max: 7, default: 0, ok: true, verified: true };
+    test.use({ scenario: { routes: { '/api/box/balance': { body: BALANCE } } } });
+
+    test('8. the balance slider follows the wheel and writes once per gesture, on release', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await openSound(page);
+      const bal = page.locator('#boxBalanceSlider');
+      await expect(bal).toBeVisible();
+      await expect(bal).toHaveValue('0');
+      const writes = () => app.api.calls.filter((c) => c.method === 'POST' && c.url.includes('/api/box/balance')).length;
+      expect(writes()).toBe(0);
+      await bal.hover();
+      await notches(page, 3);
+      await expect(bal).toHaveValue('3');
+      // Nothing goes out while the gesture runs: balance writes on release.
+      expect(writes()).toBe(0);
+      await runFor(page, RELEASE_MS);
+      await expect.poll(writes).toBe(1);
+      await runFor(page, 2_000);
+      expect(writes()).toBe(1);
+      await expect(bal).toHaveValue('3');
+    });
   });
 
   test.describe('with a volume ceiling', () => {
@@ -218,6 +304,48 @@ test.describe('UI 2.0 sliders take the wheel and the touchpad', () => {
       expect(await mock.count('SetBoxVolume', onHost(LR.host))).toBe(0);
       // The panel stays open: the wheel is no click outside it.
       await expect(pop).toBeVisible();
+    });
+
+    test('9. the group volume moves every member by the same offset, through a zone poll, and stops on release', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      const vol = page.locator('#ui2GroupVolSlot #groupVolume');
+      await expect(vol).toBeVisible();
+      const start = Number(await vol.inputValue());
+      // Each member's own level, as the Levels rows show it.
+      await page.locator('#ui2LevelsBtn').click();
+      const pop = page.locator('#ui2LevelsPop');
+      const lrLevel = Number(await pop.locator(`input[data-host="${LR.host}"]`).inputValue());
+      const brLevel = Number(await pop.locator(`input[data-host="${BR.host}"]`).inputValue());
+      expect(brLevel).not.toBe(lrLevel);
+      await page.keyboard.press('Escape');
+      // Marks this element, so a rebuild that swaps it shows.
+      await vol.evaluate((el) => { el.dataset.e2eMark = 'kept'; });
+      await mock.resetCalls();
+
+      await vol.hover();
+      await notches(page, 2);
+      // Keep the gesture alive past a zone poll (every 15 s) with touchpad
+      // samples that turn back and forth and so add up to no step.
+      const polls = await mock.count('GetZoneState');
+      for (let i = 0; i < 55; i++) {
+        await pad(vol, 0, i % 2 ? 1 : -1);
+        await runFor(page, 300);
+      }
+      expect(await mock.count('GetZoneState')).toBeGreaterThan(polls);
+      await notches(page, 1);
+      await expect(vol).toHaveValue(String(start + 3));
+      await expect(vol).toHaveAttribute('data-e2e-mark', 'kept');
+      // The release, which also lets the group write's debounce (120 ms) run.
+      await runFor(page, RELEASE_MS);
+      await expect.poll(() => lastVolume(mock, LR.host)).toBe(lrLevel + 3);
+      await expect.poll(() => lastVolume(mock, BR.host)).toBe(brLevel + 3);
+
+      // After the release nothing more goes out.
+      const sent = await mock.count('SetBoxVolume');
+      await runFor(page, 3_000);
+      expect(await mock.count('SetBoxVolume')).toBe(sent);
+      await expect(vol).toHaveValue(String(start + 3));
     });
   });
 });

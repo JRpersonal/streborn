@@ -117,7 +117,6 @@ function world() {
   const timers = new Map();
   let nextId = 1;
   let clock = 1_000;
-  let active = null;
   const root = {
     addEventListener(type, fn, opts) { handlers[type] = { fn, opts }; },
     removeEventListener(type) { delete handlers[type]; },
@@ -151,10 +150,9 @@ function world() {
     now: () => clock,
     setTimer: (fn) => { const id = nextId++; timers.set(id, fn); return id; },
     clearTimer: (id) => timers.delete(id),
-    activeElement: () => active,
     makeEvent: (type) => ({ type }),
   });
-  return { handlers, slider, page, wheel, flush, focus: (el) => { active = el; }, idle: (ms) => { clock += ms; } };
+  return { handlers, slider, page, wheel, flush, idle: (ms) => { clock += ms; } };
 }
 
 describe('wireSliderWheel', () => {
@@ -220,13 +218,32 @@ describe('wireSliderWheel', () => {
     expect(s.value).toBe('49');
   });
 
-  it('always lets a focused slider take the wheel', () => {
+  it('lets a page scroll pass a slider that was used a moment ago, which keeps focus in a browser', () => {
     const w = world();
     const s = w.slider();
-    w.focus(s);
-    w.wheel(w.page, notch(1));
-    expect(w.wheel(s, notch(1), 50)).toBe(true);
+    // A click or drag leaves a range input focused; here the slider was turned.
+    expect(w.wheel(s, notch(1))).toBe(true);
     expect(s.value).toBe('51');
+    w.flush();
+    // Then the page is scrolled and slides the slider under the pointer.
+    expect(w.wheel(w.page, notch(1))).toBe(false);
+    expect(w.wheel(s, notch(1), 50)).toBe(false);
+    expect(w.wheel(s, notch(1), 50)).toBe(false);
+    expect(s.value).toBe('51');
+  });
+
+  it('never asks what has focus, so a focused slider gets no exception', () => {
+    expect(fileSource('sliderwheel.js')).not.toContain('activeElement');
+  });
+
+  it('leaves Ctrl and Cmd with the wheel (a zoom, a touchpad pinch) to the page', () => {
+    const w = world();
+    const s = w.slider();
+    expect(w.wheel(s, { ...notch(1), ctrlKey: true })).toBe(false);
+    expect(w.wheel(s, { ...pad(-60), ctrlKey: true }, 100)).toBe(false);
+    expect(w.wheel(s, { ...notch(1), metaKey: true }, 100)).toBe(false);
+    expect(s.value).toBe('50');
+    expect(s.events).toEqual([]);
   });
 
   it('leaves disabled sliders and sliders outside the root to the page', () => {
@@ -239,13 +256,26 @@ describe('wireSliderWheel', () => {
     expect(out.value).toBe('50');
   });
 
-  it('releases the first slider when the gesture moves to another', () => {
+  it('leaves a neighbouring slider alone when the gesture slides onto it, and releases the first', () => {
     const w = world();
     const a = w.slider();
     const b = w.slider();
-    w.focus(b);
     w.wheel(a, notch(1), 1000);
-    w.wheel(b, notch(1), 60);
+    expect(w.wheel(b, notch(1), 60)).toBe(false);
+    expect(b.value).toBe('50');
+    w.flush();
+    expect(a.events).toEqual([WHEEL_START, 'input', 'change', WHEEL_END]);
+    expect(b.events).toEqual([]);
+  });
+
+  it('releases the first slider when a new gesture starts on another before its timer ran', () => {
+    const w = world();
+    const a = w.slider();
+    const b = w.slider();
+    w.wheel(a, notch(1), 1000);
+    // Past the gesture gap, but the release timer has not fired yet.
+    w.idle(WHEEL_GESTURE_GAP_MS);
+    expect(w.wheel(b, notch(1), 1)).toBe(true);
     expect(a.events).toEqual([WHEEL_START, 'input', 'change', WHEEL_END]);
     expect(b.events).toEqual([WHEEL_START, 'input']);
   });
@@ -275,6 +305,15 @@ describe('who uses it', () => {
     expect(vol.slice(at, at + 400)).toContain('if (state.ui2Shell) return;');
     expect(vol).toContain('musicVolEl.addEventListener(WHEEL_START, beginBusy)');
     expect(vol).toContain('musicVolEl.addEventListener(WHEEL_END, endBusy)');
+  });
+
+  it('the classic Music slider steps and paces its wheel with the shared definitions', () => {
+    const vol = fileSource('views/music/volume.js');
+    expect(vol).toContain('const next = steppedValue(musicVolEl, delta);');
+    expect(vol).toContain('if (now - volWheelAt < WHEEL_MIN_STEP_MS) return;');
+    // No second clamp or rate of its own that could drift from sliderwheel.js.
+    expect(vol).not.toMatch(/Math\.min\(100, cur \+ delta\)/);
+    expect(vol).not.toMatch(/volWheelAt < \d/);
   });
 
   it('the group sliders hold the poll off and take their baseline as for a drag', () => {
