@@ -64,6 +64,7 @@ const (
 	wifiCopyStored          = "stored"
 	wifiCopyMacOS           = "macos"              // the keychain would prompt
 	wifiCopyNoWiFi          = "pc-not-on-wifi"     // nothing to copy from
+	wifiCopyNoSSID          = "pc-ssid-hidden"     // the system will not name the network (Windows: location services off) and the speaker named none to fall back on
 	wifiCopyNoInterface     = "wifi-iface-unknown" // on Wi-Fi, but its addresses are not readable
 	wifiCopyOtherSubnet     = "other-subnet"       // the speaker is not in the Wi-Fi's subnet
 	wifiCopyNoSpeakerAddr   = "speaker-addr-unknown"
@@ -244,6 +245,22 @@ func (a *App) keepSpeakerWiFiCopy(host string, port int, trigger string) WiFiCop
 	}
 	env := gatherWiFiCopyEnv(host)
 	if why := wifiCopyPrecheck(env); why != "" {
+		// Windows 11 hides the connected network's name from programs while
+		// location services are off ("netsh wlan show interfaces" then answers
+		// with a location-permission notice, 2026-11-16 on the maintainer's
+		// PC), so a computer that is on Wi-Fi read as one that is not. The
+		// speaker names the network it keeps itself; with exactly one such
+		// network, the speaker in one of this computer's subnets and a saved
+		// password for that very network here, the copy is as plausible as
+		// the computer-side route.
+		if why == wifiCopyNoWiFi || why == wifiCopyNoInterface {
+			if res, ok := a.copyFromSpeakerSSID(host, port, env); ok {
+				return res
+			}
+			if why == wifiCopyNoWiFi && env.GOOS != "darwin" {
+				why = wifiCopyNoSSID
+			}
+		}
 		return WiFiCopyResult{Reason: why, Note: true}
 	}
 	pw, _ := wifiprofiles.TryPassword(env.SSID)
@@ -300,6 +317,101 @@ func (a *App) agentReportsWiFiCopyMissing(host string, port int) (missing, known
 		return false, false
 	}
 	return v.WLANCreds == "missing", true
+}
+
+// speakerStoredSSID picks the one network the speaker keeps for itself out of
+// GET /api/box/wlan/networks. Pure. It names a network only when that is
+// unambiguous: one marked current, or else exactly one stored network that is
+// not open. Anything else (none, several, only open ones) is "" so nothing is
+// guessed.
+func speakerStoredSSID(body []byte) string {
+	var v struct {
+		Current  string `json:"current"`
+		Networks []struct {
+			SSID    string `json:"ssid"`
+			Current bool   `json:"current"`
+			Open    bool   `json:"open"`
+		} `json:"networks"`
+	}
+	if json.Unmarshal(body, &v) != nil {
+		return ""
+	}
+	if c := strings.TrimSpace(v.Current); c != "" {
+		return c
+	}
+	var closed []string
+	for _, n := range v.Networks {
+		s := strings.TrimSpace(n.SSID)
+		if s == "" || n.Open {
+			continue
+		}
+		if n.Current {
+			return s
+		}
+		closed = append(closed, s)
+	}
+	if len(closed) == 1 {
+		return closed[0]
+	}
+	return ""
+}
+
+// localNetsContain reports whether ip lies in the IPv4 subnet of one of this
+// computer's own interfaces, the computer-side half of the plausibility check
+// when the Wi-Fi interface itself cannot be identified.
+func localNetsContain(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	var nets []*net.IPNet
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && !n.IP.IsLoopback() {
+			nets = append(nets, n)
+		}
+	}
+	return ipInNets(ip, nets)
+}
+
+// copyFromSpeakerSSID is the route for a computer that will not name its own
+// network: the speaker names it, and this computer must hold a saved password
+// for exactly that network. ok is false when the route does not apply, so the
+// caller reports its own reason.
+func (a *App) copyFromSpeakerSSID(host string, port int, env wifiCopyEnv) (WiFiCopyResult, bool) {
+	if env.GOOS == "darwin" {
+		return WiFiCopyResult{}, false
+	}
+	ip := env.SpeakerIP
+	if ip == nil {
+		ip = speakerIPv4(host)
+	}
+	if !localNetsContain(ip) {
+		return WiFiCopyResult{}, false
+	}
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/wlan/networks", "", "")
+	if err != nil {
+		return WiFiCopyResult{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return WiFiCopyResult{}, false
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return WiFiCopyResult{}, false
+	}
+	ssid := speakerStoredSSID(b)
+	if ssid == "" {
+		return WiFiCopyResult{}, false
+	}
+	pw, _ := wifiprofiles.TryPassword(ssid)
+	if why := wifiCopyPasswordProblem(pw); why != "" {
+		return WiFiCopyResult{Reason: why, Note: true}, true
+	}
+	return a.putWiFiCopy(host, port, ssid, pw, "speaker-ssid"), true
 }
 
 // putWiFiCopy sends the copy to the agent and reads the answer. Only a JSON
