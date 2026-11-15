@@ -108,7 +108,11 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	if o.rememberReboot {
 		markUnlockReboot(host)
 	}
+	// The whole transcript, not its last 200 characters: the account-id seed
+	// and the getpdo reads before and after it sit at the start, and a bundle
+	// from a factory-fresh Wave that failed five unlocks in a row could not say
+	// whether the seed took (2026-11-15). The bundle export anonymises it.
 	a.logger.Warn(o.tag+": the :17000 stick-free unlock did not open SSH; stock URLs restored and the speaker restarted",
-		"host", host, "log", discovery.LastN(note, 200))
+		"host", host, "log", discovery.LastN(note, 6000))
 	return false, note, errUnlockDidNotOpenSSH
 }
