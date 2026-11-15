@@ -47,7 +47,7 @@ const CONTROLS = {
   network: {
     shown: ['#wlanSwitchToggle', '#appRegionSelect', '#appRegionSave', '#wlanStoredList', '#musicLibList'],
     placed: ['#boxWlanSelect', '#boxWlanRefresh', '#boxWlanSSID', '#boxWlanHidden', '#boxWlanPass', '#boxWlanShowPass',
-      '#boxWlanForgetOthers', '#boxWlanSave', '#wlanForgetOthersBtn', '#usServicesBody'],
+      '#boxWlanForgetOthers', '#boxWlanSave', '#wlanForgetOthersBtn', '#wlanCopyBtn', '#usServicesBody'],
   },
   keys: {
     shown: ['#boxSyncPresetsBtn', '#webhookSection > summary'],

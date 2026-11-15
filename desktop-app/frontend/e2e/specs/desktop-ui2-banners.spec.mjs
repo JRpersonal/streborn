@@ -287,8 +287,9 @@ test.describe('no internet on one speaker', () => {
   });
 });
 
-// The buttons of an attention item report where they were pressed (rule 3),
-// and Save Wi-Fi opens the speaker's page on the tab with the Wi-Fi form.
+// The buttons of an attention item report where they were pressed (rule 3).
+// A speaker without STR's copy of its Wi-Fi has no item at all since
+// 2026-11-15: the app keeps the copy itself (desktop-wifi-copy.spec.mjs).
 test.describe('attention buttons', () => {
   test.use({
     ui2: true,
@@ -299,7 +300,7 @@ test.describe('attention buttons', () => {
     },
   });
 
-  test('Save Wi-Fi opens the Network tab with the form; a refused restart says so in its item', async ({ app, mock }) => {
+  test('a refused restart says so in its item; no item for a missing Wi-Fi copy', async ({ app, mock }) => {
     const { page } = app;
     await settle(page, 9_000);
     await nav(page, 'speakers').click();
@@ -312,11 +313,9 @@ test.describe('attention buttons', () => {
     await expect(line).toContainText('refused');
     await expect(page.locator('#errorModal')).toBeHidden();
     await expect(page.locator('#toast')).not.toHaveClass(/\bshow\b/);
-    // Save Wi-Fi: Living Room's page, on Network, the form open.
-    await listCard(page, LR.host).locator('.spl-attn').getByRole('button', { name: en('speaker.wifiSaveBtn') }).click();
-    await settle(page, 2_000);
-    await expect(page.locator('#ui2SpkPageName')).toHaveText(LR.friendlyName);
-    await expect(page.locator('#ui2SpkTab-network')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('#wlanSwitchForm')).toBeVisible();
+    // Living Room reports no Wi-Fi copy: nothing on its card, and the app
+    // kept the copy by itself.
+    await expect(listCard(page, LR.host).locator('.spl-attn')).toHaveCount(0);
+    await mock.expectCalled('KeepSpeakerWiFiCopy', { pred: onHost(LR.host) });
   });
 });
