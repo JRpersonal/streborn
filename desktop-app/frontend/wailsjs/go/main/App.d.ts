@@ -242,6 +242,8 @@ export function QueuePrev(arg1:string,arg2:number):Promise<void>;
 
 export function QueueRepeat(arg1:string,arg2:number,arg3:string):Promise<void>;
 
+export function QueueServerAlive(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function QueueShuffle(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function RadioClick(arg1:string):Promise<void>;
@@ -335,8 +337,6 @@ export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
 export function SearchLibrary(arg1:string,arg2:string):Promise<main.LibrarySearchResult>;
-
-export function QueueServerAlive(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function SeekTrack(arg1:string,arg2:number,arg3:number):Promise<void>;
 
