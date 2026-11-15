@@ -156,6 +156,13 @@ releases later.
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
+- **Finding a speaker in the sidebar** (15 November 2026). Once the list has
+  more than eight rows, a search field sits above it. It narrows the other
+  speakers by name, model and what they play (the source and the station,
+  from the every-speaker poll); the pinned group stays as it is, since it is
+  what the player controls. Escape clears it, in the field and on a row, and
+  a search that finds nothing says so inline in the list, with a button to
+  clear it. The code is `shell2/spksearch.js`.
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.

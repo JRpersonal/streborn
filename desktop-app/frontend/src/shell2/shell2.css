@@ -719,6 +719,37 @@ html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: v
 html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
 
+/* Finding a speaker (spksearch.js): a field above the lists once there are
+   more than eight rows. It is something you type into, so its edge is the
+   3:1 border, never the hairline. */
+html.ui2 .ui2-spk-find {
+  flex: 0 0 auto;
+  padding: var(--u-space-1) var(--u-space-2) 6px;
+}
+html.ui2 .ui2-spk-find[hidden] { display: none; }
+html.ui2 .ui2-spk-q {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--u-target);
+  padding: 0 var(--u-space-3);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font: inherit;
+  font-size: var(--u-fs-md);
+}
+html.ui2 .ui2-spk-q::placeholder { color: var(--u-muted); opacity: 1; }
+/* Nothing matches: the words and the way out, inline in the list. */
+html.ui2 .ui2-spk-nomatch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--u-space-1);
+  padding-inline: var(--u-space-3);
+}
+html.ui2 .ui2-spk-nomatch .ui2-spk-empty { margin-inline: 0; font-size: var(--u-fs-sm); }
+
 /* A short window or a larger text size: fewer pinned rows before that list
    scrolls, so the other speakers keep room. */
 @media (height <= 700px) {

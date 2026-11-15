@@ -144,6 +144,7 @@ export const state = {
   // -- Discovery and the speaker list
   discovery: null,            // { phase: 'searching' | 'done' | 'failed', error, at, last | found }; null before the first search
   boxPlaying: undefined,      // deviceID -> plays right now, replaced by every refreshBoxPlaying round
+  boxNow: undefined,          // deviceID -> { source, station } of what it plays, from the same round
   boxPlayingBusy: false,      // a refreshBoxPlaying round is in flight
   speakerIssueParts: null,    // the parts speakerIssues is built from, merged per reporter
   speakerIssues: undefined,   // per-speaker attention items (shell2/attention.js speakerIssuesFrom)

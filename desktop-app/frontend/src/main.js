@@ -358,6 +358,8 @@ import {
   updateFilterIndicators,
   updatePandoraModeBtn,
 } from './views/music/index.js';
+import { boxSourceLabel } from './views/music/presets.js';
+import { nowLineOf } from './shell2/spksearch.js';
 // The speaker update (one speaker and Update all), extracted from this monolith
 // into src/update/. Same pattern again: initUpdateFlow injects the main.js-local
 // helpers the runners call (see update/deps.js).
@@ -1425,6 +1427,9 @@ function safeMountShell2() {
       // Phase 5: the issues of one speaker (shell2/attention.js), for the
       // sidebar chip; filled where the wedge and issue banners render.
       speakerAttention,
+      // The sidebar search names a source the way the key tiles do
+      // ("Internet radio" for LOCAL_INTERNET_RADIO).
+      sourceLabel: boxSourceLabel,
       // Help and info (shell2/help): the credits dialog, and a manual app
       // update check like the version line's own link (which also forgets a
       // dismissed notice); the result shows where it always does.
@@ -1884,6 +1889,9 @@ async function refreshBoxPlaying() {
   try {
     const results = await Promise.allSettled(polled.map(b => Status(b.host, b.port)));
     const map = {};
+    // What each speaker plays (source and station), read from the same
+    // answer: the UI 2.0 sidebar search finds a speaker by it.
+    const now = {};
     results.forEach((r, i) => {
       let playing = false;
       if (r.status === 'fulfilled' && typeof r.value === 'string') {
@@ -1891,10 +1899,13 @@ async function refreshBoxPlaying() {
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
+        const line = nowLineOf(xml);
+        if (line) now[polled[i].deviceID] = line;
       }
       map[polled[i].deviceID] = playing;
     });
     state.boxPlaying = map;
+    state.boxNow = now;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }

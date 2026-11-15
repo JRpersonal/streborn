@@ -29,6 +29,7 @@ import { navStep } from './nav.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
+import { filterSidebarModel, searchShown, searchStatusText } from './spksearch.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 import { agoText } from '../format.js';
@@ -50,6 +51,12 @@ let lastSpeakersSig = '';
 let speakersSettled = false;
 // The sidebar row that takes Tab, kept across repaints (roving tabindex).
 let rovingHost = '';
+// The sidebar search (spksearch.js): what is typed, what the list last drew
+// for, and the pending word to the live region.
+let spkQuery = '';
+let paintedQuery = '';
+let lastFindSearch = null;
+let findSayTimer = null;
 // The player's group state: on screen (live) and grouped (group.js decides,
 // through syncShellGroupPanel). One function applies both (applyPlayerGroup),
 // so the two never fight over the same flag.
@@ -319,6 +326,7 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  wireSpeakerSearch(frame.querySelector('#ui2SpkQ'));
   // Support STR, always on screen at the foot of the sidebar (Jens,
   // 2026-11-02: the classic layout's rail had no equivalent in the preview).
   wireDonateButtons(frame.querySelector('#ui2Support'));
@@ -542,6 +550,10 @@ function wireSpeakerList(root) {
     return (state.boxes || []).find((b) => b && b.host === host && b.port === port) || null;
   };
   root.addEventListener('click', (e) => {
+    if (e.target.closest('[data-spk-find-clear]')) {
+      clearSpeakerSearch(true);
+      return;
+    }
     const note = e.target.closest('.ui2-spk-note-act');
     if (note) {
       const host = note.dataset.host;
@@ -608,6 +620,21 @@ function wireSpeakerList(root) {
     // others as one sequence.
     const picks = [...root.querySelectorAll('.ui2-spk-pick')];
     const at = picks.indexOf(li ? li.querySelector('.ui2-spk-pick') : null);
+    // Escape in a searched list clears the search and stays on the row; the
+    // row is still there, since the full list holds every searched one.
+    if (e.key === 'Escape' && spkQuery) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSpeakerSearch(false);
+      return;
+    }
+    // Up on the first row goes back to the search field above it.
+    const field = searchField();
+    if (e.key === 'ArrowUp' && at === 0 && field) {
+      e.preventDefault();
+      field.focus();
+      return;
+    }
     const next = rovingIndex(e.key, at, picks.length);
     if (next < 0) return;
     e.preventDefault();
@@ -615,6 +642,102 @@ function wireSpeakerList(root) {
     setRoving(root, target.dataset.host);
     target.focus();
     try { target.scrollIntoView({ block: 'nearest' }); } catch (_) { /* old engine */ }
+  });
+}
+
+// searchField is the sidebar's search field while it is on screen, else null.
+function searchField() {
+  const box = byId('ui2SpkFind');
+  return box && !box.hidden ? byId('ui2SpkQ') : null;
+}
+
+// nowTerms is what a speaker can be found by besides its name and model:
+// its source (raw and as the key tiles name it) and its station. The speaker
+// you control reads its own status poll (fresh on every round), the others
+// the every-speaker poll (state.boxNow, main.js refreshBoxPlaying). An
+// unreachable speaker plays nothing worth finding it by.
+function nowTerms(host) {
+  const box = (state.boxes || []).find((b) => b && b.host === host);
+  if (!box || box.offline) return [];
+  let line = null;
+  const cur = state.currentBox;
+  if (cur && cur.host === host && typeof state.nowSource === 'string' && state.nowSource) {
+    const src = state.nowSource;
+    line = src && src !== 'STANDBY' && src !== 'INVALID_SOURCE' ? { source: src, station: state.nowName || '' } : null;
+  } else if (state.boxNow && box.deviceID) {
+    line = state.boxNow[box.deviceID] || null;
+  }
+  if (!line) return [];
+  const friendly = typeof deps.sourceLabel === 'function' ? deps.sourceLabel(line.source) : '';
+  return [line.source, friendly, line.station].filter(Boolean);
+}
+
+// syncSpeakerSearch shows the field only while the list is long enough
+// (spksearch.js searchShown) and returns whether it shows. When the list
+// shrinks below that, a search left in it would hide speakers with no field
+// to clear it from: it goes, and the keyboard moves to the list.
+function syncSpeakerSearch(shown) {
+  const box = byId('ui2SpkFind');
+  const field = byId('ui2SpkQ');
+  if (!box || !field) return false;
+  if (box.hidden === shown) box.hidden = !shown;
+  if (!shown && (spkQuery || field.value)) {
+    const hadFocus = document.activeElement === field;
+    spkQuery = '';
+    field.value = '';
+    if (hadFocus) setTimeout(focusSpeakerList, 0);
+  }
+  return shown;
+}
+
+// clearSpeakerSearch empties the search and repaints. toField puts the
+// keyboard in the field (the Clear button, which goes away with the search).
+function clearSpeakerSearch(toField) {
+  const field = byId('ui2SpkQ');
+  spkQuery = '';
+  if (field) field.value = '';
+  paintSpeakers(true);
+  sayFind();
+  if (toField && field) field.focus();
+}
+
+// sayFind tells the live region how the search ended, once typing pauses, so
+// a screen reader hears "Speakers shown: 3 of 9" and not every keystroke.
+function sayFind() {
+  if (findSayTimer) clearTimeout(findSayTimer);
+  findSayTimer = setTimeout(() => {
+    findSayTimer = null;
+    if (!spkQuery) return;
+    const text = searchStatusText(lastFindSearch);
+    if (text) announceSpeakers(text);
+  }, 600);
+}
+
+// wireSpeakerSearch: typing narrows the list on every input; Escape clears
+// (and only then stops the key, so an empty field lets Escape through);
+// Down goes to the first row the search left.
+function wireSpeakerSearch(field) {
+  if (!field) return;
+  field.addEventListener('input', () => {
+    spkQuery = field.value;
+    paintSpeakers(true);
+    sayFind();
+  });
+  field.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && field.value) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSpeakerSearch(true);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      const lists = byId('ui2SpkLists');
+      const first = lists && lists.querySelector('.ui2-spk-pick');
+      if (!first) return;
+      e.preventDefault();
+      setRoving(lists, first.dataset.host);
+      first.focus();
+    }
   });
 }
 
@@ -848,12 +971,18 @@ function paintSpeakers(force) {
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
   };
-  const model = sidebarModel(state.boxes, ctx);
-  const levels = levelsText(model);
+  const full = sidebarModel(state.boxes, ctx);
+  const levels = levelsText(full);
+  // The search (spksearch.js) only narrows what the list shows; the player's
+  // Levels keep reading the whole model.
+  const findShown = syncSpeakerSearch(searchShown(full));
+  const model = filterSidebarModel(full, findShown ? spkQuery : '', nowTerms);
+  lastFindSearch = model.search;
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,
     alone: model.pairAlone, searching: model.searching, levels,
     empty: model.emptyPhase, emptyError: model.emptyError, allOffline: model.allOffline, busy: stateSearchBusy(),
+    search: model.search,
   });
   if (!force && sig === lastSpeakersSig) return;
   const lists = byId('ui2SpkLists');
@@ -870,6 +999,9 @@ function paintSpeakers(force) {
     const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
     const keepHost = inList ? active.dataset.host : '';
     const keepAct = inList && active.classList.contains('ui2-spk-act');
+    // A new search starts the list at its top; a poll keeps where it was.
+    const queryChanged = model.search.query !== paintedQuery;
+    paintedQuery = model.search.query;
     const scrolls = [...lists.querySelectorAll(SPK_LISTS)].map((el) => el.scrollTop);
     const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
@@ -878,6 +1010,10 @@ function paintSpeakers(force) {
     [...lists.querySelectorAll(SPK_LISTS)].forEach((el, i) => {
       if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];
     });
+    if (queryChanged) {
+      const others = lists.querySelector('.ui2-spk-scroll');
+      if (others) others.scrollTop = 0;
+    }
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
       const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
