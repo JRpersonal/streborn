@@ -8,13 +8,15 @@ import {
   CopyPresetsAcrossBoxes,
   GetAppFlag,
   GetPresets,
+  isMissingBinding,
+  PreviewPresetKeyCopy,
   RadioSearch,
   RecallBoxPreset,
   SetAppFlag,
   SetPreset,
 } from '../../api.js';
 import { presetCopyConflict } from '../../copyreport.js';
-import { chosenSlots, summarizeKeyCopy } from '../../keycopyreport.js';
+import { chosenSlots, classicKeyCopyResult, summarizeKeyCopy } from '../../keycopyreport.js';
 import { boxMaxSlot, boxPresetRows, copyRowsNote, keyLabel, keyNum } from '../../presetrows.js';
 import { t } from '../../i18n/index.js';
 import { extractHost, stationLogoChain } from '../../logos.js';
@@ -40,6 +42,7 @@ import {
 import { renderPresets } from './presettiles.js';
 import { mstate } from './state.js';
 import { transferReport } from './ui2radio.js';
+import { reviewKeyCopy } from '../../shell2/keycopyreview.js';
 
 let loadedPresetsBoxKey = null;
 
@@ -571,7 +574,20 @@ export function wirePresetTransferRow() {
       else showToast(t('presets.transferKeysNone'));
       return;
     }
-    const someKeys = sourceKeys.length > 0 && slots.length < sourceKeys.length;
+    let someKeys = sourceKeys.length > 0 && slots.length < sourceKeys.length;
+    // UI 2.0 first shows what the copy will do on each speaker, key by key,
+    // and copies only after Copy. What it reviewed is the copy of exactly those
+    // keys, all ticked or not, so that copy runs: the whole-set copy judges a
+    // collision differently (it refuses the whole set) and would not match
+    // the review.
+    const reviewed = await reviewBeforeCopy({ btn, box, targets, val, slots, report });
+    if (reviewed === 'cancel') {
+      if (report) report(t('ui2.keyReview.cancelled'), '');
+      // The review had the keyboard; it goes back to where the copy started.
+      if (typeof btn.focus === 'function') btn.focus();
+      return;
+    }
+    if (reviewed === 'copy') someKeys = true;
     btn.disabled = true;
     const origLabel = btn.textContent;
     btn.textContent = t('settingsView.copyPresetsBusyBtn');
@@ -581,8 +597,50 @@ export function wirePresetTransferRow() {
     } finally {
       btn.textContent = origLabel;
       updatePresetTransferRow();
+      // The review had the keyboard; it goes back to where the copy started.
+      if (reviewed === 'copy' && typeof btn.focus === 'function') btn.focus();
     }
   };
+}
+
+// transferTargets is the speakers a transfer goes to: the chosen one for
+// "host|port", every target for "__ALL__".
+function transferTargets(targets, val) {
+  if (val === '__ALL__') return targets.slice();
+  const chosen = targets.filter((b) => b.host === val.split('|')[0]);
+  if (!chosen.length) {
+    const [thost, tportRaw] = val.split('|');
+    chosen.push({ host: thost, port: parseInt(tportRaw, 10) || 0 });
+  }
+  return chosen;
+}
+
+// reviewBeforeCopy is the UI 2.0 review of a copy of keys (shell2/
+// keycopyreview.js): 'copy' or 'cancel' from the user, 'skip' outside the
+// preview or with no key to copy, 'unavailable' for a build without the
+// preview binding. In the last two cases the copy runs as it always did. The
+// Transfer button is off while the review is open, so a second press cannot
+// start a second review.
+async function reviewBeforeCopy({ btn, box, targets, val, slots, report }) {
+  if (!report || !slots.length) return 'skip';
+  const chosen = transferTargets(targets, val);
+  btn.disabled = true;
+  try {
+    return await reviewKeyCopy({
+      box,
+      sourceName: getBoxLabel(box),
+      targets: chosen.map((b) => ({ host: b.host, port: b.port || 0, label: getBoxLabel(b) || b.host })),
+      slots,
+      anchor: btn,
+      t,
+      preview: PreviewPresetKeyCopy,
+      isMissing: isMissingBinding,
+      explain: friendlyErrorText,
+      checkingTarget: val === '__ALL__' ? t('ui2.feedback.allSpeakers') : (getBoxLabel(chosen[0]) || chosen[0].host),
+    });
+  } finally {
+    updatePresetTransferRow();
+  }
 }
 
 // transferableKeys is the source's keys a transfer can carry: the named ones
@@ -649,11 +707,7 @@ function wireTransferKeys(twoRows) {
 export async function runKeyTransfer({ box, targets, val, slots, report = null }) {
   const source = getBoxLabel(box);
   const all = val === '__ALL__';
-  const chosen = all ? targets.slice() : targets.filter((b) => b.host === val.split('|')[0]);
-  if (!chosen.length && !all) {
-    const [thost, tportRaw] = val.split('|');
-    chosen.push({ host: thost, port: parseInt(tportRaw, 10) || 0 });
-  }
+  const chosen = transferTargets(targets, val);
   if (report) {
     report(t('ui2.feedback.transferBusy', { source, target: all ? t('ui2.feedback.allSpeakers') : (getBoxLabel(chosen[0]) || chosen[0].host) }), 'busy');
   } else {
@@ -664,7 +718,7 @@ export async function runKeyTransfer({ box, targets, val, slots, report = null }
     const target = getBoxLabel(tb) || tb.host;
     try {
       const result = await CopyPresetKeysAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0, slots);
-      outcomes.push({ target, result });
+      outcomes.push({ target, result: report ? result : classicKeyCopyResult(result) });
     } catch (e) {
       outcomes.push({ target, error: friendlyErrorText(String((e && e.message) || e)) });
     }

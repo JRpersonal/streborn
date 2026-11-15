@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,10 +24,13 @@ type keyBox struct {
 	// bulk: the agent knows PUT /api/presets. payloadSlot: its 409 names the
 	// key of the set that collided (agents from #1551 on).
 	bulk, payloadSlot bool
-	presetRows        string
-	bulkPuts          int
-	slotPuts          int
-	syncs             int
+	// noList: GET /api/presets fails, so a copy cannot plan with the target's
+	// keys and the agent's own guard has to sort every collision.
+	noList     bool
+	presetRows string
+	bulkPuts   int
+	slotPuts   int
+	syncs      int
 }
 
 func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
@@ -54,6 +58,17 @@ func newKeyBox(t *testing.T, host string, store []Preset) *keyBox {
 				ver["presetRows"] = b.presetRows
 			}
 			_ = json.NewEncoder(w).Encode(ver)
+		case r.Method == http.MethodGet && r.URL.Path == presetAPIPath:
+			if b.noList {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			list := []Preset{}
+			for _, p := range b.store {
+				list = append(list, p)
+			}
+			sort.Slice(list, func(i, j int) bool { return list[i].Slot < list[j].Slot })
+			_ = json.NewEncoder(w).Encode(list)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/box/sync-presets":
 			b.syncs++
 			w.Header().Set("Content-Type", "application/json")
@@ -179,11 +194,13 @@ func TestCopyKeysSkipsADuplicateAndCopiesTheRest(t *testing.T) {
 }
 
 // TestCopyKeysFindsTheDuplicateWithoutPayloadSlot: an agent that predates
-// payloadSlot names only the station; the key is found by its name.
+// payloadSlot names only the station; the key is found by its name. The
+// target's keys cannot be read here, so the agent's refusal is what finds it.
 func TestCopyKeysFindsTheDuplicateWithoutPayloadSlot(t *testing.T) {
 	src := newFakeBox(t, "127.0.0.2", []Preset{radio(1, "A"), radio(2, "B")})
 	dst := newKeyBox(t, "127.0.0.3", []Preset{radio(6, "B")})
 	dst.payloadSlot = false
+	dst.noList = true
 	installProbe(t, func() bool { return true })
 
 	a := copyApp(t)
@@ -217,11 +234,13 @@ func TestCopyKeysSwapIsNoCollision(t *testing.T) {
 }
 
 // TestCopyKeysPerSlotOnAnOlderAgent: an agent without the bulk endpoint gets
-// one write per chosen key, each with its own answer.
+// one write per chosen key, each with its own answer. The target's keys cannot
+// be read, so the collision is the agent's own answer to its write.
 func TestCopyKeysPerSlotOnAnOlderAgent(t *testing.T) {
 	src := newFakeBox(t, "127.0.0.2", []Preset{radio(1, "A"), radio(2, "B"), radio(3, "C")})
 	dst := newKeyBox(t, "127.0.0.3", []Preset{radio(4, "B")})
 	dst.bulk = false
+	dst.noList = true
 	installProbe(t, func() bool { return true })
 
 	a := copyApp(t)

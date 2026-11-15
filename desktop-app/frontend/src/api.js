@@ -238,6 +238,14 @@ export function QueueServerAlive(host, port, location) {
   return callOptionalBinding('QueueServerAlive', [host, port, location]);
 }
 
+// PreviewPresetKeyCopy says, per chosen key, what copying those keys to one
+// speaker would do there (copied, replacing a station, already the same, on
+// another key there, not kept), without writing anything. UI 2.0 shows it
+// before the copy. Optional binding, per the note above.
+export function PreviewPresetKeyCopy(srcHost, srcPort, dstHost, dstPort, slots) {
+  return callOptionalBinding('PreviewPresetKeyCopy', [srcHost, srcPort, dstHost, dstPort, slots]);
+}
+
 // LibraryRefusedServers lists the media servers that refused to describe
 // themselves to this PC in the recent scans (a SOAP fault where the device
 // description belongs), so the Library can say why they are missing. Optional

@@ -438,6 +438,10 @@ export function Prev(arg1, arg2) {
   return window['go']['main']['App']['Prev'](arg1, arg2);
 }
 
+export function PreviewPresetKeyCopy(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['PreviewPresetKeyCopy'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function ProbeSetupAP() {
   return window['go']['main']['App']['ProbeSetupAP']();
 }
