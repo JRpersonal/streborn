@@ -18,8 +18,10 @@
 // So this phase, which runs before anything is driven or stored:
 //   - refuses a group whose leader is half of a pair, with a code a client can
 //     read (pairCannotLeadCode);
-//   - and maps a pair's other half onto the pair master, so a pair is always
-//     one member and never two.
+//   - maps a pair's other half onto the pair master, so a pair is always one
+//     member and never two;
+//   - and drops a stereo flag that came with a group EXTEND rather than a
+//     pairing (zoneformextend.go).
 
 package webui
 
@@ -238,7 +240,7 @@ func (s *Server) pairCannotLead() *zoneFormAnswer {
 func (s *Server) zoneFormPairs(run *zoneFormRun) *zoneFormAnswer {
 	ctx := run.ctx
 	own, inPair := s.ownPair(ctx)
-	if run.req.Stereo {
+	if run.req.Stereo && !s.zoneFormStereoIsExtend(run, own, inPair) {
 		return nil // a pairing: the pair flow decides
 	}
 	if inPair {
