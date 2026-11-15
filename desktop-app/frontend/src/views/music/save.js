@@ -88,8 +88,14 @@ const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
 //
 // report, when given (the UI 2.0 preview's key line), takes the note and the
 // errors instead of the toast and the dialog; the move offer stays a question.
-function showPresetSaveError(err, slot, report = null) {
+// onConflict, when given (the UI 2.0 key assignment editor), takes the 409
+// itself: the editor offers the move in its own line, not in the dialog.
+function showPresetSaveError(err, slot, report = null, onConflict = null) {
   const conflict = parsePresetConflict(err);
+  if (conflict && typeof onConflict === 'function') {
+    onConflict(err);
+    return;
+  }
   if (conflict) {
     if (slot >= 1 && slot <= 2 * ROW_SIZE && state.currentBox) {
       if (report) report(null);
@@ -156,13 +162,13 @@ function voteForWhatPlays() {
 // saveNativeToSlot keeps the Pandora or iHeartRadio station the speaker is
 // playing on a key. The app sends only the name: the agent reads the exact
 // item from the speaker's own now-playing.
-async function saveNativeToSlot(slot, report = null) {
+async function saveNativeToSlot(slot, report = null, onConflict = null) {
   const nname = state.nowName || nativeServiceLabel(state.nowSource);
   try {
     await SaveNativePreset(state.currentBox.host, state.currentBox.port, slot, nname);
     await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: nname }), report, nname);
   } catch (err) {
-    if (report) showPresetSaveError(err, slot, report);
+    if (report) showPresetSaveError(err, slot, report, onConflict);
     else showPresetSaveError(err, slot);
   }
 }
@@ -181,7 +187,12 @@ let spotifyPlanHintShown = false;
 // ui2radio.js keyReport), takes every outcome instead of the toasts and the
 // error dialog, named with the key and the speaker, and done is said only
 // after the read-back (announceSaved). Without it everything is as before.
-export async function saveCurrentToSlot(slot, report = null) {
+//
+// opts.onConflict, when given (the UI 2.0 key assignment editor, which falls
+// back to this save for an agent without save-playing), receives the agent's
+// 409 already-on-slot in place of the move dialog, so the editor can offer the
+// move in its own line (docs/UI-2.0.md).
+export async function saveCurrentToSlot(slot, report = null, { onConflict = null } = {}) {
   if (report) {
     const { n, speaker } = keyWords(slot);
     report(keySavingVerdict(n, speaker).text, 'busy');
@@ -201,7 +212,7 @@ export async function saveCurrentToSlot(slot, report = null) {
   // item lives only on the speaker, so the agent reads it from there and keeps
   // it on the key as the speaker's own item. No stream URL is involved.
   if (nativeServiceSaveable(state.nowSource)) {
-    if (report) await saveNativeToSlot(slot, report);
+    if (report) await saveNativeToSlot(slot, report, onConflict);
     else await saveNativeToSlot(slot);
     return;
   }
@@ -230,7 +241,7 @@ export async function saveCurrentToSlot(slot, report = null) {
       return;
     } catch (err) {
       if (!queueSaveFallsThrough(err)) {
-        showPresetSaveError(err, slot, report);
+        showPresetSaveError(err, slot, report, onConflict);
         return;
       }
       saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, null, libraryMatch);
@@ -245,7 +256,7 @@ export async function saveCurrentToSlot(slot, report = null) {
     }
     // The preview: the notices (needs a login, needs Premium) join the
     // verdict, which waits for the read-back like every other save.
-    const sr = keySpotifyReport(slot, report);
+    const sr = keySpotifyReport(slot, report, onConflict);
     const box = state.currentBox;
     if (await saveSpotifyToSlot(slot, sr, box)) {
       const { n, speaker } = keyWords(slot, box);
@@ -273,7 +284,7 @@ export async function saveCurrentToSlot(slot, report = null) {
       });
       await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: lname }), report, lname);
     } catch (err) {
-      showPresetSaveError(err, slot, report);
+      showPresetSaveError(err, slot, report, onConflict);
     }
     return;
   }
@@ -310,7 +321,7 @@ export async function saveCurrentToSlot(slot, report = null) {
           RadioVote(app.uuid).catch(() => {});
         }
       } catch (err) {
-        showPresetSaveError(err, slot, report);
+        showPresetSaveError(err, slot, report, onConflict);
       }
       return;
     }
@@ -324,7 +335,7 @@ export async function saveCurrentToSlot(slot, report = null) {
         await announceSaved(slot, t('preset.copiedToKey', { n: keyNum(slot, t), name: src.name }), report, src.name);
         return;
       } catch (err) {
-        showPresetSaveError(err, slot, report);
+        showPresetSaveError(err, slot, report, onConflict);
         return;
       }
     }
@@ -355,7 +366,7 @@ export async function saveCurrentToSlot(slot, report = null) {
     return;
   } catch (err) {
     if (!savePlayingFallsThrough(err)) {
-      showPresetSaveError(err, slot, report);
+      showPresetSaveError(err, slot, report, onConflict);
       return;
     }
   }
@@ -399,7 +410,7 @@ export async function saveCurrentToSlot(slot, report = null) {
       );
       await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name: oname }), report, oname);
     } catch (err) {
-      showPresetSaveError(err, slot, report);
+      showPresetSaveError(err, slot, report, onConflict);
     }
     return;
   }
@@ -422,21 +433,21 @@ export async function saveCurrentToSlot(slot, report = null) {
     await announceSaved(slot, t('preset.savedToKey', { n: keyNum(slot, t), name }), report, name);
     voteForWhatPlays();
   } catch (err) {
-    showPresetSaveError(err, slot, report);
+    showPresetSaveError(err, slot, report, onConflict);
   }
 }
 
 // keySpotifyReport is how a Spotify save speaks in the UI 2.0 preview's key
 // line: the errors there, the notices collected for the verdict that follows
 // the read-back, and nothing at all for a speaker switched meanwhile.
-function keySpotifyReport(slot, report) {
+function keySpotifyReport(slot, report, onConflict = null) {
   const notes = [];
   return {
     notes,
     saved: () => {},
     notice: (key) => { notes.push(t(key)); },
     error: (key) => reportKeyFailed(report, slot, t(key)),
-    failed: (err) => showPresetSaveError(err, slot, report),
+    failed: (err) => showPresetSaveError(err, slot, report, onConflict),
     switched: () => report(null),
   };
 }

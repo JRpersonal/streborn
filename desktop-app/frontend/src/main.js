@@ -329,6 +329,7 @@ import {
   initMusicView,
   isFav,
   leaveKeyEditView,
+  loadFavStore,
   loadMusicTabVolume,
   loadPresets,
   loadStickRegion,
@@ -344,11 +345,14 @@ import {
   presetMoveOffer,
   pollTrackPosition,
   purgeMusicStateForSpeaker,
+  putStationOnKey,
   refreshSourceButtons,
   refreshStatus,
   renderGroupControl,
   renderNowPlayingBar,
   renderTrackProgress,
+  saveCurrentToSlot,
+  saveSpotifyToSlot,
   showSlotPicker,
   syncFavRemovals,
   syncSearchModeButtons,
@@ -1447,6 +1451,17 @@ function safeMountShell2() {
       checkSpeaker: CheckSpeaker,
       // "Remove from list" on a speaker that is not reachable (#1852).
       removeSpeaker: removeSpeakerEntry,
+      // The key assignment editor on a speaker's Keys tab: the music views'
+      // own save paths, so a key it writes is stored exactly as Radio,
+      // Library and Spotify store it.
+      keyEditor: {
+        putStationOnKey,
+        saveCurrentToSlot,
+        saveSpotifyToSlot,
+        loadFavStore,
+        loadPresets,
+        refreshStatus,
+      },
       reportProblem: reportProblemWithCheck,
       checkAppUpdate: (manual) => {
         try { clearNoticeDismissal('appUpdate'); } catch {}
