@@ -1767,6 +1767,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/queue/mode", s.handleQueueMode)
 	mux.HandleFunc("/api/queue/save-slot", s.handleQueueSaveSlot)
+	mux.HandleFunc("/api/queue/server-alive", s.handleQueueServerAlive)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/seek", s.handleSeek)

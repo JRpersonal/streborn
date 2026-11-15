@@ -474,6 +474,10 @@ export function QueueRepeat(arg1, arg2, arg3) {
   return window['go']['main']['App']['QueueRepeat'](arg1, arg2, arg3);
 }
 
+export function QueueServerAlive(arg1, arg2, arg3) {
+  return window['go']['main']['App']['QueueServerAlive'](arg1, arg2, arg3);
+}
+
 export function QueueShuffle(arg1, arg2, arg3) {
   return window['go']['main']['App']['QueueShuffle'](arg1, arg2, arg3);
 }

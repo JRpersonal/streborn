@@ -242,6 +242,8 @@ export function QueuePrev(arg1:string,arg2:number):Promise<void>;
 
 export function QueueRepeat(arg1:string,arg2:number,arg3:string):Promise<void>;
 
+export function QueueServerAlive(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function QueueShuffle(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function RadioClick(arg1:string):Promise<void>;

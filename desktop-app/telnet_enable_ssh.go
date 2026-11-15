@@ -247,7 +247,7 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 		a.logger.Info("telnet-enable: SSH opened stick-free via :17000 unlock", "host", host)
 		return true, log.String()
 	}
-	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle, or is factory-reset - the bootstrap path handles that)", "host", host)
+	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle; a factory-fresh box that never checks in with marge does not run the injection, compare the account in the getpdo before/after in the unlock log)", "host", host)
 	return false, log.String()
 }
 

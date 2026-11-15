@@ -1829,7 +1829,9 @@ func (s *Server) handleQueuePrev(w http.ResponseWriter, r *http.Request) {
 // source itself, it emits QPLAY_SKIP_*_FAILED), otherwise the STR play queue is
 // advanced. On a non-skippable source (radio, aux, Bluetooth) the queue skip is
 // a graceful no-op, matching a hardware remote's Next/Prev on those sources. It
-// returns which source handled the skip, for logging.
+// returns which source handled the skip, for logging. The phone page's and the
+// app's buttons add the remote key for sources the speaker plays itself, in
+// handleTransportSkip; the hardware path must not, see there.
 //
 // One Back for every caller: the app's Previous and the remote's Back key
 // both go to the song before while the room has heard less than ten seconds
@@ -2350,6 +2352,17 @@ func (s *Server) handleTransportSkip(w http.ResponseWriter, r *http.Request, for
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	// Without a folder queue of STR's own, a source the speaker plays itself
+	// (Bluetooth from a phone, AirPlay, the box's own Spotify) skips the way
+	// the remote does, with the remote key. Before this the button answered 200
+	// and nothing happened, while the IR remote's Next worked (#1903). Only
+	// here and not in transportSkip: the remote's own Next already skipped on
+	// the speaker before HardwareSkip reaches transportSkip, so sending the key
+	// there would skip twice.
+	if !s.queue.isActive() && !s.spotifyIsStreaming() && s.transportSkipKey(ctx, forward) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "source": "box-key"})
+		return
+	}
 	src, err := s.transportSkip(ctx, forward)
 	if err != nil {
 		s.logger.Warn("transport skip failed", "forward", forward, "source", src, "err", err)

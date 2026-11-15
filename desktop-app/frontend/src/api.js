@@ -231,6 +231,13 @@ export function SeekTrack(host, port, positionSec) {
   return callOptionalBinding('SeekTrack', [host, port, positionSec]);
 }
 
+// QueueServerAlive tells a speaker that a music server announced itself again,
+// so its "music server not responding" line clears (#1890). Optional binding,
+// per the note above.
+export function QueueServerAlive(host, port, location) {
+  return callOptionalBinding('QueueServerAlive', [host, port, location]);
+}
+
 // LibraryRefusedServers lists the media servers that refused to describe
 // themselves to this PC in the recent scans (a SOAP fault where the device
 // description belongs), so the Library can say why they are missing. Optional

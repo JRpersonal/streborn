@@ -2,14 +2,28 @@
 // pause/stop, track and queue buttons, the title-swap toggle, the stream
 // source fold). Attached once by mountWiring.
 
-import { EventsOn, QueueNext, QueuePrev, QueueRepeat, QueueShuffle, SetStreamTitleSwap } from '../../api.js';
+import { EventsOn, QueueNext, QueuePrev, QueueRepeat, QueueServerAlive, QueueShuffle, SetStreamTitleSwap } from '../../api.js';
 import { clearForAliveServer, MEDIA_SERVER_ALIVE_EVENT } from '../../serveralive.js';
 import { renderPresets } from './presettiles.js';
 import { state } from '../../state.js';
 import { $, clearNoticeDismissal, showError } from '../../utils.js';
 import { renderStreamSource } from '../streamsource.js';
 import { deps } from './deps.js';
-import { action, mountTrackSeek, queueAction, renderNowPlayingBar } from './nowplaying.js';
+import { action, mountTrackSeek, queueAction, refreshQueue, renderNowPlayingBar } from './nowplaying.js';
+
+// tellSpeakersServerAlive passes a returning music server on to every STR
+// speaker, so a queue it ended stops saying "music server not responding" in
+// the app and on the phone page (#1890). The event is already gated to one per
+// server per 30 s in the backend; a failure (an older agent) changes nothing.
+function tellSpeakersServerAlive(ev) {
+  const location = (ev && ev.location) || '';
+  if (!location) return;
+  const boxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host);
+  Promise.allSettled(boxes.map(b => QueueServerAlive(b.host, b.port, location)))
+    .then(() => {
+      if (state.queue && state.queue.lastEnd && state.queue.lastEnd.reason === 'server_gone') refreshQueue();
+    });
+}
 
 // stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
 // is deliberately excluded: nothing is loaded there, so Play would promise
@@ -25,6 +39,7 @@ export function mountWiring() {
     EventsOn(MEDIA_SERVER_ALIVE_EVENT, (ev) => {
       const cleared = clearForAliveServer(state.presetErrors, state.presetServerOff, state.presets, ev);
       if (cleared.length > 0) renderPresets();
+      tellSpeakersServerAlive(ev);
     });
   } catch { /* no Wails runtime (tests, plain browser): nothing to hear */ }
 

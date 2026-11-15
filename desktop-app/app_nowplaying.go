@@ -106,6 +106,17 @@ func (a *App) SeekTrack(host string, port int, positionSec int) error {
 	return a.queuePost(host, port, "/api/seek", string(b))
 }
 
+// QueueServerAlive tells a speaker's agent that a media server announced itself
+// again (its SSDP alive, heard by this app), so the "music server not
+// responding" line of a queue that server ended stops showing in the app and on
+// the phone page (#1890). The agent asks no server itself. An older agent
+// without the endpoint answers 404, which is ignored like any other failure:
+// the line then clears on the next play, as before.
+func (a *App) QueueServerAlive(host string, port int, location string) error {
+	b, _ := json.Marshal(map[string]string{"location": location})
+	return a.queuePost(host, port, "/api/queue/server-alive", string(b))
+}
+
 // SpotifyBitrate returns the bitrate the agent measured from the live
 // go-librespot Ogg stream in kbit/s, or 0 if Spotify is idle/unavailable.
 // Spotify presets carry no radio-browser bitrate, so the tile reads the

@@ -323,6 +323,9 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	s.NoteUserStop()
 	s.NoteExplicitStop()
 	s.tellSpotifyUserStopped("stop")
+	// Stop is the listener's acknowledgement: a "music server not responding"
+	// line from an earlier queue end has done its job (#1890).
+	s.clearQueueLastEnd("")
 	// A stop ends any active library queue (no auto-advance after the user stops).
 	s.stopQueue("stop was pressed")
 	// Same as Pause: a station the speaker fetches itself is not on the UPnP

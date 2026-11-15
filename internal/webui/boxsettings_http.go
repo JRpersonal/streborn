@@ -278,6 +278,10 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name empty", http.StatusBadRequest)
 		return
 	}
+	previous := ""
+	if s.boxNameFn != nil {
+		previous, _ = s.boxNameFn()
+	}
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
@@ -285,6 +289,13 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// A rename used to leave no trace on either end, so a user asking why a
+	// speaker carries another room's name could not be answered from a bundle.
+	// The line names the caller and its client; the anonymiser hashes old and
+	// new with the same salt as every other name token, so they stay
+	// comparable.
+	s.logger.Info("speaker name changed on request", "old", previous, "new", name,
+		"from", r.RemoteAddr, "ua", r.UserAgent())
 	s.NoteBoxName(name, false)
 	// On /name POST Bose also resets the margeURL back to default —
 	// trigger AutoPair so the pair state is immediately re-established.

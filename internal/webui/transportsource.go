@@ -67,3 +67,48 @@ func (s *Server) transportKeyFallback(ctx context.Context, key string) bool {
 		"source", src, "key", key)
 	return true
 }
+
+// boxSkipKey names the remote key that skips on a source the speaker plays
+// itself, and reports false where Next and Previous have nothing to move to.
+// Radio and the inputs are left out on purpose: a station or a cable has no
+// next track, and on the Wave's tuner the same key could retune it.
+func boxSkipKey(src string, forward bool) (string, bool) {
+	if !boxOwnedSource(src) {
+		return "", false
+	}
+	switch src {
+	case "LOCAL_INTERNET_RADIO", "INTERNET_RADIO", "TUNEIN", "IHEART", "SIRIUSXM",
+		"AUX", "LOCAL", "PRODUCT", "HDMI", "TV":
+		return "", false
+	}
+	if forward {
+		return "NEXT_TRACK", true
+	}
+	return "PREV_TRACK", true
+}
+
+// transportSkipKey sends the remote's Next/Prev key when the speaker plays a
+// skippable source itself, the same key the IR remote sends. Returns true when
+// it handled the press. Bluetooth is the case that asked for it (#1903): the
+// phone's player gets the skip through the speaker, exactly as with the remote.
+func (s *Server) transportSkipKey(ctx context.Context, forward bool) bool {
+	if s.boxHost == "" {
+		return false
+	}
+	src := s.readBoxSnapshot(ctx).Source
+	key, ok := boxSkipKey(src, forward)
+	if !ok {
+		s.logger.Info("transport skip: nothing to skip on this source", "source", src, "forward", forward)
+		return false
+	}
+	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
+	defer cancel()
+	if err := boxapi.New(s.boxHost).Key(kctx, key); err != nil {
+		s.logger.Warn("transport skip: the speaker did not take the remote key",
+			"source", src, "key", key, "err", err)
+		return false
+	}
+	s.logger.Info("transport skip: the speaker plays this source itself, sent the remote key",
+		"source", src, "key", key)
+	return true
+}
