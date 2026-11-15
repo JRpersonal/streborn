@@ -148,27 +148,116 @@ func (a *App) ensureZoneMembersReady(ips []string) memberReadiness {
 	return res
 }
 
-// boxInStereoPair reports whether the agent at host reports a live stereo
-// pair for its box (the zone GET carries the firmware group as `stereo`).
-// Best-effort: an unreachable or old agent answers false, so the guard can
-// never block a fleet it cannot assess.
-func (a *App) boxInStereoPair(host string, port int) bool {
+// stereoPairDoc is the stereo pair an agent reports on its zone GET (the
+// firmware /getGroup it carries as `stereo`): the pair master's deviceID and
+// both halves with their addresses.
+type stereoPairDoc struct {
+	MasterDeviceID string `json:"masterDeviceID"`
+	Members        []struct {
+		DeviceID string `json:"deviceID"`
+		IP       string `json:"ip"`
+		Role     string `json:"role"`
+	} `json:"members"`
+}
+
+// pairMaster returns the member the pair is addressed by in a group: the
+// half named as masterDeviceID, else the LEFT half (the master by Bose
+// convention). ok is false when neither carries an address.
+func (p *stereoPairDoc) pairMaster() (ZoneMember, bool) {
+	if p == nil {
+		return ZoneMember{}, false
+	}
+	for _, m := range p.Members {
+		if m.IP != "" && m.DeviceID != "" && strings.EqualFold(m.DeviceID, p.MasterDeviceID) {
+			return ZoneMember{DeviceID: m.DeviceID, IP: m.IP}, true
+		}
+	}
+	for _, m := range p.Members {
+		if m.IP != "" && strings.EqualFold(m.Role, "LEFT") {
+			return ZoneMember{DeviceID: m.DeviceID, IP: m.IP}, true
+		}
+	}
+	return ZoneMember{}, false
+}
+
+// boxStereoPair returns the live stereo pair the agent at host reports for
+// its box, or nil. Best-effort: an unreachable or old agent answers nil, so
+// the guard can never block a fleet it cannot assess.
+func (a *App) boxStereoPair(host string, port int) *stereoPairDoc {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/zone", "", "")
 	if err != nil {
-		return false
+		return nil
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false
+		return nil
 	}
 	var out struct {
 		Stereo json.RawMessage `json:"stereo"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&out) != nil {
-		return false
+		return nil
 	}
-	s := strings.TrimSpace(string(out.Stereo))
-	return s != "" && s != "null"
+	raw := strings.TrimSpace(string(out.Stereo))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var doc stereoPairDoc
+	if json.Unmarshal(out.Stereo, &doc) != nil {
+		// A stereo field that is not the document (a very old agent): still a
+		// pair, just one that cannot be addressed by its master.
+		return &stereoPairDoc{}
+	}
+	return &doc
+}
+
+// boxInStereoPair reports whether the agent at host reports a live stereo
+// pair for its box.
+func (a *App) boxInStereoPair(host string, port int) bool {
+	return a.boxStereoPair(host, port) != nil
+}
+
+// pairUnitSlaves maps the requested group members onto what the leader's
+// zone call can take, the way the Bose app forms the same group: a stereo
+// pair joins as ONE member, named by its pair master. A pair's other half
+// asked for on its own means the pair, so it is replaced by the pair master
+// (enrolled on its own it served two masters and played out of step with
+// its pair, #792); every speaker appears once. pairOf answers the pair a
+// member's agent reports, or nil. mapped lists the halves that were
+// replaced; unaddressable lists pair halves whose pair names no master that
+// could be addressed, which are left out.
+func pairUnitSlaves(slaves []ZoneMember, pairOf func(ip string) *stereoPairDoc) (out []ZoneMember, mapped, unaddressable []string) {
+	same := func(x, y ZoneMember) bool {
+		return (x.IP != "" && x.IP == y.IP) || (x.DeviceID != "" && strings.EqualFold(x.DeviceID, y.DeviceID))
+	}
+	out = make([]ZoneMember, 0, len(slaves))
+	for _, sl := range slaves {
+		unit := sl
+		if sl.IP != "" {
+			if p := pairOf(sl.IP); p != nil {
+				pm, ok := p.pairMaster()
+				switch {
+				case !ok:
+					unaddressable = append(unaddressable, sl.IP)
+					continue
+				case !same(pm, sl):
+					mapped = append(mapped, sl.IP)
+					unit = pm
+				}
+			}
+		}
+		dup := false
+		for _, o := range out {
+			if same(o, unit) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, unit)
+		}
+	}
+	return out, mapped, unaddressable
 }
 
 // FormZone forms (or replaces) a multiroom zone with masterHost as the master and
@@ -197,6 +286,49 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	}()
 	if spec.Master.DeviceID == "" || len(spec.Slaves) == 0 {
 		return nil, fmt.Errorf("a master and at least one slave are required")
+	}
+	// Stereo pairs (#792), for NATIVE zones only. A pair can JOIN a group and
+	// cannot LEAD one, both log-proven in one 12-speaker household:
+	//   - a zone stacked on a pair master never starts the firmware's audio
+	//     distribution (the master fetches the stream but never renders it,
+	//     dying in a repeating 60-second 3103 AUDIO_ERROR_TIMEOUT loop),
+	//     measured identically when the Bose app formed that shape
+	//     (2026-08-30), so it is refused;
+	//   - a pair as a MEMBER, named by its pair master only, is what the Bose
+	//     app does and it plays: a SoundTouch 30 leading a pair of SoundTouch
+	//     10s, all three on the same station, no audio error (bundle
+	//     2026-11-15). The pair's other half on its own served two masters,
+	//     so it is mapped onto the pair.
+	// Before the readiness gate, so the member it probes is the pair master.
+	// The master's agent applies the same rules and is the authority.
+	var inPair []string
+	if !spec.Stereo {
+		if a.boxInStereoPair(masterHost, masterPort) {
+			a.logger.Warn("FormZone: refused, the main speaker is half of a live stereo pair (a pair can join a group but not lead one, #792)", "master", spec.Master.DeviceID)
+			return map[string]any{"ok": false, "inPair": []string{spec.Master.IP}, "code": "pair-cannot-lead",
+				"error": "the main speaker is half of a stereo pair; a stereo pair can join a group but cannot lead one"}, nil
+		}
+		slaves, mapped, unaddressable := pairUnitSlaves(spec.Slaves, func(ip string) *stereoPairDoc { return a.boxStereoPair(ip, 0) })
+		if len(mapped) > 0 {
+			a.logger.Info("FormZone: a stereo pair joins the group as one member, addressed by its pair master", "mapped", strings.Join(mapped, ","))
+		}
+		if len(unaddressable) > 0 {
+			a.logger.Warn("FormZone: dropping a pair half whose pair names no master the group could address", "ips", strings.Join(unaddressable, ","))
+			inPair = unaddressable
+		}
+		// A pair master that is the main speaker itself cannot be a member:
+		// that is the leader's own pair, refused above.
+		keep := make([]ZoneMember, 0, len(slaves))
+		for _, sl := range slaves {
+			if sl.IP != "" && sl.IP == spec.Master.IP {
+				continue
+			}
+			keep = append(keep, sl)
+		}
+		spec.Slaves = keep
+		if len(spec.Slaves) == 0 {
+			return map[string]any{"ok": false, "inPair": inPair, "error": "no speaker is left to group"}, nil
+		}
 	}
 	// Readiness gate (#70): never form a zone against a member whose STR agent is
 	// still starting. The master must be ready to drive /setZone at all; a slave
@@ -228,42 +360,12 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	if len(spec.Slaves) == 0 {
 		return map[string]any{"ok": false, "notReady": notReady}, nil
 	}
-	// Stereo-pair guard (#792), for NATIVE zones only. Three log-proven
-	// failure shapes from one 12-speaker household (2026-08-30): an
-	// individual pair member enrolled as a zone slave serves two masters and
-	// plays audibly out of sync with its own pair; and a zone stacked on a
-	// pair master never starts the firmware's audio distribution at all (the
-	// master fetches the stream but never renders, dying in a repeating
-	// 60-second 3103 AUDIO_ERROR_TIMEOUT loop) - measured identically when
-	// the Bose app formed the same shape, so this is firmware behavior, not
-	// an STR bug to fix by trying harder. Each participant's own agent is
-	// asked; members that are half of a pair are dropped and reported.
-	if !spec.Stereo {
-		if a.boxInStereoPair(masterHost, masterPort) {
-			a.logger.Warn("FormZone: refused, master is half of a live stereo pair (zone-on-pair starves audio, #792)", "master", spec.Master.DeviceID)
-			return map[string]any{"ok": false, "inPair": []string{spec.Master.IP}, "error": "master is half of a stereo pair; dissolve the pair before grouping"}, nil
-		}
-		inPair := make([]string, 0)
-		keep := make([]ZoneMember, 0, len(spec.Slaves))
-		for _, sl := range spec.Slaves {
-			if sl.IP != "" && a.boxInStereoPair(sl.IP, 0) {
-				a.logger.Warn("FormZone: dropping slave, it is half of a live stereo pair (#792)", "ip", sl.IP)
-				inPair = append(inPair, sl.IP)
-				continue
+	if len(inPair) > 0 {
+		defer func() {
+			if result != nil {
+				result["inPair"] = inPair
 			}
-			keep = append(keep, sl)
-		}
-		spec.Slaves = keep
-		if len(spec.Slaves) == 0 {
-			return map[string]any{"ok": false, "notReady": notReady, "inPair": inPair, "error": "every remaining member is half of a stereo pair; dissolve the pair before grouping"}, nil
-		}
-		if len(inPair) > 0 {
-			defer func() {
-				if result != nil {
-					result["inPair"] = inPair
-				}
-			}()
-		}
+		}()
 	}
 	b, err := json.Marshal(zoneFormPayload(spec, a.groupWakes.recent(spec.Slaves, time.Now())))
 	if err != nil {
@@ -281,6 +383,16 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		// The agent refuses a group led by half of a stereo pair with a coded
+		// 409 (pair-cannot-lead). It is a refusal with a reason, not a failure,
+		// so it reaches the view the way the app's own refusal above does.
+		var refusal map[string]any
+		if json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&refusal) == nil && refusal["code"] == "pair-cannot-lead" {
+			return refusal, nil
+		}
+		return nil, fmt.Errorf("status %d: the speaker refused the group", resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, readHTTPError(resp)
 	}

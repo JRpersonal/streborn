@@ -75,7 +75,11 @@ describe('fixed-group editor and offline speakers (source)', () => {
   });
 
   it('doFormZone never sends an offline member', () => {
-    expect(fnSrc('async function doFormZone(')).toMatch(/sel\[b\.deviceID\] && !boxUnreachable\(b\)\)/);
+    // A ticked pair half is mapped onto its pair master first, and the
+    // reachability check is on that member, the one actually sent.
+    const src = fnSrc('async function doFormZone(');
+    expect(src).toContain('!sel[b.deviceID]) continue;');
+    expect(src).toContain('|| boxUnreachable(unit)) continue;');
   });
 });
 

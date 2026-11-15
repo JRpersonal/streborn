@@ -123,6 +123,12 @@ type Server struct {
 	// answer from the last successful read across such a moment.
 	memberIDs   map[string]string
 	memberIDsMu sync.RWMutex
+	// memberTypes remembers, per member IP, the model its firmware /info
+	// reported (guarded by memberIDsMu). Only a SoundTouch 10 can be half of a
+	// stereo pair, and /getGroup hangs on the scm/BCO chassis, so the pair
+	// read of a group member is asked of the speakers that can pair at all
+	// (zoneformpairs.go).
+	memberTypes map[string]string
 	// mediaServers remembers which DLNA/UPnP media servers the user turned into
 	// native music sources, because the speaker forgets them on reboot. nil when
 	// not wired; the endpoints then still drive the box but nothing is restored
@@ -242,6 +248,9 @@ type Server struct {
 	zoneTiming      *zoneTiming
 	fetchZoneFn     func(ctx context.Context, host string) (boxapi.Zone, error)
 	fetchDeviceIDFn func(ctx context.Context, host string) string
+	// fetchGroupFn reads a speaker's stereo pair (/getGroup); nil is
+	// production (fetchGroup in zoneformpairs.go).
+	fetchGroupFn func(ctx context.Context, host string) (boxapi.Group, error)
 	// The zone member seams: the box calls the join-volume match, the member
 	// takeover, the group wake, the pair standby, the dissolve sweeps and the
 	// default-group rejoin make. Every real implementation reaches a speaker

@@ -288,11 +288,14 @@ func (s *Server) formDefaultGroupOnPlay(z zones.Zone) {
 	if len(joiners) == 0 {
 		return
 	}
+	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	// A stereo pair is one member, by its pair master: never half of it on its
+	// own (zoneformpairs.go).
+	joiners = s.pairUnitJoiners(ctx, master, joiners)
 	// Already complete? Then the firmware is left alone.
 	if live, err := s.rejoinLiveZone(ctx, s.boxHost); err == nil && zoneCarries(live, z.Master, joiners) {
 		return
 	}
-	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
 	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: re-form on play failed", "err", err, "members", len(joiners))
 		return
@@ -519,6 +522,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 		return false
 	}
 	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	joiners = s.pairUnitJoiners(ctx, master, joiners)
 	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: taking missing members back failed", "err", err, "added", added)
 		return false
@@ -625,6 +629,7 @@ func (s *Server) reformAfterMemberReboot(ctx context.Context, z zones.Zone) bool
 	s.zoneLossRejoinTriedAt = time.Now()
 	s.zoneLossMu.Unlock()
 	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	joiners = s.pairUnitJoiners(ctx, master, joiners)
 	if err := s.rejoinSetZone(ctx, s.boxHost, master, joiners); err != nil {
 		s.logger.Warn("default group: re-forming the group after a member restarted failed", "err", err, "members", len(joiners))
 		return false

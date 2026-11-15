@@ -2946,6 +2946,9 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-card.offline { cursor: not-allowed; border-style: dashed; background: var(--c-surface); }
 .zone-card.offline:hover { background: var(--c-surface); }
 .zone-offline-note { font-size: 11px; color: var(--c-muted); }
+/* A stereo pair joins a group as one member and cannot lead one: its card
+   says so where the others offer "make main". */
+.zone-pair-note { font-size: 11px; color: var(--c-muted); }
 /* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the
    <option> popup do not inherit the app's dark theme on Linux/WebKitGTK, so
    they render white text on a white background. Force readable colors on every

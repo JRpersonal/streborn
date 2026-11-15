@@ -4,6 +4,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { state } from './state.js';
 import {
   groupCandidates,
+  isPairMaster,
+  pairUnitBox,
+  pairUnitName,
+  zoneOrPairMaster,
   inAnyStereoPair,
   zoneBoxes,
   storedPermanentGroupsOf,
@@ -1009,8 +1013,47 @@ describe('groupCandidates / inAnyStereoPair', () => {
     expect(inAnyStereoPair(null, zl)).toBe(false);
   });
 
-  it('offers every STR speaker but the master, the stock ones and the pair halves', () => {
-    expect(groupCandidates(M, zl, [M, A, L, S]).map((b) => b.host)).toEqual([A.host]);
+  const R = { host: '192.0.2.74', port: 8888, deviceID: 'R74', kind: 'STR' };
+
+  // A pair joins a group as ONE member, by its pair master (field bundle
+  // 2026-11-15); its other half alone served two masters (#792).
+  it('offers every STR speaker but the master and the stock ones, a pair once as its pair master', () => {
+    expect(groupCandidates(M, zl, [M, A, L, R, S]).map((b) => b.host)).toEqual([A.host, L.host]);
     expect(groupCandidates(null, zl, [M, A])).toEqual([]);
+  });
+
+  // A zone on a pair master never starts the audio (#792).
+  it('offers nothing to a pair half as the master', () => {
+    expect(groupCandidates(L, zl, [M, A, L, R])).toEqual([]);
+    expect(groupCandidates(R, zl, [M, A, L, R])).toEqual([]);
+  });
+
+  it('maps a pair half onto its pair master and names the pair', () => {
+    expect(isPairMaster(L, zl, [L, R])).toBe(true);
+    expect(isPairMaster(R, zl, [L, R])).toBe(false);
+    expect(pairUnitBox(R, zl, [L, R])).toBe(L);
+    expect(pairUnitBox(A, zl, [L, R, A])).toBe(A);
+    // The pair master not in the list: nothing to address the pair by.
+    expect(pairUnitBox(R, zl, [R])).toBeNull();
+    const named = { P: { stereo: { ...zl.P.stereo, name: 'Kitchen' } } };
+    expect(pairUnitName(R, named, [L, R], (p) => p.name, (b) => b.deviceID)).toBe('Kitchen');
+    expect(pairUnitName(R, zl, [L, R], () => '', (b) => b.deviceID)).toBe('MDNS72 + R74');
+    expect(pairUnitName(A, zl, [L, R, A], () => 'x', (b) => b.deviceID)).toBe('');
+  });
+
+  // A pair that is a member of a group belongs to that group with both halves,
+  // so the group's frame shows it (zoneOrPairMaster).
+  it('puts both halves of a member pair into the group that the pair master joined', () => {
+    const inZone = {
+      M70: { master: 'M70', members: [{ deviceID: 'FW72', ip: L.host }] },
+      MDNS72: { master: 'M70', senderIP: M.host, stereo: zl.P.stereo },
+      R74: { stereo: zl.P.stereo },
+    };
+    const boxes = [M, L, R];
+    expect(zoneOrPairMaster(L, inZone, boxes)).toBe('M70');
+    expect(zoneOrPairMaster(R, inZone, boxes)).toBe('M70');
+    // Not in a group: the pair is its own frame, keyed by its pair master.
+    const alone = { MDNS72: { stereo: zl.P.stereo }, R74: { stereo: zl.P.stereo } };
+    expect(zoneOrPairMaster(R, alone, boxes)).toBe('MDNS72');
   });
 });

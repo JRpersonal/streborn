@@ -573,15 +573,60 @@ export function anyInLiveGroup(boxes, zoneLive) {
   return (boxes || []).some((b) => inLiveGroup(b, zoneLive));
 }
 
+// pairOfBox returns the live stereo pair a box is half of, or null.
+export function pairOfBox(box, zoneLive) {
+  if (!box) return null;
+  return stereoPairsOf(zoneLive || {}).find((p) => inStereoPair(box, p)) || null;
+}
+
+// isPairMaster reports whether a box is the MASTER half of a live stereo pair:
+// the half a group addresses the pair by.
+export function isPairMaster(box, zoneLive, boxes) {
+  const pair = pairOfBox(box, zoneLive);
+  if (!pair) return false;
+  const mb = pairMasterBox(pair, boxes);
+  return !!mb && mb.host === box.host;
+}
+
+// pairUnitBox maps a box onto what a group takes it in as: a stereo pair joins
+// a group as ONE member, by its pair master, the way the Bose app forms it
+// (a SoundTouch 30 leading a pair of SoundTouch 10s played, field bundle
+// 2026-11-15), so a pair half is the pair master's box. A pair whose master is
+// not in the list answers null; any other speaker answers itself.
+export function pairUnitBox(box, zoneLive, boxes) {
+  const pair = pairOfBox(box, zoneLive);
+  if (!pair) return box || null;
+  return pairMasterBox(pair, boxes);
+}
+
+// pairUnitName is the name of the stereo pair a box is half of, for a pair
+// shown as one unit: the pair's own name (nameOf, the stored display name),
+// else its halves' names joined with " + ". '' for a speaker in no pair. The
+// caller adds the "(stereo)" marking (ui2.side.pairName).
+export function pairUnitName(box, zoneLive, boxes, nameOf, labelOf) {
+  const pair = pairOfBox(box, zoneLive);
+  if (!pair) return '';
+  const named = typeof nameOf === 'function' ? String(nameOf(pair) || '').trim() : '';
+  if (named) return named;
+  const label = typeof labelOf === 'function' ? labelOf : (b) => (b && (b.friendlyName || b.name || b.host)) || '';
+  return pairMemberBoxes(pair, boxes)
+    .map((x) => (x.box ? label(x.box) : ((x.member && (x.member.ip || x.member.deviceID)) || '')))
+    .filter(Boolean)
+    .join(' + ');
+}
+
 // groupCandidates lists the speakers a group led by masterBox can offer to
-// take in or out: every STR speaker other than the master that is not half of
-// a live stereo pair (#792, a pair cannot join a group as a unit). In the
-// list's own order. The Music view's group chips and the UI 2.0 sidebar both
-// start from it, so the two never offer a different set.
+// take in or out, in the list's own order: every STR speaker other than the
+// master, with a live stereo pair offered ONCE, as its pair master. The pair's
+// other half is not offered: on its own it served two masters and played out
+// of step with its pair (#792). A pair cannot LEAD a group (a zone on a pair
+// master never starts the audio, #792), so a pair half as masterBox offers
+// nothing. The Music view's group chips and the UI 2.0 sidebar both start
+// from it, so the two never offer a different set.
 export function groupCandidates(masterBox, zoneLive, boxes) {
-  if (!masterBox) return [];
+  if (!masterBox || inAnyStereoPair(masterBox, zoneLive)) return [];
   return strBoxes(boxes).filter((b) => b.host && b.host !== masterBox.host
-    && !inAnyStereoPair(b, zoneLive));
+    && (!inAnyStereoPair(b, zoneLive) || isPairMaster(b, zoneLive, boxes)));
 }
 
 // stereoUndoTargets lists the speakers an "undo pair" has to be sent to, master
@@ -661,6 +706,11 @@ export function stereoSelectionPick({ left, right, liveIDs, candIDs }) {
 // belongs to, counting both native zones AND stereo pairs, or "" when the box
 // is on its own. Shared so the speaker picker and the multi-room page agree on
 // which speakers form which group.
+//
+// A pair that is a MEMBER of a group belongs to that group with both halves:
+// only the pair master is in the leader's zone (the other half reports the
+// pair alone), so the other half follows its pair master into the group's key
+// and the group's frame shows the pair as one unit.
 export function zoneOrPairMaster(box, zoneLive, boxes) {
   if (!box || box.kind === 'stock') return '';
   const native = masterOf(box.deviceID, zoneLive);
@@ -669,7 +719,8 @@ export function zoneOrPairMaster(box, zoneLive, boxes) {
     const bxs = pairMemberBoxes(p, boxes).map((x) => x.box).filter(Boolean);
     if (!bxs.some((b) => b.host === box.host)) continue;
     const mb = pairMasterBox(p, boxes) || bxs[0] || null;
-    return mb ? up(mb.deviceID) : '';
+    if (!mb) return '';
+    return masterOf(mb.deviceID, zoneLive) || up(mb.deviceID);
   }
   return '';
 }
