@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} втратить профіль Wi-Fi, ім'я пристрою, пов'язаний обліковий запис Marge, дім AirPlay і прив'язки Spotify Connect. Сам STR залишається встановленим. Колонка перезапуститься у стан з коробки. Продовжити?",
   "settingsView.trueFactoryResetRunning": "Стирання...",
   "settingsView.trueFactoryResetDoneToast": "Колонку стерто ({{n}} записів) і перезапускається. Відкрийте застосунок Bose для iOS, щоб налаштувати з нуля.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} зберігає Wi-Fi у своєму радіочипі, який очищує лише власне скидання колонки. Утримуйте Preset 1 і Гучність − приблизно 10 секунд, доки вона не перезапуститься, а потім налаштуйте її в застосунку Bose. STR залишається встановленим.",
   "settingsView.trueFactoryResetFailed": "Повне заводське скидання не вдалося: {{msg}}",
   "settingsView.removeSTRBtn": "Видалити STR (колонка повертається до звичайного Bose)",
   "settingsView.removeSTRHelp": "Повністю видаляє STR. Спершу вийміть USB-накопичувач із колонки, інакше під час наступного перезапуску STR перевстановиться.",

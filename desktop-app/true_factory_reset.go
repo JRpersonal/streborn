@@ -32,6 +32,13 @@ type TrueFactoryResetResult struct {
 	Message    string   `json:"message"`
 	Log        string   `json:"log"`
 	WipedFiles []string `json:"wipedFiles"`
+	// ButtonReset is true on a speaker whose Wi-Fi lives in its radio chip
+	// (the BCO chassis: scm ST20 and ST30, Portable; no wlan0). Nothing here
+	// can clear that store, but Bose's own button reset does (verified on a
+	// scm ST20, 2026-11-15). There only STR's own Wi-Fi copies are removed,
+	// so the agent cannot put the old network back, the speaker is not
+	// restarted, and the owner is told to press the buttons.
+	ButtonReset bool `json:"buttonReset,omitempty"`
 }
 
 // TrueFactoryReset performs a deeper reset than Bose's hardware
@@ -102,6 +109,11 @@ func (a *App) TrueFactoryReset(host string) TrueFactoryResetResult {
 PERSIST=/mnt/nv/BoseApp-Persistence/1
 NV_STR=/mnt/nv/streborn
 WIPED=""
+# A speaker without wlan0 keeps its Wi-Fi in its radio chip, which these
+# Bose files do not reach: there only STR's own copies below go, and Bose's
+# button reset does the rest (TrueFactoryResetResult.ButtonReset).
+if [ -d /sys/class/net/wlan0 ]; then
+echo "TFR_CHASSIS:wpa"
 for f in NetworkProfiles.xml AirPlay2_Home.xml SPOTIFY.SpotifyConnectUserName.xml SPOTIFY.SpotifyAlexaUserName.xml; do
   if [ -f "$PERSIST/$f" ]; then
     rm -f "$PERSIST/$f" && WIPED="$WIPED $PERSIST/$f"
@@ -125,6 +137,9 @@ cat > "$PERSIST/SystemConfigurationDB.xml" <<'XML'
 </SystemConfiguration>
 XML
 WIPED="$WIPED ${PERSIST}/SystemConfigurationDB.xml(reseeded)"
+else
+echo "TFR_CHASSIS:bco"
+fi
 if [ -f "$NV_STR/wlan-creds" ]; then
   rm -f "$NV_STR/wlan-creds" && WIPED="$WIPED $NV_STR/wlan-creds"
 fi
@@ -143,10 +158,29 @@ echo "TFR_WIPED:$WIPED"
 		a.logger.Warn("true_factory_reset: wipe failed", "host", host, "err", err, "message", res.Message)
 		return res
 	}
+	bco := false
 	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "TFR_CHASSIS:bco" {
+			bco = true
+		}
 		if strings.HasPrefix(line, "TFR_WIPED:") {
 			res.WipedFiles = append(res.WipedFiles, strings.Fields(strings.TrimPrefix(line, "TFR_WIPED:"))...)
 		}
+	}
+	if bco {
+		// Before the empty-list check: a speaker that never had an STR copy
+		// of its Wi-Fi has nothing to remove here, and that is fine. It used
+		// to be wiped and restarted like an ST10 and came straight back on
+		// its old network while the app said "done" (2026-11-15).
+		res.Step = "button-reset"
+		res.OK = true
+		res.ButtonReset = true
+		res.Message = "This speaker keeps its Wi-Fi in its radio chip, which only Bose's own reset clears. " +
+			"Hold Preset 1 and Volume - on the speaker for about 10 seconds until it restarts, " +
+			"then set it up with the Bose app. STR stays installed."
+		a.logger.Info("true_factory_reset: radio-chip speaker, STR's Wi-Fi copies removed, the owner finishes with the button reset",
+			"host", host, "wipedCount", len(res.WipedFiles))
+		return res
 	}
 	if len(res.WipedFiles) == 0 {
 		res.Message = "wipe returned no file list — script may have failed silently. See log."

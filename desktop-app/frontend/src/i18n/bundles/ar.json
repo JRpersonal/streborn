@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "ستفقد {{name}} ملف Wi-Fi واسم الجهاز وحساب Marge المقترن ومنزل AirPlay وارتباطات Spotify Connect. يبقى STR نفسه مثبّتًا. تعيد السمّاعة التشغيل إلى حالة خروج من الصندوق. هل تتابع؟",
   "settingsView.trueFactoryResetRunning": "جارٍ المسح...",
   "settingsView.trueFactoryResetDoneToast": "مُسحت السمّاعة ({{n}} مدخل) وهي قيد إعادة التشغيل. افتح تطبيق Bose على iOS للإعداد من الصفر.",
+  "settingsView.trueFactoryResetButtonNeeded": "يحفظ {{name}} شبكة Wi-Fi في شريحة الراديو الخاصة به، ولا يمسحها إلا إعادة الضبط الخاصة بالسماعة نفسها. اضغط مع الاستمرار على Preset 1 وخفض الصوت − نحو 10 ثوانٍ حتى تعيد التشغيل، ثم اضبطها بتطبيق Bose. يبقى STR مثبتًا.",
   "settingsView.trueFactoryResetFailed": "فشلت إعادة الضبط المصنعي الكاملة: {{msg}}",
   "settingsView.removeSTRBtn": "إزالة STR (تعود السمّاعة إلى Bose عادية)",
   "settingsView.removeSTRHelp": "يزيل STR بالكامل. أخرج ذاكرة USB من السمّاعة أولًا، وإلا فستعيد تثبيت STR عند إعادة التشغيل التالية.",

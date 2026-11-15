@@ -1292,6 +1292,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} 會失去它的 Wi-Fi 設定、裝置名稱、配對的 Marge 帳號、AirPlay 家庭，以及 Spotify Connect 綁定。STR 本身會留著。喇叭會重新開機進入出廠狀態。要繼續嗎？",
   "settingsView.trueFactoryResetRunning": "清除中 ...",
   "settingsView.trueFactoryResetDoneToast": "喇叭已清除（{{n}} 筆）並正在重新開機。打開 Bose 的 iOS 應用程式，從頭設定一次。",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} 把 Wi-Fi 存在無線晶片裡，只有喇叭本身的重設能清除。請同時按住 Preset 1 和音量 − 約 10 秒直到它重新啟動，再用 Bose App 設定。STR 會保留安裝。",
   "settingsView.trueFactoryResetFailed": "完整回復原廠失敗：{{msg}}",
   "settingsView.removeSTRBtn": "移除 STR（喇叭變回單純的 Bose）",
   "settingsView.removeSTRHelp": "完整移除 STR。如果喇叭上還插著 USB 隨身碟，請先拔掉，不然喇叭下次開機又會再裝一次 STR。",

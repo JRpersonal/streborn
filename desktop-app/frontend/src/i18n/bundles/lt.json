@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} praras Wi-Fi profilį, įrenginio pavadinimą, susietą Marge paskyrą, AirPlay-home ir Spotify Connect susiejimus. Pats STR lieka įdiegtas. Garsiakalbis paleidžiamas iš naujo į būseną iš dėžutės. Tęsti?",
   "settingsView.trueFactoryResetRunning": "Šalinama...",
   "settingsView.trueFactoryResetDoneToast": "Garsiakalbis išvalytas ({{n}} elementų) ir paleistas iš naujo. Atverkite Bose iOS programą, kad sukonfigūruotumėte iš naujo.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} Wi-Fi laiko savo radijo lustyje, kurį išvalo tik paties garsiakalbio atstatymas. Laikykite nuspaudę Preset 1 ir Garsumas − apie 10 sekundžių, kol jis persikraus, tada nustatykite jį Bose programėle. STR lieka įdiegta.",
   "settingsView.trueFactoryResetFailed": "Visiškas gamyklinis atstatymas nepavyko: {{msg}}",
   "settingsView.removeSTRBtn": "Pašalinti STR (atgal į Bose)",
   "settingsView.removeSTRHelp": "Pašalina STR ir grąžina garsiakalbį į įprastą Bose gamyklinę būseną. Pirmiausia išimkite USB atmintinę iš garsiakalbio, kitaip kito paleidimo metu jis vėl įdiegs STR. Skirtingai nei atstatymas viršuje, kuris STR palieka įdiegtą.",

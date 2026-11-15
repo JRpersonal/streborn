@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} perdra son profil Wi-Fi, son nom d'appareil, son compte Marge associé, son foyer AirPlay et ses liaisons Spotify Connect. STR lui-même reste installé. L'enceinte redémarre en état de sortie d'usine. Continuer ?",
   "settingsView.trueFactoryResetRunning": "Effacement...",
   "settingsView.trueFactoryResetDoneToast": "Enceinte effacée ({{n}} entrées) et redémarrage en cours. Ouvrez l'application Bose iOS pour la configurer de zéro.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} garde son Wi-Fi dans sa puce radio, que seule la réinitialisation de l'enceinte elle-même efface. Maintenez Preset 1 et Volume − environ 10 secondes jusqu'au redémarrage, puis configurez-la avec l'app Bose. STR reste installé.",
   "settingsView.trueFactoryResetFailed": "Échec de la réinitialisation d'usine complète : {{msg}}",
   "settingsView.removeSTRBtn": "Supprimer STR (l'enceinte redevient une Bose standard)",
   "settingsView.removeSTRHelp": "Supprime complètement STR. Retirez d'abord la clé USB de l'enceinte, sinon elle réinstalle STR au prochain redémarrage.",

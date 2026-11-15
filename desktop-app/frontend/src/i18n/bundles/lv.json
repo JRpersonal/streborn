@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} zaudēs Wi-Fi profilu, ierīces nosaukumu, saistīto Marge kontu, AirPlay-home un Spotify Connect savienojumus. Pats STR paliek instalēts. Skaļrunis tiek restartēts stāvoklī kā no kastes. Turpināt?",
   "settingsView.trueFactoryResetRunning": "Notiek noņemšana...",
   "settingsView.trueFactoryResetDoneToast": "Skaļrunis notīrīts ({{n}} elementi) un restartēts. Atveriet Bose iOS lietotni, lai no jauna konfigurētu.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} glabā Wi-Fi savā radio mikroshēmā, ko notīra tikai paša skaļruņa atiestatīšana. Turiet nospiestu Preset 1 un Skaļums − apmēram 10 sekundes, līdz tas pārstartējas, pēc tam iestatiet to ar Bose lietotni. STR paliek instalēts.",
   "settingsView.trueFactoryResetFailed": "Pilnīga rūpnīcas atiestatīšana neizdevās: {{msg}}",
   "settingsView.removeSTRBtn": "Noņemt STR (atpakaļ uz Bose)",
   "settingsView.removeSTRHelp": "Noņem STR un atgriež skaļruni parastā Bose rūpnīcas stāvoklī. Vispirms izņemiet USB zibatmiņu no skaļruņa, citādi nākamajā startēšanā tas atkal instalēs STR. Atšķirībā no atiestatīšanas augšpusē, kas STR atstāj instalētu.",

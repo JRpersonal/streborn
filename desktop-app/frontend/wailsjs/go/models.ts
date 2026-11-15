@@ -1545,6 +1545,7 @@ export namespace main {
 	    message: string;
 	    log: string;
 	    wipedFiles: string[];
+	    buttonReset?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TrueFactoryResetResult(source);
@@ -1557,6 +1558,7 @@ export namespace main {
 	        this.message = source["message"];
 	        this.log = source["log"];
 	        this.wipedFiles = source["wipedFiles"];
+	        this.buttonReset = source["buttonReset"];
 	    }
 	}
 	export class UninstallSTRResult {

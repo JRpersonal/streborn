@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} straci profil Wi-Fi, nazwę urządzenia, sparowane konto Marge, AirPlay-home i powiązania Spotify Connect. Samo STR pozostaje zainstalowane. Głośnik uruchomi się ponownie w stanie z pudełka. Kontynuować?",
   "settingsView.trueFactoryResetRunning": "Usuwanie...",
   "settingsView.trueFactoryResetDoneToast": "Głośnik wyczyszczony ({{n}} elementów) i uruchomiony ponownie. Otwórz aplikację Bose iOS, aby skonfigurować od nowa.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} przechowuje Wi-Fi w swoim układzie radiowym, który czyści tylko własny reset głośnika. Przytrzymaj Preset 1 i Głośność − przez około 10 sekund, aż się uruchomi ponownie, a potem skonfiguruj go w aplikacji Bose. STR pozostaje zainstalowany.",
   "settingsView.trueFactoryResetFailed": "Pełny reset fabryczny nie powiódł się: {{msg}}",
   "settingsView.removeSTRBtn": "Usuń STR (powrót do Bose)",
   "settingsView.removeSTRHelp": "Usuwa STR i przywraca głośnik do zwykłego stanu fabrycznego Bose. Najpierw wyjmij pendrive USB z głośnika, inaczej przy następnym restarcie zainstaluje STR ponownie. Inaczej niż reset powyżej, który zachowuje STR.",
