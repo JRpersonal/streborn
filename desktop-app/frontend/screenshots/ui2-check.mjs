@@ -57,7 +57,8 @@ async function run(page) {
   check(rows.length === STR_ROWS, `one row per speaker, the pair as one (${rows.length} of ${STR_ROWS})`);
   check(new Set(rows.map((r) => r.host)).size === rows.length, 'no speaker listed twice');
   const pair = rows.filter((r) => r.pair);
-  check(pair.length === 1 && /\(stereo\)/.test(pair[0].text) && !pair[0].act, 'the stereo pair is one "(stereo)" row without "+"');
+  // Since #1916 an idle pair joins a group as one member, through its own "+".
+  check(pair.length === 1 && /\(stereo\)/.test(pair[0].text) && pair[0].act === 'add', 'the stereo pair is one "(stereo)" row, and its "+" adds it as one');
   check(!rows.some((r) => r.host === host('Terrace right')), 'the second pair half has no row of its own');
   const off = row('Garage');
   check(off.offline && /Offline/.test(off.text) && /Offline/.test(off.label) && !off.act, 'the offline speaker is greyed, says Offline and offers no "+"');
@@ -68,7 +69,7 @@ async function run(page) {
   check(row('Dining room').act === 'remove' && /Take Dining room out/.test(row('Dining room').actLabel), 'a member can be taken out ("-")');
   check(!row('Living Room').act, 'the master has no "-"');
   const adds = rows.filter((r) => r.act === 'add').map((r) => r.host).sort();
-  const idle = ['Office', 'Bedroom', 'Hall', 'Bathroom', 'Studio'].map(host).sort();
+  const idle = ['Office', 'Bedroom', 'Hall', 'Bathroom', 'Studio', 'Terrace left'].map(host).sort();
   check(adds.join() === idle.join(), `"+" on exactly the idle speakers (${adds.length})`);
   check(/Play on Office too/.test(row('Office').actLabel), 'the "+" names its speaker');
 
