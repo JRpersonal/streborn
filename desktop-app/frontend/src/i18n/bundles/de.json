@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Im Radio zeigen",
   "ui2.player.goLibrary": "In der Mediathek zeigen",
   "ui2.player.goSpotify": "In Spotify zeigen",
+  "ui2.slider.wheelHint": "Zum Ändern über dem Regler scrollen oder wischen",
   "ui2.popover.close": "Schließen",
   "setup.stayOnPage": "Bitte bleib auf dieser Seite und lass die App geöffnet, bis die Installation abgeschlossen ist.",
   "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",

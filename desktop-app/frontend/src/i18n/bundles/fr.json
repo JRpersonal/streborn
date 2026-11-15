@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Afficher dans l'onglet Radio",
   "ui2.player.goLibrary": "Afficher dans l'onglet Bibliothèque",
   "ui2.player.goSpotify": "Afficher dans l'onglet Spotify",
+  "ui2.slider.wheelHint": "Faites défiler ou balayez sur le curseur pour le modifier",
   "ui2.popover.close": "Fermer",
   "setup.stayOnPage": "Restez sur cette page et laissez l'application ouverte jusqu'à la fin de l'installation.",
   "setup.provisionNoAnswer": "pas de réponse de l'enceinte",

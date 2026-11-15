@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Mostrar en Radio",
   "ui2.player.goLibrary": "Mostrar en Biblioteca",
   "ui2.player.goSpotify": "Mostrar en Spotify",
+  "ui2.slider.wheelHint": "Desplázate o desliza sobre el control deslizante para cambiarlo",
   "ui2.popover.close": "Cerrar",
   "setup.stayOnPage": "Permanece en esta página y mantén la app abierta hasta que termine la instalación.",
   "setup.provisionNoAnswer": "sin respuesta del altavoz",

@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Pokaż w karcie Radio",
   "ui2.player.goLibrary": "Pokaż w karcie Biblioteka",
   "ui2.player.goSpotify": "Pokaż w karcie Spotify",
+  "ui2.slider.wheelHint": "Przewiń lub przesuń palcami nad suwakiem, aby go zmienić",
   "ui2.popover.close": "Zamknij",
   "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy.",
   "setup.provisionNoAnswer": "brak odpowiedzi głośnika",

@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "عرض في تبويب راديو",
   "ui2.player.goLibrary": "عرض في تبويب المكتبة",
   "ui2.player.goSpotify": "عرض في تبويب Spotify",
+  "ui2.slider.wheelHint": "مرّر أو اسحب فوق شريط التمرير لتغييره",
   "ui2.popover.close": "إغلاق",
   "setup.stayOnPage": "يرجى البقاء في هذه الصفحة وإبقاء التطبيق مفتوحاً حتى انتهاء التثبيت.",
   "setup.provisionNoAnswer": "لا استجابة من السمّاعة",

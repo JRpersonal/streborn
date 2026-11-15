@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Radyo sekmesinde göster",
   "ui2.player.goLibrary": "Kitaplık sekmesinde göster",
   "ui2.player.goSpotify": "Spotify sekmesinde göster",
+  "ui2.slider.wheelHint": "Değiştirmek için kaydırıcının üzerinde kaydırın veya parmağınızı kaydırın",
   "ui2.popover.close": "Kapat",
   "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun.",
   "setup.provisionNoAnswer": "hoparlörden yanıt yok",

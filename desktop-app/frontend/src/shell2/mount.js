@@ -45,6 +45,7 @@ import {
 import './banners.css';
 import { mountHelp, syncHelpView } from './help/help.js';
 import { wireDonateButtons } from '../donate.js';
+import { wireSliderWheel } from '../sliderwheel.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -356,6 +357,25 @@ function wire(frame, skip) {
   // The Speakers area (phase 3): its row of places and its routes.
   initSpeakersArea(frame, deps);
   wireStatesEnv(frame);
+  wireSliders(frame);
+}
+
+// wireSliders gives every slider in the shell the mouse wheel and the touchpad
+// (sliderwheel.js: one delegated listener, so the Levels rows and the Sound
+// tab's sliders that re-renders create are covered too), and a tooltip that
+// says so on the sliders that have none of their own.
+function wireSliders(frame) {
+  wireSliderWheel(frame);
+  frame.addEventListener('pointerover', (e) => {
+    const el = e.target && typeof e.target.closest === 'function' ? e.target.closest('input[type="range"]') : null;
+    if (!el) return;
+    // Only a title this code wrote is replaced (it follows the language); a
+    // slider whose own code names it (balance, the player volume) keeps that.
+    if (el.title && el.title !== el.dataset.ui2WheelHint) return;
+    const hint = t('ui2.slider.wheelHint');
+    el.title = hint;
+    el.dataset.ui2WheelHint = hint;
+  });
 }
 
 // wireStatesEnv hands the states of phase 5 (state.js) what their buttons

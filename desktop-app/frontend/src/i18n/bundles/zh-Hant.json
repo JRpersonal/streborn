@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "在電台中顯示",
   "ui2.player.goLibrary": "在音樂庫中顯示",
   "ui2.player.goSpotify": "在 Spotify 中顯示",
+  "ui2.slider.wheelHint": "在滑桿上捲動或滑動即可調整",
   "ui2.popover.close": "關閉",
   "setup.stayOnPage": "安裝完成前，請留在這個頁面，也別關掉應用程式。",
   "setup.provisionNoAnswer": "喇叭沒有回應",

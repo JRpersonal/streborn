@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "Rādīt cilnē Radio",
   "ui2.player.goLibrary": "Rādīt cilnē Bibliotēka",
   "ui2.player.goSpotify": "Rādīt cilnē Spotify",
+  "ui2.slider.wheelHint": "Ritiniet vai velciet virs slīdņa, lai to mainītu",
   "ui2.popover.close": "Aizvērt",
   "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta.",
   "setup.provisionNoAnswer": "skaļrunis neatbild",

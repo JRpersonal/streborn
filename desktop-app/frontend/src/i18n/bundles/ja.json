@@ -2093,6 +2093,7 @@
   "ui2.player.goRadio": "ラジオで表示",
   "ui2.player.goLibrary": "ライブラリで表示",
   "ui2.player.goSpotify": "Spotifyで表示",
+  "ui2.slider.wheelHint": "スライダーの上でスクロールまたはスワイプして変更します",
   "ui2.popover.close": "閉じる",
   "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。",
   "setup.provisionNoAnswer": "スピーカーから応答がありません",
