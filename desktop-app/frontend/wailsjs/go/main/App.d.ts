@@ -174,6 +174,8 @@ export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallRes
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
 
+export function LibraryFolder(arg1:string,arg2:string):Promise<main.LibraryContainer>;
+
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
 export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;

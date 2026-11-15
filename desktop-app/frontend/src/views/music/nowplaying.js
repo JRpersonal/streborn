@@ -187,6 +187,13 @@ export function resetNowPlaying() {
   state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;
   state.optimisticUntil = 0;
   state.lastStatusHTML = '';
+  // The queue belongs to the speaker it was read from. refreshQueue keeps the
+  // last reply when a read fails, and a speaker without the agent's queue
+  // fails every read, so without this the previous speaker's folder stayed
+  // the one that "plays" here for good: on the line, and as the folder the
+  // UI 2.0 player's "Show in Library" opened.
+  state.queue = null;
+  renderQueueControls();
 }
 
 // renderNowPlayingBar paints the now-playing status line purely from cached
@@ -396,6 +403,20 @@ export function renderNowPlayingBar() {
     const main = $('statusMain');
     if (main) main.innerHTML = statusHTML;
     requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
+  }
+  // The UI 2.0 player's "Show in Radio / Library / Spotify" button follows
+  // what plays, from the same state this line was drawn from
+  // (shell2/gotosource.js). The classic layout sets no hook.
+  const goSource = reportHook('nowPlaying');
+  if (goSource) {
+    goSource({
+      source: src,
+      location: loc,
+      decodedLocation: decodeProxyUrl(loc),
+      queue: state.queue,
+      lastLibraryPlay: state.lastLibraryPlay,
+      optimistic,
+    });
   }
 }
 

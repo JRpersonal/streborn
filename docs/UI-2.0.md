@@ -169,6 +169,11 @@ releases later.
   window from its answer, and confirms a pause only from a play-state read
   that worked. A stereo pair whose master is offline has no button: the
   other half does not own the pair's transport. `shell2/sessionplay.js`.
+- **Back to where it plays from.** Next to the player's title a small button
+  names the tab the music comes from (Radio, Library or Spotify) and opens
+  it; a music-library folder opens at that folder, under its trail. Inputs
+  without a tab of their own (Bluetooth, AUX, TV, AirPlay) get no button
+  (`shell2/gotosource.js`).
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.
