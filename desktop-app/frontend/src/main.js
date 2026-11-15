@@ -179,6 +179,7 @@ import {
   clearNoticeDismissal,
 } from './utils.js';
 import { isPlaying, strBoxes } from './boxes.js';
+import { statusNowItem } from './shell2/playclaim.js';
 import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -1913,6 +1914,11 @@ async function refreshBoxPlaying(force) {
     // read lands as "not playing" here, so the UI 2.0 sidebar confirms a
     // pause only with a read that worked (shell2/sessionplay.js).
     const readAt = { ...(state.boxPlayReadAt || {}) };
+    // What each speaker plays (name, source, stream) from the same answers:
+    // the UI 2.0 sidebar's join review says what a speaker stops before "+"
+    // takes it into a group, and the name alone cannot tell whether that is
+    // the group's own music (shell2/playclaim.js joinReview, sameMusic).
+    const items = {};
     results.forEach((r, i) => {
       let playing = false;
       let isPaused = false;
@@ -1923,6 +1929,7 @@ async function refreshBoxPlaying(force) {
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
         isPaused = ps === 'PAUSE_STATE' && src !== 'STANDBY';
+        if (playing) items[polled[i].deviceID] = statusNowItem(xml);
       }
       map[polled[i].deviceID] = playing;
       paused[polled[i].deviceID] = isPaused;
@@ -1930,6 +1937,7 @@ async function refreshBoxPlaying(force) {
     state.boxPlaying = map;
     state.boxPaused = paused;
     state.boxPlayReadAt = readAt;
+    state.boxNow = items;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }

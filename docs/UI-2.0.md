@@ -72,8 +72,12 @@ releases later.
   answers both questions: which speaker you control (one click on its row)
   and who plays along (`+` on an idle speaker adds it to what's playing,
   `−` takes a member out again). Choosing a row and its `+` are two
-  different clicks. A stereo pair is one row, "Living room (stereo)",
-  because it only plays as a whole. The playing group stays pinned on
+  different clicks. A speaker that plays something else of its own gets a
+  `+` too, but joining ends that music, so its `+` first opens a review in
+  its own row that names what stops and what plays instead ("Kitchen stops
+  Jazz24 and plays FluxFM"), with Add and Cancel (Escape cancels); an idle
+  speaker or one in standby joins at once. A stereo pair is one row,
+  "Living room (stereo)", because it only plays as a whole. The playing group stays pinned on
   top (the one you control first when several play; with nothing playing,
   the speaker you control, so a group can be put together before Play);
   with many speakers the rest of the list scrolls on its own. Offline
