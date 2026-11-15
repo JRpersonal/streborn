@@ -328,6 +328,7 @@ import {
   favStationsJSON,
   initMusicView,
   isFav,
+  leaveKeyEditView,
   loadMusicTabVolume,
   loadPresets,
   loadStickRegion,
@@ -926,6 +927,9 @@ function switchView(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   syncShellNav(view);
+  // A station search the UI 2.0 preview started for one key ends with the
+  // Radio view, so a "Put on key" elsewhere starts on the first key again.
+  if (view !== 'box') leaveKeyEditView();
   // The UI 2.0 player's volume and transport follow the polling scope (hidden
   // in Setup). Coming back out of Setup into a view other than Music, the
   // slider reads the speaker once, so its first drag starts from the real

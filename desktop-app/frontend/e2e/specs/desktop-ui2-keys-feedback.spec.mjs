@@ -1,5 +1,6 @@
 // The key tiles of the UI 2.0 preview report in their own line (#1286 phase 5,
-// docs/UI-2.0.md rules 2 and 3): a recall the speaker refused, a hold-to-save,
+// docs/UI-2.0.md rules 2 and 3): a recall the speaker refused, a save from a
+// hold (the hold opens the key's choices, saving what plays is the first),
 // a rename and the Transfer say what happened where it happened, named with
 // the key and the speaker, done only after the speaker's read-back, and the
 // keyboard stays on the key. The last block checks the current layout.
@@ -24,6 +25,15 @@ async function holdKey(page, slot) {
   await page.mouse.down();
   await runFor(page, 1_300);
   await page.mouse.up();
+}
+
+// holdToSave is the same save in the UI 2.0 preview, where a hold opens the
+// key's choices (ui2keyedit.js) and saving what plays is the first of them.
+async function holdToSave(page, slot) {
+  await holdKey(page, slot);
+  const save = page.locator('#ui2KeyEdit [data-ke="save"]');
+  await expect(save).toBeFocused();
+  await save.click();
 }
 
 // Key 6 is not one of STR's keys but the speaker's own (a Deezer mix), which
@@ -73,7 +83,7 @@ test.describe('UI 2.0 key tiles', () => {
       // The read-back takes a moment, so the line can be seen before it.
       await mock.set('GetPresets', { delayMs: 1500 });
       await mock.resetCalls();
-      await holdKey(page, 4);
+      await holdToSave(page, 4);
       // Living Room plays its key 2, so the hold copies key 2 onto key 4.
       await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 4 });
       await expect(line(page, 4)).toHaveText(en('ui2.radio.saving', { n: 4, speaker: LR.friendlyName }));
@@ -92,7 +102,7 @@ test.describe('UI 2.0 key tiles', () => {
     test('3. is not called done', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
-      await holdKey(page, 4);
+      await holdToSave(page, 4);
       await runFor(page, 1_000);
       await expect(line(page, 4)).toHaveText(en('ui2.radio.notConfirmed', { n: 4, speaker: LR.friendlyName }));
       await expect(line(page, 4)).toHaveClass(/is-warn/);

@@ -7,12 +7,13 @@ import { keyFailedVerdict, keyHolds, keySavingVerdict, keyVerdict } from '../../
 import { stationLogoChain } from '../../logos.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { state } from '../../state.js';
-import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, rowSlots, slotKey } from '../../presetrows.js';
+import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, rowSlots, slotKey, slotRow } from '../../presetrows.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel, showError, showToast } from '../../utils.js';
 import { loadPresets } from './presets.js';
 import { wireRowTabs } from './presettiles.js';
 import { presetMoveOffer } from './save.js';
 import { preferMp3SiblingForBox } from './search.js';
+import { takeKeyAssignTarget } from './ui2keyedit.js';
 
 // showSlotPicker renders the shared preset slot-picker modal (six keys per row). Callers pass
 // the title, subtitle and an onPick(slot) that does the actual save; closing the
@@ -43,12 +44,17 @@ export function showSlotPicker({ title, subtitle, onPick, box, report = null }) 
   const target = box || state.currentBox;
   const own = !box || (state.currentBox && box.host === state.currentBox.host);
   const rows = boxPresetRows(target, own ? state.presets : null);
-  const row = clampRow(state.presetRow, rows);
+  // A key the user chose to fill from its choices in the UI 2.0 preview
+  // (ui2keyedit.js) is where the keyboard starts, on its own row even when
+  // the grid has moved to the other one since; otherwise the first key of
+  // the row the grid shows.
+  const want = takeKeyAssignTarget(target);
+  const row = clampRow(want ? slotRow(want) : state.presetRow, rows);
   renderPickSlots({ row, rows, onPick, target, report });
   const modal = $('pickModal');
   modal.classList.remove('hidden');
   dialogSemantics(modal);
-  const first = $('pickGrid').querySelector('.pick-slot');
+  const first = (want && $('pickGrid').querySelector(`.pick-slot[data-slot="${want}"]`)) || $('pickGrid').querySelector('.pick-slot');
   if (first) first.focus();
 }
 

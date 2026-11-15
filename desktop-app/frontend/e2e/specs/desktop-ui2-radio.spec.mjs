@@ -419,7 +419,7 @@ test.describe('UI 2.0 Radio', () => {
     test('21. the hold hint is said once, and the first station row shows without scrolling', async ({ app }) => {
       const { page } = app;
       await expect(rows(page)).toHaveCount(STATIONS.length);
-      await expect(page.locator('#ui2KeysHint')).toContainText(en('ui2.radio.keysHoldHint'));
+      await expect(page.locator('#ui2KeysHint')).toContainText(en('ui2.radio.keysEditHint'));
       await expect(page.locator('#presets .preset-hint:visible')).toHaveCount(0);
       const main = await page.locator('#ui2Main').boundingBox();
       const first = await rows(page).first().locator('.ui2-st-main').boundingBox();
