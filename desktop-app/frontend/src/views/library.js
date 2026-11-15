@@ -515,6 +515,11 @@ async function libraryBrowseCurrent() {
       start += LIB_PAGE;
       const done = got < LIB_PAGE || (acc.totalMatches && start >= acc.totalMatches);
       const capped = acc.returned >= LIB_MAX;
+      // Only the first page names the folder's own class (app_library.go), so it
+      // is read before the first-page block below turns first off. Read after
+      // it, it was never set, and a folder longer than one page kept the
+      // server's A to Z order in this list (#1487).
+      if (first) containerClass = page.containerClass || '';
       if (first) {
         // Show the first page immediately, keep paging the rest in the background.
         libState.page = acc;
@@ -524,7 +529,6 @@ async function libraryBrowseCurrent() {
         first = false;
         nudgeBoxLibrary(libState.currentUDN);
       }
-      if (first) containerClass = page.containerClass || '';
       if (done || capped) {
         libState.capped = capped && !done;
         // A folder longer than one page is put in album track order here,
