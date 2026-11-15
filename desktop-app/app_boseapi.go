@@ -610,6 +610,12 @@ type BoxPresetInfo struct {
 	// by the location). Meaningful only when StrOrigin is set; an agent that
 	// sends the one sends the other.
 	Lost bool `json:"lost"`
+	// Row2Key: the agent's mark on a StrOrigin slot that is the placeholder
+	// it keeps on a key with nothing on its single press but a station on its
+	// double press (#1910). A single press plays the second row, so the grid
+	// shows the key's single press as empty, never as a station on the
+	// speaker. Absent from agents before the fix, which never wrote one.
+	Row2Key bool `json:"row2Key"`
 }
 
 // BoxPresets reads the box's own preset list (incl. foreign sources). Empty until

@@ -1139,6 +1139,26 @@ export function isLostStrKey(bp) {
   return bp.name !== WEBHOOK_PLACEHOLDER_NAME && isStrOriginLocation(bp.location);
 }
 
+// isRow2Placeholder reports whether a speaker-side preset is the placeholder
+// the agent keeps on a key with nothing on its single press but a station on
+// its double press (#1910). The firmware refuses an empty key and never
+// reports its press, so the agent parks STR's own /stream/N form there, and a
+// single press plays the key's second row. It is not a station on the speaker,
+// so the key's single-press tile stays empty. Only the agent can tell (it sees
+// the store's second row), so only its row2Key mark counts; an agent from
+// before #1910 never writes such a placeholder.
+export function isRow2Placeholder(bp) {
+  return !!bp && bp.strOrigin === true && bp.row2Key === true;
+}
+
+// shownBoxPreset picks the speaker-side preset a key's single-press tile
+// draws: the box's own entry for slot, unless it is the agent's row-2
+// placeholder, which leaves the tile empty.
+export function shownBoxPreset(boxPresets, slot) {
+  const bp = (boxPresets || []).find((x) => x.slot === slot);
+  return bp && !isRow2Placeholder(bp) ? bp : null;
+}
+
 // nativeSlotStale decides whether a preset tile the active-slot number points
 // at should still light up while the speaker plays a NATIVE radio descriptor.
 // The speaker keeps playing the station it recalled even after the box's own

@@ -41,6 +41,7 @@ import {
   shouldAdoptPresetArt,
   showError,
   showToast,
+  shownBoxPreset,
 } from '../../utils.js';
 import { renderGroupControl } from './group.js';
 import { renderNowPlayingBar } from './nowplaying.js';
@@ -140,8 +141,10 @@ export function renderPresets() {
     // A slot STR does not manage may still hold one of the box's own presets
     // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
     // can recall it, instead of a misleading "empty" tile. The firmware has
-    // six keys of its own, so a row-2 slot never holds one.
-    const bp = !p && i <= ROW_SIZE ? (state.boxPresets || []).find(x => x.slot === i) : null;
+    // six keys of its own, so a row-2 slot never holds one. The placeholder
+    // the agent keeps on a key whose single press plays its second row
+    // (#1910) is no station of its own: that tile stays empty.
+    const bp = !p && i <= ROW_SIZE ? shownBoxPreset(state.boxPresets, i) : null;
     // The queue match is checked outside the location gate below: right after
     // a click on a library album or folder key the optimistic location is
     // empty (the key stores no stream URL) and only the optimistic queue card
