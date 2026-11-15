@@ -13,6 +13,7 @@ import {
 } from '../../groups.js';
 import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
+import { WHEEL_END, WHEEL_START } from '../../sliderwheel.js';
 import { $, escapeAttr, escapeHtml, getBoxLabel, showError, showToast } from '../../utils.js';
 // The UI 2.0 sidebar shows the same pending marks and the player the same
 // group volume; both are no-ops while the preview shell is not mounted.
@@ -672,6 +673,13 @@ export function renderGroupControl() {
     vol.onpointerup = endDrag;
     vol.onpointercancel = endDrag;
     vol.onblur = endDrag;
+    // A wheel or touchpad gesture in UI 2.0 (sliderwheel.js) is a drag too:
+    // the baseline is the level it starts from, and the poll waits for it.
+    vol.addEventListener(WHEEL_START, () => {
+      groupPanelState.dragging = true;
+      captureGroupBaseline(parseInt(vol.value, 10));
+    });
+    vol.addEventListener(WHEEL_END, endDrag);
     vol.oninput = () => { noteGroupPanelWrite(); setGroupVolume(parseInt(vol.value, 10)); };
   }
   cont.querySelectorAll('.group-member-vol input[type=range]').forEach(el => {
@@ -680,6 +688,8 @@ export function renderGroupControl() {
     el.onpointerup = endMemberDrag;
     el.onpointercancel = endMemberDrag;
     el.onblur = endMemberDrag;
+    el.addEventListener(WHEEL_START, () => { groupPanelState.dragging = true; });
+    el.addEventListener(WHEEL_END, endMemberDrag);
     el.oninput = () => {
       noteGroupPanelWrite();
       const lbl = document.getElementById('memberVolVal-' + cssId(el.dataset.host));

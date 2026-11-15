@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} وغيرها: {{n}}",
   "ui2.player.levels": "مستويات الصوت",
   "ui2.player.levelsTitle": "مستوى الصوت لكل سمّاعة",
+  "ui2.slider.wheelHint": "مرّر أو اسحب فوق شريط التمرير لتغييره",
   "ui2.popover.close": "إغلاق",
   "setup.stayOnPage": "يرجى البقاء في هذه الصفحة وإبقاء التطبيق مفتوحاً حتى انتهاء التثبيت.",
   "setup.provisionNoAnswer": "لا استجابة من السمّاعة",

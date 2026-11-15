@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + {{n}} andere",
   "ui2.player.levels": "Niveaus",
   "ui2.player.levelsTitle": "Volume per speaker",
+  "ui2.slider.wheelHint": "Scrol of veeg over de schuifregelaar om hem aan te passen",
   "ui2.popover.close": "Sluiten",
   "setup.stayOnPage": "Blijf op deze pagina en houd de app open tot de installatie is afgerond.",
   "setup.provisionNoAnswer": "geen antwoord van de speaker",

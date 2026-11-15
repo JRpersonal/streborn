@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + 另外 {{n}} 個",
   "ui2.player.levels": "音量",
   "ui2.player.levelsTitle": "每個喇叭的音量",
+  "ui2.slider.wheelHint": "在滑桿上捲動或滑動即可調整",
   "ui2.popover.close": "關閉",
   "setup.stayOnPage": "安裝完成前，請留在這個頁面，也別關掉應用程式。",
   "setup.provisionNoAnswer": "喇叭沒有回應",

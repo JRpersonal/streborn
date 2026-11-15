@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} un citi: {{n}}",
   "ui2.player.levels": "Skaļumi",
   "ui2.player.levelsTitle": "Skaļums katram skaļrunim",
+  "ui2.slider.wheelHint": "Ritiniet vai velciet virs slīdņa, lai to mainītu",
   "ui2.popover.close": "Aizvērt",
   "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta.",
   "setup.provisionNoAnswer": "skaļrunis neatbild",

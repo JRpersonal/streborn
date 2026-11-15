@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + 他 {{n}} 台",
   "ui2.player.levels": "音量",
   "ui2.player.levelsTitle": "スピーカーごとの音量",
+  "ui2.slider.wheelHint": "スライダーの上でスクロールまたはスワイプして変更します",
   "ui2.popover.close": "閉じる",
   "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。",
   "setup.provisionNoAnswer": "スピーカーから応答がありません",

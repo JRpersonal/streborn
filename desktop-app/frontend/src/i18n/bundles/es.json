@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + {{n}} más",
   "ui2.player.levels": "Niveles",
   "ui2.player.levelsTitle": "Volumen por altavoz",
+  "ui2.slider.wheelHint": "Desplázate o desliza sobre el control deslizante para cambiarlo",
   "ui2.popover.close": "Cerrar",
   "setup.stayOnPage": "Permanece en esta página y mantén la app abierta hasta que termine la instalación.",
   "setup.provisionNoAnswer": "sin respuesta del altavoz",

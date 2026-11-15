@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + {{n}} weitere",
   "ui2.player.levels": "Lautstärken",
   "ui2.player.levelsTitle": "Lautstärke pro Lautsprecher",
+  "ui2.slider.wheelHint": "Zum Ändern über dem Regler scrollen oder wischen",
   "ui2.popover.close": "Schließen",
   "setup.stayOnPage": "Bitte bleib auf dieser Seite und lass die App geöffnet, bis die Installation abgeschlossen ist.",
   "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",

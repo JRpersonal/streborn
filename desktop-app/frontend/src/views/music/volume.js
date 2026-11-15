@@ -16,6 +16,7 @@ import {
 import { state } from '../../state.js';
 import { playerOnScreen } from '../../statusrefreshscope.js';
 import { pairDisplayName } from '../../stereoNames.js';
+import { WHEEL_END, WHEEL_START } from '../../sliderwheel.js';
 import { $ } from '../../utils.js';
 import { throttledSetVolume } from '../settings.js';
 
@@ -57,9 +58,10 @@ function renderVolumeScope(target = currentPairTarget()) {
   if (wrap) wrap.classList.toggle('is-pair', !!target);
   if (musicVolEl) {
     musicVolEl.setAttribute('aria-label', target ? t('controls.pairVolumeLabel', { name }) : t('controls.volume'));
-    musicVolEl.title = target
-      ? t('controls.pairVolumeTitle', { name }) + '\n' + t('controls.volumeWheelHint')
-      : t('controls.volumeWheelHint');
+    // UI 2.0 turns the slider with the wheel or the touchpad without a click
+    // first (sliderwheel.js), so its hint says so; the classic one keeps its.
+    const hint = state.ui2Shell ? t('ui2.slider.wheelHint') : t('controls.volumeWheelHint');
+    musicVolEl.title = target ? t('controls.pairVolumeTitle', { name }) + '\n' + hint : hint;
   }
   return target;
 }
@@ -313,6 +315,11 @@ export function mountVolume() {
     musicVolEl.addEventListener('pointerleave', () => {
       if (state.musicVolBusy) endBusy();
     });
+    // A wheel or touchpad gesture in UI 2.0 (sliderwheel.js) is held like a
+    // drag: the status poll keeps its hands off the thumb while it runs and
+    // for the same grace period after it ends.
+    musicVolEl.addEventListener(WHEEL_START, beginBusy);
+    musicVolEl.addEventListener(WHEEL_END, endBusy);
 
     // Precise stepping: the +/- buttons and the mouse wheel both nudge the volume
     // by exactly one, sharing one clamped helper. stepVolume mirrors what an
@@ -348,6 +355,9 @@ export function mountVolume() {
     // Rate-limited to one step per notch so a fast flick moves one at a time.
     let volWheelAt = 0;
     musicVolEl.addEventListener('wheel', (e) => {
+      // UI 2.0 hands every slider's wheel to sliderwheel.js (shell2/mount.js),
+      // which also takes a touchpad and the horizontal axis.
+      if (state.ui2Shell) return;
       if (document.activeElement !== musicVolEl) return;
       e.preventDefault();
       const now = Date.now();

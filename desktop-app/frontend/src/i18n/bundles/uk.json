@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} та інші: {{n}}",
   "ui2.player.levels": "Рівні",
   "ui2.player.levelsTitle": "Гучність кожної колонки",
+  "ui2.slider.wheelHint": "Прокрутіть або проведіть над повзунком, щоб змінити його",
   "ui2.popover.close": "Закрити",
   "setup.stayOnPage": "Залишайтеся на цій сторінці та не закривайте застосунок, доки встановлення не завершиться.",
   "setup.provisionNoAnswer": "немає відповіді від динаміка",

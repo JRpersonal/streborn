@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} ir kiti: {{n}}",
   "ui2.player.levels": "Garsumai",
   "ui2.player.levelsTitle": "Kiekvieno garsiakalbio garsumas",
+  "ui2.slider.wheelHint": "Slinkite arba braukite virš šliaužiklio, kad jį pakeistumėte",
   "ui2.popover.close": "Uždaryti",
   "setup.stayOnPage": "Likite šiame puslapyje ir neuždarykite programos, kol diegimas bus baigtas.",
   "setup.provisionNoAnswer": "garsiakalbis neatsako",

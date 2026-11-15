@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} i inne: {{n}}",
   "ui2.player.levels": "Poziomy",
   "ui2.player.levelsTitle": "Głośność każdego głośnika",
+  "ui2.slider.wheelHint": "Przewiń lub przesuń palcami nad suwakiem, aby go zmienić",
   "ui2.popover.close": "Zamknij",
   "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy.",
   "setup.provisionNoAnswer": "brak odpowiedzi głośnika",

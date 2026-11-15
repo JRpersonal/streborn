@@ -2045,6 +2045,7 @@
   "ui2.player.outputGroup": "{{name}} + {{n}} diğer",
   "ui2.player.levels": "Seviyeler",
   "ui2.player.levelsTitle": "Hoparlör başına ses seviyesi",
+  "ui2.slider.wheelHint": "Değiştirmek için kaydırıcının üzerinde kaydırın veya parmağınızı kaydırın",
   "ui2.popover.close": "Kapat",
   "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun.",
   "setup.provisionNoAnswer": "hoparlörden yanıt yok",
