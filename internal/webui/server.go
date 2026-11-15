@@ -515,6 +515,9 @@ type Server struct {
 	wlanMechFn       func() (iface, mech string)
 	wlanAssociatedFn func(iface, ssid string) bool
 	wlanApplyFn      func(iface, mech, ssid, password string, hidden, forgetOthers bool)
+	// wlanCopyFactsFn stands in for what PUT /api/box/wlan/copy reads off the
+	// speaker (wlancopy.go), nil in production.
+	wlanCopyFactsFn func() wlanCopyFacts
 
 	// boxNowReadFn is THE test seam for "what does this speaker play right
 	// now": every own-box now_playing read in this package goes through
@@ -1801,6 +1804,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/wlan/scan", s.handleBoxWLANScan)
+	mux.HandleFunc("/api/box/wlan/copy", s.handleBoxWLANCopy)
 	mux.HandleFunc("/api/box/wlan/networks", s.handleBoxWLANNetworks)
 	mux.HandleFunc("/api/box/wlan/forget-others", s.handleBoxWLANForgetOthers)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)

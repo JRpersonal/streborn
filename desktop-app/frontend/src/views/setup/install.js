@@ -41,9 +41,11 @@ import {
   SaveDiagnosticBundle,
   EventsOn,
   LogSetupWifiStep,
+  KeepSpeakerWiFiCopy,
   boxFetch,
 } from '../../api.js';
 import { wifiStepOutcome, wifiStepRediscoverDelays, wifiStepLogDetail } from '../../wifistep.js';
+import { keepWifiCopy } from '../../wificopy.js';
 import { takeShareOffer, wireShareOffer } from '../../share.js';
 import { verifyInstalledLoop, waitForStableAgent } from '../../agentsettle.js';
 import { deps } from './deps.js';
@@ -945,6 +947,12 @@ function verifyInstalledState(box, onState) {
       }
       if (!(wifiForBox && wifiForBox.ssid)) {
         unplugLine = t('setup.unplugNoWifi');
+        // No Wi-Fi step: the speaker is on a network it was given before STR
+        // (the Bose app, its setup page). Let STR keep its own copy of it now,
+        // store-only, so the offline rescue has one after a power cut
+        // (wificopy.js). Nothing on the speaker's Wi-Fi changes; when the
+        // copy cannot be kept, its Network settings say so quietly.
+        keepWifiCopy(agentBox, 'install', KeepSpeakerWiFiCopy).catch(() => {});
       }
     }
     const failDetails = Object.values(failReasons)

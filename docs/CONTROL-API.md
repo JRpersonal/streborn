@@ -286,6 +286,22 @@ address ranges.
 | `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). A speaker that is already on that network with the password a confirmed switch recorded answers `"status":"unchanged"` with `"unchanged":true` and leaves its connection alone. |
 | `DELETE` | `/api/box/wlan` | `{"reboot":false}` (optional) | Forget the Wi-Fi altogether, for a speaker that should run on its network cable only (#969). See below. |
 | `POST`   | `/api/box/wlan/forget-others` | `{"reboot":false}` (optional) | Forget every stored network but the one the speaker is on. Wi-Fi speakers only. |
+| `PUT`    | `/api/box/wlan/copy` | `{"ssid":"...","password":"..."}` | Give STR its own copy of the network the speaker is ALREADY on, store-only: writes `wlan-creds` (and the supersede baseline) and nothing else, never the radio, the firmware's store, `wpa_supplicant.conf`, the apply marker or a restart. See below. |
+
+`PUT /api/box/wlan/copy` fills in a missing copy, it never replaces one. It
+answers `200` with `{"status":"stored-copy","stored":true,"evidence":"..."}`
+only where the agent itself reports `wlanCreds: "missing"` (a coprocessor
+chassis without STR's copy), and `409` with `{"code":"..."}` otherwise:
+`already-has-copy`, `retired` (the owner moved the speaker outside STR),
+`not-needed` (the chassis keeps its Wi-Fi by itself), `speaker-in-setup`,
+`no-firmware-profile` (the firmware reports no stored Wi-Fi profile at all, the
+one state in which run.sh would push the copy at an online speaker),
+`other-network` (the speaker names, or stores, a different network) or `busy`
+(a Wi-Fi change is running). `400` with `"code":"invalid"` for an empty SSID,
+a password shorter than 8 or longer than 64 characters, or a line break in
+either. The copy is used exactly like any other: by the offline rescue when the
+speaker has no lease 90 s into a boot. An agent older than the endpoint answers
+the path with its phone page, so a client must check for the JSON status.
 
 `DELETE /api/box/wlan` only runs when the speaker is on a network cable AND the
 request reached it over that cable: its default route must leave through a
