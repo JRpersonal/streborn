@@ -71,7 +71,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// optimistic data alone (the two-screens-disagree family). After a
 	// few consecutive hangs the read is paused for a while — the answer cannot
 	// change while the firmware refuses to give one.
-	if s.groupReadAllowed() {
+	if s.mayHoldStereoPair() && s.groupReadAllowed() {
 		gctx, gcancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		g, gerr := c.GetGroup(gctx)
 		gcancel()
@@ -181,6 +181,29 @@ func (s *Server) rememberedZoneMembers() []rememberedMember {
 		out = append(out, rememberedMember{IP: m.IP, DeviceID: m.DeviceID, Name: names[m.IP]})
 	}
 	return out
+}
+
+// mayHoldStereoPair reports whether this speaker can be half of a stereo pair
+// at all. Bose pairs only two SoundTouch 10s, so on every other model the
+// /getGroup read can only ever answer "no pair", and on the scm/BCO chassis
+// (ST20, ST30, Portable) it never answers at all: each try is a request that
+// hangs on BoseApp's web server. A fresh ST20 asked three times every five
+// minutes went silent on :8090 for 5 s to 3 min shortly after each burst
+// (2026-11-15), and with it the app's status and network view and the Wi-Fi
+// light. An unknown model keeps the read, so a pair is never missed for a
+// name the agent has not learned yet.
+func (s *Server) mayHoldStereoPair() bool {
+	if s.boxNameFn == nil {
+		return true
+	}
+	_, model := s.boxNameFn()
+	return modelMayHoldStereoPair(model)
+}
+
+// modelMayHoldStereoPair is the model rule of mayHoldStereoPair.
+func modelMayHoldStereoPair(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	return m == "" || strings.Contains(m, "soundtouch 10")
 }
 
 // groupReadAllowed reports whether the stereo /getGroup read should be tried,
