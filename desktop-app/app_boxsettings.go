@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,7 +37,15 @@ func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 // otherwise store an "&" that takes the speaker's UPnP renderer down on the
 // next boot, and Spotify and the music library with it.
 func (a *App) SetBoxName(host string, port int, name string) error {
-	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": speakername.Sanitise(name)})
+	stored := speakername.Sanitise(name)
+	if err := a.boxPut(host, port, "/api/box/name", map[string]string{"name": stored}); err != nil {
+		slog.Warn("speaker name change refused", "host", host, "new", stored, "err", err)
+		return err
+	}
+	// Logged so a speaker that turns up under another room's name can be
+	// traced to the moment and the PC that renamed it.
+	slog.Info("speaker name changed from the app", "host", host, "new", stored)
+	return nil
 }
 
 // RepairSpeakerName is the one-tap fix for a speaker whose stored name its
