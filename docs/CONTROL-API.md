@@ -149,8 +149,8 @@ from the speaker's notes.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/alarms` | - | The alarm document plus a read-only `status` block. |
-| `PUT`  | `/api/alarms` | the whole document | Replaces it wholesale. LAN only. |
+| `GET`  | `/api/alarms` | - | The alarm document, its `rev`, plus a read-only `status` block. |
+| `PUT`  | `/api/alarms` | the whole document, ideally with the `rev` it was read at | Replaces it wholesale. With `rev`, only while that is still the stored revision, otherwise `409`. LAN only. |
 
 An alarm is
 `{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
@@ -174,9 +174,32 @@ or is snoozed, `ring` (`{"id","ringing","snoozedUntil","snoozes"}`); it is
 ignored on the way in. `nextFire` comes from the speaker, so it is the honest answer to "when
 will this actually go off", including its zone and its clock.
 
+**Revisions: do not undo another app's change.** Every app that edits the
+alarms (STR's phone page, a third-party remote) sends the WHOLE document, so an
+app that saves an old copy silently undoes whatever another app changed since
+it read it: an alarm switched off from one app came back on when the phone page
+saved its copy (discussion #1918). `rev` prevents that:
+
+- `GET` answers `"rev":<n>`, a number that goes up by one with every save
+  (`0` for a document not saved since revisions exist). It survives an agent
+  restart.
+- Send that `rev` back with the `PUT`. If another app saved in between, the
+  speaker stores nothing and answers `409` with the current document (same
+  shape as `GET`, with its current `rev`). Apply your user's one change to
+  that document (find alarms by `id`, never by position) and `PUT` again with
+  the new `rev`.
+- A `PUT` without `rev` replaces the document whatever is stored, the way it
+  always did, so older apps keep working. A `PUT` that sends `rev` must handle
+  `409`. Note that `0` is a real revision, not "none".
+- A successful `PUT` answers the stored document with its new `rev`; keep that
+  one for the next save rather than the one you sent.
+
+An agent from before revisions answers no `rev` and ignores one sent to it.
+
 ```bash
 curl -s $BOX/api/alarms
 curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
+  "rev":4,
   "zone":"Europe/Berlin",
   "alarms":[{"id":"weekdays","enabled":true,"hour":6,"minute":30,
              "days":[1,2,3,4,5],"slot":3,"volume":25,"autoOff":60,"snooze":9}]}'
