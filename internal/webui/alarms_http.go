@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -19,8 +20,23 @@ type alarmView struct {
 	Alarms []alarm.Alarm `json:"alarms"`
 	// SkipDates are the days without an alarm still to come; past ones are
 	// left out here and dropped from NAND on the next save.
-	SkipDates []string    `json:"skipDates"`
-	Status    alarmStatus `json:"status"`
+	SkipDates []string `json:"skipDates"`
+	// Rev is the document's revision. An editor that sends it back with its
+	// PUT gets a 409 instead of a silent overwrite when another app saved in
+	// between (discussion #1918).
+	Rev    int64       `json:"rev"`
+	Status alarmStatus `json:"status"`
+}
+
+// alarmPut is the body of a PUT: the document, plus the revision the editor
+// read it at. Rev is a pointer because absent and 0 differ: an editor that
+// does not know about revisions (an older phone page, a third-party app)
+// sends none and keeps the old replace-whatever-is-there behaviour, while 0 is
+// the revision of a document never saved since revisions existed. The outer
+// field shadows Document.Rev for encoding/json; the store sets that one itself.
+type alarmPut struct {
+	alarm.Document
+	Rev *int64 `json:"rev"`
 }
 
 // alarmStatus is what the editor needs to tell the user the truth about what
@@ -47,8 +63,13 @@ type alarmStatus struct {
 
 // handleAlarms serves the per-speaker alarm clock document.
 //
-// GET /api/alarms -> the whole document plus the status block.
+// GET /api/alarms -> the whole document, its rev, plus the status block.
 // PUT /api/alarms <- the whole document; validated, then persisted on NAND.
+//
+// A PUT that carries "rev" is written only while that is still the stored
+// revision; otherwise it answers 409 with the current document, so the editor
+// can re-apply its one change to it. A PUT without "rev" replaces wholesale,
+// as before (discussion #1918).
 //
 // LAN only, like every other write to the speaker's configuration. The PUT
 // replaces the document wholesale (an editor always sends all of it) and is the
@@ -67,8 +88,15 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.alarmView())
 	case http.MethodPut:
-		var d alarm.Document
-		if !decodeJSONRequest(w, r, 1<<16, &d) {
+		var body alarmPut
+		if !decodeJSONRequest(w, r, 1<<16, &body) {
+			return
+		}
+		d := body.Document
+		if body.Rev != nil && *body.Rev != s.alarms.Rev() {
+			// Checked again under the store's lock on the write itself; this
+			// early answer only spares the validation below.
+			s.alarmStale(w, r, *body.Rev)
 			return
 		}
 		if d.SkipDates == nil {
@@ -96,19 +124,50 @@ func (s *Server) handleAlarms(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := s.alarms.Set(d); err != nil {
+		var err error
+		if body.Rev != nil {
+			_, err = s.alarms.SetAt(d, *body.Rev)
+		} else {
+			err = s.alarms.Set(d)
+		}
+		if errors.Is(err, alarm.ErrStale) {
+			s.alarmStale(w, r, *body.Rev)
+			return
+		}
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// An alarm moved earlier has to be picked up now, not at the next
 		// evaluation.
 		s.KickAlarms()
-		s.logger.Info("alarms: saved from an editor", "count", len(d.Alarms))
+		s.logger.Info("alarms: saved from an editor", "count", len(d.Alarms),
+			"rev", s.alarms.Rev(), "sent_rev", alarmRevArg(body.Rev),
+			"remote", r.RemoteAddr, "ua", r.UserAgent())
 		writeJSON(w, http.StatusOK, s.alarmView())
 	default:
 		w.Header().Set("Allow", "GET, PUT")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// alarmStale answers a PUT whose revision is no longer the stored one: 409,
+// with the current document in the same shape GET answers, so the editor can
+// re-apply its own change to it without another round trip.
+func (s *Server) alarmStale(w http.ResponseWriter, r *http.Request, sent int64) {
+	v := s.alarmView()
+	s.logger.Info("alarms: save refused, the editor's copy is stale",
+		"sent_rev", sent, "rev", v.Rev, "remote", r.RemoteAddr, "ua", r.UserAgent())
+	writeJSON(w, http.StatusConflict, v)
+}
+
+// alarmRevArg renders the revision a PUT named, for the log: "none" for an
+// editor that sent none.
+func alarmRevArg(rev *int64) string {
+	if rev == nil {
+		return "none"
+	}
+	return strconv.FormatInt(*rev, 10)
 }
 
 // checkAlarmKeys refuses an enabled alarm on a key with nothing stored on it
@@ -162,7 +221,7 @@ func (s *Server) alarmView() alarmView {
 	// left open never causes a NAND write.
 	upcoming := doc
 	upcoming.DropPastSkipDates(now)
-	v := alarmView{Zone: doc.Zone, Alarms: doc.Alarms, SkipDates: upcoming.SkipDates}
+	v := alarmView{Zone: doc.Zone, Alarms: doc.Alarms, SkipDates: upcoming.SkipDates, Rev: doc.Rev}
 	if v.Alarms == nil {
 		v.Alarms = []alarm.Alarm{}
 	}
@@ -196,6 +255,7 @@ func (s *Server) AlarmsSnapshot() any {
 	v := s.alarmView()
 	return map[string]any{
 		"zone":          v.Zone,
+		"rev":           v.Rev,
 		"count":         len(v.Alarms),
 		"clock_trusted": v.Status.ClockTrusted,
 		"zone_resolved": v.Status.ZoneResolved,

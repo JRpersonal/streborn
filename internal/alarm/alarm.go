@@ -19,6 +19,7 @@ package alarm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -158,6 +159,13 @@ type Document struct {
 	// list is one editor and one cap. Sorted and de-duplicated by Validate,
 	// at most MaxSkipDates long.
 	SkipDates []string `json:"skipDates,omitempty"`
+	// Rev is the document's revision: 0 for a document never saved since
+	// revisions existed, and one higher after every successful Set. The Store
+	// owns it; whatever a caller puts here is ignored on the way in. It lets
+	// an editor say "replace the document I read", so a page left open with
+	// an old copy cannot silently undo a change another app made meanwhile
+	// (discussion #1918). Persisted, so it survives an agent restart.
+	Rev int64 `json:"rev,omitempty"`
 }
 
 // Location resolves the document's zone. An empty zone is UTC, not an error,
@@ -349,11 +357,18 @@ func freeID(taken map[string]bool, hour, minute, from int) string {
 	}
 }
 
+// ErrStale is SetAt's answer when the document changed since the caller read
+// it: another editor saved in between.
+var ErrStale = errors.New("the alarms were changed from somewhere else in the meantime")
+
 // Store is the NAND-persisted document.
 type Store struct {
 	path   string
 	logger *slog.Logger
 
+	// wmu serialises writers, so the revision check, the bump and the file
+	// write of one save cannot interleave with another's.
+	wmu sync.Mutex
 	mu  sync.RWMutex
 	doc Document
 }
@@ -433,34 +448,65 @@ func (s *Store) Get() Document {
 	return cloneDoc(s.doc)
 }
 
-// Set validates, replaces and persists the document. This is the only NAND
-// write in this file, and it happens on a save from an editor, never on a fire.
+// Set validates, replaces and persists the document, whatever revision it was
+// read at. This is the only NAND write in this file, and it happens on a save
+// from an editor, never on a fire.
 func (s *Store) Set(d Document) error {
-	if err := d.Validate(); err != nil {
-		return err
+	_, err := s.set(d, false, 0)
+	return err
+}
+
+// SetAt is Set for an editor that names the revision it read: when the stored
+// document has moved on since, nothing is written and the answer is ErrStale.
+// It returns the document as stored, revision included.
+func (s *Store) SetAt(d Document, rev int64) (Document, error) {
+	return s.set(d, true, rev)
+}
+
+// Rev returns the stored document's revision.
+func (s *Store) Rev() int64 {
+	if s == nil {
+		return 0
 	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.doc.Rev
+}
+
+func (s *Store) set(d Document, check bool, rev int64) (Document, error) {
+	if err := d.Validate(); err != nil {
+		return Document{}, err
+	}
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
 	s.mu.Lock()
+	cur := s.doc.Rev
+	if check && rev != cur {
+		s.mu.Unlock()
+		return Document{}, ErrStale
+	}
+	d.Rev = cur + 1
 	s.doc = cloneDoc(d)
 	s.mu.Unlock()
 	if s.path == "" {
-		return nil
+		return cloneDoc(d), nil
 	}
 	b, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
-		return err
+		return Document{}, err
 	}
 	// Durable write (fsync + rename): a plain write can leave a 0-byte file
 	// behind a standby power cut.
 	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
-		return err
+		return Document{}, err
 	}
 	// The backup only ever holds a document that was written whole.
 	_ = atomicfile.WriteFile(s.path+".bak", b, 0o644)
-	return nil
+	return cloneDoc(d), nil
 }
 
 func cloneDoc(d Document) Document {
-	out := Document{Zone: d.Zone, Alarms: make([]Alarm, 0, len(d.Alarms))}
+	out := Document{Zone: d.Zone, Rev: d.Rev, Alarms: make([]Alarm, 0, len(d.Alarms))}
 	if len(d.SkipDates) > 0 {
 		out.SkipDates = append([]string(nil), d.SkipDates...)
 	}
