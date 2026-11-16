@@ -970,8 +970,9 @@ stage_ram_binary() {
 # cold boot skipped it and raced the mount.
 #
 # Gate the wait on a USB BLOCK DEVICE being present. By the time run.sh
-# runs (~boot+30s, after the Bose mesh is up) USB has long since
-# enumerated, so an absent /sys/block/sda means the box is genuinely
+# runs (after S97 shelby_local, which rc.local's own USB-storage gate
+# already held for up to 30s whenever a stick was enumerating) USB has long
+# since enumerated, so an absent /sys/block/sda means the box is genuinely
 # stickless: we add ZERO delay to the normal NAND-only steady-state
 # boot. Only when a stick IS plugged (block device present, filesystem
 # possibly still mounting) do we wait, up to 25s, for /media/sda1.
