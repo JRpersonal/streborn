@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} perderá su perfil Wi-Fi, el nombre del dispositivo, la cuenta Marge emparejada, el hogar AirPlay y los vínculos de Spotify Connect. STR sigue instalado. El altavoz se reinicia a estado de fábrica. ¿Continuar?",
   "settingsView.trueFactoryResetRunning": "Borrando...",
   "settingsView.trueFactoryResetDoneToast": "Altavoz borrado ({{n}} entradas) y reiniciando. Abre la aplicación Bose iOS para configurarlo desde cero.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} guarda su Wi-Fi en su chip de radio, que solo borra el propio restablecimiento del altavoz. Mantén pulsados Preset 1 y Volumen − unos 10 segundos hasta que se reinicie y luego configúralo con la app de Bose. STR sigue instalado.",
   "settingsView.trueFactoryResetFailed": "Error en el restablecimiento de fábrica completo: {{msg}}",
   "settingsView.removeSTRBtn": "Eliminar STR (el altavoz vuelve a ser un Bose normal)",
   "settingsView.removeSTRHelp": "Elimina STR por completo. Retira primero la memoria USB del altavoz, de lo contrario reinstala STR en el próximo reinicio.",

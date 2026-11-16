@@ -1292,6 +1292,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} will lose its Wi-Fi profile, device name, paired Marge account, AirPlay home, and Spotify Connect bindings. STR itself stays installed. The speaker reboots into out-of-box state. Continue?",
   "settingsView.trueFactoryResetRunning": "Wiping...",
   "settingsView.trueFactoryResetDoneToast": "Speaker wiped ({{n}} entries) and rebooting. Open the Bose iOS app to onboard from scratch.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} keeps its Wi-Fi in its radio chip, which only the speaker's own reset clears. Hold Preset 1 and Volume − for about 10 seconds until it restarts, then set it up with the Bose app. STR stays installed.",
   "settingsView.trueFactoryResetFailed": "True factory reset failed: {{msg}}",
   "settingsView.removeSTRBtn": "Remove STR (speaker goes back to plain Bose)",
   "settingsView.removeSTRHelp": "Removes STR completely. If a USB stick is still plugged into the speaker, take it out first, otherwise the speaker installs STR again on the next restart.",

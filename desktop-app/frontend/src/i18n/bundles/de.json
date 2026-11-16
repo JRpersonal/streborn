@@ -1292,6 +1292,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} verliert sein WLAN-Profil, den Gerätenamen, den gepairten Marge-Account, das AirPlay-Home und die Spotify-Connect-Bindung. STR selbst bleibt installiert. Der Lautsprecher startet im OOB-Zustand neu. Fortfahren?",
   "settingsView.trueFactoryResetRunning": "Wird gelöscht ...",
   "settingsView.trueFactoryResetDoneToast": "Lautsprecher gelöscht ({{n}} Einträge) und startet neu. Öffne die Bose-iOS-App, um von vorn einzurichten.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} speichert sein WLAN im Funkchip, und den leert nur der eigene Reset des Lautsprechers. Halte Preset 1 und Lautstärke − etwa 10 Sekunden gedrückt, bis er neu startet, und richte ihn dann mit der Bose-App ein. STR bleibt installiert.",
   "settingsView.trueFactoryResetFailed": "Echter Werks-Reset fehlgeschlagen: {{msg}}",
   "settingsView.removeSTRBtn": "STR entfernen (Lautsprecher wird wieder reines Bose)",
   "settingsView.removeSTRHelp": "Entfernt STR komplett. Falls noch ein USB-Stick im Lautsprecher steckt, zieh ihn vorher ab, sonst installiert der Lautsprecher STR beim nächsten Neustart erneut.",

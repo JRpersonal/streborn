@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} verliest zijn wifi-profiel, apparaatnaam, gekoppelde Marge-account, AirPlay-thuis en Spotify Connect-koppelingen. STR zelf blijft geïnstalleerd. De speaker herstart in uit-de-doos-toestand. Doorgaan?",
   "settingsView.trueFactoryResetRunning": "Wissen...",
   "settingsView.trueFactoryResetDoneToast": "Speaker gewist ({{n}} items) en herstart. Open de Bose iOS-app om vanaf nul in te stellen.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} bewaart zijn wifi in zijn radiochip, en die wist alleen de eigen reset van de speaker. Houd Preset 1 en Volume − ongeveer 10 seconden ingedrukt tot hij opnieuw start, en stel hem daarna in met de Bose-app. STR blijft geïnstalleerd.",
   "settingsView.trueFactoryResetFailed": "Volledige fabrieksreset mislukt: {{msg}}",
   "settingsView.removeSTRBtn": "STR verwijderen (terug naar Bose)",
   "settingsView.removeSTRHelp": "Verwijdert STR en zet de speaker terug naar een gewone Bose-fabriekstoestand. Haal eerst de USB-stick uit de speaker, anders installeert hij STR bij de volgende herstart opnieuw. Anders dan de reset hierboven, die STR geïnstalleerd houdt.",

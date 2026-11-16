@@ -1157,6 +1157,7 @@
   "settingsView.trueFactoryResetConfirmBody": "{{name}} Wi-Fi profilini, cihaz adını, bağlı Marge hesabını, AirPlay-home ve Spotify Connect eşleştirmelerini kaybedecek. STR'nin kendisi kurulu kalır. Hoparlör kutudan yeni çıkmış gibi bir duruma yeniden başlatılır. Devam edilsin mi?",
   "settingsView.trueFactoryResetRunning": "Kaldırılıyor...",
   "settingsView.trueFactoryResetDoneToast": "Hoparlör temizlendi ({{n}} öğe) ve yeniden başlatıldı. Yeniden yapılandırmak için Bose iOS uygulamasını açın.",
+  "settingsView.trueFactoryResetButtonNeeded": "{{name}} Wi-Fi bilgisini radyo çipinde tutar ve bunu yalnızca hoparlörün kendi sıfırlaması temizler. Yeniden başlayana kadar Preset 1 ve Ses − tuşlarını yaklaşık 10 saniye basılı tut, ardından Bose uygulamasıyla kur. STR yüklü kalır.",
   "settingsView.trueFactoryResetFailed": "Tam fabrika sıfırlaması başarısız: {{msg}}",
   "settingsView.removeSTRBtn": "STR'yi kaldır (Bose'a geri dön)",
   "settingsView.removeSTRHelp": "STR'yi kaldırır ve hoparlörü normal Bose fabrika durumuna döndürür. Önce USB belleği hoparlörden çıkarın, aksi halde bir sonraki başlatmada STR'yi yeniden kurar. Yukarıdaki, STR'yi kurulu bırakan sıfırlamanın aksine.",
