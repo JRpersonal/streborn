@@ -155,11 +155,14 @@ describe('the stages', () => {
 
   // A coprocessor Wi-Fi speaker that hung in its own restart (every port
   // closed): waiting does nothing for it, unplugging it does.
-  it('lead with unplugging for 30 seconds instead of waiting when the verdict says so', () => {
+  it('lead with unplugging for 5 minutes instead of waiting when the verdict says so', () => {
     expect(darkChecklistSteps('SoundTouch 20', { unplugFirst: true }).map((s) => s.id)).toEqual(['unplug', 'power', 'wifi', 'dark']);
     expect(darkChecklistSteps('SoundTouch 20', { unplugFirst: false }).map((s) => s.id)).toEqual(['wait', 'power', 'wifi', 'dark']);
     const en = bundle('en');
-    expect(en['darkCheck.unplug']).toMatch(/30 seconds/);
+    // Minutes, not seconds: a hung module needed several minutes without power
+    // in the 2026-11-16 field test; 30 s left it dark.
+    expect(en['darkCheck.unplug']).toMatch(/5 minutes/);
+    expect(en['darkCheck.unplug']).not.toMatch(/30 seconds/);
     expect(en['darkCheck.unplug']).toMatch(/3 minutes/);
     setLocale('en');
     const html = darkChecklistHtml({ name: 'Kitchen', box: { model: 'SoundTouch 20' }, context: 'update', framed: true, unplugFirst: true });
@@ -349,7 +352,7 @@ describe('the words', () => {
     }
   });
 
-  it('warn before the update in all 13 languages, naming the speaker, 30 seconds and 3 minutes', () => {
+  it('warn before the update in all 13 languages, naming the speaker, 5 minutes and 3 minutes', () => {
     const en = bundle('en');
     for (const l of LANGS) {
       const b = bundle(l);
@@ -361,7 +364,8 @@ describe('the words', () => {
       }
       for (const k of ['update.darkRiskBody', 'updateAll.noteDarkRisk']) {
         expect(b[k], `${l}: ${k}`).toContain('{{name}}');
-        expect(b[k], `${l}: ${k}`).toMatch(/30/);
+        expect(b[k], `${l}: ${k}`).toMatch(/5/);
+        expect(b[k], `${l}: ${k} still says 30`).not.toMatch(/30/);
         expect(b[k], `${l}: ${k}`).toMatch(/3/);
       }
     }

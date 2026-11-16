@@ -2,7 +2,7 @@
 // update with a restart of the whole speaker, on a speaker type that often
 // does not come back from it (the first-generation SoundTouch 20 and 30 and
 // the other coprocessor Wi-Fi speakers), is named in the update confirmation
-// with what to do should it stay dark: unplug it for 30 seconds, wait 3
+// with what to do should it stay dark: unplug it for 5 minutes, wait 3
 // minutes. The Go side decides (BoxRestartPlan): "warn" only where the app
 // cannot route around that restart. The owner is told, never stopped.
 //
@@ -40,13 +40,13 @@ const modal = (page) => page.locator('#warnModal');
 test.describe('classic layout, the app cannot route around the restart', () => {
   test.use(classic(WARN));
 
-  test('the confirmation names the speaker, 30 seconds and 3 minutes, and the update goes on', async ({ app, mock }) => {
+  test('the confirmation names the speaker, 5 minutes and 3 minutes, and the update goes on', async ({ app, mock }) => {
     const { page } = app;
     await page.locator('#speakerUpdateCard #sucUpdate').click();
     await expect(modal(page)).toBeVisible();
     await expect(modal(page).locator('.warn-title')).toContainText(en('update.darkRiskTitle'));
     await expect(page.locator('#warnBody')).toHaveText(en('update.darkRiskBody', { name: HALL.friendlyName }));
-    await expect(page.locator('#warnBody')).toContainText('30 seconds');
+    await expect(page.locator('#warnBody')).toContainText('5 minutes');
     await expect(page.locator('#warnBody')).toContainText('3 minutes');
     await mock.expectCalled('BoxRestartPlan', { pred: onHost(HALL.host) });
     // Nothing has started yet.

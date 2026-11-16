@@ -585,7 +585,7 @@ func unplugAdvised(host string) bool {
 func unreachableVerdictLine(bcoAllClosed bool, cause string) string {
 	if bcoAllClosed {
 		return "outcome: NOT CONFIRMED - box unreachable after the verify window, and it is a coprocessor Wi-Fi speaker (scm) with every port closed (" +
-			portList(darkProbePorts) + "): this chassis can hang in its own restart; unplug it for 30 seconds, plug it back in and wait 3 minutes (a later discovery sighting on the new build adds a corrective line): " + cause
+			portList(darkProbePorts) + "): this chassis can hang in its own restart; unplug it for 5 minutes, plug it back in and wait 3 minutes (a later discovery sighting on the new build adds a corrective line): " + cause
 	}
 	return "outcome: NOT CONFIRMED - box unreachable after the verify window (a later discovery sighting on the new build adds a corrective line): " + cause
 }
