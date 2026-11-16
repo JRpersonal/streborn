@@ -360,7 +360,7 @@ func TestUnreachableVerdictLine(t *testing.T) {
 		t.Errorf("generic verdict: %q", generic)
 	}
 	bco := unreachableVerdictLine(true, "dial tcp: i/o timeout")
-	for _, want := range []string{"NOT CONFIRMED", "coprocessor Wi-Fi speaker", "8090 8091 8080 17008 17000 22", "unplug it for 30 seconds", "wait 3 minutes", "dial tcp: i/o timeout"} {
+	for _, want := range []string{"NOT CONFIRMED", "coprocessor Wi-Fi speaker", "8090 8091 8080 17008 17000 22", "unplug it for 5 minutes", "wait 3 minutes", "dial tcp: i/o timeout"} {
 		if !strings.Contains(bco, want) {
 			t.Errorf("coprocessor verdict lacks %q: %q", want, bco)
 		}
