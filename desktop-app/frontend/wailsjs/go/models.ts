@@ -1630,6 +1630,22 @@ export namespace main {
 	    }
 	}
 	
+	export class WiFiCopyResult {
+	    stored: boolean;
+	    reason: string;
+	    note: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new WiFiCopyResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stored = source["stored"];
+	        this.reason = source["reason"];
+	        this.note = source["note"];
+	    }
+	}
 	export class WingetUpdateResult {
 	    started: boolean;
 	    notYet: boolean;

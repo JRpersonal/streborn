@@ -4,7 +4,7 @@
 // The classic layout has two window-wide banners that name speakers:
 // #boxWedgeBanner (a speaker that accepts playback and never plays; unplug it
 // once) and #boxIssueBanner (no internet, leftovers of another tool, a
-// foreign cloud address, no saved Wi-Fi, a refusal storm, a refused key
+// foreign cloud address, a refusal storm, a refused key
 // press, a long press STR could not keep, a stale folder key, a dropout on a
 // weak Wi-Fi signal, a name the firmware cannot survive). In the preview those banners are hidden
 // (banners.css) and the same words and the same buttons stand where the
@@ -32,7 +32,7 @@ import { restarts } from '../restartwait.js';
 // The order the items show in, the classic banner's own order (the wedge
 // banner sits above the issue banner).
 export const ATTENTION_KINDS = Object.freeze([
-  'wedged', 'noNet', 'conflict', 'foreignCloud', 'noWifi', 'storm',
+  'wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
   'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName',
 ]);
 
@@ -57,7 +57,6 @@ export function speakerIssuesFrom(parts = {}, label = labelOf) {
   for (const b of parts.noNet || []) add(b, { kind: 'noNet' });
   for (const b of parts.conflict || []) add(b, { kind: 'conflict', mod: b.conflictingMod || '' });
   for (const b of parts.foreignCloud || []) add(b, { kind: 'foreignCloud', url: b.foreignCloudURL || '' });
-  for (const b of parts.noWifi || []) add(b, { kind: 'noWifi' });
   for (const b of parts.storm || []) add(b, { kind: 'storm' });
   for (const b of parts.keyErr || []) {
     const line = groupKeyErrorBanners([b], label)[0];
@@ -91,7 +90,6 @@ export function itemText(item) {
     case 'noNet': return { title: t('speaker.noInternetBanner', { name }), text: t('speaker.noInternetHint') };
     case 'conflict': return { text: t('speaker.conflictModBanner', { name, mod: item.mod }) };
     case 'foreignCloud': return { text: t('speaker.foreignCloudBanner', { name, url: item.url }) };
-    case 'noWifi': return { text: t('speaker.noWifiBanner', { name }) };
     case 'storm': return { text: t('speaker.stormBanner', { name }) };
     case 'keyErr': return {
       text: t(item.key, { name, reason: item.reason }),
@@ -107,7 +105,7 @@ export function itemText(item) {
 
 // itemActions: the buttons the classic banner offers for this kind, as
 // [{ act, label, primary }]. dismiss covers the kinds the classic banner lets
-// you dismiss per speaker (warnDismiss:<id>:conflict, :nowifi and :weakwifi).
+// you dismiss per speaker (warnDismiss:<id>:conflict and :weakwifi).
 export function itemActions(item) {
   switch (item.kind) {
     case 'conflict': return [
@@ -115,10 +113,6 @@ export function itemActions(item) {
       { act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'conflict' },
     ];
     case 'foreignCloud': return [{ act: 'cloudRestore', label: t('ui2.attention.cloudRestore'), primary: true }];
-    case 'noWifi': return [
-      { act: 'saveWifi', label: t('speaker.wifiSaveBtn') },
-      { act: 'dismiss', label: t('speaker.issueDismiss'), dismiss: 'nowifi' },
-    ];
     // While a restart the app asked for is still running, the button says so
     // and cannot be pressed: a second press lands on a speaker in the middle
     // of its boot (#1768).

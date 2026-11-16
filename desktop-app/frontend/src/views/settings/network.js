@@ -12,8 +12,11 @@ import {
   BoxWifiScan,
   TryWiFiPassword,
   CurrentWiFi,
+  KeepSpeakerWiFiCopy,
+  StoreSpeakerWiFiCopy,
   boxFetch,
 } from '../../api.js';
+import { keepWifiCopy, noteWifiCopyResult, paintWifiCopyNote } from '../../wificopy.js';
 import { deps, withButtonPending, revealInSettings, confirmFor, reportError, reportDone, reportFieldError, clearFieldErrors } from './shared.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
@@ -60,12 +63,24 @@ export function renderNetworkSections(ctx) {
     netRows += `<div class="muted small">${escapeHtml(t('settingsView.wlanStrConfigured', { ssid: nv.strSSID }))}</div>`;
   }
   const netHeadingKey = (nv.kind === 'wired' || nv.kind === 'unknown-link') ? 'settingsView.netHeading' : 'settingsView.wlanHeading';
+  // STR has no copy of this speaker's Wi-Fi and could not keep one by itself
+  // (wificopy.js). A quiet line with one sentence on what the copy is for,
+  // never a banner: the speaker works without it. Rendered hidden and shown by
+  // paintWifiCopyNote, which also runs when an attempt finishes later.
+  const host = (ctx.box && ctx.box.host) || '';
+  const copyNote = host
+    ? `<div id="wlanCopyNote" class="muted small" data-host="${escapeAttr(host)}" style="margin-top:8px" hidden>
+        <span>${escapeHtml(t('settingsView.wlanCopyNote'))}</span>
+        <button class="btn btn-mini" id="wlanCopyBtn" style="margin-left:6px">${escapeHtml(t('settingsView.wlanCopySaveBtn'))}</button>
+      </div>`
+    : '';
   return {
     group: 'network',
     html: `
     <div data-ui2-sec="wifi" class="settings-section">
       <h3>${escapeHtml(t(netHeadingKey))}</h3>
       ${netRows}
+      ${copyNote}
       <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
       <button class="btn" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
       <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">
@@ -175,19 +190,42 @@ function wireWlanSwitch(box, currentSsid) {
   const toggle = $('wlanSwitchToggle');
   const form = $('wlanSwitchForm');
   if (!toggle || !form) return;
-  // Arriving from the "Save Wi-Fi" banner. The form is the switch form and its
-  // labels talk about MOVING the speaker, so a user who only meant to let STR
-  // keep the current network saved name, language and everything else on the
-  // page, and the banner never went away (mail 2026-10-18). Open the form on the
-  // network the speaker is on now and say that only the password is missing.
-  if (state.wlanStoreFor && box && state.wlanStoreFor === box.host) {
-    state.wlanStoreFor = null;
-    openForStore();
-  }
-  async function openForStore() {
-    form.classList.remove('hidden');
+  // storeMode: the form was opened from the "no copy of the Wi-Fi" note, to
+  // give STR a copy of the network the speaker is on, not to move it. Save
+  // then writes the copy store-only (StoreSpeakerWiFiCopy) and the speaker's
+  // Wi-Fi is not touched. Only an agent too old for that path falls back to
+  // the ordinary save, with its own confirmation.
+  let storeMode = false;
+  // setStoreMode switches the form between the two jobs: the hint line and
+  // the Save button's label say which one it does.
+  const setStoreMode = (on) => {
+    storeMode = !!on;
     const hint = $('wlanStoreHint');
-    if (hint) hint.hidden = false;
+    if (hint) hint.hidden = !storeMode;
+    const save = $('boxWlanSave');
+    if (save) save.textContent = t(storeMode ? 'settingsView.wlanCopySaveBtn' : 'settingsView.wlanSaveBtn');
+  };
+  // The note's button. First the same automatic copy the app tries by
+  // itself (the computer may be on the speaker's Wi-Fi by now); when that
+  // cannot work, the form opens on the current network in store mode. Since
+  // 2026-11-15 this replaces the "Save Wi-Fi" banner, whose button led into
+  // the switch form, read like a required action, and restarted the speaker.
+  const copyBtn = $('wlanCopyBtn');
+  if (copyBtn && box && box.host) {
+    copyBtn.onclick = () => withButtonPending(copyBtn, async () => {
+      const rec = await keepWifiCopy(box, 'button', KeepSpeakerWiFiCopy);
+      if (rec && rec.stored) {
+        paintWifiCopyNote();
+        reportDone('wlanCopyBtn', t('settingsView.wlanCopySaved'), 7000);
+        return;
+      }
+      await openForStore();
+    });
+  }
+  paintWifiCopyNote();
+  async function openForStore() {
+    setStoreMode(true);
+    form.classList.remove('hidden');
     // BCO chassis do not report the SSID, so the computer's own network is the
     // best guess there: the speaker was set up from it in nearly every case.
     let ssid = currentSsid || '';
@@ -206,6 +244,8 @@ function wireWlanSwitch(box, currentSsid) {
     if (pass && !pass.value) pass.focus();
   }
   toggle.onclick = () => {
+    // The toggle is the switch form: moving the speaker, never the copy.
+    setStoreMode(false);
     form.classList.toggle('hidden');
     if (!form.classList.contains('hidden')) {
       loadBoxWlanList();
@@ -268,6 +308,39 @@ function wireWlanSwitch(box, currentSsid) {
     if (i.type === 'password') { i.type = 'text'; b.innerHTML = '&#128064;'; }
     else { i.type = 'password'; b.innerHTML = '&#128065;'; }
   };
+  // saveCopyOnly writes the owner's network as STR's copy, store-only, and
+  // reports whether it handled the save. false means the agent is too old for
+  // the store-only path (or this build lacks the binding): the caller then
+  // runs the ordinary save.
+  async function saveCopyOnly(ssid, pass) {
+    let res;
+    try {
+      res = await StoreSpeakerWiFiCopy(box.host, box.port || 0, ssid, pass);
+    } catch {
+      return false;
+    }
+    if (!res || res.reason === 'agent-too-old') return false;
+    noteWifiCopyResult(box.host, res);
+    if (res.stored) {
+      for (const b of state.boxes || []) { if (b && b.host === box.host) b.wlanCredsMissing = false; }
+      box.wlanCredsMissing = false;
+      $('boxWlanPass').value = '';
+      form.classList.add('hidden');
+      storeMode = false;
+      paintWifiCopyNote();
+      reportDone('boxWlanSave', t('settingsView.wlanCopySaved'), 7000);
+      return true;
+    }
+    const why = String(res.reason || '');
+    if (why === 'refused:other-network') {
+      reportFieldError('boxWlanSSID', t('settingsView.wlanCopyOtherNetwork'));
+    } else if (why === 'no-password' || why === 'password-unusable') {
+      reportFieldError('boxWlanPass', t('settingsView.wlanCopyBadPassword'));
+    } else {
+      reportError('boxWlanSave', t('settingsView.wlanCopyFailed', { reason: why || '?' }));
+    }
+    return true;
+  }
   $('boxWlanSave').onclick = () => withButtonPending($('boxWlanSave'), async () => {
     const ssid = $('boxWlanSSID').value.trim();
     const pass = $('boxWlanPass').value;
@@ -277,9 +350,10 @@ function wireWlanSwitch(box, currentSsid) {
     // Default ON: a speaker that keeps its old networks falls back to them,
     // public hotspots included (field case 2026-10-14).
     const forgetOthers = !$('boxWlanForgetOthers') || $('boxWlanForgetOthers').checked;
-    clearFieldErrors('boxWlanSSID');
+    clearFieldErrors('boxWlanSSID', 'boxWlanPass');
     if (!ssid) { reportFieldError('boxWlanSSID', t('settingsView.wlanSsidEmpty')); return; }
-    const ok = await confirmFor(box, 
+    if (storeMode && await saveCopyOnly(ssid, pass)) return;
+    const ok = await confirmFor(box,
       t('settingsView.wlanSwitchConfirmTitle'),
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
     );

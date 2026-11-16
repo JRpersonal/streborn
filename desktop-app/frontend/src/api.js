@@ -336,6 +336,17 @@ export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notic
   return callOptionalBinding('LogSpotifySaveGate', [host, slot, canRecall, premiumRequired, notice]);
 }
 
+// KeepSpeakerWiFiCopy lets STR keep its own copy of the speaker's Wi-Fi from
+// this computer's current network, store-only (wificopy.js, desktop-app
+// wificopy.go); StoreSpeakerWiFiCopy writes the one the owner typed. Both
+// resolve to { stored, reason, note }. Optional bindings, per the note above.
+export function KeepSpeakerWiFiCopy(host, port, trigger) {
+  return callOptionalBinding('KeepSpeakerWiFiCopy', [host, port || 0, trigger || '']);
+}
+export function StoreSpeakerWiFiCopy(host, port, ssid, password) {
+  return callOptionalBinding('StoreSpeakerWiFiCopy', [host, port || 0, ssid, password]);
+}
+
 // LogSetupWifiStep records that the setup's Wi-Fi step ran and how it ended
 // ('changed', 'unchanged', 'stored' or 'failed'). The network name is passed so
 // the app can log its tag; the app never writes the name itself, and the

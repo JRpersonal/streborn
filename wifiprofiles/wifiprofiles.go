@@ -22,6 +22,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -81,6 +82,120 @@ func CurrentSSID() string {
 	default:
 		return currentSSIDLinux()
 	}
+}
+
+// Interface identifies the host's Wi-Fi adapter that is connected right now,
+// so a caller can find its addresses among net.Interfaces(). Name is the
+// interface name as Go reports it (Windows: the connection name, Linux: the
+// device), MAC its hardware address in the "aa:bb:cc:dd:ee:ff" form. Either
+// may be empty; a caller matches on MAC first.
+type Interface struct {
+	SSID string
+	Name string
+	MAC  string
+}
+
+// CurrentInterface returns the connected Wi-Fi adapter, ok=false when the host
+// is not on Wi-Fi or the platform cannot say. Not implemented on macOS, where
+// the app never reads a Wi-Fi password without the owner asking.
+func CurrentInterface() (Interface, bool) {
+	switch runtime.GOOS {
+	case "windows":
+		out, err := run("netsh", "wlan", "show", "interfaces")
+		if err != nil {
+			return Interface{}, false
+		}
+		return parseNetshConnectedInterface(string(out))
+	case "darwin":
+		return Interface{}, false
+	default:
+		out, err := run("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device")
+		if err != nil {
+			return Interface{}, false
+		}
+		return parseNmcliWifiDevice(string(out))
+	}
+}
+
+// macLike matches the hardware address netsh prints ("aa:bb:cc:dd:ee:ff").
+var macLike = regexp.MustCompile(`^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$`)
+
+// parseNetshConnectedInterface finds the adapter block of `netsh wlan show
+// interfaces` that carries an SSID and returns its SSID, name and MAC.
+//
+// netsh localises its keys ("Name", "Nom", "Physical address", "Adresse
+// physique", ...), so only the keys that read the same in every language are
+// trusted: "SSID" and "BSSID". The name is the first key/value line of the
+// block (netsh always prints it first) and the MAC is the first value shaped
+// like one whose key is not a BSSID.
+func parseNetshConnectedInterface(out string) (Interface, bool) {
+	var blocks [][][2]string
+	var cur [][2]string
+	flush := func() {
+		if len(cur) > 0 {
+			blocks = append(blocks, cur)
+		}
+		cur = nil
+	}
+	sc := bufio.NewScanner(strings.NewReader(out))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			flush()
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// A key on its own ("There is 1 interface on the system:") is a
+		// header, not part of an adapter block.
+		if val == "" && len(cur) == 0 {
+			continue
+		}
+		cur = append(cur, [2]string{key, val})
+	}
+	flush()
+	for _, b := range blocks {
+		var it Interface
+		for i, kv := range b {
+			k := strings.ToLower(kv[0])
+			switch {
+			case i == 0:
+				it.Name = kv[1]
+			case k == "ssid":
+				if it.SSID == "" {
+					it.SSID = kv[1]
+				}
+			case strings.Contains(k, "bssid"):
+			case it.MAC == "" && macLike.MatchString(kv[1]):
+				it.MAC = strings.ToLower(strings.ReplaceAll(kv[1], "-", ":"))
+			}
+		}
+		if it.SSID != "" {
+			return it, true
+		}
+	}
+	return Interface{}, false
+}
+
+// parseNmcliWifiDevice picks the connected Wi-Fi device from the terse output
+// of `nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device`.
+func parseNmcliWifiDevice(out string) (Interface, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.SplitN(strings.TrimSpace(line), ":", 4)
+		if len(f) < 3 || f[1] != "wifi" || f[2] != "connected" {
+			continue
+		}
+		it := Interface{Name: f[0]}
+		if len(f) == 4 {
+			it.SSID = f[3]
+		}
+		return it, true
+	}
+	return Interface{}, false
 }
 
 // ----- Windows -----

@@ -342,6 +342,10 @@ export function IsBoseStick(arg1) {
   return window['go']['main']['App']['IsBoseStick'](arg1);
 }
 
+export function KeepSpeakerWiFiCopy(arg1, arg2, arg3) {
+  return window['go']['main']['App']['KeepSpeakerWiFiCopy'](arg1, arg2, arg3);
+}
+
 export function LibraryRefusedServers() {
   return window['go']['main']['App']['LibraryRefusedServers']();
 }
@@ -828,6 +832,10 @@ export function StickVersion(arg1) {
 
 export function Stop(arg1, arg2) {
   return window['go']['main']['App']['Stop'](arg1, arg2);
+}
+
+export function StoreSpeakerWiFiCopy(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StoreSpeakerWiFiCopy'](arg1, arg2, arg3, arg4);
 }
 
 export function StreamBitrate(arg1, arg2) {

@@ -7,11 +7,10 @@ import { RebootBox, RemoveConflictingMod, RepairSpeakerName } from '../api.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { t } from '../i18n/index.js';
 import { localizeStillRestarting, restarts } from '../restartwait.js';
-import { openSpeakers } from '../shell2/speakers/index.js';
 import { sectionReport } from '../shell2/state.js';
 import { state } from '../state.js';
 import { confirmWarn, getBoxLabel, showError, showToast } from '../utils.js';
-import { renderBoxSelect, selectBox } from '../views/boxpicker.js';
+import { renderBoxSelect } from '../views/boxpicker.js';
 import { deps } from './deps.js';
 import { warnDismissKey } from './dismiss.js';
 import { checkBoxIssueBanner, noteRestartRequested, runCloudRestore } from './speaker.js';
@@ -42,14 +41,6 @@ export async function runSpeakerAttention(host, act, btn, dismissKind) {
       });
       break;
     }
-    case 'saveWifi':
-      state.wlanStoreFor = box.host;
-      // The preview's speaker page shows one tab at a time: open it on
-      // Network, where the Wi-Fi form is (wireWlanSwitch opens it there).
-      if (state.ui2Shell && openSpeakers('speaker', { host: box.host, tab: 'network' })) break;
-      selectBox(box);
-      deps.switchView('settings');
-      break;
     case 'dismiss':
       try { localStorage.setItem(warnDismissKey(box, dismissKind), String(Date.now())); } catch {}
       checkBoxIssueBanner();

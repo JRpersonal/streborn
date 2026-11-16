@@ -4,7 +4,7 @@
 // UI 2.0 preview (noteSpeakerIssues) and the cloud restore run. Extracted from
 // the main.js monolith; main.js-local helpers arrive through deps.js.
 
-import { EventsOn, RebootBox, RemoveConflictingMod, RepairSpeakerName, RestoreSTRCloud } from '../api.js';
+import { EventsOn, KeepSpeakerWiFiCopy, RebootBox, RemoveConflictingMod, RepairSpeakerName, RestoreSTRCloud } from '../api.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { groupKeyErrorBanners } from '../groupkeys.js';
 import { t } from '../i18n/index.js';
@@ -24,8 +24,9 @@ import {
   showToast,
   stormBannerBoxes,
 } from '../utils.js';
-import { renderBoxSelect, selectBox } from '../views/boxpicker.js';
+import { renderBoxSelect } from '../views/boxpicker.js';
 import { weakWifiDropoutBoxes } from '../weakwifi.js';
+import { keepWifiCopies, paintWifiCopyNote } from '../wificopy.js';
 import { deps } from './deps.js';
 import { warnDismissKey, warnDismissed } from './dismiss.js';
 
@@ -53,11 +54,15 @@ export function noteRestartRequested(host) {
 }
 
 // checkBoxIssueBanner is a heads-up when a speaker carries leftovers of a
-// rival cloud-free SoundTouch tool (they can fight STR) or has no STR Wi-Fi
-// backup saved. Global banner, #270. Dismissible per box and warning type:
-// both are informational (a healthy speaker keeps playing either way), so the
-// user must be able to acknowledge them once instead of being nagged forever
-// (Jens, 2026-07-12).
+// rival cloud-free SoundTouch tool (they can fight STR), among the other
+// issues below. Global banner, #270. The informational ones are dismissible
+// per box and warning type, so the user can acknowledge them once instead of
+// being nagged forever (Jens, 2026-07-12).
+//
+// A speaker without STR's copy of its Wi-Fi (wlanCredsMissing) is no longer
+// a banner: the app keeps the copy itself (wificopy.js), and only when it
+// cannot does that speaker's Network settings say so, quietly. Every refresh
+// passes through here, so this is where the app tries.
 export function checkBoxIssueBanner() {
   const el = $('boxIssueBanner');
   if (!el) return;
@@ -71,7 +76,7 @@ export function checkBoxIssueBanner() {
   // (they do not survive a factory reset, this does) and nothing plays on such a
   // speaker at all, so it is worth its own sentence naming the address.
   const foreignCloud = boxes.filter(b => b && b.foreignCloudURL && !b.conflictingMod);
-  const noWifi = boxes.filter(b => b && b.wlanCredsMissing && !warnDismissed(b, 'nowifi'));
+  keepWifiCopies(boxes, KeepSpeakerWiFiCopy, paintWifiCopyNote).catch(() => {});
   // A speaker refusing essentially every preset recall (Bose error 1036). This
   // one is NOT dismissible: nothing the user presses will play until it clears,
   // and the remedy people find on their own, pulling the plug, resets the box
@@ -122,10 +127,6 @@ export function checkBoxIssueBanner() {
       name: names, url: foreignCloud[0].foreignCloudURL,
     })));
   }
-  if (noWifi.length) {
-    const names = noWifi.map(b => getBoxLabel(b)).join(', ');
-    msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
-  }
   if (storm.length) {
     const names = storm.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
@@ -162,7 +163,7 @@ export function checkBoxIssueBanner() {
   // music library cannot play while radio still does, and nothing else on
   // screen says why. Not dismissible; the fix is one tap.
   const badName = unsafeNameBoxes(boxes);
-  noteSpeakerIssues({ noNet, conflict, foreignCloud, noWifi, storm, keyErr, holdErr, staleKey, weakWifi, badName });
+  noteSpeakerIssues({ noNet, conflict, foreignCloud, storm, keyErr, holdErr, staleKey, weakWifi, badName });
   if (badName.length) {
     const names = badName.map(b => getBoxLabel(b)).join(', ');
     msgs.push(`<b>${escapeHtml(t('speaker.badNameBanner', { name: names }))}</b> ${escapeHtml(t('speaker.badNameHint'))}`);
@@ -170,12 +171,6 @@ export function checkBoxIssueBanner() {
   if (!msgs.length) { el.classList.add('hidden'); return; }
   const badNameBtn = badName.length
     ? `<button class="btn btn-primary btn-mini" id="boxIssueBadNameBtn">${escapeHtml(t('speaker.badNameFixBtn'))}</button>`
-    : '';
-  // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
-  // instead of just telling them to "set it up in the settings": the button
-  // jumps straight to that speaker's settings, where the Wi-Fi section is.
-  const wifiBtn = noWifi.length
-    ? `<button class="btn btn-mini" id="boxIssueWifiBtn">${escapeHtml(t('speaker.wifiSaveBtn'))}</button>`
     : '';
   // A conflicting-mod (AfterTouch, OpenCloudTouch) leftover is removable in one
   // click, and this button does it right here. It used to only switch to the
@@ -210,8 +205,7 @@ export function checkBoxIssueBanner() {
     ${cloudBtn}
     ${stormBtn}
     ${conflictBtn}
-    ${wifiBtn}
-    ${(conflict.length || noWifi.length || weakWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
+    ${(conflict.length || weakWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
   const sb = $('boxIssueStormBtn');
   if (sb) sb.onclick = async () => {
     const box = storm[0];
@@ -252,9 +246,6 @@ export function checkBoxIssueBanner() {
   };
   const cloudB = $('boxIssueCloudBtn');
   if (cloudB) cloudB.onclick = () => runCloudRestore(foreignCloud, cloudB);
-  const wb = $('boxIssueWifiBtn');
-  // Settings opens straight on the Wi-Fi form for this speaker (wireWlanSwitch).
-  if (wb) wb.onclick = () => { state.wlanStoreFor = noWifi[0].host; selectBox(noWifi[0]); deps.switchView('settings'); };
   const cb = $('boxIssueConflictBtn');
   if (cb) cb.onclick = async () => {
     const label = cb.textContent;
@@ -276,7 +267,6 @@ export function checkBoxIssueBanner() {
   if (d) d.onclick = () => {
     const stamp = String(Date.now());
     conflict.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'conflict'), stamp); } catch {} });
-    noWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'nowifi'), stamp); } catch {} });
     weakWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'weakwifi'), stamp); } catch {} });
     el.classList.add('hidden');
   };

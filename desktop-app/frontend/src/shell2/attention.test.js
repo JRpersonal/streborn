@@ -23,18 +23,27 @@ const label = (b) => b.friendlyName;
 describe('speakerIssuesFrom', () => {
   it('splits the banner lists into one ordered item list per speaker', () => {
     const issues = speakerIssuesFrom({
-      wedged: [bath], conflict: [kitchen], foreignCloud: [bath], noWifi: [kitchen],
+      wedged: [bath], conflict: [kitchen], foreignCloud: [bath], weakWifi: [kitchen],
     }, label);
     expect(Object.keys(issues).sort()).toEqual([bath.host, kitchen.host].sort());
-    expect(issues[kitchen.host].map((i) => i.kind)).toEqual(['conflict', 'noWifi']);
+    expect(issues[kitchen.host].map((i) => i.kind)).toEqual(['conflict', 'weakWifi']);
     expect(issues[bath.host].map((i) => i.kind)).toEqual(['wedged', 'foreignCloud']);
     expect(issues[kitchen.host][0]).toMatchObject({ name: 'Kitchen', mod: 'AfterTouch' });
     expect(issues[bath.host][1]).toMatchObject({ url: 'http://cloud.example' });
   });
 
   it('knows every classic banner kind', () => {
-    expect(ATTENTION_KINDS).toEqual(['wedged', 'noNet', 'conflict', 'foreignCloud', 'noWifi', 'storm',
+    expect(ATTENTION_KINDS).toEqual(['wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
       'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName']);
+  });
+
+  // A speaker without STR's copy of its Wi-Fi is not something the owner has
+  // to act on: the app keeps the copy itself (wificopy.js) and only the
+  // speaker's Network settings mention it, quietly (2026-11-15).
+  it('has no attention item for a speaker without STR\'s Wi-Fi copy', () => {
+    expect(ATTENTION_KINDS).not.toContain('noWifi');
+    expect(speakerIssuesFrom({ noWifi: [kitchen] }, label)).toEqual({});
+    expect(itemActions({ kind: 'noWifi' })).toEqual([]);
   });
 
   it('says a dropout on a weak Wi-Fi signal on that speaker, as a dismissible heads-up', () => {
@@ -59,20 +68,19 @@ describe('speakerIssuesFrom', () => {
 
 describe('words and buttons', () => {
   it('chips a speaker that cannot play as danger, a heads-up as warn', () => {
-    const issues = speakerIssuesFrom({ wedged: [bath], noWifi: [kitchen] }, label);
+    const issues = speakerIssuesFrom({ wedged: [bath], weakWifi: [kitchen] }, label);
     expect(attentionChip(issues[bath.host])).toEqual({ kind: 'danger', label: t('ui2.attention.chip') });
     expect(attentionChip(issues[kitchen.host]).kind).toBe('warn');
   });
 
   it('notes the classic sentence for this one speaker, with its buttons and dismiss kind', () => {
-    const issues = speakerIssuesFrom({ conflict: [kitchen], noWifi: [kitchen] }, label);
+    const issues = speakerIssuesFrom({ conflict: [kitchen], weakWifi: [kitchen] }, label);
     const html = attentionNoteHTML(issues[kitchen.host]);
     expect(html).toContain(escapeHtml(t('speaker.conflictModBanner', { name: 'Kitchen', mod: 'AfterTouch' })));
-    expect(html).toContain(escapeHtml(t('speaker.noWifiBanner', { name: 'Kitchen' })));
+    expect(html).toContain(escapeHtml(t('speaker.weakWifiDropoutBanner', { name: 'Kitchen' })));
     expect(html).toContain('data-attn="removeConflict"');
-    expect(html).toContain('data-attn="saveWifi"');
     expect(html).toContain('data-dismiss="conflict"');
-    expect(html).toContain('data-dismiss="nowifi"');
+    expect(html).toContain('data-dismiss="weakwifi"');
     expect(html).toContain(`data-host="${kitchen.host}"`);
     expect(html).toContain(t('speaker.conflictRemoveBtn'));
     expect(html).toContain(t('speaker.issueDismiss'));
@@ -126,10 +134,10 @@ describe('runAttentionAction', () => {
   it('hands a button press to the runner main.js registered', () => {
     const run = vi.fn();
     setSpeakerAttentionRunner(run);
-    const btn = { dataset: { host: kitchen.host, attn: 'dismiss', dismiss: 'nowifi' }, disabled: false, getAttribute: () => null };
+    const btn = { dataset: { host: kitchen.host, attn: 'dismiss', dismiss: 'weakwifi' }, disabled: false, getAttribute: () => null };
     const target = { closest: (sel) => (sel === '.attn-act' ? btn : null) };
     expect(runAttentionAction(target)).toBe(true);
-    expect(run).toHaveBeenCalledWith(kitchen.host, 'dismiss', btn, 'nowifi');
+    expect(run).toHaveBeenCalledWith(kitchen.host, 'dismiss', btn, 'weakwifi');
     expect(runAttentionAction({ closest: () => null })).toBe(false);
   });
 });
