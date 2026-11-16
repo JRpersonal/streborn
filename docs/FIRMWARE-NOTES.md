@@ -930,6 +930,16 @@ else on the key), a double press plays the same and does not restart it, and
 a "replace" webhook still withholds the single press. A real first-row preset
 is never overwritten.
 
+On the sm2 chassis an empty key gets no tap verdict either: an ST10 bundle
+(#1931, firmware list empty, STR store holding keys 1 to 5) showed each tap on
+key 1 and 3 as one analytics press line and nothing else, which is also all a
+hold leaves there. So when STR's store holds a key that the speaker's own
+`/presets` list lacks, a press that produced nothing is read as a press on a
+dead key: STR plays the key itself and asks for the key re-sync, which then
+runs even on a source the listener chose, since the press asked to leave it
+(`cmd/agent/deadkey.go`).
+A key empty in both keeps the hold-to-save reading.
+
 ## Per-logical-stream retention in the Ogg/HTTP path
 
 **Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,

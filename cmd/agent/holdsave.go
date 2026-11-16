@@ -155,6 +155,9 @@ type holdPress struct {
 	// combo is set once another physical key was seen down around this
 	// press: a firmware key combination, which STR stays out of.
 	combo bool
+	// dead is set once the press was read as one on a key the speaker lost
+	// (deadkey.go); used is set with it, and it is never a hold.
+	dead bool
 }
 
 // holdSaver pairs preset presses with the firmware's hold verdict and saves
@@ -184,6 +187,11 @@ type holdSaver struct {
 	// tapHold wires the tap+hold save onto the second row
 	// (tapholdsave.go). Zero value: off.
 	tapHold tapHoldWiring
+	// deadKey reports whether a key STR's store holds is missing from the
+	// speaker's own list (deadKeyOnBox), playDeadKey plays it and asks for
+	// the key re-sync (presetWsHandler.playDeadKey). Either nil: off.
+	deadKey     func(slot int) deadKeyVerdict
+	playDeadKey func(slot int, v deadKeyVerdict)
 
 	mu sync.Mutex
 	// tap is the newest selection frame a person caused (tapholdsave.go).
@@ -206,6 +214,10 @@ type holdSaver struct {
 	otherName  string
 	otherUp    time.Time
 	otherTrace bool
+	// fwStoreSlot / fwStoreAt are the newest store of the firmware's own
+	// hold gesture that reached the marge keeper (NoteFirmwareStore).
+	fwStoreSlot int
+	fwStoreAt   time.Time
 }
 
 func newHoldSaver(logger *slog.Logger, save holdSaveFunc) *holdSaver {
@@ -280,6 +292,10 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 	}
 	if p.producer.Physical() && p.origin == boxlog.OriginStats && h.after != nil {
 		h.after(max(p.at.Add(holdConfirmAfter).Sub(h.now()), 0), func() { h.statsHold(p) })
+	} else if p.producer.Physical() && h.deadKey != nil && h.after != nil {
+		// statsHold makes the dead-key decision for an analytics-line press;
+		// every other physical press gets it here (deadkey.go).
+		h.after(max(p.at.Add(holdConfirmAfter).Sub(h.now()), 0), func() { h.checkDeadKey(p) })
 	}
 	if h.emptyKey != nil && h.after != nil &&
 		(p.producer.Physical() || (p.origin == boxlog.OriginWeb && h.appKeysAccepted())) {
@@ -475,7 +491,9 @@ func (h *holdSaver) recentPhysicalHold(slot int, d time.Duration) bool {
 	h.mu.Lock()
 	p, veto, verdictAt, verdictHold := h.press, h.vetoAt, h.verdictAt, h.verdictHold
 	h.mu.Unlock()
-	if p.slot != slot {
+	if p.slot != slot || p.dead {
+		// A press on a key the speaker lost is played, never held: a
+		// re-sync PUT after it is no store of the user's (deadkey.go).
 		return false
 	}
 	if p.used {
@@ -525,7 +543,9 @@ func (h *holdSaver) checkUnpaired(p holdPress) {
 // reported only by the analytics line: when it is still the newest press, no
 // verdict paired with it, and neither a tap verdict nor a preset activation
 // came since shortly before it, the press was a hold the firmware gave no
-// verdict for (#1217), and it is saved like a paired one.
+// verdict for (#1217), and it is saved like a paired one. A key STR's store
+// holds but the speaker's own list lacks is the exception: a tap on it leaves
+// the same nothing behind, and it is played instead (deadKeyPress, #1931).
 func (h *holdSaver) statsHold(p holdPress) {
 	from := p.at.Add(-holdVetoLookback)
 	h.mu.Lock()
@@ -539,6 +559,18 @@ func (h *holdSaver) statsHold(p holdPress) {
 	if cur.seq != p.seq || cur.used || cur.combo ||
 		(!tapped && !veto.IsZero() && !veto.Before(from)) ||
 		(!tapped && !verdictAt.IsZero() && !verdictAt.Before(from)) {
+		h.mu.Unlock()
+		return
+	}
+	h.mu.Unlock()
+	// A key the speaker lost answers a tap with nothing at all, exactly
+	// like a hold here (#1931): it is played, not saved over (deadkey.go).
+	// The hold of a tap+hold had a frame of the key, so the key is not dead.
+	if !tapped && h.deadKeyPress(p) {
+		return
+	}
+	h.mu.Lock()
+	if h.press.seq != p.seq || h.press.used || h.press.combo {
 		h.mu.Unlock()
 		return
 	}
