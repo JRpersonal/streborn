@@ -27,20 +27,12 @@ import (
 // it; anything longer is truncated by the firmware anyway.
 const webhookPlaceholderName = "Webhook"
 
-// webhookOnlySlots returns the preset keys that are configured as "webhook only"
-// (replace mode) yet have no STR preset behind them.
-//
-// This is the #536 case. An EMPTY preset key is refused by the speaker itself:
-// it blinks orange and emits no presetSelectionUpdated frame at all, and
-// OnPresetSelected, which is what fires the per-key webhook, therefore never
-// runs. Two reporters hit it independently (an ST10 on 2026-08-05, an ST20 and
-// an ST30 on 2026-08-22) and in both bundles the agent log carries no press
-// event whatsoever, while the box's WebSocket bus is plainly connected and
-// delivering other frames. So the webhook is not failing, it is never reached.
-//
-// The fix is to keep something in the slot so the firmware treats the key as
-// assigned and reports the press; the replace-mode branch in OnPresetSelected
-// then withholds the playback, which is exactly what the mode promised.
+// row2PlaceholderName is what a key with nothing on its single press but a
+// station on its double press (#1910) shows on the box display for the moment
+// before the station's own name takes over. "2x" is the same mark the panel
+// notice and the app put on the second row.
+const row2PlaceholderName = "2x"
+
 // boxRowPresets returns the presets that belong on the speaker's own keys:
 // row 1, slots 1..6. The second row (7..12, #1110) lives only in STR's store
 // and is reached by a double press, so every pass that maps the store onto
@@ -57,20 +49,122 @@ func boxRowPresets(all []presets.Preset) []presets.Preset {
 	return out
 }
 
-func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
-	slots := wh.ReplacePresetSlots()
-	if len(slots) == 0 {
+// keyPlaceholder is a placeholder preset the reconcile keeps on a speaker key
+// that has no row-1 preset but still has to report its press.
+type keyPlaceholder struct {
+	slot int
+	// playsRow2 is set when a single press of the key plays its second row:
+	// the second-row slot holds a preset and no replace-mode webhook withholds
+	// the single press's playback.
+	playsRow2 bool
+}
+
+// name is what the box shows for the key.
+func (k keyPlaceholder) name() string {
+	if k.playsRow2 {
+		return row2PlaceholderName
+	}
+	return webhookPlaceholderName
+}
+
+// placeholderKeys returns, ascending, the keys 1..6 that need a placeholder:
+// no row-1 preset in the store, yet a press of the key must reach STR because
+// the key's second row holds a preset (#1910) or an enabled per-key webhook of
+// either mode is configured for it (#536). all is the WHOLE store, both rows.
+//
+// The reason is the same for all of them. An EMPTY preset key is refused by
+// the speaker itself: it blinks orange and emits no presetSelectionUpdated
+// frame at all, so OnPresetSelected, which fires the per-key webhook and
+// detects the double press, never runs. Two reporters hit it with webhook-only
+// keys (an ST10 on 2026-08-05, an ST20 and an ST30 on 2026-08-22) and in both
+// bundles the agent log carries no press event whatsoever, while the box's
+// WebSocket bus is plainly connected and delivering other frames. An ST300
+// bundle (#1910, 2026-11-15) showed the same silence for a station saved only
+// on a key's double press: the first press never arrived, so there was no
+// second one to pair it with.
+//
+// The fix is to keep something in the slot so the firmware treats the key as
+// assigned and reports the press. ordinaryPress then makes sure the
+// placeholder itself is never played: a replace-mode key withholds playback
+// as the mode promised, a key with a second row plays that row, and a key
+// with only an additional-mode webhook just fires it.
+//
+// A key with a row-1 preset is never listed: its real preset already makes
+// the speaker report the press, and a placeholder must never replace it.
+func placeholderKeys(wh *webhooks.Store, all []presets.Preset) []keyPlaceholder {
+	row1 := make(map[int]bool, len(all))
+	row2 := make(map[int]bool, len(all))
+	for _, p := range all {
+		switch {
+		case presets.IsBoxSlot(p.Slot):
+			row1[p.Slot] = true
+		case presets.IsRow2(p.Slot):
+			row2[presets.KeyOf(p.Slot)] = true
+		}
+	}
+	hooked := map[int]bool{}
+	for _, slot := range wh.PresetSlots() {
+		hooked[slot] = true
+	}
+	replace := map[int]bool{}
+	for _, slot := range wh.ReplacePresetSlots() {
+		replace[slot] = true
+	}
+	var out []keyPlaceholder
+	for key := 1; key <= presets.BoxSlots; key++ {
+		if row1[key] || (!row2[key] && !hooked[key]) {
+			continue
+		}
+		// A replace-mode key stays a webhook key on its single press even
+		// with a second row: that press withholds playback, and its double
+		// press plays the second row as on any other key.
+		out = append(out, keyPlaceholder{slot: key, playsRow2: row2[key] && !replace[key]})
+	}
+	return out
+}
+
+// placeholderSlots is placeholderKeys reduced to the slot numbers, for the
+// passes that only need to know which keys STR claims.
+func placeholderSlots(wh *webhooks.Store, all []presets.Preset) []int {
+	keys := placeholderKeys(wh, all)
+	if len(keys) == 0 {
 		return nil
 	}
-	stored := make(map[int]bool, len(stick))
-	for _, p := range stick {
-		stored[p.Slot] = true
+	out := make([]int, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k.slot)
 	}
-	out := slots[:0:0]
-	for _, slot := range slots {
-		if !stored[slot] {
-			out = append(out, slot)
+	return out
+}
+
+// placeholderWrites decides which of the placeholder keys this pass writes,
+// given the box's current locations per slot. A key the box already holds in
+// STR's own UPnP form is left alone outside a forced full re-sync, so a
+// placeholder costs one write, not one per pass.
+func placeholderWrites(keys []keyPlaceholder, boxLocs map[int]string, forceFull bool) []boxcli.PresetSpec {
+	var out []boxcli.PresetSpec
+	for _, k := range keys {
+		loc, onBox := boxLocs[k.slot]
+		switch {
+		case onBox && !isOwnBoxPresetLocation(loc):
+			// A foreign entry (a box-cached Deezer or TuneIn preset) already
+			// occupies the key, so the firmware reports the press and the
+			// webhook is reached. Never overwrite what the user has there.
+			continue
+		case onBox && isNativeRadioLocation(loc):
+			// A leftover native station from an earlier install: the firmware
+			// plays that form ITSELF, so STR could neither withhold it (replace
+			// mode) nor put the second row in its place. Rewrite it in the
+			// UPnP form STR drives.
+		case onBox && !forceFull:
+			continue
 		}
+		// NativeLocation is deliberately left empty. A native slot is played by
+		// the box without asking STR, so the one thing the placeholder has to
+		// leave to STR, deciding what the press plays, would be impossible.
+		out = append(out, boxcli.PresetSpec{
+			Slot: k.slot, Name: k.name(), StreamURL: boxurl.StreamSlot(k.slot),
+		})
 	}
 	return out
 }
@@ -1001,6 +1095,16 @@ func (r *reconciler) releaseForcedPass(src string) {
 	r.forceHeldSince = time.Time{}
 }
 
+// placeholderSig names the placeholder keys the store and the webhook config
+// call for right now, in a form two calls can compare: "" when there are none
+// (and on a reconciler without a store).
+func (r *reconciler) placeholderSig() string {
+	if r.store == nil {
+		return ""
+	}
+	return fmt.Sprint(placeholderKeys(r.wh, r.store.All()))
+}
+
 // waitForNextPass is phase 7.
 func (r *reconciler) waitForNextPass() {
 	if r.fullDone {
@@ -1008,8 +1112,19 @@ func (r *reconciler) waitForNextPass() {
 		// for a forced re-sync so a dead key recovers in seconds, not
 		// after up to five minutes, and when the speaker re-read its
 		// account during boot (an ordinary pass, see accountresync.go).
+		//
+		// Also wake when the set of placeholder keys changed: a station saved
+		// on a key's double press while its single press is empty (#1910), or
+		// a webhook set up for an empty key, writes nothing to the speaker by
+		// itself, and the key stays silent until its placeholder is on the
+		// box. Memory reads only, no speaker poll.
+		holders := r.placeholderSig()
 		for waited := time.Duration(0); waited < 5*time.Minute && !r.asks.ask.Load() && !r.recheck.Load(); waited += 10 * time.Second {
 			r.sleep(10 * time.Second)
+			if r.placeholderSig() != holders {
+				r.logger.Info("preset reconcile: the keys that need a placeholder changed, checking the speaker's keys now")
+				break
+			}
 		}
 	} else {
 		r.sleep(10 * time.Second)
@@ -1357,12 +1472,12 @@ func (r *reconciler) keysMissingOnBox() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	stick := boxRowPresets(r.store.All())
-	return slotsMissingOnBox(stick, webhookOnlySlots(r.wh, stick), entries), nil
+	all := r.store.All()
+	return slotsMissingOnBox(boxRowPresets(all), placeholderSlots(r.wh, all), entries), nil
 }
 
-// slotsMissingOnBox lists, sorted, the store's slots and webhook-only keys the
-// box's list lacks. A native service key (Pandora, iHeartRadio) is left out:
+// slotsMissingOnBox lists, sorted, the store's slots and placeholder keys
+// (placeholderKeys) the box's list lacks. A native service key (Pandora, iHeartRadio) is left out:
 // it is the speaker's own item, written back only while the speaker offers
 // the service (nativeslots.go), so a forced pass could not restore it anyway.
 func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPresetEntry) []int {
@@ -1390,12 +1505,14 @@ func slotsMissingOnBox(stick []presets.Preset, hookSlots []int, entries []boxPre
 
 func (r *reconciler) reconcileOnce(forceFull bool) bool {
 	store, boxHost, logger, wh := r.store, r.boxHost, r.logger, r.wh
-	stick := boxRowPresets(store.All())
-	// Keys configured as "webhook only" need a placeholder even when the store
-	// is completely empty, which is the shape the second #536 reporter was in:
-	// no presets anywhere, six dead keys, and a webhook that could never fire.
-	hookSlots := webhookOnlySlots(wh, stick)
-	if len(stick) == 0 && len(hookSlots) == 0 {
+	all := store.All()
+	stick := boxRowPresets(all)
+	// Keys with a webhook or a second-row station need a placeholder even when
+	// row 1 is completely empty, which is the shape the second #536 reporter
+	// was in (no presets anywhere, six dead keys, and a webhook that could
+	// never fire) and the #1910 one (stations saved only on double presses).
+	holders := placeholderKeys(wh, all)
+	if len(stick) == 0 && len(holders) == 0 {
 		// Nothing to register, but the box may still list the keys of a
 		// removed install (#882): read once, prune them, then idle at the
 		// maintenance cadence. See preset_recovery.go.
@@ -1508,42 +1625,26 @@ func (r *reconciler) reconcileOnce(forceFull bool) bool {
 			})
 		}
 	}
-	// Claim the "webhook only" keys AFTER the store loop, so a slot that has a
-	// real preset is never treated as one (webhookOnlySlots already excludes
+	// Claim the placeholder keys AFTER the store loop, so a slot that has a
+	// real preset is never treated as one (placeholderKeys already excludes
 	// those, this ordering just keeps strSlots authoritative for the prune).
 	//
-	// strSlots is set for every hook slot, including the ones left alone below,
-	// so the prune cannot delete the placeholder it just wrote. Turning the
-	// webhook off drops the slot out of hookSlots again, which drops it out of
-	// strSlots, and the existing prune pass removes the placeholder by itself.
-	placeholders := 0
-	for _, slot := range hookSlots {
-		strSlots[slot] = true
-		loc, onBox := boxLocs[slot]
-		switch {
-		case onBox && !isOwnBoxPresetLocation(loc):
-			// A foreign entry (a box-cached Deezer or TuneIn preset) already
-			// occupies the key, so the firmware reports the press and the
-			// webhook is reached. Never overwrite what the user has there.
-			continue
-		case onBox && isNativeRadioLocation(loc):
-			// A leftover native station from an earlier install: the firmware
-			// plays that form ITSELF, so replace mode could not withhold it.
-			// Rewrite it in the UPnP form STR drives.
-		case onBox && !forceFull:
-			continue
-		}
-		// NativeLocation is deliberately left empty. A native slot is played by
-		// the box without asking STR, so the one thing replace mode has to do,
-		// withhold the audio, would be impossible.
-		missing = append(missing, boxcli.PresetSpec{
-			Slot: slot, Name: webhookPlaceholderName, StreamURL: boxurl.StreamSlot(slot),
-		})
-		placeholders++
+	// strSlots is set for every placeholder key, including the ones left alone
+	// by placeholderWrites, so the prune cannot delete the placeholder it just
+	// wrote. Turning the webhook off or clearing the second-row station drops
+	// the key out of holders again, which drops it out of strSlots, and the
+	// existing prune pass removes the placeholder by itself.
+	for _, k := range holders {
+		strSlots[k.slot] = true
 	}
-	if placeholders > 0 {
-		logger.Info("preset reconcile: placing a placeholder on webhook-only keys, an empty key is refused by the box and never reports its press (#536)",
-			"slots", placeholders)
+	if writes := placeholderWrites(holders, boxLocs, forceFull); len(writes) > 0 {
+		missing = append(missing, writes...)
+		slots := make([]int, 0, len(writes))
+		for _, w := range writes {
+			slots = append(slots, w.Slot)
+		}
+		logger.Info("preset reconcile: placing a placeholder on keys with only a webhook or a second-row station, an empty key is refused by the box and never reports its press (#536, #1910)",
+			"slots", slots)
 	}
 	if migrated > 0 {
 		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",
@@ -1664,7 +1765,7 @@ func (r *reconciler) reconcileOnce(forceFull bool) bool {
 			for _, slot := range healed {
 				logger.Info("preset reconcile healed", "slot", slot)
 				if _, inStore := store.Get(slot); inStore {
-					restored++ // not a webhook-only placeholder
+					restored++ // not a placeholder key
 				}
 			}
 			// kept were on the box before the write, so finding them after it

@@ -34,6 +34,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -218,7 +219,7 @@ func (h *presetWsHandler) confirmDoublePress(ctx context.Context, key int, first
 	}
 	if n >= 2 {
 		seq := h.pressSeq.Add(1)
-		h.playRow2(ctx, seq, key, row2, pressAt.Sub(first), "key trace confirms two presses")
+		h.playRow2(ctx, seq, key, row2, pressAt.Sub(first), true, "key trace confirms two presses")
 		return
 	}
 	if n == 1 {
@@ -234,28 +235,89 @@ func (h *presetWsHandler) confirmDoublePress(ctx context.Context, key int, first
 // playRow2 plays the second-row preset of key through the app's recall path,
 // superseding the first press: seq was bumped for this press, so the first
 // press's recall, verify, 1036 recovery and last-play record stand down, and
-// the first-press rescue may no longer press key again.
-func (h *presetWsHandler) playRow2(ctx context.Context, seq uint64, key int, p presets.Preset, gap time.Duration, why string) {
+// the first-press rescue may no longer press key again. double is false for
+// the single press of a key with nothing on row 1 (#1910), which plays its
+// second row directly.
+func (h *presetWsHandler) playRow2(ctx context.Context, seq uint64, key int, p presets.Preset, gap time.Duration, double bool, why string) {
 	h.firstPress.cancel()
-	h.logger.Info("double press on key "+strconv.Itoa(key)+" -> row 2 slot "+strconv.Itoa(p.Slot)+" '"+p.Name+"'",
+	press := "single press"
+	if double {
+		press = "double press"
+	}
+	h.logger.Info(press+" on key "+strconv.Itoa(key)+" -> row 2 slot "+strconv.Itoa(p.Slot)+" '"+p.Name+"'",
 		"key", key, "slot", p.Slot, "type", p.Type, "gapMs", gap.Milliseconds(), "why", why)
 	showNotice(oled.PresetPlaying(key, "2x "+p.Name))
 	if h.noteUserPlay != nil {
 		h.noteUserPlay()
 	}
 	if h.playSlotFn == nil {
-		h.logger.Warn("double press: no recall path wired, row 2 cannot play", "slot", p.Slot)
+		h.logger.Warn(press+": no recall path wired, row 2 cannot play", "slot", p.Slot)
 		return
 	}
 	if h.pressSeq.Load() != seq {
-		h.logger.Info("double press superseded by a newer press before row 2 started", "slot", p.Slot)
+		h.logger.Info(press+" superseded by a newer press before row 2 started", "slot", p.Slot)
 		return
 	}
 	playCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if _, err := h.playSlotFn(playCtx, p.Slot); err != nil {
-		h.logger.Warn("double press: row 2 did not start", "key", key, "slot", p.Slot, "err", err)
+		h.logger.Warn(press+": row 2 did not start", "key", key, "slot", p.Slot, "err", err)
 	}
+}
+
+// placeholderPress reports whether a press of key landed on the placeholder
+// the reconcile keeps on a key with nothing on row 1 (placeholderKeys): no
+// row-1 preset in the store, the box's location in STR's own UPnP form (or
+// none at all), and a second-row station or a per-key webhook behind the key.
+// row2 is the key's second-row preset, nil when the key has only a webhook.
+//
+// A box location STR did not write (a speaker-cached Deezer or TuneIn key) or
+// a native station is no placeholder: that key plays what it holds, exactly
+// as before. Nor is an STR-form key with neither a second row nor a webhook:
+// that is a key left over from a reinstall (#882), handled where it was.
+func (h *presetWsHandler) placeholderPress(key int, location string) (row2 *presets.Preset, holder bool) {
+	if !presets.IsBoxSlot(key) || h.store == nil {
+		return nil, false
+	}
+	if _, ok := h.store.Get(key); ok {
+		return nil, false
+	}
+	if location != "" && !ownBoxPresetLocRe.MatchString(location) {
+		return nil, false
+	}
+	if p, ok := h.store.Get(presets.Row2Slot(key)); ok {
+		return &p, true
+	}
+	if h.webhooks != nil {
+		if _, ok := h.webhooks.Button(fmt.Sprintf("preset%d", key)); ok {
+			return nil, true
+		}
+	}
+	return nil, false
+}
+
+// row2SinglePress remembers the newest single press that played a key's
+// second row because the key has nothing on row 1. Zero value ready.
+type row2SinglePress struct {
+	mu  sync.Mutex
+	key int
+	at  time.Time
+}
+
+// note records that the press of key at t started the key's second row.
+func (r *row2SinglePress) note(key int, t time.Time) {
+	r.mu.Lock()
+	r.key, r.at = key, t
+	r.mu.Unlock()
+}
+
+// startedBy reports whether the press of key at first already started the
+// key's second row, i.e. the double press whose first half it was has
+// nothing left to do.
+func (r *row2SinglePress) startedBy(key int, first time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.key == key && !first.IsZero() && r.at.Equal(first)
 }
 
 // refreshGroupMembership reads the speaker's zone once, so the double-press

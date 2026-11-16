@@ -34,6 +34,7 @@ import {
   hideToast,
   isLostStrKey,
   presetSignature,
+  shownBoxPreset,
   showError,
   showToast,
 } from '../../utils.js';
@@ -244,7 +245,7 @@ function lostPresetsNow() {
   if (!snap || !Array.isArray(snap.lostPresets)) return [];
   return snap.lostPresets.filter((lp) => {
     const live = state.presets.find((x) => x.slot === lp.slot) ||
-      (state.boxPresets || []).find((x) => x.slot === lp.slot);
+      shownBoxPreset(state.boxPresets, lp.slot);
     return !live;
   });
 }

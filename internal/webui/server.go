@@ -1148,13 +1148,21 @@ type BoxPreset struct {
 	// here: the desktop is the place to explain a dead key, not to hide it.
 	StrOrigin bool `json:"strOrigin"`
 	// Lost is the agent's verdict on a StrOrigin slot: the store has nothing
-	// on it AND no webhook-only key claims it, so a press plays nothing. The
+	// on it AND no placeholder key claims it, so a press plays nothing. The
 	// second condition is why the verdict is made here and not on the
-	// desktop: a webhook-only key (#536) carries a placeholder in STR's own
-	// form and is kept out of the store on purpose, and the desktop sees
+	// desktop: a key with only a webhook (#536) or only a second-row station
+	// (#1910) carries a placeholder in STR's own form and is kept out of the
+	// store's first row on purpose, and the desktop sees
 	// neither the store nor the webhook slots. Stamped alongside StrOrigin
 	// at the composition root.
 	Lost bool `json:"lost"`
+	// Row2Key marks a StrOrigin slot as the placeholder the agent keeps on a
+	// key with nothing on its single press but a station on its double press
+	// (#1910): the firmware refuses an empty key and never reports its press,
+	// so the slot holds STR's own form, and a single press plays the second
+	// row. The desktop shows such a key's single press as empty, not as a
+	// station on the speaker. Stamped alongside Lost.
+	Row2Key bool `json:"row2Key"`
 }
 
 // recentCardCtx is the current source card for a source, retained so the live

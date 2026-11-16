@@ -310,17 +310,26 @@ func TestLostVerdictSparesStoredAndHookedSlots(t *testing.T) {
 		ownNativeEntry(2, "Kept"),
 		{Slot: 3, Name: "Flow", Source: "DEEZER", Location: "https://api.deezer.com/user/me/flow"},
 		{Slot: 4, Name: webhookPlaceholderName, Location: "http://127.0.0.1:8888/stream/4"},
-		// Additional mode gets no placeholder (a real preset plays as well),
-		// so a store-less STR-origin slot there IS dead.
-		{Slot: 5, Name: "Old", Location: "http://127.0.0.1:8888/stream/5"},
+		// An additional-mode webhook on an empty key gets a placeholder too
+		// since #1910 (the empty key never reported its press), so it is not
+		// dead either.
+		{Slot: 5, Name: webhookPlaceholderName, Location: "http://127.0.0.1:8888/stream/5"},
+		// A key with nothing on row 1 and a station on its double press holds
+		// the row-2 placeholder: claimed, and flagged so the desktop shows its
+		// single press as empty rather than as a station on the speaker.
+		{Slot: 6, Name: row2PlaceholderName, Location: "http://127.0.0.1:8888/stream/6"},
 	})
+	if err := store.SetSlot(presets.Preset{Slot: 12, Name: "Twelve", Type: "radio", StreamURL: "https://twelve.example/s"}); err != nil {
+		t.Fatal(err)
+	}
 	stampLostBoxPresets(bps, store, wh)
-	want := map[int][2]bool{ // slot -> {StrOrigin, Lost}
-		1: {true, true}, 2: {true, false}, 3: {false, false}, 4: {true, false}, 5: {true, true},
+	want := map[int][3]bool{ // slot -> {StrOrigin, Lost, Row2Key}
+		1: {true, true, false}, 2: {true, false, false}, 3: {false, false, false},
+		4: {true, false, false}, 5: {true, false, false}, 6: {true, false, true},
 	}
 	for _, bp := range bps {
-		if w := want[bp.Slot]; bp.StrOrigin != w[0] || bp.Lost != w[1] {
-			t.Errorf("slot %d: strOrigin=%v lost=%v, want %v/%v", bp.Slot, bp.StrOrigin, bp.Lost, w[0], w[1])
+		if w := want[bp.Slot]; bp.StrOrigin != w[0] || bp.Lost != w[1] || bp.Row2Key != w[2] {
+			t.Errorf("slot %d: strOrigin=%v lost=%v row2Key=%v, want %v/%v/%v", bp.Slot, bp.StrOrigin, bp.Lost, bp.Row2Key, w[0], w[1], w[2])
 		}
 	}
 	// No store and no webhook config: every STR-origin slot is lost.

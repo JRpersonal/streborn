@@ -282,6 +282,7 @@ export namespace main {
 	    name: string;
 	    strOrigin: boolean;
 	    lost: boolean;
+	    row2Key: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new BoxPresetInfo(source);
@@ -297,6 +298,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.strOrigin = source["strOrigin"];
 	        this.lost = source["lost"];
+	        this.row2Key = source["row2Key"];
 	    }
 	}
 	export class BoxSSHState {

@@ -918,6 +918,18 @@ and an ST10 (sm2), all on 27.0.6:
 Selections STR causes itself (its own `sys presetkey`, an item it hands to
 `/select`) are never counted as a press.
 
+An EMPTY key emits no frame at all: the firmware refuses it (orange blink)
+before anything reaches the bus (#536). So a key whose single press is empty
+can never be double-pressed into its second row either, which is what an
+ST300 bundle showed (#1910). The reconcile therefore keeps a placeholder in
+STR's own UPnP form (`/stream/N`, name `2x`) on every key that has no
+first-row preset but a second-row station or a per-key webhook of either mode
+(`placeholderKeys` in `cmd/agent/reconcile.go`). The placeholder is never
+played. On such a key a single press plays the second row (there is nothing
+else on the key), a double press plays the same and does not restart it, and
+a "replace" webhook still withholds the single press. A real first-row preset
+is never overwritten.
+
 ## Per-logical-stream retention in the Ogg/HTTP path
 
 **Symptom.** Spotify through STR (go-librespot raw Ogg Vorbis passthrough,
