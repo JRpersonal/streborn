@@ -105,6 +105,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	run.ctx, run.c = ctx, boxapi.New(s.boxHost)
 	s.zoneFormResolveMembers(run)
+	// A stereo pair joins a group as one member and never leads one; a stereo
+	// flag that came with a group extend is dropped (zoneformpairs.go). Before
+	// the template save and the pairing branch, so both see the result.
+	if ans := s.zoneFormPairs(run); ans != nil {
+		writeZoneFormAnswer(w, ans)
+		return
+	}
 	if ans := s.zoneFormDefineOnly(run); ans != nil {
 		writeZoneFormAnswer(w, ans)
 		return
@@ -114,7 +121,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// channel and the partner the RIGHT by Bose convention. Only the ST10
 	// actually pairs, but every model lists /addGroup, so we let the firmware
 	// be the authority and surface its real response to the app.
-	if req.Stereo {
+	if run.req.Stereo {
 		writeZoneFormAnswer(w, s.formStereoPair(ctx, run.c, run.master, run.slaves, req.Name, wokenMemberSet(req.WokenFromStandby)))
 		return
 	}
@@ -295,6 +302,9 @@ func (s *Server) zoneFormResolveMembers(run *zoneFormRun) {
 			if real != "" {
 				s.rememberMemberDeviceID(slaves[i].IP, real)
 			}
+			// The model, for the stereo pair phase: only a SoundTouch 10
+			// is asked for its pair (zoneformpairs.go).
+			s.rememberMemberType(slaves[i].IP, info.Type)
 		}
 		if real == "" {
 			cached, ok := s.cachedMemberDeviceID(slaves[i].IP)

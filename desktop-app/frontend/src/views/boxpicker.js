@@ -253,6 +253,15 @@ export function renderBoxSelect() {
       String(b.deviceID || '').toUpperCase() === String(p.master || '').toUpperCase()) || boxes[0] || null;
     const key = masterBox ? String(masterBox.deviceID || '').toUpperCase() : '';
     if (!key) continue;
+    // A pair that is a MEMBER of a group (its master follows a zone): both
+    // halves are framed with that group, the way the Bose app groups a pair,
+    // by its pair master. Only the pair master is in the zone, so without this
+    // its other half stood outside the group frame on its own.
+    const joined = zoneMasterOf(masterBox.deviceID, zlMap);
+    if (joined) {
+      for (const b of boxes) pairHostToKey.set(b.host, joined);
+      continue;
+    }
     pairByKey.set(key, p);
     for (const b of boxes) pairHostToKey.set(b.host, key);
   }

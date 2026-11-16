@@ -57,8 +57,28 @@ describe('sidebar speaker model', () => {
     expect(pair.kind).toBe('pair');
     expect(pair.name).toBe('Terrace (stereo)');
     expect(pair.pill).toBe('');
-    expect(pair.action).toBe('');
+    // The pair joins the playing group as one member, by its pair master.
+    expect(pair.action).toBe('add');
+    expect(pair.master).toBe(M.host);
     expect(pair.host).toBe(P1.host);
+  });
+
+  // A stereo pair joins a group as ONE member, by its pair master, the way the
+  // Bose app forms it (field bundle 2026-11-15): the leader's zone names the
+  // pair master alone, the other half reports only its pair.
+  it('pins a pair that is a member of the group as one row with a "-"', () => {
+    const zl = {
+      ...ZONES,
+      MMM: { master: 'MMM', members: [{ deviceID: 'MMM', ip: M.host }, { deviceID: 'FFF', ip: F.host }, { deviceID: 'P1P', ip: P1.host }] },
+      P1P: { master: 'MMM', senderIP: M.host, stereo: ZONES.P1P.stereo },
+    };
+    const m = model({ zoneLive: zl });
+    const pair = byHost(m, P2);
+    expect(pair).toBe(byHost(m, P1));
+    expect(pair.pinned).toBe(true);
+    expect(pair.action).toBe('remove');
+    expect(pair.master).toBe(M.host);
+    expect(m.pinned.map((r) => r.host)).toEqual([M.host, F.host, P1.host]);
   });
 
   it('pins the group you control, master first, and keeps the others in list order', () => {
@@ -112,8 +132,9 @@ describe('sidebar speaker model', () => {
 
   it('offers "+" only on idle, online, known STR speakers outside the group', () => {
     const m = model();
-    expect([...m.pinned, ...m.others].filter((r) => r.action === 'add').map((r) => r.host)).toEqual([I1.host, I2.host, I3.host]);
-    for (const b of [P1, O, S]) expect(byHost(m, b).action, b.friendlyName).toBe('');
+    // The idle stereo pair is offered as its one row (its pair master).
+    expect([...m.pinned, ...m.others].filter((r) => r.action === 'add').map((r) => r.host)).toEqual([P1.host, I1.host, I2.host, I3.host]);
+    for (const b of [O, S]) expect(byHost(m, b).action, b.friendlyName).toBe('');
     // Playing elsewhere, play state not read yet, or in another zone: no "+".
     const busy = model({ boxPlaying: { ...PLAYING, II1: true } });
     expect(byHost(busy, I1).action).toBe('');

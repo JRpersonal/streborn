@@ -21,7 +21,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { srcOf } from './test/source.js';
 import { state } from './state.js';
-import { boxUnreachable, dropOfflineMembers, stereoPairsOf, livePairFor, pairBlockedHosts, masterOf as zoneMasterOf } from './groups.js';
+import { boxUnreachable, dropOfflineMembers, stereoPairsOf, livePairFor, pairBlockedHosts, masterOf as zoneMasterOf, inAnyStereoPair, isPairMaster, pairUnitBox } from './groups.js';
 import { groupCreateBlock, zoneFormFailure, stereoReachBlock, stereoFormFailure, isNotReachableError } from './zonereach.js';
 import { stereoFormMessage } from './stereoformmsg.js';
 import { clearZoneNoteOnEdit, setZoneMsg, resetMultiroomNotes } from './views/multiroom.js';
@@ -109,6 +109,9 @@ function liftFormZone({ formZone, renders }) {
   const env = {
     state,
     pairMemberIds: () => new Set(),
+    inAnyStereoPair,
+    isPairMaster,
+    pairUnitBox,
     boxUnreachable,
     // The one writer, minus its flash timer.
     setZoneMsg: (html) => { state.zoneMsg = html; },
@@ -247,7 +250,7 @@ describe('Create group during the outage (#1741, finding 1)', () => {
 
   it('the Create button carries the block and is disabled with it', () => {
     const render = srcOf('renderMultiroom');
-    expect(render).toContain('const createBlock = enough ? groupCreateBlock(zoneMasterBox, zoneBoxes, zoneLabel) : null;');
+    expect(render).toContain('const createBlock = enough ? groupCreateBlock(zoneMasterBox, memberBoxes, zoneLabel) : null;');
     expect(render).toContain("const createDis = (!enough || createBlock || zoneFormBusy) ? ' disabled' : '';");
     expect(render).toContain('<button id="zoneCreate" class="btn"$' + '{createDis}>');
     expect(render).toContain('$' + '{createWhy}');
