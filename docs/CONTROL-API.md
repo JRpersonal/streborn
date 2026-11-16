@@ -253,12 +253,19 @@ own when the speakers carry the default, and it never writes that name back over
 
 Two fields decide more than they look like they do.
 
-**`permanent` is not carried forward.** The document is stored exactly as sent,
-so a POST that omits it turns a durable group into an ordinary one: it stops
-re-forming when the master plays, and the next `DELETE` clears it for good. A
-client that adds or removes ONE member must read `permanent` from
-`GET /api/box/zone` first and send it back. (Found in a third-party client,
-2026-09-14, where adding a speaker silently demoted the saved group.)
+**`permanent` is not carried forward.** The document is stored exactly as sent.
+A POST without `permanent` on top of a durable group does not delete that group
+(agent v1.4.0 and later): the master's agent sets the durable group aside, the
+new group is an ordinary one, and the next `DELETE` without `forget` brings the
+durable group back as it was. So a client that adds or removes ONE member and
+leaves `permanent` out gets a change that lasts only until the group ends. To
+make the change itself durable, read `permanent` from `GET /api/box/zone` first
+and send it back. A POST with `"permanent":true` replaces the durable group and
+drops anything set aside; `DELETE ?forget=1` deletes both. Only one group is
+kept aside, and `GET` does not report it, so a client cannot see it while an
+ordinary group is stored on top. Agents before v1.4.0 overwrite the durable
+group instead. (Found in a third-party client, 2026-09-14, where adding a
+speaker silently demoted the saved group.)
 
 **A 200 is not a success.** The dissolve answers
 `{"ok":false,"remaining":N,"error":"..."}` when the speaker took the request and
