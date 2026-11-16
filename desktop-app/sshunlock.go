@@ -28,13 +28,19 @@ type sshUnlockOptions struct {
 	// the unlock is about to run ("access" for the install). Empty emits
 	// nothing; the OTA and the uninstall have no install checklist to advance.
 	phase string
-	// bootstrap: when the plain unlock does not open SSH, try the
+	// bootstrap: when the plain unlock does not open SSH, ALWAYS try the
 	// factory-reset bootstrap (enableSSHViaTelnetBootstrap) before giving up.
-	// Only the uninstall sets it. The install dropped that rung on purpose
-	// (see the account-seed note in installSTROnBox: seeding the marge account
-	// made the plain unlock cover factory-fresh boxes too), and the OTA never
-	// had it.
+	// Only the uninstall sets it.
 	bootstrap bool
+	// bootstrapIfNoAccount: like bootstrap, but conditional. The install sets
+	// it so that a factory-fresh box the account seed did not reach (an sm2 Wave
+	// with no Bose account, 2026-11-15) still falls through to the bootstrap -
+	// but ONLY when /info positively reports an empty margeAccountUUID. A used
+	// box that carries an account keeps the plain-unlock-only behaviour: it
+	// already runs the marge check on its own, and the bootstrap would POST a
+	// dummy account over its real one (project_bootstrap_used_box_deadend). The
+	// OTA sets neither and never falls through.
+	bootstrapIfNoAccount bool
 	// rememberReboot records the restart a FAILED unlock costs the speaker in
 	// unlockReboots, so a second press of Install within unlockRebootGrace
 	// reports "still restarting" instead of unlocking again. Only the install
@@ -51,6 +57,15 @@ var errSetupPortClosed = errors.New(":17000 setup port closed, no stick-free unl
 // budget. The speaker's stock cloud URLs have been restored and it has been
 // restarted (best-effort), so it is booting when this is returned.
 var errUnlockDidNotOpenSSH = errors.New("the :17000 stick-free unlock did not open SSH; stock URLs restored and the speaker restarted")
+
+// errBootstrapResponderUnreachable: the factory-reset bootstrap ran, the
+// speaker came back on the network, but it never called this PC's local marge
+// responder (:19080) - the Windows Firewall is the usual cause. A more specific
+// flavour of errUnlockDidNotOpenSSH (the speaker was still restored and
+// restarted) so the install can name the firewall in its advice. errors.Is
+// against errUnlockDidNotOpenSSH stays false; callers that only care that the
+// unlock failed check `!opened` instead.
+var errBootstrapResponderUnreachable = errors.New("the factory-reset bootstrap ran but the speaker never reached this PC's marge responder; stock URLs restored and the speaker restarted (likely a firewall block)")
 
 // ensureSSHOpen opens root SSH on a speaker without a USB stick through its
 // :17000 setup shell, the same unlock every caller used to spell out itself.
@@ -87,10 +102,25 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	// with an empty margeAccountUUID runs the marge check the injection rides
 	// on, then injects, reboots and waits for :22.
 	opened, note = a.enableSSHViaTelnet(host, model)
-	if !opened && o.bootstrap {
+	failErr := errUnlockDidNotOpenSSH
+	// Second rung: the factory-reset bootstrap (local marge responder +
+	// setMargeAccount). It runs unconditionally for the uninstall (o.bootstrap),
+	// and for the install only on a box that positively reports NO marge account
+	// (o.bootstrapIfNoAccount - the account seed in the plain unlock did not
+	// cover it, and it has no account for the dummy account to overwrite). Each
+	// of enableSSHViaTelnet and enableSSHViaTelnetBootstrap reboots the box at
+	// most once, and restoreStockBoseURLsAndReboot below reboots at most once
+	// more on the failing exit: the reboot count stays bounded and every one is
+	// logged.
+	if !opened && a.shouldTryBootstrapUnlock(host, o) {
+		a.logger.Info(o.tag+": plain unlock did not open SSH and the box carries no account; trying the factory-reset bootstrap", "host", host, "model", model)
 		var blog string
-		opened, blog = a.enableSSHViaTelnetBootstrap(host, model)
+		var firewallSuspected bool
+		opened, blog, firewallSuspected = a.enableSSHViaTelnetBootstrap(host, model)
 		note += blog
+		if !opened && firewallSuspected {
+			failErr = errBootstrapResponderUnreachable
+		}
 	}
 	if opened {
 		// Restore stock cloud URLs while :17000 is still the plain Bose TAP.
@@ -101,18 +131,38 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 		}
 		return true, note, nil
 	}
-	// The unlock did not open SSH. It may have written a dead .invalid
-	// injection URL into the box config; restore stock URLs and reboot so the
-	// box is never left marge-checking a dead host. Best-effort.
+	// The unlock did not open SSH. It may have written a dead .invalid (or a
+	// live local-IP, from the bootstrap) injection URL into the box config;
+	// restore stock URLs and reboot so the box is never left marge-checking a
+	// dead/reassignable host. Best-effort.
 	a.restoreStockBoseURLsAndReboot(host)
 	if o.rememberReboot {
 		markUnlockReboot(host)
 	}
-	// The whole transcript, not its last 200 characters: the account-id seed
-	// and the getpdo reads before and after it sit at the start, and a bundle
-	// from a factory-fresh Wave that failed five unlocks in a row could not say
-	// whether the seed took (2026-11-15). The bundle export anonymises it.
+	// The whole transcript, not its last 200 characters: the account-id seed,
+	// the getpdo reads around it, and the margeAccountUUID line after the reboot
+	// sit at the start, and a bundle from a factory-fresh Wave that failed five
+	// unlocks in a row could not say whether the seed took (2026-11-15). The
+	// bundle export anonymises it.
 	a.logger.Warn(o.tag+": the :17000 stick-free unlock did not open SSH; stock URLs restored and the speaker restarted",
-		"host", host, "log", discovery.LastN(note, 6000))
-	return false, note, errUnlockDidNotOpenSSH
+		"host", host, "firewallSuspected", errors.Is(failErr, errBootstrapResponderUnreachable), "log", discovery.LastN(note, 6000))
+	return false, note, failErr
+}
+
+// shouldTryBootstrapUnlock decides whether, after the plain :17000 unlock failed
+// to open SSH, the heavier factory-reset bootstrap should run. The uninstall
+// (o.bootstrap) always falls through. The install (o.bootstrapIfNoAccount) falls
+// through only when the box positively reports an empty margeAccountUUID - so a
+// used box that still carries a Bose account is never handed the dummy account
+// the bootstrap POSTs over it (project_bootstrap_used_box_deadend), and it does
+// not need the bootstrap anyway (it runs the marge check on its own). The OTA
+// sets neither option and never falls through.
+func (a *App) shouldTryBootstrapUnlock(host string, o sshUnlockOptions) bool {
+	if o.bootstrap {
+		return true
+	}
+	if !o.bootstrapIfNoAccount {
+		return false
+	}
+	return a.boxMargeAccountEmpty(host)
 }
