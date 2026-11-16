@@ -5064,6 +5064,38 @@ else
     setup_log "shim status: Series-II box (chipset permissive, STR :8888 reachable directly) — late-swap still runs as a no-op safety net; if it succeeds the box gains :17008 as an additional reachable port"
 fi
 
+# Filters for the one-shot post-start snapshot below. Each reads stdin and
+# writes the kept lines to stdout, so usb-stick/tests/snapshot_filter_test.sh
+# can feed them canned ss/netstat/ps/syslog text without a speaker.
+#
+# Only the ports STR cares about, not the whole table. The full netstat/ss dump
+# appended tens of lines per boot to the NAND setup.log and the diagnostic
+# bundle for no diagnostic gain: the question is "is :8888 bound and who else
+# holds an STR/Bose port", which this filter answers.
+# STR: 8888/9080/8081/443. Bose: 8080/8090/8091/17008/17002/17000.
+# AirPlay: 7000 (the firmware's AirPlay receiver) and 5353 (mDNS, UDP), so a
+# speaker whose :8090/sources lost its AIRPLAY slot shows whether anything
+# still listens there.
+snapshot_socket_filter() {
+    grep -E ':8888 |:9080 |:8081 |:443 |:8080 |:8090 |:8091 |:17008 |:17002 |:17000 |:7000 |:5353 '
+}
+
+# STR + Bose-relevant process lines only (was a full ps -ef every boot), plus
+# the AirPlay receiver and whatever mDNS responder the firmware runs.
+# grep -v grep drops the matcher itself; head caps a runaway.
+snapshot_process_filter() {
+    grep -iE 'streborn|go-librespot|SoftwareUpdate|BoseApp|shepherdd|wpa_supplicant|sshd|airplay|raop|mdns|avahi' | grep -v grep | head -40
+}
+
+# AirPlay lines from the whole syslog the box still holds, not only the late
+# tail the debug state carries: an AirPlay receiver that fails at boot says so
+# once, long before that tail starts. mfi (Apple's auth chip) is matched only
+# at a word start, so ordinary words containing those letters do not flood it.
+# Bounded to the last 60 matches, each cut to 300 bytes.
+snapshot_airplay_log_filter() {
+    grep -iE 'airplay|raop|(^|[^a-z])mfi' | tail -60 | cut -c1-300
+}
+
 # One-shot diagnostic snapshot 90 s after start_agent. By then any
 # fast respawn churn has settled and either :8888 is up or it never
 # will be. The snapshot dumps listening sockets and process tree into
@@ -5072,29 +5104,35 @@ fi
 (
     sleep 90
     setup_log "=== one-shot post-start snapshot (uptime=$(uptime_s)s) ==="
-    # Only the ports STR cares about, not the whole table. The full netstat/ss
-    # dump appended tens of lines per boot to the NAND setup.log and the
-    # diagnostic bundle for no diagnostic gain: the question is always "is :8888
-    # bound and who else holds an STR/Bose port", which these filters answer.
-    # STR: 8888/9080/8081/443. Bose: 8080/8090/8091/17008/17002/17000.
-    _sock_ports=':8888 |:9080 |:8081 |:443 |:8080 |:8090 |:8091 |:17008 |:17002 |:17000 '
+    # Filters: snapshot_socket_filter / snapshot_process_filter above. -u is
+    # there for the UDP mDNS socket on :5353; the filter keeps the output small.
     if command -v ss >/dev/null 2>&1; then
-        setup_log "listening sockets (ss -ltnp, STR/Bose ports only):"
-        ss -ltnp 2>&1 | grep -E "$_sock_ports" | while IFS= read -r line; do setup_log "  $line"; done
+        setup_log "listening sockets (ss -ltunp, STR/Bose/AirPlay ports only):"
+        ss -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
     elif command -v netstat >/dev/null 2>&1; then
-        setup_log "listening sockets (netstat -ltnp, STR/Bose ports only):"
-        netstat -ltnp 2>&1 | grep -E "$_sock_ports" | while IFS= read -r line; do setup_log "  $line"; done
+        setup_log "listening sockets (netstat -ltunp, STR/Bose/AirPlay ports only):"
+        netstat -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
     else
         setup_log "listening sockets: ss and netstat both unavailable"
     fi
-    # Process tree, STR + Bose-relevant lines only (was a full ps -ef every
-    # boot). grep -v grep drops the matcher itself; head caps a runaway.
-    setup_log "process tree (STR/Bose-relevant, ps -ef or busybox ps):"
+    setup_log "process tree (STR/Bose/AirPlay-relevant, ps -ef or busybox ps):"
     if ps -ef >/dev/null 2>&1; then
-        ps -ef 2>&1 | grep -iE 'streborn|go-librespot|SoftwareUpdate|BoseApp|shepherdd|wpa_supplicant|sshd' | grep -v grep | head -40 | while IFS= read -r line; do setup_log "  $line"; done
+        ps -ef 2>&1 | snapshot_process_filter | while IFS= read -r line; do setup_log "  $line"; done
     else
-        ps 2>&1 | grep -iE 'streborn|go-librespot|SoftwareUpdate|BoseApp|shepherdd|wpa_supplicant|sshd' | grep -v grep | head -40 | while IFS= read -r line; do setup_log "  $line"; done
+        ps 2>&1 | snapshot_process_filter | while IFS= read -r line; do setup_log "  $line"; done
     fi
+    # One read of the syslog ring (busybox logread without -f returns at once),
+    # or /var/log/messages where a firmware writes one instead. Absolute path
+    # first: the PATH this script inherits does not always include /sbin.
+    setup_log "airplay syslog (last 60 matching lines of the whole log):"
+    if [ -x /sbin/logread ]; then
+        /sbin/logread 2>/dev/null
+    elif command -v logread >/dev/null 2>&1; then
+        logread 2>/dev/null
+    elif [ -r /var/log/messages ]; then
+        cat /var/log/messages 2>/dev/null
+    fi | snapshot_airplay_log_filter | while IFS= read -r line; do setup_log "  $line"; done
+    setup_log "/airplay syslog"
     if [ -f "$PIDFILE" ]; then
         CUR_PID=$(cat "$PIDFILE" 2>/dev/null)
         if [ -n "$CUR_PID" ] && [ -r "/proc/$CUR_PID/status" ]; then
