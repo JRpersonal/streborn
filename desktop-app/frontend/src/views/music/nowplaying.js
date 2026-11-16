@@ -159,11 +159,10 @@ function renderQueueControls() {
   if (pos) {
     const items = q.items || [];
     const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
-    // The running song's artist and album, as its Library row named them
-    // (#1033); the title itself is already on the now-playing line.
-    const meta = queueTrackMeta(q);
-    const of = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
-    pos.textContent = [of, meta].filter(Boolean).join(' · ');
+    // Only the position. The running song's artist and album (#1033) used to
+    // follow here too, but since #1874 the now-playing line above carries
+    // them, so the same names stood twice in the player (#1922).
+    pos.textContent = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
   }
 }
 

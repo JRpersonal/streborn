@@ -35,9 +35,12 @@ describe('queueTrackMeta', () => {
 });
 
 describe('wiring', () => {
-  it('the queue line shows it', () => {
-    const fn = srcOf('renderQueueControls');
-    expect(fn).toContain('queueTrackMeta(q)');
+  // Since #1874 the now-playing line carries artist and album, so the queue
+  // line under it names the position only; both together repeated the names
+  // right below each other (#1922).
+  it('the now-playing line shows it, the queue line does not repeat it', () => {
+    expect(srcOf('renderQueueControls')).not.toContain('queueTrackMeta');
+    expect(srcOf('renderQueueControls')).toContain("t('queue.trackOf'");
   });
 
   it('both folder plays send the album along with the artist', () => {
