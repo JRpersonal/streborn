@@ -28,6 +28,8 @@ export function BoxInstallReachable(arg1:string):Promise<boolean>;
 
 export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPresetInfo>>;
 
+export function BoxRestartPlan(arg1:string,arg2:number):Promise<main.RestartPlan>;
+
 export function BoxSSHStatus(arg1:string,arg2:number):Promise<main.BoxSSHState>;
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;

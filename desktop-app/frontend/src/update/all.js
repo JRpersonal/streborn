@@ -38,7 +38,7 @@ import {
   updateAllRowReport,
 } from './failreport.js';
 import { noteOTAResult, otaStuck } from './otastuck.js';
-import { fmtMB, stickMounted, weakWifiSignal } from './preflight.js';
+import { fmtMB, mayStayDark, stickMounted, weakWifiSignal } from './preflight.js';
 import { BOX_BUSY_TOKEN, UPDATE_STEPS, withStep } from './shared.js';
 import { ustate } from './state.js';
 
@@ -162,6 +162,11 @@ async function runUpdateAllBoxes(onStart) {
         }));
       }
     } catch { /* headroom unknown (older agent): never block a batch */ }
+    try {
+      // The same restart pre-flight as the single update (mayStayDark), as a
+      // note: the batch asks once for the whole run.
+      if (await mayStayDark(b)) notes.push(t('updateAll.noteDarkRisk', { name: getBoxLabel(b) }));
+    } catch { /* plan unknown: never block a batch */ }
   }
   // A grouped speaker leaves its group while it restarts, in a run just as in
   // a single update (#1339): said once, before the run starts.
@@ -473,7 +478,9 @@ async function runUpdateAllBoxes(onStart) {
     const r = rowState.get(host);
     const slot = r && updateAllRowReport(host);
     if (slot) {
-      slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), box: r.box });
+      const entry = darkEntries.find((e) => e.host === host);
+      const unplugFirst = !!(entry && entry.result && entry.result.unplugFirst);
+      slot.innerHTML = darkChecklistRowHtml({ name: getBoxLabel(r.box), box: r.box, unplugFirst });
       wireDarkChecklist(slot, { openURL: (url) => { try { BrowserOpenURL(url); } catch {} } });
     }
   }

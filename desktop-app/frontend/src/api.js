@@ -64,6 +64,7 @@ export {
   EjectDrive,
   BoxAgentVersion,
   BoxStoragePreflight,
+  BoxRestartPlan,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
   RecordOTAOutcome,
