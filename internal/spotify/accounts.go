@@ -757,14 +757,27 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 // message goes away by itself, because the cause is on Spotify's side and there
 // is nothing on the speaker that clearing it would fix. The window is generous
 // enough that switching to the app and back still shows it.
+//
+// It also ends as soon as the engine delivers real audio again
+// (noteKeyRefusalStreamedLocked): a notice that the account cannot play,
+// shown over a track that is playing, is plainly wrong (discussion #1930).
 func (m *Manager) AudioKeyRefused() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.audioKeyRefusedLocked(time.Now())
+}
+
+// audioKeyRefusedLocked is AudioKeyRefused at now. Caller holds m.mu.
+func (m *Manager) audioKeyRefusedLocked(now time.Time) bool {
 	// A newer engine stops after three refusals and reports it itself
 	// (keydenied.go), so its run never gets as far as keyRefusalRunTrips.
-	if !m.engineKeyDeniedAt.IsZero() && time.Since(m.engineKeyDeniedAt) < keyDeniedShowFor {
+	// Only a report after the last real audio counts.
+	if !m.engineKeyDeniedAt.IsZero() && m.engineKeyDeniedAt.After(m.keyRefusalClearedAt) &&
+		now.Sub(m.engineKeyDeniedAt) < keyDeniedShowFor {
 		return true
 	}
+	// Real audio resets the run (noteKeyRefusalStreamedLocked), so a run that
+	// trips here was refused track after track since the last thing that played.
 	if m.keyRefusalRun < keyRefusalRunTrips {
 		return false
 	}
@@ -772,7 +785,7 @@ func (m *Manager) AudioKeyRefused() bool {
 	if !m.keyRefusalGaveUpAt.IsZero() && m.keyRefusalGaveUpAt.After(last) {
 		last = m.keyRefusalGaveUpAt
 	}
-	return time.Since(last) < keyDeniedShowFor
+	return now.Sub(last) < keyDeniedShowFor
 }
 
 // spotifyWebGet makes ONE authenticated Spotify Web API call, using an access

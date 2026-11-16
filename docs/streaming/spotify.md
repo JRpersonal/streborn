@@ -57,7 +57,14 @@ trips the five-refusal run and gets paused by the agent; a newer one trips
 a recall during its back-off fails at once with an explaining message
 instead of waiting out the load timeouts.
 
-`AudioKeyRefused()` lasts ten minutes. For the apps the speaker also keeps
+`AudioKeyRefused()` lasts ten minutes, or until the engine delivers real
+audio again, whichever comes first (discussion #1930: the notice used to
+outlive a preset that played). That first audio page also resets the
+five-refusal run, so refusals on either side of a track that plays never add
+up to a run, and a refusal after it is reported again at once
+(`noteKeyRefusalStreamedLocked`). The `spotify_auth` debug section carries
+the run, the timestamps of each source and of the last clear. For the apps
+the speaker also keeps
 a sticky, per-account record (`internal/spotify/accountrefused.go`,
 discussion #1671): each refusal episode (either trip above, deduplicated
 within the 30 s run gap) asks the engine once which account is logged in
