@@ -327,6 +327,76 @@ func (m *Manager) PremiumRequired() bool {
 	return fresh == "free" || fresh == "open"
 }
 
+// PremiumRequiredFor is PremiumRequired asked for a recall of a key saved under
+// account, which is the question both recall paths actually have.
+//
+// PremiumRequired judges the account the engine is logged in as NOW. A recall
+// of another household account's key does not play under that account: it
+// first switches to the account the key was saved under (switchAccountFrom).
+// Asking about the current account there refused every Spotify key on the
+// speaker as soon as the engine sat on one account that is free, including the
+// keys a Premium account had saved and that would have switched and played
+// (discussion #1947: a lapsed account's keys failed, and the Premium account's
+// keys beside them failed with the same "free account" message until that
+// Premium account was tapped in again). So when the key belongs to a different
+// account AND the speaker holds a usable credential copy for it, the recall
+// will switch, the current account's plan says nothing about it, and the
+// answer is false. The engine reads the plan of the account it switched to,
+// and a refusal there is that account's own (the audio-key refusal message, and
+// PremiumRequired for the next press of that account's key).
+//
+// Everything else keeps PremiumRequired's answer: a key of the current account,
+// a key without an account, and a key whose account has no copy to switch to
+// (switchAccountFrom then plays it with the current account, which is exactly
+// the account the plan describes).
+func (m *Manager) PremiumRequiredFor(account string) bool {
+	account = strings.TrimSpace(account)
+	if account != "" && account != m.activeAccount() {
+		if _, found, err := m.readAccountCredential(account); found && err == nil {
+			return false
+		}
+	}
+	return m.PremiumRequired()
+}
+
+// activeAccount is the account the engine is logged in as, answered without
+// asking the engine (the recall gate runs before the speaker is woken and must
+// not wait on anything): the account the last /status read named, or, before
+// one has, the login the engine starts from (state.json). "" when neither is
+// known.
+func (m *Manager) activeAccount() string {
+	m.mu.Lock()
+	user := m.productUser
+	m.mu.Unlock()
+	if user != "" {
+		return user
+	}
+	if cred, ok := m.readStateCredential(); ok {
+		return strings.TrimSpace(cred.Username)
+	}
+	return ""
+}
+
+// readAccountCredential reads the per-account credential copy a recall swaps in
+// for username. found is false when there is no copy at all; err is set when a
+// copy exists but cannot be used (unparseable, or no login data in it).
+func (m *Manager) readAccountCredential(username string) (cred storedCredential, found bool, err error) {
+	data, rerr := os.ReadFile(filepath.Join(m.credStore, sanitizeUser(username)+".json"))
+	if rerr != nil {
+		return storedCredential{}, false, rerr
+	}
+	if err := json.Unmarshal(data, &cred); err != nil {
+		return storedCredential{}, true, err
+	}
+	if len(cred.Data) == 0 {
+		return storedCredential{}, true, errors.New("the credential copy holds no login data")
+	}
+	if cred.Username == "" {
+		cred.Username = username
+	}
+	return cred, true, nil
+}
+
 // currentUsername returns the Spotify account go-librespot is currently logged
 // in as, or "" if it is not reachable / not authed yet.
 func (m *Manager) currentUsername(ctx context.Context) string {
@@ -631,18 +701,16 @@ func (m *Manager) switchAccountFrom(ctx context.Context, cur, username string) (
 	if cur == username {
 		return false, nil // already this account: no switch, no restart
 	}
-	data, err := os.ReadFile(filepath.Join(m.credStore, sanitizeUser(username)+".json"))
-	if err != nil {
+	// The same read PremiumRequiredFor makes: a key it let past the plan gate
+	// because it would switch must be one this actually switches for.
+	cred, found, err := m.readAccountCredential(username)
+	if !found {
 		m.logger.Info("spotify: no stored credential for account, playing with current", "want", anonymise.MaskAccount(username))
 		return false, nil
 	}
-	var cred storedCredential
-	if err := json.Unmarshal(data, &cred); err != nil || len(cred.Data) == 0 {
+	if err != nil {
 		m.logger.Info("spotify: stored credential unreadable, playing with current", "want", anonymise.MaskAccount(username), "err", err)
 		return false, nil
-	}
-	if cred.Username == "" {
-		cred.Username = username
 	}
 	if err := m.writeActiveCredential(cred); err != nil {
 		return false, err

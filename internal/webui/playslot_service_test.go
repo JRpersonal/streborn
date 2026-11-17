@@ -187,7 +187,7 @@ func TestHandlePlaySlotWire(t *testing.T) {
 			s, _ := newPlayTestServer(t)
 			_ = s.presets.SetSlot(presets.Preset{Slot: 1, Name: "Mix", Type: "spotify", URI: "spotify:playlist:x"})
 			spotifyOn(s)
-			s.spotifyPremiumRequired = func() bool { return true }
+			s.spotifyPremiumRequired = func(string) bool { return true }
 			return s
 		}, http.StatusUnprocessableEntity,
 			`{"code":"spotify-premium-required","error":"The Spotify account on this speaker is a free account. Spotify presets only play with Spotify Premium.","name":"Mix","slot":1}` + "\n"},

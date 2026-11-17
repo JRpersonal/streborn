@@ -548,6 +548,17 @@ answers 429/503 for hours (#1077). The log says once per engine process
 which source was used: `read the account plan from the engine` or
 `read the account plan from Spotify`.
 
+The recall gate asks `PremiumRequiredFor(<the key's account>)`, not the
+plan of whoever is logged in. A key saved by another account that has a
+credential copy in `sp-accounts/` switches to that account before it plays,
+so the logged-in account's plan says nothing about it and does not refuse
+it. Until v1.6.4 it did: with the engine sitting on an account that had
+lapsed to free, every Spotify key on the speaker answered
+`spotify-premium-required`, the Premium account's keys included, until that
+Premium account was tapped in again (discussion #1947). A key of the
+logged-in account, a key without an account, and a key whose account has no
+usable copy (it would play with the logged-in account) keep the old answer.
+
 `/v1/me` is still the only source of the account's display name
 (`accountnames.go`). So when the engine reports the plan but no name is
 remembered for that account, the check makes one `/v1/me` call per
