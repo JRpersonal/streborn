@@ -42,7 +42,10 @@ func isEngineKeyDeniedLine(lc string) bool {
 func (m *Manager) noteEngineKeyDenied(detail string) {
 	now := time.Now()
 	m.mu.Lock()
-	fresh := m.engineKeyDeniedAt.IsZero() || now.Sub(m.engineKeyDeniedAt) > keyRefusalRunGap
+	// A report after real audio has played is a new episode even inside the
+	// run gap: whatever was refused before, something played in between.
+	fresh := m.engineKeyDeniedAt.IsZero() || now.Sub(m.engineKeyDeniedAt) > keyRefusalRunGap ||
+		!m.engineKeyDeniedAt.After(m.keyRefusalClearedAt)
 	m.engineKeyDeniedAt = now
 	m.engineKeyDeniedMsg = detail
 	// From now on this engine is known to stop by itself, so the agent's own
@@ -86,3 +89,42 @@ const keyDeniedBackoffHint = "Spotify refused the audio key for several tracks i
 	"stopped and is waiting a few minutes before asking again. " +
 	"This usually means Spotify does not let this engine stream with this account right now; " +
 	"the speaker's own Spotify entry is unaffected."
+
+// noteKeyRefusalStreamedLocked ends the short-lived refusal state once the
+// engine delivers real audio again, and reports whether the apps were being
+// told about a refusal until now. Called from noteAccountStreamed, the same
+// signal that clears the sticky per-account record: a refused key decrypts
+// nothing, so a first audio page proves the engine plays (accountrefused.go).
+//
+// Field report, discussion #1930 (ST10): a few stream attempts were refused,
+// then six preset presses in a row all played within two seconds, and the
+// apps kept saying Spotify refuses the account over a track that was playing,
+// for the rest of the ten-minute window.
+//
+// What it resets, and why that keeps the back-off honest:
+//   - keyRefusalRun goes back to zero, because the run means "refused in a
+//     row" and a track that plays breaks the row. An older engine that is
+//     refused again needs a fresh run of keyRefusalRunTrips, and that run
+//     trips the notice, the episode record and the agent's pause again.
+//   - keyRefusalClearedAt is stamped, and AudioKeyRefused only counts an
+//     engine key_denied report made after it. A newer engine that refuses
+//     again right after is reported at once. The engine's own back-off is
+//     cleared by the engine itself once a track plays (see the top of this
+//     file), so nothing here has to tell it.
+//
+// engineKeyDeniedAt, lastKeyRefusalAt and keyRefusalGaveUpAt keep their
+// values: the recall path asks engineKeyDeniedSince and playDenialHint about
+// a play that just failed, and those questions are about what happened, not
+// about what the apps should show.
+//
+// Cheap, because it runs on the drain path: a few field reads under the lock
+// the caller already holds. Caller holds m.mu.
+func (m *Manager) noteKeyRefusalStreamedLocked(now time.Time) bool {
+	if m.keyRefusalRun == 0 && !m.engineKeyDeniedAt.After(m.keyRefusalClearedAt) {
+		return false
+	}
+	showing := m.audioKeyRefusedLocked(now)
+	m.keyRefusalRun = 0
+	m.keyRefusalClearedAt = now
+	return showing
+}

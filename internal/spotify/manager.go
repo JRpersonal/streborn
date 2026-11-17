@@ -298,6 +298,11 @@ type Manager struct {
 	engineKeyDeniedAt      time.Time
 	engineKeyDeniedMsg     string
 	engineStopsOnKeyDenial bool
+	// keyRefusalClearedAt is when the engine last delivered real audio after a
+	// refusal had been noted: the short AudioKeyRefused notice stops at that
+	// point instead of running out its ten minutes over a track that plays
+	// (discussion #1930). See noteKeyRefusalStreamedLocked in keydenied.go.
+	keyRefusalClearedAt time.Time
 	// refusedAccounts maps each Spotify account id this engine has been refused
 	// for (a whole run of audio keys, not one track) to when that was first
 	// recorded. Kept on the NAND until the account plays; see accountrefused.go.

@@ -182,11 +182,13 @@ func (m *Manager) refusalAccount() string {
 //
 // The two callers can both fire for one episode (an engine that logs each
 // refused track AND reports the stop), so a second call within the run gap of
-// the first is the same episode and asks nothing.
+// the first is the same episode and asks nothing. Unless real audio played in
+// between: then it is a new episode, and the account is recorded again.
 func (m *Manager) noteKeyRefusalEpisode() {
 	now := time.Now()
 	m.mu.Lock()
-	same := !m.refusalEpisodeAt.IsZero() && now.Sub(m.refusalEpisodeAt) < keyRefusalRunGap
+	same := !m.refusalEpisodeAt.IsZero() && now.Sub(m.refusalEpisodeAt) < keyRefusalRunGap &&
+		m.refusalEpisodeAt.After(m.keyRefusalClearedAt)
 	m.refusalEpisodeAt = now
 	m.mu.Unlock()
 	if same {
@@ -208,18 +210,27 @@ func (m *Manager) noteKeyRefusalEpisode() {
 // it the one signal that proves the account plays, unlike a load, which the
 // engine logs for refused tracks too.
 //
+// It also ends the short-lived AudioKeyRefused notice (keydenied.go), which
+// otherwise ran out its ten minutes over a track that plays (#1930).
+//
 // Cheap on the common path: an empty store is one map length under the lock.
 // Only while something is recorded does it ask the engine who is logged in,
 // once per track start at most, and never two lookups at a time.
 func (m *Manager) noteAccountStreamed() {
 	m.mu.Lock()
+	noticeCleared := m.noteKeyRefusalStreamedLocked(time.Now())
 	m.loadRefusedAccountsLocked()
-	if len(m.refusedAccounts) == 0 || m.refusedClearBusy {
-		m.mu.Unlock()
+	ask := len(m.refusedAccounts) > 0 && !m.refusedClearBusy
+	if ask {
+		m.refusedClearBusy = true
+	}
+	m.mu.Unlock()
+	if noticeCleared {
+		m.logger.Info("spotify: the engine plays audio again after Spotify refused the audio key; the refusal notice is cleared")
+	}
+	if !ask {
 		return
 	}
-	m.refusedClearBusy = true
-	m.mu.Unlock()
 	go func() {
 		defer func() {
 			m.mu.Lock()

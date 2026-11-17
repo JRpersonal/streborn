@@ -283,6 +283,17 @@ func (m *Manager) CredentialSnapshot() map[string]any {
 	m.mu.Lock()
 	s := m.credReject
 	sr := m.stateRepair
+	// The audio-key refusal state behind /spotify/info's audioKeyRefused, so a
+	// report of the notice outliving a playing track (discussion #1930) can be
+	// read off the bundle: when each source last fired, the run, and when real
+	// audio last cleared it.
+	keyRun := m.keyRefusalRun
+	lastKeyRefusal := m.lastKeyRefusalAt
+	keyGaveUp := m.keyRefusalGaveUpAt
+	engineDenied := m.engineKeyDeniedAt
+	engineStops := m.engineStopsOnKeyDenial
+	keyCleared := m.keyRefusalClearedAt
+	keyRefused := m.audioKeyRefusedLocked(time.Now())
 	m.mu.Unlock()
 	present := stateHasCredential(filepath.Join(m.configDir, "state.json"))
 	_, backupErr := os.Stat(filepath.Join(m.configDir, rejectedCredentialFile))
@@ -299,6 +310,15 @@ func (m *Manager) CredentialSnapshot() map[string]any {
 		"stateRepairedAt":      fmtTime(sr.at),
 		"stateLoginRestored":   sr.restored,
 		"stateRepairError":     sr.err,
+		// Plain values only (ints, strings, bools): this section is a live Go
+		// value inside /api/debug/state, not generic JSON.
+		"audioKeyRefused":        keyRefused,
+		"keyRefusalRun":          keyRun,
+		"lastKeyRefusalAt":       fmtTime(lastKeyRefusal),
+		"keyRefusalGaveUpAt":     fmtTime(keyGaveUp),
+		"engineKeyDeniedAt":      fmtTime(engineDenied),
+		"engineStopsOnKeyDenial": engineStops,
+		"keyRefusalClearedAt":    fmtTime(keyCleared),
 	}
 	return out
 }
