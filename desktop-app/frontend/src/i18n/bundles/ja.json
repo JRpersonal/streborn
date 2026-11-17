@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Spotify エンジンを復元",
   "updateAll.confirmLead": "これらのスピーカーに最新のソフトウェアを適用します。それぞれ一度再起動し、自動的に戻ります。1台あたり約4分から6分です。",
   "updateAll.confirmLeadEngine": "これらはすでに最新で、Spotify エンジンだけが不足しています。通常は再起動なしで復元されます。",
+  "updateAll.confirmLeadNotes": "開始前に知っておいてください：",
   "updateAll.confirmBtn": "今すぐ更新",
   "updateAll.confirmBtnEngine": "今すぐ復元",
   "updateAll.checking": "スピーカーを確認しています…",

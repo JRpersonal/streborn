@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "استعادة محرك Spotify",
   "updateAll.confirmLead": "ستحصل مكبرات الصوت هذه على البرنامج الحالي. يعيد كل واحد التشغيل مرة واحدة ويعود من تلقاء نفسه، نحو أربع إلى ست دقائق لكل مكبر.",
   "updateAll.confirmLeadEngine": "هذه محدّثة بالفعل وينقصها محرك Spotify فقط. تتم استعادته عادةً دون إعادة تشغيل.",
+  "updateAll.confirmLeadNotes": "من المفيد معرفة ذلك قبل البدء:",
   "updateAll.confirmBtn": "تحديث الآن",
   "updateAll.confirmBtnEngine": "استعادة الآن",
   "updateAll.checking": "جارٍ فحص مكبرات الصوت…",

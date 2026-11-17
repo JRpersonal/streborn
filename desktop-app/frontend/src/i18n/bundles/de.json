@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Spotify-Engine nachholen",
   "updateAll.confirmLead": "Diese Lautsprecher bekommen die aktuelle Software. Jeder startet dabei einmal neu und meldet sich von allein zurück, etwa vier bis sechs Minuten pro Gerät.",
   "updateAll.confirmLeadEngine": "Diese hier sind schon aktuell, ihnen fehlt nur die Spotify-Engine. Die wird nachgeholt, normalerweise ohne Neustart.",
+  "updateAll.confirmLeadNotes": "Gut zu wissen, bevor es losgeht:",
   "updateAll.confirmBtn": "Jetzt aktualisieren",
   "updateAll.confirmBtnEngine": "Jetzt nachholen",
   "updateAll.checking": "Lautsprecher werden geprüft…",

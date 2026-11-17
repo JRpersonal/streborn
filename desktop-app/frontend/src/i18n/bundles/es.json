@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Restaurar el motor de Spotify",
   "updateAll.confirmLead": "Estos altavoces reciben el software actual. Cada uno se reinicia una vez y vuelve por sí solo, unos cuatro a seis minutos por altavoz.",
   "updateAll.confirmLeadEngine": "Estos ya están actualizados, solo les falta el motor de Spotify. Se vuelve a instalar, normalmente sin reiniciar.",
+  "updateAll.confirmLeadNotes": "Conviene saber esto antes de empezar:",
   "updateAll.confirmBtn": "Actualizar ahora",
   "updateAll.confirmBtnEngine": "Restaurar ahora",
   "updateAll.checking": "Comprobando los altavoces…",

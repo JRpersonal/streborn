@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Spotify-engine herstellen",
   "updateAll.confirmLead": "Deze speakers krijgen de huidige software. Elke speaker start één keer opnieuw op en komt vanzelf terug, ongeveer vier tot zes minuten per speaker.",
   "updateAll.confirmLeadEngine": "Deze zijn al bij, alleen de Spotify-engine ontbreekt. Die wordt teruggezet, normaal gesproken zonder herstart.",
+  "updateAll.confirmLeadNotes": "Goed om te weten voordat het begint:",
   "updateAll.confirmBtn": "Nu bijwerken",
   "updateAll.confirmBtnEngine": "Nu herstellen",
   "updateAll.checking": "Speakers worden gecontroleerd…",

@@ -2224,6 +2224,12 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 
 /* "Update all speakers" multi-progress overlay (logical props so RTL mirrors) */
 .ua-modal { max-width: 560px; }
+/* What happens during the run, and the pre-scan's notes, above the rows. */
+.ua-lead p { margin: 6px 0 4px 0; font-size: 13px; line-height: 1.45; }
+.ua-lead ul { margin: 0 0 4px 0; padding: 0; list-style: none; }
+.ua-lead li { font-size: 12px; line-height: 1.4; color: var(--c-muted); padding-inline-start: 14px; position: relative; margin-bottom: 2px; }
+.ua-lead li::before { content: '\2022'; position: absolute; inset-inline-start: 2px; }
+.ua-lead:empty { display: none; }
 .ua-list { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px 0; }
 .ua-row { background: var(--c-surface); border-radius: 6px; padding: 8px 10px; }
 .ua-row-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }

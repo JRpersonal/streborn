@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "補上 Spotify 引擎",
   "updateAll.confirmLead": "這些喇叭會裝上目前的軟體。每一台在更新時會重新啟動一次，然後自己回來，每台大約四到六分鐘。",
   "updateAll.confirmLeadEngine": "這些已經是最新版本，只差 Spotify 引擎沒補上。補的時候通常不用重新啟動。",
+  "updateAll.confirmLeadNotes": "開始前先知道這些：",
   "updateAll.confirmBtn": "立即更新",
   "updateAll.confirmBtnEngine": "立即補上",
   "updateAll.checking": "正在檢查你的喇叭…",

@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Spotify motorunu geri yükle",
   "updateAll.confirmLead": "Bu hoparlörler güncel yazılımı alır. Her biri bir kez yeniden başlar ve kendiliğinden geri döner, hoparlör başına yaklaşık dört ila altı dakika.",
   "updateAll.confirmLeadEngine": "Bunlar zaten güncel, yalnızca Spotify motoru eksik. Genellikle yeniden başlatmadan geri yüklenir.",
+  "updateAll.confirmLeadNotes": "Başlamadan önce bilmekte fayda var:",
   "updateAll.confirmBtn": "Şimdi güncelle",
   "updateAll.confirmBtnEngine": "Şimdi geri yükle",
   "updateAll.checking": "Hoparlörler kontrol ediliyor…",

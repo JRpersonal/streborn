@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Atkurti „Spotify“ variklį",
   "updateAll.confirmLead": "Šie garsiakalbiai gaus naujausią programinę įrangą. Kiekvienas kartą persikraus ir grįš pats, maždaug po keturias–šešias minutes.",
   "updateAll.confirmLeadEngine": "Šie jau naujausi, jiems trūksta tik „Spotify“ variklio. Jis bus atkurtas, paprastai be perkrovimo.",
+  "updateAll.confirmLeadNotes": "Verta žinoti prieš pradedant:",
   "updateAll.confirmBtn": "Atnaujinti dabar",
   "updateAll.confirmBtnEngine": "Atkurti dabar",
   "updateAll.checking": "Tikrinami garsiakalbiai…",
