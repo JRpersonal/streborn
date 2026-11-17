@@ -79,6 +79,9 @@ func newPlayTestServer(t *testing.T) (*Server, *soapRecorder) {
 		queueHostAnswers: func(context.Context, string) bool { return true },
 	}
 	t.Cleanup(func() { s.stopQueue("test cleanup") })
+	// Registered after the store's TempDir, so it runs before that is removed:
+	// a key recall can still be writing a recovered label into it.
+	t.Cleanup(s.keyLabelWrites.Wait)
 	return s, rec
 }
 
