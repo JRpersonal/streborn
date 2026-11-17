@@ -35,6 +35,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -202,21 +203,33 @@ const dummyPairXML = `<?xml version="1.0" encoding="UTF-8" ?>` +
 // marge. The box's own HTTP response usually times out (it tries to reach its
 // then-current marge URL during association), but it still stores the account -
 // so a timeout here is treated as success, not failure.
-func (a *App) setMargeAccountDummy(host string) {
+//
+// It returns a one-line account of what the box answered, for the unlock log.
+// A box that answers at once usually REFUSED the account rather than storing it:
+// a factory-fresh Wave (2026-11-17 bundle) answered without ever calling the
+// local responder and its UUID never appeared, and nothing recorded what it
+// said, so the answer is logged with its status and the start of its body.
+func (a *App) setMargeAccountDummy(host string) string {
 	client := &http.Client{Timeout: 12 * time.Second}
 	url := fmt.Sprintf("http://%s:8090/setMargeAccount", host)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(dummyPairXML))
 	if err != nil {
-		return
+		return "setMargeAccount: request not built: " + err.Error()
 	}
 	req.Header.Set("Content-Type", "application/xml")
+	start := time.Now()
 	resp, err := client.Do(req)
+	took := time.Since(start).Round(100 * time.Millisecond)
 	if err != nil {
 		// A timeout is the common, expected outcome and still sets the UUID.
-		a.logger.Info("telnet-bootstrap: setMargeAccount returned no clean response (expected; the box still stores the account)", "host", host, "err", err)
-		return
+		a.logger.Info("telnet-bootstrap: setMargeAccount returned no clean response (expected; the box still stores the account)", "host", host, "err", err, "took", took)
+		return fmt.Sprintf("setMargeAccount: no clean response after %v (expected): %v", took, err)
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
+	snippet := strings.Join(strings.Fields(string(body)), " ")
+	a.logger.Info("telnet-bootstrap: setMargeAccount answered", "host", host, "status", resp.StatusCode, "took", took, "body", snippet)
+	return fmt.Sprintf("setMargeAccount: HTTP %d after %v: %s", resp.StatusCode, took, snippet)
 }
 
 // enableSSHViaTelnetBootstrap is the factory-reset unlock: it gives the box a
@@ -277,7 +290,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 			return false, log.String(), false
 		}
 	}
-	a.setMargeAccountDummy(host)
+	fmt.Fprintf(&log, "%s\n", a.setMargeAccountDummy(host))
 	// Wait for the association to actually PERSIST the account before injecting.
 	// The box POSTs to the responder over a few seconds (device -> full ->
 	// provider_settings) and only then stores its margeAccountUUID; checking
