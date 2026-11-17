@@ -175,15 +175,25 @@ describe('fingerprint and the out-of-date marker', () => {
 });
 
 describe('housing colour', () => {
-  it('is dark until chosen and remembered per speaker', () => {
+  it('is white until chosen, dark for the Portable', () => {
     const storage = fakeStorage();
-    expect(housingOf('a', storage)).toBe('dark');
-    setHousing('a', 'white', storage);
+    expect(housingOf('a', storage, 'SoundTouch 10')).toBe('white');
+    expect(housingOf('a', storage, 'SoundTouch 30')).toBe('white');
+    expect(housingOf('a', storage, 'Wave SoundTouch')).toBe('white');
     expect(housingOf('a', storage)).toBe('white');
-    expect(housingOf('b', storage)).toBe('dark');
+    expect(housingOf('a', storage, 'SoundTouch Portable')).toBe('dark');
+    expect(housingOf('a', broken, 'SoundTouch 20')).toBe('white');
+  });
+
+  it('is what the user chose, per speaker', () => {
+    const storage = fakeStorage();
     setHousing('a', 'dark', storage);
-    expect(housingOf('a', storage)).toBe('dark');
-    expect(housingOf('a', broken)).toBe('dark');
+    expect(housingOf('a', storage, 'SoundTouch 20')).toBe('dark');
+    expect(housingOf('b', storage, 'SoundTouch 20')).toBe('white');
+    setHousing('p', 'white', storage);
+    expect(housingOf('p', storage, 'SoundTouch Portable')).toBe('white');
+    setHousing('a', 'white', storage);
+    expect(housingOf('a', storage, 'SoundTouch 20')).toBe('white');
   });
 });
 
@@ -215,7 +225,7 @@ describe('the one-time hint', () => {
 
   describe('is offered by a save, whichever way the key was saved', () => {
     beforeEach(() => forgetReadings());
-    const added = [...PRESETS, { slot: 2, name: 'Talk', type: 'radio' }];
+    const added = [...PRESETS, { slot: 2, name: 'Talk', type: 'radio', stream_url: 'https://stream.example.com/talk' }];
 
     it('not by the first reading of a speaker, nor by reading another speaker', () => {
       const storage = fakeStorage();
@@ -225,7 +235,7 @@ describe('the one-time hint', () => {
       expect(hintState(storage)).toBe('');
     });
 
-    it('by a key that was filled or renamed since the last reading', () => {
+    it('by a key that was filled, or plays something else, since the last reading', () => {
       const storage = fakeStorage();
       noteSpeakerKeys(KITCHEN, PRESETS, storage);
       noteSpeakerKeys(KITCHEN, added, storage);
@@ -234,8 +244,15 @@ describe('the one-time hint', () => {
       forgetReadings();
       const other = fakeStorage();
       noteSpeakerKeys(KITCHEN, PRESETS, other);
-      noteSpeakerKeys(KITCHEN, PRESETS.map((p) => (p.slot === 1 ? { ...p, name: 'Jazz 24' } : p)), other);
+      noteSpeakerKeys(KITCHEN, PRESETS.map((p) => (p.slot === 3 ? { ...p, uri: 'spotify:playlist:xyz' } : p)), other);
       expect(hintState(other)).toBe('show');
+    });
+
+    it('not by a rename', () => {
+      const storage = fakeStorage();
+      noteSpeakerKeys(KITCHEN, PRESETS, storage);
+      noteSpeakerKeys(KITCHEN, PRESETS.map((p) => (p.slot === 1 ? { ...p, name: 'Jazz 24' } : p)), storage);
+      expect(hintState(storage)).toBe('');
     });
 
     it('not by a key that was only cleared', () => {

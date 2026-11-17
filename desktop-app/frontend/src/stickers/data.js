@@ -7,6 +7,7 @@
 
 import { extractHost, logoHostsFor } from '../logos.js';
 import { ROW_SIZE, boxPresetRows } from '../presetrows.js';
+import { stickerKind } from './layout.js';
 import { appArtFromBoxArt, presetOwnArt } from '../utils.js';
 
 // speakerId names a speaker in what is remembered: its device ID, or its
@@ -101,9 +102,12 @@ function writeMap(key, map, storage) {
 }
 
 // The housing colour cannot be read from a speaker, so the user's choice per
-// speaker is kept. Dark until chosen.
-export function housingOf(id, storage) {
-  return readMap(HOUSING_KEY, storage)[id] === 'white' ? 'white' : 'dark';
+// speaker is kept. Until chosen it is white, and dark for the Portable, whose
+// sticker is only made in its grey.
+export function housingOf(id, storage, model = '') {
+  const chosen = readMap(HOUSING_KEY, storage)[id];
+  if (chosen === 'white' || chosen === 'dark') return chosen;
+  return stickerKind(model) === 'portable' ? 'dark' : 'white';
 }
 
 export function setHousing(id, housing, storage) {
@@ -128,28 +132,38 @@ export function rememberPrinted(fingerprints, storage) {
 // sticker since the app started. A speaker enters and leaves it whenever its
 // presets are read for the keys view, so no speaker is asked just for this.
 const stale = new Set();
-// What each speaker's keys were at the last reading, to notice a save.
+// What each speaker's slots played at the last reading, to notice a save.
 const lastSeen = new Map();
 
-const filled = (keys) => keys.reduce((n, k) => n + (k.name ? 1 : 0) + (k.twice ? 1 : 0), 0);
+// slotSources is what every filled slot plays, without its name: a rename
+// leaves it as it is, another station or playlist on the key does not.
+function slotSources(presets) {
+  const out = new Map();
+  for (const p of Array.isArray(presets) ? presets : []) {
+    if (!p || !p.name) continue;
+    out.set(p.slot, JSON.stringify([p.type || '', p.stream_url || '', p.uri || '', p.native || null, p.folder || null, p.track || null, p.items || null]));
+  }
+  return out;
+}
 
 // noteSpeakerKeys takes every fresh reading of a speaker's presets for the
 // keys view and does two things with it. It compares the keys with what was
 // printed for that speaker (one that was never printed is never stale). And
 // it notices a save: every way of putting something on a key (the search, a
-// hold, the library, Spotify, the phone) ends in such a reading, so a reading
-// that differs from the one before, with no key lost, is a key that was just
-// saved or renamed, and that offers the one-time hint.
+// hold, the library, Spotify, the phone) ends in such a reading, so a slot
+// that was empty at the reading before, or played something else, is a key
+// that was just saved, and that offers the one-time hint. A rename or a
+// cleared key does not.
 export function noteSpeakerKeys(box, presets, storage) {
   const id = speakerId(box);
   if (!id) return;
   const keys = stickerKeys(box, presets);
-  const now = { print: keysFingerprint(keys), filled: filled(keys) };
+  const now = slotSources(presets);
   const before = lastSeen.get(id);
   lastSeen.set(id, now);
-  if (before && before.print !== now.print && now.filled >= before.filled) offerHint(storage);
+  if (before && [...now].some(([slot, src]) => before.get(slot) !== src)) offerHint(storage);
   const printed = printedFingerprints(storage)[id];
-  if (printed && printed !== now.print) stale.add(id);
+  if (printed && printed !== keysFingerprint(keys)) stale.add(id);
   else stale.delete(id);
 }
 

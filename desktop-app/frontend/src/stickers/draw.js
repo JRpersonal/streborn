@@ -9,14 +9,36 @@
 // layout.js made. Images must be data: URIs: one image from another origin
 // would taint the canvas, and a tainted canvas cannot be read back.
 
-import { BLEED, PAGE } from './layout.js';
+import { BLEED, PAGE, SQUEEZE, SQUEEZE_CONDENSED } from './layout.js';
 
-// The app's UI font (style.css body), so the sheet looks like the app and
-// falls back per script the same way.
-export const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// The app's UI font (style.css body): what a script the condensed fonts do
+// not cover falls back to, and the whole sheet where there is none of them.
+const UI_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// The stickers were designed with a condensed font, so a condensed system
+// font comes first: Bahnschrift on Windows (one variable font, narrowed by
+// the stretch keyword), then what macOS and the common Linux desktops have.
+export const FONT_STACK = `Bahnschrift, 'Avenir Next Condensed', 'Roboto Condensed', 'DejaVu Sans Condensed', ${UI_STACK}`;
 export const PRINT_DPI = 300;
 
-const fontOf = (weight, px) => `${weight} ${px}px ${FONT_STACK}`;
+const fontOf = (weight, px) => `condensed ${weight} ${px}px ${FONT_STACK}`;
+
+// hasCondensedFont says whether the stack really draws narrower than the UI
+// font here. Asked by measuring: the stretch keyword and the family names
+// are accepted everywhere, also where nothing answers to them.
+export function hasCondensedFont(doc = document) {
+  const ctx = doc.createElement('canvas').getContext('2d');
+  const probe = 'Energy Discover 0123';
+  ctx.font = `700 100px ${UI_STACK}`;
+  const wide = ctx.measureText(probe).width;
+  ctx.font = fontOf(700, 100);
+  return ctx.measureText(probe).width < wide * 0.93;
+}
+
+// squeezeFor is the squeeze layout.js lays out with: a little with a
+// condensed font, the full one without.
+export function squeezeFor(doc = document) {
+  return hasCondensedFont(doc) ? SQUEEZE_CONDENSED : SQUEEZE;
+}
 
 // makeMeasure returns the measure(text, { size, weight }) that layout.js
 // asks for, answering in the unit size is given in. Text is measured at a

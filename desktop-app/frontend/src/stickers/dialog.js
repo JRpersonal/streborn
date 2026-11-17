@@ -22,7 +22,7 @@ import {
   setHousing,
   stickersStale,
 } from './data.js';
-import { PRINT_DPI, drawPage, loadImages, makeMeasure } from './draw.js';
+import { PRINT_DPI, drawPage, loadImages, makeMeasure, squeezeFor } from './draw.js';
 import { layoutStickers } from './layout.js';
 
 // The preview is the same drawing at a resolution a screen can use.
@@ -130,6 +130,7 @@ async function redraw(mine) {
   if (!m) return;
   m.layout = layoutStickers(m.speakers, {
     measure: m.measure,
+    squeeze: m.squeeze,
     texts: { instruction: t('stickers.sheetInstruction'), control: t('stickers.sheetControl') },
   });
   m.images = await loadImages(m.layout);
@@ -219,7 +220,7 @@ export async function openStickerDialog() {
 
   const { speakers, skipped } = await collectSpeakers(state.boxes, { GetPresets, PhoneAddressFor, PhoneQR, ResolveStationLogo, StickerImage });
   if (mine !== run || modal.classList.contains('hidden')) return;
-  model = { speakers, skipped, measure: makeMeasure(), layout: null, images: new Map() };
+  model = { speakers, skipped, measure: makeMeasure(), squeeze: squeezeFor(), layout: null, images: new Map() };
   const list = $('stickerSpeakers');
   list.innerHTML = speakersHTML(speakers, skipped);
   list.onchange = (e) => {

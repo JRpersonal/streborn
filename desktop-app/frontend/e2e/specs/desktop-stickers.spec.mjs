@@ -72,21 +72,21 @@ for (const ui2 of [false, true]) {
 test('the housing colour switch repaints the sticker and is remembered', async ({ app }) => {
   const { page } = app;
   await openFromKeys(page);
-  // The first speaker is the bedroom's SoundTouch 10.
+  // The first speaker is the bedroom's SoundTouch 10: white until chosen.
   const first = page.locator('.sticker-speaker').first();
-  await expect(first.getByRole('radio', { name: en('stickers.dark') })).toBeChecked();
+  await expect(first.getByRole('radio', { name: en('stickers.white') })).toBeChecked();
   // A point on its sticker's background, left of the first key.
-  const dark = await inkAt(page, 19, 40);
-  expect(dark).toEqual([0x14, 0x15, 0x18]);
+  const white = await inkAt(page, 19, 40);
+  expect(white).toEqual([0xE5, 0xDC, 0xC8]);
 
-  await first.getByRole('radio', { name: en('stickers.white') }).check();
-  await expect.poll(() => inkAt(page, 19, 40)).toEqual([0xE5, 0xDC, 0xC8]);
+  await first.getByRole('radio', { name: en('stickers.dark') }).check();
+  await expect.poll(() => inkAt(page, 19, 40)).toEqual([0x14, 0x15, 0x18]);
 
   await page.locator('#stickerClose').click();
   await expect(modal(page)).toBeHidden();
   await openFromKeys(page);
-  await expect(page.locator('.sticker-speaker').first().getByRole('radio', { name: en('stickers.white') })).toBeChecked();
-  await expect(page.locator('.sticker-speaker').nth(1).getByRole('radio', { name: en('stickers.dark') })).toBeChecked();
+  await expect(page.locator('.sticker-speaker').first().getByRole('radio', { name: en('stickers.dark') })).toBeChecked();
+  await expect(page.locator('.sticker-speaker').nth(1).getByRole('radio', { name: en('stickers.white') })).toBeChecked();
 });
 
 test('Save sends one A4 page image per page and says where the file went', async ({ app, mock }) => {

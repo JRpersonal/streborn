@@ -237,6 +237,14 @@ describe('text fitting', () => {
     expect(ellipsise('😀😀😀😀😀😀', 4, font, measure)).toBe('😀😀😀…');
   });
 
+  it('keeps a name on one line when one step smaller is enough', () => {
+    expect(fitName('Radio Jazz', 10, 2, measure)).toEqual({ lines: ['Radio Jazz'], size: 2 });
+    // 13 characters: too wide even squeezed, one line at nine tenths.
+    const smaller = fitName('Radio Jazz FM', 10, 2, measure);
+    expect(smaller.lines).toEqual(['Radio Jazz FM']);
+    expect(smaller.size).toBeCloseTo(1.8, 5);
+  });
+
   it('tries a name narrower and smaller before cutting it', () => {
     // Fits two lines of 10 as it is.
     expect(fitName('Radio Paradise', 10, 2, measure)).toEqual({ lines: ['Radio', 'Paradise'], size: 2 });

@@ -69,7 +69,7 @@ async function collectOne(box, api, storage) {
     }),
   ]);
   const id = speakerId(box);
-  return { id, name: labelOf(box), model: box.model || '', housing: housingOf(id, storage), keys, qr };
+  return { id, name: labelOf(box), model: box.model || '', housing: housingOf(id, storage, box.model || ''), keys, qr };
 }
 
 // collectSpeakers reads every STR speaker of the list. Returns the speakers

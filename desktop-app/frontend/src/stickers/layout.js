@@ -62,11 +62,16 @@ const ELLIPSIS = '…';
 // A name that does not fit two lines is tried narrower and smaller before it
 // is cut.
 const NAME_SCALES = [1, 0.9, 0.8];
-// How narrow a line may be drawn. draw.js squeezes a line into its box, so
-// text up to 1/SQUEEZE as wide as the box still fits; the letters then look
-// like a condensed cut of the font, which the stickers were designed with.
+// How narrow a line may be drawn where the system has no condensed font, which
+// the stickers were designed with. draw.js squeezes a line into its box, so
+// text up to 1/SQUEEZE as wide as the box still fits and the letters look
+// like a condensed cut. A real condensed font is only squeezed a little, to
+// the width of the one the design was made with (layoutStickers' squeeze
+// option).
 export const SQUEEZE = 0.82;
-const loose = (maxW) => maxW / SQUEEZE;
+export const SQUEEZE_CONDENSED = 0.9;
+let squeeze = SQUEEZE;
+const loose = (maxW) => maxW / squeeze;
 
 // tokens splits text where a line may break: at spaces (dropped at a break)
 // and after hyphens (kept).
@@ -123,8 +128,13 @@ export function wrapText(text, maxW, font, measure, maxLines = 2) {
 }
 
 // fitName lays a key's name out on up to two lines, smaller when that avoids
-// cutting it.
+// cutting it. One line a step smaller is preferred over two: it leaves the
+// cell room for the pressed-twice entry.
 export function fitName(text, maxW, size, measure) {
+  const name = String(text || '').trim();
+  for (const scale of NAME_SCALES.slice(0, 2)) {
+    if (name && measure(name, { size: size * scale, weight: 700 }) <= loose(maxW)) return { lines: [name], size: size * scale };
+  }
   let last = { lines: [], size };
   for (const scale of NAME_SCALES) {
     const font = { size: size * scale, weight: 700 };
@@ -401,7 +411,8 @@ const INK = '#111111';
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
 // two translated lines of the sheet (the stickers themselves hold no words):
 // { instruction, control }. A speaker's pieces never go on two pages.
-export function layoutStickers(speakers, { measure, texts = {} } = {}) {
+export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE } = {}) {
+  squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
   const groups = buildGroups(speakers || [], measure);
   const head = wrapText(texts.instruction || '', AREA.w, HEAD_FONT, measure, 4).lines;
   const header = head.map((text, i) => ({
