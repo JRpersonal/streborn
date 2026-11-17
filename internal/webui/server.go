@@ -843,6 +843,11 @@ type Server struct {
 	exhaustedStandbySendFn func(ctx context.Context, host string) error
 	hushReadNowPlayingFn   func(ctx context.Context, host string) nowPlayingSnapshot
 	hushStopFn             func(ctx context.Context) error
+	// nativeRemoveMu guards nativeRemoveFlights, the account removal running
+	// per service (usservices.go). A DELETE that arrives while one runs
+	// waits for it and gets its answer instead of sending a second removal.
+	nativeRemoveMu      sync.Mutex
+	nativeRemoveFlights map[string]*nativeRemoveFlight
 	// setVolumeFn overrides the start-volume write for tests. nil = the box.
 	setVolumeFn func(ctx context.Context, vol int) error
 	// startVolumeMu guards startVolumeAt, when the start level was last

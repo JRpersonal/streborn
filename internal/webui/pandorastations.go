@@ -81,7 +81,7 @@ func (s *Server) pandoraGate(w http.ResponseWriter, r *http.Request, method stri
 }
 
 // writePandoraAccountError turns a failed /sources read into the answer.
-func writePandoraAccountError(w http.ResponseWriter, err error) {
+func (s *Server) writePandoraAccountError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errPandoraNotLinked) {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": "No Pandora account is linked to this speaker.",
@@ -89,8 +89,9 @@ func writePandoraAccountError(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	s.logger.Warn("pandora: could not read the speaker's sources", "err", err)
 	writeJSON(w, http.StatusBadGateway, map[string]any{
-		"error": "The speaker's source list could not be read: " + err.Error(),
+		"error": "The speaker's source list could not be read (" + speakerErrorReason(err) + ").",
 		"code":  "sources-unreadable",
 	})
 }
@@ -103,7 +104,7 @@ func (s *Server) handlePandoraStations(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	account, status, err := s.pandoraAccount(ctx)
 	if err != nil {
-		writePandoraAccountError(w, err)
+		s.writePandoraAccountError(w, err)
 		return
 	}
 	stations, err := s.nativeBox().ListServiceStations(ctx, pandoraSource, account)
@@ -111,7 +112,7 @@ func (s *Server) handlePandoraStations(w http.ResponseWriter, r *http.Request) {
 		msg := maskAccountIn(err.Error(), account)
 		s.logger.Warn("pandora: the speaker did not list the stations", "account", maskForLog(account), "status", status, "err", msg)
 		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": "The speaker could not list the Pandora stations: " + msg,
+			"error": "The speaker could not list the Pandora stations (" + speakerErrorReason(err) + ").",
 			"code":  "navigate-failed",
 		})
 		return
@@ -181,7 +182,7 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 	// that lost the account answers "not linked" rather than a firmware error.
 	account, _, err := s.pandoraAccount(ctx)
 	if err != nil {
-		writePandoraAccountError(w, err)
+		s.writePandoraAccountError(w, err)
 		return
 	}
 	item, listed := s.listedPandoraItem(req.Location)
@@ -200,7 +201,7 @@ func (s *Server) handlePandoraPlay(w http.ResponseWriter, r *http.Request) {
 		msg := maskAccountIn(err.Error(), account)
 		s.logger.Warn("pandora: the speaker refused the station", "location", req.Location, "listed", listed, "err", msg)
 		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": "The speaker did not start the station: " + msg,
+			"error": "The speaker did not start the station (" + speakerErrorReason(err) + ").",
 			"code":  "select-failed",
 		})
 		return
