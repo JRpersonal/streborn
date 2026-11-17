@@ -326,6 +326,16 @@ func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.
 	// A folder of folders (an artist with one folder per album, #1682) is read
 	// with its sub-folders, the way it was walked when it was put on the key.
 	tree, err := s.collectFolderTracks(rctx, srv, p.Folder.ContainerID, false)
+	if anc := libraryContainerAncestors(p.Folder.ContainerID); len(anc) > 0 && libraryServerAnswered(rctx, err) {
+		// Windows media sharing forgets a deep folder id until the folders
+		// above it are browsed again (#1857): the key's folder answers "no such
+		// object" and the same key plays once somebody walked down to it in a
+		// library browser. Walk down once here, then ask again.
+		s.browseLibraryAncestors(rctx, srv, anc)
+		tree, err = s.collectFolderTracks(rctx, srv, p.Folder.ContainerID, false)
+		s.logger.Info("queue preset: the server did not know the key's folder, browsed the folders above it and asked again",
+			"slot", slot, "server", p.Source, "folder", p.Folder.ContainerID, "ancestors", len(anc), "known now", err == nil)
+	}
 	fresh := tree.items
 	if err != nil || len(fresh) == 0 {
 		// Gone only on the server's own word: a "no such container" for the
@@ -362,6 +372,41 @@ func (s *Server) reresolveQueuePreset(ctx context.Context, slot int, p *presets.
 		"slot", slot, "server", p.Source, "tracks", n, "of", len(p.Items))
 	s.storeHealedKey("queue preset", slot, *p, nil)
 	return true, nil
+}
+
+// libraryMaxAncestors caps the folders browseLibraryAncestors walks through.
+const libraryMaxAncestors = 8
+
+// libraryContainerAncestors lists the folders a hierarchical object id names
+// above itself, outermost first, starting at the root "0": Windows media
+// sharing builds its folder ids as a chain, "14_a_b" sits in "14_a", which
+// sits in "14". An id without that shape names no ancestors.
+func libraryContainerAncestors(id string) []string {
+	parts := strings.Split(id, "_")
+	if len(parts) < 2 || len(parts) > libraryMaxAncestors {
+		return nil
+	}
+	out := make([]string, 0, len(parts))
+	out = append(out, "0")
+	for i := 1; i < len(parts); i++ {
+		if parts[i-1] == "" {
+			return nil
+		}
+		out = append(out, strings.Join(parts[:i], "_"))
+	}
+	return out
+}
+
+// browseLibraryAncestors reads the first page of each folder in ids, in order,
+// the way a library browser walks down to a folder. The answers are not used:
+// the walk only makes the server know the folders below again.
+func (s *Server) browseLibraryAncestors(ctx context.Context, srv dlna.Server, ids []string) {
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		_, _ = dlna.Browse(ctx, srv, id, 0, libraryBrowsePage)
+	}
 }
 
 // queueItemsListed reports whether any track of a folder key sits in the
