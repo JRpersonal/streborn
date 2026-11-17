@@ -5109,17 +5109,6 @@ snapshot_airplay_log_filter() {
 (
     sleep 90
     setup_log "=== one-shot post-start snapshot (uptime=$(uptime_s)s) ==="
-    # Filters: snapshot_socket_filter / snapshot_process_filter above. -u is
-    # there for the UDP mDNS socket on :5353; the filter keeps the output small.
-    if command -v ss >/dev/null 2>&1; then
-        setup_log "listening sockets (ss -ltunp, STR/Bose/AirPlay ports only):"
-        ss -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
-    elif command -v netstat >/dev/null 2>&1; then
-        setup_log "listening sockets (netstat -ltunp, STR/Bose/AirPlay ports only):"
-        netstat -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
-    else
-        setup_log "listening sockets: ss and netstat both unavailable"
-    fi
     setup_log "process tree (STR/Bose/AirPlay-relevant, ps -ef or busybox ps):"
     if ps -ef >/dev/null 2>&1; then
         ps -ef 2>&1 | snapshot_process_filter | while IFS= read -r line; do setup_log "  $line"; done
@@ -5138,6 +5127,20 @@ snapshot_airplay_log_filter() {
         cat /var/log/messages 2>/dev/null
     fi | snapshot_airplay_log_filter | while IFS= read -r line; do setup_log "  $line"; done
     setup_log "/airplay syslog"
+    # Listening sockets come after the process list and the AirPlay lines on
+    # purpose: the diagnostic carries only the last 8 KB of setup.log, and on a
+    # Portable the process list alone pushed this section out of that window.
+    # Filters: snapshot_socket_filter / snapshot_process_filter above. -u is
+    # there for the UDP mDNS socket on :5353; the filter keeps the output small.
+    if command -v ss >/dev/null 2>&1; then
+        setup_log "listening sockets (ss -ltunp, STR/Bose/AirPlay ports only):"
+        ss -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
+    elif command -v netstat >/dev/null 2>&1; then
+        setup_log "listening sockets (netstat -ltunp, STR/Bose/AirPlay ports only):"
+        netstat -ltunp 2>&1 | snapshot_socket_filter | while IFS= read -r line; do setup_log "  $line"; done
+    else
+        setup_log "listening sockets: ss and netstat both unavailable"
+    fi
     if [ -f "$PIDFILE" ]; then
         CUR_PID=$(cat "$PIDFILE" 2>/dev/null)
         if [ -n "$CUR_PID" ] && [ -r "/proc/$CUR_PID/status" ]; then
