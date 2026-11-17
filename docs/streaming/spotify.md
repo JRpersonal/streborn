@@ -149,6 +149,14 @@ carries both halves the box needs: the Ogg-passthrough (the box decodes,
 the engine never does) and the merged upstream. Every other branch in the
 fork is history.
 
+Last upstream merge: 2026-11-16 (fork PR #13, upstream f83227e, 17 commits).
+Relevant to STR: a stalled audio chunk is fetched again, dead pooled HTTP/2
+connections are replaced, incomplete metadata no longer panics, the
+playback id is cleared with the track (an Android Spotify client crashed on
+the stale id), and a Web API play of a plain track list plays. The Vorbis,
+ALSA and PulseAudio fixes do not reach the lean build. Field-tested on the
+Portable (.79) on 2026-11-17: two skips and two natural track changes.
+
 Building an older topic branch is not a harmless mistake, because the
 failure looks like a box problem: the engine starts, authenticates, and
 then refuses every single track with `failed initializing ogg vorbis
