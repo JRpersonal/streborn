@@ -115,16 +115,19 @@ export async function checkAppUpdate(manual) {
     // Only treat a real http(s) URL as a download link; anything else is
     // ignored so we never hand junk to the system browser.
     const dlUrl = (typeof m.downloadUrl === 'string' && /^https?:\/\//i.test(m.downloadUrl)) ? m.downloadUrl : '';
-    // Link target for the notes: an explicit notesUrl from the server if
-    // present, else the matching GitHub release page for the new version,
-    // else the releases list.
     const repo = ((state.appInfo && state.appInfo.githubUrl) || 'https://github.com/JRpersonal/streborn').replace(/\/+$/, '');
     // /releases/latest always resolves to the newest PUBLISHED release, so it
     // never 404s on a draft/just-published tag (the "page not found" a user hit).
+    // It stays the manual download fallback below.
     const latestUrl = `${repo}/releases/latest`;
-    const notesUrl = (typeof m.notesUrl === 'string' && /^https?:\/\//i.test(m.notesUrl))
-      ? m.notesUrl
-      : latestUrl;
+    // "What's new" opens the releases list, the same page "What's new" under
+    // Help and info opens (helpModel urls.releaseNotes): the newest notes on
+    // top and every earlier version below them. This link used to open only
+    // the one new release (the manifest's notesUrl, else /releases/latest), so
+    // whoever skipped a few versions saw the last step and none of the ones
+    // before it, and the two "What's new" links in the app led to different
+    // pages (#1954, after #1872 for Help and info).
+    const releasesUrl = `${repo}/releases`;
     // The banner itself only shows for a genuinely newer version (CheckAppUpdate
     // returns nothing otherwise), and the download button only when the manifest
     // carries a real download URL. The button is a primary button so it stands
@@ -135,7 +138,7 @@ export async function checkAppUpdate(manual) {
     // a Gatekeeper problem: the build is notarized). The button
     // always shows now: the asset URL + hash are resolved from the release
     // manifest in the backend, so it no longer depends on the manifest carrying a
-    // downloadUrl. notesUrl / releases page stays as the manual fallback.
+    // downloadUrl. The latest release page stays as the manual fallback.
     const isMacOS = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
     // Label makes the target unambiguous: this updates THE APP itself, not the
     // speaker (a non-technical user clicked the speaker-update expecting the app
@@ -185,7 +188,7 @@ export async function checkAppUpdate(manual) {
       banner.insertBefore(line, banner.firstChild);
     }).catch(() => {});
     const notesLink = $('appUpdateNotes');
-    if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
+    if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releasesUrl); };
     const dl = $('appUpdateBtn');
     if (dl) dl.onclick = viaWinget
       ? () => runWingetUpdate(m.version, dl, installLabel)
