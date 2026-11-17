@@ -72,7 +72,11 @@ func (s *Server) playLibraryFilePresetLocked(ctx context.Context, p presets.Pres
 	gen := s.recordLastPlay(&lastPlayInfo{boxURL: directURL, title: p.Name, art: p.Art, mime: mime,
 		artist: artist, album: album})
 	if from != "" {
-		go s.storeKeyTrackLabel(p.Slot, directURL, artist, album, from)
+		s.keyLabelWrites.Add(1)
+		go func(slot int) {
+			defer s.keyLabelWrites.Done()
+			s.storeKeyTrackLabel(slot, directURL, artist, album, from)
+		}(p.Slot)
 	}
 	name, art := p.Name, p.Art
 	go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {

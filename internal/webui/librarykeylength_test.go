@@ -64,6 +64,9 @@ func newDIDLTestServer(t *testing.T) (*Server, *didlRecorder) {
 		renderer: &upnp.Renderer{ControlURL: box.URL, Client: box.Client()},
 	}
 	t.Cleanup(func() { s.stopQueue("test cleanup") })
+	// Registered after the store's TempDir, so it runs before that is removed:
+	// a key recall can still be writing a recovered label into it.
+	t.Cleanup(s.keyLabelWrites.Wait)
 	return s, rec
 }
 

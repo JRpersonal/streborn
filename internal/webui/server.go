@@ -213,6 +213,10 @@ type Server struct {
 	// the evaluation that started them. The tests wait on it; nothing in
 	// production does yet, but a graceful shutdown would.
 	alarmBackground sync.WaitGroup
+	// keyLabelWrites tracks the store write of a label recovered at a key
+	// recall (storeKeyTrackLabel), which runs after the recall answered. Same
+	// role as alarmBackground: the tests wait on it before their TempDir goes.
+	keyLabelWrites sync.WaitGroup
 	// ring is the alarm that is ringing (or snoozed) right now, if any. RAM
 	// only: see alarmsnooze.go.
 	ring alarmRing
