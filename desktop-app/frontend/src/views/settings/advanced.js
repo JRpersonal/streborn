@@ -6,6 +6,7 @@
 import { state } from '../../state.js';
 import { $, escapeHtml, escapeAttr, showToast } from '../../utils.js';
 import { t } from '../../i18n/index.js';
+import { INFO_ICON, POWER_ICON_PATHS } from '../../glyphs.js';
 import { boxPresetRows, keyLabel, keyNum, rowSlots } from '../../presetrows.js';
 // Group keys (#863): the thumbs keys that carry a saved group are marked on
 // the remote key map; the document itself is edited on the Multi-Room tab.
@@ -42,6 +43,9 @@ const VOICE_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/A
 // alive plus the integrations that target them (Jens, 2026-09-06).
 const HOME_ASSISTANT_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/HOME-ASSISTANT.md';
 
+// POWER_KEY marks the one key remoteSvg draws as an icon rather than a label.
+const POWER_KEY = Symbol('power');
+
 // remoteSvg draws the SoundTouch remote as a clickable key map for the
 // webhook section, laid out from a photo of the real remote (2026-09-06):
 // power and AUX on top, presets 1 to 6, volume up/down stacked beside a tall
@@ -52,10 +56,14 @@ function remoteSvg() {
   const key = (id, x, y, w, h, label, cls) =>
     `<g class="rc-keyg" data-key="${id}">`
     + `<rect class="rc-key ${cls || ''}" data-key="${id}" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/>`
-    + `<text class="rc-label" x="${x + w / 2}" y="${y + h / 2 + 1}">${label}</text>`
+    + (label === POWER_KEY
+      // The power symbol is drawn: U+23FB is a tofu box on a Debian desktop
+      // (#1948). The 24-unit icon at 18 px, centred on the key.
+      ? `<g class="rc-icon" transform="translate(${x + w / 2 - 9} ${y + h / 2 - 9}) scale(0.75)">${POWER_ICON_PATHS}</g>`
+      : `<text class="rc-label" x="${x + w / 2}" y="${y + h / 2 + 1}">${label}</text>`)
     + `</g>`;
   const keys = [
-    key('power', 16, 22, 80, 46, '&#9211;'), key('aux', 104, 22, 80, 46, 'AUX'),
+    key('power', 16, 22, 80, 46, POWER_KEY), key('aux', 104, 22, 80, 46, 'AUX'),
     key('preset1', 16, 78, 50, 46, '1'), key('preset2', 75, 78, 50, 46, '2'), key('preset3', 134, 78, 50, 46, '3'),
     key('preset4', 16, 134, 50, 46, '4'), key('preset5', 75, 134, 50, 46, '5'), key('preset6', 134, 134, 50, 46, '6'),
     key('volUp', 16, 190, 80, 46, '&#128266;+', 'rc-off'), key('volDown', 16, 246, 80, 46, '&#128266;&#8722;', 'rc-off'),
@@ -138,7 +146,7 @@ export function renderAdvancedSections() {
         <span class="muted small" id="announceVolumeVal" style="flex:0 0 2.5em;text-align:right">25</span>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.announceCharHint'))}</small>
-      <small class="muted small" style="display:block;margin-top:6px">&#9432; ${escapeHtml(t('settingsView.announcePrivacy'))}</small>
+      <small class="muted small" style="display:block;margin-top:6px">${INFO_ICON} ${escapeHtml(t('settingsView.announcePrivacy'))}</small>
       <details style="margin-top:10px">
         <summary class="muted small" style="cursor:pointer">${escapeHtml(t('settingsView.announceExpert'))}</summary>
         <small class="muted small" style="display:block;margin:6px 0">${escapeHtml(t('settingsView.announceExpertHelp'))}</small>

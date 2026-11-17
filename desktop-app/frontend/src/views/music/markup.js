@@ -5,6 +5,7 @@
 
 import { t } from '../../i18n/index.js';
 import { escapeAttr, escapeHtml } from '../../utils.js';
+import { POWER_ICON } from '../../glyphs.js';
 
 // ---------- Box steuern View ----------
 
@@ -46,7 +47,7 @@ export function musicViewMarkup() {
       </div>
       <div class="source-buttons" id="sourceButtons">
         <span class="source-inputs" id="sourceInputs"></span>
-        <button class="btn btn-power btn-source-icon" id="powerBtn" aria-pressed="false" aria-label="${escapeAttr(t('controls.powerTitle'))}" title="${escapeAttr(t('controls.powerTitle'))}">&#9211;</button>
+        <button class="btn btn-power btn-source-icon" id="powerBtn" aria-pressed="false" aria-label="${escapeAttr(t('controls.powerTitle'))}" title="${escapeAttr(t('controls.powerTitle'))}">${POWER_ICON}</button>
       </div>
       <div class="volume-control">
         <span class="vol-scope hidden" id="musicVolumeScope"></span>

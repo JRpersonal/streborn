@@ -10,6 +10,8 @@
 // phone remote already uses, never "standby": a group master really is on and
 // cannot be put to standby without dissolving the group.
 
+import { PLAY_ICON } from './glyphs.js';
+
 // nowStateLabel picks the state word (an i18n key, '' for none) and the bar's
 // class for a play state and an upper-cased source. An explicit STOP_STATE on a
 // real source is "stopped"; with no source (standby, nothing selected) the
@@ -42,9 +44,9 @@ export function isAnalogueInput(srcU) {
 // for PAUSE_STATE only, the play arrow otherwise. An analogue input in
 // STOP_STATE keeps the play arrow that matches its "active" word.
 export function nowStateGlyph(ps, srcU) {
-  if (ps === 'STOP_STATE') return isAnalogueInput(srcU) ? '&#9205;' : '&#9209;';
+  if (ps === 'STOP_STATE') return isAnalogueInput(srcU) ? PLAY_ICON : '&#9209;';
   if (ps === 'PAUSE_STATE') return '&#9208;';
-  return '&#9205;';
+  return PLAY_ICON;
 }
 
 // keepsLiveTitle says whether a play state may keep the cached live ICY title.

@@ -14,6 +14,7 @@ import { nowLine, playingLibraryURLs, queueNowItem } from '../../librarynow.js';
 import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
+import { PLAY_ICON } from '../../glyphs.js';
 import { queueEndLabelKey } from '../../queueend.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import {
@@ -219,7 +220,7 @@ export function renderNowPlayingBar() {
   const ppBtn = $('pauseBtn');
   if (ppBtn) {
     ppBtn.innerHTML = stoppedOrPaused(ps)
-      ? '&#9205; ' + escapeHtml(t('controls.play'))
+      ? PLAY_ICON + ' ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
   // Track skip/previous: for a Spotify playlist, and for Bluetooth or AirPlay

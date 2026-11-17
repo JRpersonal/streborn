@@ -1614,6 +1614,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-power.on { border-color: var(--brand); color: var(--brand); }
 .btn-source-icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
 .btn-source-icon svg { display: block; }
+/* An icon drawn as SVG where a character would have been (glyphs.js): power,
+   play and the circled i are tofu boxes on a Debian desktop (#1948). 1em and
+   the text colour, sat on the baseline the character sat on. */
+.glyph { display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em; flex: none; overflow: visible; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }
 /* While a stereo pair half is selected the slider moves the whole pair, and the
    pair's name sits in front of it (#1093). The row grows by the label's width so
@@ -3755,6 +3759,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .rc-key.rc-on { stroke: #4caf50; stroke-width: 2.5; }
 .rc-key.rc-sel { fill: #1f5f8f; stroke: #7cc0ff; stroke-width: 2.5; }
 .rc-key.rc-off { cursor: default; opacity: .4; }
+.rc-icon { fill: none; stroke: #e8e8e8; stroke-width: 2.2; stroke-linecap: round; pointer-events: none; }
 .rc-label { fill: #e8e8e8; font-size: 13px; font-family: system-ui, sans-serif; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
 .rc-legend { line-height: 1.7; }
 .rc-legend-on, .rc-legend-sel { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; }

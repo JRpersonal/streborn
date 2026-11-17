@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { isAnalogueInput, keepsLiveTitle, nowStateGlyph, nowStateLabel, presetMayLight } from './stoppedstate.js';
+import { PLAY_ICON } from './glyphs.js';
 import { titleSwapOffered } from './titleswap.js';
 import { srcOf } from './test/source.js';
 
@@ -55,14 +56,14 @@ describe('nowStateGlyph', () => {
   it('draws a stop square for stopped and pause bars for paused only', () => {
     expect(nowStateGlyph('STOP_STATE')).toBe('&#9209;');
     expect(nowStateGlyph('PAUSE_STATE')).toBe('&#9208;');
-    expect(nowStateGlyph('PLAY_STATE')).toBe('&#9205;');
-    expect(nowStateGlyph('BUFFERING_STATE')).toBe('&#9205;');
+    expect(nowStateGlyph('PLAY_STATE')).toBe(PLAY_ICON);
+    expect(nowStateGlyph('BUFFERING_STATE')).toBe(PLAY_ICON);
     expect(nowStateGlyph('STOP_STATE', 'BLUETOOTH')).toBe('&#9209;');
   });
 
   it('keeps the play arrow for an analogue input that reads "active"', () => {
-    expect(nowStateGlyph('STOP_STATE', 'AUX')).toBe('&#9205;');
-    expect(nowStateGlyph('STOP_STATE', 'LOCAL')).toBe('&#9205;');
+    expect(nowStateGlyph('STOP_STATE', 'AUX')).toBe(PLAY_ICON);
+    expect(nowStateGlyph('STOP_STATE', 'LOCAL')).toBe(PLAY_ICON);
   });
 });
 

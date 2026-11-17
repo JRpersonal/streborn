@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileSource, srcOf } from '../test/source.js';
 import { transportGlyph, transportLabel } from './transport.js';
+import { PLAY_ICON } from '../glyphs.js';
 
 // Line endings follow the checkout; the rules below are matched on LF.
 const css = readFileSync(new URL('./shell2.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
@@ -20,6 +21,9 @@ describe('UI 2.0 transport buttons', () => {
     expect(transportGlyph(`${PLAY} Play`)).toBe('play');
     expect(transportGlyph(`${PLAY} Wiedergabe`)).toBe('play');
     expect(transportGlyph(`${PAUSE} Duraklat`)).toBe('pause');
+    // Play is an inline SVG now (#1948), told by its mark in the markup.
+    expect(transportGlyph(`${PLAY_ICON} Play`)).toBe('play');
+    expect(transportGlyph(`${PLAY_ICON} Wiedergabe`)).toBe('play');
     // The markup's first state, and anything unknown, draws Pause.
     expect(transportGlyph('')).toBe('pause');
     expect(transportGlyph(undefined)).toBe('pause');
@@ -36,7 +40,7 @@ describe('UI 2.0 transport buttons', () => {
 
   it('reads the symbols nowplaying.js and the markup write', () => {
     const bar = srcOf('renderNowPlayingBar');
-    expect(bar).toContain("'&#9205; ' + escapeHtml(t('controls.play'))");
+    expect(bar).toContain("PLAY_ICON + ' ' + escapeHtml(t('controls.play'))");
     expect(bar).toContain("'&#9208; ' + escapeHtml(t('controls.pause'))");
     expect(fileSource('views/music/markup.js')).toContain('id="stopBtn">&#9209; ');
   });
@@ -44,7 +48,7 @@ describe('UI 2.0 transport buttons', () => {
   it('names the buttons where the preview mounts, and only there', () => {
     expect(srcOf('mountShell2')).toContain('nameTransport();');
     const name = srcOf('nameTransport');
-    expect(name).toContain('pp.dataset.ui2Glyph = transportGlyph(pp.textContent)');
+    expect(name).toContain('pp.dataset.ui2Glyph = transportGlyph(pp.innerHTML)');
     expect(name).toContain('new MutationObserver(sync)');
     // The words stay in the button (its accessible name); only a tooltip and
     // the glyph mark are added.

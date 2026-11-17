@@ -48,6 +48,7 @@ import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 import { parsePresetConflict } from '../presetmove.js';
 import { libraryRowStatus } from '../librarynow.js';
+import { PLAY_ICON } from '../glyphs.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
 // they are shared across views; the library code calls them as deps.<name>.
@@ -2047,7 +2048,7 @@ function renderLibrary() {
     const subs = libraryOnlySubfolders();
     const folderActions = (nItems > 0 || subs) ? `
       <div class="library-folder-actions">
-        <button class="btn lib-play-folder-btn">&#9205; ${escapeHtml(t('controls.playFolder'))}</button>
+        <button class="btn lib-play-folder-btn">${PLAY_ICON} ${escapeHtml(t('controls.playFolder'))}</button>
         <button class="btn lib-save-folder-btn" title="${escapeAttr(t('controls.saveFolderPreset'))}">&#11088; ${escapeHtml(t('controls.saveFolderPreset'))}</button>
         <button class="btn btn-mini toggle-btn lib-queue-shuffle${libState.shuffle ? ' active' : ''}" title="${escapeAttr(t('controls.shuffle'))}">&#128256; ${escapeHtml(t('controls.shuffle'))}</button>
         <button class="btn btn-mini toggle-btn lib-queue-repeat${libState.repeat !== 'off' ? ' active' : ''}" title="${escapeAttr(t('controls.repeat'))}">&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}</button>
