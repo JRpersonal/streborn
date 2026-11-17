@@ -108,6 +108,34 @@ func TestAccountResyncIgnoresReadsAfterTheBootWindow(t *testing.T) {
 	}
 }
 
+// TestAccountResyncReportsLateReadsSparingly: a read after the boot window is
+// reported (it is the moment the keys go missing with nothing to recheck
+// them), but a firmware that reads its account every few minutes must not
+// write a line each time.
+func TestAccountResyncReportsLateReadsSparingly(t *testing.T) {
+	var log fireLog
+	r := newAccountResync(time.Minute, time.Millisecond, log.fire)
+	clock := r.start.Add(2 * time.Minute)
+	r.now = func() time.Time { return clock }
+
+	r.noteAccountRead() // reported
+	first := r.lateLogged
+	if first.IsZero() || r.late != 0 {
+		t.Fatalf("first late read: lateLogged=%v late=%d, want it reported and the count reset", first, r.late)
+	}
+	clock = clock.Add(5 * time.Minute)
+	r.noteAccountRead() // inside the spacing: counted, not reported
+	r.noteAccountRead()
+	if !r.lateLogged.Equal(first) || r.late != 2 {
+		t.Fatalf("reads inside the spacing: lateLogged moved=%v late=%d, want unmoved and 2", !r.lateLogged.Equal(first), r.late)
+	}
+	clock = clock.Add(lateLogEvery)
+	r.noteAccountRead() // spacing over: reported with the reads it covered
+	if r.lateLogged.Equal(first) || r.late != 0 {
+		t.Fatalf("read after the spacing: lateLogged unmoved=%v late=%d, want a new report and the count reset", r.lateLogged.Equal(first), r.late)
+	}
+}
+
 // TestAccountResyncStaleTimerDoesNothing: a timer of an older arming that
 // fires anyway (Stop lost the race) must neither run the check early nor eat
 // the reads the newer arming is waiting for.

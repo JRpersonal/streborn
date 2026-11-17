@@ -33,6 +33,8 @@ const (
 	// speaker, and the firmware's account reads of a boot fall within its
 	// first minutes.
 	accountResyncBootWindow = 10 * time.Minute
+	// lateLogEvery spaces the reports of account reads after the boot window.
+	lateLogEvery = 30 * time.Minute
 )
 
 // presetRecheckAsk wakes the reconcile for one ordinary (missing-only) pass
@@ -52,6 +54,14 @@ type accountResync struct {
 	gen    int // which arming the pending timer belongs to
 	reads  int
 	fire   func(reads int)
+	// late counts the account reads that arrived after the boot window, and
+	// lateLogged is when they were last reported. Such a read drops the key
+	// registrations just the same and nothing rechecks them, which a field
+	// bundle could not show (a speaker with a Pandora account found its keys
+	// empty after standby). Reported at most once per lateLogEvery, so a
+	// firmware that reads its account all night does not fill the NAND log.
+	late       int
+	lateLogged time.Time
 }
 
 // newAccountResync returns a debouncer whose boot window starts now. fire is
@@ -72,6 +82,13 @@ func (r *accountResync) noteAccountRead() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.now().Sub(r.start) > r.window {
+		r.late++
+		if r.lateLogged.IsZero() || r.now().Sub(r.lateLogged) >= lateLogEvery {
+			slog.Info("account read after the boot window: the firmware drops its key registrations on it, and no key check is armed",
+				"readsSinceLastReport", r.late, "agentUpMin", int(r.now().Sub(r.start).Minutes()))
+			r.late = 0
+			r.lateLogged = r.now()
+		}
 		return
 	}
 	r.reads++
