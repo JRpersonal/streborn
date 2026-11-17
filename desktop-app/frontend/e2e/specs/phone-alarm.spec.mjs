@@ -250,3 +250,68 @@ test('a save from a stale page keeps the other app\'s change (#1918)', async ({ 
   const fail = await page.evaluate(() => window.T.alarmFail);
   expect(await page.locator('#alarmSum').textContent()).not.toContain(fail);
 });
+
+// #1952: the list printed a fixed 24h "06:45" while the editor's native time
+// picker read "6:45 AM". The list and the "Next:" line now follow the
+// browser's own 12h/24h convention, the one the picker follows too; "Next:"
+// drops the seconds and stays in the speaker's zone (the zone named under the
+// card) on a phone set to another one.
+for (const [locale, timezoneId, time] of [
+  ['en-US', 'Europe/Berlin', '6:45 AM'],
+  ['en-US', 'America/New_York', '6:45 AM'],
+  ['de-DE', 'Europe/Berlin', '06:45'],
+]) {
+  test.describe(`alarm times in ${locale}, phone in ${timezoneId}`, () => {
+    test.use({ locale, timezoneId });
+    test('the list and Next: use the browser\'s time format (#1952)', async ({ phone }) => {
+      const { page } = phone;
+      await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+      await expect(page.locator('#alarmList [data-alarm-edit="0"] strong')).toHaveText(time);
+      const sum = await page.locator('#alarmSum').textContent();
+      expect(sum).toContain(time);
+      expect(sum).not.toMatch(/\d:\d\d:\d\d/);
+    });
+  });
+}
+
+// #1952: a station name that runs to a paragraph stops after two lines in the
+// alarm list and in the editor, with the whole name in the title; the editor's
+// time sits at the page's own input size instead of 1.4 times it.
+test.describe('alarm on a long station name', () => {
+  const NAME = '# TOP 100 DJ CHARTS - DJ REMIX & CHARTS RADIO @ TikTok Charts, Electronic Music, EDM, House, Deep House, '
+    + 'Dance Music, Techno & Hypertechno, Top40, Latin Charts, Reggaeton, Urban, HipHop, Club & Party Radio - & LIVE DJ SETS';
+  test.use({ phoneOverrides: { '/api/presets': { body: PHONE.PRESETS.map((p) => (p.slot === 3 ? { ...p, name: NAME } : p)) } } });
+
+  function lines(el) {
+    const cs = getComputedStyle(el);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    return { shown: Math.round(el.getBoundingClientRect().height / lh), cut: el.scrollHeight > el.clientHeight + 1 };
+  }
+
+  for (const w of [390, 320]) {
+    test(`stops after two lines at ${w}px (#1952)`, async ({ phone }) => {
+      const { page } = phone;
+      await page.setViewportSize({ width: w, height: 844 });
+      await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
+      const row = page.locator('#alarmList [data-alarm-edit="0"]');
+      await expect(row).toHaveAttribute('title', /LIVE DJ SETS$/);
+      const listed = await row.locator('.clamp2').evaluate(lines);
+      expect(listed.shown).toBeLessThanOrEqual(2);
+      expect(listed.cut).toBe(true);
+      // The switch next to it stays on screen.
+      const box = await page.locator('#alarmList [data-alarm-on="0"]').boundingBox();
+      expect(box.x + box.width).toBeLessThanOrEqual(w);
+      // The short name of the second alarm is not touched.
+      expect((await page.locator('#alarmList [data-alarm-edit="1"] .clamp2').evaluate(lines)).cut).toBe(false);
+
+      await openEditor(page);
+      const line = page.locator('#alarmPresetLine');
+      await expect(line).toHaveAttribute('title', /LIVE DJ SETS$/);
+      const ed = await line.evaluate(lines);
+      expect(ed.shown).toBeLessThanOrEqual(2);
+      expect(ed.cut).toBe(true);
+      expect(await page.locator('#alarmTime').evaluate((e) => getComputedStyle(e).fontSize)).toBe('16px');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    });
+  }
+});
