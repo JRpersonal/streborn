@@ -557,8 +557,8 @@ body {
 .sticker-status:empty { margin: 0; min-height: 0; }
 .sticker-status.is-ok { color: var(--signal-green); }
 .sticker-status.is-error { color: var(--signal-red); }
-.sticker-preview { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.sticker-speakers { flex: 0 1 auto; max-height: 30vh; overflow-y: auto; }
+.sticker-preview { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
+.sticker-speakers { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; }
 .sticker-page { display: block; width: 100%; height: auto; border: 1px solid var(--c-border-2); border-radius: 2px; background: #fff; }
 
 /* The one-time row under the install success message: set off by a thin rule
