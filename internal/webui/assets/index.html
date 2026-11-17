@@ -283,9 +283,32 @@ button.btn:active { background:var(--press); }
    the keys start exactly where they did under the label alone, whatever line
    height the platform's font gives the label (fixed negative margins matched
    Windows' Segoe UI and were 3px off with Linux fonts). */
-.phead.two { position:relative; }
-.phead.two #lblPresets { padding-right:120px; }
-.phead.two .rowsw { position:absolute; right:12px; top:50%; transform:translateY(-50%); }
+/* The tools of the heading line (Transfer, the 1x/2x switch) are laid over
+   the label's line, so they add no height: the label keeps its own block
+   layout and margins, and its padding keeps its text clear of the tools. The
+   padding is the tools' measured width (--phtools, set by paintPresetTools),
+   since the Transfer label differs per language. */
+.phead { position:relative; }
+.phead.tools #lblPresets { padding-right:var(--phtools, 120px); overflow-wrap:anywhere; }
+.phtools { position:absolute; right:12px; top:50%; transform:translateY(-50%); display:flex; align-items:center; gap:4px; }
+/* Transfer (#1591): drawn like a segment of the switch beside it. Under 380px
+   only the icon shows; the name stays for screen readers and the title. */
+.xferbtn { position:relative; min-width:44px; height:40px; padding:0; margin:0; background:none; border:0; color:var(--fg); font:inherit; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; }
+.xferbtn .seg { display:flex; align-items:center; gap:5px; height:26px; box-sizing:border-box; padding:0 10px; white-space:nowrap; border:1px solid var(--line); border-radius:8px; background:var(--card2); }
+.xferbtn[aria-expanded="true"] .seg { background:color-mix(in srgb, var(--accent) 18%, var(--card2)); border-color:var(--accent); }
+.xferbtn:focus-visible { outline:none; }
+.xferbtn:focus-visible .seg { outline:2px solid var(--accent); outline-offset:1px; }
+@media (max-width:379px) { .xferbtn .xflbl { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; } }
+.xfercard { margin-top:0; }
+.xfercard .xfsel { display:block; width:100%; box-sizing:border-box; min-height:44px; margin:4px 0 10px; padding:8px 10px; font:inherit; font-size:15px; border-radius:8px; border:1px solid var(--line); background:var(--card2); color:var(--fg); }
+.xfercard .xfwarn { margin:0 0 10px; padding:6px 10px; border-left:3px solid #d97706; font-size:13px; line-height:1.4; }
+.xfercard .xfnote { margin:0 0 10px; font-size:13px; line-height:1.4; color:var(--muted); }
+.xfercard .xfto { display:block; font-size:13px; color:var(--muted); }
+.xfercard button.btn.xfgo { border-color:#d97706; font-weight:600; }
+.xfercard .xfmsg:empty { display:none; }
+.xfercard .xfmsg p { margin:0 0 8px; font-size:14px; line-height:1.4; overflow-wrap:anywhere; }
+.xfercard .xfmsg.ok p:first-child { color:var(--accent); font-weight:600; }
+.xfercard .xfmsg.warn, .xfercard .xfmsg.error { border-left:3px solid #d97706; padding-left:10px; }
 .pickhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .pickhead { flex-wrap:wrap; margin-bottom:4px; }
 .pickhead > :first-child { flex:1 1 auto; min-width:0; margin:0; }
@@ -840,8 +863,16 @@ html.ui2 .tabbar button .ti { display:none; }
      wrapper adds nothing and the heading is exactly what it was. -->
 <div class="phead" id="presetHead">
 <div class="label" id="lblPresets" style="margin:18px 12px 8px">Presets</div>
+<!-- The tools of the heading line: Transfer (copy these keys to other
+     speakers, #1591) and the 1x/2x switch. Hidden while neither is offered. -->
+<div class="phtools" id="presetTools" hidden>
+<button type="button" class="xferbtn" id="btnXfer" aria-expanded="false" aria-controls="xferCard" hidden><span class="seg"><svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="11" height="14" rx="2"></rect><path d="M10 12h11"></path><path d="M17 8l4 4-4 4"></path></svg><span class="xflbl" id="btnXferLbl">Transfer</span></span></button>
 <div class="rowsw" id="presetRowSw" role="group" aria-label="Key rows" hidden></div>
 </div>
+</div>
+<!-- The transfer itself, opened from the heading line: which speaker, what it
+     replaces there, then the answer per speaker. Filled by renderXfer*. -->
+<div class="card xfercard" id="xferCard" hidden></div>
 <!-- One line over an empty second row: what it is and where to fill it. -->
 <div class="row2hint" id="row2Hint" hidden><span id="row2HintTxt"></span> <button type="button" class="linkbtn" id="btnRow2Find"></button></div>
 <div class="grid" id="presets"></div>
@@ -1201,6 +1232,8 @@ function pickDict(){
   for (var k3 in base3) out[k3] = (sel3[k3] != null ? sel3[k3] : base3[k3]);
   var base4 = I18N4.en, sel4 = I18N4[code] || base4;
   for (var k4 in base4) out[k4] = (sel4[k4] != null ? sel4[k4] : base4[k4]);
+  var base5 = I18N5.en, sel5 = I18N5[code] || base5;
+  for (var k5 in base5) out[k5] = (sel5[k5] != null ? sel5[k5] : base5[k5]);
   return out;
 }
 // A third dictionary with short lines: one locale per line and only a few
@@ -1237,6 +1270,23 @@ var I18N4 = {
   lt:{tListen:"Klausytis",tSpk2:"Garsiakalbiai",keysOn:"Mygtukai: {{name}}",findSumOn:"Ieškokite pasauliniame stočių kataloge ir paleiskite stotį per {{name}}.",offlineOn:"{{name}} šiuo metu neatsako. Patikrinkite, ar jis įjungtas į elektros tinklą ir prisijungęs prie Wi-Fi, arba pasirinkite kitą garsiakalbį iš sąrašo viršuje.",tryAgain:"Bandyti dar kartą",noKeysOn:"{{name}} dar neturi išsaugotų mygtukų. Paleiskite stotį, tada palaikykite mygtuką, kad ją ten išsaugotumėte.",onlyOne:"Kol kas tik {{name}}. Kiti garsiakalbiai su ST Reborn tame pačiame tinkle čia atsiras patys.",helpInfo:"Pagalba ir informacija",updates:"Atnaujinimai",issues:"Pranešti per GitHub",source:"Šaltinio kodas",worldMap:"Pasaulio žemėlapis",supportLead:"ST Reborn yra nemokamas ir atvirojo kodo. Jis finansuojamas iš aukų.",about:"Apie ST Reborn",privacy:"Privatumas",imprint:"Rekvizitai",offlineWord:"Neprisijungęs",withNames:"su {{names}}",stereoTag:"(stereo)",checkingNow:"Tikrinama…",stillOffOn:"{{name}} vis dar neatsako. Patikrinkite, ar jis įjungtas į elektros tinklą ir prisijungęs prie Wi-Fi, arba pasirinkite kitą garsiakalbį iš sąrašo viršuje."},
   lv:{tListen:"Klausīties",tSpk2:"Skaļruņi",keysOn:"Pogas: {{name}}",findSumOn:"Meklē pasaules staciju katalogā un atskaņo staciju ierīcē {{name}}.",offlineOn:"{{name}} pašlaik neatbild. Pārbaudi, vai tam ir strāva un tas ir pievienots Wi-Fi, vai izvēlies citu skaļruni sarakstā augšpusē.",tryAgain:"Mēģināt vēlreiz",noKeysOn:"Ierīcē {{name}} vēl nav saglabātu pogu. Atskaņo staciju un tad turi nospiestu pogu, lai to tur saglabātu.",onlyOne:"Pagaidām tikai {{name}}. Citi skaļruņi ar ST Reborn tajā pašā tīklā šeit parādīsies paši.",helpInfo:"Palīdzība un informācija",updates:"Atjauninājumi",issues:"Ziņot GitHub",source:"Pirmkods",worldMap:"Pasaules karte",supportLead:"ST Reborn ir bezmaksas un atvērtā koda. To finansē ziedojumi.",about:"Par ST Reborn",privacy:"Privātums",imprint:"Rekvizīti",offlineWord:"Bezsaistē",withNames:"ar {{names}}",stereoTag:"(stereo)",checkingNow:"Pārbauda…",stillOffOn:"{{name}} joprojām neatbild. Pārbaudi, vai tam ir strāva un tas ir pievienots Wi-Fi, vai izvēlies citu skaļruni sarakstā augšpusē."},
   uk:{tListen:"Слухати",tSpk2:"Колонки",keysOn:"Кнопки: {{name}}",findSumOn:"Шукайте у світовому каталозі станцій і вмикайте станцію на {{name}}.",offlineOn:"{{name}} зараз не відповідає. Перевірте, чи є живлення і чи підключено до Wi-Fi, або виберіть іншу колонку зі списку вгорі.",tryAgain:"Спробувати ще раз",noKeysOn:"На {{name}} ще немає збережених кнопок. Увімкніть станцію, а потім утримуйте кнопку, щоб зберегти її туди.",onlyOne:"Поки що лише {{name}}. Інші колонки з ST Reborn у тій самій мережі з'являться тут самі.",helpInfo:"Довідка та інформація",updates:"Оновлення",issues:"Повідомити на GitHub",source:"Вихідний код",worldMap:"Карта світу",supportLead:"ST Reborn безкоштовний і має відкритий код. Він існує завдяки пожертвам.",about:"Про ST Reborn",privacy:"Конфіденційність",imprint:"Вихідні дані",offlineWord:"Не в мережі",withNames:"з {{names}}",stereoTag:"(стерео)",checkingNow:"Перевіряємо…",stillOffOn:"{{name}} досі не відповідає. Перевірте, чи є живлення і чи підключено до Wi-Fi, або виберіть іншу колонку зі списку вгорі."}
+};
+// A fifth dictionary for copying the keys to other speakers (#1591), one
+// locale per line like I18N3. pickDict merges it with the same per-key English
+// fall-through; every locale carries every key.
+var I18N5 = {
+  en:{xfBtn:"Transfer",xfHead:"Copy keys to another speaker",xfIntro:"Copies the keys of this speaker to another speaker on your network, so you do not have to set up each one by hand.",xfTo:"Copy to",xfAll:"All other speakers ({n})",xfReplRow:"On the speaker you choose, this replaces keys 1 to 6.",xfReplBoth:"On the speaker you choose, this replaces the keys pressed once and the keys pressed twice.",xfSpotify:"The Spotify login of this speaker goes along, so the Spotify keys play there too.",xfBusy:"Copying the keys. This takes a few seconds per speaker.",xfDone:"{name} took the keys ({n}).",xfAllDone:"All {n} speakers took the keys.",xfPartial:"{done} of {total} speakers took the keys.",xfRow1:"{name} has only one row of keys, so the keys pressed twice were not copied there.",xfConflict:"{station} is already on key {key} of {name}. Delete that key there, then transfer again.",xfUnreach:"{name} did not answer. Check that it is switched on, then transfer again.",xfFail:"{name} did not take the keys.",xfRunning:"A transfer is already running on this speaker. Try again in a moment.",xfNoTargets:"No other speaker found to transfer to.",xfClose:"Close"},
+  de:{xfBtn:"Übertragen",xfHead:"Tasten auf einen anderen Lautsprecher kopieren",xfIntro:"Kopiert die Tasten dieses Lautsprechers auf einen anderen im Netzwerk, damit du nicht jeden von Hand einrichten musst.",xfTo:"Kopieren nach",xfAll:"Alle anderen Lautsprecher ({n})",xfReplRow:"Auf dem Lautsprecher, den du wählst, ersetzt das die Tasten 1 bis 6.",xfReplBoth:"Auf dem Lautsprecher, den du wählst, ersetzt das die Tasten für einmal und für zweimal Drücken.",xfSpotify:"Der Spotify-Login dieses Lautsprechers geht mit, damit die Spotify-Tasten dort auch spielen.",xfBusy:"Die Tasten werden kopiert. Das dauert ein paar Sekunden pro Lautsprecher.",xfDone:"{name} hat die Tasten übernommen ({n}).",xfAllDone:"Alle {n} Lautsprecher haben die Tasten übernommen.",xfPartial:"{done} von {total} Lautsprechern haben die Tasten übernommen.",xfRow1:"{name} hat nur eine Tastenreihe, deshalb wurden die Tasten für zweimal Drücken dort nicht kopiert.",xfConflict:"{station} liegt auf {name} schon auf Taste {key}. Lösche die Taste dort und übertrage noch einmal.",xfUnreach:"{name} hat nicht geantwortet. Prüf, ob er eingeschaltet ist, und übertrage noch einmal.",xfFail:"{name} hat die Tasten nicht übernommen.",xfRunning:"Auf diesem Lautsprecher läuft schon eine Übertragung. Versuch es gleich noch mal.",xfNoTargets:"Kein anderer Lautsprecher zum Übertragen gefunden.",xfClose:"Schließen"},
+  nl:{xfBtn:"Overzetten",xfHead:"Toetsen naar een andere speaker kopiëren",xfIntro:"Kopieert de toetsen van deze speaker naar een andere speaker in je netwerk, zodat je ze niet allemaal met de hand hoeft in te stellen.",xfTo:"Kopiëren naar",xfAll:"Alle andere speakers ({n})",xfReplRow:"Op de speaker die je kiest, vervangt dit de toetsen 1 tot en met 6.",xfReplBoth:"Op de speaker die je kiest, vervangt dit de toetsen voor één keer en twee keer drukken.",xfSpotify:"De Spotify-login van deze speaker gaat mee, zodat de Spotify-toetsen daar ook spelen.",xfBusy:"De toetsen worden gekopieerd. Dat duurt een paar seconden per speaker.",xfDone:"{name} heeft de toetsen overgenomen ({n}).",xfAllDone:"Alle {n} speakers hebben de toetsen overgenomen.",xfPartial:"{done} van {total} speakers hebben de toetsen overgenomen.",xfRow1:"{name} heeft maar één rij toetsen, daarom zijn de toetsen voor twee keer drukken daar niet gekopieerd.",xfConflict:"{station} staat op {name} al op toets {key}. Verwijder die toets daar en zet de toetsen opnieuw over.",xfUnreach:"{name} antwoordde niet. Controleer of hij aan staat en zet de toetsen opnieuw over.",xfFail:"{name} heeft de toetsen niet overgenomen.",xfRunning:"Op deze speaker loopt al een overdracht. Probeer het zo meteen opnieuw.",xfNoTargets:"Geen andere speaker gevonden om naar over te zetten.",xfClose:"Sluiten"},
+  fr:{xfBtn:"Transférer",xfHead:"Copier les touches vers une autre enceinte",xfIntro:"Copie les touches de cette enceinte sur une autre enceinte de votre réseau, pour que vous n'ayez pas à configurer chacune à la main.",xfTo:"Copier vers",xfAll:"Toutes les autres enceintes ({n})",xfReplRow:"Sur l'enceinte que vous choisissez, cela remplace les touches 1 à 6.",xfReplBoth:"Sur l'enceinte que vous choisissez, cela remplace les touches à appui simple et à double appui.",xfSpotify:"La connexion Spotify de cette enceinte est transférée aussi, pour que les touches Spotify y fonctionnent.",xfBusy:"Copie des touches en cours. Cela prend quelques secondes par enceinte.",xfDone:"{name} a repris les touches ({n}).",xfAllDone:"Les {n} enceintes ont repris les touches.",xfPartial:"{done} enceintes sur {total} ont repris les touches.",xfRow1:"{name} n'a qu'une rangée de touches, les touches à double appui n'y ont donc pas été copiées.",xfConflict:"{station} est déjà sur la touche {key} de {name}. Supprimez cette touche là-bas, puis relancez le transfert.",xfUnreach:"{name} n'a pas répondu. Vérifiez qu'elle est allumée, puis relancez le transfert.",xfFail:"{name} n'a pas repris les touches.",xfRunning:"Un transfert est déjà en cours sur cette enceinte. Réessayez dans un instant.",xfNoTargets:"Aucune autre enceinte trouvée pour le transfert.",xfClose:"Fermer"},
+  es:{xfBtn:"Transferir",xfHead:"Copiar las teclas a otro altavoz",xfIntro:"Copia las teclas de este altavoz a otro altavoz de tu red, para que no tengas que configurar cada uno a mano.",xfTo:"Copiar a",xfAll:"Todos los demás altavoces ({n})",xfReplRow:"En el altavoz que elijas, esto reemplaza las teclas 1 a 6.",xfReplBoth:"En el altavoz que elijas, esto sustituye las teclas de una y de dos pulsaciones.",xfSpotify:"El inicio de sesión de Spotify de este altavoz se copia también, para que las teclas de Spotify suenen allí.",xfBusy:"Copiando las teclas. Tarda unos segundos por altavoz.",xfDone:"{name} recibió las teclas ({n}).",xfAllDone:"Los {n} altavoces recibieron las teclas.",xfPartial:"{done} de {total} altavoces recibieron las teclas.",xfRow1:"{name} solo tiene una fila de teclas, así que las teclas de dos pulsaciones no se copiaron allí.",xfConflict:"{station} ya está en la tecla {key} de {name}. Borra esa tecla allí y vuelve a transferir.",xfUnreach:"{name} no respondió. Comprueba que está encendido y vuelve a transferir.",xfFail:"{name} no recibió las teclas.",xfRunning:"Ya hay una transferencia en curso en este altavoz. Vuelve a intentarlo en un momento.",xfNoTargets:"No se encontró otro altavoz al que transferir.",xfClose:"Cerrar"},
+  pl:{xfBtn:"Przenieś",xfHead:"Kopiuj przyciski na inny głośnik",xfIntro:"Kopiuje przyciski tego głośnika na inny głośnik w twojej sieci, żeby nie trzeba było ustawiać każdego ręcznie.",xfTo:"Kopiuj do",xfAll:"Wszystkie inne głośniki ({n})",xfReplRow:"Na wybranym głośniku zastępuje to przyciski od 1 do 6.",xfReplBoth:"Na wybranym głośniku to zastąpi przyciski na jedno i na dwa naciśnięcia.",xfSpotify:"Logowanie Spotify tego głośnika też zostanie przeniesione, żeby przyciski Spotify grały również tam.",xfBusy:"Kopiowanie przycisków. Trwa to kilka sekund na każdy głośnik.",xfDone:"{name}: przejęto przyciski ({n}).",xfAllDone:"Wszystkie głośniki ({n}) przejęły przyciski.",xfPartial:"{done} z {total} głośników przejęło przyciski.",xfRow1:"{name} ma tylko jeden rząd przycisków, więc przyciski na dwa naciśnięcia nie zostały tam skopiowane.",xfConflict:"{station} jest już pod przyciskiem {key} w głośniku {name}. Usuń tam ten przycisk i przenieś jeszcze raz.",xfUnreach:"{name} nie odpowiedział. Sprawdź, czy jest włączony, i przenieś jeszcze raz.",xfFail:"{name} nie przejął przycisków.",xfRunning:"Na tym głośniku trwa już przenoszenie. Spróbuj ponownie za chwilę.",xfNoTargets:"Nie znaleziono innego głośnika do przeniesienia.",xfClose:"Zamknij"},
+  tr:{xfBtn:"Aktar",xfHead:"Tuşları başka bir hoparlöre kopyala",xfIntro:"Bu hoparlörün tuşlarını ağındaki başka bir hoparlöre kopyalar, böylece her birini elle ayarlaman gerekmez.",xfTo:"Hedef hoparlör",xfAll:"Diğer tüm hoparlörler ({n})",xfReplRow:"Seçtiğin hoparlörde bu, 1 ile 6 arasındaki tuşların yerini alır.",xfReplBoth:"Seçtiğin hoparlörde bu, bir kez ve iki kez basılan tuşları değiştirir.",xfSpotify:"Bu hoparlörün Spotify oturumu da aktarılır, böylece Spotify tuşları orada da çalar.",xfBusy:"Tuşlar kopyalanıyor. Bu, hoparlör başına birkaç saniye sürer.",xfDone:"{name} tuşları aldı ({n}).",xfAllDone:"{n} hoparlörün hepsi tuşları aldı.",xfPartial:"{total} hoparlörden {done} tanesi tuşları aldı.",xfRow1:"{name} hoparlöründe yalnızca bir tuş sırası var, bu yüzden iki kez basılan tuşlar oraya kopyalanmadı.",xfConflict:"{station}, {name} hoparlöründe zaten {key} numaralı tuşta. Oradaki tuşu sil ve yeniden aktar.",xfUnreach:"{name} yanıt vermedi. Açık olduğunu kontrol et ve yeniden aktar.",xfFail:"{name} tuşları almadı.",xfRunning:"Bu hoparlörde zaten bir aktarım sürüyor. Birazdan tekrar dene.",xfNoTargets:"Aktarılacak başka hoparlör bulunamadı.",xfClose:"Kapat"},
+  ar:{xfBtn:"نقل",xfHead:"نسخ الأزرار إلى سمّاعة أخرى",xfIntro:"ينسخ أزرار هذه السمّاعة إلى سمّاعة أخرى على شبكتك، حتى لا تضطر إلى إعداد كل واحدة يدويًا.",xfTo:"النسخ إلى",xfAll:"كل السمّاعات الأخرى ({n})",xfReplRow:"على السمّاعة التي تختارها، يستبدل هذا الأزرار من 1 إلى 6.",xfReplBoth:"على السمّاعة التي تختارها، سيستبدل هذا أزرار الضغطة الواحدة والضغطتين.",xfSpotify:"يُنقل تسجيل دخول Spotify لهذه السمّاعة أيضًا، حتى تعمل أزرار Spotify هناك.",xfBusy:"جارٍ نسخ الأزرار. يستغرق ذلك بضع ثوانٍ لكل سمّاعة.",xfDone:"استلمت {name} الأزرار ({n}).",xfAllDone:"استلمت كل السمّاعات ({n}) الأزرار.",xfPartial:"استلمت {done} من {total} سمّاعات الأزرار.",xfRow1:"لدى {name} صف واحد فقط من الأزرار، لذلك لم تُنسخ أزرار الضغطتين إليها.",xfConflict:"{station} موجودة بالفعل على الزر {key} في {name}. احذف هذا الزر هناك ثم أعد النقل.",xfUnreach:"لم تستجب {name}. تأكد من أنها قيد التشغيل، ثم أعد النقل.",xfFail:"لم تستلم {name} الأزرار.",xfRunning:"هناك عملية نقل جارية بالفعل على هذه السمّاعة. حاول مرة أخرى بعد قليل.",xfNoTargets:"لا توجد سمّاعة أخرى للنقل إليها.",xfClose:"إغلاق"},
+  ja:{xfBtn:"転送",xfHead:"キーを別のスピーカーにコピー",xfIntro:"このスピーカーのキーをネットワーク上の別のスピーカーにコピーします。1台ずつ手で設定する必要はありません。",xfTo:"コピー先",xfAll:"他のすべてのスピーカー（{n}）",xfReplRow:"選んだスピーカーのキー1から6を置き換えます。",xfReplBoth:"選んだスピーカーの1回押しと2回押しのキーを置き換えます。",xfSpotify:"このスピーカーのSpotifyログインも一緒に移すので、Spotifyのキーは転送先でも再生できます。",xfBusy:"キーをコピーしています。スピーカー1台につき数秒かかります。",xfDone:"{name} がキーを受け取りました（{n} 個）。",xfAllDone:"{n} 台すべてのスピーカーがキーを受け取りました。",xfPartial:"{total} 台中 {done} 台がキーを受け取りました。",xfRow1:"{name} にはキーが1列しかないため、2回押しのキーはコピーされませんでした。",xfConflict:"{station} は {name} のキー {key} にすでに登録されています。そちらでそのキーを削除してから、もう一度転送してください。",xfUnreach:"{name} から応答がありません。電源が入っているか確認してから、もう一度転送してください。",xfFail:"{name} はキーを受け取りませんでした。",xfRunning:"このスピーカーではすでに転送が進行中です。しばらくしてからもう一度お試しください。",xfNoTargets:"転送先となる他のスピーカーが見つかりません。",xfClose:"閉じる"},
+  lt:{xfBtn:"Perkelti",xfHead:"Kopijuoti klavišus į kitą garsiakalbį",xfIntro:"Nukopijuoja šio garsiakalbio klavišus į kitą garsiakalbį jūsų tinkle, kad nereikėtų kiekvieno nustatyti rankiniu būdu.",xfTo:"Kopijuoti į",xfAll:"Visi kiti garsiakalbiai ({n})",xfReplRow:"Jūsų pasirinktame garsiakalbyje tai pakeičia klavišus nuo 1 iki 6.",xfReplBoth:"Jūsų pasirinktame garsiakalbyje tai pakeičia vieną ir du kartus spaudžiamus klavišus.",xfSpotify:"Kartu perkeliamas ir šio garsiakalbio Spotify prisijungimas, kad Spotify klavišai grotų ir ten.",xfBusy:"Klavišai kopijuojami. Tai užtrunka kelias sekundes kiekvienam garsiakalbiui.",xfDone:"{name} perėmė klavišus ({n}).",xfAllDone:"Visi garsiakalbiai ({n}) perėmė klavišus.",xfPartial:"Klavišus perėmė {done} iš {total} garsiakalbių.",xfRow1:"{name} turi tik vieną klavišų eilę, todėl du kartus spaudžiami klavišai ten nebuvo nukopijuoti.",xfConflict:"{station} jau yra garsiakalbio {name} klaviše {key}. Ištrinkite tą klavišą ten ir perkelkite dar kartą.",xfUnreach:"{name} neatsakė. Patikrinkite, ar jis įjungtas, ir perkelkite dar kartą.",xfFail:"{name} neperėmė klavišų.",xfRunning:"Šiame garsiakalbyje jau vyksta perkėlimas. Bandykite dar kartą po akimirkos.",xfNoTargets:"Nerasta kito garsiakalbio, į kurį perkelti.",xfClose:"Uždaryti"},
+  lv:{xfBtn:"Pārnest",xfHead:"Kopēt taustiņus uz citu skaļruni",xfIntro:"Nokopē šī skaļruņa taustiņus uz citu skaļruni jūsu tīklā, lai jums nebūtu katrs jāiestata ar roku.",xfTo:"Kopēt uz",xfAll:"Visi pārējie skaļruņi ({n})",xfReplRow:"Jūsu izvēlētajā skaļrunī tas aizstāj taustiņus no 1 līdz 6.",xfReplBoth:"Jūsu izvēlētajā skaļrunī tas aizstāj vienreiz un divreiz nospiežamos taustiņus.",xfSpotify:"Līdzi tiek pārnesta arī šī skaļruņa Spotify pieteikšanās, lai Spotify taustiņi atskaņotu arī tur.",xfBusy:"Taustiņi tiek kopēti. Tas aizņem dažas sekundes katram skaļrunim.",xfDone:"{name} pārņēma taustiņus ({n}).",xfAllDone:"Visi skaļruņi ({n}) pārņēma taustiņus.",xfPartial:"Taustiņus pārņēma {done} no {total} skaļruņiem.",xfRow1:"{name} ir tikai viena taustiņu rinda, tāpēc divreiz nospiežamie taustiņi tur netika nokopēti.",xfConflict:"{station} jau ir skaļruņa {name} taustiņā {key}. Izdzēsiet to taustiņu tur un pārnesiet vēlreiz.",xfUnreach:"{name} neatbildēja. Pārbaudiet, vai tas ir ieslēgts, un pārnesiet vēlreiz.",xfFail:"{name} nepārņēma taustiņus.",xfRunning:"Šajā skaļrunī jau notiek pārnešana. Mēģiniet vēlreiz pēc brīža.",xfNoTargets:"Nav atrasts cits skaļrunis, uz kuru pārnest.",xfClose:"Aizvērt"},
+  uk:{xfBtn:"Перенести",xfHead:"Копіювати кнопки на іншу колонку",xfIntro:"Копіює кнопки цієї колонки на іншу колонку у вашій мережі, щоб не налаштовувати кожну вручну.",xfTo:"Копіювати на",xfAll:"Усі інші колонки ({n})",xfReplRow:"На вибраній колонці це замінює кнопки з 1 по 6.",xfReplBoth:"На вибраній колонці це замінить кнопки на одне й на подвійне натискання.",xfSpotify:"Вхід у Spotify цієї колонки переноситься разом із кнопками, тож кнопки Spotify гратимуть і там.",xfBusy:"Кнопки копіюються. Це займає кілька секунд на кожну колонку.",xfDone:"{name}: кнопки отримано ({n}).",xfAllDone:"Усі колонки ({n}) отримали кнопки.",xfPartial:"{done} з {total} колонок отримали кнопки.",xfRow1:"{name} має лише один ряд кнопок, тому кнопки на подвійне натискання туди не скопійовано.",xfConflict:"{station} вже стоїть на кнопці {key} колонки {name}. Видаліть цю кнопку там і перенесіть ще раз.",xfUnreach:"{name} не відповідає. Перевірте, чи вона увімкнена, і перенесіть ще раз.",xfFail:"{name}: кнопки не отримано.",xfRunning:"На цій колонці вже триває перенесення. Спробуйте ще раз за мить.",xfNoTargets:"Не знайдено іншої колонки для перенесення.",xfClose:"Закрити"},
 };
 var T = pickDict();
 // The UI 2.0 preview switch, read once (the head script set html.ui2 from it).
@@ -1289,6 +1339,7 @@ function applyStaticI18n() {
   set('btnPauseLbl', T.pause); set('btnStopLbl', T.stop);
   var sp = document.getElementById('btnStop'); if (sp) { sp.setAttribute('aria-label', T.stop); sp.title = T.stop; }
   set('lblPresets', T.presets); set('lblPeers', T.swSpk);
+  paintXferBtn(true);
   // The second row's switch and explainer (#1110) carry words of their own.
   if (presetRowsOK && lastPresetSig !== null && !renamingSlot) renderPresetGrid();
   set('lblAlarm', T.alarm); set('lblAlarmAdd', T.alarmAdd); set('lblAlarmBadge', T.strOnly);
@@ -2628,6 +2679,7 @@ async function loadPresets() {
   lastPresetSig = sig;
   lastPresetList = list;
   renderPresetGrid();
+  paintXferBtn();
 }
 
 /* The second row of keys (#1110)
@@ -2709,6 +2761,7 @@ function paintPresetRowSwitch() {
   if (!head || !sw) return;
   head.classList.toggle('two', presetRowsOK);
   sw.hidden = !presetRowsOK;
+  paintPresetTools();
   if (!presetRowsOK) { sw.innerHTML = ''; return; }
   buildRowSwitch(sw, {
     row: presetRow,
@@ -2838,6 +2891,219 @@ function paintPresetRowSwitchDots() {
   paintPresetRowSwitch();
   if (focused && sw) { var b = sw.querySelector('button[data-row="' + focused + '"]'); if (b) b.focus(); }
 }
+/* Copying the keys to other speakers (#1591, Ideas #1780)
+   =========================================================================
+   The desktop app's Transfer, from the phone. The page only ever talks to its
+   own speaker, so it asks THIS speaker's agent to do the copy
+   (POST /api/box/preset-copy): the agent writes the keys onto the targets
+   with the same requests the desktop app sends them, both rows when a target
+   keeps two, plus the Spotify login when a Spotify key goes along, and
+   answers per speaker. Offered while another speaker answers and this one
+   holds at least one key. */
+var xferOpen = false;
+var xferBusy = false;
+
+// xferIP is the address the agent knows a peer by (presetcopy.go matches it
+// against its own peer list).
+function xferIP(p) {
+  if (p && p.ip) return String(p.ip);
+  try { return new URL(p.url).hostname; } catch (e) { return ''; }
+}
+// xferTargets are the speakers the switcher offers right now.
+function xferTargets() {
+  return (peersList || []).filter(function (p) { return p && p.reachable !== false && xferIP(p); });
+}
+function xferHasKeys() { return (lastPresetList || []).some(function (p) { return p && p.name; }); }
+
+// paintPresetTools hides the heading's tool box while it holds nothing and
+// keeps the label's text clear of it.
+function paintPresetTools() {
+  var head = document.getElementById('presetHead');
+  var tools = document.getElementById('presetTools');
+  var sw = document.getElementById('presetRowSw');
+  var b = document.getElementById('btnXfer');
+  if (!head || !tools) return;
+  tools.hidden = (!sw || sw.hidden) && (!b || b.hidden);
+  head.classList.toggle('tools', !tools.hidden);
+  measurePresetTools();
+}
+// measurePresetTools sets the label's room from the tools' real width. A
+// hidden tab measures 0 and keeps the last value; the observer below catches
+// the moment it becomes visible, a language change and the 380px breakpoint.
+function measurePresetTools() {
+  var head = document.getElementById('presetHead');
+  var tools = document.getElementById('presetTools');
+  if (!head || !tools || tools.hidden) return;
+  var w = tools.getBoundingClientRect().width;
+  if (w > 0) head.style.setProperty('--phtools', Math.ceil(w + 8) + 'px');
+}
+(function observePresetTools() {
+  var tools = document.getElementById('presetTools');
+  if (tools && window.ResizeObserver) {
+    try { new ResizeObserver(function () { measurePresetTools(); }).observe(tools); } catch (e) {}
+  }
+})();
+
+// paintXferBtn shows the Transfer button when there is something to copy and
+// somewhere to copy it to. An open card stays until it is closed; it is only
+// redrawn for a language change (relabel), never under a finger by a poll.
+function paintXferBtn(relabel) {
+  var b = document.getElementById('btnXfer');
+  if (!b) return;
+  var offer = xferTargets().length > 0 && xferHasKeys();
+  b.hidden = !(offer || xferOpen);
+  var lbl = document.getElementById('btnXferLbl');
+  if (lbl) lbl.textContent = T.xfBtn;
+  // The name is the visible word (axe: label-content-name-mismatch); the
+  // longer line is the tooltip and the description.
+  b.title = T.xfHead;
+  b.setAttribute('aria-expanded', String(xferOpen));
+  paintPresetTools();
+  if (relabel && xferOpen && !xferBusy && document.getElementById('xferTarget')) renderXferForm();
+}
+
+function closeXfer() {
+  xferOpen = false;
+  var card = document.getElementById('xferCard');
+  if (card) { card.hidden = true; card.innerHTML = ''; }
+  paintXferBtn();
+}
+
+function xferEl(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// renderXferForm is the question: which speaker, what it replaces there.
+function renderXferForm() {
+  var card = document.getElementById('xferCard');
+  if (!card) return;
+  var keep = document.getElementById('xferTarget');
+  var keepVal = keep ? keep.value : '';
+  var targets = xferTargets();
+  card.hidden = false;
+  card.innerHTML = '';
+  card.appendChild(xferEl('div', 'label', T.xfHead));
+  card.appendChild(xferEl('p', 'xfnote', T.xfIntro));
+  var lab = xferEl('label', 'xfto', T.xfTo);
+  lab.htmlFor = 'xferTarget';
+  card.appendChild(lab);
+  var sel = xferEl('select', 'xfsel');
+  sel.id = 'xferTarget';
+  targets.forEach(function (p) {
+    var o = xferEl('option', '', p.name || xferIP(p));
+    o.value = xferIP(p);
+    sel.appendChild(o);
+  });
+  if (targets.length > 1) {
+    var all = xferEl('option', '', fmt(T.xfAll, { n: targets.length }));
+    all.value = '__all';
+    sel.appendChild(all);
+  }
+  if (keepVal && sel.querySelector('option[value="' + keepVal.replace(/"/g, '') + '"]')) sel.value = keepVal;
+  card.appendChild(sel);
+  // What it replaces: both rows only when this speaker has keys on the second.
+  var both = presetRowsOK && row2Filled(lastPresetList);
+  var warn = xferEl('p', 'xfwarn', both ? T.xfReplBoth : T.xfReplRow);
+  warn.id = 'xferScope';
+  card.appendChild(warn);
+  if ((lastPresetList || []).some(function (p) { return p && p.type === 'spotify'; })) {
+    card.appendChild(xferEl('p', 'xfnote', T.xfSpotify));
+  }
+  var row = xferEl('div', 'row c2');
+  var no = xferEl('button', 'btn', T.renCancel);
+  no.type = 'button'; no.id = 'btnXferNo';
+  no.addEventListener('click', closeXfer);
+  var go = xferEl('button', 'btn xfgo', T.xfBtn);
+  go.type = 'button'; go.id = 'btnXferGo';
+  go.addEventListener('click', runXfer);
+  row.appendChild(no); row.appendChild(go);
+  card.appendChild(row);
+  var msg = xferEl('div', 'xfmsg');
+  msg.id = 'xferMsg';
+  msg.setAttribute('role', 'status');
+  card.appendChild(msg);
+}
+
+// xferLine is what one speaker's result says, '' for a plain success.
+function xferLine(r, one) {
+  var name = r.name || r.ip || '';
+  if (r.ok) return one ? fmt(T.xfDone, { name: name, n: r.copied || 0 }) : '';
+  if (r.code === 'already-on-slot' && r.conflict) {
+    return fmt(T.xfConflict, { station: r.conflict.name || '', key: keyName(r.conflict.slot), name: name });
+  }
+  if (r.code === 'unreachable' || r.code === 'unknown-speaker') return fmt(T.xfUnreach, { name: name });
+  return fmt(T.xfFail, { name: name });
+}
+
+// xferSummary turns the agent's answer into lines and a kind (ok, warn, error).
+function xferSummary(res, all) {
+  if (!res || !res.ok || !res.data || !Array.isArray(res.data.results)) {
+    var code = res && res.data && res.data.code;
+    var t = code === 'busy' ? T.xfRunning : code === 'no-targets' ? T.xfNoTargets : code === 'no-presets' ? T.noPresets : T.identFail;
+    return { kind: 'error', lines: [t] };
+  }
+  var d = res.data, lines = [];
+  var results = d.results;
+  var done = results.filter(function (r) { return r.ok; }).length;
+  var one = !all && results.length === 1;
+  if (!one) lines.push(done === results.length ? fmt(T.xfAllDone, { n: results.length }) : fmt(T.xfPartial, { done: done, total: results.length }));
+  results.forEach(function (r) {
+    var l = xferLine(r, one);
+    if (l) lines.push(l);
+    if (r.ok && r.row1Only) lines.push(fmt(T.xfRow1, { name: r.name || r.ip }));
+  });
+  return { kind: done === results.length ? 'ok' : (done ? 'warn' : 'error'), lines: lines };
+}
+
+function renderXferResult(sum) {
+  var card = document.getElementById('xferCard');
+  if (!card) return;
+  card.innerHTML = '';
+  card.appendChild(xferEl('div', 'label', T.xfHead));
+  var msg = xferEl('div', 'xfmsg ' + sum.kind);
+  msg.id = 'xferMsg';
+  msg.setAttribute('role', 'status');
+  sum.lines.forEach(function (l) { msg.appendChild(xferEl('p', '', l)); });
+  card.appendChild(msg);
+  var close = xferEl('button', 'btn', T.xfClose);
+  close.type = 'button'; close.id = 'btnXferClose';
+  close.addEventListener('click', closeXfer);
+  card.appendChild(close);
+  try { close.focus({ preventScroll: true }); } catch (e) {}
+}
+
+async function runXfer() {
+  var sel = document.getElementById('xferTarget');
+  var v = sel ? sel.value : '';
+  if (!v || xferBusy) return;
+  var all = v === '__all';
+  xferBusy = true;
+  ['btnXferGo', 'btnXferNo', 'xferTarget'].forEach(function (id) { var e = document.getElementById(id); if (e) e.disabled = true; });
+  var msg = document.getElementById('xferMsg');
+  if (msg) { msg.className = 'xfmsg busy'; msg.innerHTML = ''; msg.appendChild(xferEl('p', '', T.xfBusy)); }
+  // The agent waits for a target that is still starting up, so allow it time.
+  var res = await apiDetail('/api/box/preset-copy', 'POST', all ? { all: true } : { targets: [v] }, 240000);
+  xferBusy = false;
+  renderXferResult(xferSummary(res, all));
+}
+
+(function wireXfer() {
+  var b = document.getElementById('btnXfer');
+  if (!b) return;
+  b.addEventListener('click', function () {
+    if (xferBusy) return;
+    if (xferOpen) { closeXfer(); return; }
+    xferOpen = true;
+    renderXferForm();
+    paintXferBtn();
+    var sel = document.getElementById('xferTarget');
+    if (sel) { try { sel.focus({ preventScroll: true }); } catch (e) { sel.focus(); } }
+  });
+})();
+
 /* Renaming a key (discussion #812). Station names come from the directory, and
    there they are sometimes shouted in capitals, wrong, or long enough to fill
    the whole key; the store has always held a free-form name, so the key only
@@ -4220,6 +4486,7 @@ async function loadPeers() {
   // appearing or going away.
   try { renderGroupAdd(); } catch (e) {}
   renderDevMenu();
+  paintXferBtn();
   if (ui2On) { ui2PeersKnown = true; ui2PaintPeers(); return; }
   // A home with one speaker gets three tabs, not four. A tab that can only ever
   // say "there is nothing here" is worse than no tab: it invites a tap, answers

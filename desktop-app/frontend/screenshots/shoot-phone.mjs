@@ -19,6 +19,8 @@
 // (#1110); they are not in the default set. Neither are phone-alarm-offat
 // (switch-off at a time of day, #1364), phone-alarm-skip (days without an
 // alarm, #1491) and phone-alarm-edit (the editor on the first alarm, #1952).
+// Nor are phone-transfer (copying the keys to other speakers, #1591) and
+// phone-transfer-done (its answer for all speakers, one of them refusing).
 //
 // SHOOT_UI2=1 shoots the UI 2.0 preview (Aa > Layout, localStorage
 // str.ui2Preview) into a ui2/ folder level, with its own default views:
@@ -40,7 +42,17 @@ const THEMES = (process.env.SHOOT_THEMES && process.env.SHOOT_THEMES.trim())
   ? process.env.SHOOT_THEMES.split(',').map((s) => s.trim()).filter(Boolean)
   : [''];
 const WIDTH = Number(process.env.SHOOT_WIDTH) || 390;
-const ROW2_FILLED = ['phone-keys-row1', 'phone-keys-row2-playing', 'phone-save-row2', 'phone-alarm-row2'];
+const ROW2_FILLED = ['phone-keys-row1', 'phone-keys-row2-playing', 'phone-save-row2', 'phone-alarm-row2', 'phone-transfer', 'phone-transfer-done'];
+// The agent's answer to the transfer shot (presetcopy.go): two speakers took
+// the keys, one of them keeps only one row, one already holds a station.
+const TRANSFER_ANSWER = {
+  keys: 10, rows: 2, done: 2, total: 3,
+  results: [
+    { name: 'Bedroom', ip: '192.0.2.52', ok: true, copied: 10 },
+    { name: 'Kitchen', ip: '192.0.2.51', ok: true, copied: 6, row1Only: true, notCopied: 4 },
+    { name: 'Office', ip: '192.0.2.53', ok: false, copied: 0, code: 'already-on-slot', conflict: { name: 'Jazz24', slot: 4 } },
+  ],
+};
 const ORIGIN = PHONE.ORIGIN; // a placeholder origin, never resolved
 const UI2 = process.env.SHOOT_UI2 === '1';
 
@@ -130,6 +142,16 @@ async function drive(page, view) {
     // Days without an alarm (discussion #1491).
     await page.waitForSelector('#alarmSkip', { timeout: 9000 });
     await scrollTo('#lblAlarm', 70);
+  } else if (view === 'phone-transfer' || view === 'phone-transfer-done') {
+    await page.waitForSelector('#btnXfer:not([hidden])', { timeout: 9000 });
+    await page.click('#btnXfer');
+    await page.waitForSelector('#xferTarget', { timeout: 9000 });
+    if (view === 'phone-transfer-done') {
+      await page.selectOption('#xferTarget', '__all');
+      await page.click('#btnXferGo');
+      await page.waitForSelector('#btnXferClose', { timeout: 9000 });
+    }
+    await scrollTo('#presetHead', 84);
   } else if (view === 'phone-list') {
     await page.click('#dev');
     await page.waitForSelector('#u2List #peers a.peer', { timeout: 9000 });
@@ -185,6 +207,7 @@ try {
       // The second row of keys: filled for these shots, empty for the rest
       // (the explainer); the playing shot plays key 3 pressed twice.
       phone.options.row2 = ROW2_FILLED.includes(view);
+      phone.options.overrides = view === 'phone-transfer-done' ? { '/api/box/preset-copy': { body: TRANSFER_ANSWER } } : {};
       phone.options.playing = view === 'phone-keys-row2-playing'
         ? { name: 'Jazz Lounge', loc: 'http://192.0.2.50:8888/stream/9', key: '' } : null;
       shotPath = path.join(dir, view + '.png');

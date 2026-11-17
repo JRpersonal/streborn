@@ -523,6 +523,8 @@ type Server struct {
 	// requests cannot run applyWLANChange concurrently and interleave their
 	// writes to wlan-creds / wpa_supplicant.conf.
 	wlanMu sync.Mutex
+	// presetCopyMu keeps one phone-driven preset copy at a time (presetcopy.go).
+	presetCopyMu sync.Mutex
 	// Test seams of PUT /api/box/wlan, nil in production: which Wi-Fi stack
 	// the chassis has (detectWlanMechanism), whether the supplicant is
 	// associated to a network (wpaAssociatedTo), and the background switch
@@ -1780,6 +1782,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
 	// answers a plain 404, which cannot be confused with anything.
 	mux.HandleFunc("/api/box/preset-move", s.handlePresetMove)
+	mux.HandleFunc(presetCopyAPIPath, s.handlePresetCopy)
 	mux.HandleFunc("/api/box/save-playing", s.handleSavePlaying)
 	mux.HandleFunc("/api/presets/", s.handlePresetSlot)
 	mux.HandleFunc("/api/play", s.handlePlay)
