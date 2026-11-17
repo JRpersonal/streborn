@@ -5127,6 +5127,12 @@ snapshot_airplay_log_filter() {
         cat /var/log/messages 2>/dev/null
     fi | snapshot_airplay_log_filter | while IFS= read -r line; do setup_log "  $line"; done
     setup_log "/airplay syslog"
+    # The firmware's own verdict on Apple's MFi auth chip. scmmond probes the
+    # chip at boot and writes its address here, 0 when the chip did not answer,
+    # and STSCertified registers the AIRPLAY source only when it finds a chip.
+    # So a speaker whose :8090/sources has no AIRPLAY slot says here whether the
+    # chip is the reason, without a reboot-time syslog line having to survive.
+    setup_log "mfi auth chip address (/var/run/authChipAddress): $(cat /var/run/authChipAddress 2>/dev/null || echo missing)"
     # Listening sockets come after the process list and the AirPlay lines on
     # purpose: the diagnostic carries only the last 8 KB of setup.log, and on a
     # Portable the process list alone pushed this section out of that window.
