@@ -40,6 +40,7 @@ export const MODELLED_BINDINGS = [
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
+  'SaveStickerPDF', 'StickerImage',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
   'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockBrightness', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset', 'SetStandbyClock',
   'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StoreSpeakerWiFiCopy', 'StreamBitrate', 'StreamTitleInfo',
@@ -187,6 +188,10 @@ export function installDesktopMock({ scenario, demo }) {
       return v;
     },
     PhoneQR: () => demo.phoneQR,
+    // The sticker sheet (stickers/): no logo is fetched in a mocked run, and
+    // the save answers with the path the dialog then shows.
+    StickerImage: () => '',
+    SaveStickerPDF: () => '/home/demo/Downloads/st-reborn-stickers.pdf',
     GetPresets: ([h]) => clone(presetsFor(h)),
     // The argument orders are those of app_presets.go.
     SetPreset: ([h, , slot, name, url, art, bitrate, homepage, codec]) => {

@@ -338,6 +338,8 @@ export function SaveQueuePreset(arg1:string,arg2:number,arg3:number):Promise<str
 
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 
+export function SaveStickerPDF(arg1:Array<string>):Promise<string>;
+
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
 export function SearchLibrary(arg1:string,arg2:string):Promise<main.LibrarySearchResult>;
@@ -419,6 +421,8 @@ export function StickConfigs(arg1:string):Promise<sticksetup.StickConfigs>;
 export function StickInstallFirmwareGate(arg1:string):Promise<main.StickFirmwareGate>;
 
 export function StickVersion(arg1:string):Promise<string>;
+
+export function StickerImage(arg1:string):Promise<string>;
 
 export function Stop(arg1:string,arg2:number):Promise<void>;
 

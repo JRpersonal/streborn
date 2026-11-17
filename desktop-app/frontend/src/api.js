@@ -24,6 +24,8 @@ export {
   GetQueue,
   PhoneQR,
   PhoneAddressFor,
+  StickerImage,
+  SaveStickerPDF,
   RebootBox,
   RepairSpeakerName,
   RecordUpdateIntent,

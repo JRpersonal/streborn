@@ -249,6 +249,7 @@ import {
 // file stops growing.
 import { renderRecent, initRecentView, repaintRecentFavStars } from './views/recent.js';
 import { shareModalHTML, openShareModal } from './share.js';
+import { stickerModalHTML } from './stickers/dialog.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
@@ -688,6 +689,8 @@ document.querySelector('#app').innerHTML = `
   </div>
 
   ${shareModalHTML()}
+
+  ${stickerModalHTML()}
 
   <div class="modal hidden" id="updateAllOverlay">
     <div class="modal-content ua-modal">

@@ -533,6 +533,34 @@ body {
 .share-fallback input { width: 100%; max-width: 28rem; }
 .share-foot { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* Stickers (stickers/dialog.js): the button and the one-time hint by the keys,
+   and the dialog with the sheet as it will print. The pages are canvases at
+   A4 proportions, scaled to the dialog's width. */
+.sticker-print-btn { position: relative; }
+.sticker-stale-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-startvol); flex: 0 0 auto; }
+.sticker-hint {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  margin: 8px 2px 0; padding: 8px 12px;
+  background: var(--brand-bg); border: 1px solid var(--brand-border); border-radius: 6px;
+}
+.sticker-hint p { margin: 0; flex: 1 1 260px; color: var(--brand-text); font-size: 13px; line-height: 1.4; }
+.phone-stickers { margin: 6px 0 0; font-size: 13px; }
+/* Only the preview scrolls, so Save stays in view under a tall sheet. */
+.sticker-modal { max-width: 720px; max-height: 92vh; display: flex; flex-direction: column; }
+.sticker-speakers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.sticker-speaker { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
+.sticker-speaker-name .muted { padding: 0; }
+.sticker-housing { display: inline-flex; gap: 14px; font-size: 13px; }
+.sticker-housing label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.sticker-skipped { margin: 0; font-size: 13px; color: var(--c-muted); }
+.sticker-status { min-height: 1.2em; margin: 8px 0; font-size: 13px; color: var(--c-muted); overflow-wrap: anywhere; }
+.sticker-status:empty { margin: 0; min-height: 0; }
+.sticker-status.is-ok { color: var(--signal-green); }
+.sticker-status.is-error { color: var(--signal-red); }
+.sticker-preview { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.sticker-speakers { flex: 0 1 auto; max-height: 30vh; overflow-y: auto; }
+.sticker-page { display: block; width: 100%; height: auto; border: 1px solid var(--c-border-2); border-radius: 2px; background: #fff; }
+
 /* The one-time row under the install success message: set off by a thin rule
    and kept small, so it never competes with the result above it. */
 .share-offer {

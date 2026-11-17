@@ -10,6 +10,7 @@ import { spotifyAccountName } from '../../spotifyaccountlabel.js';
 import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
+import { syncStickerEntry } from '../../stickers/dialog.js';
 import {
   ROW_SIZE,
   boxPresetRows,
@@ -76,6 +77,7 @@ export function renderPresets() {
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
   updatePresetTransferRow();
+  syncStickerEntry();
   renderGroupControl();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg

@@ -11,6 +11,7 @@ import { BoxAgentVersion, PhoneQR, PhoneAddressFor, RebootBox, boxFetch } from '
 import { deps, confirmFor, reportError, reportDone } from './shared.js';
 import { inLiveGroup, anyInLiveGroup } from '../../groups.js';
 import { isUpdateRunning, updateRunningNoticeHTML } from '../../updaterunning.js';
+import { openStickerDialog } from '../../stickers/dialog.js';
 
 // renderStatusSection renders the Status block; it is filled by wireStatusSections.
 export function renderStatusSection() {
@@ -40,6 +41,7 @@ export function renderPhoneSection() {
             <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
           </div>
           <p class="phone-scan-hint">${escapeHtml(t('settingsView.phoneHelp'))}</p>
+          <p class="phone-stickers"><a href="#" id="phoneStickersLink">${escapeHtml(t('stickers.settingsLink'))}</a></p>
         </div>
         <small class="muted small phone-url-alt" id="phoneUrlAlt" hidden></small>
       </div>
@@ -51,6 +53,10 @@ export function renderPhoneSection() {
 
 export function wireStatusSections(ctx) {
   const { box } = ctx;
+
+  // The stickers carry this same code; the link under it opens them.
+  const stickersLink = $('phoneStickersLink');
+  if (stickersLink) stickersLink.onclick = (e) => { e.preventDefault(); openStickerDialog(); };
 
   // Phone control: build this speaker's web-remote URL from its reachable
   // host:port (probeSTR records the right port: 8888 direct or 17008 redirect)
