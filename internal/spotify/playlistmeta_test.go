@@ -225,3 +225,98 @@ func TestPlaylistMetaTakesThePlayingPlaylistsNameFromTheEngine(t *testing.T) {
 		})
 	}
 }
+
+// An artist page in the Spotify app plays the artist's popular tracks as a
+// list that wraps the artist. Neither oEmbed nor the Web API has a page for
+// that list, so nobody was asked and a key saved from an artist page stayed
+// "Spotify" (#1940). The name the engine has for the list comes first (it is
+// what the speaker's own Spotify shows); without one, the artist's page names
+// the key and gives it the artist's picture.
+func TestPlaylistMetaNamesAnArtistsPopularTracks(t *testing.T) {
+	const list = "spotify:list:popular-release-segments-main-roles:artist_0aBcDeFgHiJkLmNoPqRsTu"
+	for _, tc := range []struct {
+		name, engineName, want string
+	}{
+		{"engine names the list", "Some Artist Popular", "Some Artist Popular"},
+		{"engine has no name", "", "Some Artist"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var apiCalls atomic.Int32
+			engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/status":
+					_, _ = w.Write([]byte(`{"context_uri":"` + list + `","context_name":"` + tc.engineName + `"}`))
+				case "/token":
+					_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer engine.Close()
+			oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.URL.Query().Get("url"); got != "https://open.spotify.com/artist/0aBcDeFgHiJkLmNoPqRsTu" {
+					t.Errorf("oEmbed asked for %q, want the artist's page", got)
+				}
+				_, _ = w.Write([]byte(`{"title":"Some Artist","thumbnail_url":"https://i.scdn.co/image/artist"}`))
+			}))
+			defer oembed.Close()
+			api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { apiCalls.Add(1) }))
+			defer api.Close()
+
+			m := productTestManager(t, engine.URL)
+			cover, title := m.playlistMetaAt(context.Background(), list, oembed.URL, api.URL)
+			if cover != "https://i.scdn.co/image/artist" || title != tc.want {
+				t.Fatalf("got cover=%q title=%q, want the artist's picture and %q", cover, title, tc.want)
+			}
+			if apiCalls.Load() != 0 {
+				t.Fatalf("Web API asked %d times although oEmbed answered", apiCalls.Load())
+			}
+		})
+	}
+}
+
+// oEmbed does not answer for the artist either: the Web API is asked for the
+// artist, not for the list it has no page for.
+func TestPlaylistMetaAsksTheWebAPIForTheWrappedArtist(t *testing.T) {
+	var tokenCalls atomic.Int32
+	engine := metaTestEngine(t, &tokenCalls)
+	defer engine.Close()
+	oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer oembed.Close()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/artists/0aBcDeFgHiJkLmNoPqRsTu" {
+			t.Errorf("Web API asked for %q", r.URL.Path)
+			http.Error(w, "nope", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{"name":"Some Artist","images":[{"url":"https://i.scdn.co/image/a300","width":300}]}`))
+	}))
+	defer api.Close()
+
+	m := productTestManager(t, engine.URL)
+	cover, title := m.playlistMetaAt(context.Background(),
+		"spotify:list:popular-release-segments-main-roles:artist_0aBcDeFgHiJkLmNoPqRsTu", oembed.URL, api.URL)
+	if cover != "https://i.scdn.co/image/a300" || title != "Some Artist" {
+		t.Fatalf("got cover=%q title=%q", cover, title)
+	}
+}
+
+func TestMetaPageURI(t *testing.T) {
+	for _, tc := range []struct{ uri, want string }{
+		{"spotify:list:popular-release-segments-main-roles:artist_0aBcDeFgHiJkLmNoPqRsTu", "spotify:artist:0aBcDeFgHiJkLmNoPqRsTu"},
+		// A list that wraps nothing it could be looked up by stays as it is.
+		{"spotify:list:jam-list:163dc0978f246346e7f1d14a4dd2bb9d", "spotify:list:jam-list:163dc0978f246346e7f1d14a4dd2bb9d"},
+		{"spotify:list:some-list:artist_", "spotify:list:some-list:artist_"},
+		{"spotify:list:some-list:artist_x/../y", "spotify:list:some-list:artist_x/../y"},
+		// Contexts that are their own page.
+		{"spotify:playlist:abc", "spotify:playlist:abc"},
+		{"spotify:artist:abc", "spotify:artist:abc"},
+		{"", ""},
+	} {
+		if got := metaPageURI(tc.uri); got != tc.want {
+			t.Errorf("metaPageURI(%q) = %q, want %q", tc.uri, got, tc.want)
+		}
+	}
+}
