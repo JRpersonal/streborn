@@ -128,6 +128,17 @@ func (s *Server) handleMargeGroupDoc(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "empty group document", http.StatusBadRequest)
 			return
 		}
+		// Bose pairs only two SoundTouch 10s. A pair document that lands on
+		// any other model can never become a pair, but the play paths believe
+		// it: a SoundTouch 30 that kept one refused every play as a pair
+		// follower and the app started the music on the named master instead
+		// (#1964). Refused here, at the only door a canonical document for
+		// the following half comes through.
+		if !s.mayHoldStereoPair() {
+			s.logger.Warn("stereo: refusing a pair document, this model cannot be half of a stereo pair")
+			writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "error": "model-cannot-pair"})
+			return
+		}
 		if err := s.margeGroupSet(string(body)); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -231,11 +231,12 @@ func (s *Server) mayHoldStereoPair() bool {
 		return true
 	}
 	_, model := s.boxNameFn()
-	return modelMayHoldStereoPair(model)
+	return ModelMayHoldStereoPair(model)
 }
 
-// modelMayHoldStereoPair is the model rule of mayHoldStereoPair.
-func modelMayHoldStereoPair(model string) bool {
+// ModelMayHoldStereoPair is the model rule of mayHoldStereoPair. Exported for
+// the agent's startup check of a restored pair record.
+func ModelMayHoldStereoPair(model string) bool {
 	m := strings.ToLower(strings.TrimSpace(model))
 	return m == "" || strings.Contains(m, "soundtouch 10")
 }

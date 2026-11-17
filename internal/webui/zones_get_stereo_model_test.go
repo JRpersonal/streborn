@@ -19,7 +19,7 @@ func TestOnlyASoundTouch10IsAskedForItsStereoPair(t *testing.T) {
 		"Wave SoundTouch music system IV":  false,
 	}
 	for model, want := range cases {
-		if got := modelMayHoldStereoPair(model); got != want {
+		if got := ModelMayHoldStereoPair(model); got != want {
 			t.Errorf("%q: %v, want %v", model, got, want)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/marge"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // firmwareGroupProbe reads the speaker's own /getGroup for marge, so a group
@@ -80,6 +81,79 @@ func adoptFirmwarePairAtStartup(ctx context.Context, m *marge.Server, boxHost st
 		default:
 			logger.Warn("stereo pair: the firmware holds a pair STR cannot vouch for, leaving it as it is",
 				"reason", why, "status", fg.Status, "master", fg.MasterDeviceID)
+			return
+		}
+	}
+}
+
+// phantomPairCheckInterval is the gap between two looks at a restored pair
+// record, and phantomPairCheckRounds how many there are: a slow boot gets
+// about twenty minutes.
+const (
+	phantomPairCheckInterval = 30 * time.Second
+	phantomPairCheckRounds   = 40
+)
+
+// dropPhantomRestoredPair clears a pair record that was restored from NAND and
+// describes a pair that does not exist. It runs once per agent start, only
+// when such a record was restored, and stops at the first definite answer.
+//
+// Two things prove a phantom:
+//
+// The firmware answers /getGroup empty twice in a row with still no live
+// confirmation (no firmware group post, no canonical install). That is the
+// Bose factory reset, which wipes the firmware's own pairing but not
+// /mnt/nv/streborn.
+//
+// Or the speaker is a model that cannot be half of a stereo pair at all. Bose
+// pairs only two SoundTouch 10s, so a record on anything else is wrong whatever
+// it says. This had to become its own rule because the first one cannot fire
+// there: /getGroup never answers on the scm/BCO chassis, it hangs, every read
+// counted as "firmware not answering yet", and the record stayed for good. A
+// SoundTouch 30 holding a record that named a SoundTouch 10 as its master then
+// refused every play STR was asked for as "the following half of a stereo
+// pair": the second preset row, a station from the search, a key in the app.
+// The app sent each of them on to the named master, so the music started in
+// the other room (#1964). The model is asked first, so such a speaker is never
+// sent the read that hangs.
+//
+// A model that is not known yet (the firmware is still booting) decides
+// nothing and the round falls through to the /getGroup read.
+func dropPhantomRestoredPair(ctx context.Context, m *marge.Server,
+	boxModel func(context.Context) (string, error),
+	getGroup func(context.Context) (boxapi.Group, error),
+	interval time.Duration, logger *slog.Logger) {
+	emptyReads := 0
+	for i := 0; i < phantomPairCheckRounds; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+		if !m.GroupRestoredUnconfirmed() {
+			return // confirmed by a live signal meanwhile
+		}
+		mctx, mcancel := context.WithTimeout(ctx, 5*time.Second)
+		model, merr := boxModel(mctx)
+		mcancel()
+		if merr == nil && !webui.ModelMayHoldStereoPair(model) {
+			logger.Warn("stereo pair: dropping a restored pair record, this model cannot be half of a stereo pair",
+				"model", model)
+			m.ClearGroup("restored pair record on a model that cannot hold a stereo pair")
+			return
+		}
+		gctx, gcancel := context.WithTimeout(ctx, 6*time.Second)
+		g, err := getGroup(gctx)
+		gcancel()
+		if err != nil {
+			emptyReads = 0 // firmware not answering yet; start over
+			continue
+		}
+		if g.ID != "" || len(g.Members) > 0 {
+			return // firmware still paired: the restored record is real
+		}
+		if emptyReads++; emptyReads >= 2 {
+			m.ClearGroup("firmware reports no pair after restart (factory reset?)")
 			return
 		}
 	}
