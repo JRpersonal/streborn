@@ -21,6 +21,7 @@ import { extractHost, stationLogoChain } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceLabel } from '../../nativeservice.js';
 import { state } from '../../state.js';
 import { strBoxes } from '../../boxes.js';
+import { noteSpeakerKeys } from '../../stickers/data.js';
 import {
   $,
   appArtFromBoxArt,
@@ -73,6 +74,7 @@ export async function refreshPresetsIfChanged() {
   if (fresh.length === 0 && state.presets.length > 0) return;
   if (presetSignature(fresh) === presetSignature(state.presets)) return;
   state.presets = fresh;
+  noteSpeakerKeys(box, fresh);
   renderPresets();
   healPresetLogos();
   loadBoxPresets();
@@ -178,6 +180,7 @@ export async function loadPresets(retry = 0) {
       return;
     }
     state.presets = fresh;
+    noteSpeakerKeys(state.currentBox, fresh);
     // This IS a fresh read, so the background re-check starts its interval
     // from here instead of firing again right after a box switch or a save.
     mstate._lastPresetCheck = Date.now();

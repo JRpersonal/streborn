@@ -666,6 +666,10 @@ export function SaveSpotifyPreset(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SaveSpotifyPreset'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function SaveStickerPDF(arg1) {
+  return window['go']['main']['App']['SaveStickerPDF'](arg1);
+}
+
 export function SaveWebhookConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveWebhookConfig'](arg1, arg2, arg3);
 }
@@ -828,6 +832,10 @@ export function StickInstallFirmwareGate(arg1) {
 
 export function StickVersion(arg1) {
   return window['go']['main']['App']['StickVersion'](arg1);
+}
+
+export function StickerImage(arg1) {
+  return window['go']['main']['App']['StickerImage'](arg1);
 }
 
 export function Stop(arg1, arg2) {
