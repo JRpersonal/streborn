@@ -139,6 +139,10 @@ drops snapshot_airplay_log_filter \
     'Jan  1 00:00:14 spotty user.info BoseApp: volume 12' \
     "an unrelated syslog line is dropped"
 
+drops snapshot_airplay_log_filter     'Nov 17 03:02:18 taigan local0.info BoseApp[1899]: [(002790):AirplayWhippet:INFO]pItem->SetRecvPayloadLength( payloadSize ): 22'     "Whippet transport INFO chatter is dropped"
+drops snapshot_airplay_log_filter     'Nov 17 03:02:18 taigan local0.info BoseApp[1899]: [(002790):AirplaySPI:INFO]Reading var length msg of size 16'     "SPI transport INFO chatter is dropped"
+keeps snapshot_airplay_log_filter     'Nov 17 03:02:18 taigan local0.err BoseApp[1899]: [(002790):AirplayCne:ERROR]CneQueueMgr::ReadSetting failed'     'AirplayCne:ERROR' "an AirPlay ERROR line is kept"
+
 LOG=""
 i=0
 while [ "$i" -lt 200 ]; do
@@ -149,12 +153,12 @@ noise $i
 done
 OUT=$(printf '%s' "$LOG" | snapshot_airplay_log_filter)
 N=$(printf '%s\n' "$OUT" | wc -l)
-if [ "$N" -eq 60 ]; then ok; else fail "AirPlay syslog capped at 60 lines (got $N)"; fi
+if [ "$N" -eq 15 ]; then ok; else fail "AirPlay syslog capped at 15 lines (got $N)"; fi
 if printf '%s\n' "$OUT" | tail -1 | grep -qF 'line 199 AirPlay'; then ok; else fail "AirPlay syslog keeps the LAST matches"; fi
 
 LONG="AirPlay $(printf '%0400d' 0)"
 W=$(printf '%s\n' "$LONG" | snapshot_airplay_log_filter | awk '{ print length($0) }')
-if [ "$W" -eq 300 ]; then ok; else fail "AirPlay syslog line cut to 300 bytes (got $W)"; fi
+if [ "$W" -eq 220 ]; then ok; else fail "AirPlay syslog line cut to 220 bytes (got $W)"; fi
 
 echo "snapshot_filter_test: $CASES cases, $FAILED failed"
 [ "$FAILED" -eq 0 ]

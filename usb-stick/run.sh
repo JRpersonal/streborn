@@ -5091,9 +5091,14 @@ snapshot_process_filter() {
 # tail the debug state carries: an AirPlay receiver that fails at boot says so
 # once, long before that tail starts. mfi (Apple's auth chip) is matched only
 # at a word start, so ordinary words containing those letters do not flood it.
-# Bounded to the last 60 matches, each cut to 300 bytes.
+# The Portable's BoseApp logs its AirPlay coprocessor transport at INFO on
+# every exchange (AirplayWhippet, AirplaySPI), dozens of lines a minute that say
+# nothing about whether the receiver runs; those are dropped. Bounded to the
+# last 15 matches, each cut to 220 bytes: the diagnostic carries only the last
+# 8 KB of setup.log, and a 60-line section pushed the listening-port and
+# process lists above it out of that window (field test, Portable, 2026-11-17).
 snapshot_airplay_log_filter() {
-    grep -iE 'airplay|raop|(^|[^a-z])mfi' | tail -60 | cut -c1-300
+    grep -iE 'airplay|raop|(^|[^a-z])mfi' | grep -vE 'Airplay(Whippet|SPI):INFO' | tail -15 | cut -c1-220
 }
 
 # One-shot diagnostic snapshot 90 s after start_agent. By then any
@@ -5124,7 +5129,7 @@ snapshot_airplay_log_filter() {
     # One read of the syslog ring (busybox logread without -f returns at once),
     # or /var/log/messages where a firmware writes one instead. Absolute path
     # first: the PATH this script inherits does not always include /sbin.
-    setup_log "airplay syslog (last 60 matching lines of the whole log):"
+    setup_log "airplay syslog (last 15 matching lines of the whole log):"
     if [ -x /sbin/logread ]; then
         /sbin/logread 2>/dev/null
     elif command -v logread >/dev/null 2>&1; then
