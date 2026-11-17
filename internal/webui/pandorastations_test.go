@@ -3,7 +3,6 @@ package webui
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -117,15 +116,25 @@ func TestPandoraStationsFirmwareErrorMasksAccount(t *testing.T) {
 	var logBuf bytes.Buffer
 	s.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 	pandoraLinked(box)
-	box.stationsErr = errors.New(`box /navigate: 500: bad account ` + pandoraTestAccount)
+	box.stationsErr = firmwareError("/navigate", "1005", "UNKNOWN_SOURCE_ERROR", "bad account "+pandoraTestAccount)
 	w := httptest.NewRecorder()
 	s.handlePandoraStations(w, nativeReq(http.MethodGet, "/api/pandora/stations", "", "192.168.1.5:5000", ""))
-	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "bad account") {
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"navigate-failed"`) || !strings.Contains(w.Body.String(), "UNKNOWN_SOURCE_ERROR") {
 		t.Fatalf("firmware error: %d %s", w.Code, w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), pandoraTestAccount) || strings.Contains(logBuf.String(), pandoraTestAccount) {
 		t.Fatalf("account in clear: body %s log %s", w.Body.String(), logBuf.String())
 	}
+	assertNoFirmwareLeak(t, w.Body.String())
+
+	// A failed /sources read is coded the same way.
+	box.sourcesErr = firmwareError("/sources", "1005", "SOME_ERROR", "")
+	w = httptest.NewRecorder()
+	s.handlePandoraStations(w, nativeReq(http.MethodGet, "/api/pandora/stations", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"sources-unreadable"`) {
+		t.Fatalf("sources error: %d %s", w.Code, w.Body.String())
+	}
+	assertNoFirmwareLeak(t, w.Body.String())
 }
 
 func TestPandoraPlayReplaysListedItem(t *testing.T) {
@@ -166,10 +175,11 @@ func TestPandoraPlayErrors(t *testing.T) {
 		t.Fatalf("not linked: %d %s", w.Code, w.Body.String())
 	}
 	pandoraLinked(box)
-	box.selectErr = errors.New("box /select: 1005 UNKNOWN_SOURCE_ERROR")
+	box.selectErr = firmwareError("/select", "1005", "UNKNOWN_SOURCE_ERROR", "")
 	w = httptest.NewRecorder()
 	s.handlePandoraPlay(w, nativeReq(http.MethodPost, "/api/pandora/play", `{"location":"1"}`, "192.168.1.5:5000", "application/json"))
-	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "UNKNOWN_SOURCE_ERROR") {
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "UNKNOWN_SOURCE_ERROR") || !strings.Contains(w.Body.String(), `"select-failed"`) {
 		t.Fatalf("refused: %d %s", w.Code, w.Body.String())
 	}
+	assertNoFirmwareLeak(t, w.Body.String())
 }

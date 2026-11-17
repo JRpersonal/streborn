@@ -124,10 +124,38 @@ Pandora client plays the station, STR only hands it the item.
 
 Both answer `409` with `{"code":"service-off"}` when Pandora is not enabled on
 the speaker and `{"code":"not-linked"}` when it lists no Pandora account, and
-`502` with the firmware's message when the speaker refuses (`navigate-failed`,
-`select-failed`). To keep a station on a key, start it and then save the key
+`502` with a short reason when the speaker refuses (`navigate-failed`,
+`select-failed`, or `sources-unreadable` when its source list cannot be read).
+To keep a station on a key, start it and then save the key
 with `PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`: the agent
 takes the item from what the speaker plays.
+
+### Unlinking a Pandora or iHeartRadio account
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `DELETE` | `/api/pandora/account` | - | Remove the Pandora account from the speaker and from STR. |
+| `DELETE` | `/api/iheart/account` | - | The same for iHeartRadio. |
+
+Both need the service enabled on the speaker (`409` otherwise, as above). The
+call asks the speaker to remove the account and then re-reads its source list
+to confirm, so it takes **1 to 5 seconds**. Do not retry while one is still
+in flight; wait for its answer.
+
+| Status | Body | Meaning |
+| ------ | ---- | ------- |
+| `200` | `{"ok":true}` | The account is gone, also when it already was. |
+| `502` | `{"code":"remove-refused","error":"..."}` | The speaker refused the removal. |
+| `502` | `{"code":"still-linked","error":"..."}` | The speaker still lists the account as ready afterwards. |
+| `500` | `{"code":"clear-failed","error":"..."}` | STR could not drop its own copy of the account. |
+| `503` | `{"code":"remove-busy","error":"..."}` | Another removal of the same account was still running when this request gave up waiting (after 15 seconds). |
+
+A repeated `DELETE` is safe. Requests that arrive while a removal runs do not
+send a second one to the speaker: they wait and get the same answer as the
+first. A request after the account is gone answers `200` without touching the
+speaker. The `error` text is a short English sentence for people; branch on
+`code`. It never carries the speaker's raw reply, which stays in the agent
+log.
 
 ## Favourites
 
