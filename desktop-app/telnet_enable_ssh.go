@@ -34,6 +34,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/anonymise"
 )
 
 // remoteServicesInjection is appended to the marge URL. When the firmware next
@@ -243,12 +245,47 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	boxSSHClients.invalidateHost(host)
 	a.logger.Info("telnet-enable: injection written and sys reboot sent; polling for SSH", "host", host, "model", model)
 
-	if a.waitForSSHOpen(host, agentWaitBudget(model)) {
+	opened := a.waitForSSHOpen(host, agentWaitBudget(model))
+	// Prove whether the account seed actually took. The injection rides on the
+	// box's periodic marge check, which a box with an empty margeAccountUUID
+	// never runs, and the seed (`envswitch accountid set`) is meant to populate
+	// it. getpdo CurrentSystemConfiguration (logged above) does NOT contain
+	// margeAccountUUID, so a transcript from a failed Wave could not say whether
+	// the seed landed (2026-11-15). Read /info now - after the seed and the
+	// reboot - and record margeAccountUUID (present/empty, value hashed the way
+	// the bundle scrubber hashes it) so the next diagnostic is conclusive.
+	state := a.margeUUIDState(host)
+	fmt.Fprintf(&log, "-> GET :8090/info margeAccountUUID (after seed+reboot)\n%s\n", state)
+	a.logger.Info("telnet-enable: margeAccountUUID after account seed and reboot", "host", host, "state", state)
+	if opened {
 		a.logger.Info("telnet-enable: SSH opened stick-free via :17000 unlock", "host", host)
 		return true, log.String()
 	}
-	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle; a factory-fresh box that never checks in with marge does not run the injection, compare the account in the getpdo before/after in the unlock log)", "host", host)
+	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle; a factory-fresh box whose account seed did not take never checks in with marge and does not run the injection, see the margeAccountUUID line in the unlock log)", "host", host)
 	return false, log.String()
+}
+
+// margeUUIDState reads GET :8090/info and returns a one-line, log-safe
+// description of margeAccountUUID: whether it is populated and, when it is, a
+// hashed form of its value (MARGE#<hash>, the same anonymise.HashShort the
+// diagnostic-bundle exporter uses in anonymizeBoseInfoXML), so no raw account id
+// is ever written to a transcript. On a read error (box still booting, off the
+// LAN) it says so rather than guessing, so the transcript distinguishes "seed
+// did not take" from "could not ask".
+func (a *App) margeUUIDState(host string) string {
+	body, err := a.boseGet(host, "/info")
+	if err != nil {
+		return "unknown (/info unreachable: " + err.Error() + ")"
+	}
+	v, found := margeUUIDFromInfo(body)
+	switch {
+	case !found:
+		return "unknown (no margeAccountUUID element in /info)"
+	case v == "":
+		return "empty (the account seed did NOT populate margeAccountUUID on this box)"
+	default:
+		return "present MARGE#" + anonymise.HashShort(v)
+	}
 }
 
 // resetBoseURLsViaTelnet restores stock cloud URLs over :17000 after a stick-free

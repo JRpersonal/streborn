@@ -534,6 +534,14 @@ const (
 	// failure into two for the same owner (#966).
 	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: power it off, plug the STR stick in, power it back on, and then leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
 
+	// bootstrapFirewallAdvice is appended for a factory-fresh (no-account)
+	// speaker whose unlock had to go through the bootstrap and whose speaker
+	// came back online but never called this PC's helper. That is the Windows
+	// Firewall: the bootstrap opens a small helper on this PC (port 19080) that
+	// the speaker must reach, and a blocked firewall prompt is the one cause the
+	// user can fix themselves (confirmed live, project_bootstrap_used_box_deadend).
+	bootstrapFirewallAdvice = "This speaker has no Bose account, so ST Reborn had to unlock it by having the speaker call a helper on this PC (port 19080), and the speaker never reached it. On Windows this is almost always the firewall: when Windows first asked whether to allow ST Reborn on your network, that request must be allowed for Private networks. Allow ST Reborn through the Windows Firewall (or turn the firewall off briefly to test), make sure this PC and the speaker are on the same Wi-Fi, and press Install again."
+
 	alreadyInstalledAdvice = "Refresh the speaker list. If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
 
 	// The no-stick variants of the four paragraphs above that name the STR

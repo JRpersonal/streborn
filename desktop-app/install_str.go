@@ -443,7 +443,7 @@ func (a *App) installUnlockOrAdvise(r *installRun) bool {
 	// :22 on the Portable live. The rung itself (port probe, unlock, stock
 	// URL restore on both outcomes) is ensureSSHOpen, shared with the OTA and
 	// the uninstall; rememberReboot feeds the recentUnlockReboot check above.
-	opened, tlog, unlockErr := a.ensureSSHOpen(host, model, sshUnlockOptions{tag: "install_str", phase: "access", rememberReboot: true})
+	opened, tlog, unlockErr := a.ensureSSHOpen(host, model, sshUnlockOptions{tag: "install_str", phase: "access", rememberReboot: true, bootstrapIfNoAccount: true})
 	switch {
 	case opened:
 		a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
@@ -502,6 +502,15 @@ func (a *App) installUnlockOrAdvise(r *installRun) bool {
 		res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
 			"It is still booting, which is why it does not answer right now.") +
 			"\n\n" + stickAdviceFor(noStick, restartingAfterUnlockAdvice, restartingAfterUnlockNoStickAdvice)
+		// A factory-fresh box with no Bose account can only be unlocked through
+		// the bootstrap, which needs the speaker to call a helper on THIS PC
+		// (:19080). When the speaker came back on the network but never reached
+		// that helper, the Windows Firewall prompt was almost certainly answered
+		// "no" (or never shown): name it, because on this path it is the one
+		// thing the user can fix (project_bootstrap_used_box_deadend).
+		if errors.Is(unlockErr, errBootstrapResponderUnreachable) {
+			res.Message += "\n\n" + bootstrapFirewallAdvice
+		}
 		a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host, "unlock", unlockOutcome)
 		return true
 	}
@@ -919,6 +928,25 @@ func buildStickProbeCmd(paths []string) string {
 	return b.String()
 }
 
+// margeUUIDFromInfo pulls the <margeAccountUUID> value out of a Bose /info body.
+// found is false when the tag is absent (so callers can tell "no such tag" from
+// "tag present but empty"); value is the trimmed inner text otherwise. A
+// factory-fresh box reports the empty form <margeAccountUUID></margeAccountUUID>,
+// which returns value="" found=true.
+func margeUUIDFromInfo(body string) (value string, found bool) {
+	const openTag = "<margeAccountUUID>"
+	i := strings.Index(body, openTag)
+	if i < 0 {
+		return "", false
+	}
+	rest := body[i+len(openTag):]
+	j := strings.Index(rest, "<")
+	if j < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(rest[:j]), true
+}
+
 // boxHasResidualMargeUUID reports whether the speaker still carries a Bose
 // margeAccountUUID from before the cloud shutdown. Only such a box runs the
 // periodic marge check the simple :17000 SSH injection rides on; an empty-UUID
@@ -933,17 +961,27 @@ func (a *App) boxHasResidualMargeUUID(host string) bool {
 	if err != nil {
 		return true
 	}
-	const openTag = "<margeAccountUUID>"
-	i := strings.Index(body, openTag)
-	if i < 0 {
+	v, found := margeUUIDFromInfo(body)
+	if !found {
 		return true
 	}
-	rest := body[i+len(openTag):]
-	j := strings.Index(rest, "<")
-	if j < 0 {
-		return true
+	return v != ""
+}
+
+// boxMargeAccountEmpty positively confirms the speaker carries NO marge account:
+// /info answered AND it contains a <margeAccountUUID> tag whose value is empty
+// (the factory-fresh / cloud-cleared state). Unlike boxHasResidualMargeUUID it
+// returns false on any read error or missing tag, so the account-REPLACING
+// factory-reset bootstrap only runs on a box we have positively read as having
+// no account to overwrite. A used box that still carries an account must never
+// be handed the dummy account the bootstrap POSTs (project_bootstrap_used_box_deadend).
+func (a *App) boxMargeAccountEmpty(host string) bool {
+	body, err := a.boseGet(host, "/info")
+	if err != nil {
+		return false
 	}
-	return strings.TrimSpace(rest[:j]) != ""
+	v, found := margeUUIDFromInfo(body)
+	return found && v == ""
 }
 
 // repairPlan is how one of the four auto-repair sites in installSTROnBox wants
