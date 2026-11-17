@@ -7,6 +7,7 @@ import { agentErrorCode, agentErrorText, pandoraFindMode, pandoraStationRows } f
 import { $, escapeAttr, escapeHtml, showError, showToast } from '../../utils.js';
 import { keyNum } from '../../presetrows.js';
 import { pandoraFavFromRow } from '../../pandorafav.js';
+import { PLAY_ICON } from '../../glyphs.js';
 import { isFav, toggleFav } from './favorites.js';
 import { showSlotPicker } from './picker.js';
 import { listButtonClick, syncSearchModeButtons } from './search.js';
@@ -125,7 +126,7 @@ export function renderPandoraStations() {
           <div class="result-meta">Pandora</div>
         </div>
         <div class="result-actions">
-          <button class="btn btn-mini pandora-play" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>
+          <button class="btn btn-mini pandora-play" data-i="${i}" title="${escapeAttr(t('search.playNow'))}" aria-label="${escapeAttr(t('search.playNow'))}">${PLAY_ICON}</button>
           ${s.presetable ? `<button class="btn btn-mini pandora-pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>` : ''}
           <button class="btn btn-mini fav-toggle pandora-fav${fav ? ' is-fav' : ''}" data-i="${i}" aria-pressed="${fav ? 'true' : 'false'}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>
         </div>
