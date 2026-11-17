@@ -252,7 +252,7 @@ alone.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/box/zone` | - | The live zone, plus `remembered` when none is live and `permanent` when the saved group is the durable kind. |
+| `GET`    | `/api/box/zone` | - | The live zone, plus `remembered` when none is live, `permanent` when the saved group is the durable kind, and `setAside` (`{"master","name","members":[...]}`) while a temporary group holds a permanent one aside. |
 | `POST`   | `/api/box/zone` | the whole group | Forms or REPLACES the group. Send the full member list every time. |
 | `DELETE` | `/api/box/zone` | - | Takes the live group apart. The saved group survives; add `?forget=1` to delete that too. |
 | `GET`    | `/api/box/zone/volume` | - | `{"grouped","stereo","members":[...],"average"}`. A member that did not answer reports `volume: -1` rather than disappearing. |
@@ -290,8 +290,9 @@ leaves `permanent` out gets a change that lasts only until the group ends. To
 make the change itself durable, read `permanent` from `GET /api/box/zone` first
 and send it back. A POST with `"permanent":true` replaces the durable group and
 drops anything set aside; `DELETE ?forget=1` deletes both. Only one group is
-kept aside, and `GET` does not report it, so a client cannot see it while an
-ordinary group is stored on top. Agents before v1.4.0 overwrite the durable
+kept aside. Since agent v1.6.5 `GET` reports it as `setAside`, so a client can
+name the group a `permanent:true` form would replace; older agents do not report
+it. Agents before v1.4.0 overwrite the durable
 group instead. (Found in a third-party client, 2026-09-14, where adding a
 speaker silently demoted the saved group.)
 
