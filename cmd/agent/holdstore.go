@@ -140,6 +140,11 @@ func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logge
 	}
 	// The display tells the user how the hold went (displaynotices.go).
 	return func(item marge.HeldItem) error {
+		// Any store of the firmware's own on a key says the press on it was
+		// a hold, so it is no press on a dead key (deadkey.go).
+		if hs := heldGestureSaver.Load(); hs != nil {
+			hs.NoteFirmwareStore(item.Slot)
+		}
 		// A hold that follows a tap of the same key saves onto the key's
 		// second row (tapholdsave.go). The firmware's own store would put
 		// the key's own station (the tap started it) back on the key: it is

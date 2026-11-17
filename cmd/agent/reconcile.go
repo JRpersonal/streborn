@@ -208,13 +208,29 @@ type resyncAsks struct {
 	// travels with the ask: consumed with it, dropped with it by the standby
 	// deferral.
 	keysDead atomic.Bool
+	// deadKeyAt (unix nanos) is the newest press on a key the speaker lost
+	// while STR's store holds it (deadkey.go, #1931). That press is the
+	// listener's consent to leave the source that plays, so for
+	// deadKeyConsentWindow a forced pass is not held on a source the
+	// listener chose (deadKeyConsent). Nothing else sets it. deadKeyLast is
+	// the dead-key ask's own budget (unix seconds).
+	deadKeyAt   atomic.Int64
+	deadKeyLast atomic.Int64
 }
+
+// deadKeyConsentWindow bounds how long a dead-key press lets a forced pass
+// run on a source the listener chose. The reconcile wakes for an ask within
+// ten seconds and a held pass retries every forcedPlayHoldRetry, so the pass
+// that answers the press runs well inside it; a source the listener picks
+// again later is protected as before.
+const deadKeyConsentWindow = 2 * time.Minute
 
 func newResyncAsks() *resyncAsks { return &resyncAsks{} }
 
 // askerExpectsDeadKeys reports whether a re-sync asker comes with evidence that
 // the hardware keys are dead while the speaker still LISTS them: a press that
-// produced no selection frame (thumb, thumb-repeat, #342), or the re-login and
+// produced no selection frame (thumb, thumb-repeat, #342; dead-key, a press on
+// a key STR's store holds and the speaker's list lacks, #1931), or the re-login and
 // pairing moments that wipe the key registrations (1036, paired). For those
 // the forced pass runs at its hold ceiling even into STR's own music, because
 // the list cannot show what is wrong. Every other asker (refused-rewrite,
@@ -222,7 +238,7 @@ func newResyncAsks() *resyncAsks { return &resyncAsks{} }
 // runs at the ceiling when a key is actually missing from the list.
 func askerExpectsDeadKeys(asker string) bool {
 	switch asker {
-	case "thumb", "thumb-repeat", "1036", "paired":
+	case "thumb", "thumb-repeat", "dead-key", "1036", "paired":
 		return true
 	}
 	return false
@@ -285,6 +301,50 @@ func (a *resyncAsks) requestUrgent(logger *slog.Logger, asker string) {
 	if logger != nil {
 		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)", "asker", asker)
 	}
+}
+
+// requestDeadKey is request for a press on a key the speaker lost
+// (deadkey.go). It stamps the press as the listener's consent to leave the
+// source that plays (deadKeyConsent) every time, and arms the ask on a budget
+// of its own, so a routine ask consumed minutes earlier cannot swallow it and
+// a person pressing the key again and again cannot cause a re-sync storm. A
+// forced pass that is already held does not need the ask: the stamp releases
+// it at its next retry.
+func (a *resyncAsks) requestDeadKey(logger *slog.Logger, slot int, source string) {
+	if a == nil {
+		return
+	}
+	a.deadKeyAt.Store(time.Now().UnixNano())
+	const minGapSec = 60
+	now := time.Now().Unix()
+	if last := a.deadKeyLast.Load(); last != 0 && now-last < minGapSec {
+		if logger != nil {
+			logger.Info("preset self-heal: dead key pressed again, the re-sync asked for it is already on its way",
+				"slot", slot, "source", source)
+		}
+		return
+	}
+	a.deadKeyLast.Store(now)
+	a.noteAsker("dead-key")
+	a.ask.Store(true)
+	if logger != nil {
+		logger.Info("preset self-heal: a press on a key the speaker lost asks for a full box preset re-sync; the press is consent to leave the source that plays",
+			"slot", slot, "source", source)
+	}
+}
+
+// deadKeyConsent reports whether a dead-key press within deadKeyConsentWindow
+// of now lets a forced pass leave a source the listener chose.
+func (a *resyncAsks) deadKeyConsent(now time.Time) (ok bool, ago time.Duration) {
+	if a == nil {
+		return false, 0
+	}
+	at := a.deadKeyAt.Load()
+	if at == 0 {
+		return false, 0
+	}
+	ago = now.Sub(time.Unix(0, at))
+	return ago >= 0 && ago < deadKeyConsentWindow, ago
 }
 
 // standbyThumbRepeat stamps a thumb frame read while the box reports STANDBY
@@ -957,6 +1017,17 @@ func (r *reconciler) heldForStartingPlay(src string, playing, playKnown bool) bo
 func (r *reconciler) heldForPlaybackOrSource(src string, playing, paused, playKnown bool) bool {
 	userSrc := userChosenSource(src)
 	setupSrc := isSetupSource(src)
+	if userSrc && !setupSrc {
+		// A press on a key the speaker lost (#1931) asked to leave this
+		// source: STR plays the key itself, and the keys are written now
+		// instead of whenever the listener leaves it. Only that press
+		// opens this hold; every other asker still waits.
+		if ok, ago := r.asks.deadKeyConsent(time.Now()); ok {
+			r.logger.Info("preset reconcile: forced pass runs on a source the listener chose, a press on a dead key asked to leave it",
+				"source", src, "playing", playing, "pressAgoMs", ago.Milliseconds(), "heldOn", r.userHeldSrc)
+			return false
+		}
+	}
 	if userSrc || setupSrc {
 		// The ceiling bounds a wait on STR's own playback only. Time
 		// spent on the listener's AirPlay or Bluetooth, or in the
@@ -1081,6 +1152,9 @@ func (r *reconciler) heldForPlaybackOrSource(src string, playing, paused, playKn
 func (r *reconciler) releaseForcedPass(src string) {
 	r.ceilingListedLogged = false
 	r.forceKeysDead = false
+	// The pass about to run answers the dead-key press; its consent is
+	// used up with it.
+	r.asks.deadKeyAt.Store(0)
 	if r.setupHeldSrc != "" {
 		r.logger.Info("preset reconcile: the speaker left setup, running the held pass",
 			"heldOn", r.setupHeldSrc, "source", src)

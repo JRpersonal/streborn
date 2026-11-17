@@ -1602,6 +1602,10 @@ func (a *agent) buildBoxLink() error {
 		}
 		return false, false
 	}
+	// A press on a key the speaker lost while the store still holds it is
+	// played by STR and re-registers the keys (deadkey.go, #1931).
+	holdSave.deadKey = func(slot int) deadKeyVerdict { return deadKeyOnBox(store, a.flags.boxHost, slot) }
+	holdSave.playDeadKey = func(slot int, v deadKeyVerdict) { wsHandler.playDeadKey(context.Background(), slot, v) }
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}
