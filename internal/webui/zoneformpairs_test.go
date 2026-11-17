@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -207,6 +208,49 @@ func TestOnlyASoundTouch10IsAskedForItsPair(t *testing.T) {
 	for _, ip := range []string{"192.0.2.2", "192.0.2.3", "192.0.2.4", ""} {
 		if s.mayBePairHalf(ip) {
 			t.Errorf("%q must not be asked", ip)
+		}
+	}
+}
+
+// The leader's own /getGroup read is asked only of a SoundTouch 10: on the
+// scm/BCO chassis it hangs BoseApp's web server (2026-11-15), and nothing but
+// a SoundTouch 10 can be half of a pair. A plain two-speaker form led by
+// another model reads no pair from the leader; an ST10 leader still does.
+func TestOnlyASoundTouch10LeaderReadsItsOwnPair(t *testing.T) {
+	t.Parallel()
+	for model, wantLeaderRead := range map[string]bool{
+		"SoundTouch 10":       true,
+		"SoundTouch 20":       false,
+		"SoundTouch 30":       false,
+		"SoundTouch Portable": false,
+	} {
+		s := pgServer(t, pgLeaderIP, nil)
+		var mu sync.Mutex
+		var asked []string
+		s.fetchGroupFn = func(_ context.Context, h string) (boxapi.Group, error) {
+			mu.Lock()
+			asked = append(asked, h)
+			mu.Unlock()
+			return boxapi.Group{}, nil
+		}
+		s.boxNameFn = func() (string, string) { return "Living room", model }
+		run := pgRun(pgLeader, false, pgOther)
+		if ans := s.zoneFormPairs(run); ans != nil {
+			t.Fatalf("%s: a plain two-speaker group was refused: %+v", model, ans)
+		}
+		if got := pgIPs(run.slaves); got != pgOtherIP {
+			t.Fatalf("%s: members = %s, want %s", model, got, pgOtherIP)
+		}
+		leaderRead := false
+		mu.Lock()
+		for _, h := range asked {
+			if h == pgLeaderIP {
+				leaderRead = true
+			}
+		}
+		mu.Unlock()
+		if leaderRead != wantLeaderRead {
+			t.Errorf("%s leader: /getGroup on the leader = %v, want %v (asked %v)", model, leaderRead, wantLeaderRead, asked)
 		}
 	}
 }

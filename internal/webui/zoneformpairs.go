@@ -140,8 +140,13 @@ func pairUnitMembers(self boxapi.ZoneMember, selfHost string, slaves []boxapi.Zo
 
 // ownPair reads this speaker's own stereo pair, from its firmware first and
 // from the last answer the zone poll saw when the firmware does not answer.
+// A leader that cannot hold a stereo pair (anything but a SoundTouch 10) is
+// not asked: on the scm/BCO chassis the read hangs BoseApp's web server, the
+// same reason the zone poll skips it (mayHoldStereoPair).
 func (s *Server) ownPair(ctx context.Context) (boxapi.Group, bool) {
-	if s.boxHost != "" && (s.fetchGroupFn != nil || s.groupReadAllowed()) {
+	if s.boxHost != "" && !s.mayHoldStereoPair() {
+		s.logger.Debug("zone: the leader's model cannot hold a stereo pair, skipping its /getGroup read")
+	} else if s.boxHost != "" && (s.fetchGroupFn != nil || s.groupReadAllowed()) {
 		gctx, cancel := context.WithTimeout(ctx, pairReadBudget)
 		g, err := s.fetchGroup(gctx, s.boxHost)
 		cancel()
