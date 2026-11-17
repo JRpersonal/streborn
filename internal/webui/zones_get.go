@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +55,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// Live or not: the desktop marks a permanent group's frame with it, so
 	// the user can tell a group that will come back by itself from one that
 	// ends with the next standby (Jens, 2026-09-06).
+	out.SetAside = s.setAsideGroup()
 	if s.zones != nil {
 		if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
 			out.Permanent = true
@@ -116,6 +118,12 @@ type zoneAnswer struct {
 	// member that stayed out read as removed from the group, then came back
 	// once the group ended (#1576).
 	NotJoined []rememberedMember `json:"notJoined,omitempty"`
+	// SetAside is the permanent group a temporary group set aside (zones.Store.Set):
+	// it comes back by itself when the temporary group ends without forget, and
+	// a POST with permanent:true replaces it. Without it a client forming a group
+	// while nothing was live could only ask the user blindly whether to replace
+	// a durable group it could not see (SoundRebornRemote, 2026-11-17).
+	SetAside *setAsideAnswer `json:"setAside,omitempty"`
 	// PairPartnerGone names the other half of a stereo pair that did not answer.
 	// While a pair is incomplete the firmware refuses every source activation, so
 	// the speaker wakes and is back in standby five seconds later and nothing it
@@ -125,6 +133,26 @@ type zoneAnswer struct {
 	// eighty failed presses).
 	PairPartnerGone   string `json:"pairPartnerGone,omitempty"`
 	PairPartnerGoneID string `json:"pairPartnerGoneId,omitempty"`
+}
+
+// setAsideAnswer is the set-aside permanent group as GET /api/box/zone reports it.
+type setAsideAnswer struct {
+	Master  string             `json:"master"`
+	Name    string             `json:"name,omitempty"`
+	Members []rememberedMember `json:"members"`
+}
+
+// setAsideGroup is the permanent group set aside under the current one, nil
+// when there is none.
+func (s *Server) setAsideGroup() *setAsideAnswer {
+	if s.zones == nil {
+		return nil
+	}
+	z, ok := s.zones.Standing()
+	if !ok || z.Stereo {
+		return nil
+	}
+	return &setAsideAnswer{Master: z.Master, Name: z.Name, Members: s.zoneMembersNamed(z)}
 }
 
 // rememberedMember is one follower of the persisted (not currently live) zone.
@@ -165,6 +193,12 @@ func (s *Server) rememberedZoneMembers() []rememberedMember {
 	if !ok || z.Stereo || len(z.Slaves) == 0 {
 		return nil
 	}
+	return s.zoneMembersNamed(z)
+}
+
+// zoneMembersNamed lists a stored group's followers with the names the peer
+// roster knows them by.
+func (s *Server) zoneMembersNamed(z zones.Zone) []rememberedMember {
 	names := map[string]string{}
 	if s.peersFn != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
