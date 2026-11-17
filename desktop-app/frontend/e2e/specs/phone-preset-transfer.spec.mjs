@@ -28,7 +28,7 @@ test.describe('one target', () => {
     phoneOverrides: { [COPY]: { body: { keys: 6, rows: 2, done: 1, total: 1, results: [ok('Kitchen', '192.0.2.51', 6)] } } },
   });
 
-  test('opens from the heading, warns that it replaces keys 1 to 6, copies to the picked speaker', async ({ phone }) => {
+  test('opens from the heading, warns that it overwrites keys 1 to 6 and keeps the rest, copies to the picked speaker', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
     await expect(page.locator('#btnXfer')).toHaveAttribute('aria-expanded', 'false');
@@ -38,7 +38,7 @@ test.describe('one target', () => {
     await expect(page.locator('#xferCard')).toBeVisible();
     await expect(page.locator('#xferCard')).toContainText('Copy keys to another speaker');
     // Row 2 holds nothing: only keys 1 to 6 are replaced.
-    await expect(page.locator('#xferScope')).toHaveText('On the speaker you choose, this replaces keys 1 to 6.');
+    await expect(page.locator('#xferScope')).toHaveText('On the speaker you choose, keys 1 to 6 that are set here overwrite the same keys there. All other keys there stay as they are.');
     // Every answering speaker, then "all" (three of them).
     await expect(page.locator('#xferTarget option')).toHaveText(['Kitchen', 'Bedroom', 'Office', 'All other speakers (3)']);
     await page.locator('#xferTarget').selectOption('192.0.2.51');
@@ -73,11 +73,11 @@ test.describe('both rows', () => {
     },
   });
 
-  test('says both rows are replaced, sends "all" and names the one-row speaker', async ({ phone }) => {
+  test('says both rows are overwritten, sends "all" and names the one-row speaker', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
     await page.locator('#btnXfer').click();
-    await expect(page.locator('#xferScope')).toHaveText('On the speaker you choose, this replaces the keys pressed once and the keys pressed twice.');
+    await expect(page.locator('#xferScope')).toHaveText('On the speaker you choose, every key set here, pressed once or twice, overwrites the same key there. All other keys there stay as they are.');
     await page.locator('#xferTarget').selectOption('__all');
     expect(await confirmAndCatch(page)).toEqual({ all: true });
     const lines = page.locator('#xferMsg p');
@@ -215,7 +215,7 @@ test.describe('layout at 320px', () => {
     await expect(page.locator('#btnXfer')).toHaveAccessibleName('Übertragen');
     await expect(page.locator('#btnXfer')).toHaveAttribute('title', 'Tasten auf einen anderen Lautsprecher kopieren');
     await page.locator('#btnXfer').click();
-    await expect(page.locator('#xferScope')).toHaveText('Auf dem Lautsprecher, den du wählst, ersetzt das die Tasten für einmal und für zweimal Drücken.');
+    await expect(page.locator('#xferScope')).toHaveText('Auf dem Lautsprecher, den du wählst, überschreibt jede hier belegte Taste, für einmal und für zweimal Drücken, dieselbe Taste dort. Alle anderen Tasten dort bleiben, wie sie sind.');
     for (const sel of ['#xferCard', '#xferTarget', '#btnXferGo', '#btnXferNo']) {
       const b = await page.locator(sel).boundingBox();
       expect(b.x + b.width, sel).toBeLessThanOrEqual(320.5);
