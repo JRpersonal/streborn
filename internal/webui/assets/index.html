@@ -6095,6 +6095,39 @@ function alarmHHMM(a) {
   return ('0' + a.hour).slice(-2) + ':' + ('0' + a.minute).slice(-2);
 }
 
+// alarmTimeLabel is an alarm's time the way the list SHOWS it: 12h or 24h as
+// the phone's own settings say, the same convention the editor's native time
+// picker follows. The list used to print a fixed 24h "07:00" next to an editor
+// reading "7:00 AM" (#1952). The browser's locale, not the page language: the
+// picker follows the former, so only that keeps the two in step. alarmHHMM
+// stays the editor's VALUE, which is always 24h HH:MM.
+function alarmTimeLabel(a) {
+  try {
+    return new Intl.DateTimeFormat(undefined, { hour: alarmHourStyle(), minute: '2-digit', timeZone: 'UTC' })
+      .format(new Date(Date.UTC(2000, 0, 1, Number(a.hour) || 0, Number(a.minute) || 0)));
+  } catch (e) { return alarmHHMM(a); }
+}
+
+// alarmHourStyle keeps the leading zero a 24h clock shows ("06:45", as the
+// picker and the list always did) and leaves a 12h one without ("6:45 AM").
+function alarmHourStyle() {
+  try {
+    var hc = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hourCycle;
+    return (hc === 'h23' || hc === 'h24') ? '2-digit' : 'numeric';
+  } catch (e) { return 'numeric'; }
+}
+
+// alarmNextLabel is the next alarm's date and time for the "Next:" line, in the
+// SPEAKER's zone (the zone the list's times are in, named under the card) and
+// in the same 12h/24h convention as the list, without the seconds.
+function alarmNextLabel(when) {
+  var opts = { weekday: 'short', day: 'numeric', month: 'short', hour: alarmHourStyle(), minute: '2-digit' };
+  try {
+    if (alarmDoc.zone) return when.toLocaleString(undefined, Object.assign({ timeZone: alarmDoc.zone }, opts));
+  } catch (e) { /* a zone this browser does not know: the phone's own below */ }
+  try { return when.toLocaleString(undefined, opts); } catch (e) { return when.toLocaleString(); }
+}
+
 function alarmDaysLabel(a) {
   var names = alarmDayNames();
   var order = alarmDayOrder();
@@ -6166,7 +6199,7 @@ function renderAlarms() {
   }
   if (alarmState && alarmState.nextFire) {
     var when = new Date(alarmState.nextFire);
-    sum.textContent = fmt(T.alarmNext, { when: isNaN(when) ? alarmState.nextFire : when.toLocaleString() });
+    sum.textContent = fmt(T.alarmNext, { when: isNaN(when) ? alarmState.nextFire : alarmNextLabel(when) });
   } else {
     sum.textContent = T.alarmNone;
   }
@@ -6176,7 +6209,7 @@ function renderAlarms() {
     // between the time and the day names ("06:45Mo Tu").
     return '<div class="row" style="grid-template-columns:1fr auto;align-items:center;gap:10px;margin-top:8px">' +
       '<button class="btn" type="button" data-alarm-edit="' + i + '" style="flex:1;text-align:left;justify-content:flex-start;gap:.5em">' +
-        '<strong>' + escapeHtml(alarmHHMM(a)) + '</strong> ' +
+        '<strong style="flex:none;white-space:nowrap">' + escapeHtml(alarmTimeLabel(a)) + '</strong> ' +
         escapeHtml(alarmDaysLabel(a)) + ' &middot; ' + escapeHtml(alarmPresetName(a.slot)) +
       '</button>' +
       '<input type="checkbox" data-alarm-on="' + i + '"' + (a.enabled ? ' checked' : '') +
