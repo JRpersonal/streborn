@@ -6362,7 +6362,7 @@ function alarmEditorHtml(a) {
       escapeHtml(T.alarmOffMin.replace('{n}', String(n))) + '</option>';
   }).join('');
   return '<div style="margin-top:8px">' +
-    '<input type="time" id="alarmTime" value="' + escapeHtml(alarmHHMM(a)) + '" style="width:100%;font-size:1.4em;padding:8px">' +
+    '<input type="time" id="alarmTime" value="' + escapeHtml(alarmHHMM(a)) + '" style="width:100%;font-size:16px;padding:8px">' +
     '<div class="row" style="margin-top:10px" id="alarmDays">' + days + '</div>' +
     (presetRowsOK
       ? '<div class="pickhead" style="margin-top:6px"><div class="msg">' + escapeHtml(T.alarmPreset) + ': ' +
@@ -6379,7 +6379,7 @@ function alarmEditorHtml(a) {
     '<label class="msg" style="margin-top:10px;display:block">' + escapeHtml(T.alarmOff) +
       ' <select id="alarmAutoOff">' + offs + '</select></label>' +
     '<div id="alarmOffAtRow"' + (offAt ? '' : ' hidden') + ' style="margin-top:6px">' +
-      '<input type="time" id="alarmOffAt" value="' + escapeHtml(offAtVal) + '" aria-label="' + escapeHtml(T.alarmOffAt) + '" style="width:100%;font-size:1.1em;padding:6px">' +
+      '<input type="time" id="alarmOffAt" value="' + escapeHtml(offAtVal) + '" aria-label="' + escapeHtml(T.alarmOffAt) + '" style="width:100%;font-size:16px;padding:6px">' +
       '<div class="msg">' + escapeHtml(T.alarmOffAtHint) + '</div>' +
     '</div>' +
     '<label class="msg" style="margin-top:10px;display:block">' + escapeHtml(T.alarmSnooze) +
