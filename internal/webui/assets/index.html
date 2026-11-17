@@ -6206,11 +6206,14 @@ function renderAlarms() {
   list.innerHTML = alarmDoc.alarms.map(function(a, i) {
     // .row is a grid and .btn a flex box: without the two columns the switch
     // wrapped under its alarm, and the flex button swallowed the space
-    // between the time and the day names ("06:45Mo Tu").
-    return '<div class="row" style="grid-template-columns:1fr auto;align-items:center;gap:10px;margin-top:8px">' +
-      '<button class="btn" type="button" data-alarm-edit="' + i + '" style="flex:1;text-align:left;justify-content:flex-start;gap:.5em">' +
+    // between the time and the day names ("06:45Mo Tu"). A station name can
+    // run to a paragraph (#1952): days and name stop after two lines, the
+    // button's title holds all of it.
+    var what = alarmDaysLabel(a) + ' · ' + alarmPresetName(a.slot);
+    return '<div class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin-top:8px">' +
+      '<button class="btn" type="button" data-alarm-edit="' + i + '" title="' + escapeHtml(what) + '" style="flex:1;min-width:0;text-align:left;justify-content:flex-start;gap:.5em">' +
         '<strong style="flex:none;white-space:nowrap">' + escapeHtml(alarmTimeLabel(a)) + '</strong> ' +
-        escapeHtml(alarmDaysLabel(a)) + ' &middot; ' + escapeHtml(alarmPresetName(a.slot)) +
+        '<span class="clamp2" style="min-width:0">' + escapeHtml(what) + '</span>' +
       '</button>' +
       '<input type="checkbox" data-alarm-on="' + i + '"' + (a.enabled ? ' checked' : '') +
         ' style="width:22px;height:22px;accent-color:var(--accent)">' +
@@ -6394,14 +6397,16 @@ function alarmEditorHtml(a) {
     return '<option value="' + n + '"' + (snoozeNow === n ? ' selected' : '') + '>' +
       escapeHtml(T.alarmOffMin.replace('{n}', String(n))) + '</option>';
   }).join('');
+  // A station name can run to a paragraph (#1952); two lines of it, the whole
+  // name as the tooltip.
+  var preset = escapeHtml(T.alarmPreset + ': ' + alarmPresetName(a.slot));
   return '<div style="margin-top:8px">' +
     '<input type="time" id="alarmTime" value="' + escapeHtml(alarmHHMM(a)) + '" style="width:100%;font-size:16px;padding:8px">' +
     '<div class="row" style="margin-top:10px" id="alarmDays">' + days + '</div>' +
     (presetRowsOK
-      ? '<div class="pickhead" style="margin-top:6px"><div class="msg">' + escapeHtml(T.alarmPreset) + ': ' +
-          escapeHtml(alarmPresetName(a.slot)) + '</div><div class="rowsw" id="alarmRowSw"></div></div>'
-      : '<div class="msg" style="margin-top:10px">' + escapeHtml(T.alarmPreset) + ': ' +
-          escapeHtml(alarmPresetName(a.slot)) + '</div>') +
+      ? '<div class="pickhead" style="margin-top:6px"><div class="msg clamp2" id="alarmPresetLine" title="' + preset + '">' + preset +
+          '</div><div class="rowsw" id="alarmRowSw"></div></div>'
+      : '<div class="msg clamp2" id="alarmPresetLine" style="margin-top:10px" title="' + preset + '">' + preset + '</div>') +
     '<div class="row c3" style="gap:4px" id="alarmSlots">' + slots + '</div>' +
     '<div class="msg" style="margin-top:10px">' + escapeHtml(T.alarmVol) + ': ' +
       '<span id="alarmVolVal"></span></div>' +
