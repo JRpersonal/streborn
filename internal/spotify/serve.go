@@ -49,6 +49,12 @@ func (m *Manager) playlistMetaAt(ctx context.Context, uri, oembedURL, webAPIBase
 	if cover != "" && title != "" {
 		return cover, title
 	}
+	if title == "" {
+		title = m.engineContextName(ctx, uri)
+	}
+	if cover != "" && title != "" {
+		return cover, title
+	}
 	wc, wt := m.webAPIMeta(ctx, uri, webAPIBase)
 	if cover == "" {
 		cover = wc
@@ -57,6 +63,31 @@ func (m *Manager) playlistMetaAt(ctx context.Context, uri, oembedURL, webAPIBase
 		title = wt
 	}
 	return cover, title
+}
+
+// engineContextName is the name the engine itself reports for the context it
+// is playing, when that context is uri. The engine reads it with its own login
+// while it loads the context, so it names a private playlist too and costs no
+// Web API call; the Web API lookup it spares is the one Spotify answers with
+// 429 often enough that a saved key kept the placeholder "Spotify" (#1940).
+// "" when the engine plays something else, says nothing or cannot be asked.
+func (m *Manager) engineContextName(ctx context.Context, uri string) string {
+	if !m.Ready() {
+		return ""
+	}
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		ContextURI  string `json:"context_uri"`
+		ContextName string `json:"context_name"`
+	}
+	if json.Unmarshal(data, &st) != nil || st.ContextName == "" ||
+		normalizeContextURI(st.ContextURI) != normalizeContextURI(uri) {
+		return ""
+	}
+	return strings.TrimSpace(st.ContextName)
 }
 
 // webAPIMeta asks the Spotify Web API for a context's name and cover with the

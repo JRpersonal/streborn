@@ -178,3 +178,50 @@ func TestPlaylistMetaWithoutEngineStaysOnOEmbed(t *testing.T) {
 		t.Fatalf("asked the engine for a token %d times without an engine binary", tokenCalls.Load())
 	}
 }
+
+// The reporter's save (#1940): a private playlist, oEmbed does not know it and
+// the Web API answers 429. The engine plays that very playlist and names it in
+// its own /status, so the key gets the name without the Web API being asked.
+// The cover still comes from the Web API, here throttled.
+func TestPlaylistMetaTakesThePlayingPlaylistsNameFromTheEngine(t *testing.T) {
+	for _, tc := range []struct {
+		name, playing, want string
+	}{
+		{"same playlist", "spotify:playlist:priv", "Mj Lenderman universe"},
+		{"engine plays another", "spotify:playlist:other", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var apiCalls atomic.Int32
+			engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/status":
+					_, _ = w.Write([]byte(`{"context_uri":"` + tc.playing + `","context_name":"Mj Lenderman universe"}`))
+				case "/token":
+					_, _ = w.Write([]byte(`{"token":"BQ-test-token"}`))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer engine.Close()
+			oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "Not found", http.StatusNotFound)
+			}))
+			defer oembed.Close()
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				apiCalls.Add(1)
+				w.Header().Set("Retry-After", "30")
+				w.WriteHeader(http.StatusTooManyRequests)
+			}))
+			defer api.Close()
+
+			m := productTestManager(t, engine.URL)
+			cover, title := m.playlistMetaAt(context.Background(), "spotify:playlist:priv", oembed.URL, api.URL)
+			if title != tc.want || cover != "" {
+				t.Fatalf("got cover=%q title=%q, want title %q", cover, title, tc.want)
+			}
+			if apiCalls.Load() != 1 {
+				t.Fatalf("Web API asked %d times, want once for the cover", apiCalls.Load())
+			}
+		})
+	}
+}
