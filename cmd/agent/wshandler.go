@@ -1599,8 +1599,10 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// A free/open Spotify account cannot autonomously play a saved context, so a
 	// hardware-button recall would silently produce no audio. Skip it and log the
 	// reason rather than thrashing the box (#45). The desktop app surfaces the
-	// "needs Premium" note; the hardware press has no UI to show it.
-	if h.spotify.PremiumRequired() {
+	// "needs Premium" note; the hardware press has no UI to show it. Asked for
+	// the key's own account, like the app path: a key another account saved
+	// switches to it in PlayAccount, so the logged-in plan does not decide (#1947).
+	if h.spotify.PremiumRequiredFor(p.Account) {
 		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name)
 		return
 	}

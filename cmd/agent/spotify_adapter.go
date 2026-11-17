@@ -76,11 +76,13 @@ func (e *spotifyEngine) SkipBoundary() time.Time { return e.m.LastSkipBoundary()
 // SetRecalling so a preset re-press never feeds the box the old track's audio
 // during the load preamble; the stale-KB probe lets the recall re-push stand
 // down when the cut kept the box clean.
-func (e *spotifyEngine) ArmRecallCut()                       { e.m.ArmRecallCut() }
-func (e *spotifyEngine) BoundaryStaleKB() int64              { return e.m.LastBoundaryStaleKB() }
-func (e *spotifyEngine) Ready() bool                         { return e.m.Ready() }
-func (e *spotifyEngine) CanRecall(ctx context.Context) bool  { return e.m.CanRecall(ctx) }
-func (e *spotifyEngine) PremiumRequired() bool               { return e.m.PremiumRequired() }
+func (e *spotifyEngine) ArmRecallCut()                      { e.m.ArmRecallCut() }
+func (e *spotifyEngine) BoundaryStaleKB() int64             { return e.m.LastBoundaryStaleKB() }
+func (e *spotifyEngine) Ready() bool                        { return e.m.Ready() }
+func (e *spotifyEngine) CanRecall(ctx context.Context) bool { return e.m.CanRecall(ctx) }
+func (e *spotifyEngine) PremiumRequiredFor(account string) bool {
+	return e.m.PremiumRequiredFor(account)
+}
 func (e *spotifyEngine) SetRecalling()                       { e.m.SetRecalling() }
 func (e *spotifyEngine) SuppressActivate(d time.Duration)    { e.m.SuppressActivate(d) }
 func (e *spotifyEngine) ExpectReattach(window time.Duration) { e.m.ExpectReattach(window) }

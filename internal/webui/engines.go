@@ -66,9 +66,11 @@ type SpotifyEngine interface {
 	// CanRecall (spotifyCanRecall): a live session or a persisted credential
 	// exists, so a recall can proceed.
 	CanRecall(ctx context.Context) bool
-	// PremiumRequired (spotifyPremiumRequired): the account is free/open and
-	// cannot do autonomous recall playback.
-	PremiumRequired() bool
+	// PremiumRequiredFor (spotifyPremiumRequired): a recall of a key saved
+	// under account would play under a free/open account, which cannot do
+	// autonomous recall playback. A key of another account the speaker can
+	// switch to is judged by that account, not the current one (#1947).
+	PremiumRequiredFor(account string) bool
 	// SetRecalling (spotifySetRecalling): mark an in-flight recall.
 	SetRecalling()
 	// SuppressActivate (spotifySuppressActivate): hold the auto-repoint off
@@ -169,7 +171,7 @@ func WithSpotify(e SpotifyEngine) Option {
 		s.spotifyBoundaryStaleKB = e.BoundaryStaleKB
 		s.spotifyReady = e.Ready
 		s.spotifyCanRecall = e.CanRecall
-		s.spotifyPremiumRequired = e.PremiumRequired
+		s.spotifyPremiumRequired = e.PremiumRequiredFor
 		s.spotifySetRecalling = e.SetRecalling
 		s.spotifySuppressActivate = e.SuppressActivate
 		s.spotifyExpectReattach = e.ExpectReattach

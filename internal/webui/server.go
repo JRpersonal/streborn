@@ -399,10 +399,12 @@ type Server struct {
 	// optimistically reporting "playing" and failing silently (#45 Pierre). nil
 	// until wired.
 	spotifyCanRecall func(ctx context.Context) bool
-	// spotifyPremiumRequired reports whether the logged-in Spotify account is
-	// free/open and so cannot do the autonomous recall playback (#45). nil until
+	// spotifyPremiumRequired reports whether a recall of a key saved under the
+	// given account would play under a free/open account and so cannot do the
+	// autonomous recall playback (#45). Another account's key the speaker can
+	// switch to is not judged by the logged-in account (#1947). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
-	spotifyPremiumRequired func() bool
+	spotifyPremiumRequired func(account string) bool
 
 	// phoneLangSeen counts the Accept-Language values the remote page was asked
 	// for, so a diagnostic shows what the phones actually claim rather than what
