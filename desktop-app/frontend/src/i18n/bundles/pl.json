@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Przywróć silnik Spotify",
   "updateAll.confirmLead": "Te głośniki otrzymają aktualne oprogramowanie. Każdy raz uruchomi się ponownie i wróci sam, około czterech do sześciu minut na głośnik.",
   "updateAll.confirmLeadEngine": "Te są już aktualne, brakuje im tylko silnika Spotify. Zostanie przywrócony, zwykle bez restartu.",
+  "updateAll.confirmLeadNotes": "Warto wiedzieć przed startem:",
   "updateAll.confirmBtn": "Aktualizuj teraz",
   "updateAll.confirmBtnEngine": "Przywróć teraz",
   "updateAll.checking": "Sprawdzanie głośników…",

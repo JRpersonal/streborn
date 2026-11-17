@@ -692,6 +692,9 @@ document.querySelector('#app').innerHTML = `
   <div class="modal hidden" id="updateAllOverlay">
     <div class="modal-content ua-modal">
       <h3>${escapeHtml(t('updateAll.title'))}</h3>
+      <!-- What happens to the speakers during the run, and anything the
+           pre-scan noted, stays on screen while it runs (#1954). -->
+      <div class="ua-lead" id="uaLead"></div>
       <p class="modal-sub" id="uaSummary"></p>
       <div id="uaList" class="ua-list"></div>
       <div class="warn-buttons">

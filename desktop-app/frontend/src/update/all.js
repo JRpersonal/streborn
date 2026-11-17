@@ -37,6 +37,7 @@ import {
   showUpdateNoNetworkNotice,
   updateAllRowReport,
 } from './failreport.js';
+import { updateAllConfirmPlan } from './confirmplan.js';
 import { noteOTAResult, otaStuck } from './otastuck.js';
 import { fmtMB, mayStayDark, stickMounted, weakWifiSignal } from './preflight.js';
 import { BOX_BUSY_TOKEN, UPDATE_STEPS, withStep } from './shared.js';
@@ -67,6 +68,14 @@ function spotifyPhaseText(d) {
 // or a card off screen for it need that answer to put it back. onStart fires
 // the moment the batch is committed, for callers that want to get out of the
 // way then rather than minutes later when the whole batch is done.
+//
+// opts.named is for a caller that has itself shown the owner which speakers
+// will be updated and got a yes (the speaker update card): the hosts it named.
+// opts.groupNoteShown says the card also showed the group note. With those the
+// run asks again only about what the card could not know (updateAllConfirmPlan,
+// confirmplan.js); without them it asks with the whole list, as it always did.
+//
+
 // Re-entrancy latch, set BEFORE the first await and cleared in the finally at
 // the very bottom. state.otaInProgress is not enough: it is only raised AFTER
 // the confirmation, and everything before it (a version read per speaker, a
@@ -75,7 +84,7 @@ function spotifyPhaseText(d) {
 // then queue two confirmations on a modal that keeps ONE resolver, so the
 // second prompt arrived after the batch was already done and asked the user to
 // update speakers they had just updated (Jens, 2026-08-22).
-export async function updateAllBoxes(onStart) {
+export async function updateAllBoxes(onStart, opts) {
   // Saying so out loud, not returning silently: a second press on a dead-looking
   // button is exactly what the single-box path already learned to answer.
   if (ustate.updateAllBusy || ustate.boxUpdateBusy || state.otaInProgress) {
@@ -84,14 +93,14 @@ export async function updateAllBoxes(onStart) {
   }
   ustate.updateAllBusy = true;
   try {
-    return await runUpdateAllBoxes(onStart);
+    return await runUpdateAllBoxes(onStart, opts || {});
   } finally {
     ustate.updateAllBusy = false;
   }
 }
 
 // runUpdateAllBoxes is the body; updateAllBoxes above is the guard around it.
-async function runUpdateAllBoxes(onStart) {
+async function runUpdateAllBoxes(onStart, opts) {
   // Offline speakers are excluded up front: probing them burns the pre-flight
   // budget, and counting them as "nothing to do" is how an all-offline fleet
   // produced "already up to date" (#775).
@@ -168,10 +177,22 @@ async function runUpdateAllBoxes(onStart) {
       if (await mayStayDark(b)) notes.push(t('updateAll.noteDarkRisk', { name: getBoxLabel(b) }));
     } catch { /* plan unknown: never block a batch */ }
   }
+  // Everything noted so far is something the pre-scan found on a speaker; the
+  // group note below is the one the speaker update card can show by itself.
+  const warnings = notes.length;
   // A grouped speaker leaves its group while it restarts, in a run just as in
   // a single update (#1339): said once, before the run starts.
   if (anyInLiveGroup(updateTargets, state.zoneLive)) notes.push(t('updateAll.groupNote'));
+  const groupNoted = notes.length > warnings;
   hideToast();
+  const ask = updateAllConfirmPlan({
+    named: opts.named,
+    updateHosts: updateTargets.map(b => b.host),
+    engineCount: engineTargets.length,
+    warnings,
+    groupNoted,
+    groupNoteShown: !!opts.groupNoteShown,
+  });
   // The prompt used to be one plain string with "\n" separators pushed through
   // innerHTML, where HTML collapses newlines: four speakers plus two notes
   // arrived as a single unbroken paragraph under a red warning triangle and a
@@ -187,25 +208,38 @@ async function runUpdateAllBoxes(onStart) {
   // Two groups with two different promises: the first restarts, the second
   // normally does not. Saying which is which up front is the difference between
   // a run the user can predict and one that surprises them.
-  let body = '';
-  if (updateTargets.length) {
-    body += `<p>${escapeHtml(t('updateAll.confirmLead'))}</p>`
-      + nameList(updateTargets);
+  //
+  // After the speaker update card ('notes'), the speakers the owner just
+  // agreed to are not listed again: the window only carries what the card
+  // could not say. After the card with nothing new to say ('none') there is no
+  // window at all and the run goes straight to its progress (#1954).
+  if (ask !== 'none') {
+    let body = '';
+    if (ask === 'full' && updateTargets.length) {
+      body += `<p>${escapeHtml(t('updateAll.confirmLead'))}</p>`
+        + nameList(updateTargets);
+    }
+    // The group note is left out when the card already showed it.
+    const shownNotes = ask === 'notes' && opts.groupNoteShown && groupNoted ? notes.slice(0, warnings) : notes;
+    if (ask === 'notes' && shownNotes.length) {
+      body += `<p>${escapeHtml(t('updateAll.confirmLeadNotes'))}</p>`
+        + nameList(shownNotes, 'warn-notes');
+    }
+    if (engineTargets.length) {
+      body += `<p>${escapeHtml(t('updateAll.confirmLeadEngine'))}</p>`
+        + nameList(engineTargets);
+    }
+    if (ask === 'full' && notes.length) body += nameList(notes, 'warn-notes');
+    const confirmTitle = updateTargets.length ? t('updateAll.confirmTitle') : t('updateAll.confirmTitleEngine');
+    const confirmed = await confirmWarn(confirmTitle, body, {
+      icon: null,
+      calm: true,
+      rich: true,
+      confirmLabel: updateTargets.length ? t('updateAll.confirmBtn') : t('updateAll.confirmBtnEngine'),
+      confirmClass: 'btn btn-primary',
+    });
+    if (!confirmed) return false;
   }
-  if (engineTargets.length) {
-    body += `<p>${escapeHtml(t('updateAll.confirmLeadEngine'))}</p>`
-      + nameList(engineTargets);
-  }
-  if (notes.length) body += nameList(notes, 'warn-notes');
-  const confirmTitle = updateTargets.length ? t('updateAll.confirmTitle') : t('updateAll.confirmTitleEngine');
-  const confirmed = await confirmWarn(confirmTitle, body, {
-    icon: null,
-    calm: true,
-    rich: true,
-    confirmLabel: updateTargets.length ? t('updateAll.confirmBtn') : t('updateAll.confirmBtnEngine'),
-    confirmClass: 'btn btn-primary',
-  });
-  if (!confirmed) return false;
   // The prompt can sit on screen for a while. Anything that started an OTA in
   // the meantime (the single-speaker button, a resumed update intent) owns the
   // speakers now, so do not push a second batch over it.
@@ -277,6 +311,17 @@ async function runUpdateAllBoxes(onStart) {
     if (barClass) { r.el.classList.remove('ua-wait', 'ua-busy', 'ua-done', 'ua-failed', 'ua-defer'); r.el.classList.add(barClass); }
   };
 
+  // What happens to the speakers, said again where the run is watched: the
+  // card said it before the click, and with no second window in between this
+  // is where an owner looks while the speakers go quiet and restart. The
+  // pre-scan's notes go with it, since one of them (a speaker that may stay
+  // dark) says what to do if it happens (#1954).
+  const leadEl = $('uaLead');
+  if (leadEl) {
+    leadEl.innerHTML =
+      `<p>${escapeHtml(updateTargets.length ? t('updateAll.confirmLead') : t('updateAll.confirmLeadEngine'))}</p>`
+      + (notes.length ? nameList(notes) : '');
+  }
   const overlay = $('updateAllOverlay');
   if (overlay) overlay.classList.remove('hidden');
   renderSummary();

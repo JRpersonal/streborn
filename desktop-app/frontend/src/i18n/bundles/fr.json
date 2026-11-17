@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Réinstaller le moteur Spotify",
   "updateAll.confirmLead": "Ces enceintes reçoivent la version actuelle du logiciel. Chacune redémarre une fois et revient toute seule, environ quatre à six minutes par enceinte.",
   "updateAll.confirmLeadEngine": "Celles-ci sont déjà à jour, il ne leur manque que le moteur Spotify. Il est réinstallé, normalement sans redémarrage.",
+  "updateAll.confirmLeadNotes": "Bon à savoir avant de commencer :",
   "updateAll.confirmBtn": "Mettre à jour",
   "updateAll.confirmBtnEngine": "Réinstaller",
   "updateAll.checking": "Vérification des enceintes…",

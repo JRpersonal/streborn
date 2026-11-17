@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Atjaunot Spotify dzinēju",
   "updateAll.confirmLead": "Šie skaļruņi saņems aktuālo programmatūru. Katrs vienreiz pārstartēsies un atgriezīsies pats, aptuveni četras līdz sešas minūtes uz skaļruni.",
   "updateAll.confirmLeadEngine": "Šie jau ir aktuāli, tiem trūkst tikai Spotify dzinēja. Tas tiks atjaunots, parasti bez pārstartēšanas.",
+  "updateAll.confirmLeadNotes": "Vērts zināt pirms sākšanas:",
   "updateAll.confirmBtn": "Atjaunināt tagad",
   "updateAll.confirmBtnEngine": "Atjaunot tagad",
   "updateAll.checking": "Pārbauda skaļruņus…",

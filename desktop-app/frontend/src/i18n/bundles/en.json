@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Restore the Spotify engine",
   "updateAll.confirmLead": "These speakers get the current software. Each one restarts once during the update and comes back by itself, about four to six minutes per speaker.",
   "updateAll.confirmLeadEngine": "These are already up to date and only need the Spotify engine put back. That normally happens without a restart.",
+  "updateAll.confirmLeadNotes": "Good to know before it starts:",
   "updateAll.confirmBtn": "Update now",
   "updateAll.confirmBtnEngine": "Restore now",
   "updateAll.checking": "Checking your speakers…",

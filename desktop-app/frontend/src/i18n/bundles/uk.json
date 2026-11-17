@@ -16,6 +16,7 @@
   "updateAll.confirmTitleEngine": "Відновити рушій Spotify",
   "updateAll.confirmLead": "Ці колонки отримають актуальне програмне забезпечення. Кожна один раз перезапуститься й повернеться сама, приблизно чотири до шести хвилин на колонку.",
   "updateAll.confirmLeadEngine": "Ці вже актуальні, їм бракує лише рушія Spotify. Його буде відновлено, зазвичай без перезапуску.",
+  "updateAll.confirmLeadNotes": "Варто знати перед початком:",
   "updateAll.confirmBtn": "Оновити зараз",
   "updateAll.confirmBtnEngine": "Відновити зараз",
   "updateAll.checking": "Перевіряємо колонки…",
