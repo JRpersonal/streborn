@@ -66,7 +66,8 @@ describe('model to sticker', () => {
     expect(size(0, 'qr')).toEqual([19.7, 23.3]);
     expect(size(1, 'grid')).toEqual([80, 51.5]);
     expect(size(1, 'qr')).toEqual([22, 26.3]);
-    expect(size(2, 'main')).toEqual([150, 33.7]);
+    expect(size(2, 'main')).toEqual([175, 33.7]);
+    expect(size(3, 'main')).toEqual([150, 33.7]);
     // The ST20 edge follows the housing; any other model gets a rectangle.
     expect(page.pieces.find((x) => x.speaker === 2).curved).toBe(true);
     const plain = page.pieces.find((x) => x.speaker === 3);

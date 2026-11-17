@@ -297,26 +297,31 @@ function st10Arc(sp, idx, back, pal, measure) {
   return p;
 }
 
-// wideSticker is the ST20 and ST30 sticker: 150 x 34 mm, the six keys in two
-// rows and the code with the name in a column on the right. curved gives it
-// the top edge that follows the housing; without it, it is the plain rectangle
-// every other model gets.
+// wideSticker is the ST20 and ST30 sticker: the six keys in two rows and the
+// code with the name in a column on the right. curved gives it the top edge
+// that follows the housing, and an empty column on the left as wide as the
+// code column, so the keys sit in the middle and the curve is the same on both
+// sides (175 x 34 mm). Without it, it is the plain 150 x 34 mm rectangle every
+// other model gets.
 function wideSticker(sp, idx, curved, pal, measure) {
-  const W = 900, H = 202, GRID_W = 750, TOP = 24;
-  const p = newPiece(idx, 'main', W, H, pal, curved ? (x) => 1.47e-4 * (x - 375) ** 2 : null, null);
+  const H = 202, GRID_W = 750, TOP = 24, QR_W = 150;
+  const OFF = curved ? QR_W : 0;
+  const W = OFF + GRID_W + QR_W;
+  const p = newPiece(idx, 'main', W, H, pal, curved ? (x) => 1.47e-4 * (x - W / 2) ** 2 : null, null);
   const cw = GRID_W / 3;
   const ch = (H - TOP) / 2;
   const s = { num: u(22), tile: u(56), name: u(22), two: u(17) };
   for (let i = 0; i < 6; i++) {
     const col = i % 3, row = Math.floor(i / 3);
-    const x = col * cw, y = TOP + row * ch;
+    const x = OFF + col * cw, y = TOP + row * ch;
     const ruleR = col < 2 ? 1.5 : 0;
     rowCell(p, keyAt(sp, i + 1), { x: u(x + 12), y: u(y), w: u(cw - 22 - ruleR), h: u(ch - (row === 0 ? 1.5 : 0)) }, s, pal, measure);
     if (col < 2) p.rules.push({ x1: u(x + cw - 0.75), y1: u(y), x2: u(x + cw - 0.75), y2: u(y + ch) });
   }
-  p.rules.push({ x1: 0, y1: u(TOP + ch - 0.75), x2: u(GRID_W), y2: u(TOP + ch - 0.75) });
-  p.rules.push({ x1: u(GRID_W + 0.75), y1: 0, x2: u(GRID_W + 0.75), y2: p.h });
-  addQr(p, sp, u(GRID_W + 1.5), u(40), u(W - GRID_W - 1.5), u(H - 40), 112, 17, pal, measure);
+  p.rules.push({ x1: u(OFF), y1: u(TOP + ch - 0.75), x2: u(OFF + GRID_W), y2: u(TOP + ch - 0.75) });
+  if (OFF) p.rules.push({ x1: u(OFF - 0.75), y1: 0, x2: u(OFF - 0.75), y2: p.h });
+  p.rules.push({ x1: u(OFF + GRID_W + 0.75), y1: 0, x2: u(OFF + GRID_W + 0.75), y2: p.h });
+  addQr(p, sp, u(OFF + GRID_W + 1.5), u(40), u(QR_W - 1.5), u(H - 40), 112, 17, pal, measure);
   return p;
 }
 
