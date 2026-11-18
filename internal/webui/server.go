@@ -413,7 +413,8 @@ type Server struct {
 	// autonomous recall playback (#45). Another account's key the speaker can
 	// switch to is not judged by the logged-in account (#1947). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
-	spotifyPremiumRequired func(account string) bool
+	// why goes into the gate's log line and nowhere else.
+	spotifyPremiumRequired func(account string) (required bool, why string)
 
 	// phoneLangSeen counts the Accept-Language values the remote page was asked
 	// for, so a diagnostic shows what the phones actually claim rather than what

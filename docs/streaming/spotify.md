@@ -600,6 +600,17 @@ Premium account was tapped in again (discussion #1947). A key of the
 logged-in account, a key without an account, and a key whose account has no
 usable copy (it would play with the logged-in account) keep the old answer.
 
+Both gate log lines (`... account is free/open, recall needs Premium ...`, app
+and hardware key) say which of those cases decided: `account` is the key's
+account, masked like every other account in the log, and `why` comes from
+`PremiumRequiredForWhy`: the case (`key-has-no-account`,
+`key-account-is-logged-in`, `key-account-has-no-stored-login`,
+`key-account-stored-login-unusable`), the logged-in account (masked), its
+plan as read in this engine run, whether the engine's free-account log line
+latched, and the plan remembered for the key's account. The `presets` section
+of `/api/debug/state` carries the same masked `account` per key, so a bundle
+shows which keys belong to which account without naming anyone.
+
 `/v1/me` is still the only source of the account's display name
 (`accountnames.go`). So when the engine reports the plan but no name is
 remembered for that account, the check makes one `/v1/me` call per

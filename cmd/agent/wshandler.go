@@ -1608,8 +1608,10 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// "needs Premium" note; the hardware press has no UI to show it. Asked for
 	// the key's own account, like the app path: a key another account saved
 	// switches to it in PlayAccount, so the logged-in plan does not decide (#1947).
-	if h.spotify.PremiumRequiredFor(p.Account) {
-		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name)
+	if required, why := h.spotify.PremiumRequiredForWhy(p.Account); required {
+		// account and why: whose plan the verdict was about (#1947).
+		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name,
+			"account", anonymise.MaskAccount(p.Account), "why", why)
 		return
 	}
 

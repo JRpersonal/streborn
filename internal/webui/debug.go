@@ -361,12 +361,13 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	// could only be diagnosed by asking the user to fetch presets.json (#252).
 	// Stream URLs are included in full. They are masked on the way out with
 	// everything else unless the caller asked for raw; see writeDebugState.
+	// The account a Spotify key was saved under is the exception: it is hashed
+	// in presetDebugLine, so the raw form never carries the name either.
 	if s.presets != nil {
 		all := s.presets.All()
 		lines := make([]string, 0, len(all))
 		for _, p := range all {
-			lines = append(lines, fmt.Sprintf("slot %d: type=%s name=%q codec=%q stream=%q uri=%q items=%d",
-				p.Slot, p.Type, p.Name, p.Codec, p.StreamURL, p.URI, len(p.Items)))
+			lines = append(lines, presetDebugLine(p))
 		}
 		state["presets"] = lines
 	}

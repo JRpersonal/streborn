@@ -16,9 +16,9 @@ func TestRecallPremiumGateAsksForTheKeysAccount(t *testing.T) {
 	s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 	s.spotifyCanRecall = func(context.Context) bool { return true }
 	var asked []string
-	s.spotifyPremiumRequired = func(account string) bool {
+	s.spotifyPremiumRequired = func(account string) (bool, string) {
 		asked = append(asked, account)
-		return account == "lapsedaccount01"
+		return account == "lapsedaccount01", "key-account-is-logged-in (test)"
 	}
 
 	lapsed := presets.Preset{Slot: 1, Name: "Lapsed key", Type: "spotify", URI: "spotify:playlist:a", Account: "lapsedaccount01"}
