@@ -530,6 +530,14 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .station .sname small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
 .station .btn { flex:none; min-height:44px; padding:8px 12px; font-size:13px; text-align:center; }
 .station .btn.fill { flex:1 1 0; }
+/* The track that plays right now in a folder of the music library (#1874):
+   its title in the accent colour with three moving bars in front of it, so it
+   is found at a glance in a long folder and not told by colour alone. The bars
+   are a background, no asset; the reduced-motion rule further down stops them. */
+.station.now .sname { color:var(--accent); font-weight:600; }
+.station.now .sname small { font-weight:400; }
+.station.now .sname::before { content:""; display:inline-block; width:14px; height:12px; margin-right:7px; background:linear-gradient(currentColor,currentColor) 0 100% / 3px 45% no-repeat, linear-gradient(currentColor,currentColor) 50% 100% / 3px 100% no-repeat, linear-gradient(currentColor,currentColor) 100% 100% / 3px 70% no-repeat; animation:nowbars .7s ease-in-out infinite alternate; }
+@keyframes nowbars { to { background-size:3px 100%, 3px 40%, 3px 95%; } }
 .station .btn.rec-del { min-width:44px; padding:8px; font-size:18px; line-height:1; color:var(--muted); }
 /* The name button takes the room; the star and, with more than one
    favourite, the up and down buttons (#1519) follow it on the same line. */
@@ -4135,6 +4143,8 @@ async function refreshStatus() {
   if (queue) followPlayMode(queue, pmSeq);
   // The same read lights the key a folder was started from (#1029).
   markPlaying(nowLoc, queue, spKey, state);
+  // And the row of the running track in the open folder (#1874).
+  browseMarkNow(browseNowURLs(playing && upnpPlay, queue, nowLoc));
   if (!song && playing && queue) song = queueSongMeta(queue);
   // A single library track: its artist and album as its start named them,
   // from the same read (#1839). Never for a proxied radio stream.
@@ -5651,6 +5661,7 @@ async function searchLibrary(q) {
   if (!lastLibResults.length) return;
   lastLibResults.forEach(function(it, idx){
     var row = document.createElement('div'); row.className = 'station';
+    if (it.url) { row.setAttribute('data-url', it.url); browseMarkRow(row); }
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = it.title || it.url;
     var sub = document.createElement('small');
@@ -8588,6 +8599,37 @@ async function browseOpen(start) {
     more.onclick = function(){ browseOpen(seen); };
   }
 }
+/* The track that plays right now, marked in the open folder and in the
+   library search results (#1874). brNow holds the addresses that count as playing, set by every status poll: the
+   address the agent's queue handed the speaker last (it knows the running
+   track seconds before the speaker's own now_playing does) and the speaker's
+   location. A row is matched by its track address, never by its title, so two
+   tracks with the same name do not both light up. */
+var brNow = [];
+function browseLocPlain(loc) {
+  return String(loc || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); });
+}
+function browseNowURLs(playing, queue, loc) {
+  if (!playing) return [];
+  var out = [];
+  if (queue && typeof queue.url === 'string' && queue.url) out.push(queue.url);
+  var plain = browseLocPlain(loc);
+  if (!out.length && plain) out.push(plain);
+  return out;
+}
+function browseMarkNow(urls) {
+  brNow = Array.isArray(urls) ? urls : [];
+  var rows = document.querySelectorAll('.station[data-url]');
+  for (var i = 0; i < rows.length; i++) browseMarkRow(rows[i]);
+}
+function browseMarkRow(row) {
+  var on = brNow.indexOf(row.getAttribute('data-url')) >= 0;
+  row.classList.toggle('now', on);
+  if (on) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
+}
 /* renderBrowseList draws what the open folder has loaded, in the order chosen
    above. */
 function renderBrowseList() {
@@ -8652,6 +8694,7 @@ function renderBrowseList() {
   }
   ord.tracks.forEach(function(it){
     var row = document.createElement('div'); row.className = 'station';
+    if (it.url) { row.setAttribute('data-url', it.url); browseMarkRow(row); }
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = it.title || it.url;
     var sub = document.createElement('small');

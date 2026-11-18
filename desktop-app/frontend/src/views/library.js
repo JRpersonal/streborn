@@ -637,6 +637,36 @@ function setLibStatus(key, st) {
   paintLibStatus(key);
 }
 
+// rowPlays says whether a status key names the track that plays right now
+// (#1874). The key is the track's stream URL (statusKey), the same address
+// the agent hands the speaker, so two tracks with the same title never both
+// light up.
+function rowPlays(key) {
+  return key.startsWith('u:') && key.length > 2 && libNowURLs.includes(key.slice(2));
+}
+
+// nowRowClass and nowRowAttrs mark a track row of the classic layout as it is
+// drawn: the class the stylesheet turns into the playing colour and the moving
+// bars, and the key paintLibNow finds the row by afterwards.
+function nowRowClass(key) {
+  return rowPlays(key) ? ' is-now' : '';
+}
+function nowRowAttrs(key) {
+  return ` data-skey="${escapeAttr(key)}"${rowPlays(key) ? ' aria-current="true"' : ''}`;
+}
+
+// paintLibNow moves the mark of the playing track onto or off the rows of one
+// status key, in both layouts, without redrawing the list.
+function paintLibNow(key) {
+  if (typeof document === 'undefined') return;
+  const on = rowPlays(key);
+  document.querySelectorAll('#view-library .library-row-track').forEach((row) => {
+    if (row.dataset.skey !== key) return;
+    row.classList.toggle('is-now', on);
+    if (on) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
+  });
+}
+
 // paintLibStatus writes the line of one status key into the rows on screen.
 function paintLibStatus(key) {
   if (typeof document === 'undefined') return;
@@ -674,8 +704,12 @@ export function libraryNowPlaying(urls) {
   if (next.length === libNowURLs.length && next.every((u, i) => u === libNowURLs[i])) return;
   const touched = new Set([...libNowURLs, ...next].map((u) => `u:${u}`));
   libNowURLs = next;
-  if (!ui2()) return;
-  for (const key of touched) paintLibStatus(key);
+  for (const key of touched) {
+    // The row itself is marked in both layouts; only the preview has the
+    // "Playing on Kitchen" line under it.
+    paintLibNow(key);
+    if (ui2()) paintLibStatus(key);
+  }
 }
 
 // libraryContainers and libraryItems are the open folder's sub-folders and
@@ -1330,7 +1364,7 @@ function libraryListInnerHTML() {
     const meta = [it.artist, it.album].filter(Boolean).join(' — ');
     const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatClock(it.durationSec)}</span>` : '';
     return `
-        <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
+        <li class="library-row library-row-track${nowRowClass(statusKey(it))}"${nowRowAttrs(statusKey(it))} data-iid="${escapeAttr(it.id)}">
           <span class="library-icon">&#9835;</span>
           <span class="library-title">
             <span class="library-track-title">${escapeHtml(it.title)}</span>
@@ -1494,7 +1528,7 @@ function libraryWholeSearchBody() {
     const meta = [it.artist, it.album, it.server].filter(Boolean).join(' · ');
     const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatClock(it.durationSec)}</span>` : '';
     return `
-        <li class="library-row library-row-track">
+        <li class="library-row library-row-track${nowRowClass(statusKey(it))}"${nowRowAttrs(statusKey(it))}>
           <span class="library-icon">&#9835;</span>
           <span class="library-title">
             <span class="library-track-title">${escapeHtml(it.title || it.streamURL || '')}</span>
@@ -1595,6 +1629,7 @@ function ui2FolderRowsHTML() {
       meta: [it.artist, it.album].filter(Boolean).join(' · '),
       duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
       status: rowStatusFor(statusKey(it)),
+      playing: rowPlays(statusKey(it)),
     })).join('');
   if (!rows && libState.filter) {
     return `<li class="lib2-none">${escapeHtml(t('ui2.library.filterNone', { q: libState.filter.trim() }))}</li>`;
@@ -1692,6 +1727,7 @@ function ui2SearchHTML() {
     meta: [it.artist, it.album, it.server].filter(Boolean).join(' · '),
     duration: it.durationSec > 0 ? formatClock(it.durationSec) : '',
     status: rowStatusFor(statusKey(it)),
+    playing: rowPlays(statusKey(it)),
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);

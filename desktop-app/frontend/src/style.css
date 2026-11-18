@@ -1579,6 +1579,31 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .library-title { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .library-track-title { color: var(--c-text); }
 .library-track-meta { color: var(--c-muted); font-size: 11px; }
+
+/* The track that plays right now (#1874): its title in the playing colour
+   and three moving bars where the note was, so it is found at a glance in a
+   long folder and not told by colour alone. The bars are a background, no
+   asset; they stand still for a viewer who asked for less motion. */
+.library-row-track.is-now .library-track-title { color: var(--signal-green); font-weight: 600; }
+.library-row-track.is-now .library-icon { color: var(--signal-green); font-size: 0; }
+.library-row-track.is-now .library-icon::after {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 3px 45% no-repeat,
+    linear-gradient(currentColor, currentColor) 50% 100% / 3px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 100% / 3px 70% no-repeat;
+  content: "";
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .library-row-track.is-now .library-icon::after { animation: library-now-bars 700ms ease-in-out infinite alternate; }
+}
+
+@keyframes library-now-bars { to { background-size: 3px 100%, 3px 40%, 3px 95%; } }
+
 .library-duration { color: var(--c-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
 .library-meta { color: var(--c-faint); font-size: 11px; }
 .library-actions { display: flex; gap: 6px; flex-shrink: 0; }
