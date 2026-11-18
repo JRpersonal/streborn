@@ -3,6 +3,7 @@
 // source fold). Attached once by mountWiring.
 
 import { EventsOn, QueueNext, QueuePrev, QueueRepeat, QueueServerAlive, QueueShuffle, SetStreamTitleSwap } from '../../api.js';
+import { playButtonAction } from '../../playbutton.js';
 import { clearForAliveServer, MEDIA_SERVER_ALIVE_EVENT } from '../../serveralive.js';
 import { renderPresets } from './presettiles.js';
 import { state } from '../../state.js';
@@ -24,11 +25,6 @@ function tellSpeakersServerAlive(ev) {
       if (state.queue && state.queue.lastEnd && state.queue.lastEnd.reason === 'server_gone') refreshQueue();
     });
 }
-
-// stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
-// is deliberately excluded: nothing is loaded there, so Play would promise
-// something that cannot happen.
-export function stoppedOrPaused(ps) { return ps === 'PAUSE_STATE' || ps === 'STOP_STATE'; }
 
 // mountWiring attaches the handlers that used to be wired at module scope in
 // main.js, once #view-box exists (called from mountMusicView).
@@ -63,7 +59,11 @@ export function mountWiring() {
   // button still read Pause and sent pause to a transport that had already
   // stopped: nothing happened and there was no way back to the music. Same fault,
   // same fix as the phone remote.
-  $('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
+  //
+  // A speaker in standby or with nothing loaded gets the third press: wake it
+  // and bring back what it played last, like the Play key of the Bose remote
+  // (#1920, playbutton.js).
+  $('pauseBtn').onclick = () => action(playButtonAction(state.nowPlayState, state.nowSource));
   // "Artist and title are the wrong way round for this station": the agent keeps
   // the flag per station and answers with the corrected live title, so the line
   // above flips at once instead of with the next song.

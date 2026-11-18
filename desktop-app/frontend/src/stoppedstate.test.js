@@ -117,7 +117,8 @@ describe('wiring', () => {
     expect(bar).toContain('nowStateLabel(ps, srcU)');
     expect(bar).toContain('nowStateGlyph(ps, srcU)');
     // The Play/Pause button still treats stopped like paused: Play resumes.
-    expect(bar).toContain('stoppedOrPaused(ps)');
+    // (playbutton.js, which also offers Play on a speaker with nothing loaded).
+    expect(bar).toContain('playButtonOffersPlay(ps, src)');
   });
 
   it('the AUX/LOCAL branch still fills in "active" when no word was picked', () => {

@@ -2018,14 +2018,31 @@ async function cycleRepeat() {
 // the desktop app's #202 toggle). paused tracks the live transport state so the
 // tap sends the right command even between status polls.
 var paused = false;
-function applyTransportUI(state) {
+// What the next press does (discussion #1920): 'pause' while something plays,
+// 'resume' on a paused or stopped stream, and 'wake' on a speaker in standby
+// or with nothing loaded. The Bose remote's Play key starts a speaker with
+// what it played last; this button sent /api/resume there, which reaches a
+// transport that has nothing to resume, so a press did nothing. 'wake' is the
+// power button's "on" (/api/box/power): wake the speaker and bring back the
+// last item. The same rule as the desktop app's playbutton.js.
+var ppAction = 'pause';
+var ppBusy = false;
+function playButtonAction(state, src) {
+  var up = String(src || '').toUpperCase();
+  if (state === 'PLAY_STATE' || state === 'BUFFERING_STATE') return 'pause';
+  if (up === 'STANDBY' || up === 'INVALID_SOURCE') return 'wake';
+  if (state === 'PAUSE_STATE' || state === 'STOP_STATE') return 'resume';
+  return 'pause';
+}
+function applyTransportUI(state, src) {
   // A stopped stream offers Play, exactly like a paused one. Only PAUSE_STATE
   // counted before, so after pressing Stop the button still read Pause and
   // sent /api/pause to a transport that was already stopped: the control did
   // nothing and there was no way back to the music without picking a key
-  // again. INVALID_SOURCE is deliberately NOT included: nothing is loaded
-  // there, so Play would promise something that cannot happen.
-  paused = (state === 'PAUSE_STATE' || state === 'STOP_STATE');
+  // again. A speaker in standby or with nothing loaded (INVALID_SOURCE)
+  // offers Play too since #1920: the press wakes it and resumes the last item.
+  ppAction = playButtonAction(state, src);
+  paused = ppAction !== 'pause';
   var b = document.getElementById('btnPause');
   if (!b) return;
   // Swap both the glyph and the label so a paused stream offers Play (#382): the
@@ -2043,6 +2060,19 @@ function applyTransportUI(state) {
 }
 async function togglePlayPause(btn) {
   if (!paused) { await pp(btn, '/api/pause'); return; }
+  if (ppAction === 'wake') {
+    // One wake at a time: it takes the speaker a few seconds, and a second
+    // tap in that time would push the last station twice.
+    if (ppBusy) return;
+    ppBusy = true;
+    press(btn);
+    // The power button follows at once, as after a tap on itself. Nothing
+    // but the power-on is sent: the level stays where the listener left it.
+    boxOn = true; applyPowerUI();
+    try { await api('/api/box/power', 'POST', { on: true }); } finally { ppBusy = false; }
+    setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
+    return;
+  }
   // A resume is a play: on a stereo pair follower it is refused with the pair
   // notice instead of being silently ignored by the speaker.
   press(btn);
@@ -4065,7 +4095,7 @@ async function refreshStatus() {
   // it off, which was the whole point of the request).
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
-  applyTransportUI(state);
+  applyTransportUI(state, src);
   if (ui2On) ui2NoteState(state, src);
   // INVALID_PLAY_STATUS is what a speaker reports while it has no transport at
   // all, e.g. during Bluetooth pairing. It is a state like the others, so it
