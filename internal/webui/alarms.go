@@ -555,6 +555,7 @@ func (s *Server) wakeForAlarm(ctx context.Context, vol int) {
 	if !quietWakeNeeded(s.quietWakeNowPlaying(ctx, s.boxHost)) {
 		// Already up, so the write lands and stays.
 		if vol > 0 {
+			s.noteOwnVolumeWrite(vol)
 			if err := c.SetVolume(ctx, vol); err != nil {
 				s.logger.Warn("alarm: could not set the level", "vol", vol, "err", err)
 			}
@@ -585,6 +586,7 @@ func (s *Server) wakeForAlarm(ctx context.Context, vol int) {
 	if vol > 0 {
 		// Belt and braces: the watcher may have raced the firmware's own level
 		// restore, so the level is written once more now the box is up.
+		s.noteOwnVolumeWrite(vol)
 		_ = c.SetVolume(ctx, vol)
 	}
 	// Whatever the firmware resumed on power-on is stopped, so the alarm's own

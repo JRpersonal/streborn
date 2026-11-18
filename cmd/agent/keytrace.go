@@ -104,6 +104,13 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 	if h.holdSaver != nil {
 		h.holdSaver.NotePress(ev)
 	}
+	// Every state of a physical volume key, release included: a held key is
+	// one press, a run of repeats and a release, and the group volume follows
+	// it for as long as it is down (webui groupvolumefollow.go). A key a
+	// network client sent (producer app) is not a person at the speaker.
+	if (ev.Name == "VOLUME_UP" || ev.Name == "VOLUME_DOWN") && ev.Producer.Physical() && h.onVolumeKey != nil {
+		h.onVolumeKey(ev.Name, ev.State == boxlog.StateReleased, ev.Origin == boxlog.OriginTrace, ev.At)
+	}
 	if !ev.Pressed() || !ev.Producer.Physical() {
 		return
 	}

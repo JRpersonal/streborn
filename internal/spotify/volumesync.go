@@ -105,6 +105,9 @@ type volSync struct {
 	// capFn is the speaker's volume ceiling (ok=false: none). A Spotify app
 	// slider pushed past it stops at it. nil = no ceiling.
 	capFn func() (int, bool)
+	// boxWriteNote is told every level the bridge is about to write into the
+	// speaker, before the write (SetBoxVolumeWriteHook). nil = nobody asks.
+	boxWriteNote func(pct int)
 
 	// Test seams; nil in production.
 	engineSet func(ctx context.Context, pct int) error
@@ -202,7 +205,11 @@ func (m *Manager) readBoxVolume(ctx context.Context) (int, error) {
 func (m *Manager) writeBoxVolume(ctx context.Context, pct int) error {
 	m.vs.mu.Lock()
 	set := m.vs.boxSet
+	note := m.vs.boxWriteNote
 	m.vs.mu.Unlock()
+	if note != nil {
+		note(pct)
+	}
 	if set != nil {
 		return set(ctx, pct)
 	}
@@ -462,6 +469,18 @@ func (m *Manager) handleEngineVolumeEvent(value, maxSteps int) {
 func (m *Manager) SetVolumeCapFn(fn func() (int, bool)) {
 	m.vs.mu.Lock()
 	m.vs.capFn = fn
+	m.vs.mu.Unlock()
+}
+
+// SetBoxVolumeWriteHook installs a function that is told every level the
+// bridge writes into the speaker, just before the write. The agent uses it so
+// the frame that reports the Spotify app's volume back is not taken for a key
+// press on the speaker: in a permanent group the main speaker's volume keys
+// move the members (webui groupvolumefollow.go), and the Spotify app's volume
+// already reaches them through mirrorVolumeToGroup.
+func (m *Manager) SetBoxVolumeWriteHook(fn func(pct int)) {
+	m.vs.mu.Lock()
+	m.vs.boxWriteNote = fn
 	m.vs.mu.Unlock()
 }
 

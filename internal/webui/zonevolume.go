@@ -361,6 +361,7 @@ func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(m zoneMemberVolume) {
 			defer wg.Done()
+			s.noteGroupSliderWrite(m, req.Value)
 			if err := boxapi.New(m.IP).SetVolume(ctx, req.Value); err != nil {
 				mu.Lock()
 				failed = append(failed, m.Name)
@@ -616,6 +617,7 @@ func (s *Server) zoneVolumeStep(w http.ResponseWriter, r *http.Request, delta in
 		wg.Add(1)
 		go func(m zoneMemberVolume, want int) {
 			defer wg.Done()
+			s.noteGroupSliderWrite(m, want)
 			if err := boxapi.New(m.IP).SetVolume(ctx, want); err != nil {
 				mu.Lock()
 				failed = append(failed, m.Name)
@@ -653,4 +655,14 @@ func (s *Server) zoneVolumeStep(w http.ResponseWriter, r *http.Request, delta in
 		"ok": len(failed) == 0, "delta": delta, "members": members,
 		"loudest": loudest, "average": avg, "failed": failed,
 	})
+}
+
+// noteGroupSliderWrite marks the phone group slider's write to THIS speaker as
+// STR's own, so the main speaker of a permanent group does not take the frame
+// that reports it for a key press and move the members a second time
+// (groupvolumefollow.go). The slider has just written every member itself.
+func (s *Server) noteGroupSliderWrite(m zoneMemberVolume, level int) {
+	if m.IsSelf || (s.boxHost != "" && m.IP == s.boxHost) {
+		s.noteOwnVolumeWrite(level)
+	}
 }

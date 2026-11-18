@@ -215,6 +215,14 @@ func (l *newPlayLevelState) inEpisode() bool {
 	return l.episodes > 0
 }
 
+// held reports whether the level is STR's right now: a muted wake for a new
+// play is muting the speaker, or has not put its level back yet.
+func (l *newPlayLevelState) held() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.muting || l.episodes > 0
+}
+
 func (l *newPlayLevelState) episodeDone() {
 	l.mu.Lock()
 	if l.episodes > 0 {
@@ -228,6 +236,9 @@ func (l *newPlayLevelState) episodeDone() {
 // once, instead of a poll noticing it later. Called on the gabbo read loop:
 // the write runs in its own goroutine.
 func (s *Server) NoteBoxSourceChanged(from, to string) {
+	// The settle window after standby of the group volume keys
+	// (groupvolumefollow.go) follows every edge.
+	s.noteGroupFollowSource(from, to)
 	if from != "STANDBY" || to == "STANDBY" || s.boxHost == "" {
 		return
 	}
@@ -265,6 +276,10 @@ func (s *Server) NoteBoxVolumeLevel(level int) {
 	// Its own mutex, taken before the new-play state's and never inside it.
 	groupHeld := s.groupWake.noteLevel(level)
 	l := &s.newPlayLevel
+	// In a permanent group the main speaker's volume keys move the members
+	// (groupvolumefollow.go). It sees every frame, and is told when the level
+	// is STR's to hold, so a muted wake never reaches a member.
+	s.noteGroupFollowLevel(level, groupHeld || l.held())
 	l.mu.Lock()
 	switch {
 	case l.muting:
@@ -396,6 +411,7 @@ func (s *Server) ownVolume(ctx context.Context) (boxapi.Volume, error) {
 
 // setOwnLevel writes this speaker's level.
 func (s *Server) setOwnLevel(ctx context.Context, vol int) error {
+	s.noteOwnVolumeWrite(vol)
 	if s.ownLevelSetFn != nil {
 		return s.ownLevelSetFn(ctx, vol)
 	}

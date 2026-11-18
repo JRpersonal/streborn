@@ -340,6 +340,9 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	// A slider pushed past the ceiling stops at it, and the reply says where,
 	// so the app and the phone page can show the level the speaker really has.
 	req.Value = s.capVolume(req.Value)
+	// A level written through STR is never a key press on the speaker: in a
+	// permanent group it stays with this speaker (groupvolumefollow.go).
+	s.noteOwnVolumeWrite(req.Value)
 	if err := c.SetVolume(ctx, req.Value); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

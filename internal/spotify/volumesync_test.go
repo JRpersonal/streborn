@@ -266,3 +266,31 @@ func TestSpotifyVolumeStopsAtTheSpeakerCeiling(t *testing.T) {
 		t.Errorf("the echo of the slider push must not reach the speaker, box got %v", got)
 	}
 }
+
+// Every level the bridge writes into the speaker is announced before the
+// write, so the agent can tell the frame that reports it from a key press on
+// the speaker (a permanent group follows only the latter).
+func TestBoxVolumeWriteHookIsToldBeforeTheWrite(t *testing.T) {
+	m, r := newSyncTestManager(20)
+	var mu sync.Mutex
+	var noted []int
+	var boxAtNote []int
+	m.SetBoxVolumeWriteHook(func(pct int) {
+		mu.Lock()
+		noted = append(noted, pct)
+		boxAtNote = append(boxAtNote, len(r.boxVals()))
+		mu.Unlock()
+	})
+	m.applySpotifyVolumeToBox(42)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(noted) != 1 || noted[0] != 42 {
+		t.Fatalf("the hook must be told the level written, got %v", noted)
+	}
+	if boxAtNote[0] != 0 {
+		t.Fatalf("the hook must run before the write, %d writes had already happened", boxAtNote[0])
+	}
+	if got := r.boxVals(); len(got) != 1 || got[0] != 42 {
+		t.Fatalf("the speaker must still get the level, got %v", got)
+	}
+}

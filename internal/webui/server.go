@@ -80,8 +80,15 @@ type Server struct {
 	// group join muted from, the settling window of that operation and the
 	// last firmware-reported zone change (quietwakestate.go, own mutex).
 	groupWake quietWakeState
-	logger    *slog.Logger
-	presets   *presets.Store
+	// groupFollow passes the volume keys of a permanent group's main speaker
+	// on to its members (groupvolumefollow.go, own mutex). groupFollowT is the
+	// test clock (nil = production); volumeKeyTraceHealthyFn the key trace's
+	// liveness (nil = no trace, exclusion decides).
+	groupFollow             groupFollowState
+	groupFollowT            *groupFollowTiming
+	volumeKeyTraceHealthyFn func() bool
+	logger                  *slog.Logger
+	presets                 *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
