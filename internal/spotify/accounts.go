@@ -350,13 +350,73 @@ func (m *Manager) PremiumRequired() bool {
 // (switchAccountFrom then plays it with the current account, which is exactly
 // the account the plan describes).
 func (m *Manager) PremiumRequiredFor(account string) bool {
+	required, _ := m.PremiumRequiredForWhy(account)
+	return required
+}
+
+// The cases PremiumRequiredForWhy names for whose plan judged a key.
+const (
+	// premiumWhySwitches: the key belongs to another account the speaker holds
+	// a usable login for, so the recall switches and the logged-in plan is not
+	// asked. The only case that always comes with "not required".
+	premiumWhySwitches = "key-account-will-switch"
+	// The ways a key ends up judged by the logged-in account's plan.
+	premiumWhyNoAccount = "key-has-no-account"
+	premiumWhySameAcct  = "key-account-is-logged-in"
+	premiumWhyNoCred    = "key-account-has-no-stored-login"
+	premiumWhyBadCred   = "key-account-stored-login-unusable"
+)
+
+// PremiumRequiredForWhy is PremiumRequiredFor plus the evidence behind the
+// answer, as one value for the log. The verdict is PremiumRequiredFor's own.
+//
+// Discussion #1947, second round: a Premium account's key was refused while the
+// engine sat on a lapsed free account, and the bundle could not say which of
+// the fall-through cases it was (the key carries no account, the key's account
+// is the logged-in one, or the speaker holds no usable login for the key's
+// account). why names the case, the logged-in account in the masked form every
+// other log line uses, and the plan values the verdict was read from: the
+// fresh plan of this engine process, whether the engine's free-account log
+// line latched, and the plan remembered for the key's own account.
+func (m *Manager) PremiumRequiredForWhy(account string) (required bool, why string) {
 	account = strings.TrimSpace(account)
-	if account != "" && account != m.activeAccount() {
-		if _, found, err := m.readAccountCredential(account); found && err == nil {
-			return false
+	active := m.activeAccount()
+	reason := premiumWhyNoAccount
+	switch account {
+	case "":
+	case active:
+		reason = premiumWhySameAcct
+	default:
+		_, found, err := m.readAccountCredential(account)
+		switch {
+		case found && err == nil:
+			reason = premiumWhySwitches
+		case found:
+			reason = premiumWhyBadCred
+		default:
+			reason = premiumWhyNoCred
 		}
 	}
-	return m.PremiumRequired()
+	m.mu.Lock()
+	fresh, freeLog := m.productType, m.sawFreeAccountLog
+	keyPlan := ""
+	if account != "" {
+		m.loadAccountPlansLocked()
+		keyPlan = m.accountPlans[account].Product
+	}
+	m.mu.Unlock()
+	if reason != premiumWhySwitches {
+		required = m.PremiumRequired()
+	}
+	orUnknown := func(v string) string {
+		if v == "" {
+			return "unknown"
+		}
+		return v
+	}
+	why = fmt.Sprintf("%s (logged in: %s, its plan read in this engine run: %s, free-account log line seen: %t, the key account's remembered plan: %s)",
+		reason, orUnknown(anonymise.MaskAccount(active)), orUnknown(fresh), freeLog, orUnknown(keyPlan))
+	return required, why
 }
 
 // activeAccount is the account the engine is logged in as, answered without
