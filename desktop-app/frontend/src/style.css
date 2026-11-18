@@ -825,6 +825,18 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A cut-off title a click opened to its full length (#1811, titleexpand.js):
+   the one-line names of the station results and of Recently played, and the
+   two-line names above. A second click closes it again. */
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2).title-open {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 /* ---------- Topbar ---------- */
 .topbar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .topbar-head { display: flex; align-items: center; gap: 10px; }
