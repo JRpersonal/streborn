@@ -245,7 +245,7 @@ function newPiece(speaker, part, wPx, hPx, pal, top, bot) {
   return {
     speaker, part, x: 0, y: 0, w: u(wPx), h: u(hPx), rot: 0, pal,
     outline: outline(wPx, hPx, top, bot), curved: !!(top || bot),
-    rules: [], tiles: [], texts: [], icons: [], qr: null,
+    rules: [], tiles: [], texts: [], icons: [], qr: null, brand: null,
   };
 }
 
@@ -297,12 +297,29 @@ function st10Arc(sp, idx, back, pal, measure) {
   return p;
 }
 
+// BRAND is the project's name as it stands under its mark. A name, so it is
+// the same in every language, like the speaker's own name under the code.
+const BRAND = 'ST Reborn';
+
+// addBrand places the ST Reborn mark with the name under it, centred in a
+// column, in the same frame addQr gives the code: the two columns of the wide
+// sticker then mirror each other.
+function addBrand(piece, x, y, w, h, markPx, namePx, pal) {
+  const mark = u(markPx);
+  const size = u(namePx);
+  const top = y + (h - (mark + u(6) + size)) / 2;
+  piece.brand = { x: x + (w - mark) / 2, y: top, size: mark, color: pal.ink };
+  piece.texts.push({
+    text: BRAND, x: x + w / 2, y: top + mark + u(6) + size / 2, size, weight: 700, color: pal.ink, align: 'center', maxW: w - u(12),
+  });
+}
+
 // wideSticker is the ST20 and ST30 sticker: the six keys in two rows and the
 // code with the name in a column on the right. curved gives it the top edge
-// that follows the housing, and an empty column on the left as wide as the
-// code column, so the keys sit in the middle and the curve is the same on both
-// sides (175 x 34 mm). Without it, it is the plain 150 x 34 mm rectangle every
-// other model gets.
+// that follows the housing, and a column on the left as wide as the code
+// column, so the keys sit in the middle and the curve is the same on both
+// sides (175 x 34 mm). That left column carries the ST Reborn mark. Without
+// the curve it is the plain 150 x 34 mm rectangle every other model gets.
 function wideSticker(sp, idx, curved, pal, measure) {
   const H = 202, GRID_W = 750, TOP = 24, QR_W = 150;
   const OFF = curved ? QR_W : 0;
@@ -322,6 +339,7 @@ function wideSticker(sp, idx, curved, pal, measure) {
   if (OFF) p.rules.push({ x1: u(OFF - 0.75), y1: 0, x2: u(OFF - 0.75), y2: p.h });
   p.rules.push({ x1: u(OFF + GRID_W + 0.75), y1: 0, x2: u(OFF + GRID_W + 0.75), y2: p.h });
   addQr(p, sp, u(OFF + GRID_W + 1.5), u(40), u(QR_W - 1.5), u(H - 40), 112, 17, pal, measure);
+  if (OFF) addBrand(p, 0, u(40), u(OFF - 1.5), u(H - 40), 112, 17, pal);
   return p;
 }
 
