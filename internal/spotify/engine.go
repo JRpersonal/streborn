@@ -783,9 +783,7 @@ func (m *Manager) playDenialHint() string {
 					"This usually only hits the first press after the speaker's Spotify engine has started; " +
 					"press the button again in a few seconds."
 			}
-			return "Spotify refused to deliver the audio for this item (audio key denied). " +
-				"This usually means the Spotify account on the speaker has no Premium subscription, " +
-				"which STR's Spotify engine requires; occasionally the item itself is not licensed for streaming."
+			return keyDeniedItemHint
 		}
 		if attempt == 0 {
 			time.Sleep(200 * time.Millisecond)

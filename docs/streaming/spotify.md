@@ -57,6 +57,13 @@ trips the five-refusal run and gets paused by the agent; a newer one trips
 a recall during its back-off fails at once with an explaining message
 instead of waiting out the load timeouts.
 
+A play that fails on a refused key is returned as an error with an
+`AudioKeyDenied` method (`spotify.IsAudioKeyDenied`), whichever of the two
+messages explains it. The app recall asks that method before its last-attempt
+re-play (`webui.isSpotifyKeyDenied`); it used to look for the words "audio key
+denied", which the back-off message does not contain, so a play refused during
+the back-off was answered with another play (discussion #1947).
+
 `AudioKeyRefused()` lasts ten minutes, or until the engine delivers real
 audio again, whichever comes first (discussion #1930: the notice used to
 outlive a preset that played). That first audio page also resets the
