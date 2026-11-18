@@ -91,3 +91,45 @@ func TestPairInsideSetupBracketNothingStartedNothingLeft(t *testing.T) {
 		t.Fatalf("one failed SETUP_START and nothing else expected, got %d calls", n)
 	}
 }
+
+func TestRepeatLanguageOnlyWhenSetupSaysUnset(t *testing.T) {
+	var calls []postedCall
+	post := func(path, body string) (int, string, error) {
+		calls = append(calls, postedCall{path, body})
+		return http.StatusOK, "<sysLanguage>3</sysLanguage>", nil
+	}
+	gets := 0
+	get := func(path string) string { gets++; return `<setupStateResponse systemstate="SETUP_LANG_SET" />` }
+	var log strings.Builder
+
+	if repeatLanguageIfSetupSaysUnset(`<setupStateResponse state="SETUP_INACTIVE" systemstate="SETUP_LANG_SET" />`, 3, post, get, &log) {
+		t.Fatal("a speaker whose language is set must be left alone")
+	}
+	if len(calls) != 0 || gets != 0 {
+		t.Fatalf("nothing may be sent, got %d posts and %d reads", len(calls), gets)
+	}
+
+	if !repeatLanguageIfSetupSaysUnset(`<setupStateResponse state="SETUP_INACTIVE" systemstate="SETUP_LANG_NOT_SET" />`, 3, post, get, &log) {
+		t.Fatal("an accepted language must report true")
+	}
+	if len(calls) != 1 || calls[0].path != "/language" || calls[0].body != "<sysLanguage>3</sysLanguage>" {
+		t.Fatalf("one language post expected, got %+v", calls)
+	}
+	if gets != 1 {
+		t.Errorf("the state after the language step must be read once for the log, got %d reads", gets)
+	}
+	if !strings.Contains(log.String(), "language repeat: POST /language") {
+		t.Errorf("the answer belongs in the unlock log, got:\n%s", log.String())
+	}
+}
+
+func TestRepeatLanguageTransportErrorIsLoggedNotFatal(t *testing.T) {
+	post := func(path, body string) (int, string, error) { return 0, "", errors.New("connection reset") }
+	var log strings.Builder
+	if repeatLanguageIfSetupSaysUnset(`systemstate="SETUP_LANG_NOT_SET"`, 3, post, func(string) string { return "" }, &log) {
+		t.Fatal("a failed post must report false")
+	}
+	if !strings.Contains(log.String(), "connection reset") {
+		t.Errorf("the failure belongs in the unlock log, got:\n%s", log.String())
+	}
+}
