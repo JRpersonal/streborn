@@ -124,6 +124,15 @@ export function spotifySlotForContext(presets, snapshot) {
   return best;
 }
 
+// spotifyKeyGone reports whether the key remembered as the playing Spotify key
+// no longer exists as a Spotify key: it was emptied, or something else was
+// saved on it. An empty key list is no evidence (the keys may not be loaded
+// yet), so it never reports true then.
+export function spotifyKeyGone(presets, slot) {
+  if (slot == null || !presets || !presets.length) return false;
+  return !presets.some(p => p && p.slot === slot && p.type === 'spotify');
+}
+
 // nativeSpotifySlot names the Spotify key that holds what the speaker's OWN
 // Spotify client plays (the "<speaker> (L+R)" entry in the Spotify app, not
 // STR's "(STR)" one). That session never goes through STR's engine, so neither
