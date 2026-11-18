@@ -463,6 +463,66 @@ html.ui2 #view-box .ui2-xfer-status:empty { display: none; }
 html.ui2 #view-box .ui2-xfer-status.is-ok { color: var(--u-ok); }
 html.ui2 #view-box .ui2-xfer-status.is-warn { color: var(--u-warn); }
 html.ui2 #view-box .ui2-xfer-status.is-error { color: var(--u-danger); }
+/* The review before a copy of keys (shell2/keycopyreview.js): a card under
+   the keys' heading row, one block per speaker, one line per key. The words
+   say what happens to each key; the edge mark only repeats it, and a key that
+   replaces another station gets the warn colour so it is seen twice. */
+html.ui2 #view-box .ui2-xfer-review {
+  margin: var(--u-space-2) 0 var(--u-space-3);
+  padding: var(--u-space-3) var(--u-space-4);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius-card);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+  font-size: var(--u-fs-md);
+}
+html.ui2 #view-box .ui2-xfer-review-title {
+  margin: 0 0 var(--u-space-1);
+  font-size: var(--u-fs-lg);
+  font-weight: var(--u-fw-semibold);
+}
+html.ui2 #view-box .ui2-xfer-review-title:focus-visible {
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
+}
+html.ui2 #view-box .ui2-xfer-review-intro,
+html.ui2 #view-box .ui2-xfer-review-status {
+  margin: 0 0 var(--u-space-2);
+  color: var(--u-muted);
+  font-size: var(--u-fs-sm);
+}
+html.ui2 #view-box .ui2-xfer-review-status:empty { display: none; }
+html.ui2 #view-box .ui2-xfer-review-target h4 {
+  margin: var(--u-space-2) 0 var(--u-space-1);
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-semibold);
+}
+html.ui2 #view-box .ui2-xfer-review-target ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+html.ui2 #view-box .ui2-xfer-review-line {
+  margin: 0 0 var(--u-space-1);
+  padding-inline-start: var(--u-space-2);
+  border-inline-start: 3px solid var(--u-hairline);
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-box .ui2-xfer-review-line.is-change { border-inline-start-color: var(--u-ok); }
+html.ui2 #view-box .ui2-xfer-review-line.is-replace { border-inline-start-color: var(--u-warn); color: var(--u-warn); }
+html.ui2 #view-box .ui2-xfer-review-line:is(.is-skip, .is-unchecked) { color: var(--u-muted); }
+html.ui2 #view-box .ui2-xfer-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--u-space-2);
+  margin-top: var(--u-space-3);
+}
+html.ui2 #view-box .ui2-xfer-review-actions .u-btn[hidden] { display: none; }
+html.ui2 #view-box .ui2-xfer-review-actions .u-btn:focus-visible {
+  outline: var(--u-focus-ring);
+  outline-offset: var(--u-focus-offset);
+}
 /* A station row's way out of its problem (a speaker without internet: its
    Wi-Fi), right under the row's status line. */
 html.ui2 #view-box .ui2-st .ui2-st-fix {
@@ -547,3 +607,63 @@ html.ui2 #view-spotify :is(.sp2-q-status, .sp2-sync-status).is-error { color: va
 html.ui2 #view-spotify .sp2-q-note { color: var(--u-muted); font-size: var(--u-fs-sm); }
 html.ui2 #view-spotify #spotifySyncBtn[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
 html.ui2 #view-spotify .sp2-acct-open { margin-top: var(--u-space-2); }
+
+/* ---------- Holding a key to change it (ui2keyedit.js) ---------- */
+
+/* The hold fills the bar along the key's foot in the accent colour, a little
+   thicker than the classic one so it reads as the key filling up. With less
+   motion asked for, the bar stands full at once (presettiles.js) and the key
+   does not shrink. */
+html.ui2 #view-box .preset .long-press-bar { height: 4px; background: var(--u-accent); }
+html.ui2 #view-box .preset.long-press { border-color: var(--u-accent); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  html.ui2 #view-box .preset { transition: none; }
+  html.ui2 #view-box .preset.long-press { transform: none; }
+  html.ui2 #view-box .preset .long-press-bar { transition: none; }
+}
+/* An empty key is one button: it rings as a whole. */
+html.ui2 #view-box .preset.empty[role="button"]:focus-visible,
+html.ui2 #view-box .ui2-key-edit .u-btn:focus-visible {
+  outline: var(--u-focus-ring) !important;
+  outline-offset: var(--u-focus-offset) !important;
+}
+html.ui2 #view-box .preset.empty[role="button"][aria-expanded="true"] { border-style: solid; border-color: var(--u-accent); }
+html.ui2 #view-box .preset.empty[role="button"][aria-expanded="true"] .name { color: var(--u-text); }
+
+/* The key's choices, one card under the grid: what is on it now, then the
+   choices as buttons, the first one primary. */
+html.ui2 #view-box .ui2-key-edit {
+  margin: 0 0 var(--u-space-3);
+  padding: var(--u-space-2) var(--u-space-3) var(--u-space-3);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius-card);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font-family: var(--u-font);
+}
+html.ui2 #view-box .ui2-key-edit[hidden] { display: none; }
+html.ui2 #view-box .ui2-key-edit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--u-space-2);
+}
+html.ui2 #view-box .ui2-key-edit-title {
+  margin: 0;
+  font-size: var(--u-fs-md);
+  font-weight: var(--u-fw-bold);
+}
+html.ui2 #view-box .ui2-key-edit-close { color: var(--u-muted); }
+html.ui2 #view-box .ui2-key-edit-close:hover { color: var(--u-text); }
+html.ui2 #view-box .ui2-key-edit-now {
+  margin: 0 0 var(--u-space-2);
+  font-size: var(--u-fs-sm);
+  color: var(--u-muted);
+  overflow-wrap: anywhere;
+}
+html.ui2 #view-box .ui2-key-edit-acts { display: flex; flex-wrap: wrap; gap: var(--u-space-2); }
+html.ui2 #view-box .ui2-key-edit-note {
+  margin: var(--u-space-2) 0 0;
+  font-size: var(--u-fs-sm);
+  color: var(--u-muted);
+}

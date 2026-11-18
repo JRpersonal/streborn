@@ -24,6 +24,7 @@ import { t } from '../i18n/index.js';
 import { holdFor, holdsByHost } from '../installhold.js';
 import { boxCannotReachInternet, noInternetText } from '../nointernet.js';
 import { shell2Mounted, shellOfflinePick } from '../shell2/mount.js';
+import { closeKeyCopyReview } from '../shell2/keycopyreview.js';
 import { allowsInstallAgain, checkResultHTML, runSpeakerChecks } from '../speakercheck.js';
 import { canRemoveFromList, removeOutcomeText } from '../speakerremove.js';
 import { speakerTileState } from '../speakertile.js';
@@ -796,7 +797,13 @@ export function selectBox(box) {
   }
   state.presetErrors = {};
   state.presetServerOff = {};
-  if (switched) { resetNowPlaying(); renderNowPlayingBar(); }
+  if (switched) {
+    resetNowPlaying();
+    renderNowPlayingBar();
+    // A UI 2.0 review of a copy of keys is about the speaker it was opened
+    // for; it must not offer Copy under another speaker's keys.
+    closeKeyCopyReview();
+  }
   renderBoxSelect();
   loadPresets();
   refreshStatus();

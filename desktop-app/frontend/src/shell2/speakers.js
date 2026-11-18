@@ -27,6 +27,10 @@ import { groupCandidates, groupMemberBoxes, groupMembersOf, inAnyStereoPair, mas
 import { roomItems } from './rooms.js';
 import { CHIP_LABEL_KEYS, chipHTML, pillLabel, statusPillHTML } from './pill.js';
 import { discoveryPhase, noSpeakersState } from './state.js';
+import { pausedNow, rowTransport, rowTransportLabel } from './sessionplay.js';
+import { joinReview } from './playclaim.js';
+import { labelVia } from '../boxes.js';
+import { noMatchHTML } from './spksearch.js';
 
 const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 
@@ -48,6 +52,18 @@ const has = (o, k) => !!o && !!k && Object.prototype.hasOwnProperty.call(o, k);
 //                    { items, chip }, chip null when nothing is wrong); none
 //                    without it
 //        connectOpen the empty state's Connect by address block is open
+//        boxPaused   { deviceID: bool } from the every-speaker poll: a paused
+//                    row offers Play (sessionplay.js), and its "+" opens
+//                    the join review, since joining ends the paused session
+//        transportPending  Map or object host -> 'pause' | 'resume': a row's
+//                    own Play/Pause press that waits for the speaker
+//        nowName     what the speaker you control plays (state.nowName), with
+//        nowSource   its source (state.nowSource) and
+//        nowLocation its stream (state.nowLocation)
+//        boxNow      { deviceID: { name, source, location } } of what every
+//                    other speaker plays, from the every-speaker poll
+//                    (state.boxNow, shell2/playclaim.js statusNowItem)
+//        review      the host whose join review is open ('' for none)
 //
 // The pinned group is the group that plays (#1284: "the playing group stays
 // pinned on top", "`+` on the idle ones ... adding it to what's playing"):
@@ -104,11 +120,33 @@ export function sidebarModel(boxes, ctx = {}) {
   const candidates = new Set(groupable ? groupCandidates(master, zl, list).map((b) => b.host) : []);
   const playing = ctx.boxPlaying || {};
   const pending = ctx.pending || new Set();
+  // A sidebar Play/Pause press that waits for the speaker: Map or object host
+  // -> 'pause' | 'resume'.
+  const transportPendingOf = (host) => {
+    const tw = ctx.transportPending;
+    if (!tw || !host) return '';
+    const v = typeof tw.get === 'function' ? tw.get(host) : tw[host];
+    return v === 'pause' || v === 'resume' ? v : '';
+  };
   const notes = ctx.notes || null;
   const noteOf = (host) => {
     if (!notes || !host) return null;
     const n = typeof notes.get === 'function' ? notes.get(host) : notes[host];
     return n && n.text ? n : null;
+  };
+  // What a speaker plays ({ name, source, location }): the speaker you
+  // control from its own status poll (fresher), every other one from the
+  // every-speaker poll. The source and the stream come along because the
+  // name alone does not say two speakers play the same music (sameMusic).
+  const nowOf = (b) => {
+    const none = { name: '', source: '', location: '' };
+    if (!b) return none;
+    if (ctx.currentBox && b.host === ctx.currentBox.host && ctx.nowName) {
+      return { name: String(ctx.nowName), source: String(ctx.nowSource || ''), location: String(ctx.nowLocation || '') };
+    }
+    const items = ctx.boxNow || {};
+    const it = has(items, b.deviceID) ? items[b.deviceID] : null;
+    return it && typeof it === 'object' ? it : none;
   };
   const attentionOf = (host) => {
     if (typeof ctx.attention !== 'function' || !host) return '';
@@ -126,20 +164,42 @@ export function sidebarModel(boxes, ctx = {}) {
     const pinned = r.hosts.some((h) => groupHosts.has(h));
     const isMaster = !!master && r.hosts.includes(master.host);
     let action = '';
+    let review = null;
     // A pair row is one unit: its host is the pair master (rooms.js), which
     // is the candidate. A half shown on its own row is not.
     const unit = r.kind === 'pair' || (r.kind === 'str' && !r.inPair);
     if (groupable && unit && candidates.has(r.host)) {
       if (pinned && !isMaster && memberHosts.has(r.host)) {
         action = 'remove';
-      } else if (!pinned && !r.offline && !r.playing) {
+      } else if (!pinned && !r.offline) {
         // "+" only on a speaker known to be free: in no zone of its own or of
         // another master, and with its play state read at least once. Before
         // the first every-speaker poll every row looks idle, and forming a zone with
         // a speaker that follows another master pulls it out of that group.
         const b = boxOf(r.host);
         const known = !!b && has(zl, b.deviceID) && has(playing, b.deviceID);
-        if (known && masterOf(b.deviceID, zl) === '') action = 'add';
+        if (known && masterOf(b.deviceID, zl) === '') {
+          action = 'add';
+          // A speaker that plays music of its own may join too, but joining
+          // ends that music: its "+" first opens a review in the row that
+          // says what stops and what plays instead (joinReview). So does a
+          // paused one, whose paused session joining ends just as silently
+          // (sessionplay.js pausedNow, the same read as its Play button).
+          // Idle and standby speakers join at once, as before.
+          review = joinReview({
+            name: r.name,
+            playing: r.playing,
+            paused: !r.playing && pausedNow(b, {
+              currentBox: ctx.currentBox,
+              nowPlayState: ctx.nowPlayState,
+              nowSource: ctx.nowSource,
+              boxPaused: ctx.boxPaused,
+            }),
+            stops: nowOf(b),
+            plays: nowOf(master),
+            master: master ? labelVia(ctx.label, master) : '',
+          });
+        }
       }
     }
     const row = {
@@ -150,6 +210,27 @@ export function sidebarModel(boxes, ctx = {}) {
       pending: r.hosts.some((h) => pending.has(h)),
       master: action && master ? master.host : '',
     };
+    // Play/Pause of the session this row plays (sessionplay.js): on a single
+    // speaker, a group's master and a stereo pair, never on a follower.
+    const tp = rowTransport(r, {
+      boxes: list,
+      zoneLive: zl,
+      currentBox: ctx.currentBox,
+      nowPlayState: ctx.nowPlayState,
+      nowSource: ctx.nowSource,
+      boxPaused: ctx.boxPaused,
+    });
+    if (tp.kind) {
+      row.transport = tp.kind;
+      row.transportGroup = tp.group;
+      const want = transportPendingOf(r.host);
+      if (want) row.transportPending = want;
+    }
+    if (review) {
+      row.review = review.text;
+      if (review.paused) row.reviewPaused = true;
+      row.reviewOpen = !!ctx.review && ctx.review === r.host;
+    }
     const note = r.hosts.map(noteOf).find(Boolean) || null;
     if (note) {
       row.note = {
@@ -249,7 +330,8 @@ function rowHTML(row, tabHost) {
     row.kind === 'stock' ? 'is-stock' : '',
     row.kind === 'pair' ? 'is-pair' : '',
     row.pinned ? 'is-member' : '',
-    row.note ? 'has-note' : ''].filter(Boolean).join(' ');
+    row.note ? 'has-note' : '',
+    row.reviewOpen ? 'has-join' : ''].filter(Boolean).join(' ');
   const pill = statusPillHTML(row.pill);
   const chips = (row.chips || []).map(chipHTML).join('')
     + (row.attention ? `<span class="u-chip ui2-spk-attn" data-chip="attention">${escapeHtml(row.attention)}</span>` : '');
@@ -261,15 +343,59 @@ function rowHTML(row, tabHost) {
     + `<span class="ui2-spk-name">${escapeHtml(row.name)}</span>`
     + (pill || chips ? `<span class="ui2-room-badges">${pill}${chips}</span>` : '')
     + '</button>';
+  // The row's own Play/Pause: its own host and port, never the pick (it
+  // does not change the speaker you control). The glyph is drawn in CSS
+  // (shell2.css), the words are its name and tooltip.
+  let tp = '';
+  if (row.transport) {
+    const name = rowTransportLabel(row);
+    tp = `<button type="button" class="u-btn u-btn--icon ui2-spk-tp${row.transportPending ? ' pending' : ''}" data-tp="${row.transport}"`
+      + ` data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" tabindex="${tab}"`
+      + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.transportPending ? ' aria-busy="true"' : ''}>`
+      + '<span class="ui2-spk-tp-glyph" aria-hidden="true"></span></button>';
+  }
   let act = '';
+  const reviews = row.action === 'add' && !!row.review && !row.pending;
   if (row.action) {
     const name = actionLabel(row);
+    // A "+" that opens the join review says whether the review is open, and
+    // points at it while it is.
+    const expand = reviews
+      ? ` data-review="1" aria-expanded="${row.reviewOpen ? 'true' : 'false'}"`
+        + (row.reviewOpen ? ` aria-controls="${escapeAttr(joinId(row.host))}"` : '')
+      : '';
     act = `<button type="button" class="u-btn u-btn--icon ui2-spk-act${row.pending ? ' pending' : ''}" data-group-toggle data-act="${row.action}"`
       + ` data-host="${escapeAttr(row.host)}" data-port="${escapeAttr(row.port)}" data-master="${escapeAttr(row.master || '')}" tabindex="${tab}"`
-      + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.pending ? ' aria-busy="true"' : ''}>`
+      + ` aria-label="${escapeAttr(name)}" title="${escapeAttr(name)}"${row.pending ? ' aria-busy="true"' : ''}${expand}>`
       + `<span aria-hidden="true">${row.action === 'add' ? '+' : '&minus;'}</span></button>`;
   }
-  return `<li class="${cls}">${pick}${act}${noteHTML(row)}</li>`;
+  return `<li class="${cls}">${pick}${tp}${act}${reviews && row.reviewOpen ? joinHTML(row) : ''}${noteHTML(row)}</li>`;
+}
+
+// joinId is the id of a row's join review, from its host (an address or a
+// name with dots and colons, which an id reference must not carry).
+function joinId(host) {
+  return `ui2SpkJoin-${String(host || '').replace(/[^A-Za-z0-9_-]/g, '-')}`;
+}
+
+// joinHTML is the join review in the row itself, under the speaker's name:
+// what it stops and what it plays instead, then Add and Cancel. Inline where
+// the "+" was pressed, never a dialog or a toast across the window (UI 2.0
+// rule 3). Add carries the same host, port and master as the "+", so it makes
+// exactly the edit the "+" would have made.
+function joinHTML(row) {
+  const id = joinId(row.host);
+  const add = t('ui2.side.joinAddLabel', { name: row.name });
+  // Cancel leaves the speaker as it was: playing, or paused.
+  const cancel = t(row.reviewPaused ? 'ui2.side.joinPausedCancelLabel' : 'ui2.side.joinCancelLabel', { name: row.name });
+  return `<div class="ui2-spk-join" id="${escapeAttr(id)}" role="group" aria-labelledby="${escapeAttr(id)}-text">`
+    + `<p class="ui2-spk-join-text" id="${escapeAttr(id)}-text">${escapeHtml(row.review)}</p>`
+    + '<div class="ui2-spk-join-acts">'
+    + `<button type="button" class="u-btn u-btn--primary ui2-spk-join-btn" data-join="add" data-host="${escapeAttr(row.host)}"`
+    + ` data-port="${escapeAttr(row.port)}" data-master="${escapeAttr(row.master || '')}" aria-label="${escapeAttr(add)}">${escapeHtml(t('ui2.side.joinAdd'))}</button>`
+    + `<button type="button" class="u-btn u-btn--secondary ui2-spk-join-btn" data-join="cancel" data-host="${escapeAttr(row.host)}"`
+    + ` aria-label="${escapeAttr(cancel)}">${escapeHtml(t('common.cancel'))}</button>`
+    + '</div></div>';
 }
 
 // noteHTML is what happened to a row, under its name: an offline pick that
@@ -297,7 +423,8 @@ function noteHTML(row) {
 
 // sidebarHTML renders both lists: the pinned group with its heading, and the
 // other speakers, which scroll on their own. One pick button takes Tab (plus
-// the action next to it); the arrow keys move between rows (rovingIndex).
+// the Play/Pause and the action next to it); Up and Down move between rows
+// (rovingIndex), Right and Left along one row.
 export function sidebarHTML(model, opts = {}) {
   const m = model || { pinned: [], others: [] };
   const rows = [...(m.pinned || []), ...(m.others || [])];
@@ -312,8 +439,13 @@ export function sidebarHTML(model, opts = {}) {
   }
   const others = (m.others || []).map((r) => rowHTML(r, tabHost)).join('');
   // A model without the phase (an older caller) keeps the one-line text.
+  // A search that leaves no row says so (spksearch.js); it never reads as
+  // "no speakers found", which is about the network, not the search.
+  const search = m.search && m.search.query ? m.search : null;
   let empty = '';
-  if (!rows.length) {
+  if (search && search.noMatch) {
+    empty = noMatchHTML(search.query);
+  } else if (!rows.length && !search) {
     empty = m.emptyPhase
       ? noSpeakersState(m.emptyPhase, { id: 'ui2SpkState', error: m.emptyError, connectOpen: m.connectOpen, level: 3 })
       : `<p class="ui2-spk-empty">${escapeHtml(t(m.searching ? 'speaker.searching' : 'ui2.side.empty'))}</p>`;

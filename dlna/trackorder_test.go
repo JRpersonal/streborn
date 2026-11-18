@@ -199,3 +199,22 @@ func TestContainerClassAsksBrowseMetadata(t *testing.T) {
 		t.Errorf("class = %q", class)
 	}
 }
+
+func TestContainerMetadataNamesTheFolder(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>` +
+			`<u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><Result>` +
+			`&lt;DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"&gt;` +
+			`&lt;container id="pl" parentID="p0"&gt;&lt;dc:title&gt;Road Trip&lt;/dc:title&gt;` +
+			`&lt;upnp:class&gt;object.container.playlistContainer&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;` +
+			`</Result><NumberReturned>1</NumberReturned><TotalMatches>1</TotalMatches></u:BrowseResponse></s:Body></s:Envelope>`))
+	}))
+	defer ts.Close()
+	c, err := ContainerMetadata(context.Background(), Server{CDSControlURL: ts.URL}, "pl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ID != "pl" || c.ParentID != "p0" || c.Title != "Road Trip" || !IsPlaylistClass(c.Class) {
+		t.Errorf("container = %+v", c)
+	}
+}

@@ -102,3 +102,23 @@ func TestBrowseLibraryFirstPageOfALongFolderCarriesTheClass(t *testing.T) {
 		t.Errorf("containerClass = %q", page.ContainerClass)
 	}
 }
+
+// The UI 2.0 player names a folder it leads to by the server's own words, not
+// by the album of the track that plays (a playlist holds many albums).
+func TestLibraryFolderDescribesTheFolder(t *testing.T) {
+	ts := albumCDS(t, "object.container.playlistContainer", 4)
+	a := &App{libraryServers: map[string]dlna.Server{"uuid:x": {UDN: "uuid:x", CDSControlURL: ts.URL}}}
+	c, err := a.LibraryFolder("uuid:x", "al")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ID != "al" || c.Class != "object.container.playlistContainer" {
+		t.Errorf("folder = %+v", c)
+	}
+	if _, err := a.LibraryFolder("uuid:y", "al"); err == nil {
+		t.Error("an unknown server must be an error")
+	}
+	if _, err := a.LibraryFolder("uuid:x", "0"); err == nil {
+		t.Error("the server root is no folder to describe")
+	}
+}

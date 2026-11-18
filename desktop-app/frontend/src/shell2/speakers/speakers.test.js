@@ -10,6 +10,7 @@ import {
 import { speakerFrameHTML, speakerHead, tabsLabel } from './speaker.js';
 import { mountGroups } from './groups.js';
 import * as router from './index.js';
+import { aimKeyEditor, keyEditorAim, resetKeyEditor } from './keyeditor.js';
 import { setLocale } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { shellMarkup } from '../markup.js';
@@ -145,6 +146,37 @@ describe('the speaker page reconnect loop', () => {
     expect(views).toEqual(['settings']);
     expect(state.settingsBox).toBe(B);
     expect(state.settingsReconnect).toBe(null);
+  });
+
+  // A hold on a Radio key: "Find a station" and "Choose a favorite" open this
+  // speaker's key editor on that key (views/music/ui2keyedit.js).
+  it('opens the page with a key aimed at the key editor', () => {
+    reset();
+    resetKeyEditor();
+    expect(router.openSpeakers('speaker', { host: B.host, tab: 'keys', key: { slot: 8, mode: 'favorites' } })).toBe(true);
+    expect(views).toEqual(['settings']);
+    expect(state.settingsBox).toBe(B);
+    expect(keyEditorAim()).toMatchObject({ host: B.host, slot: 8, mode: 'favorites' });
+    // No key, no aim; an unknown mode is the station search.
+    resetKeyEditor();
+    router.openSpeakers('speaker', { host: B.host, tab: 'keys' });
+    expect(keyEditorAim()).toBe(null);
+    router.openSpeakers('speaker', { host: A.host, key: { slot: 3, mode: 'x' } });
+    expect(keyEditorAim()).toMatchObject({ host: A.host, slot: 3, mode: 'find' });
+    // A speaker not in the list goes to the list, with no aim.
+    resetKeyEditor();
+    router.openSpeakers('speaker', { host: '192.0.2.99', key: { slot: 3, mode: 'find' } });
+    expect(keyEditorAim()).toBe(null);
+    // An aim needs a speaker and a key; a new one replaces the last.
+    aimKeyEditor({ host: A.host, slot: 0 });
+    expect(keyEditorAim()).toBe(null);
+    aimKeyEditor({ host: '', slot: 2 });
+    expect(keyEditorAim()).toBe(null);
+    aimKeyEditor({ host: A.host, slot: '4', mode: 'find' });
+    aimKeyEditor({ host: B.host, slot: 5, mode: 'favorites' });
+    expect(keyEditorAim()).toMatchObject({ host: B.host, slot: 5, mode: 'favorites' });
+    resetKeyEditor();
+    expect(keyEditorAim()).toBe(null);
   });
 
   it('keeps running for the same speaker, and stops once the page is left', () => {

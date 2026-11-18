@@ -25,6 +25,7 @@ import {
   ProbeTrackDelivery,
   ListMediaServers,
   LibraryRefusedServers,
+  LibraryFolder,
   SearchLibrary,
   BrowseLibrary,
   AddMediaServerByURL,
@@ -48,6 +49,7 @@ import { libraryTrackRef, saveLibraryTrackPreset } from '../librarytrackref.js';
 import { withoutMacMetadata, speakerRefusingPushes } from '../libraryplayfail.js';
 import { parsePresetConflict } from '../presetmove.js';
 import { libraryRowStatus } from '../librarynow.js';
+import { folderStack, sharedAlbum, splitCardFolder } from '../shell2/gotosource.js';
 import { PLAY_ICON } from '../glyphs.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
@@ -190,10 +192,113 @@ export async function openLibrary() {
   libState.sort = loadLibrarySort();
   syncPlayModeFromBox();
   renderLibrary();
+  // A search for the servers is already on its way (the tab opened a moment
+  // ago, or the player's button was pressed twice): wait for it instead of
+  // starting a second one. Two sweeps raced each other, and the later one
+  // opened the remembered folder over the one the player asked for.
+  if (serversLoad) {
+    await serversLoad;
+    if (placePendingFolder()) await libraryBrowseCurrent();
+    return;
+  }
   if (libState.servers.length === 0) {
     await loadMediaServers();
-  } else if (libState.currentUDN) {
+  } else if (placePendingFolder() || libState.currentUDN) {
     await libraryBrowseCurrent();
+  }
+}
+
+// The search for media servers in flight, so openLibrary can join it.
+let serversLoad = null;
+
+// The folder the UI 2.0 player's "Show in Library" asked for, taken by the
+// next openLibrary (shell2/gotosource.js): { card } from a running queue's
+// card, or { udn, id } from a single track's place on its server, each with a
+// title for the trail, and when it was asked for.
+let pendingFolder = null;
+// A request is for the press that made it. One the Library never got to (the
+// server search failed, or never ended) must not open that folder unasked the
+// next time the tab opens, minutes later and with something else playing.
+const PENDING_FOLDER_MS = 30_000;
+
+// The trails walked this session, by "<udn>|<container id>", so a folder the
+// player leads back to gets its whole trail of crumbs and not only the server
+// root above it. Bounded: the oldest walk goes first.
+const walkedTrails = new Map();
+const WALKED_TRAILS_MAX = 100;
+
+function rememberTrail() {
+  const top = libState.stack[libState.stack.length - 1];
+  if (!libState.currentUDN || !top) return;
+  const key = `${libState.currentUDN}|${top.id}`;
+  walkedTrails.delete(key);
+  walkedTrails.set(key, libState.stack.map((s) => ({ ...s })));
+  if (walkedTrails.size > WALKED_TRAILS_MAX) walkedTrails.delete(walkedTrails.keys().next().value);
+}
+
+// showLibraryFolder asks the Library to open folder the next time it opens
+// (switchView('library') right after). Only the preview's player calls it.
+export function showLibraryFolder(folder) {
+  pendingFolder = folder && (folder.card || (folder.udn && folder.id)) ? { ...folder, at: Date.now() } : null;
+}
+
+// placePendingFolder puts the Library on the asked-for folder: its server and
+// the trail to it. False (and the Library opens where it would have) when
+// nothing was asked, the request is old, or its server is not in the list.
+function placePendingFolder() {
+  const f = pendingFolder;
+  pendingFolder = null;
+  if (!f || !(Date.now() - (f.at || 0) < PENDING_FOLDER_MS)) return false;
+  const udns = libState.servers.map((s) => s.udn);
+  const where = f.card ? splitCardFolder(f.card, udns) : { udn: f.udn, id: f.id };
+  const srv = where && libState.servers.find((s) => s.udn === where.udn);
+  if (!srv) return false;
+  const known = [
+    libState.currentUDN === srv.udn ? libState.stack : null,
+    walkedTrails.get(`${srv.udn}|${where.id}`),
+    rememberedPathFor(srv.udn),
+  ];
+  const stack = folderStack(where.id, known, f.title || '');
+  if (!stack) return false;
+  if (!stack[0].title) stack[0] = { ...stack[0], title: srv.friendlyName || '' };
+  libState.currentUDN = srv.udn;
+  // The server the Library now shows is the one it opens next time too, as a
+  // pick from the list does: the folder's path is remembered for this server
+  // (rememberPath), and a remembered server left on another one opened that
+  // other one at its root on the next start (#642).
+  rememberServerUDN(srv.udn);
+  libState.stack = stack;
+  libState.restoredPath = false;
+  libState.search.active = false;
+  const top = stack[stack.length - 1];
+  if (top.provisional) fillPlacedCrumb(srv.udn, top);
+  return true;
+}
+
+// fillPlacedCrumb names a folder the player led to that no walked trail
+// passes through, from the folder's own metadata on its server: its title,
+// its class (A to Z keeps a playlist and an album in their own order) and its
+// cover (a folder key falls back to it). Until it answers, the crumb carries
+// the title of the album all of the queue's tracks share, if any; a server
+// that cannot answer leaves it to the tracks the browse finds
+// (libraryBrowseCurrent). Only that crumb object is changed, so a walk
+// elsewhere in the meantime is left alone.
+async function fillPlacedCrumb(udn, crumb) {
+  let meta = null;
+  try {
+    meta = await LibraryFolder(udn, crumb.id);
+  } catch { return; /* older build or a server that refuses: the tracks name it */ }
+  if (!meta) return;
+  if (meta.title) crumb.title = meta.title;
+  if (meta.class) crumb.cls = meta.class;
+  if (meta.albumArtURL && !crumb.art) crumb.art = meta.albumArtURL;
+  delete crumb.provisional;
+  if (libState.currentUDN !== udn || !libState.stack.includes(crumb)) return;
+  renderLibrary();
+  // The browse may have saved the trail with the stand-in title already.
+  if (!libState.loading) {
+    rememberPath();
+    rememberTrail();
   }
 }
 
@@ -222,6 +327,11 @@ async function syncPlayModeFromBox() {
 // straight away. The preview's "Search again" on the server list passes false:
 // it asks for a fresh list and stays on it.
 async function loadMediaServers(opts = {}) {
+  // Announced before the first await, so an openLibrary right behind this
+  // one finds it (serversLoad); settled in the finally below.
+  let settle = () => {};
+  const run = new Promise((resolve) => { settle = resolve; });
+  serversLoad = run;
   const autoOpen = opts.autoOpen !== false;
   libState.loading = true;
   libState.ui2.serversError = '';
@@ -246,6 +356,13 @@ async function loadMediaServers(opts = {}) {
     // nothing set up, it is right from the second visit, and a server that
     // disappears simply falls back to the list instead of leaving a stale
     // exclusion behind that nobody remembers making.
+    // The player asked for the folder that plays: it wins over the
+    // remembered one, and over "Search again" staying on the list, since
+    // the press came after it.
+    if (placePendingFolder()) {
+      await libraryBrowseCurrent();
+      return;
+    }
     const preferred = rememberedServerUDN();
     const auto = !autoOpen ? null : libState.servers.length === 1
       ? libState.servers[0]
@@ -261,6 +378,9 @@ async function loadMediaServers(opts = {}) {
     libState.currentUDN = '';
     libState.page = null;
   } catch (e) {
+    // No list, so no folder to place: the request ends with this search
+    // instead of waiting for the next time the tab opens.
+    pendingFolder = null;
     // In the preview the failed search is the server list's own state, with
     // the way out next to it, not a window over everything.
     if (ui2()) libState.ui2.serversError = String((e && e.message) || e || '');
@@ -268,6 +388,8 @@ async function loadMediaServers(opts = {}) {
   } finally {
     libState.loading = false;
     renderLibrary();
+    if (serversLoad === run) serversLoad = null;
+    settle();
   }
 }
 
@@ -583,7 +705,14 @@ async function libraryBrowseCurrent() {
       libState.loadingMore = false;
       libState.page = acc.returned ? acc : (libState.page || null);
       renderLibrary();
-      if (!libState.loading && acc.returned >= 0 && libState.currentUDN) rememberPath();
+      // A folder the player led to whose server has not named it (yet): its
+      // tracks' album, when they all share one, rather than an empty crumb
+      // or the album of whichever track played (fillPlacedCrumb).
+      if (top.provisional && !top.title) top.title = sharedAlbum(acc.items);
+      if (!libState.loading && acc.returned >= 0 && libState.currentUDN) {
+        rememberPath();
+        rememberTrail();
+      }
     }
   }
 }

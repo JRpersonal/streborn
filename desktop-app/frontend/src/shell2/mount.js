@@ -25,10 +25,14 @@ import { state } from '../state.js';
 import { t } from '../i18n/index.js';
 import { groupMembersOf, lastZoneRound, onZoneLive, stereoPairsOf } from '../groups.js';
 import { shellMarkup } from './markup.js';
-import { navStep } from './nav.js';
+import { navEntryFor, navStep } from './nav.js';
+import { goSourceLabelKey, goSourceTarget } from './gotosource.js';
 import { wirePopover } from './popover.js';
 import { transportGlyph, transportLabel } from './transport.js';
 import { rovingIndex, sidebarHTML, sidebarModel } from './speakers.js';
+import { TRANSPORT_SEND_MS, TRANSPORT_WITHIN_MS, transportVerdict } from './sessionplay.js';
+import { Pause, Resume } from '../api.js';
+import { filterSidebarModel, searchShown, searchStatusText, speakerTerms } from './spksearch.js';
 import { playerOnScreen } from '../statusrefreshscope.js';
 import { initSpeakersArea, openSpeakers, refreshSpeakersArea, syncSpeakersArea } from './speakers/index.js';
 import { agoText } from '../format.js';
@@ -41,6 +45,7 @@ import {
 import './banners.css';
 import { mountHelp, syncHelpView } from './help/help.js';
 import { wireDonateButtons } from '../donate.js';
+import { wireSliderWheel } from '../sliderwheel.js';
 
 const VIEW_IDS = ['view-box', 'view-library', 'view-recent', 'view-settings', 'view-setup', 'view-multiroom', 'view-spotify', 'view-wishes'];
 
@@ -50,6 +55,12 @@ let lastSpeakersSig = '';
 let speakersSettled = false;
 // The sidebar row that takes Tab, kept across repaints (roving tabindex).
 let rovingHost = '';
+// The sidebar search (spksearch.js): what is typed, what the list last drew
+// for, and the pending word to the live region.
+let spkQuery = '';
+let paintedQuery = '';
+let lastFindSearch = null;
+let findSayTimer = null;
 // The player's group state: on screen (live) and grouped (group.js decides,
 // through syncShellGroupPanel). One function applies both (applyPlayerGroup),
 // so the two never fight over the same flag.
@@ -65,8 +76,23 @@ const rowNotes = new Map();
 const awaiting = new Map();
 const CONFIRM_AFTER_MS = 1000;
 const CONFIRM_WITHIN_MS = 20000;
+// A row's own Play/Pause press (sessionplay.js) that waits for the speaker:
+// host -> { want: 'pause' | 'resume', at, sent, sentAt, name, verdict }. The
+// row stays pending until the poll shows the change (honest feedback, as a
+// group edit).
+const transportWait = new Map();
+// The latest press per row, settled or not: a binding that answers after its
+// press timed out only speaks for the row while no newer press replaced it.
+const lastTransportPress = new Map();
+// The buttons of one sidebar row, in their order on screen: the name (pick),
+// the row's own Play/Pause, "+" or "-".
+const ROW_BUTTONS = '.ui2-spk-pick, .ui2-spk-tp, .ui2-spk-act';
 // The speaker the player's error line spoke about.
 let playerStatusHost = '';
+// The sidebar row whose join review is open (host, '' for none): "+" on a
+// speaker that plays something else first says, in that row, what it stops
+// and what it plays instead. One at a time; part of the row model.
+let joinReviewHost = '';
 
 const byId = (id) => document.getElementById(id);
 const label = (b) => labelVia(deps.getBoxLabel, b);
@@ -112,6 +138,7 @@ function collect(frame) {
     fAppSettings: q('#ui2AppSettings'),
     fMainInner: q('#ui2MainInner'),
     fNow: q('.ui2-player-now'),
+    fNowLine: q('#ui2NowLine'),
     fTransport: q('.ui2-player-transport'),
     fVolume: q('.ui2-player-volume'),
     fMoreBody: q('#ui2MoreBody'),
@@ -188,7 +215,9 @@ export function mountShell2(d) {
     n.speakerUpdateCard.setAttribute('aria-label', t('speakerUpdate.title'));
     n.views.forEach((v) => move(v, n.fMainInner));
     move(n.footer, n.fMainInner);
-    move(n.statusBar, n.fNow);
+    // The title line shares a row with the button that opens where the music
+    // comes from (wireGoSource).
+    move(n.statusBar, n.fNowLine);
     move(n.titleSwapRow, n.fNow);
     move(n.spotifyRefusedRow, n.fNow);
     move(n.controls, n.fTransport);
@@ -319,6 +348,7 @@ function wire(frame, skip) {
   // sidebar is the one place that chooses.
   pops.levels = wirePopover(frame.querySelector('#ui2LevelsBtn'), frame.querySelector('#ui2LevelsPop'));
   wireSpeakerList(frame.querySelector('#ui2SpkLists'));
+  wireSpeakerSearch(frame.querySelector('#ui2SpkQ'));
   // Support STR, always on screen at the foot of the sidebar (Jens,
   // 2026-11-02: the classic layout's rail had no equivalent in the preview).
   wireDonateButtons(frame.querySelector('#ui2Support'));
@@ -327,6 +357,33 @@ function wire(frame, skip) {
   // The Speakers area (phase 3): its row of places and its routes.
   initSpeakersArea(frame, deps);
   wireStatesEnv(frame);
+  wireSliders(frame);
+}
+
+// wireSliders gives every slider in the shell the mouse wheel and the touchpad
+// (sliderwheel.js: one delegated listener, so the Levels rows and the Sound
+// tab's sliders that re-renders create are covered too), and a tooltip that
+// says so on the sliders that have none of their own.
+function wireSliders(frame) {
+  wireSliderWheel(frame);
+  frame.addEventListener('pointerover', (e) => {
+    const el = e.target && typeof e.target.closest === 'function' ? e.target.closest('input[type="range"]') : null;
+    if (!el) return;
+    // A disabled slider (bass on a speaker without it) ignores the wheel
+    // (sliderwheel.js), so it must not promise it; a hint written while it was
+    // still enabled goes too.
+    if (el.disabled) {
+      if (el.dataset.ui2WheelHint && el.title === el.dataset.ui2WheelHint) el.removeAttribute('title');
+      delete el.dataset.ui2WheelHint;
+      return;
+    }
+    // Only a title this code wrote is replaced (it follows the language); a
+    // slider whose own code names it (balance, the player volume) keeps that.
+    if (el.title && el.title !== el.dataset.ui2WheelHint) return;
+    const hint = t('ui2.slider.wheelHint');
+    el.title = hint;
+    el.dataset.ui2WheelHint = hint;
+  });
 }
 
 // wireStatesEnv hands the states of phase 5 (state.js) what their buttons
@@ -346,6 +403,7 @@ function wireStatesEnv(frame) {
   // The transport and the queue report their failures in the player, naming
   // the speaker (nowplaying.js asks for this hook; without it, the dialog).
   setReportHook('transport', reportTransport);
+  wireGoSource(frame);
   const transport = frame.querySelector('.ui2-player-transport');
   const more = frame.querySelector('#ui2MoreBody');
   // A new press clears the last failure; its own result writes a new one.
@@ -353,6 +411,62 @@ function wireStatesEnv(frame) {
     if (el) el.addEventListener('click', () => setPlayerStatus(''), true);
   }
   ensureSpeakerLive(frame);
+}
+
+// The player's "Show in Radio / Library / Spotify" button (gotosource.js).
+// goSourceNow is what the speaker plays, as the last now-playing line handed
+// it over (nowplaying.js renderNowPlayingBar, through the 'nowPlaying' hook);
+// goTarget is where the button leads for it.
+let goSourceNow = null;
+let goTarget = null;
+
+// wireGoSource follows the now-playing line and opens the source's tab on a
+// press: the same switch a tab does, and for a music-library folder the
+// folder too (main.js hands in the Library's showLibraryFolder).
+function wireGoSource(frame) {
+  const btn = frame.querySelector('#ui2GoSource');
+  if (!btn) return;
+  setReportHook('nowPlaying', (np) => {
+    goSourceNow = np || null;
+    paintGoSource();
+  });
+  btn.addEventListener('click', () => {
+    const tgt = goTarget;
+    if (!tgt) return;
+    if (tgt.view === 'library' && tgt.folder && typeof deps.showLibraryFolder === 'function') deps.showLibraryFolder(tgt.folder);
+    if (typeof deps.switchView === 'function') deps.switchView(tgt.view);
+  });
+  // What plays already when the shell comes up, before the next status poll
+  // draws the line again.
+  goSourceNow = {
+    source: state.nowSource || '',
+    location: state.nowLocation || '',
+    queue: state.queue,
+    lastLibraryPlay: state.lastLibraryPlay,
+  };
+  paintGoSource();
+}
+
+// paintGoSource shows the button for a source a tab holds and names it: the
+// tab's name as its words, "Show in <tab>" as its name and tooltip. No button
+// for an input without a tab, with no speaker, or for one that is offline
+// (what it played last is not what plays).
+function paintGoSource() {
+  const btn = byId('ui2GoSource');
+  if (!btn) return;
+  const box = state.currentBox;
+  const tgt = box && !box.offline && goSourceNow ? goSourceTarget(goSourceNow) : null;
+  goTarget = tgt;
+  btn.hidden = !tgt;
+  if (!tgt) return;
+  const entry = navEntryFor(tgt.view);
+  const words = entry ? t(entry.labelKey) : '';
+  const name = t(goSourceLabelKey(tgt.view));
+  const text = btn.querySelector('.ui2-go-source-text');
+  if (text && text.textContent !== words) text.textContent = words;
+  if (btn.getAttribute('aria-label') !== name) btn.setAttribute('aria-label', name);
+  if (btn.title !== name) btn.title = name;
+  btn.dataset.view = tgt.view;
 }
 
 // focusSpeakerList is "Go to the speaker list": the keyboard lands on the row
@@ -528,6 +642,119 @@ function confirmAwaiting() {
   }
 }
 
+// rowTransportPress is a row's own Play/Pause: Pause or Resume on that row's
+// host and port (a group's master, a pair's master, a single speaker), never
+// through the speaker you control, which stays the one it was. The row waits
+// for the speaker (settleTransport); a refusal is an alert in the row itself
+// ("Kitchen did not pause: ..."), never a toast across the window.
+function rowTransportPress(host, port, want, name) {
+  if (!host || transportWait.has(host)) return;
+  // The note of an earlier failed press goes with the next one.
+  const old = rowNotes.get(host);
+  if (old && old.kind === 'transport') rowNotes.delete(host);
+  const w = { want, at: Date.now(), sent: false, sentAt: 0, name, verdict: '' };
+  transportWait.set(host, w);
+  lastTransportPress.set(host, w);
+  paintSpeakers(true);
+  const fn = want === 'pause' ? Pause : Resume;
+  // A press that settleTransport already gave up on while the binding had
+  // not answered yet, with no newer press on the row since: its late answer
+  // still belongs to it.
+  const lateOwn = () => !transportWait.has(host) && lastTransportPress.get(host) === w && w.verdict === 'timeout';
+  Promise.resolve().then(() => fn(host, port)).then(() => {
+    if (transportWait.get(host) !== w) {
+      if (!lateOwn()) return;
+      // Accepted after all: the press waits for the speaker again instead of
+      // leaving its warning standing next to a speaker that did what it was
+      // told.
+      dropTransportNote(host, 'warn');
+      w.verdict = '';
+      transportWait.set(host, w);
+    }
+    w.sent = true;
+    w.sentAt = Date.now();
+    askWhoPlays();
+    // The confirm window counts from here, so its deadline repaint does too.
+    setTimeout(() => paintSpeakers(false), TRANSPORT_WITHIN_MS + 100);
+    paintSpeakers(true);
+  }, (err) => {
+    const own = transportWait.get(host) === w;
+    if (!own && !lateOwn()) return;
+    if (own) transportWait.delete(host);
+    // A late refusal takes the place of the "has not confirmed it yet"
+    // warning: the speaker did answer, and with a no (rule 3).
+    const text = transportErrorText(want, name, err);
+    rowNotes.set(host, { tone: 'error', text, kind: 'transport', host });
+    paintSpeakers(true);
+    // News about one press: it goes after a while, unless something newer
+    // took its place.
+    setTimeout(() => {
+      const n = rowNotes.get(host);
+      if (n && n.kind === 'transport' && n.text === text) { rowNotes.delete(host); paintSpeakers(true); }
+    }, CONFIRM_WITHIN_MS);
+  });
+  // A repaint once the binding should have answered, in case nothing else
+  // repaints then.
+  setTimeout(() => paintSpeakers(false), TRANSPORT_SEND_MS + 100);
+}
+
+function dropTransportNote(host, tone) {
+  const n = rowNotes.get(host);
+  if (n && n.kind === 'transport' && n.tone === tone) rowNotes.delete(host);
+}
+
+// playReadAt is when the last every-speaker round that read this speaker
+// successfully started (main.js refreshBoxPlaying, state.boxPlayReadAt), 0
+// when none did. A failed read marks a speaker as not playing, so a pause is
+// only confirmed by a read that worked (sessionplay.js transportVerdict).
+function playReadAt(host) {
+  const b = (state.boxes || []).find((x) => x && x.host === host);
+  const at = b && b.deviceID && state.boxPlayReadAt ? state.boxPlayReadAt[b.deviceID] : 0;
+  return typeof at === 'number' ? at : 0;
+}
+
+// askWhoPlays reads every speaker's play state soon after a press instead of
+// on the next 15 s round. The speaker takes a moment to report the change, so
+// a second read follows. A round already in flight started before the press:
+// refreshBoxPlaying then runs one more round right after it.
+function askWhoPlays() {
+  if (typeof deps.refreshBoxPlaying !== 'function') return;
+  setTimeout(() => { try { deps.refreshBoxPlaying(); } catch (_) { /* best effort */ } }, 800);
+  setTimeout(() => { try { deps.refreshBoxPlaying(); } catch (_) { /* best effort */ } }, 3000);
+}
+
+// settleTransport checks the waiting presses against the rows as the poll
+// draws them now (sessionplay.js transportVerdict). Confirmed: said once
+// through the sidebar's live region. Not confirmed in time: a note in the
+// row, which then shows what the speaker reports. Returns whether anything
+// changed, so the model is built again without the pending mark.
+function settleTransport(model) {
+  if (!transportWait.size) return false;
+  const rows = [...(model.pinned || []), ...(model.others || [])];
+  const now = Date.now();
+  let changed = false;
+  for (const [h, w] of [...transportWait]) {
+    const row = rows.find((r) => r.host === h) || null;
+    const verdict = transportVerdict(w, row && { ...row, readAt: playReadAt(h) }, now);
+    if (verdict === 'wait') continue;
+    transportWait.delete(h);
+    w.verdict = verdict;
+    changed = true;
+    if (verdict === 'confirmed') {
+      announceSpeakers(t(w.want === 'pause' ? 'ui2.side.paused' : 'ui2.side.resumed', { name: w.name }));
+    } else if (verdict === 'timeout') {
+      const text = t('ui2.side.noConfirm', { name: w.name });
+      rowNotes.set(h, { tone: 'warn', text, kind: 'transport', host: h });
+      announceSpeakers(text);
+      setTimeout(() => {
+        const n = rowNotes.get(h);
+        if (n && n.kind === 'transport' && n.text === text) { rowNotes.delete(h); paintSpeakers(true); }
+      }, CONFIRM_WITHIN_MS);
+    }
+  }
+  return changed;
+}
+
 // wireSpeakerList handles the sidebar list, delegated, so a repaint never
 // loses a handler. A row's pick button chooses the speaker you control
 // (pickBox: an offline speaker explains itself and rediscovers, a Bose
@@ -541,7 +768,33 @@ function wireSpeakerList(root) {
     const port = parseInt(btn.dataset.port, 10);
     return (state.boxes || []).find((b) => b && b.host === host && b.port === port) || null;
   };
+  // focusRow puts the keyboard back on a row's "+" (or its pick button when
+  // the "+" is gone), after the join review closed under it.
+  const focusRow = (host) => {
+    const find = (cls) => [...root.querySelectorAll(cls)].find((b) => b.dataset.host === host);
+    const target = find('.ui2-spk-act') || find('.ui2-spk-pick');
+    if (target) target.focus();
+  };
+  const closeJoin = (host, add) => {
+    const btn = [...root.querySelectorAll('.ui2-spk-join-btn[data-join="add"]')].find((b) => b.dataset.host === host);
+    joinReviewHost = '';
+    rovingHost = host;
+    if (add && btn && typeof deps.toggleGroupMember === 'function') {
+      deps.toggleGroupMember(host, parseInt(btn.dataset.port, 10), btn.dataset.master || '', groupReport);
+    }
+    paintSpeakers(true);
+    focusRow(host);
+  };
   root.addEventListener('click', (e) => {
+    const join = e.target.closest('.ui2-spk-join-btn');
+    if (join) {
+      closeJoin(join.dataset.host, join.dataset.join === 'add');
+      return;
+    }
+    if (e.target.closest('[data-spk-find-clear]')) {
+      clearSpeakerSearch(true);
+      return;
+    }
     const note = e.target.closest('.ui2-spk-note-act');
     if (note) {
       const host = note.dataset.host;
@@ -563,9 +816,34 @@ function wireSpeakerList(root) {
       }
       return;
     }
+    // A row's own Play/Pause: never a pick, so the speaker you control stays.
+    const tp = e.target.closest('.ui2-spk-tp');
+    if (tp) {
+      rovingHost = tp.dataset.host;
+      const li = tp.closest('li');
+      const nameEl = li && li.querySelector('.ui2-spk-name');
+      const box = boxFor(tp);
+      const name = (nameEl && nameEl.textContent) || (box ? label(box) : tp.dataset.host);
+      rowTransportPress(tp.dataset.host, parseInt(tp.dataset.port, 10), tp.dataset.tp === 'play' ? 'resume' : 'pause', name);
+      return;
+    }
     const act = e.target.closest('.ui2-spk-act');
     if (act) {
       rovingHost = act.dataset.host;
+      // A speaker that plays something else: the first press opens the
+      // review in its row (a second one closes it again), and only Add there
+      // makes the edit.
+      if (act.dataset.review === '1') {
+        const host = act.dataset.host;
+        joinReviewHost = joinReviewHost === host ? '' : host;
+        paintSpeakers(true);
+        const add = joinReviewHost
+          ? [...root.querySelectorAll('.ui2-spk-join-btn[data-join="add"]')].find((b) => b.dataset.host === host)
+          : null;
+        if (add) add.focus();
+        else focusRow(host);
+        return;
+      }
       if (typeof deps.toggleGroupMember === 'function') deps.toggleGroupMember(act.dataset.host, parseInt(act.dataset.port, 10), act.dataset.master || '', groupReport);
       return;
     }
@@ -583,31 +861,53 @@ function wireSpeakerList(root) {
     }).catch(() => {});
   });
   root.addEventListener('focusin', (e) => {
-    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    const btn = e.target.closest(ROW_BUTTONS);
     if (btn) setRoving(root, btn.dataset.host);
   });
   root.addEventListener('keydown', (e) => {
-    const btn = e.target.closest('.ui2-spk-pick, .ui2-spk-act');
+    // Escape in the join review (or on the "+" that opened it) is Cancel.
+    if (e.key === 'Escape' && joinReviewHost) {
+      const inJoin = e.target.closest('.ui2-spk-join');
+      const opener = e.target.closest('.ui2-spk-act');
+      if (inJoin || (opener && opener.dataset.host === joinReviewHost)) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeJoin(joinReviewHost, false);
+        return;
+      }
+    }
+    const btn = e.target.closest(ROW_BUTTONS);
     if (!btn) return;
     const li = btn.closest('li');
-    const isAct = btn.classList.contains('ui2-spk-act');
     const rtl = getComputedStyle(root).direction === 'rtl';
     const toAct = rtl ? 'ArrowLeft' : 'ArrowRight';
     const toPick = rtl ? 'ArrowRight' : 'ArrowLeft';
-    if (!isAct && e.key === toAct) {
-      const a = li && li.querySelector('.ui2-spk-act');
-      if (a) { e.preventDefault(); a.focus(); }
-      return;
-    }
-    if (isAct && e.key === toPick) {
-      const p = li && li.querySelector('.ui2-spk-pick');
-      if (p) { e.preventDefault(); p.focus(); }
+    // Right and Left move along the row: the name, Play/Pause, "+" or "-".
+    if (e.key === toAct || e.key === toPick) {
+      const inRow = li ? [...li.querySelectorAll(ROW_BUTTONS)] : [];
+      const next = inRow[inRow.indexOf(btn) + (e.key === toAct ? 1 : -1)];
+      if (next) { e.preventDefault(); next.focus(); }
       return;
     }
     // Up, Down, Home and End move through every row, the pinned group and the
     // others as one sequence.
     const picks = [...root.querySelectorAll('.ui2-spk-pick')];
     const at = picks.indexOf(li ? li.querySelector('.ui2-spk-pick') : null);
+    // Escape in a searched list clears the search and stays on the row; the
+    // row is still there, since the full list holds every searched one.
+    if (e.key === 'Escape' && spkQuery) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSpeakerSearch(false);
+      return;
+    }
+    // Up on the first row goes back to the search field above it.
+    const field = searchField();
+    if (e.key === 'ArrowUp' && at === 0 && field) {
+      e.preventDefault();
+      field.focus();
+      return;
+    }
     const next = rovingIndex(e.key, at, picks.length);
     if (next < 0) return;
     e.preventDefault();
@@ -618,11 +918,98 @@ function wireSpeakerList(root) {
   });
 }
 
+// searchField is the sidebar's search field while it is on screen, else null.
+function searchField() {
+  const box = byId('ui2SpkFind');
+  return box && !box.hidden ? byId('ui2SpkQ') : null;
+}
+
+// findTerms is what one speaker can be found by besides its row's name and
+// model (spksearch.js speakerTerms, pure, so vitest covers it).
+function findTerms(host) {
+  return speakerTerms(host, state, { label, sourceLabel: deps.sourceLabel });
+}
+
+// syncSpeakerSearch shows the field only while the list is long enough
+// (spksearch.js searchShown) and returns whether it shows. When the list
+// shrinks below that, a search left in it would hide speakers with no field
+// to clear it from: it goes, and the keyboard moves to the list.
+function syncSpeakerSearch(shown) {
+  const box = byId('ui2SpkFind');
+  const field = byId('ui2SpkQ');
+  if (!box || !field) return false;
+  // Read before hiding: a hidden field may lose focus right away (the
+  // browser's focus fixup), and the keyboard would then land on the page.
+  const hadFocus = document.activeElement === field;
+  if (box.hidden === shown) box.hidden = !shown;
+  if (!shown && (spkQuery || field.value)) {
+    spkQuery = '';
+    field.value = '';
+    if (hadFocus) setTimeout(focusSpeakerList, 0);
+  }
+  return shown;
+}
+
+// clearSpeakerSearch empties the search and repaints. toField puts the
+// keyboard in the field (the Clear button, which goes away with the search).
+function clearSpeakerSearch(toField) {
+  const field = byId('ui2SpkQ');
+  spkQuery = '';
+  if (field) field.value = '';
+  paintSpeakers(true);
+  sayFind();
+  if (toField && field) field.focus();
+}
+
+// sayFind tells the live region how the search ended, once typing pauses, so
+// a screen reader hears "Speakers shown: 3 of 9" and not every keystroke.
+function sayFind() {
+  if (findSayTimer) clearTimeout(findSayTimer);
+  findSayTimer = setTimeout(() => {
+    findSayTimer = null;
+    if (!spkQuery) return;
+    const text = searchStatusText(lastFindSearch);
+    if (text) announceSpeakers(text);
+  }, 600);
+}
+
+// wireSpeakerSearch: typing narrows the list on every input; Escape clears
+// (and only then stops the key, so an empty field lets Escape through);
+// Down goes to the first row the search left.
+function wireSpeakerSearch(field) {
+  if (!field) return;
+  field.addEventListener('input', () => {
+    spkQuery = field.value;
+    paintSpeakers(true);
+    sayFind();
+  });
+  field.addEventListener('keydown', (e) => {
+    // While an input method composes (Japanese, Chinese), Down picks a
+    // candidate and Escape cancels the composition: both belong to the IME,
+    // not to the search. keyCode 229 is how WebKit marks such a key.
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape' && field.value) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSpeakerSearch(true);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      const lists = byId('ui2SpkLists');
+      const first = lists && lists.querySelector('.ui2-spk-pick');
+      if (!first) return;
+      e.preventDefault();
+      setRoving(lists, first.dataset.host);
+      first.focus();
+    }
+  });
+}
+
 // setRoving gives Tab to one row: its pick button and its action, and takes it
 // from every other row.
 function setRoving(root, host) {
   rovingHost = host || '';
-  root.querySelectorAll('.ui2-spk-pick, .ui2-spk-act').forEach((b) => {
+  root.querySelectorAll(ROW_BUTTONS).forEach((b) => {
     b.tabIndex = b.dataset.host === rovingHost ? 0 : -1;
   });
 }
@@ -743,6 +1130,9 @@ export function syncShellPlayer(hasBox = !!state.currentBox) {
   if (!live && pops.more) pops.more.close(false);
   playerLive = live;
   applyPlayerGroup();
+  // A speaker that went offline (or another one chosen) takes the source
+  // button with it until its line is drawn again.
+  paintGoSource();
 }
 
 // syncShellGroupPanel is how group.js tells the player whether the selected
@@ -843,17 +1233,41 @@ function paintSpeakers(force) {
     // Phase 5: the empty list says why from the discovery itself.
     discovery: typeof deps.discovery === 'function' ? discoveryNow() : undefined,
     notes: rowNotes,
+    nowName: state.nowName,
+    nowLocation: state.nowLocation,
+    boxNow: state.boxNow || {},
+    review: joinReviewHost,
     attention: deps.speakerAttention,
     label,
     offlineTitle: deps.offlineTitle,
     pairName: deps.pairName,
+    boxPaused: state.boxPaused,
   };
-  const model = sidebarModel(state.boxes, ctx);
-  const levels = levelsText(model);
+  const waiting = () => new Map([...transportWait].map(([h, w]) => [h, w.want]));
+  ctx.transportPending = waiting();
+  let full = sidebarModel(state.boxes, ctx);
+  // A row's Play/Pause press the poll has now confirmed (or given up on)
+  // is no longer pending: the model again, without the mark.
+  if (settleTransport(full)) {
+    ctx.transportPending = waiting();
+    full = sidebarModel(state.boxes, ctx);
+  }
+  // A review whose row no longer asks for one (the speaker stopped, joined,
+  // went offline, left the list) closes by itself; "+" then acts at once.
+  if (joinReviewHost && ![...full.pinned, ...full.others].some((r) => r.host === joinReviewHost && r.reviewOpen)) {
+    joinReviewHost = '';
+  }
+  const levels = levelsText(full);
+  // The search (spksearch.js) only narrows what the list shows; the player's
+  // Levels keep reading the whole model.
+  const findShown = syncSpeakerSearch(searchShown(full));
+  const model = filterSidebarModel(full, findShown ? spkQuery : '', findTerms);
+  lastFindSearch = model.search;
   const sig = JSON.stringify({
     pinned: model.pinned, others: model.others, head: model.headingKey,
     alone: model.pairAlone, searching: model.searching, levels,
     empty: model.emptyPhase, emptyError: model.emptyError, allOffline: model.allOffline, busy: stateSearchBusy(),
+    search: model.search,
   });
   if (!force && sig === lastSpeakersSig) return;
   const lists = byId('ui2SpkLists');
@@ -869,7 +1283,17 @@ function paintSpeakers(force) {
     const active = document.activeElement;
     const inList = !!active && lists.contains(active) && !!active.dataset && !!active.dataset.host;
     const keepHost = inList ? active.dataset.host : '';
-    const keepAct = inList && active.classList.contains('ui2-spk-act');
+    // On "+" or "-", or on the row's Play/Pause: the same button again (a
+    // Play/Pause that left with the music falls back to the name). In the
+    // join review: the same Add or Cancel, else the "+" that opened it.
+    let keepCls = '';
+    if (inList && active.classList.contains('ui2-spk-act')) keepCls = '.ui2-spk-act';
+    else if (inList && active.classList.contains('ui2-spk-tp')) keepCls = '.ui2-spk-tp';
+    const keepJoin = inList && active.classList.contains('ui2-spk-join-btn') ? active.dataset.join : '';
+    if (keepJoin) keepCls = '.ui2-spk-act';
+    // A new search starts the list at its top; a poll keeps where it was.
+    const queryChanged = model.search.query !== paintedQuery;
+    paintedQuery = model.search.query;
     const scrolls = [...lists.querySelectorAll(SPK_LISTS)].map((el) => el.scrollTop);
     const keepField = connectFocus(lists);
     lists.innerHTML = sidebarHTML(model, { focusHost: keepHost || rovingHost });
@@ -878,9 +1302,14 @@ function paintSpeakers(force) {
     [...lists.querySelectorAll(SPK_LISTS)].forEach((el, i) => {
       if (typeof scrolls[i] === 'number') el.scrollTop = scrolls[i];
     });
+    if (queryChanged) {
+      const others = lists.querySelector('.ui2-spk-scroll');
+      if (others) others.scrollTop = 0;
+    }
     if (keepHost) {
       const sel = (cls) => [...lists.querySelectorAll(cls)].find((b) => b.dataset.host === keepHost);
-      const again = (keepAct && sel('.ui2-spk-act')) || sel('.ui2-spk-pick');
+      const again = (keepJoin && sel(`.ui2-spk-join-btn[data-join="${keepJoin}"]`))
+        || (keepCls && sel(keepCls)) || sel('.ui2-spk-pick');
       if (again) again.focus();
     }
   }

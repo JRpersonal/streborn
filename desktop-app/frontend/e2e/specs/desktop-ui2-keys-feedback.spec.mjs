@@ -1,5 +1,6 @@
 // The key tiles of the UI 2.0 preview report in their own line (#1286 phase 5,
-// docs/UI-2.0.md rules 2 and 3): a recall the speaker refused, a hold-to-save,
+// docs/UI-2.0.md rules 2 and 3): a recall the speaker refused, a save from a
+// hold (the hold opens the key's choices, saving what plays is the first),
 // a rename and the Transfer say what happened where it happened, named with
 // the key and the speaker, done only after the speaker's read-back, and the
 // keyboard stays on the key. The last block checks the current layout.
@@ -24,6 +25,15 @@ async function holdKey(page, slot) {
   await page.mouse.down();
   await runFor(page, 1_300);
   await page.mouse.up();
+}
+
+// holdToSave is the same save in the UI 2.0 preview, where a hold opens the
+// key's choices (ui2keyedit.js) and saving what plays is the first of them.
+async function holdToSave(page, slot) {
+  await holdKey(page, slot);
+  const save = page.locator('#ui2KeyEdit [data-ke="save"]');
+  await expect(save).toBeFocused();
+  await save.click();
 }
 
 // Key 6 is not one of STR's keys but the speaker's own (a Deezer mix), which
@@ -73,7 +83,7 @@ test.describe('UI 2.0 key tiles', () => {
       // The read-back takes a moment, so the line can be seen before it.
       await mock.set('GetPresets', { delayMs: 1500 });
       await mock.resetCalls();
-      await holdKey(page, 4);
+      await holdToSave(page, 4);
       // Living Room plays its key 2, so the hold copies key 2 onto key 4.
       await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 4 });
       await expect(line(page, 4)).toHaveText(en('ui2.radio.saving', { n: 4, speaker: LR.friendlyName }));
@@ -92,7 +102,7 @@ test.describe('UI 2.0 key tiles', () => {
     test('3. is not called done', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
-      await holdKey(page, 4);
+      await holdToSave(page, 4);
       await runFor(page, 1_000);
       await expect(line(page, 4)).toHaveText(en('ui2.radio.notConfirmed', { n: 4, speaker: LR.friendlyName }));
       await expect(line(page, 4)).toHaveClass(/is-warn/);
@@ -148,18 +158,30 @@ test.describe('UI 2.0 key tiles', () => {
     await expect(page.locator('#toast')).not.toHaveClass(/show/);
   });
 
-  test('5. Transfer reports under its button, naming both speakers', async ({ app, mock }) => {
-    const { page } = app;
-    await mock.resetCalls();
-    await page.locator('#presetTransferBtn').click();
-    await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
-    await page.locator('#warnConfirm').click();
-    await mock.expectCalled('CopyPresetsAcrossBoxes', { pred: (c) => c.args[0] === LR.host && c.args[2] === BR.host });
-    const status = page.locator('#ui2XferStatus');
-    await expect(status).toHaveAttribute('role', 'status');
-    await expect(status).toHaveText(new RegExp(`^${BR.friendlyName} took \\d+ keys of ${LR.friendlyName}\\.`));
-    await expect(status).toHaveClass(/is-ok/);
-    await expect(page.locator('#toast')).not.toHaveClass(/show/);
+  test.describe('Transfer to a speaker without keys', () => {
+    test.use({ scenario: { presets: { bedroom: [] } } });
+
+    test('5. Transfer reports under its button, naming both speakers', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.resetCalls();
+      await page.locator('#presetTransferBtn').click();
+      await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
+      await page.locator('#warnConfirm').click();
+      // UI 2.0 first reviews the copy (desktop-ui2-copy-keys-review.spec.mjs),
+      // naming the speaker the keys come from, and copies those keys on Copy.
+      await expect(page.locator('#ui2XferReview')).toContainText(en('ui2.keyReview.intro', { source: LR.friendlyName }));
+      await page.locator('#ui2XferReviewCopy').click();
+      await mock.expectCalled('CopyPresetKeysAcrossBoxes', { pred: (c) => c.args[0] === LR.host && c.args[2] === BR.host });
+      const status = page.locator('#ui2XferStatus');
+      await expect(status).toHaveAttribute('role', 'status');
+      // Bedroom keeps one row: keys 1 to 6 go, the two keys pressed twice cannot.
+      await expect(status).toHaveText(
+        en('presets.keyCopyCopied', { target: BR.friendlyName, keys: [1, 2, 3, 4, 5, 6].map((n) => en('preset.key', { n })).join(', ') }) + ' '
+        + en('presets.keyCopyNotKept', { target: BR.friendlyName, keys: [1, 3].map((n) => en('preset.row2.key', { n })).join(', ') }),
+      );
+      await expect(status).toHaveClass(/is-warn/);
+      await expect(page.locator('#toast')).not.toHaveClass(/show/);
+    });
   });
 });
 

@@ -17,6 +17,7 @@ import { escapeAttr, escapeHtml } from '../utils.js';
 import { donateButtonsHTML } from '../donate.js';
 import { NAV } from './nav.js';
 import { SUBNAV } from './speakers/routes.js';
+import { searchFieldHTML } from './spksearch.js';
 
 function navItemHTML(item) {
   const badge = item.badgeId
@@ -65,6 +66,7 @@ export function shellMarkup() {
     </div>
     <section class="ui2-spk" id="ui2Speakers" aria-labelledby="ui2SpkHead">
       <h2 class="u-sr-only" id="ui2SpkHead">${escapeHtml(t('ui2.side.speakers'))}</h2>
+      ${searchFieldHTML()}
       <div class="ui2-spk-lists" id="ui2SpkLists"></div>
     </section>
     <section class="ui2-support" id="ui2Support" aria-label="${escapeAttr(t('ui2.help.support'))}">
@@ -85,7 +87,12 @@ export function shellMarkup() {
     <div class="ui2-main-inner" id="ui2MainInner">${speakersAreaHTML()}<div id="view-speakers" class="view hidden"></div><div id="view-help" class="view hidden"></div></div>
   </main>
   <section class="ui2-player" id="ui2Player" aria-label="${escapeAttr(t('ui2.player.label'))}">
-    <div class="ui2-player-now"></div>
+    <div class="ui2-player-now">
+      <div class="ui2-now-row">
+        <div class="ui2-now-line" id="ui2NowLine"></div>
+        <button type="button" class="u-btn u-btn--secondary ui2-go-source" id="ui2GoSource" hidden><span class="ui2-go-source-text"></span></button>
+      </div>
+    </div>
     <div class="ui2-player-transport"></div>
     <div class="ui2-player-more u-pop-anchor">
       <button type="button" class="u-btn u-btn--secondary" id="ui2MoreBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="ui2MorePop">${escapeHtml(t('ui2.player.more'))}</button>

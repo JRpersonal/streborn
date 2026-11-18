@@ -178,6 +178,8 @@ export function IsBoseStick(arg1:string):Promise<boolean>;
 
 export function KeepSpeakerWiFiCopy(arg1:string,arg2:number,arg3:string):Promise<main.WiFiCopyResult>;
 
+export function LibraryFolder(arg1:string,arg2:string):Promise<main.LibraryContainer>;
+
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
 export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
@@ -227,6 +229,8 @@ export function PrepareFirmwareStick(arg1:string,arg2:string):Promise<main.Firmw
 export function PrepareFirmwareStickFromFile(arg1:string,arg2:string,arg3:string):Promise<main.FirmwareStickResult>;
 
 export function Prev(arg1:string,arg2:number):Promise<void>;
+
+export function PreviewPresetKeyCopy(arg1:string,arg2:number,arg3:string,arg4:number,arg5:Array<number>):Promise<main.KeyCopyPreview>;
 
 export function ProbeSetupAP():Promise<main.SetupAPProbe>;
 
