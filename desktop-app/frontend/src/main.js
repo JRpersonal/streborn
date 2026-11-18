@@ -278,6 +278,7 @@ import {
 } from './shell2/mount.js';
 import { playerOnScreen } from './statusrefreshscope.js';
 import { watchTabs } from './tabfit.js';
+import { mountTitleExpand } from './titleexpand.js';
 applyA11y();
 // Speaker Settings view (extracted from this monolith, same pattern as the views
 // above). loadBoxSettings is the entry point switchView calls; langOptionsHtml /
@@ -1376,6 +1377,9 @@ mountMusicView();
 // UI 2.0 preview: the new shell is built around the views just mounted, only
 // when the preview is switched on (Aa menu > Layout). Off, nothing here runs.
 if (getUi2Preview()) safeMountShell2();
+// A click on a cut-off title in a list opens it to its full length (#1811).
+// One listener for the whole window, in both layouts.
+mountTitleExpand();
 
 // safeMountShell2 builds the UI 2.0 preview shell (shell2/mount.js) and hands
 // it what it needs from this file. A failure leaves the current layout as it

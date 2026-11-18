@@ -209,12 +209,16 @@ const dummyPairXML = `<?xml version="1.0" encoding="UTF-8" ?>` +
 // a factory-fresh Wave (2026-11-17 bundle) answered without ever calling the
 // local responder and its UUID never appeared, and nothing recorded what it
 // said, so the answer is logged with its status and the start of its body.
-func (a *App) setMargeAccountDummy(host string) string {
+//
+// refused is true only when the box ANSWERED with something other than 200 (the
+// Wave of the 2026-11-18 bundle: HTTP 500, SET_MARGE_ACCOUNT_ERROR 1038, within
+// a second). A timeout is not a refusal.
+func (a *App) setMargeAccountDummy(host string) (line string, refused bool) {
 	client := &http.Client{Timeout: 12 * time.Second}
 	url := fmt.Sprintf("http://%s:8090/setMargeAccount", host)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(dummyPairXML))
 	if err != nil {
-		return "setMargeAccount: request not built: " + err.Error()
+		return "setMargeAccount: request not built: " + err.Error(), false
 	}
 	req.Header.Set("Content-Type", "application/xml")
 	start := time.Now()
@@ -223,13 +227,89 @@ func (a *App) setMargeAccountDummy(host string) string {
 	if err != nil {
 		// A timeout is the common, expected outcome and still sets the UUID.
 		a.logger.Info("telnet-bootstrap: setMargeAccount returned no clean response (expected; the box still stores the account)", "host", host, "err", err, "took", took)
-		return fmt.Sprintf("setMargeAccount: no clean response after %v (expected): %v", took, err)
+		return fmt.Sprintf("setMargeAccount: no clean response after %v (expected): %v", took, err), false
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
 	snippet := strings.Join(strings.Fields(string(body)), " ")
 	a.logger.Info("telnet-bootstrap: setMargeAccount answered", "host", host, "status", resp.StatusCode, "took", took, "body", snippet)
-	return fmt.Sprintf("setMargeAccount: HTTP %d after %v: %s", resp.StatusCode, took, snippet)
+	return fmt.Sprintf("setMargeAccount: HTTP %d after %v: %s", resp.StatusCode, took, snippet), resp.StatusCode != http.StatusOK
+}
+
+// boxPoster POSTs an XML body to one path of the speaker's :8090 API and returns
+// the HTTP status and the start of the answer. A seam so the setup bracket below
+// is testable without a speaker.
+type boxPoster func(path, body string) (status int, answer string, err error)
+
+// boxPosterFor is the real boxPoster for host.
+func boxPosterFor(host string) boxPoster {
+	client := &http.Client{Timeout: 12 * time.Second}
+	return func(path, body string) (int, string, error) {
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:8090%s", host, path), strings.NewReader(body))
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Content-Type", "application/xml")
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, "", err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
+		return resp.StatusCode, strings.Join(strings.Fields(string(b)), " "), nil
+	}
+}
+
+// setupBracketStates is the setup state machine the Bose app walked BEFORE it
+// sent setMargeAccount to a speaker that had never been set up (order from the
+// documented app capture: gesellix/Bose-SoundTouch, DEVICE-PAIRING-FLOW). The
+// language step of that capture is not repeated here, the install sets the
+// language before it ever reaches the unlock.
+var setupBracketStates = []string{
+	`<setupState state="SETUP_START"/>`,
+	`<setupState state="SETUP_IDENTIFY_DEVICE_ENTER" timeout="300000"/>`,
+	`<setupState state="SETUP_ENTER"/>`,
+	`<setupState state="SETUP_IDENTIFY_DEVICE_LEAVE"/>`,
+}
+
+// pairInsideSetupBracket repeats the dummy-account request the way the Bose app
+// sent it: inside the setup state machine. It is the second attempt for a
+// speaker that refused the bare request (a never-set-up Wave answered it with
+// SET_MARGE_ACCOUNT_ERROR 1038, 2026-11-18). Whether the bracket is what that
+// firmware wants is NOT proven, no such speaker was on the bench; every answer
+// is therefore written to the unlock log so the next bundle decides it.
+//
+// SETUP_LEAVE is sent whenever SETUP_START went out, also after a failure, so
+// the speaker is never left inside its setup state. Returns whether the speaker
+// accepted the account (HTTP 200).
+func pairInsideSetupBracket(post boxPoster, log *strings.Builder) bool {
+	step := func(path, body string) (int, bool) {
+		status, answer, err := post(path, body)
+		if err != nil {
+			fmt.Fprintf(log, "setup bracket: POST %s %s: %v\n", path, body, err)
+			return 0, false
+		}
+		fmt.Fprintf(log, "setup bracket: POST %s %s: HTTP %d: %s\n", path, body, status, answer)
+		return status, true
+	}
+	accepted := false
+	started := false
+	walked := true
+	for _, st := range setupBracketStates {
+		if _, ok := step("/setup", st); !ok {
+			walked = false
+			break
+		}
+		started = true
+	}
+	if walked {
+		status, ok := step("/setMargeAccount", dummyPairXML)
+		accepted = ok && status == http.StatusOK
+	}
+	if started {
+		step("/setup", `<setupState state="SETUP_LEAVE"/>`)
+	}
+	return accepted
 }
 
 // enableSSHViaTelnetBootstrap is the factory-reset unlock: it gives the box a
@@ -290,7 +370,21 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 			return false, log.String(), false
 		}
 	}
-	fmt.Fprintf(&log, "%s\n", a.setMargeAccountDummy(host))
+	pairLine, accountRefused := a.setMargeAccountDummy(host)
+	fmt.Fprintf(&log, "%s\n", pairLine)
+	if accountRefused {
+		// The speaker said no instead of timing out. Record what it thinks its
+		// own setup state is, then ask again the way the Bose app did.
+		for _, path := range []string{"/soundTouchConfigurationStatus", "/setup"} {
+			body, gerr := a.boseGet(host, path)
+			if gerr != nil {
+				body = "not readable: " + gerr.Error()
+			}
+			fmt.Fprintf(&log, "GET %s: %s\n", path, strings.Join(strings.Fields(body), " "))
+		}
+		accountRefused = !pairInsideSetupBracket(boxPosterFor(host), &log)
+		a.logger.Info("telnet-bootstrap: the speaker refused the bare dummy account; repeated it inside the setup state machine", "host", host, "acceptedNow", !accountRefused)
+	}
 	// Wait for the association to actually PERSIST the account before injecting.
 	// The box POSTs to the responder over a few seconds (device -> full ->
 	// provider_settings) and only then stores its margeAccountUUID; checking
@@ -310,6 +404,16 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	}
 	fmt.Fprintf(&log, "dummy account persisted against local responder: %v (margeHits=%d)\n", uuidStuck, marge.hits.Load())
 	a.logger.Info("telnet-bootstrap: dummy account association result", "host", host, "uuidPersisted", uuidStuck, "margeHits", marge.hits.Load())
+	if accountRefused && !uuidStuck && marge.hits.Load() == 0 {
+		// Refused twice, nothing stored, never called this PC: a speaker without
+		// an account does not run the boot check the injection rides on, so the
+		// reboot and the four-minute wait cannot open SSH. Stop here; the caller
+		// restores the stock URLs. Not a firewall case, the speaker never tried.
+		t.close()
+		fmt.Fprintf(&log, "the speaker refused the dummy account with and without the setup state machine; unlock stopped before the reboot\n")
+		a.logger.Warn("telnet-bootstrap: the speaker refused the dummy account twice and stored none; stopping before the reboot (not a firewall case)", "host", host)
+		return false, log.String(), false
+	}
 
 	// Now swap marge to the INJECTION (same reachable base, so the boot curl
 	// connects to the responder as GET / and then runs the ;touch;sshd payload).

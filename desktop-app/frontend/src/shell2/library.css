@@ -334,6 +334,26 @@ html.ui2 #view-library .lib2-loading {
   color: var(--u-muted);
   font-size: var(--u-fs-md);
 }
+/* The track that plays right now (#1874): its title in the playing colour
+   and three moving bars where the note icon was, so it is found at a glance
+   in a long folder and not told by colour alone. The bars are a background,
+   no asset; they stand still for a viewer who asked for less motion. */
+html.ui2 #view-library .lib2-track.is-now .lib2-name { color: var(--u-ok); }
+html.ui2 #view-library .lib2-track.is-now .lib2-icon { color: var(--u-ok); }
+html.ui2 #view-library .lib2-track.is-now .lib2-icon svg { display: none; }
+html.ui2 #view-library .lib2-track.is-now .lib2-icon::after {
+  width: 16px;
+  height: 16px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 4px 45% no-repeat,
+    linear-gradient(currentColor, currentColor) 50% 100% / 4px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 100% / 4px 70% no-repeat;
+  content: "";
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.ui2 #view-library .lib2-track.is-now .lib2-icon::after { animation: lib2-now-bars 700ms ease-in-out infinite alternate; }
+}
+@keyframes lib2-now-bars { to { background-size: 4px 100%, 4px 40%, 4px 95%; } }
 html.ui2 #view-library .lib2-spinner {
   flex: 0 0 auto;
   width: 16px;

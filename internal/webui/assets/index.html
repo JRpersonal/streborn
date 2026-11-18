@@ -161,6 +161,11 @@ header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; pa
    name. overflow-wrap breaks a name with no spaces, which line-clamp alone
    would let run out sideways. */
 .clamp2, .nowcard .now.clamp2 { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+/* A name on one line, cut with "…" (the music servers under More). */
+.cut1 { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* A cut-off title a tap opened to its full length (#1811, titlePress below). */
+.clamp2.title-open, .nowcard .now.clamp2.title-open { -webkit-line-clamp:unset; line-clamp:unset; overflow:visible; }
+.cut1.title-open { overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
 .nowcard .st { font-size:13px; color:var(--muted); margin-top:3px; }
 .nowcard.loading { opacity:.6; }
 .trackprog { display:flex; align-items:center; gap:8px; margin-top:8px; font-variant-numeric:tabular-nums; }
@@ -530,6 +535,14 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .station .sname small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
 .station .btn { flex:none; min-height:44px; padding:8px 12px; font-size:13px; text-align:center; }
 .station .btn.fill { flex:1 1 0; }
+/* The track that plays right now in a folder of the music library (#1874):
+   its title in the accent colour with three moving bars in front of it, so it
+   is found at a glance in a long folder and not told by colour alone. The bars
+   are a background, no asset; the reduced-motion rule further down stops them. */
+.station.now .sname { color:var(--accent); font-weight:600; }
+.station.now .sname small { font-weight:400; }
+.station.now .sname::before { content:""; display:inline-block; width:14px; height:12px; margin-right:7px; background:linear-gradient(currentColor,currentColor) 0 100% / 3px 45% no-repeat, linear-gradient(currentColor,currentColor) 50% 100% / 3px 100% no-repeat, linear-gradient(currentColor,currentColor) 100% 100% / 3px 70% no-repeat; animation:nowbars .7s ease-in-out infinite alternate; }
+@keyframes nowbars { to { background-size:3px 100%, 3px 40%, 3px 95%; } }
 .station .btn.rec-del { min-width:44px; padding:8px; font-size:18px; line-height:1; color:var(--muted); }
 /* The name button takes the room; the star and, with more than one
    favourite, the up and down buttons (#1519) follow it on the same line. */
@@ -1930,6 +1943,64 @@ function onBass(v) {
   if (bassTimer) clearTimeout(bassTimer);
   bassTimer = setTimeout(function(){ if (+v !== bassLast) { bassLast = +v; api('/api/box/bass','PUT',{value:+v}); } }, 250);
 }
+// Tap a cut-off title to read all of it (discussion #1811). Long station and
+// track names stop after two lines with "…" (#1783) and the full name sat in
+// the title attribute, which a phone has no way to show. A tap on the cut-off
+// TEXT opens that one name to its full length, a second tap closes it.
+//
+// It must not get in the way of what a row does: only the name reacts, never
+// the row or its buttons; a name inside a control (a key tile, an alarm row,
+// any button) is left alone, there the tap belongs to the control; a name that
+// fits does nothing; and selecting text is not a tap. No new control, no new
+// string. The now-playing card is written again by every status poll and the
+// lists are drawn again when they change, so the opened names are remembered
+// and opened again on what comes back. The same rule as the desktop app's
+// titleexpand.js.
+var TITLE_SEL = '.clamp2, .cut1';
+var TITLE_CTRL = 'button, a, input, select, textarea, label, summary, [role="button"], .preset';
+var TITLE_MAX_OPEN = 50;
+var openTitles = [];
+function titlePress(inControl, open, cutOff, selecting) {
+  if (inControl || selecting) return '';
+  if (open) return 'close';
+  return cutOff ? 'open' : '';
+}
+function titleCutOff(el) {
+  return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+}
+function titleName(el) {
+  return String(el.textContent || '').trim();
+}
+function titleRemember(name, on) {
+  openTitles = openTitles.filter(function (n) { return n !== name; });
+  if (on && name) openTitles.push(name);
+  if (openTitles.length > TITLE_MAX_OPEN) openTitles = openTitles.slice(openTitles.length - TITLE_MAX_OPEN);
+}
+document.addEventListener('click', function (ev) {
+  var el = ev.target && ev.target.closest ? ev.target.closest(TITLE_SEL) : null;
+  if (!el) return;
+  var sel = window.getSelection ? String(window.getSelection() || '') : '';
+  var open = el.classList.contains('title-open');
+  var press = titlePress(!!el.closest(TITLE_CTRL), open, !open && titleCutOff(el), sel.trim() !== '');
+  if (!press) return;
+  el.classList.toggle('title-open', press === 'open');
+  titleRemember(titleName(el), press === 'open');
+});
+if (window.MutationObserver) {
+  new MutationObserver(function (muts) {
+    if (!openTitles.length) return;
+    muts.forEach(function (m) {
+      Array.prototype.forEach.call(m.addedNodes, function (node) {
+        if (node.nodeType !== 1) return;
+        var found = Array.prototype.slice.call(node.querySelectorAll(TITLE_SEL));
+        if (node.matches(TITLE_SEL)) found.push(node);
+        found.forEach(function (el) {
+          if (openTitles.indexOf(titleName(el)) >= 0 && !el.closest(TITLE_CTRL)) el.classList.add('title-open');
+        });
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
+}
 // setNow renders the now-playing card and clears its loading state.
 function setNow(name, state) {
   document.getElementById('status').innerHTML = '<span class="now clamp2" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' + (state ? '<div class="st">' + escapeHtml(state) + '</div>' : '');
@@ -2010,14 +2081,31 @@ async function cycleRepeat() {
 // the desktop app's #202 toggle). paused tracks the live transport state so the
 // tap sends the right command even between status polls.
 var paused = false;
-function applyTransportUI(state) {
+// What the next press does (discussion #1920): 'pause' while something plays,
+// 'resume' on a paused or stopped stream, and 'wake' on a speaker in standby
+// or with nothing loaded. The Bose remote's Play key starts a speaker with
+// what it played last; this button sent /api/resume there, which reaches a
+// transport that has nothing to resume, so a press did nothing. 'wake' is the
+// power button's "on" (/api/box/power): wake the speaker and bring back the
+// last item. The same rule as the desktop app's playbutton.js.
+var ppAction = 'pause';
+var ppBusy = false;
+function playButtonAction(state, src) {
+  var up = String(src || '').toUpperCase();
+  if (state === 'PLAY_STATE' || state === 'BUFFERING_STATE') return 'pause';
+  if (up === 'STANDBY' || up === 'INVALID_SOURCE') return 'wake';
+  if (state === 'PAUSE_STATE' || state === 'STOP_STATE') return 'resume';
+  return 'pause';
+}
+function applyTransportUI(state, src) {
   // A stopped stream offers Play, exactly like a paused one. Only PAUSE_STATE
   // counted before, so after pressing Stop the button still read Pause and
   // sent /api/pause to a transport that was already stopped: the control did
   // nothing and there was no way back to the music without picking a key
-  // again. INVALID_SOURCE is deliberately NOT included: nothing is loaded
-  // there, so Play would promise something that cannot happen.
-  paused = (state === 'PAUSE_STATE' || state === 'STOP_STATE');
+  // again. A speaker in standby or with nothing loaded (INVALID_SOURCE)
+  // offers Play too since #1920: the press wakes it and resumes the last item.
+  ppAction = playButtonAction(state, src);
+  paused = ppAction !== 'pause';
   var b = document.getElementById('btnPause');
   if (!b) return;
   // Swap both the glyph and the label so a paused stream offers Play (#382): the
@@ -2035,6 +2123,19 @@ function applyTransportUI(state) {
 }
 async function togglePlayPause(btn) {
   if (!paused) { await pp(btn, '/api/pause'); return; }
+  if (ppAction === 'wake') {
+    // One wake at a time: it takes the speaker a few seconds, and a second
+    // tap in that time would push the last station twice.
+    if (ppBusy) return;
+    ppBusy = true;
+    press(btn);
+    // The power button follows at once, as after a tap on itself. Nothing
+    // but the power-on is sent: the level stays where the listener left it.
+    boxOn = true; applyPowerUI();
+    try { await api('/api/box/power', 'POST', { on: true }); } finally { ppBusy = false; }
+    setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
+    return;
+  }
   // A resume is a play: on a stereo pair follower it is refused with the pair
   // notice instead of being silently ignored by the speaker.
   press(btn);
@@ -2226,7 +2327,7 @@ async function loadMusicLib() {
     row.className = 'row';
     row.style.cssText = 'align-items:center;justify-content:space-between;gap:10px;margin-top:8px';
     var name = document.createElement('div');
-    name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    name.className = 'cut1';
     name.textContent = s.friendlyName || s.modelName || s.id;
     var b = document.createElement('button');
     b.className = 'btn';
@@ -4057,7 +4158,7 @@ async function refreshStatus() {
   // it off, which was the whole point of the request).
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
-  applyTransportUI(state);
+  applyTransportUI(state, src);
   if (ui2On) ui2NoteState(state, src);
   // INVALID_PLAY_STATUS is what a speaker reports while it has no transport at
   // all, e.g. during Bluetooth pairing. It is a state like the others, so it
@@ -4135,6 +4236,8 @@ async function refreshStatus() {
   if (queue) followPlayMode(queue, pmSeq);
   // The same read lights the key a folder was started from (#1029).
   markPlaying(nowLoc, queue, spKey, state);
+  // And the row of the running track in the open folder (#1874).
+  browseMarkNow(browseNowURLs(playing && upnpPlay, queue, nowLoc));
   if (!song && playing && queue) song = queueSongMeta(queue);
   // A single library track: its artist and album as its start named them,
   // from the same read (#1839). Never for a proxied radio stream.
@@ -5651,6 +5754,7 @@ async function searchLibrary(q) {
   if (!lastLibResults.length) return;
   lastLibResults.forEach(function(it, idx){
     var row = document.createElement('div'); row.className = 'station';
+    if (it.url) { row.setAttribute('data-url', it.url); browseMarkRow(row); }
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = it.title || it.url;
     var sub = document.createElement('small');
@@ -8588,6 +8692,37 @@ async function browseOpen(start) {
     more.onclick = function(){ browseOpen(seen); };
   }
 }
+/* The track that plays right now, marked in the open folder and in the
+   library search results (#1874). brNow holds the addresses that count as playing, set by every status poll: the
+   address the agent's queue handed the speaker last (it knows the running
+   track seconds before the speaker's own now_playing does) and the speaker's
+   location. A row is matched by its track address, never by its title, so two
+   tracks with the same name do not both light up. */
+var brNow = [];
+function browseLocPlain(loc) {
+  return String(loc || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function (_, h) { return String.fromCharCode(parseInt(h, 16)); });
+}
+function browseNowURLs(playing, queue, loc) {
+  if (!playing) return [];
+  var out = [];
+  if (queue && typeof queue.url === 'string' && queue.url) out.push(queue.url);
+  var plain = browseLocPlain(loc);
+  if (!out.length && plain) out.push(plain);
+  return out;
+}
+function browseMarkNow(urls) {
+  brNow = Array.isArray(urls) ? urls : [];
+  var rows = document.querySelectorAll('.station[data-url]');
+  for (var i = 0; i < rows.length; i++) browseMarkRow(rows[i]);
+}
+function browseMarkRow(row) {
+  var on = brNow.indexOf(row.getAttribute('data-url')) >= 0;
+  row.classList.toggle('now', on);
+  if (on) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
+}
 /* renderBrowseList draws what the open folder has loaded, in the order chosen
    above. */
 function renderBrowseList() {
@@ -8652,6 +8787,7 @@ function renderBrowseList() {
   }
   ord.tracks.forEach(function(it){
     var row = document.createElement('div'); row.className = 'station';
+    if (it.url) { row.setAttribute('data-url', it.url); browseMarkRow(row); }
     var nm = document.createElement('div'); nm.className = 'sname';
     nm.textContent = it.title || it.url;
     var sub = document.createElement('small');

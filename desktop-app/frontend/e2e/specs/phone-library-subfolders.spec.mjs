@@ -46,6 +46,12 @@ async function routeLibrary(page, playReply) {
   return plays;
 }
 
+// The speaker's answer while it plays a music library file.
+const upnpStatus = (it) => '<?xml version="1.0" encoding="UTF-8"?>'
+  + '<nowPlaying deviceID="A1B2C3D4E5F6" source="UPNP">'
+  + `<ContentItem source="UPNP" location="${it.url}" isPresetable="true"><itemName>${it.title}</itemName></ContentItem>`
+  + '<playStatus>PLAY_STATE</playStatus></nowPlaying>';
+
 async function openArtist(page) {
   await page.locator('#tabBrowse').click();
   await expect(page.locator('#panelBrowse')).toBeVisible();
@@ -104,5 +110,35 @@ test.describe('phone library browser', () => {
     expect(await names(page)).toEqual(['Late Train', 'Blue Hour']);
     // A folder with tracks keeps the ordinary folder play.
     await expect(page.locator('#btnBrowseTree')).toHaveCount(0);
+  });
+
+  test('4. the track that plays is marked in its folder, and the mark follows the music (#1874)', async ({ phone }) => {
+    const { page, handler } = phone;
+    await routeLibrary(page, { status: 'ok' });
+    await openArtist(page);
+    await page.locator('#browseList .station', { hasText: 'Night Lines' }).locator('button').click();
+    const row = (title) => page.locator('#browseList .station', { hasText: title });
+    await expect(row('Late Train')).toBeVisible();
+    // A radio station plays: no row is marked.
+    await expect(page.locator('#browseList .station.now')).toHaveCount(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-library-nothing-playing.png` });
+    // The folder plays as a queue and is on its first track.
+    const [late, blue] = FOLDERS.night.tracks;
+    const playing = (it) => {
+      handler.options.overrides = {
+        '/api/status': { contentType: 'application/xml', body: upnpStatus(it) },
+        '/api/queue': { body: { active: true, pos: 0, shuffle: false, repeat: 'off', url: it.url, items: [{ title: it.title, artist: it.artist, album: it.album }] } },
+      };
+      return page.evaluate(() => window.refreshStatus());
+    };
+    await playing(late);
+    await expect(row('Late Train')).toHaveClass(/now/);
+    await expect(row('Late Train')).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#browseList .station.now')).toHaveCount(1);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-library-playing-track.png` });
+    // The queue moves on while the list stays open.
+    await playing(blue);
+    await expect(row('Blue Hour')).toHaveClass(/now/);
+    await expect(row('Late Train')).not.toHaveClass(/now/);
   });
 });

@@ -101,7 +101,9 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 	// resets the toggle, the deferred restore covers the failure paths.
 	defer s.boostUploadThroughput("agent-update")()
 	// Quieten the speaker before the transfer starts (hushforupload.go).
-	s.hushForUpload("agent-update")
+	// A speaker that was playing carries on after the restart; decided here,
+	// from what it reported before it went quiet (resume_update.go).
+	resume := s.planUpdateResume(s.hushForUpload("agent-update"))
 	const maxSize = 30 * 1024 * 1024
 	if up.Size > maxSize {
 		return agentInstalled{}, textUploadRefusal(http.StatusRequestEntityTooLarge, errUploadTooBig.Error())
@@ -217,6 +219,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 			} else {
 				s.logger.Warn("could not write OTA-reboot marker (ram-staged); post-OTA resume may fire", "err", werr)
 			}
+			s.writeUpdateResumeMarker(resume)
 			if restartOnly {
 				// The helper starts the new agent itself instead of rebooting
 				// (otarestart.go): it holds run.sh's PID file through the copy,
@@ -295,6 +298,7 @@ func (s *Server) installAgentUpload(up upload) (agentInstalled, *uploadRefusal) 
 		if werr := os.WriteFile(otaRebootMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); werr != nil {
 			s.logger.Warn("could not write OTA-reboot marker; post-OTA resume may fire", "err", werr)
 		}
+		s.writeUpdateResumeMarker(resume)
 		// Unconditional flush before the reboot. refreshStickAgentBinary syncs
 		// only when a stick is mounted; on a stickless box (the #381 field
 		// case) nothing else flushed this path before v0.9.7. Every other
@@ -379,6 +383,14 @@ func (s *Server) installEngineUpload(up upload) (engineInstalled, *uploadRefusal
 	// deliberately still buffers, because its fallback tiers need the bytes
 	// again after the write.
 	defer s.boostUploadThroughput("sidecar")()
+	// An engine that arrives after an update's restart quietens a speaker
+	// that has just carried on; it gets its music back when the transfer is
+	// over (resume_update.go).
+	s.engineUploads.Add(1)
+	defer func() {
+		s.engineUploads.Add(-1)
+		s.afterEngineUpload()
+	}()
 	sum, size, ref := s.streamELFUpload(up, s.logger, "sidecar", goLibrespotBinPath)
 	if ref != nil {
 		return engineInstalled{Size: size}, ref
