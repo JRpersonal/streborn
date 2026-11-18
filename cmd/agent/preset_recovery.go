@@ -119,34 +119,40 @@ func boxPresetsFromEntries(entries []boxPresetEntry) []webui.BoxPreset {
 }
 
 // stampLostBoxPresets sets Lost on every StrOrigin slot the store has nothing
-// on and no webhook-only key claims, in place, and returns the same slice.
+// on and no placeholder key claims, and Row2Key on the placeholders whose
+// single press plays the key's second row, in place, and returns the same
+// slice.
 //
-// The webhook exclusion is the point of doing this on the agent. A key
-// configured as "webhook only" (#536) holds a placeholder in STR's own
-// /stream/N form so the firmware reports its press, and is kept OUT of the
-// store on purpose (webhookOnlySlots). Judged by the location alone, as the
-// desktop would have to, it is indistinguishable from a dead key: the tile
-// would say the key was lost in a reinstall, a tap would explain instead of
-// pressing the key, and the webhook the user set up would never fire from the
-// app. Only the agent sees the store and the webhook config, so only the
-// agent can tell the two apart.
+// The placeholder exclusion is the point of doing this on the agent. A key
+// with only a webhook (#536) or only a second-row station (#1910) holds a
+// placeholder in STR's own /stream/N form so the firmware reports its press,
+// and is kept OUT of the store on purpose (placeholderKeys). Judged by the
+// location alone, as the desktop would have to, it is indistinguishable from a
+// dead key: the tile would say the key was lost in a reinstall, a tap would
+// explain instead of pressing the key, and the webhook the user set up would
+// never fire from the app. Only the agent sees the store and the webhook
+// config, so only the agent can tell the two apart.
 //
 // Every producer hands over a fresh slice (a gabbo frame mapping, a
 // boxPresetsFromEntries result), so the in-place write never touches a list
 // the webui cache already holds.
 func stampLostBoxPresets(bps []webui.BoxPreset, store *presets.Store, wh *webhooks.Store) []webui.BoxPreset {
-	stored := map[int]bool{}
+	var all []presets.Preset
 	if store != nil {
-		for _, p := range store.All() {
-			stored[p.Slot] = true
-		}
+		all = store.All()
 	}
-	hooked := map[int]bool{}
-	for _, slot := range wh.ReplacePresetSlots() {
-		hooked[slot] = true
+	stored := map[int]bool{}
+	for _, p := range all {
+		stored[p.Slot] = true
+	}
+	claimed := map[int]keyPlaceholder{}
+	for _, k := range placeholderKeys(wh, all) {
+		claimed[k.slot] = k
 	}
 	for i := range bps {
-		bps[i].Lost = bps[i].StrOrigin && !stored[bps[i].Slot] && !hooked[bps[i].Slot]
+		k, isHolder := claimed[bps[i].Slot]
+		bps[i].Lost = bps[i].StrOrigin && !stored[bps[i].Slot] && !isHolder
+		bps[i].Row2Key = bps[i].StrOrigin && isHolder && k.playsRow2
 	}
 	return bps
 }
@@ -232,9 +238,9 @@ func pruneStaleKeysOnEmptyStore(store *presets.Store, wh *webhooks.Store, boxHos
 		return false
 	}
 	publishBoxPresetList(entries)
-	if stick := boxRowPresets(store.All()); len(stick) > 0 || len(webhookOnlySlots(wh, stick)) > 0 {
+	if all := store.All(); len(boxRowPresets(all)) > 0 || len(placeholderSlots(wh, all)) > 0 {
 		logger.Info("preset reconcile: the store filled while the box list was read (a restore or a save landed), leaving the keys to the next pass",
-			"storeCount", len(stick))
+			"storeCount", len(all))
 		return false
 	}
 	boxLocs := make(map[int]string, len(entries))

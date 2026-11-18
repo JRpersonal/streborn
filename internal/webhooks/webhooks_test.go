@@ -219,4 +219,20 @@ func TestFireKeyFallsBackToLegacyThumb(t *testing.T) {
 	if got := nilStore.FireKey(ctx, KeyPrev); got != "" {
 		t.Fatalf("nil store must be safe, got %q", got)
 	}
+	// KeyConfigured answers what FireKey would do, without firing.
+	for id, want := range map[string]bool{KeyThumbsUp: true, KeyThumbsDown: true, KeyPrev: false} {
+		if got := s.KeyConfigured(id); got != want {
+			t.Errorf("KeyConfigured(%q) = %v, want %v", id, got, want)
+		}
+	}
+	s.cfg.Thumb.Enabled = false
+	if s.KeyConfigured(KeyThumbsUp) || !s.KeyConfigured(KeyThumbsDown) {
+		t.Error("with the shared thumbs action off, only thumbs down carries a webhook")
+	}
+	if nilStore.KeyConfigured(KeyThumbsUp) {
+		t.Error("a nil store carries no webhook")
+	}
+	if len(hits) != 2 {
+		t.Fatalf("KeyConfigured fired a webhook: hits=%v", hits)
+	}
 }

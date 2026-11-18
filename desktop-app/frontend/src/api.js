@@ -24,6 +24,8 @@ export {
   GetQueue,
   PhoneQR,
   PhoneAddressFor,
+  StickerImage,
+  SaveStickerPDF,
   RebootBox,
   RepairSpeakerName,
   RecordUpdateIntent,
@@ -64,6 +66,7 @@ export {
   EjectDrive,
   BoxAgentVersion,
   BoxStoragePreflight,
+  BoxRestartPlan,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
   RecordOTAOutcome,
@@ -348,6 +351,17 @@ export function ReplayFolderCard(host, port, key, name, art) {
 // be the reason a save fails, so callers ignore the rejection.
 export function LogSpotifySaveGate(host, slot, canRecall, premiumRequired, notice) {
   return callOptionalBinding('LogSpotifySaveGate', [host, slot, canRecall, premiumRequired, notice]);
+}
+
+// KeepSpeakerWiFiCopy lets STR keep its own copy of the speaker's Wi-Fi from
+// this computer's current network, store-only (wificopy.js, desktop-app
+// wificopy.go); StoreSpeakerWiFiCopy writes the one the owner typed. Both
+// resolve to { stored, reason, note }. Optional bindings, per the note above.
+export function KeepSpeakerWiFiCopy(host, port, trigger) {
+  return callOptionalBinding('KeepSpeakerWiFiCopy', [host, port || 0, trigger || '']);
+}
+export function StoreSpeakerWiFiCopy(host, port, ssid, password) {
+  return callOptionalBinding('StoreSpeakerWiFiCopy', [host, port || 0, ssid, password]);
 }
 
 // LogSetupWifiStep records that the setup's Wi-Fi step ran and how it ended

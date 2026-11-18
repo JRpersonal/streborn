@@ -134,7 +134,17 @@ export function maybeShowSpeakerUpdateCard() {
           // quality) before it can ask, which is seconds of silence on a busy
           // LAN. It keeps its own "checking" toast up; the card stays on screen
           // in its working state until that flow commits or backs out.
-          const started = await updateAllBoxes(hide);
+          //
+          // This card named the speakers, said what the update does to them,
+          // and the click is the owner's yes. So the run is told which
+          // speakers that yes covers and whether the group note was on the
+          // card: it then asks again only about what its pre-scan finds that
+          // the card could not know, and otherwise goes straight to its
+          // progress window (#1954, updateAllConfirmPlan).
+          const started = await updateAllBoxes(hide, {
+            named: [...wanted],
+            groupNoteShown: !!$('sucGroupNote'),
+          });
           if (!started) restore();
           return;
         }

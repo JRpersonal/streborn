@@ -250,6 +250,7 @@ import {
 // file stops growing.
 import { renderRecent, initRecentView, repaintRecentFavStars } from './views/recent.js';
 import { shareModalHTML, openShareModal } from './share.js';
+import { stickerModalHTML } from './stickers/dialog.js';
 import { donateButtonsHTML, wireDonateButtons, donateFooterLinkHTML } from './donate.js';
 import { renderMultiroom, initMultiroomView, stopMultiroomLive, resetMultiroomNotes } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
@@ -278,6 +279,7 @@ import {
 } from './shell2/mount.js';
 import { playerOnScreen } from './statusrefreshscope.js';
 import { watchTabs } from './tabfit.js';
+import { mountTitleExpand } from './titleexpand.js';
 applyA11y();
 // Speaker Settings view (extracted from this monolith, same pattern as the views
 // above). loadBoxSettings is the entry point switchView calls; langOptionsHtml /
@@ -697,9 +699,14 @@ document.querySelector('#app').innerHTML = `
 
   ${shareModalHTML()}
 
+  ${stickerModalHTML()}
+
   <div class="modal hidden" id="updateAllOverlay">
     <div class="modal-content ua-modal">
       <h3>${escapeHtml(t('updateAll.title'))}</h3>
+      <!-- What happens to the speakers during the run, and anything the
+           pre-scan noted, stays on screen while it runs (#1954). -->
+      <div class="ua-lead" id="uaLead"></div>
       <p class="modal-sub" id="uaSummary"></p>
       <div id="uaList" class="ua-list"></div>
       <div class="warn-buttons">
@@ -1381,6 +1388,9 @@ mountMusicView();
 // UI 2.0 preview: the new shell is built around the views just mounted, only
 // when the preview is switched on (Aa menu > Layout). Off, nothing here runs.
 if (getUi2Preview()) safeMountShell2();
+// A click on a cut-off title in a list opens it to its full length (#1811).
+// One listener for the whole window, in both layouts.
+mountTitleExpand();
 
 // safeMountShell2 builds the UI 2.0 preview shell (shell2/mount.js) and hands
 // it what it needs from this file. A failure leaves the current layout as it

@@ -12,6 +12,8 @@ import { en } from '../helpers/i18n.mjs';
 import { ROSTER } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
+// E2E_SHOTS=<dir> also saves screenshots of Play in standby there.
+const SHOTS = process.env.E2E_SHOTS || '';
 const CONTROLS = ['.ui2-player-transport', '.ui2-player-volume', '.ui2-player-more', '.ui2-player-groupvol', '.ui2-player-levels'];
 
 test.describe('UI 2.0 player: the speaker you control is offline', () => {
@@ -52,6 +54,46 @@ test.describe('UI 2.0 player: a refused transport press', () => {
     const status = page.locator('#ui2PlayerStatus');
     await expect(status).toHaveAttribute('role', 'alert');
     await expect(status).toHaveText(en('ui2.state.player.failPause', { name: LR.friendlyName, err: 'speaker refused' }));
+    await expect(page.locator('#errorModal')).toBeHidden();
+  });
+});
+
+// #1920: Play on a speaker in standby wakes it with what it played last,
+// through the round Play/Pause button the player already has.
+test.describe('UI 2.0 player: the speaker you control is in standby', () => {
+  test.use({ ui2: true, scenario: { playing: { livingRoom: 'STANDBY' } } });
+
+  test('2b. the round button shows Play and a click wakes the speaker', async ({ app, mock }) => {
+    const { page } = app;
+    const pp = page.locator('#ui2Player #pauseBtn');
+    await expect(pp).toBeVisible();
+    await expect(pp).toBeEnabled();
+    await expect(pp).toHaveAttribute('data-ui2-glyph', 'play');
+    await expect(pp).toHaveAttribute('title', en('controls.play'));
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-ui2-play-in-standby.png` });
+    await mock.resetCalls();
+    await pp.click();
+    await mock.expectCalled('SetBoxPower', { times: 1 });
+    expect((await mock.last('SetBoxPower')).args).toEqual([LR.host, LR.port, true]);
+    await expect(pp).toHaveAttribute('data-ui2-glyph', 'pause');
+    expect(await mock.count('Resume')).toBe(0);
+    expect(await mock.count('SetBoxVolume')).toBe(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-ui2-play-after-wake.png` });
+  });
+});
+
+test.describe('UI 2.0 player: a speaker in standby that does not wake', () => {
+  test.use({ ui2: true, scenario: { playing: { livingRoom: 'STANDBY' }, bindings: { SetBoxPower: { error: 'speaker refused' } } } });
+
+  test('2c. says so in the player like any refused Play, and the button is free again', async ({ app, mock }) => {
+    const { page } = app;
+    const pp = page.locator('#ui2Player #pauseBtn');
+    await expect(pp).toHaveAttribute('data-ui2-glyph', 'play');
+    await pp.click();
+    await mock.expectCalled('SetBoxPower');
+    const status = page.locator('#ui2PlayerStatus');
+    await expect(status).toHaveText(en('ui2.state.player.failResume', { name: LR.friendlyName, err: 'speaker refused' }));
+    await expect(pp).toBeEnabled();
     await expect(page.locator('#errorModal')).toBeHidden();
   });
 });

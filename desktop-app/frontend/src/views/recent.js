@@ -36,6 +36,7 @@ import { groupCardsByDay } from './recentdays.js';
 // The preview's look of this view; every rule sits under html.ui2.
 import '../shell2/recent.css';
 import { libraryFavFields } from '../libraryfav.js';
+import { PLAY_ICON } from '../glyphs.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -400,13 +401,13 @@ function recentCardHTML(c, i, nowPlaying) {
     actions = ui2CardActions(c, i, isRadio);
   } else if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
-    actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
+    actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}" aria-label="${escapeAttr(t('search.playNow'))}">${PLAY_ICON}</button>`
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
       + `<button class="btn btn-mini rc-fav${fav ? ' is-fav' : ''}" id="recFav${i}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>`;
   } else {
     const canPlay = c.source === 'pandora' ? !!c.url : c.playSlot != null;
     actions = (canPlay
-      ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
+      ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}" aria-label="${escapeAttr(t('search.playNow'))}">${PLAY_ICON}</button>`
       : '')
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
@@ -417,7 +418,7 @@ function recentCardHTML(c, i, nowPlaying) {
   // "Now playing" badge, reusing the preset tile's own state label so the wording
   // matches the preset card exactly (and is already translated in every bundle).
   const nowBadge = nowPlaying
-    ? ` <span class="rc-now-badge">&#9205; ${escapeHtml(t('preset.statePlay'))}</span>`
+    ? ` <span class="rc-now-badge">${PLAY_ICON} ${escapeHtml(t('preset.statePlay'))}</span>`
     : '';
   // The preview finds a card by its identity (data-ck), not by its place in the
   // list: a repaint can shift every index while an action is out.
@@ -461,7 +462,7 @@ function ui2CardActions(c, i, isRadio) {
   const canPlay = isRadio || (c.source === 'pandora' ? !!c.url : c.playSlot != null);
   let html = '';
   const busy = playsInFlight.has(c.cardKey) ? ' aria-disabled="true" aria-busy="true"' : '';
-  if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), '&#9205;', busy);
+  if (canPlay) html += btn('rc-play', 'recPlay' + i, t('ui2.recent.playOn', { name, speaker: label(cardPlayBox(c)) }), PLAY_ICON, busy);
   // The same "Put on key" control as Radio and Library (shell2/keybtn.js).
   html += keyButtonHTML({ cls: 'rc-pick', attrs: `id="recPick${i}"`, name, speaker: label(cardKeyBox(c)) });
   if (isRadio) {

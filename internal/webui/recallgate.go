@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/JRpersonal/streborn/anonymise"
 	"github.com/JRpersonal/streborn/internal/presets"
 )
 
@@ -119,8 +120,19 @@ func (s *Server) recallRefusal(slot int, pp *presets.Preset) *playRefusal {
 	// A free/open Spotify account cannot do the autonomous on-demand playback a
 	// recall needs (it can only play when the phone app drives it), so the
 	// recall would silently fail. Tell the user it needs Premium instead (#45).
-	if s.spotifyPremiumRequired != nil && s.spotifyPremiumRequired() {
-		s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium, not waking the speaker", "slot", slot)
+	// Asked for the key's own account: a key another account saved switches to
+	// that account before it plays, so the logged-in account's plan must not
+	// refuse it (#1947).
+	required, why := false, ""
+	if s.spotifyPremiumRequired != nil {
+		required, why = s.spotifyPremiumRequired(p.Account)
+	}
+	if required {
+		// account and why are the evidence a bundle needs to tell which
+		// account the verdict was about (#1947): the key's own account, masked
+		// like every other account in the log, and the case that decided.
+		s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium, not waking the speaker",
+			"slot", slot, "account", anonymise.MaskAccount(p.Account), "why", why)
 		return jsonRefusal(http.StatusUnprocessableEntity, map[string]any{
 			"error": "The Spotify account on this speaker is a free account. Spotify presets only play with Spotify Premium.",
 			"code":  "spotify-premium-required",

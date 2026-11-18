@@ -1105,6 +1105,8 @@ html.ui2 .ui2-player .controls #pauseBtn[data-ui2-glyph="play"]::before {
    and a ring, so on and off differ by more than a colour (aria-pressed says
    it to a screen reader). */
 html.ui2 .ui2-player .controls #powerBtn { font-size: 0; }
+/* The classic layout's inline icons (glyphs.js); the preview draws its own. */
+html.ui2 .ui2-player .controls :is(#pauseBtn, #stopBtn, #powerBtn) > svg { display: none; }
 html.ui2 .ui2-player .controls #powerBtn::before {
   content: '';
   width: 20px;

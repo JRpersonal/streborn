@@ -415,7 +415,9 @@ function markZoneCards(cards) {
     b.dataset.ui2Act = 'toggle-member';
     b.dataset.key = id;
     b.setAttribute('aria-pressed', String(pressed));
-    b.textContent = t('ui2.speakers.groups.include', { name: nameOf(box) });
+    // A stereo pair's card carries the pair's name ("Terrace (stereo)"): it
+    // joins as one member, by its pair master.
+    b.textContent = t('ui2.speakers.groups.include', { name: card.dataset.unitName || nameOf(box) });
     const foot = card.querySelector('.zone-card-foot');
     if (foot) foot.insertBefore(b, foot.firstChild); else card.appendChild(b);
   });

@@ -326,9 +326,11 @@ func (w *wokenStop) resolve(c wokenCheck, word masterWord) string {
 
 // NoteBoxNowPlaying takes a <nowPlaying> document the speaker's own bus just
 // carried, so the woken-stop mark follows the speaker without waiting for an
-// app to poll. Must not block: the bus read loop calls it, and the master check
-// a switch may need runs off it.
+// app to poll, and the speaker display learns the song a phone plays over
+// Bluetooth (panelBoxNowPlaying). Must not block: the bus read loop calls it,
+// and the master check a switch may need runs off it.
 func (s *Server) NoteBoxNowPlaying(raw []byte) {
+	s.panelBoxNowPlaying(raw)
 	s.observeWokenStop(raw)
 }
 

@@ -30,6 +30,7 @@ var (
 	_ webui.SpotifyStatusPages     = (*spotifyEngine)(nil)
 	_ webui.SpotifyEngineLifecycle = (*spotifyEngine)(nil)
 	_ webui.SpotifyRemoteKeys      = (*spotifyEngine)(nil)
+	_ webui.SpotifyLibrary         = (*spotifyEngine)(nil)
 	_ webui.SpotifyRecallRecovery  = (*spotifyEngine)(nil)
 )
 
@@ -76,11 +77,13 @@ func (e *spotifyEngine) SkipBoundary() time.Time { return e.m.LastSkipBoundary()
 // SetRecalling so a preset re-press never feeds the box the old track's audio
 // during the load preamble; the stale-KB probe lets the recall re-push stand
 // down when the cut kept the box clean.
-func (e *spotifyEngine) ArmRecallCut()                       { e.m.ArmRecallCut() }
-func (e *spotifyEngine) BoundaryStaleKB() int64              { return e.m.LastBoundaryStaleKB() }
-func (e *spotifyEngine) Ready() bool                         { return e.m.Ready() }
-func (e *spotifyEngine) CanRecall(ctx context.Context) bool  { return e.m.CanRecall(ctx) }
-func (e *spotifyEngine) PremiumRequired() bool               { return e.m.PremiumRequired() }
+func (e *spotifyEngine) ArmRecallCut()                      { e.m.ArmRecallCut() }
+func (e *spotifyEngine) BoundaryStaleKB() int64             { return e.m.LastBoundaryStaleKB() }
+func (e *spotifyEngine) Ready() bool                        { return e.m.Ready() }
+func (e *spotifyEngine) CanRecall(ctx context.Context) bool { return e.m.CanRecall(ctx) }
+func (e *spotifyEngine) PremiumRequiredFor(account string) (bool, string) {
+	return e.m.PremiumRequiredForWhy(account)
+}
 func (e *spotifyEngine) SetRecalling()                       { e.m.SetRecalling() }
 func (e *spotifyEngine) SuppressActivate(d time.Duration)    { e.m.SuppressActivate(d) }
 func (e *spotifyEngine) ExpectReattach(window time.Duration) { e.m.ExpectReattach(window) }
@@ -106,6 +109,25 @@ func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
 }
 func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
 	return e.m.CycleRepeat(ctx)
+}
+
+// webui.SpotifyLibrary
+func (e *spotifyEngine) LikeCurrentTrack(ctx context.Context) (webui.SpotifyLikedTrack, error) {
+	return likedResult(e.m.LikeCurrentTrack(ctx))
+}
+
+func (e *spotifyEngine) UnlikeCurrentTrack(ctx context.Context) (webui.SpotifyLikedTrack, error) {
+	return likedResult(e.m.UnlikeCurrentTrack(ctx))
+}
+
+// likedResult carries a save or a removal over the seam, with the reason
+// word for a failure.
+func likedResult(tr spotify.LikedTrack, err error) (webui.SpotifyLikedTrack, error) {
+	out := webui.SpotifyLikedTrack{URI: tr.URI, Name: tr.Name, Repeat: tr.Repeat}
+	if err != nil {
+		return out, &webui.SpotifyLikeError{Reason: spotify.LikeFailureReason(err), Err: err}
+	}
+	return out, nil
 }
 
 // webui.SpotifyRecallRecovery

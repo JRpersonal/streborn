@@ -7,9 +7,10 @@ import { t } from '../../i18n/index.js';
 import { logoImgTag, monogramDataUri, spotifyCoverImgTag } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceActive, nativeServiceBadge } from '../../nativeservice.js';
 import { spotifyAccountName } from '../../spotifyaccountlabel.js';
-import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds } from '../../spotifynowplaying.js';
+import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds, spotifyKeyGone } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
+import { syncStickerEntry } from '../../stickers/dialog.js';
 import {
   ROW_SIZE,
   boxPresetRows,
@@ -41,6 +42,7 @@ import {
   shouldAdoptPresetArt,
   showError,
   showToast,
+  shownBoxPreset,
 } from '../../utils.js';
 import { renderGroupControl } from './group.js';
 import { renderNowPlayingBar } from './nowplaying.js';
@@ -76,6 +78,7 @@ export function renderPresets() {
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
   updatePresetTransferRow();
+  syncStickerEntry();
   renderGroupControl();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
@@ -96,6 +99,9 @@ export function renderPresets() {
       state.nowSpotifySlot = null;
     }
   }
+  // The remembered key was emptied or now holds something else than Spotify:
+  // forget it, or it blocks the context match below and no key lights (#1975).
+  if (spotifyKeyGone(state.presets, state.nowSpotifySlot)) state.nowSpotifySlot = null;
   // Playback no key started (the Spotify app, then a hold that saved it on a
   // key) never gets a per-slot URL: light the key that holds the playing
   // context, by URI only (#1217). The stale check above drops it again once
@@ -141,8 +147,10 @@ export function renderPresets() {
     // A slot STR does not manage may still hold one of the box's own presets
     // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
     // can recall it, instead of a misleading "empty" tile. The firmware has
-    // six keys of its own, so a row-2 slot never holds one.
-    const bp = !p && i <= ROW_SIZE ? (state.boxPresets || []).find(x => x.slot === i) : null;
+    // six keys of its own, so a row-2 slot never holds one. The placeholder
+    // the agent keeps on a key whose single press plays its second row
+    // (#1910) is no station of its own: that tile stays empty.
+    const bp = !p && i <= ROW_SIZE ? shownBoxPreset(state.boxPresets, i) : null;
     // The queue match is checked outside the location gate below: right after
     // a click on a library album or folder key the optimistic location is
     // empty (the key stores no stream URL) and only the optimistic queue card

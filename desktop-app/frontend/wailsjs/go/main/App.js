@@ -46,6 +46,10 @@ export function BoxPresets(arg1, arg2) {
   return window['go']['main']['App']['BoxPresets'](arg1, arg2);
 }
 
+export function BoxRestartPlan(arg1, arg2) {
+  return window['go']['main']['App']['BoxRestartPlan'](arg1, arg2);
+}
+
 export function BoxSSHStatus(arg1, arg2) {
   return window['go']['main']['App']['BoxSSHStatus'](arg1, arg2);
 }
@@ -336,6 +340,10 @@ export function InstallSTROnBox(arg1, arg2) {
 
 export function IsBoseStick(arg1) {
   return window['go']['main']['App']['IsBoseStick'](arg1);
+}
+
+export function KeepSpeakerWiFiCopy(arg1, arg2, arg3) {
+  return window['go']['main']['App']['KeepSpeakerWiFiCopy'](arg1, arg2, arg3);
 }
 
 export function LibraryFolder(arg1, arg2) {
@@ -666,6 +674,10 @@ export function SaveSpotifyPreset(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SaveSpotifyPreset'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function SaveStickerPDF(arg1) {
+  return window['go']['main']['App']['SaveStickerPDF'](arg1);
+}
+
 export function SaveWebhookConfig(arg1, arg2, arg3) {
   return window['go']['main']['App']['SaveWebhookConfig'](arg1, arg2, arg3);
 }
@@ -830,8 +842,16 @@ export function StickVersion(arg1) {
   return window['go']['main']['App']['StickVersion'](arg1);
 }
 
+export function StickerImage(arg1) {
+  return window['go']['main']['App']['StickerImage'](arg1);
+}
+
 export function Stop(arg1, arg2) {
   return window['go']['main']['App']['Stop'](arg1, arg2);
+}
+
+export function StoreSpeakerWiFiCopy(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StoreSpeakerWiFiCopy'](arg1, arg2, arg3, arg4);
 }
 
 export function StreamBitrate(arg1, arg2) {

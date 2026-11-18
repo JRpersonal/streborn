@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +55,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// Live or not: the desktop marks a permanent group's frame with it, so
 	// the user can tell a group that will come back by itself from one that
 	// ends with the next standby (Jens, 2026-09-06).
+	out.SetAside = s.setAsideGroup()
 	if s.zones != nil {
 		if sz, ok := s.zones.Get(); ok && sz.Permanent && !sz.Stereo {
 			out.Permanent = true
@@ -71,7 +73,7 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// optimistic data alone (the two-screens-disagree family). After a
 	// few consecutive hangs the read is paused for a while — the answer cannot
 	// change while the firmware refuses to give one.
-	if s.groupReadAllowed() {
+	if s.mayHoldStereoPair() && s.groupReadAllowed() {
 		gctx, gcancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 		g, gerr := c.GetGroup(gctx)
 		gcancel()
@@ -116,6 +118,12 @@ type zoneAnswer struct {
 	// member that stayed out read as removed from the group, then came back
 	// once the group ended (#1576).
 	NotJoined []rememberedMember `json:"notJoined,omitempty"`
+	// SetAside is the permanent group a temporary group set aside (zones.Store.Set):
+	// it comes back by itself when the temporary group ends without forget, and
+	// a POST with permanent:true replaces it. Without it a client forming a group
+	// while nothing was live could only ask the user blindly whether to replace
+	// a durable group it could not see (SoundRebornRemote, 2026-11-17).
+	SetAside *setAsideAnswer `json:"setAside,omitempty"`
 	// PairPartnerGone names the other half of a stereo pair that did not answer.
 	// While a pair is incomplete the firmware refuses every source activation, so
 	// the speaker wakes and is back in standby five seconds later and nothing it
@@ -125,6 +133,26 @@ type zoneAnswer struct {
 	// eighty failed presses).
 	PairPartnerGone   string `json:"pairPartnerGone,omitempty"`
 	PairPartnerGoneID string `json:"pairPartnerGoneId,omitempty"`
+}
+
+// setAsideAnswer is the set-aside permanent group as GET /api/box/zone reports it.
+type setAsideAnswer struct {
+	Master  string             `json:"master"`
+	Name    string             `json:"name,omitempty"`
+	Members []rememberedMember `json:"members"`
+}
+
+// setAsideGroup is the permanent group set aside under the current one, nil
+// when there is none.
+func (s *Server) setAsideGroup() *setAsideAnswer {
+	if s.zones == nil {
+		return nil
+	}
+	z, ok := s.zones.Standing()
+	if !ok || z.Stereo {
+		return nil
+	}
+	return &setAsideAnswer{Master: z.Master, Name: z.Name, Members: s.zoneMembersNamed(z)}
 }
 
 // rememberedMember is one follower of the persisted (not currently live) zone.
@@ -165,6 +193,12 @@ func (s *Server) rememberedZoneMembers() []rememberedMember {
 	if !ok || z.Stereo || len(z.Slaves) == 0 {
 		return nil
 	}
+	return s.zoneMembersNamed(z)
+}
+
+// zoneMembersNamed lists a stored group's followers with the names the peer
+// roster knows them by.
+func (s *Server) zoneMembersNamed(z zones.Zone) []rememberedMember {
 	names := map[string]string{}
 	if s.peersFn != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -181,6 +215,30 @@ func (s *Server) rememberedZoneMembers() []rememberedMember {
 		out = append(out, rememberedMember{IP: m.IP, DeviceID: m.DeviceID, Name: names[m.IP]})
 	}
 	return out
+}
+
+// mayHoldStereoPair reports whether this speaker can be half of a stereo pair
+// at all. Bose pairs only two SoundTouch 10s, so on every other model the
+// /getGroup read can only ever answer "no pair", and on the scm/BCO chassis
+// (ST20, ST30, Portable) it never answers at all: each try is a request that
+// hangs on BoseApp's web server. A fresh ST20 asked three times every five
+// minutes went silent on :8090 for 5 s to 3 min shortly after each burst
+// (2026-11-15), and with it the app's status and network view and the Wi-Fi
+// light. An unknown model keeps the read, so a pair is never missed for a
+// name the agent has not learned yet.
+func (s *Server) mayHoldStereoPair() bool {
+	if s.boxNameFn == nil {
+		return true
+	}
+	_, model := s.boxNameFn()
+	return ModelMayHoldStereoPair(model)
+}
+
+// ModelMayHoldStereoPair is the model rule of mayHoldStereoPair. Exported for
+// the agent's startup check of a restored pair record.
+func ModelMayHoldStereoPair(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	return m == "" || strings.Contains(m, "soundtouch 10")
 }
 
 // groupReadAllowed reports whether the stereo /getGroup read should be tried,

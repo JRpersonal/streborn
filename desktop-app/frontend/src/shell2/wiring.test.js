@@ -228,8 +228,11 @@ describe('UI 2.0 sidebar speaker list', () => {
   });
 
   // Which group a batch edits is run for real in views/music/group.test.js.
-  it('refuses a stereo half at click time', () => {
-    expect(srcOf('runGroupMemberToggle')).toContain('inAnyStereoPair(tgt, state.zoneLive)');
+  // A pair cannot lead a group, and joins one as its pair master (#792).
+  it('refuses a pair as the leader and maps a pair half onto its pair at click time', () => {
+    const fn = srcOf('runGroupMemberToggle');
+    expect(fn).toContain('inAnyStereoPair(box, state.zoneLive)');
+    expect(fn).toContain('pairUnitBox(b, state.zoneLive, state.boxes)');
   });
 
   it('keeps the Music view markup as it was without the player slot', () => {

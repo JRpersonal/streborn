@@ -17,7 +17,7 @@ import { gkMembersForSave, normalizeDoc, templateFromBoxes, templateFromStored, 
 import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, playModeOn } from '../keyactions.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, zoneBoxes as strZoneBoxes, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers, boxUnreachable } from '../groups.js';
+import { masterOf as zoneMasterOf, zoneBoxes as strZoneBoxes, fetchZoneLive, groupMembersOf, stereoPairsOf, stereoPairKey, stereoSelectionPick, pairMemberBoxes, stereoUndoTargets, groupColorMap, zoneOrPairMaster, masterBoxForKey, storedPermanentGroupsOf, pairBlockedHosts, defaultZoneMasterID, livePairFor, dropOfflineMembers, boxUnreachable, inAnyStereoPair, isPairMaster, pairMasterBox, pairOfBox, pairUnitBox, pairUnitName } from '../groups.js';
 // What the editors do and say about a speaker the app cannot reach (#1741).
 import { groupCreateBlock, zoneFormFailure, stereoReachBlock, stereoFormFailure } from '../zonereach.js';
 // App-side pair display name (STR keeps its own, survives updates): see stereoNames.js.
@@ -53,6 +53,16 @@ export function setMultiroomRenderHooks(h) {
 // name (Michal's group menu showing str-192.168.x.y). Fall back to name/host only
 // when no friendly name resolved. Matches the box switcher and the recent view.
 function zoneLabel(b) { return getBoxLabel(b); }
+
+// unitLabel names a speaker the way a group shows it: half of a stereo pair as
+// the pair, by the pair's name with "(stereo)" (the UI 2.0 sidebar's pair row
+// name), because a pair joins a group as ONE member; any other speaker by its
+// own name. A frame used to show a pair in a group as "Kitchen left" alone.
+function unitLabel(b) {
+  const name = pairUnitName(b, state.zoneLive, strZoneBoxes(state.boxes),
+    (p) => pairDisplayName(p, () => renderMultiroom(false)), zoneLabel);
+  return name ? t('ui2.side.pairName', { name }) : zoneLabel(b);
+}
 
 // liveZoneMaster returns the speaker that is leading a group RIGHT NOW, or
 // null when the speakers report none. It reads the same cached self-reports
@@ -263,18 +273,28 @@ export function renderMultiroom(fetchLive) {
     state.zoneMaster = liveNow.deviceID;
   }
   // The halves of a live stereo pair are worked out BEFORE the master default
-  // (#882). The grid below hides them (#792), but the default still picked
-  // strBoxes[0], so a hidden pair half was submitted as the group's master;
-  // the agent refused, and the refusal landed as a note the user could not
-  // act on from this screen, because no visible card carried the star.
-  // Neither the default nor a stale selection may name a pair half.
+  // (#882): a pair can JOIN a group but never LEAD one (#792, a zone on a pair
+  // master never starts the audio), so neither the default nor a stale
+  // selection may name a pair half as the main speaker. The default once
+  // picked strBoxes[0], a pair half; the agent refused, and the refusal landed
+  // as a note the user could not act on from this screen.
+  //
+  // zoneBoxes are the speakers that can LEAD (the star, "make main"):
+  // never a pair half. memberBoxes are the cards the grid offers as members:
+  // those plus ONE card per pair, its pair master's, named after the pair. The
+  // Bose app forms a pair into a group exactly so, by its pair master alone,
+  // and it plays (a SoundTouch 30 leading a pair of SoundTouch 10s, field
+  // bundle 2026-11-15). The pair's other half has no card: on its own it
+  // served two masters and played out of step with its pair (#792).
   const groupablePairIDs = new Set(
     stereoPairsOf(state.zoneLive).flatMap(pp => (pp.members || []).map(m => String(m.deviceID || '').toUpperCase())));
-  const inPair = (b) => groupablePairIDs.has(String((b && b.deviceID) || '').toUpperCase());
+  const inPair = (b) => groupablePairIDs.has(String((b && b.deviceID) || '').toUpperCase()) || inAnyStereoPair(b, state.zoneLive);
   const zoneBoxes = strBoxes.filter(b => !inPair(b));
+  const memberBoxes = strBoxes.filter(b => !inPair(b) || isPairMaster(b, state.zoneLive, strBoxes));
   for (const id of Object.keys(state.zoneSlaves)) {
-    if (strBoxes.some(b => b.deviceID === id && inPair(b))) delete state.zoneSlaves[id];
+    if (strBoxes.some(b => b.deviceID === id && inPair(b) && !isPairMaster(b, state.zoneLive, strBoxes))) delete state.zoneSlaves[id];
   }
+  if (inPair(strBoxes.find(b => b.deviceID === state.zoneMaster))) delete state.zoneSlaves[state.zoneMaster];
   // An offline speaker cannot join a group: a tick made while it was still
   // answering is dropped the moment the list marks it offline, so it is
   // neither sent nor named in the "keep permanently" help.
@@ -318,7 +338,18 @@ export function renderMultiroom(fetchLive) {
     const mb = bxs.find(b => (b.deviceID || '').toUpperCase() === (p.master || '').toUpperCase()) || bxs[0] || null;
     return mb && (mb.deviceID || '').toUpperCase() === mk;
   }) || null;
-  const frameKeys = Object.keys(colorMap).sort();
+  // A pair that is a MEMBER of a group has no frame key of its own (its halves
+  // belong to the group, zoneOrPairMaster), but it is still a pair the user
+  // may want to change or undo: it keeps its own frame, after the groups, in
+  // the colour of the group it joined. Without it the pair vanished from the
+  // UI 2.0 "Stereo pairs" section while it played in a group.
+  const memberPairKeys = livePairsTop
+    .map(p => pairMasterBox(p, strBoxes))
+    .filter(pm => pm && zoneMasterOf(pm.deviceID, state.zoneLive) && !colorMap[up(pm.deviceID)])
+    .map(pm => up(pm.deviceID));
+  const frameColor = (mk) => colorMap[mk]
+    || colorMap[zoneMasterOf((strBoxes.find(b => up(b.deviceID) === mk) || {}).deviceID, state.zoneLive)] || 1;
+  const frameKeys = [...Object.keys(colorMap).sort(), ...memberPairKeys.filter(k => !colorMap[k])];
   // Permanent groups that are stored but not live right now: the main speaker
   // reports them under `remembered` with `permanent` set. They get a dashed
   // frame of their own, so the user sees the group exists and can remove it
@@ -343,7 +374,7 @@ export function renderMultiroom(fetchLive) {
       : '';
     const chips = (g.masterBox ? `<span class="zone-frame-chip">${masterMark}${escapeHtml(label)}</span>` : '') +
       g.members.filter(m => m.box).map(m =>
-        `<span class="zone-frame-chip">${escapeHtml(zoneLabel(m.box))}${memberX(m.box.host || m.ip, zoneLabel(m.box))}</span>`).join('') +
+        `<span class="zone-frame-chip">${escapeHtml(unitLabel(m.box))}${memberX(m.box.host || m.ip, unitLabel(m.box))}</span>`).join('') +
       g.members.filter(m => !m.box).map(m =>
         `<span class="zone-frame-chip">${escapeHtml(m.name || m.ip)}${memberX(m.ip, m.name || m.ip)}</span>`).join('');
     return `<div class="box-group box-group-stored">` + xBtn +
@@ -352,7 +383,9 @@ export function renderMultiroom(fetchLive) {
   }).join('');
   const liveFramesHtml = (frameKeys.length || storedGroups.length)
     ? `<div class="zone-frames">` + frameKeys.map(mk => {
-        const members = strBoxes
+        const members = memberPairKeys.includes(mk)
+          ? pairMemberBoxes(pairForMasterKey(mk), strBoxes).map(x => x.box).filter(Boolean)
+          : strBoxes
           .filter(b => zoneOrPairMaster(b, state.zoneLive, strBoxes) === mk)
           .sort((a, b) => (((b.deviceID || '').toUpperCase() === mk ? 1 : 0) - ((a.deviceID || '').toUpperCase() === mk ? 1 : 0)));
         const pair = pairForMasterKey(mk);
@@ -376,6 +409,11 @@ export function renderMultiroom(fetchLive) {
         const permBadge = permanent
           ? ` <span class="box-group-perm" title="${escapeAttr(t('speaker.permanentTitle'))}">&#128257; ${escapeHtml(t('speaker.permanentBadge'))}</span>`
           : '';
+        // A stereo pair that is a member of this group is ONE chip, named
+        // after the pair: both halves belong to the group (zoneOrPairMaster),
+        // and listing them as two speakers, or the pair master alone under its
+        // own name, read as a group of separate speakers.
+        const pairChipsDone = new Set();
         const chips = members.map(b => {
           // Compared by HOST, not by deviceID: the ID is the untrustworthy
           // field here (see masterBoxForKey), and wherever it disagrees the
@@ -383,6 +421,13 @@ export function renderMultiroom(fetchLive) {
           // main speaker in it.
           const isMaster = !pair && !!masterBox && b.host === masterBox.host;
           const mark = isMaster ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733; ${escapeHtml(t('multiroom.mainBadge'))}</span>` : '';
+          const memberPair = !pair && !isMaster ? pairOfBox(b, state.zoneLive) : null;
+          if (memberPair) {
+            const k = stereoPairKey(memberPair) || memberPair.id || b.host;
+            if (pairChipsDone.has(k)) return '';
+            pairChipsDone.add(k);
+            return `<span class="zone-frame-chip zone-frame-chip-pair" title="${escapeAttr(t('speaker.stereoPairTitle'))}">${STEREO_ICON} ${escapeHtml(unitLabel(b))}</span>`;
+          }
           return `<span class="zone-frame-chip">${mark}${escapeHtml(zoneLabel(b))}</span>`;
         }).join('') + (permanent ? notJoinedChips(((state.zoneLive || {})[masterBox.deviceID] || {}).notJoined, strBoxes) : '');
         // A dismiss control per frame: the honest place to take THIS group apart,
@@ -397,7 +442,7 @@ export function renderMultiroom(fetchLive) {
         // the music tab already labels the same frame (main.js groupLabel).
         const frameIcon = pair ? STEREO_ICON : GROUP_ICON;
         const frameTip = pair ? t('speaker.stereoPairTitle') : t('speaker.groupLabelTitle', { name: label });
-        return `<div class="box-group box-group-c${colorMap[mk]}">` + xBtn +
+        return `<div class="box-group box-group-c${frameColor(mk)}">` + xBtn +
           `<span class="box-group-label" title="${escapeAttr(frameTip)}">${frameIcon} ${escapeHtml(label)}${permBadge}</span>` +
           chips + `</div>`;
       }).join('') + storedFramesHtml + `</div>`
@@ -437,18 +482,21 @@ export function renderMultiroom(fetchLive) {
     return `<div class="zone-live">&#9675; ${escapeHtml(t('multiroom.liveStandalone'))}</div>`;
   };
 
-  // A live stereo pair stays OUT of the zone grid (#792): enrolling one
-  // half serves two masters and plays out of sync with its own pair, and a
-  // zone stacked on the pair's master never starts the firmware's audio
-  // distribution (log-proven, 12-speaker household 2026-08-30). Until pairs
-  // can join as one unit, the honest offer is: dissolve the pair, group,
-  // re-pair afterwards - and the grid says so instead of hiding boxes
-  // silently. groupablePairIDs / zoneBoxes are computed above the master
-  // default, so the default can never land on a hidden half (#882).
-  const pairHiddenCount = strBoxes.length - zoneBoxes.length;
-  const cards = zoneBoxes.length
-    ? zoneBoxes.map(b => {
-        const isMaster = b.deviceID === state.zoneMaster;
+  // A live stereo pair is ONE card in the grid (memberBoxes): it joins as a
+  // unit, by its pair master. Enrolling its other half on its own serves two
+  // masters and plays out of sync with its own pair, and a zone stacked on
+  // the pair's master never starts the firmware's audio distribution
+  // (log-proven, 12-speaker household 2026-08-30), so the pair's card can be
+  // ticked and never made the main speaker. groupablePairIDs / zoneBoxes are
+  // computed above the master default, so the default can never land on a
+  // pair half (#882).
+  const cards = memberBoxes.length
+    ? memberBoxes.map(b => {
+        // A stereo pair's card: it joins as one member and cannot be the main
+        // speaker, so it carries the reason where "make main" sits on the
+        // others, and its name is the pair's.
+        const pairCard = inPair(b);
+        const isMaster = !pairCard && b.deviceID === state.zoneMaster;
         // An offline speaker (the list's own offline mark) is shown so the
         // grid matches the speaker list, but it is not a member or main
         // candidate: it is marked disabled with the reason in place of the
@@ -471,30 +519,30 @@ export function renderMultiroom(fetchLive) {
             + (unreachable ? ` <span class="zone-offline-note">${escapeHtml(offlineWhy)}</span>` : '')
           : offline
             ? `<span class="zone-offline-note">${escapeHtml(offlineWhy)}</span>`
-            : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
+            : pairCard
+              ? `<span class="zone-pair-note">${escapeHtml(t('multiroom.pairJoinOnly'))}</span>`
+              : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
         // A BUTTON, not a span. It looked exactly like the button beside it and
         // did nothing, and the click fell through to the card, which selected
         // the outdated speaker for the group anyway: the control did the
         // opposite of what it said.
         const upd = outdated && !offline ? `<button class="zone-update-badge" data-update-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.updateFirst'))}</button>` : '';
         const offAttrs = offline ? ` aria-disabled="true" title="${escapeAttr(offlineWhy)}"` : '';
-        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}${offline ? ' offline' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0"${offAttrs}>
+        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}${offline ? ' offline' : ''}${pairCard ? ' pair' : ''}" data-id="${escapeAttr(b.deviceID)}"${pairCard ? ` data-unit-name="${escapeAttr(unitLabel(b))}"` : ''} role="button" tabindex="0"${offAttrs}>
             <span class="zone-card-tick">${selected ? '&#10003;' : (isMaster ? '&#9733;' : '')}</span>
-            <div class="zone-card-name">${escapeHtml(zoneLabel(b))} ${model}</div>
+            <div class="zone-card-name">${pairCard ? STEREO_ICON + ' ' : ''}${escapeHtml(pairCard ? unitLabel(b) : zoneLabel(b))} ${model}</div>
             <small class="zone-card-host">${escapeHtml(b.host)}</small>
             ${liveLine(b)}
             <div class="zone-card-foot">${foot}${upd}</div>
           </div>`;
       }).join('')
-      + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '')
-    : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`
-      + (pairHiddenCount > 0 ? `<div class="muted small">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>` : '');
+    : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
   const dis = enough ? '' : ' disabled';
   // Create group waits, with its reason beside it, while the speakers it
   // would need cannot be reached, and while a create is already on its way
   // (a second press would send the same group twice, #1741).
   const zoneMasterBox = zoneBoxes.find(b => b.deviceID === state.zoneMaster) || null;
-  const createBlock = enough ? groupCreateBlock(zoneMasterBox, zoneBoxes, zoneLabel) : null;
+  const createBlock = enough ? groupCreateBlock(zoneMasterBox, memberBoxes, zoneLabel) : null;
   const createDis = (!enough || createBlock || zoneFormBusy) ? ' disabled' : '';
   const createWhy = createBlock
     ? `<div class="setup-warn small zone-create-why">${escapeHtml(t(createBlock.key, createBlock.params))}</div>`
@@ -523,7 +571,7 @@ export function renderMultiroom(fetchLive) {
     // self-reports, so a member whose master missed a poll (or the other way
     // round) still shows up by name instead of dropping out of the line.
     const names = groupMembersOf(masterBox, state.zoneLive, strBoxes)
-      .map(m => m.box ? zoneLabel(m.box) : (m.ip || m.deviceID));
+      .map(m => m.box ? unitLabel(m.box) : (m.ip || m.deviceID));
     currentHtml = `<b>${escapeHtml(t('multiroom.currentZone'))}:</b> ` +
       escapeHtml(zoneLabel(masterBox) + (names.length ? ' + ' + names.join(', ') : ''));
   } else if (anyAnswered && !anyGrouped) {
@@ -646,9 +694,9 @@ export function renderMultiroom(fetchLive) {
   // is no main yet.
   const permMasterBox = strBoxes.find(b => b.deviceID === state.zoneMaster);
   const permMasterName = permMasterBox ? zoneLabel(permMasterBox) : '';
-  const permMemberNames = strBoxes
+  const permMemberNames = memberBoxes
     .filter(b => b.deviceID !== state.zoneMaster && state.zoneSlaves && state.zoneSlaves[b.deviceID])
-    .map(b => zoneLabel(b));
+    .map(b => unitLabel(b));
   const permanentHelpText = permMasterName
     ? (permMemberNames.length
         ? t('multiroom.permanentHelpConcrete', { master: permMasterName, members: permMemberNames.join(', ') })
@@ -1315,19 +1363,31 @@ async function doFormZone(strBoxes) {
   // One create at a time: the button is disabled while one is on its way,
   // and a press that still reaches here (a stale handler) is dropped.
   if (zoneFormBusy) return;
-  // Only speakers that are NOT half of a live stereo pair can be grouped
-  // (#792). The grid hides the halves, so the submit must not see them
-  // either: a hidden half used to slip in as the default master, and the
-  // agent's refusal landed as a note nobody could act on (#882). When the
-  // pick is a pair half or nothing groupable is left, say so here, through
-  // the flash, instead of sending a request that is refused for sure.
+  // A stereo pair can JOIN a group but never LEAD one (#792): a zone on a
+  // pair master never starts the firmware's audio distribution. So the main
+  // speaker comes from the speakers that are not half of a pair; a pair half
+  // used to slip in as the default master, and the agent's refusal landed as
+  // a note nobody could act on (#882). When the pick is a pair half or no
+  // speaker that could lead is left, say so here, through the flash, instead
+  // of sending a request that is refused for sure.
   const pairs = pairMemberIds(state.zoneLive);
-  const groupable = strBoxes.filter(b => !pairs.has(String(b.deviceID || '').toUpperCase()));
+  const isHalf = (b) => pairs.has(String(b.deviceID || '').toUpperCase()) || inAnyStereoPair(b, state.zoneLive);
+  const groupable = strBoxes.filter(b => !isHalf(b));
   const master = groupable.find(b => b.deviceID === state.zoneMaster);
   const sel = state.zoneSlaves || {};
-  // Never an unreachable member, even from a tick that predates the mark.
-  const slaveBoxes = groupable.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID] && !boxUnreachable(b));
-  if (!master || (!slaveBoxes.length && groupable.length < 2)) {
+  // The members: a ticked pair joins as ONE member, its pair master (the
+  // pair's card is the pair master's; a tick on its other half, from a stale
+  // selection, means the pair too). Never an unreachable member, even from a
+  // tick that predates the mark.
+  const memberPool = strBoxes.filter(b => !isHalf(b) || isPairMaster(b, state.zoneLive, strBoxes));
+  const slaveBoxes = [];
+  for (const b of strBoxes) {
+    if (b.deviceID === state.zoneMaster || !sel[b.deviceID]) continue;
+    const unit = isHalf(b) ? pairUnitBox(b, state.zoneLive, strBoxes) : b;
+    if (!unit || unit.deviceID === state.zoneMaster || boxUnreachable(unit)) continue;
+    if (!slaveBoxes.some(x => x.host === unit.host)) slaveBoxes.push(unit);
+  }
+  if (!master || (!slaveBoxes.length && memberPool.length < 2)) {
     setZoneMsg(`<div class="setup-warn">${escapeHtml(t('multiroom.pairNotGroupable'))}</div>`, { transient: true });
     renderMultiroom(false);
     return;
@@ -1336,7 +1396,7 @@ async function doFormZone(strBoxes) {
   // The speakers this needs cannot be reached: say that, not "tap a speaker"
   // (the ticks of unreachable speakers were just dropped) and not the code
   // the create would come back with (#1741).
-  const block = groupCreateBlock(master, groupable, zoneLabel);
+  const block = groupCreateBlock(master, memberPool, zoneLabel);
   if (block) {
     setZoneMsg(`<div class="setup-warn">${escapeHtml(t(block.key, block.params))}</div>`, { transient: false });
     renderMultiroom(false);
@@ -1486,7 +1546,7 @@ function notJoinedChips(list, boxes) {
   return (list || []).map((m) => {
     const box = (boxes || []).find((x) => x && x.deviceID && m.deviceID && up(x.deviceID) === up(m.deviceID))
       || (boxes || []).find((x) => x && x.host && m.ip && x.host === m.ip) || null;
-    const name = box ? zoneLabel(box) : (m.name || m.ip || '');
+    const name = box ? unitLabel(box) : (m.name || m.ip || '');
     if (!name) return '';
     const tip = t('multiroom.notJoinedTip', { name });
     return `<span class="zone-frame-chip zone-chip-out" title="${escapeAttr(tip)}">${escapeHtml(name)}` +

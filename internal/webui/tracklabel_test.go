@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -145,19 +144,17 @@ func TestAKeySavedBeforeTheLabelRecoversItFromRecentlyPlayed(t *testing.T) {
 		t.Fatal("RecallSlot did not claim the library track key")
 	}
 	wantLabel(t, queueFile(t, s), "Boston", "Third Stage")
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		got, _ := s.presets.Get(3)
-		if got.Artist == "Boston" && got.Album == "Third Stage" {
-			if got.DurationSec != 256 || got.Source != "MiniDLNA" || got.Name != "Amanda" {
-				t.Fatalf("storing the label changed the key: %+v", got)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the recovered label was not stored on the key: %+v", got)
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The label is stored from a goroutine of the recall. SetSlot updates the
+	// memory before it writes presets.json and presets.json.bak, so polling the
+	// memory let the test end mid-write and the TempDir cleanup failed with
+	// "directory not empty". Wait for the whole write instead.
+	s.keyLabelWrites.Wait()
+	got, _ := s.presets.Get(3)
+	if got.Artist != "Boston" || got.Album != "Third Stage" {
+		t.Fatalf("the recovered label was not stored on the key: %+v", got)
+	}
+	if got.DurationSec != 256 || got.Source != "MiniDLNA" || got.Name != "Amanda" {
+		t.Fatalf("storing the label changed the key: %+v", got)
 	}
 }
 

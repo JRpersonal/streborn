@@ -213,6 +213,12 @@ func (s *Server) handleZonePurge(w http.ResponseWriter, r *http.Request) {
 	if s.zones != nil {
 		if z, ok := s.zones.Get(); ok && zoneReferences(z, req.DeviceID, req.IP) {
 			switch {
+			case z.Stereo:
+				// This box's own stereo pair. A pair can be a member of a group
+				// led by another speaker; that group ending is no reason to
+				// forget the pair, which is undone only by its own "undo pair".
+				s.logger.Info("zone purge: keeping this speaker's stereo pair; a group it joined has ended",
+					"peerDeviceID", req.DeviceID, "peerIP", req.IP)
 			case z.Permanent:
 				// A PERMANENT group is the user's explicit, durable choice, and its
 				// document is the only thing the play-reform (formDefaultGroupOnPlay)

@@ -101,6 +101,19 @@ func TestTheEngineStopLineRemembersTheAccount(t *testing.T) {
 	m.noteLibrespotLine(refusalLine)
 	m.noteLibrespotLine(engineStopLine)
 	waitUntil(t, "the refused account to be recorded", func() bool { return isRefused(m, refusedUser) })
+	// The file is written after the memory entry; returning before it lands
+	// races the temp dir's cleanup on Windows.
+	waitForRefusedFile(t, m)
+}
+
+// waitForRefusedFile waits for the background write of refused.json, so a test
+// never ends while it is still in flight.
+func waitForRefusedFile(t *testing.T, m *Manager) {
+	t.Helper()
+	waitUntil(t, "the refusal to reach the NAND", func() bool {
+		_, err := os.Stat(filepath.Join(m.credStore, accountRefusedFile))
+		return err == nil
+	})
 }
 
 // A single refused track is one unavailable track. Nothing is remembered.

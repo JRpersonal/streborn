@@ -299,7 +299,7 @@ function nameTransport() {
   }
   if (!pp) return;
   const sync = () => {
-    pp.dataset.ui2Glyph = transportGlyph(pp.textContent);
+    pp.dataset.ui2Glyph = transportGlyph(pp.innerHTML);
     const label = transportLabel(pp.textContent);
     if (label && pp.title !== label) pp.title = label;
   };

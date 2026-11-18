@@ -354,6 +354,12 @@ func TestAJumpBackInAFolderTrackIsNotItsEnd(t *testing.T) {
 	if snap := s.queue.snapshot(); snap.Pos != 1 || !snap.Active {
 		t.Fatalf("the track never ended after the jump: %+v", snap)
 	}
+	// The advance moves the queue to the next track first and hands that track
+	// to the speaker after (advanceAndPlayEnded), so the push can still be on
+	// its way to the fake box when the new position shows: wait for it rather
+	// than reading the commands in that gap.
+	waitForTrackEnd(t, "the next track to be handed to the speaker",
+		func() bool { return strings.Contains(seekCommands(box), "SetAVTransportURI") })
 	if got := seekCommands(box); !strings.HasPrefix(got, "Seek,SetAVTransportURI") {
 		t.Fatalf("commands = %s, want the Seek and then the next track, nothing in between", got)
 	}

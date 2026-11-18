@@ -34,6 +34,50 @@ func Repeat(mode string) Notice {
 	return keyNotice(NoticePlayMode, iconRepeat, 0, "REPEAT OFF", "Plays to the end", playModeNoticeHold, 2)
 }
 
+// Liked: the playing Spotify song was saved to the account's Liked Songs
+// (the remote's thumbs up key, #1165). name is the song, cut to one line.
+func Liked(name string) Notice {
+	if name == "" {
+		name = "Liked Songs"
+	}
+	return keyNotice(NoticePlayMode, iconHeart, 0, "LIKED", name, playModeNoticeHold, 2)
+}
+
+// Unliked: the playing Spotify song was removed from the account's Liked
+// Songs (the remote's thumbs down key, #1165). name is the song, cut to one
+// line.
+func Unliked(name string) Notice {
+	if name == "" {
+		name = "Liked Songs"
+	}
+	return keyNotice(NoticePlayMode, iconHeartOff, 0, "REMOVED", name, playModeNoticeHold, 2)
+}
+
+// heartIcon is a filled heart.
+func (c canvas) heartIcon() {
+	c.heart(iconX+16, iconY+12, 6, 15)
+}
+
+// heartOffIcon is the outline of the same heart: a filled heart with a
+// smaller one cut out of it.
+func (c canvas) heartOffIcon() {
+	c.heart(iconX+16, iconY+12, 6, 15)
+	c.heart(iconX+16, iconY+13, 4, 0)
+}
+
+// heart draws a filled heart around cx with its lobes centred on cy: two
+// discs of radius rad over a downward wedge.
+func (c canvas) heart(cx, cy, rad, lvl int) {
+	c.disc(cx-rad, cy, rad, lvl)
+	c.disc(cx+rad, cy, rad, lvl)
+	// The wedge runs from the discs' widest line down to the tip.
+	half, depth := 2*rad-1, 2*rad+1
+	for i := 0; i <= depth; i++ {
+		w := half - half*i/depth
+		c.line(cx-w, cy+2+i, cx+w, cy+2+i, lvl)
+	}
+}
+
 // shuffleIcon is two crossing arrows.
 func (c canvas) shuffleIcon() {
 	const x0, x1, top, bot = iconX + 3, iconX + 27, iconY + 9, iconY + 23

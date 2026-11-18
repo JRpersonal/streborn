@@ -8,7 +8,7 @@
 // note for its one confirmation. The storage gate (BoxStoragePreflight) is one
 // Go call and stays in each runner next to what it does with the verdict.
 
-import { BoxSettings, boxFetch } from '../api.js';
+import { BoxRestartPlan, BoxSettings, boxFetch } from '../api.js';
 
 // stickMounted: is a USB stick in the speaker right now? A stick left in means
 // rc.local re-copies the stick's (older) version on the next boot and undoes
@@ -36,6 +36,19 @@ export async function weakWifiSignal(box) {
   const conn = ifs.find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
   const sig = conn && conn.signal;
   return sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL';
+}
+
+// mayStayDark: may this speaker stay dark once after the update, with nothing
+// the app can do about it beforehand? The Go side decides (BoxRestartPlan): an
+// STR older than 1.3.0 ends the update with a restart of the whole speaker,
+// which the first-generation SoundTouch 20 and 30 (and the other coprocessor
+// Wi-Fi speakers) often do not come back from until they are unplugged. The
+// app routes around that restart over SSH where it can; "warn" is where it
+// cannot (SSH cannot be opened, or the speaker type cannot be told). The
+// owner is told, never stopped.
+export async function mayStayDark(box) {
+  const plan = await BoxRestartPlan(box.host, box.port);
+  return !!plan && plan.mode === 'warn';
 }
 
 // fmtMB renders a byte count as megabytes with one decimal, for the free/need

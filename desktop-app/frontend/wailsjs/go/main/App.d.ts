@@ -28,6 +28,8 @@ export function BoxInstallReachable(arg1:string):Promise<boolean>;
 
 export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPresetInfo>>;
 
+export function BoxRestartPlan(arg1:string,arg2:number):Promise<main.RestartPlan>;
+
 export function BoxSSHStatus(arg1:string,arg2:number):Promise<main.BoxSSHState>;
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -173,6 +175,8 @@ export function InstallHolds(arg1:Array<string>):Promise<Array<main.InstallHold>
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
+
+export function KeepSpeakerWiFiCopy(arg1:string,arg2:number,arg3:string):Promise<main.WiFiCopyResult>;
 
 export function LibraryFolder(arg1:string,arg2:string):Promise<main.LibraryContainer>;
 
@@ -338,6 +342,8 @@ export function SaveQueuePreset(arg1:string,arg2:number,arg3:number):Promise<str
 
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 
+export function SaveStickerPDF(arg1:Array<string>):Promise<string>;
+
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
 export function SearchLibrary(arg1:string,arg2:string):Promise<main.LibrarySearchResult>;
@@ -420,7 +426,11 @@ export function StickInstallFirmwareGate(arg1:string):Promise<main.StickFirmware
 
 export function StickVersion(arg1:string):Promise<string>;
 
+export function StickerImage(arg1:string):Promise<string>;
+
 export function Stop(arg1:string,arg2:number):Promise<void>;
+
+export function StoreSpeakerWiFiCopy(arg1:string,arg2:number,arg3:string,arg4:string):Promise<main.WiFiCopyResult>;
 
 export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
 

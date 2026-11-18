@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -112,6 +113,12 @@ type presetWsHandler struct {
 	// onPlayModeKey switches shuffle or steps repeat on a Spotify playlist
 	// (webui.PlayModeKeyPress, #1679). nil-safe.
 	onPlayModeKey func(action string)
+	// onLikeKey saves the playing Spotify song to Liked Songs
+	// (webui.LikeKeyPress, #1165): thumbs up with nothing else on the key.
+	// onUnlikeKey removes it (webui.UnlikeKeyPress): thumbs down with
+	// nothing else on the key. Both nil-safe.
+	onLikeKey   func()
+	onUnlikeKey func()
 	// onRadioStepKey steps to the next or previous radio key when the key
 	// trace reports Next or Previous (webui.RadioStepKey, #1619). nil-safe.
 	onRadioStepKey func(forward bool)
@@ -331,6 +338,10 @@ type presetWsHandler struct {
 	// whether the speaker is in a zone or pair (doublepress.go, #1110).
 	doublePress doublePressDetector
 	group       groupMembership
+	// row2Single remembers the single press that played a key's second row
+	// because the key has nothing on row 1 (#1910), so the second half of a
+	// double press of that key does not start the same station again.
+	row2Single row2SinglePress
 	// playSlotFn recalls a preset slot through the app's path (webui
 	// PlaySlotForKey): how a double press plays the second row. nil = off.
 	playSlotFn func(ctx context.Context, slot int) (string, error)
@@ -587,12 +598,22 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// A second press of the same key moments after the first plays the key's
 	// second-row preset (#1110, doublepress.go). The first press has already
 	// started row 1 by now; it is never held back waiting for a second one.
-	switch plan, row2, first := h.planPress(slot, pressAt); plan {
+	plan, row2, first := h.planPress(slot, pressAt)
+	if plan != planSingle && h.row2Single.startedBy(slot, first) {
+		// A key with nothing on row 1 played its second row on the first
+		// press already (ordinaryPress). Starting it again would only cut the
+		// buffering station off and restart it; the webhook stays with the
+		// first press as on every double press.
+		h.logger.Info("double press on key "+strconv.Itoa(slot)+": row 2 already starting from the first press (nothing on row 1)",
+			"key", slot, "slot", row2.Slot, "gapMs", pressAt.Sub(first).Milliseconds())
+		return
+	}
+	switch plan {
 	case planRow2:
 		// Bumped here on the read loop, so the first press's recall stands
 		// down from this instant on. The webhook stays with the first press.
 		seq := h.pressSeq.Add(1)
-		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), "second press within the window")
+		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
 		return
 	case planConfirm:
 		// Inside a group one press can arrive as two frames. The first press's
@@ -632,6 +653,22 @@ func (h *presetWsHandler) ordinaryPress(ctx context.Context, pressAt time.Time, 
 			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
 			return
 		}
+	}
+	// A key with nothing on row 1 reports its press only because the
+	// reconcile keeps a placeholder on it (placeholderKeys, #1910). The
+	// placeholder is never played: there is no station behind it, and its
+	// /stream/N would only answer 404 into the verify's retry loop. The second
+	// row is all the key has, so a single press plays that; a key with only an
+	// additional-mode webhook has fired it above and plays nothing.
+	if row2, holder := h.placeholderPress(slot, location); holder {
+		if row2 == nil {
+			h.logger.Info("preset key holds only a placeholder (webhook key without a station), nothing to play", "slot", slot)
+			return
+		}
+		seq := h.pressSeq.Add(1)
+		h.row2Single.note(slot, pressAt)
+		go h.playRow2(ctx, seq, slot, *row2, 0, false, "nothing on row 1, the key plays its second row")
+		return
 	}
 	// The press sequence orders rapid presses exactly as the user made them.
 	// Bumped only for presses that actually recall (i.e. after the replace-mode
@@ -1568,9 +1605,13 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// A free/open Spotify account cannot autonomously play a saved context, so a
 	// hardware-button recall would silently produce no audio. Skip it and log the
 	// reason rather than thrashing the box (#45). The desktop app surfaces the
-	// "needs Premium" note; the hardware press has no UI to show it.
-	if h.spotify.PremiumRequired() {
-		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name)
+	// "needs Premium" note; the hardware press has no UI to show it. Asked for
+	// the key's own account, like the app path: a key another account saved
+	// switches to it in PlayAccount, so the logged-in plan does not decide (#1947).
+	if required, why := h.spotify.PremiumRequiredForWhy(p.Account); required {
+		// account and why: whose plan the verdict was about (#1947).
+		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name,
+			"account", anonymise.MaskAccount(p.Account), "why", why)
 		return
 	}
 

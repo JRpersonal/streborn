@@ -65,6 +65,7 @@ import { loadLanguagesForCountry, renderGenreChips } from './taxonomy.js';
 import { openUi2RadioTab, renderUi2Stations, syncFilterSummary, syncUi2RadioTabs } from './ui2radio.js';
 import { discoverFiltersApply } from './ui2stations.js';
 import { loadingHTML, stateHTML } from '../../shell2/library.js';
+import { PLAY_ICON } from '../../glyphs.js';
 
 // The UI 2.0 preview's station list says what went wrong where the list
 // would be (docs/UI-2.0.md, rule 3): listError holds the failed directory
@@ -918,7 +919,7 @@ export function renderSearchResults() {
           ${tagChips ? `<div class="result-tag-chips">${tagChips}</div>` : ''}
         </div>
         <div class="result-actions">
-          <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>
+          <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}" aria-label="${escapeAttr(t('search.playNow'))}">${PLAY_ICON}</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
           <button class="btn btn-mini fav-toggle${isFav(s) ? ' is-fav' : ''}" data-i="${i}" title="${escapeAttr(isFav(s) ? t('search.removeFav') : t('search.addFav'))}">${isFav(s) ? '&#9733;' : '&#9734;'}</button>
           ${favMode ? favMoveButtonsHTML(i, list.length) : ''}

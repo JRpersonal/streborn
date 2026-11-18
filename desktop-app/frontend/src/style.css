@@ -533,6 +533,34 @@ body {
 .share-fallback input { width: 100%; max-width: 28rem; }
 .share-foot { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* Stickers (stickers/dialog.js): the button and the one-time hint by the keys,
+   and the dialog with the sheet as it will print. The pages are canvases at
+   A4 proportions, scaled to the dialog's width. */
+.sticker-print-btn { position: relative; }
+.sticker-stale-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-startvol); flex: 0 0 auto; }
+.sticker-hint {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  margin: 8px 2px 0; padding: 8px 12px;
+  background: var(--brand-bg); border: 1px solid var(--brand-border); border-radius: 6px;
+}
+.sticker-hint p { margin: 0; flex: 1 1 260px; color: var(--brand-text); font-size: 13px; line-height: 1.4; }
+.phone-stickers { margin: 6px 0 0; font-size: 13px; }
+/* Only the preview scrolls, so Save stays in view under a tall sheet. */
+.sticker-modal { max-width: 720px; max-height: 92vh; display: flex; flex-direction: column; }
+.sticker-speakers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.sticker-speaker { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
+.sticker-speaker-name .muted { padding: 0; }
+.sticker-housing { display: inline-flex; gap: 14px; font-size: 13px; }
+.sticker-housing label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.sticker-skipped { margin: 0; font-size: 13px; color: var(--c-muted); }
+.sticker-status { min-height: 1.2em; margin: 8px 0; font-size: 13px; color: var(--c-muted); overflow-wrap: anywhere; }
+.sticker-status:empty { margin: 0; min-height: 0; }
+.sticker-status.is-ok { color: var(--signal-green); }
+.sticker-status.is-error { color: var(--signal-red); }
+.sticker-preview { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
+.sticker-speakers { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; }
+.sticker-page { display: block; width: 100%; height: auto; border: 1px solid var(--c-border-2); border-radius: 2px; background: #fff; }
+
 /* The one-time row under the install success message: set off by a thin rule
    and kept small, so it never competes with the result above it. */
 .share-offer {
@@ -795,6 +823,49 @@ body {
   line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* A cut-off title a click opened to its full length (#1811, titleexpand.js):
+   the one-line names of the station results and of Recently played, and the
+   two-line names above. A second click closes it again. */
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2).title-open {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+/* The small arrow that says a cut-off title opens: down while it is closed
+   (.title-cut, set by titleexpand.js only while the title really is cut off),
+   up while it is open. Drawn as two borders of a turned square, not as a font
+   glyph, so it is there on every desktop. It sits in the title's own end
+   padding, out of the flow, so it never changes a row's height, and that
+   padding exists only while the arrow does. Symmetric, so the same shape is
+   right in a right-to-left language; only its side changes. */
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2):is(.title-cut, .title-open) {
+  position: relative;
+  padding-inline-end: 18px;
+  cursor: pointer;
+}
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2):is(.title-cut, .title-open)::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 5px;
+  bottom: 0.5em;
+  bottom: calc(0.5lh - 2px);
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: solid var(--c-muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2).title-open::after {
+  bottom: 0.3em;
+  bottom: calc(0.5lh - 5px);
+  transform: rotate(-135deg);
 }
 
 /* ---------- Topbar ---------- */
@@ -1551,6 +1622,31 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .library-title { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .library-track-title { color: var(--c-text); }
 .library-track-meta { color: var(--c-muted); font-size: 11px; }
+
+/* The track that plays right now (#1874): its title in the playing colour
+   and three moving bars where the note was, so it is found at a glance in a
+   long folder and not told by colour alone. The bars are a background, no
+   asset; they stand still for a viewer who asked for less motion. */
+.library-row-track.is-now .library-track-title { color: var(--signal-green); font-weight: 600; }
+.library-row-track.is-now .library-icon { color: var(--signal-green); font-size: 0; }
+.library-row-track.is-now .library-icon::after {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 3px 45% no-repeat,
+    linear-gradient(currentColor, currentColor) 50% 100% / 3px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 100% 100% / 3px 70% no-repeat;
+  content: "";
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .library-row-track.is-now .library-icon::after { animation: library-now-bars 700ms ease-in-out infinite alternate; }
+}
+
+@keyframes library-now-bars { to { background-size: 3px 100%, 3px 40%, 3px 95%; } }
+
 .library-duration { color: var(--c-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
 .library-meta { color: var(--c-faint); font-size: 11px; }
 .library-actions { display: flex; gap: 6px; flex-shrink: 0; }
@@ -1614,6 +1710,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-power.on { border-color: var(--brand); color: var(--brand); }
 .btn-source-icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
 .btn-source-icon svg { display: block; }
+/* An icon drawn as SVG where a character would have been (glyphs.js): power,
+   play and the circled i are tofu boxes on a Debian desktop (#1948). 1em and
+   the text colour, sat on the baseline the character sat on. */
+.glyph { display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em; flex: none; overflow: visible; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }
 /* While a stereo pair half is selected the slider moves the whole pair, and the
    pair's name sits in front of it (#1093). The row grows by the label's width so
@@ -2224,6 +2324,12 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 
 /* "Update all speakers" multi-progress overlay (logical props so RTL mirrors) */
 .ua-modal { max-width: 560px; }
+/* What happens during the run, and the pre-scan's notes, above the rows. */
+.ua-lead p { margin: 6px 0 4px 0; font-size: 13px; line-height: 1.45; }
+.ua-lead ul { margin: 0 0 4px 0; padding: 0; list-style: none; }
+.ua-lead li { font-size: 12px; line-height: 1.4; color: var(--c-muted); padding-inline-start: 14px; position: relative; margin-bottom: 2px; }
+.ua-lead li::before { content: '\2022'; position: absolute; inset-inline-start: 2px; }
+.ua-lead:empty { display: none; }
 .ua-list { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px 0; }
 .ua-row { background: var(--c-surface); border-radius: 6px; padding: 8px 10px; }
 .ua-row-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
@@ -2946,6 +3052,9 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-card.offline { cursor: not-allowed; border-style: dashed; background: var(--c-surface); }
 .zone-card.offline:hover { background: var(--c-surface); }
 .zone-offline-note { font-size: 11px; color: var(--c-muted); }
+/* A stereo pair joins a group as one member and cannot lead one: its card
+   says so where the others offer "make main". */
+.zone-pair-note { font-size: 11px; color: var(--c-muted); }
 /* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the
    <option> popup do not inherit the app's dark theme on Linux/WebKitGTK, so
    they render white text on a white background. Force readable colors on every
@@ -3746,6 +3855,7 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .rc-key.rc-on { stroke: #4caf50; stroke-width: 2.5; }
 .rc-key.rc-sel { fill: #1f5f8f; stroke: #7cc0ff; stroke-width: 2.5; }
 .rc-key.rc-off { cursor: default; opacity: .4; }
+.rc-icon { fill: none; stroke: #e8e8e8; stroke-width: 2.2; stroke-linecap: round; pointer-events: none; }
 .rc-label { fill: #e8e8e8; font-size: 13px; font-family: system-ui, sans-serif; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
 .rc-legend { line-height: 1.7; }
 .rc-legend-on, .rc-legend-sel { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 4px; background: #2a2a2e; box-sizing: border-box; }

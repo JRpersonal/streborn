@@ -35,11 +35,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/JRpersonal/streborn/sticksetup"
 )
 
 // bootstrapMargePort is the LAN port the throwaway marge responder binds during
@@ -202,45 +205,164 @@ const dummyPairXML = `<?xml version="1.0" encoding="UTF-8" ?>` +
 // marge. The box's own HTTP response usually times out (it tries to reach its
 // then-current marge URL during association), but it still stores the account -
 // so a timeout here is treated as success, not failure.
-func (a *App) setMargeAccountDummy(host string) {
+//
+// It returns a one-line account of what the box answered, for the unlock log.
+// A box that answers at once usually REFUSED the account rather than storing it:
+// a factory-fresh Wave (2026-11-17 bundle) answered without ever calling the
+// local responder and its UUID never appeared, and nothing recorded what it
+// said, so the answer is logged with its status and the start of its body.
+//
+// refused is true only when the box ANSWERED with something other than 200 (the
+// Wave of the 2026-11-18 bundle: HTTP 500, SET_MARGE_ACCOUNT_ERROR 1038, within
+// a second). A timeout is not a refusal.
+func (a *App) setMargeAccountDummy(host string) (line string, refused bool) {
 	client := &http.Client{Timeout: 12 * time.Second}
 	url := fmt.Sprintf("http://%s:8090/setMargeAccount", host)
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(dummyPairXML))
 	if err != nil {
-		return
+		return "setMargeAccount: request not built: " + err.Error(), false
 	}
 	req.Header.Set("Content-Type", "application/xml")
+	start := time.Now()
 	resp, err := client.Do(req)
+	took := time.Since(start).Round(100 * time.Millisecond)
 	if err != nil {
 		// A timeout is the common, expected outcome and still sets the UUID.
-		a.logger.Info("telnet-bootstrap: setMargeAccount returned no clean response (expected; the box still stores the account)", "host", host, "err", err)
-		return
+		a.logger.Info("telnet-bootstrap: setMargeAccount returned no clean response (expected; the box still stores the account)", "host", host, "err", err, "took", took)
+		return fmt.Sprintf("setMargeAccount: no clean response after %v (expected): %v", took, err), false
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
+	snippet := strings.Join(strings.Fields(string(body)), " ")
+	a.logger.Info("telnet-bootstrap: setMargeAccount answered", "host", host, "status", resp.StatusCode, "took", took, "body", snippet)
+	return fmt.Sprintf("setMargeAccount: HTTP %d after %v: %s", resp.StatusCode, took, snippet), resp.StatusCode != http.StatusOK
+}
+
+// boxPoster POSTs an XML body to one path of the speaker's :8090 API and returns
+// the HTTP status and the start of the answer. A seam so the setup bracket below
+// is testable without a speaker.
+type boxPoster func(path, body string) (status int, answer string, err error)
+
+// boxPosterFor is the real boxPoster for host.
+func boxPosterFor(host string) boxPoster {
+	client := &http.Client{Timeout: 12 * time.Second}
+	return func(path, body string) (int, string, error) {
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:8090%s", host, path), strings.NewReader(body))
+		if err != nil {
+			return 0, "", err
+		}
+		req.Header.Set("Content-Type", "application/xml")
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, "", err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 600))
+		return resp.StatusCode, strings.Join(strings.Fields(string(b)), " "), nil
+	}
+}
+
+// setupBracketStates is the setup state machine the Bose app walked BEFORE it
+// sent setMargeAccount to a speaker that had never been set up (order from the
+// documented app capture: gesellix/Bose-SoundTouch, DEVICE-PAIRING-FLOW). The
+// language step of that capture is not repeated here, the install sets the
+// language before it ever reaches the unlock.
+var setupBracketStates = []string{
+	`<setupState state="SETUP_START"/>`,
+	`<setupState state="SETUP_IDENTIFY_DEVICE_ENTER" timeout="300000"/>`,
+	`<setupState state="SETUP_ENTER"/>`,
+	`<setupState state="SETUP_IDENTIFY_DEVICE_LEAVE"/>`,
+}
+
+// repeatLanguageIfSetupSaysUnset sets the speaker's language again when its own
+// /setup answer says SETUP_LANG_NOT_SET at the moment it refuses the account.
+// The install sets the language at its start, but the plain unlock that runs
+// before this bootstrap reboots the speaker, and a never-set-up Wave came back
+// from that reboot with the language unset again and refused the account with
+// 1038, with and without the setup bracket (2026-11-18, v1.8.0). The language
+// is the first gate of Bose's own setup, so it is repeated here, right before
+// the account is asked for again. Whether that is what lifts the refusal is NOT
+// proven; the answer and the state after it go to the unlock log.
+func repeatLanguageIfSetupSaysUnset(setupBody string, lang int, post boxPoster, get func(path string) string, log *strings.Builder) bool {
+	if !strings.Contains(setupBody, "SETUP_LANG_NOT_SET") {
+		return false
+	}
+	body := fmt.Sprintf("<sysLanguage>%d</sysLanguage>", lang)
+	status, answer, err := post("/language", body)
+	if err != nil {
+		fmt.Fprintf(log, "language repeat: POST /language %s: %v\n", body, err)
+		return false
+	}
+	fmt.Fprintf(log, "language repeat: POST /language %s: HTTP %d: %s\n", body, status, answer)
+	get("/setup")
+	return status == http.StatusOK
+}
+
+// pairInsideSetupBracket repeats the dummy-account request the way the Bose app
+// sent it: inside the setup state machine. It is the second attempt for a
+// speaker that refused the bare request (a never-set-up Wave answered it with
+// SET_MARGE_ACCOUNT_ERROR 1038, 2026-11-18). Whether the bracket is what that
+// firmware wants is NOT proven, no such speaker was on the bench; every answer
+// is therefore written to the unlock log so the next bundle decides it.
+//
+// SETUP_LEAVE is sent whenever SETUP_START went out, also after a failure, so
+// the speaker is never left inside its setup state. Returns whether the speaker
+// accepted the account (HTTP 200).
+func pairInsideSetupBracket(post boxPoster, log *strings.Builder) bool {
+	step := func(path, body string) (int, bool) {
+		status, answer, err := post(path, body)
+		if err != nil {
+			fmt.Fprintf(log, "setup bracket: POST %s %s: %v\n", path, body, err)
+			return 0, false
+		}
+		fmt.Fprintf(log, "setup bracket: POST %s %s: HTTP %d: %s\n", path, body, status, answer)
+		return status, true
+	}
+	accepted := false
+	started := false
+	walked := true
+	for _, st := range setupBracketStates {
+		if _, ok := step("/setup", st); !ok {
+			walked = false
+			break
+		}
+		started = true
+	}
+	if walked {
+		status, ok := step("/setMargeAccount", dummyPairXML)
+		accepted = ok && status == http.StatusOK
+	}
+	if started {
+		step("/setup", `<setupState state="SETUP_LEAVE"/>`)
+	}
+	return accepted
 }
 
 // enableSSHViaTelnetBootstrap is the factory-reset unlock: it gives the box a
 // dummy account, points its marge at a throwaway responder on this PC, injects
 // the sshd payload via envswitch, reboots, and waits for :22. Returns whether
-// SSH opened and a command log.
+// SSH opened, a command log, and firewallSuspected - true when the box came back
+// on the network but never called this PC's responder, which on Windows is
+// almost always the firewall blocking the inbound to :19080. The caller uses
+// that flag to name the firewall in its user-facing advice.
 //
 // Cleanup contract: once the injection is written it embeds this PC's live LAN
 // IP in the box's persistent config, so ANY failure exit after that point calls
 // restoreStockBoseURLsAndReboot before returning, leaving the box back on stock
 // URLs. On success the caller resets boseurls to stock (so STR's own marge
 // interception takes over) before installing.
-func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
+func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, bool) {
 	var log strings.Builder
 
 	pcIP, err := localIPForBox(host)
 	if err != nil {
 		a.logger.Info("telnet-bootstrap: cannot determine this PC's LAN IP for the box; skipping factory-reset unlock", "host", host, "err", err)
-		return false, "could not determine local IP: " + err.Error()
+		return false, "could not determine local IP: " + err.Error(), false
 	}
 	marge, err := startBootstrapMarge()
 	if err != nil {
 		a.logger.Warn("telnet-bootstrap: could not start the local marge responder on any candidate port; close any other STR instance or program using 19080-19085 and retry", "host", host, "err", err)
-		return false, "could not start the local marge responder: a port in the 19080-19085 range is in use by another program. Close any other running copy of this app and try again."
+		return false, "could not start the local marge responder: a port in the 19080-19085 range is in use by another program. Close any other running copy of this app and try again.", false
 	}
 	defer marge.Stop()
 	fmt.Fprintf(&log, "PC marge address for the box: http://%s:%d\n", pcIP, marge.port)
@@ -252,7 +374,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 
 	t, err := dialTAP(host, 5*time.Second)
 	if err != nil {
-		return false, "port 17000 not reachable: " + err.Error()
+		return false, "port 17000 not reachable: " + err.Error(), false
 	}
 
 	// Winning-sequence ORDER (this ordering bug is what failed the taigan unlock).
@@ -271,10 +393,30 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	} {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
-			return false, log.String()
+			return false, log.String(), false
 		}
 	}
-	a.setMargeAccountDummy(host)
+	pairLine, accountRefused := a.setMargeAccountDummy(host)
+	fmt.Fprintf(&log, "%s\n", pairLine)
+	if accountRefused {
+		// The speaker said no instead of timing out. Record what it thinks its
+		// own setup state is, then ask again the way the Bose app did.
+		get := func(path string) string {
+			body, gerr := a.boseGet(host, path)
+			if gerr != nil {
+				body = "not readable: " + gerr.Error()
+			}
+			body = strings.Join(strings.Fields(body), " ")
+			fmt.Fprintf(&log, "GET %s: %s\n", path, body)
+			return body
+		}
+		get("/soundTouchConfigurationStatus")
+		post := boxPosterFor(host)
+		langRepeated := repeatLanguageIfSetupSaysUnset(get("/setup"), sticksetup.SysLanguageForLocale(a.appLocale()), post, get, &log)
+		accountRefused = !pairInsideSetupBracket(post, &log)
+		a.logger.Info("telnet-bootstrap: language state before the second account request", "host", host, "languageRepeated", langRepeated)
+		a.logger.Info("telnet-bootstrap: the speaker refused the bare dummy account; repeated it inside the setup state machine", "host", host, "acceptedNow", !accountRefused)
+	}
 	// Wait for the association to actually PERSIST the account before injecting.
 	// The box POSTs to the responder over a few seconds (device -> full ->
 	// provider_settings) and only then stores its margeAccountUUID; checking
@@ -294,6 +436,16 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	}
 	fmt.Fprintf(&log, "dummy account persisted against local responder: %v (margeHits=%d)\n", uuidStuck, marge.hits.Load())
 	a.logger.Info("telnet-bootstrap: dummy account association result", "host", host, "uuidPersisted", uuidStuck, "margeHits", marge.hits.Load())
+	if accountRefused && !uuidStuck && marge.hits.Load() == 0 {
+		// Refused twice, nothing stored, never called this PC: a speaker without
+		// an account does not run the boot check the injection rides on, so the
+		// reboot and the four-minute wait cannot open SSH. Stop here; the caller
+		// restores the stock URLs. Not a firewall case, the speaker never tried.
+		t.close()
+		fmt.Fprintf(&log, "the speaker refused the dummy account with and without the setup state machine; unlock stopped before the reboot\n")
+		a.logger.Warn("telnet-bootstrap: the speaker refused the dummy account twice and stored none; stopping before the reboot (not a firewall case)", "host", host)
+		return false, log.String(), false
+	}
 
 	// Now swap marge to the INJECTION (same reachable base, so the boot curl
 	// connects to the responder as GET / and then runs the ;touch;sshd payload).
@@ -302,7 +454,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	for _, cmd := range buildBootstrapEnableSSHCommands(base) {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
-			return false, log.String()
+			return false, log.String(), false
 		}
 	}
 	_, _ = t.send("sys reboot")
@@ -314,15 +466,19 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	budget := agentWaitBudget(model) + 90*time.Second
 	if a.waitForSSHOpen(host, budget) {
 		a.logger.Info("telnet-bootstrap: SSH opened on the factory-reset box via the local-marge unlock", "host", host, "margeHits", marge.hits.Load())
-		return true, log.String()
+		return true, log.String(), false
 	}
 	// State-aware diagnosis instead of a blind "timed out": the box callback count
 	// plus its reachability say which failure this is, so the caller/UI can give the
 	// right advice (firewall vs power-cycle vs "this chassis needs the USB stick").
 	hits := marge.hits.Load()
 	reachable := tcpReachable(host, 8090, 2*time.Second)
-	a.logger.Info("telnet-bootstrap: SSH did not open", "host", host, "margeHits", hits, "boxReachableNow", reachable, "diagnosis", bootstrapFailureReason(hits, reachable))
-	return false, log.String()
+	// firewallSuspected: the box came back on the network but never called this
+	// PC's responder, so the inbound to :19080 was dropped - on Windows almost
+	// always the firewall prompt (project_bootstrap_used_box_deadend).
+	firewallSuspected := hits == 0 && reachable
+	a.logger.Info("telnet-bootstrap: SSH did not open", "host", host, "margeHits", hits, "boxReachableNow", reachable, "firewallSuspected", firewallSuspected, "diagnosis", bootstrapFailureReason(hits, reachable))
+	return false, log.String(), firewallSuspected
 }
 
 // bootstrapFailureReason turns the bootstrap end-state (how many times the box

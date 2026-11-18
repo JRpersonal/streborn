@@ -116,6 +116,11 @@ type UpdateOutcome struct {
 	// Attempts counts the full push cycles (1, or 2 after the one retry).
 	Attempts int    `json:"attempts"`
 	Err      string `json:"err"`
+	// UnplugFirst: the speaker is unreachable, it is a coprocessor Wi-Fi
+	// speaker (scm, wlan-mode "bco") and every one of its ports is closed. It
+	// hung in its own restart, and unplugging it for 30 seconds is the step
+	// that brings it back, so the frontend leads with that instead of waiting.
+	UnplugFirst bool `json:"unplugFirst"`
 }
 
 // FleetTarget is one speaker of a whole-house run. EngineOnly rows get the
@@ -198,8 +203,11 @@ type otaSeams struct {
 	// the late-confirmation memo, which ClassifyOTAResult does for the others.
 	locate          func(id speakerIdentity, exclude string, sweep bool) (host string, port int, ok bool)
 	noteUnconfirmed func(host, verdict string)
-	recordIntent    func(host string, port int, deviceID, name string)
-	clearIntent     func(host string, port int)
+	// unplugAdvised reports whether the classifier advised unplugging the
+	// speaker at host (ClassifyOTAResult, ota_oldbco.go); nil never does.
+	unplugAdvised func(host string) bool
+	recordIntent  func(host string, port int, deviceID, name string)
+	clearIntent   func(host string, port int)
 	// spawn runs fn without waiting for it (the group restore is fire and
 	// forget). Tests run it inline.
 	spawn func(fn func())
@@ -489,6 +497,13 @@ func (u *speakerUpdater) addr() (string, int) {
 		u.live, u.livePort = u.host, u.port
 	}
 	return u.live, u.livePort
+}
+
+// unplugFirst reports whether an unconfirmed run's verdict comes with the
+// advice to unplug the speaker: only an unreachable one the classifier found
+// on the coprocessor chassis with every port closed.
+func (u *speakerUpdater) unplugFirst(verdict, host string) bool {
+	return verdict == "unreachable" && u.seams.unplugAdvised != nil && u.seams.unplugAdvised(host)
 }
 
 // agentPushSettled reports this row's agent push as done to the batch gate.
@@ -859,6 +874,7 @@ func (u *speakerUpdater) run(attempt int) UpdateOutcome {
 		}
 		if confirmed == nil {
 			base.Verdict = cls
+			base.UnplugFirst = u.unplugFirst(cls, live)
 			base.Outcome = unconfirmedOutcome(cls)
 			base = u.restoreEngineAfterIncompleteUpdate(base)
 			u.phase(updatePhase{Phase: base.Outcome, Attempt: attempt, Outcome: base.Outcome})
@@ -935,6 +951,7 @@ func (u *speakerUpdater) fellBack(base UpdateOutcome, v map[string]string) (out 
 	}
 	base.Confirmed = false
 	base.Verdict = cls
+	base.UnplugFirst = u.unplugFirst(cls, live)
 	base.Outcome = unconfirmedOutcome(cls)
 	u.phase(updatePhase{Phase: base.Outcome, Attempt: base.Attempts, Outcome: base.Outcome})
 	return base, true
@@ -1369,6 +1386,7 @@ func (a *App) otaSeams() *otaSeams {
 			return a.locateSpeaker(id, exclude, sweep, a.BoxAgentVersion)
 		},
 		noteUnconfirmed: a.noteOTAUnconfirmed,
+		unplugAdvised:   unplugAdvised,
 		recordIntent: func(host string, port int, deviceID, name string) {
 			a.RecordUpdateIntent(host, port, appVersion, deviceID, name, true)
 		},

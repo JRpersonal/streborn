@@ -13,7 +13,8 @@ package webui
 //                              account to the firmware's own local API
 // POST /api/iheart/account     the same for iHeartRadio
 // DELETE /api/{pandora,iheart}/account removes it from the firmware and the
-//                              stand-in
+//                              stand-in; safe to repeat, and one removal runs
+//                              per service at a time
 //
 // GET  /api/pandora/stations, POST /api/pandora/play: the linked account's
 //                              stations and starting one (pandorastations.go)
@@ -23,13 +24,19 @@ package webui
 // The account calls need the service enabled (a US speaker, or the opt-in),
 // every call except GET needs a JSON body (a plain HTML form from a foreign
 // page cannot send one), and all of them the LAN. The password is passed
-// straight to the firmware and never stored or logged here.
+// straight to the firmware and never stored or logged here. A firmware
+// refusal reaches the client as a short sentence and a code, never as the
+// speaker's raw answer: that carries the unmasked deviceID (see
+// speakerErrorReason). The full answer is in the agent log.
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -83,7 +90,8 @@ func (s *Server) nativeBoxSources(ctx context.Context) map[string]map[string]str
 	out := map[string]map[string]string{}
 	srcs, err := s.nativeBox().GetSources(ctx)
 	if err != nil {
-		out["error"] = map[string]string{"error": err.Error()}
+		s.logger.Warn("us-services: could not read the speaker's sources", "err", err)
+		out["error"] = map[string]string{"error": "the speaker's source list could not be read (" + speakerErrorReason(err) + ")"}
 		return out
 	}
 	for _, typ := range marge.NativeServiceTypes() {
@@ -210,13 +218,17 @@ func (s *Server) handleNativeAccount(typ string) http.HandlerFunc {
 					})
 					return
 				}
-				http.Error(w, "the speaker refused the account: "+err.Error(), http.StatusBadGateway)
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": "the speaker refused the account (" + speakerErrorReason(err) + ")",
+					"code":  "account-refused",
+				})
 				return
 			}
 			s.logger.Info("us-services: account handed to the speaker's own client", "service", typ, "user", maskForLog(req.User))
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "note": "the speaker registers the source with STR next; check GET /api/us-services in a minute"})
 		case http.MethodDelete:
-			s.removeNativeAccount(ctx, w, typ, display)
+			res := s.removeNativeAccountShared(ctx, typ, display)
+			writeJSON(w, res.status, res.body)
 		default:
 			w.Header().Set("Allow", "POST, DELETE")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -236,6 +248,58 @@ const codeIHeartProfileIDTooLarge = "iheart-profileid-too-large"
 // a client that does not know the code yet.
 var nativeLoginErrorText = map[string]string{
 	codeIHeartProfileIDTooLarge: "The speaker's built-in iHeartRadio client cannot handle newer iHeart accounts, so this account cannot be added. Nothing is wrong with the account itself.",
+}
+
+// firmwareNamePattern is what a firmware error name or code may look like to
+// be passed on to a client; anything else is dropped from the reason.
+var firmwareNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
+
+// speakerErrorReason is the short, client-safe form of a failed call to the
+// speaker: the firmware's error code and name when it answered with its
+// error envelope, else the HTTP status, else that it did not answer. Never
+// the raw answer: the envelope carries the speaker's unmasked deviceID, and
+// the body can echo the account. Callers log the full error themselves.
+func speakerErrorReason(err error) string {
+	var be *boxapi.BoxError
+	if errors.As(err, &be) {
+		name, value := be.Name, be.Value
+		if !firmwareNamePattern.MatchString(name) {
+			name = ""
+		}
+		if !firmwareNamePattern.MatchString(value) {
+			value = ""
+		}
+		switch {
+		case name != "" && value != "":
+			return "speaker error " + value + " " + name
+		case name != "":
+			return "speaker error " + name
+		case value != "":
+			return "speaker error " + value
+		}
+		return fmt.Sprintf("speaker answered HTTP %d", be.Status)
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "the speaker did not answer in time"
+	}
+	return "the speaker could not be reached"
+}
+
+// isSourceAlreadyRemoved reports whether the speaker refused a removal
+// because the account is already gone (error 1047 SOURCE_ALREADY_REMOVED),
+// which is the outcome the caller asked for, typically reached by another
+// removal a moment before (#1937). The bare code is only matched as the
+// typed value, never as a substring of the message, where the deviceID can
+// contain it.
+func isSourceAlreadyRemoved(err error) bool {
+	if err == nil {
+		return false
+	}
+	var be *boxapi.BoxError
+	if errors.As(err, &be) && (be.Value == "1047" || strings.EqualFold(be.Name, "SOURCE_ALREADY_REMOVED")) {
+		return true
+	}
+	return strings.Contains(strings.ToUpper(err.Error()), "SOURCE_ALREADY_REMOVED")
 }
 
 // nativeLoginErrorCode recognises a known firmware login failure in the
@@ -301,15 +365,74 @@ func stillLinked(srcs []boxapi.Source, typ string) bool {
 	return false
 }
 
-// removeNativeAccount is DELETE /api/{pandora,iheart}/account.
+// nativeRemoveResult is one account removal's answer: the HTTP status and
+// the JSON body.
+type nativeRemoveResult struct {
+	status int
+	body   map[string]any
+}
+
+// nativeRemoveFlight is the removal running for one service. done closes
+// once res holds its answer.
+type nativeRemoveFlight struct {
+	done chan struct{}
+	res  nativeRemoveResult
+}
+
+// removeNativeAccountShared runs one removal per service at a time. A DELETE
+// that arrives while one runs does not send a second removeMusicServiceAccount
+// to the speaker: it waits and answers what the running one answered (#1937,
+// an app sent three DELETEs at once). One that arrives after it finished runs
+// its own, which finds nothing left to remove and answers 200.
+func (s *Server) removeNativeAccountShared(ctx context.Context, typ, display string) nativeRemoveResult {
+	s.nativeRemoveMu.Lock()
+	if f, ok := s.nativeRemoveFlights[typ]; ok {
+		s.nativeRemoveMu.Unlock()
+		s.logger.Info("us-services: a removal is already running, answering with its result", "service", typ)
+		select {
+		case <-f.done:
+			return f.res
+		case <-ctx.Done():
+			return nativeRemoveResult{status: http.StatusServiceUnavailable, body: map[string]any{
+				"error": "an earlier removal of this account is still running",
+				"code":  "remove-busy",
+			}}
+		}
+	}
+	f := &nativeRemoveFlight{
+		done: make(chan struct{}),
+		// Replaced below; a waiter only sees it if the removal panics.
+		res: nativeRemoveResult{status: http.StatusInternalServerError, body: map[string]any{
+			"error": "the removal did not finish",
+			"code":  "remove-failed",
+		}},
+	}
+	if s.nativeRemoveFlights == nil {
+		s.nativeRemoveFlights = map[string]*nativeRemoveFlight{}
+	}
+	s.nativeRemoveFlights[typ] = f
+	s.nativeRemoveMu.Unlock()
+	defer func() {
+		s.nativeRemoveMu.Lock()
+		delete(s.nativeRemoveFlights, typ)
+		s.nativeRemoveMu.Unlock()
+		close(f.done)
+	}()
+	f.res = s.removeNativeAccount(ctx, typ, display)
+	return f.res
+}
+
+// removeNativeAccount is DELETE /api/{pandora,iheart}/account; callers go
+// through removeNativeAccountShared.
 //
 // The account to remove is the one STR registered, else the one the firmware
 // lists, else the one carried over in the reflect file. A carried-over account
 // (linked with the Bose app before STR) has no STR registration, and an
 // earlier version sent no removal at all for it while still answering ok
 // (#1101). Success is only reported once /sources no longer lists the service
-// READY with an account.
-func (s *Server) removeNativeAccount(ctx context.Context, w http.ResponseWriter, typ, display string) {
+// READY with an account. A speaker that answers the account is already gone
+// (SOURCE_ALREADY_REMOVED) counts as a removal: the cleanup runs the same.
+func (s *Server) removeNativeAccount(ctx context.Context, typ, display string) nativeRemoveResult {
 	box := s.nativeBox()
 	user := s.native.NativeUsername(typ)
 	origin := "registration"
@@ -323,19 +446,26 @@ func (s *Server) removeNativeAccount(ctx context.Context, w http.ResponseWriter,
 	if user == "" {
 		user, origin = s.native.CarriedOverAccount(typ), "carried-over"
 	}
+	alreadyRemoved := false
 	if user != "" {
 		if err := box.RemoveMusicServiceAccount(ctx, typ, display, user); err != nil {
-			s.logger.Warn("us-services: the speaker refused the removal", "service", typ, "account", origin, "err", err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "the speaker refused to remove the account: " + err.Error(),
-				"code":  "remove-refused",
-			})
-			return
+			if !isSourceAlreadyRemoved(err) {
+				s.logger.Warn("us-services: the speaker refused the removal", "service", typ, "account", origin, "err", err)
+				return nativeRemoveResult{status: http.StatusBadGateway, body: map[string]any{
+					"error": "the speaker refused to remove the account (" + speakerErrorReason(err) + ")",
+					"code":  "remove-refused",
+				}}
+			}
+			alreadyRemoved = true
+			s.logger.Info("us-services: account already removed on the speaker", "service", typ, "account", origin, "err", err)
 		}
 	}
 	if err := s.native.ClearNative(typ); err != nil {
-		http.Error(w, "could not clear the stored source", http.StatusInternalServerError)
-		return
+		s.logger.Warn("us-services: could not clear the stored source", "service", typ, "err", err)
+		return nativeRemoveResult{status: http.StatusInternalServerError, body: map[string]any{
+			"error": "could not clear the stored source",
+			"code":  "clear-failed",
+		}}
 	}
 	if user != "" {
 		for i := 0; i < nativeRemoveRereads; i++ {
@@ -356,16 +486,15 @@ func (s *Server) removeNativeAccount(ctx context.Context, w http.ResponseWriter,
 			}
 			if i == nativeRemoveRereads-1 {
 				s.logger.Warn("us-services: the speaker still lists the account after the removal", "service", typ, "account", origin)
-				writeJSON(w, http.StatusBadGateway, map[string]any{
+				return nativeRemoveResult{status: http.StatusBadGateway, body: map[string]any{
 					"error": "the speaker still lists the account after the removal",
 					"code":  "still-linked",
-				})
-				return
+				}}
 			}
 		}
 	}
-	s.logger.Info("us-services: account removed", "service", typ, "account", origin, "sent", user != "")
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	s.logger.Info("us-services: account removed", "service", typ, "account", origin, "sent", user != "", "alreadyRemoved", alreadyRemoved)
+	return nativeRemoveResult{status: http.StatusOK, body: map[string]any{"ok": true}}
 }
 
 // decodeNativeJSON enforces a JSON content type and decodes a small body.

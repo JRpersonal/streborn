@@ -14,6 +14,8 @@ import { nowLine, playingLibraryURLs, queueNowItem } from '../../librarynow.js';
 import { formatClock } from '../../format.js';
 import { reportHook } from '../../shell2/state.js';
 import { nowStateGlyph, nowStateLabel } from '../../stoppedstate.js';
+import { PLAY_ICON } from '../../glyphs.js';
+import { playButtonOffersPlay } from '../../playbutton.js';
 import { queueEndLabelKey } from '../../queueend.js';
 import { titleSwapOffered } from '../../titleswap.js';
 import {
@@ -42,13 +44,19 @@ import {
 import { deps } from './deps.js';
 import { decodeProxyUrl, refreshPresetsIfChanged } from './presets.js';
 import { applyTrackScroll, renderPresets } from './presettiles.js';
-import { sourceListCache } from './sources.js';
+import { powerOnFromPlay, sourceListCache } from './sources.js';
 import { mstate } from './state.js';
 import { refreshStatus } from './status.js';
-import { stoppedOrPaused } from './wiring.js';
 
 export async function action(kind) {
   if (!state.currentBox) return;
+  // Play on a speaker in standby or with nothing loaded (#1920): the power
+  // button's "on", which wakes it and resumes the last item. A refusal reads
+  // like any Play the speaker did not take.
+  if (kind === 'wake') {
+    await powerOnFromPlay($('pauseBtn'), (e, box) => transportFailed('resume', e, box));
+    return;
+  }
   const fn = kind === 'pause' ? Pause
     : kind === 'resume' ? Resume
       : kind === 'next' ? Next
@@ -159,11 +167,10 @@ function renderQueueControls() {
   if (pos) {
     const items = q.items || [];
     const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
-    // The running song's artist and album, as its Library row named them
-    // (#1033); the title itself is already on the now-playing line.
-    const meta = queueTrackMeta(q);
-    const of = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
-    pos.textContent = [of, meta].filter(Boolean).join(' · ');
+    // Only the position. The running song's artist and album (#1033) used to
+    // follow here too, but since #1874 the now-playing line above carries
+    // them, so the same names stood twice in the player (#1922).
+    pos.textContent = (n > 0 && items.length > 0) ? t('queue.trackOf', { n, total: items.length }) : '';
   }
 }
 
@@ -223,11 +230,12 @@ export function renderNowPlayingBar() {
   const name = state.nowName || '';
   // Transport button doubles as Play/Pause: when the box is paused it offers
   // Play (resume from the paused position, like the Bose remote), otherwise
-  // Pause (#202).
+  // Pause (#202). In standby or with nothing loaded it offers Play as well,
+  // and the press wakes the speaker with what it played last (#1920).
   const ppBtn = $('pauseBtn');
   if (ppBtn) {
-    ppBtn.innerHTML = stoppedOrPaused(ps)
-      ? '&#9205; ' + escapeHtml(t('controls.play'))
+    ppBtn.innerHTML = playButtonOffersPlay(ps, src)
+      ? PLAY_ICON + ' ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
   // Track skip/previous: for a Spotify playlist, and for Bluetooth or AirPlay

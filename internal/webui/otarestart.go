@@ -585,6 +585,7 @@ func (s *Server) settleOTAHandOver(h otaHandOver, stopSplash func()) {
 func (s *Server) abandonOTAHandOver(stopSplash func()) {
 	s.logger.Error("post-OTA: the speaker could not be restarted; it keeps running the previous version until it is power-cycled, and accepts updates and engine deliveries again")
 	_ = os.Remove(otaRebootMarkerPath)
+	s.dropUpdateResumeMarker()
 	if stopSplash != nil {
 		stopSplash()
 	}

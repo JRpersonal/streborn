@@ -136,7 +136,13 @@ export function darkBatchPlan(entries) {
 // (a Portable cannot be switched off by unplugging it), the reset and USB
 // sentences that are known for that model, and leaves the stick out for a
 // model that never reads one.
-export function darkChecklistSteps(box) {
+//
+// unplugFirst (UpdateOutcome.unplugFirst) is the coprocessor Wi-Fi speaker
+// (the first-generation SoundTouch 20 and 30, scm Wave and consoles) that hung
+// in its own restart: every port closed, only its Wi-Fi chip still there.
+// Waiting does nothing for it and a power cut brings it back, so its first
+// step is to unplug it for 30 seconds instead of "give it time".
+export function darkChecklistSteps(box, { unplugFirst = false } = {}) {
   const m = modelOf(box);
   const battery = isBatteryModel(m);
   const dark = [ONE_VOL_RESET_MODELS.includes(m) ? 'darkCheck.resetKeys' : 'darkCheck.resetGeneric'];
@@ -156,7 +162,9 @@ export function darkChecklistSteps(box) {
     ];
   }
   return [
-    { id: 'wait', head: 'darkCheck.waitHead', lines: ['darkCheck.wait'], links: [] },
+    unplugFirst
+      ? { id: 'unplug', head: 'darkCheck.unplugHead', lines: ['darkCheck.unplug'], links: [] }
+      : { id: 'wait', head: 'darkCheck.waitHead', lines: ['darkCheck.wait'], links: [] },
     { id: 'power', head: 'darkCheck.powerHead', lines: [battery ? 'darkCheck.powerBattery' : 'darkCheck.power'], links: [] },
     { id: 'wifi', head: 'darkCheck.wifiHead', lines: ['darkCheck.wifi'], links: [] },
     { id: 'dark', head: 'darkCheck.darkHead', lines: dark, links },
@@ -165,8 +173,8 @@ export function darkChecklistSteps(box) {
 
 // darkChecklistBody is the ordered list and the closing line, without any
 // frame: the part every surface shares.
-export function darkChecklistBody(box) {
-  const items = darkChecklistSteps(box).map((s) => {
+export function darkChecklistBody(box, opts = {}) {
+  const items = darkChecklistSteps(box, opts).map((s) => {
     const text = s.lines.map((k) => escapeHtml(t(k))).join(' ');
     const links = s.links.map((l) =>
       ` <a href="#" class="link dark-check-link" data-darkopen="${escapeAttr(l.url)}">${escapeHtml(t(l.key))}</a>`).join('');
@@ -184,21 +192,23 @@ export function darkChecklistBody(box) {
 //   framed   true: the full panel with title and a Close button (the update
 //            report host); false: a lead line and the list, to sit inside a
 //            screen that already says the speaker did not come back
+//   unplugFirst  lead with unplugging for 30 seconds (darkChecklistSteps)
 // The callers gate on darkChecklistApplies; this renders what it is given.
-export function darkChecklistHtml({ name, box, model, context, framed } = {}) {
+export function darkChecklistHtml({ name, box, model, context, framed, unplugFirst } = {}) {
   const who = name || t('ui2.setup.wizard.newSpeaker');
   const rec = box || { model: model || '' };
+  const opts = { unplugFirst: !!unplugFirst };
   if (!framed) {
     return `<div class="setup-help dark-check" data-darkcheck="${context === 'install' ? 'install' : 'update'}">`
       + `<b>${escapeHtml(t('darkCheck.lead'))}</b>`
-      + darkChecklistBody(rec)
+      + darkChecklistBody(rec, opts)
       + '</div>';
   }
   const intro = context === 'install' ? 'darkCheck.introInstall' : 'darkCheck.introUpdate';
   return `<div class="failreport-inner dark-check" data-darkcheck="${context === 'install' ? 'install' : 'update'}">`
     + `<div class="failreport-title">${escapeHtml(t('darkCheck.title', { name: who }))}</div>`
     + `<p class="muted small">${escapeHtml(t(intro, { name: who }))}</p>`
-    + darkChecklistBody(rec)
+    + darkChecklistBody(rec, opts)
     + '<div class="failreport-actions">'
     + `<button class="btn btn-secondary btn-mini" data-darkclose="1">${escapeHtml(t('common.close'))}</button>`
     + '</div></div>';
@@ -206,11 +216,11 @@ export function darkChecklistHtml({ name, box, model, context, framed } = {}) {
 
 // darkChecklistRowHtml is the fold-out under one speaker's row in the Update
 // all window: a whole panel per speaker would bury the other rows.
-export function darkChecklistRowHtml({ name, box, model } = {}) {
+export function darkChecklistRowHtml({ name, box, model, unplugFirst } = {}) {
   return '<details class="dark-check dark-check-row" data-darkcheck="update">'
     + `<summary>${escapeHtml(t('darkCheck.rowSummary'))}</summary>`
     + `<p class="muted small">${escapeHtml(t('darkCheck.introUpdate', { name: name || '' }))}</p>`
-    + darkChecklistBody(box || { model: model || '' })
+    + darkChecklistBody(box || { model: model || '' }, { unplugFirst: !!unplugFirst })
     + '</details>';
 }
 

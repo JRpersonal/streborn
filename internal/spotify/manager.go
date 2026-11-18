@@ -235,6 +235,12 @@ type Manager struct {
 	// older process does not land in the new one.
 	engineFeatures    map[string]bool
 	engineFeaturesGen uint64
+	// likedURI, likedState and likedAt are the last song written to Liked
+	// Songs (saved: true, removed: false) and when, so a repeated press of
+	// the same key on the same song writes once (liked.go). Memory only.
+	likedURI   string
+	likedState bool
+	likedAt    time.Time
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
@@ -298,6 +304,11 @@ type Manager struct {
 	engineKeyDeniedAt      time.Time
 	engineKeyDeniedMsg     string
 	engineStopsOnKeyDenial bool
+	// keyRefusalClearedAt is when the engine last delivered real audio after a
+	// refusal had been noted: the short AudioKeyRefused notice stops at that
+	// point instead of running out its ten minutes over a track that plays
+	// (discussion #1930). See noteKeyRefusalStreamedLocked in keydenied.go.
+	keyRefusalClearedAt time.Time
 	// refusedAccounts maps each Spotify account id this engine has been refused
 	// for (a whole run of audio keys, not one track) to when that was first
 	// recorded. Kept on the NAND until the account plays; see accountrefused.go.

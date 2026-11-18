@@ -57,7 +57,21 @@ trips the five-refusal run and gets paused by the agent; a newer one trips
 a recall during its back-off fails at once with an explaining message
 instead of waiting out the load timeouts.
 
-`AudioKeyRefused()` lasts ten minutes. For the apps the speaker also keeps
+A play that fails on a refused key is returned as an error with an
+`AudioKeyDenied` method (`spotify.IsAudioKeyDenied`), whichever of the two
+messages explains it. The app recall asks that method before its last-attempt
+re-play (`webui.isSpotifyKeyDenied`); it used to look for the words "audio key
+denied", which the back-off message does not contain, so a play refused during
+the back-off was answered with another play (discussion #1947).
+
+`AudioKeyRefused()` lasts ten minutes, or until the engine delivers real
+audio again, whichever comes first (discussion #1930: the notice used to
+outlive a preset that played). That first audio page also resets the
+five-refusal run, so refusals on either side of a track that plays never add
+up to a run, and a refusal after it is reported again at once
+(`noteKeyRefusalStreamedLocked`). The `spotify_auth` debug section carries
+the run, the timestamps of each source and of the last clear. For the apps
+the speaker also keeps
 a sticky, per-account record (`internal/spotify/accountrefused.go`,
 discussion #1671): each refusal episode (either trip above, deduplicated
 within the 30 s run gap) asks the engine once which account is logged in
@@ -69,6 +83,16 @@ refused account never produces) removes it again. `/spotify/info` reports
 `accountRefusedName`; the desktop app shows a short notice in the
 now-playing area and the UI 2.0 Spotify accounts card, the phone page under
 its now-playing line, both only while STR's Spotify is the source.
+
+While a recall switches accounts the refusal fields (`premiumRequired`,
+`audioKeyRefused`, `accountRefused`, `accountRefusedName`) are reported empty,
+because until the restarted engine is up they still describe the account being
+left (`accountswitchinfo.go`, discussion #1947: the "free account" notice sat
+over a Premium account's key for the eight seconds of the switch). A switch is
+read from state that already exists: the restart a cross-account recall just
+made, or a recall in flight while the logged-in account gates as free (the
+gate refuses that account's own keys before a recall is marked, so it can only
+be another account's key). A recall on the account that stays keeps its notice.
 
 Under the notice a folded "Why, and what you can try" says the reason and
 the decisive test. A free account (`product` free/open, or
@@ -141,6 +165,14 @@ The speaker's engine is built by `.github/workflows/go-librespot.yml` from
 carries both halves the box needs: the Ogg-passthrough (the box decodes,
 the engine never does) and the merged upstream. Every other branch in the
 fork is history.
+
+Last upstream merge: 2026-11-16 (fork PR #13, upstream f83227e, 17 commits).
+Relevant to STR: a stalled audio chunk is fetched again, dead pooled HTTP/2
+connections are replaced, incomplete metadata no longer panics, the
+playback id is cleared with the track (an Android Spotify client crashed on
+the stale id), and a Web API play of a plain track list plays. The Vorbis,
+ALSA and PulseAudio fixes do not reach the lean build. Field-tested on the
+Portable (.79) on 2026-11-17: two skips and two natural track changes.
 
 Building an older topic branch is not a harmless mistake, because the
 failure looks like a box problem: the engine starts, authenticates, and
@@ -439,6 +471,47 @@ or an unreachable engine means the old toggle-and-skip staging, unchanged.
 The warm same-context fast path (pressing the playing preset again) still
 toggles and skips, because there the skip is the point.
 
+### Liked Songs from the remote's thumbs keys (`liked.go`, `webui/likekey.go`)
+
+Thumbs up while STR's Spotify plays saves the current song to the account's
+Liked Songs, thumbs down removes it (discussion #1165; the key rules are in
+`docs/AUTOMATION.md`). `LikeCurrentTrack` and `UnlikeCurrentTrack` read the
+loaded song from the engine's `/status` and post it to the engine's
+`POST /library/liked` as `{"uris":["spotify:track:..."],"liked":true}` or
+`"liked":false`. The value is always sent: the engine answers 400 without it.
+
+A repeat of the same action on the same song inside 30 s is answered from
+memory (a save re-stamps the song's "added" date). The memory holds the
+action as well as the song, so a removal right after a save and a save right
+after a removal are always written. STR does not ask whether the song is in
+the list before removing it (`GET /library/liked` exists for that): the
+collection write carries the removal either way, so a song that was not
+liked is not an error and costs no second round trip.
+
+No Web API call and no OAuth scope are involved. The engine writes to
+Spotify's internal collection service (`spclient` `/collection/v2/write`,
+`is_removed` for a removal) with the session it plays with. The access token
+`POST /token` hands out is deliberately not used: whether it carries
+`user-library-modify` for `PUT /v1/me/tracks` is not known, and the Web API
+is the part Spotify rate-limits for hours on some households (see the plan
+read above).
+
+The route is in the fork since the 2026-10 upstream merge (upstream
+`479f3fc`, `feat: add POST /library/liked and /library/playlists/add_tracks`).
+It is not in the `features` list of `GET /`, so an older build is told by its
+answer on the press itself: the engine's router is `net/http`'s `ServeMux`,
+which answers an unknown route with 404 (or 405) and a text body, while the
+daemon's own error answers carry no body. That reads as `engine-too-old`.
+The daemon's other answers: 200 written, 204 no session, 400 not a track URI,
+403 passed on from Spotify, 502 or 500 for everything else Spotify refused
+(a 401 or 429 from the collection service arrives as one of those two, the
+daemon does not pass them on as such; STR still maps a 401 or 429 should a
+later build do so).
+
+Field state (2026-11-18): the save is confirmed on a Portable with the
+release engine (key trace, write, panel notice, the song in Liked Songs). The
+removal has not run against Spotify from STR yet.
+
 ### Volume: the speaker owns it, the app's slider follows (`volumesync.go`)
 
 The engine runs with `external_volume`, so a Connect volume command only
@@ -532,6 +605,28 @@ arrived) falls back to the Web API `GET /v1/me`, which on some households
 answers 429/503 for hours (#1077). The log says once per engine process
 which source was used: `read the account plan from the engine` or
 `read the account plan from Spotify`.
+
+The recall gate asks `PremiumRequiredFor(<the key's account>)`, not the
+plan of whoever is logged in. A key saved by another account that has a
+credential copy in `sp-accounts/` switches to that account before it plays,
+so the logged-in account's plan says nothing about it and does not refuse
+it. Until v1.6.4 it did: with the engine sitting on an account that had
+lapsed to free, every Spotify key on the speaker answered
+`spotify-premium-required`, the Premium account's keys included, until that
+Premium account was tapped in again (discussion #1947). A key of the
+logged-in account, a key without an account, and a key whose account has no
+usable copy (it would play with the logged-in account) keep the old answer.
+
+Both gate log lines (`... account is free/open, recall needs Premium ...`, app
+and hardware key) say which of those cases decided: `account` is the key's
+account, masked like every other account in the log, and `why` comes from
+`PremiumRequiredForWhy`: the case (`key-has-no-account`,
+`key-account-is-logged-in`, `key-account-has-no-stored-login`,
+`key-account-stored-login-unusable`), the logged-in account (masked), its
+plan as read in this engine run, whether the engine's free-account log line
+latched, and the plan remembered for the key's account. The `presets` section
+of `/api/debug/state` carries the same masked `account` per key, so a bundle
+shows which keys belong to which account without naming anyone.
 
 `/v1/me` is still the only source of the account's display name
 (`accountnames.go`). So when the engine reports the plan but no name is

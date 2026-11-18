@@ -36,13 +36,14 @@ export const MODELLED_BINDINGS = [
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
-  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'LibraryFolder', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
+  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'LibraryFolder', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev', 'PreviewPresetKeyCopy',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
+  'SaveStickerPDF', 'StickerImage',
   'SaveFolderPreset', 'SaveLibraryPreset', 'SaveNativePreset', 'SavePandoraStationPreset', 'SaveQueuePreset', 'SaveSpotifyPreset', 'SearchLibrary',
   'SetAppFlag', 'SetAppLocale', 'SetBoxPower', 'SetBoxVolume', 'SetClockBrightness', 'SetClockDisplay', 'SetDisplayClock', 'SetPreset', 'SetStandbyClock',
-  'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StreamBitrate', 'StreamTitleInfo',
+  'SpotifyNowPlaying', 'StartQueue', 'Status', 'Stop', 'StickConfigs', 'StickVersion', 'StoreSpeakerWiFiCopy', 'StreamBitrate', 'StreamTitleInfo',
   'SuggestBoxLanguage', 'TrackPosition', 'TryWiFiPassword', 'WakeBox',
 ];
 
@@ -223,6 +224,10 @@ export function installDesktopMock({ scenario, demo }) {
       return v;
     },
     PhoneQR: () => demo.phoneQR,
+    // The sticker sheet (stickers/): no logo is fetched in a mocked run, and
+    // the save answers with the path the dialog then shows.
+    StickerImage: () => '',
+    SaveStickerPDF: () => '/home/demo/Downloads/st-reborn-stickers.pdf',
     GetPresets: ([h]) => clone(presetsFor(h)),
     // The argument orders are those of app_presets.go.
     SetPreset: ([h, , slot, name, url, art, bitrate, homepage, codec]) => {
@@ -374,6 +379,10 @@ export function installDesktopMock({ scenario, demo }) {
     ListWiFiProfiles: () => clone(demo.wifi),
     TryWiFiPassword: () => '',
     CurrentWiFi: () => 'HomeWiFi',
+    // STR's copy of a speaker's Wi-Fi (wificopy.js): kept, store-only. A spec
+    // that needs the quiet note overrides it with { stored: false, note: true }.
+    KeepSpeakerWiFiCopy: () => ({ stored: true, reason: 'stored', note: false }),
+    StoreSpeakerWiFiCopy: () => ({ stored: true, reason: 'stored', note: false }),
     SuggestBoxLanguage: () => 3,
     GetBoxLanguage: () => '3',
     GetAirplayOpt: () => ({ enabled: true }),

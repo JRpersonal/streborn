@@ -106,7 +106,7 @@ func TestASpotifyRecallThatCannotSucceedNeverReachesTheSpeaker(t *testing.T) {
 			setup: func(s *Server) {
 				s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 				s.spotifyCanRecall = func(context.Context) bool { return true }
-				s.spotifyPremiumRequired = func() bool { return true }
+				s.spotifyPremiumRequired = func(string) (bool, string) { return true, "" }
 			},
 			wantCode: http.StatusUnprocessableEntity,
 			wantBody: "spotify-premium-required",
@@ -152,7 +152,7 @@ func TestTheSpotifyGateOnlyRefusesSpotifyRecallsThatCannotWork(t *testing.T) {
 	s, _ := newPlayTestServer(t)
 	s.spotifyPlay = func(context.Context, string, string, bool, bool) error { return nil }
 	s.spotifyCanRecall = func(context.Context) bool { return true }
-	s.spotifyPremiumRequired = func() bool { return false }
+	s.spotifyPremiumRequired = func(string) (bool, string) { return false, "" }
 
 	radio := presets.Preset{Slot: 2, Name: "Test Station", Type: "radio", StreamURL: "http://stream.example/x"}
 	spot := presets.Preset{Slot: 1, Name: "Mix", Type: "spotify", URI: "spotify:playlist:x"}

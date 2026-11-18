@@ -693,41 +693,16 @@ func (a *agent) buildMarge() error {
 	}()
 
 	// A pair record restored from NAND can describe a pair that no longer
-	// exists: a Bose factory reset wipes the firmware's own pairing
-	// (GroupService) but not /mnt/nv/streborn. Once the firmware answers, two
-	// consecutive empty /getGroup reads 30s apart with still no live
-	// confirmation (no firmware group post, no canonical install) drop the
-	// phantom record, so the group poll stops resurrecting a dead pair.
-	// Reads only; the single NAND write is the one-time record removal.
+	// exists; dropPhantomRestoredPair (groupadopt.go) knows the two ways to
+	// tell. Reads only; the single NAND write is the one-time record removal.
 	if margeSrv.GroupRestoredUnconfirmed() {
-		go func() {
-			c := boxapi.New(a.flags.boxHost)
-			emptyReads := 0
-			for i := 0; i < 40; i++ { // give a slow boot up to ~20 min
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(30 * time.Second):
-				}
-				if !margeSrv.GroupRestoredUnconfirmed() {
-					return // confirmed by a live signal meanwhile
-				}
-				gctx, gcancel := context.WithTimeout(ctx, 6*time.Second)
-				g, err := c.GetGroup(gctx)
-				gcancel()
-				if err != nil {
-					emptyReads = 0 // firmware not answering yet; start over
-					continue
-				}
-				if g.ID != "" || len(g.Members) > 0 {
-					return // firmware still paired: the restored record is real
-				}
-				if emptyReads++; emptyReads >= 2 {
-					margeSrv.ClearGroup("firmware reports no pair after restart (factory reset?)")
-					return
-				}
-			}
-		}()
+		c := boxapi.New(a.flags.boxHost)
+		go dropPhantomRestoredPair(ctx, margeSrv,
+			func(ctx context.Context) (string, error) {
+				info, err := c.GetInfo(ctx)
+				return info.Type, err
+			},
+			c.GetGroup, phantomPairCheckInterval, logger.With("comp", "groupadopt"))
 	}
 	// A pair the firmware holds but STR does not (first boot after installing
 	// STR on a speaker paired in the Bose app) is adopted before the firmware's
@@ -1307,7 +1282,11 @@ func (a *agent) buildBoxLink() error {
 		// thumbs key, and the radio-key step on Next/Previous (#1619).
 		onSleepFixedKey: webuiSrv.SleepFixedKeyPress,
 		onPlayModeKey:   webuiSrv.PlayModeKeyPress,
-		onRadioStepKey:  webuiSrv.RadioStepKey,
+		// Thumbs up with nothing else on the key saves the playing Spotify
+		// song to Liked Songs, thumbs down removes it (#1165).
+		onLikeKey:      webuiSrv.LikeKeyPress,
+		onUnlikeKey:    webuiSrv.UnlikeKeyPress,
+		onRadioStepKey: webuiSrv.RadioStepKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).
@@ -1602,6 +1581,10 @@ func (a *agent) buildBoxLink() error {
 		}
 		return false, false
 	}
+	// A press on a key the speaker lost while the store still holds it is
+	// played by STR and re-registers the keys (deadkey.go, #1931).
+	holdSave.deadKey = func(slot int) deadKeyVerdict { return deadKeyOnBox(store, a.flags.boxHost, slot) }
+	holdSave.playDeadKey = func(slot int, v deadKeyVerdict) { wsHandler.playDeadKey(context.Background(), slot, v) }
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}

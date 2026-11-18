@@ -70,7 +70,11 @@ var errNoRenderer = errors.New("no renderer")
 // hushForUpload stops STR's own playback so a large OTA transfer does not have
 // to compete with it. Best-effort and never fatal: an update must go ahead
 // whatever the speaker says about what it is playing.
-func (s *Server) hushForUpload(what string) {
+//
+// It returns what the speaker reported before anything was stopped (an empty
+// Source when it could not be read). An agent update decides from that whether
+// the speaker gets its music back after the restart (resume_update.go).
+func (s *Server) hushForUpload(what string) nowPlayingSnapshot {
 	ctx, cancel := context.WithTimeout(context.Background(), hushBudget)
 	defer cancel()
 
@@ -80,15 +84,15 @@ func (s *Server) hushForUpload(what string) {
 		// Unreadable. Stopping blind could silence a source STR does not own,
 		// which is the one outcome worse than the stutter.
 		s.logger.Debug("upload: could not read what the speaker is playing, leaving it alone", "endpoint", what)
-		return
+		return np
 	case np.Source == "STANDBY" || np.Source == "INVALID_SOURCE":
-		return // nothing playing, nothing to quieten
+		return np // nothing playing, nothing to quieten
 	case np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE":
-		return // a source is selected but silent; stopping it would change nothing
+		return np // a source is selected but silent; stopping it would change nothing
 	case boxOwnedSource(np.Source):
 		s.logger.Info("upload: the speaker is playing its own source, leaving it alone for the transfer",
 			"endpoint", what, "source", np.Source)
-		return
+		return np
 	}
 
 	// Latch the stop as deliberate BEFORE it happens. Without this the
@@ -98,8 +102,11 @@ func (s *Server) hushForUpload(what string) {
 	s.NoteUserStop()
 	if err := s.hushStop(ctx); err != nil {
 		s.logger.Warn("upload: could not stop playback before the transfer", "endpoint", what, "err", err)
-		return
+		return np
 	}
+	// Remembered for the agent update that may follow this transfer.
+	s.noteHushStopped()
 	s.logger.Info("upload: stopped playback so the transfer has the speaker to itself",
 		"endpoint", what, "source", np.Source)
+	return np
 }

@@ -23,6 +23,50 @@ echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
 # appear (post-install, user pulled it). In that case we still
 # fall back to NAND override below.
 #
+# But only wait when there is reason to. Bose's shelby_local runs this
+# file SYNCHRONOUSLY and only afterwards brings the network up (ifup eth0
+# on BCO, the wlan1 setup on sm2) and lets S99SoundTouch start BoseApp.
+# An unconditional 30s wait therefore made every stickless boot of every
+# installed speaker 30s slower, and on BCO the network came up 30s late
+# (boot.log: "rc.local triggered" and "NAND override active" exactly 30s
+# apart). USB enumeration is done long before S97, so with a NAND override
+# in place and no USB mass-storage device at all (no /sys/block/sd*, no
+# USB interface of class 08) there is no stick that could still mount, and
+# we go straight on. We keep the full bounded wait when a mass-storage
+# device exists (the udev mount is async), when there is no NAND override
+# yet (the stick is then the only way to start), and when /sys/block is
+# not visible (we cannot tell, so behave as before).
+STICK_WAIT_MAX=30
+usb_storage_seen() {
+    # Prints what it found and returns 0 when a USB mass-storage device is
+    # present, mounted or not.
+    for _usb in /sys/block/sd*; do
+        [ -e "$_usb" ] && { echo "${_usb##*/}"; return 0; }
+    done
+    for _usb in /sys/bus/usb/devices/*/bInterfaceClass; do
+        [ -r "$_usb" ] || continue
+        if [ "$(cat "$_usb" 2>/dev/null)" = "08" ]; then
+            _usb="${_usb%/bInterfaceClass}"
+            echo "USB interface ${_usb##*/}"
+            return 0
+        fi
+    done
+    return 1
+}
+if [ ! -x /mnt/nv/streborn/run-override.sh ]; then
+    STICK_WAIT=$STICK_WAIT_MAX
+    echo "$(date): no NAND override yet, waiting up to ${STICK_WAIT}s for the stick" >> "$LOGDIR/boot.log"
+elif [ ! -d /sys/block ]; then
+    STICK_WAIT=$STICK_WAIT_MAX
+    echo "$(date): /sys/block not visible, waiting up to ${STICK_WAIT}s for the stick" >> "$LOGDIR/boot.log"
+elif USB_SEEN=$(usb_storage_seen); then
+    STICK_WAIT=$STICK_WAIT_MAX
+    echo "$(date): USB storage present ($USB_SEEN), waiting up to ${STICK_WAIT}s for the stick" >> "$LOGDIR/boot.log"
+else
+    STICK_WAIT=0
+    echo "$(date): no USB storage, not waiting for a stick" >> "$LOGDIR/boot.log"
+fi
+#
 # Mount path discovery: Bose's udev rule almost always lands the
 # first USB block device at /media/sda1 across all SoundTouch
 # models (ST10 micro-USB, ST20/30 USB-A; same udev script). On a
@@ -30,9 +74,12 @@ echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
 # something else claimed sda first), we still find the stick.
 # /media/sda1 stays the primary check so existing behaviour is
 # preserved on every box that already worked.
+#
+# The loop always probes once, so a stick that is already mounted is found
+# even when STICK_WAIT is 0.
 STICK_PATH=""
 i=0
-while [ $i -lt 30 ]; do
+while :; do
     for cand in /media/sda1 /media/sdb1 /media/sdc1 /media/sdd1; do
         if [ -e "$cand/run.sh" ] || [ -e "$cand/streborn-armv7l" ]; then
             STICK_PATH="$cand"
@@ -41,6 +88,10 @@ while [ $i -lt 30 ]; do
     done
     if [ -n "$STICK_PATH" ]; then
         echo "$(date): stick detected at $STICK_PATH after ${i}s" >> "$LOGDIR/boot.log"
+        break
+    fi
+    if [ $i -ge "$STICK_WAIT" ]; then
+        [ "$STICK_WAIT" -gt 0 ] && echo "$(date): no stick after ${i}s, going on without it" >> "$LOGDIR/boot.log"
         break
     fi
     sleep 1

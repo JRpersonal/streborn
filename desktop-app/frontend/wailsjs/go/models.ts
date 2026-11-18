@@ -282,6 +282,7 @@ export namespace main {
 	    name: string;
 	    strOrigin: boolean;
 	    lost: boolean;
+	    row2Key: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new BoxPresetInfo(source);
@@ -297,6 +298,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.strOrigin = source["strOrigin"];
 	        this.lost = source["lost"];
+	        this.row2Key = source["row2Key"];
 	    }
 	}
 	export class BoxSSHState {
@@ -551,6 +553,7 @@ export namespace main {
 	    unmet: string;
 	    attempts: number;
 	    err: string;
+	    unplugFirst: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateOutcome(source);
@@ -571,6 +574,7 @@ export namespace main {
 	        this.unmet = source["unmet"];
 	        this.attempts = source["attempts"];
 	        this.err = source["err"];
+	        this.unplugFirst = source["unplugFirst"];
 	    }
 	}
 	export class FleetOutcome {
@@ -1209,6 +1213,24 @@ export namespace main {
 	        this.album = source["album"];
 	    }
 	}
+	export class RestartPlan {
+	    mode: string;
+	    chassis: string;
+	    agentVersion: string;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RestartPlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.chassis = source["chassis"];
+	        this.agentVersion = source["agentVersion"];
+	        this.reason = source["reason"];
+	    }
+	}
 	export class SavedPair {
 	    id: string;
 	    name: string;
@@ -1598,6 +1620,7 @@ export namespace main {
 	    message: string;
 	    log: string;
 	    wipedFiles: string[];
+	    buttonReset?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TrueFactoryResetResult(source);
@@ -1610,6 +1633,7 @@ export namespace main {
 	        this.message = source["message"];
 	        this.log = source["log"];
 	        this.wipedFiles = source["wipedFiles"];
+	        this.buttonReset = source["buttonReset"];
 	    }
 	}
 	export class UninstallSTRResult {
@@ -1661,6 +1685,22 @@ export namespace main {
 	    }
 	}
 	
+	export class WiFiCopyResult {
+	    stored: boolean;
+	    reason: string;
+	    note: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new WiFiCopyResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stored = source["stored"];
+	        this.reason = source["reason"];
+	        this.note = source["note"];
+	    }
+	}
 	export class WingetUpdateResult {
 	    started: boolean;
 	    notYet: boolean;

@@ -12,6 +12,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/upnp"
+	"github.com/JRpersonal/streborn/internal/webhooks"
 )
 
 // doublePressRig is a handler whose box-facing edges are recorded: the row-1
@@ -303,5 +304,173 @@ func TestBoxRowPresetsDropsTheSecondRow(t *testing.T) {
 	// cannot loop on a key the speaker does not have.
 	if missing := slotsMissingOnBox(in, nil, nil); len(missing) != 2 {
 		t.Fatalf("slotsMissingOnBox = %v, want only 1 and 6", missing)
+	}
+}
+
+// #1910: keys with nothing on row 1 hold a placeholder (placeholderKeys) so
+// the speaker reports their press at all. The placeholder itself is never
+// played; what the press plays is decided here.
+
+// row2OnlyStore holds a station on key 3's second row (slot 9) and nothing on
+// key 3's first row.
+func row2OnlyStore(t *testing.T) *presets.Store {
+	t.Helper()
+	s := presets.New()
+	_ = s.SetSlot(presets.Preset{Slot: 9, Name: "Nine", StreamURL: "http://radio.example/nine", Type: "radio"})
+	return s
+}
+
+const key3Location = "http://127.0.0.1:8888/stream/3"
+
+// webhookHits builds a webhook store whose preset keys fire at a local
+// server, and returns a channel that receives one value per fire.
+func webhookHits(t *testing.T, replace, additional []int) (*webhooks.Store, chan struct{}) {
+	t.Helper()
+	hits := make(chan struct{}, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	s := hookStore(t, nil, nil)
+	cfg := webhooks.Config{Buttons: map[string]webhooks.Trigger{}}
+	for _, group := range []struct {
+		keys []int
+		mode string
+	}{{replace, webhooks.ModeReplace}, {additional, webhooks.ModeAdditional}} {
+		for _, k := range group.keys {
+			cfg.Buttons[presetButtonID(k)] = webhooks.Trigger{
+				Action: webhooks.Action{Enabled: true, URL: srv.URL},
+				Mode:   group.mode,
+			}
+		}
+	}
+	if err := s.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	return s, hits
+}
+
+func waitHit(t *testing.T, hits chan struct{}) {
+	t.Helper()
+	select {
+	case <-hits:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the key's webhook never fired")
+	}
+}
+
+func TestSinglePressOnRowTwoOnlyKeyPlaysRowTwo(t *testing.T) {
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	rig.h.OnPresetSelected(context.Background(), 3, key3Location, "2x")
+	if got := rig.waitRow2(t); got != 9 {
+		t.Fatalf("row 2 played slot %d, want 9", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if row1, row2 := rig.counts(); row1 != 0 || row2 != 1 {
+		t.Fatalf("row-1 recalls %d (want 0: the placeholder's /stream/3 must never be pushed), row-2 recalls %d (want 1)", row1, row2)
+	}
+}
+
+func TestDoublePressOnRowTwoOnlyKeyPlaysRowTwoOnce(t *testing.T) {
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	ctx := context.Background()
+	rig.h.OnPresetSelected(ctx, 3, key3Location, "2x")
+	rig.h.OnPresetSelected(ctx, 3, key3Location, "2x")
+	if got := rig.waitRow2(t); got != 9 {
+		t.Fatalf("row 2 played slot %d, want 9", got)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if row1, row2 := rig.counts(); row1 != 0 || row2 != 1 {
+		t.Fatalf("row-1 recalls %d (want 0), row-2 recalls %d (want 1: the second press must not restart the station)", row1, row2)
+	}
+	// The pair is used up: a third press starts fresh and plays row 2 again,
+	// like any single press of the key.
+	rig.h.OnPresetSelected(ctx, 3, key3Location, "2x")
+	if got := rig.waitRow2(t); got != 9 {
+		t.Fatalf("third press played slot %d, want 9", got)
+	}
+}
+
+func TestGroupedDoublePressOnRowTwoOnlyKeyDoesNotRestart(t *testing.T) {
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	rig.h.group.zone.Store(groupMember)
+	rig.h.tracePressesFn = func(int, time.Time) int { return 2 }
+	ctx := context.Background()
+	rig.h.OnPresetSelected(ctx, 3, key3Location, "2x")
+	rig.waitRow2(t)
+	rig.h.OnPresetSelected(ctx, 3, key3Location, "2x")
+	time.Sleep(200 * time.Millisecond)
+	if row1, row2 := rig.counts(); row1 != 0 || row2 != 1 {
+		t.Fatalf("row-1 recalls %d, row-2 recalls %d, want 0 and 1", row1, row2)
+	}
+}
+
+func TestAdditionalWebhookOnlyKeyFiresAndPlaysNothing(t *testing.T) {
+	rig := newDoublePressRig(t, presets.New())
+	wh, hits := webhookHits(t, nil, []int{4})
+	rig.h.webhooks = wh
+	rig.h.OnPresetSelected(context.Background(), 4, "http://127.0.0.1:8888/stream/4", webhookPlaceholderName)
+	waitHit(t, hits)
+	time.Sleep(200 * time.Millisecond)
+	if row1, row2 := rig.counts(); row1 != 0 || row2 != 0 {
+		t.Fatalf("row-1 recalls %d, row-2 recalls %d, want nothing played for a webhook-only key", row1, row2)
+	}
+}
+
+func TestAdditionalWebhookOnRowTwoOnlyKeyFiresAndPlaysRowTwo(t *testing.T) {
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	wh, hits := webhookHits(t, nil, []int{3})
+	rig.h.webhooks = wh
+	rig.h.OnPresetSelected(context.Background(), 3, key3Location, "2x")
+	waitHit(t, hits)
+	if got := rig.waitRow2(t); got != 9 {
+		t.Fatalf("row 2 played slot %d, want 9", got)
+	}
+}
+
+func TestReplaceWebhookOnRowTwoOnlyKeyWithholdsTheSinglePress(t *testing.T) {
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	wh, hits := webhookHits(t, []int{3}, nil)
+	rig.h.webhooks = wh
+	ctx := context.Background()
+	// The replace-mode return happens on the read loop, before any recall
+	// could be started, so nothing may have been asked to play by now.
+	rig.h.OnPresetSelected(ctx, 3, key3Location, webhookPlaceholderName)
+	if row1, row2 := rig.counts(); row1 != 0 || row2 != 0 {
+		t.Fatalf("replace mode must withhold the single press, got row-1 %d row-2 %d", row1, row2)
+	}
+	if seq := rig.h.pressSeq.Load(); seq != 0 {
+		t.Fatalf("a withheld press started a recall (press sequence %d)", seq)
+	}
+	waitHit(t, hits)
+	// Its double press still plays row 2.
+	rig.h.OnPresetSelected(ctx, 3, key3Location, webhookPlaceholderName)
+	if got := rig.waitRow2(t); got != 9 {
+		t.Fatalf("double press played slot %d, want 9", got)
+	}
+}
+
+func TestForeignKeyWithRowTwoIsNoPlaceholder(t *testing.T) {
+	// A speaker-cached entry STR did not write occupies row 1 from the
+	// speaker's point of view: the key plays what it holds, as before.
+	rig := newDoublePressRig(t, row2OnlyStore(t))
+	rig.h.OnPresetSelected(context.Background(), 3, "http://radio.example/foreign", "Foreign")
+	rig.waitRow1(t)
+	if _, row2 := rig.counts(); row2 != 0 {
+		t.Fatal("a foreign key must not be taken for a placeholder")
+	}
+}
+
+func TestRowOnePresetIsNeverAPlaceholder(t *testing.T) {
+	rig := newDoublePressRig(t, twoRowStore(t, true))
+	rig.h.OnPresetSelected(context.Background(), 1, key1Location, "One")
+	rig.waitRow1(t)
+	if row2, holder := rig.h.placeholderPress(1, key1Location); holder || row2 != nil {
+		t.Fatal("a key with a row-1 preset must never be handled as a placeholder")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, row2 := rig.counts(); row2 != 0 {
+		t.Fatal("a single press of a key with a row-1 preset plays row 1, never row 2")
 	}
 }

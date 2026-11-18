@@ -23,6 +23,8 @@ type fakeTrackPanel struct {
 	shown     []oled.TrackText
 	cleared   []string
 	inputs    []inputClock
+	// inputTracks are the ShowSourceTrack calls
+	inputTracks []inputClock
 	// inputClears are the ClearSourceClock calls, by source
 	inputClears []string
 }
@@ -43,6 +45,16 @@ func (f *fakeTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
 	f.mu.Lock()
 	f.inputs = append(f.inputs, inputClock{source, t})
 	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) ShowSourceTrack(source string, t oled.TrackText) {
+	f.mu.Lock()
+	f.inputTracks = append(f.inputTracks, inputClock{source, t})
+	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) inputTrackSnapshot() []inputClock {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]inputClock(nil), f.inputTracks...)
 }
 func (f *fakeTrackPanel) ClearSourceClock(source, _ string) {
 	f.mu.Lock()

@@ -19,8 +19,9 @@ var (
 	// (webui.RefreshTrackPanel); wired in main, nil until then.
 	refreshTrackPanel func()
 	// notePanelSource tells the panel model which source the speaker is on,
-	// so the clock can stand in for the firmware's picture on Bluetooth and
-	// AUX (webui.PanelSourceChanged); wired in main, nil until then.
+	// so STR's screen can stand in for the firmware's on Bluetooth (the
+	// phone's song, the clock) and AUX (the clock)
+	// (webui.PanelSourceChanged); wired in main, nil until then.
 	notePanelSource func(source string)
 	// watchStandbyPanel looks at the panel a minute after the speaker went
 	// to standby, so a standby clock that BoseApp no longer draws is found

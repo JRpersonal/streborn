@@ -697,6 +697,32 @@ panel to BoseApp. 12 or 24 hours follow the speaker's own clock setting
 (`timeFormat` in `:8090/clockDisplay`, read once and kept). Only offered where
 STR draws on the panel.
 
+**Bluetooth and AUX.** The two settings also reach the speaker's own inputs
+(`inputScreenFor` in `internal/webui/displaytrack_panel.go`). The firmware's
+Bluetooth screen is not just a connection picture: when the phone sends the
+song (AVRCP), BoseApp turns through artist, title and album by itself (photos
+of a SoundTouch 20, discussion #1305), and the same fields arrive in the
+speaker's now-playing documents (`source="BLUETOOTH"` with `<artist>`,
+`<track>`, `<album>`, on `:8090/now_playing` and in the gabbo
+`nowPlayingUpdated` frames). So on Bluetooth, with the track setting on and an
+artist or a title in the last such frame, STR draws its track screen with
+"Bluetooth" on top and the time in the corner when the clock is on. Without a
+song (nothing connected, an app that sends no titles), or with the track
+setting off, the clock setting alone decides: on is the input's name with the
+time large, off leaves the panel to BoseApp. AUX carries no song and only has
+those last two. The input screen stands still (no playing symbol, no
+scrolling), is redrawn on a song change and at the full minute, and ends on
+any source change. The song is taken from the bus frames STR receives anyway;
+nothing polls. Not verified on a speaker yet (no Bluetooth source on the
+bench when it was written).
+
+When STR lets go of the panel on an input (the clock switched off there),
+BoseApp paints again only when it next has something to draw; nothing in STR
+asks a playing speaker to repaint, and the one nudge it has (a standby
+request, see the dark-panel watch below) is for a speaker in standby. A user's
+v1.8.0 log shows the panel still black 2 s after each of three such releases
+on Bluetooth (`fill=0x00`).
+
 A playing symbol, three small bars at the left of the top line, moves while
 the speaker plays and lies flat when it does not (the gabbo play status,
 `OnPlayingChanged`; unknown counts as playing). It shows that music runs, not
@@ -917,6 +943,28 @@ and an ST10 (sm2), all on 27.0.6:
 
 Selections STR causes itself (its own `sys presetkey`, an item it hands to
 `/select`) are never counted as a press.
+
+An EMPTY key emits no frame at all: the firmware refuses it (orange blink)
+before anything reaches the bus (#536). So a key whose single press is empty
+can never be double-pressed into its second row either, which is what an
+ST300 bundle showed (#1910). The reconcile therefore keeps a placeholder in
+STR's own UPnP form (`/stream/N`, name `2x`) on every key that has no
+first-row preset but a second-row station or a per-key webhook of either mode
+(`placeholderKeys` in `cmd/agent/reconcile.go`). The placeholder is never
+played. On such a key a single press plays the second row (there is nothing
+else on the key), a double press plays the same and does not restart it, and
+a "replace" webhook still withholds the single press. A real first-row preset
+is never overwritten.
+
+On the sm2 chassis an empty key gets no tap verdict either: an ST10 bundle
+(#1931, firmware list empty, STR store holding keys 1 to 5) showed each tap on
+key 1 and 3 as one analytics press line and nothing else, which is also all a
+hold leaves there. So when STR's store holds a key that the speaker's own
+`/presets` list lacks, a press that produced nothing is read as a press on a
+dead key: STR plays the key itself and asks for the key re-sync, which then
+runs even on a source the listener chose, since the press asked to leave it
+(`cmd/agent/deadkey.go`).
+A key empty in both keeps the hold-to-save reading.
 
 ## Per-logical-stream retention in the Ogg/HTTP path
 

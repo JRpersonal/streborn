@@ -9,6 +9,8 @@ import {
   groupMembersOf,
   inAnyStereoPair,
   notifyZoneLive,
+  pairUnitBox,
+  pairUnitName,
   resolvePlayTarget,
 } from '../../groups.js';
 import { t } from '../../i18n/index.js';
@@ -19,6 +21,8 @@ import { $, escapeAttr, escapeHtml, getBoxLabel, showError, showToast } from '..
 // group volume; both are no-ops while the preview shell is not mounted.
 import { renderShellSpeakers, syncShellGroupPanel } from '../../shell2/mount.js';
 import { deps } from './deps.js';
+// The stored display name of a stereo pair, for its one group chip.
+import { pairDisplayName } from '../../stereoNames.js';
 
 // ---- Group control (below the presets, next to Transfer) ----
 // Chips to add/remove the other speakers to a multiroom group led by the
@@ -352,20 +356,30 @@ async function runGroupMemberToggle(edits, masterHost, report) {
     return;
   }
   if (box.kind === 'stock') return;
-  // A speaker is never its own follower, whatever the clicks were.
-  const targets = edits
-    .map(([h]) => (state.boxes || []).find(b => b.host === h))
-    .filter(b => b && b.host !== box.host);
-  if (targets.length === 0) return;
-  // A live stereo pair's halves are not groupable (#792): the picker-side
-  // exclusion lives in the multiroom grid, this is the same rule for the
-  // player's group chips. Say it instead of failing later with a generic
-  // error after the zone budget.
-  const inPair = targets.filter(tgt => inAnyStereoPair(tgt, state.zoneLive));
-  if (inPair.length) {
+  // A stereo pair can join a group but cannot lead one (#792): a zone on a
+  // pair master never starts the firmware's audio distribution. The chips
+  // offer nothing to a pair (groupCandidates); this is the click-time guard
+  // for a pair that formed while the row was stale.
+  if (inAnyStereoPair(box, state.zoneLive)) {
     fail(t('multiroom.pairNotGroupable'));
-    if (inPair.length === targets.length) return;
+    return;
   }
+  // A speaker is never its own follower, whatever the clicks were. A stereo
+  // pair joins as ONE member, by its pair master (pairUnitBox): its other half
+  // on its own served two masters and played out of step with its pair (#792).
+  // A pair whose master is not in the list cannot be addressed and is said.
+  const targets = [];
+  let unaddressable = 0;
+  for (const [h] of edits) {
+    const b = (state.boxes || []).find(x => x.host === h);
+    if (!b) continue;
+    const unit = pairUnitBox(b, state.zoneLive, state.boxes);
+    if (!unit) { unaddressable++; continue; }
+    if (unit.host === box.host || targets.some(x => x.host === unit.host)) continue;
+    targets.push(unit);
+  }
+  if (unaddressable) fail(t('multiroom.pairNotGroupable'));
+  if (targets.length === 0) return;
   const members = groupMembersOf(box, state.zoneLive, state.boxes);
   // Apply every toggle to one membership list, so the speakers join or leave
   // together instead of one zone form per click.
@@ -581,13 +595,13 @@ export function renderGroupControl() {
   const isMember = !!box && box.host !== sel.host;
   // Chips are every other STR speaker relative to the MASTER (not the selection),
   // so the selected follower itself appears as an in-group chip that can be removed.
-  // A live stereo pair's two halves are excluded here: a pair cannot join a group
-  // as a unit yet, so offering its halves only produced a "not groupable" error on
-  // click and left them cluttering the +N row (reported on the music tab,
-  // 2026-08-31). This is the same exclusion the Multi-room grid applies, via the
-  // shared groupCandidates helper (the UI 2.0 sidebar reads it too); the
-  // click-time guard in runGroupMemberToggle stays as a defensive fallback for a
-  // pair that forms while the row is stale.
+  // A live stereo pair is ONE chip, its pair master's, named after the pair
+  // ("Kitchen (stereo)"): it joins a group as a unit. Its other half is not
+  // offered, and a pair as the selected speaker offers no chips, because a pair
+  // cannot lead a group (#792). The same set the Multi-room grid and the UI 2.0
+  // sidebar offer, via the shared groupCandidates helper; the click-time guard
+  // in runGroupMemberToggle stays as a defensive fallback for a pair that forms
+  // while the row is stale.
   const others = groupCandidates(box, state.zoneLive, state.boxes);
   if (others.length === 0) { clearGroupControl(cont, slot); return; }
   const slaves = currentGroupSlaves();
@@ -602,7 +616,7 @@ export function renderGroupControl() {
   const inGroup = new Set(editable.map(m => m.ip).filter(Boolean));
   const chips = others.map(b => {
     const on = inGroup.has(b.host);
-    const label = getBoxLabel(b);
+    const label = groupUnitLabel(b);
     return `<button class="group-chip${on ? ' in-group' : ''}" data-host="${b.host}" data-port="${b.port}" `
       + `title="${escapeAttr(t(on ? 'group.removeTitle' : 'group.addTitle', { name: label }))}">`
       + `<span class="group-chip-mark" aria-hidden="true">${on ? '&#10003;' : '&#43;'}</span>${escapeHtml(label)}</button>`;
@@ -614,9 +628,10 @@ export function renderGroupControl() {
   const memberRows = members.map(b => {
     const id = cssId(b.host);
     const v = typeof groupVol.members[b.host] === 'number' ? groupVol.members[b.host] : 0;
+    const name = groupUnitLabel(b);
     return `<div class="group-member-vol">`
-      + `<span class="group-member-name" title="${escapeAttr(getBoxLabel(b))}">${escapeHtml(getBoxLabel(b))}</span>`
-      + `<input type="range" id="memberVol-${id}" data-host="${b.host}" data-port="${b.port}" min="0" max="100" step="1" value="${v}" aria-label="${escapeAttr(t('group.memberVolumeLabel', { name: getBoxLabel(b) }))}" />`
+      + `<span class="group-member-name" title="${escapeAttr(name)}">${escapeHtml(name)}</span>`
+      + `<input type="range" id="memberVol-${id}" data-host="${b.host}" data-port="${b.port}" min="0" max="100" step="1" value="${v}" aria-label="${escapeAttr(t('group.memberVolumeLabel', { name }))}" />`
       + `<span class="vol-val" id="memberVolVal-${id}">${v}</span></div>`;
   }).join('');
   const groupVolRow = slaves.length > 0
@@ -698,6 +713,15 @@ export function renderGroupControl() {
     };
   });
   if (members.length) loadGroupMemberVolumes(members);
+}
+
+// groupUnitLabel names a group member: a speaker by its own name, a stereo
+// pair (its pair master's chip) by the pair's name with "(stereo)", the way
+// the UI 2.0 sidebar names pair rows.
+export function groupUnitLabel(b) {
+  const pair = pairUnitName(b, state.zoneLive, state.boxes,
+    (p) => pairDisplayName(p, () => { groupPanelState.signature = ''; renderGroupControl(); }), getBoxLabel);
+  return pair ? t('ui2.side.pairName', { name: pair }) : getBoxLabel(b);
 }
 
 // clearGroupControl empties the panel, and the player's group volume slot

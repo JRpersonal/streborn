@@ -11,7 +11,8 @@
 //
 // The playing group is pinned on top, the rest scrolls on its own, so with
 // eight or more speakers the navigation below never scrolls away. A stereo pair
-// is one row ("Living room (stereo)"), because it only plays as a whole.
+// is one row ("Living room (stereo)"), because it only plays as a whole, and
+// it joins another speaker's group as that one row.
 //
 // Pure: data in, markup out. The rows come from rooms.js (speakertile.js
 // flags), the membership from groups.js: groupMembersOf is the very list the
@@ -110,8 +111,10 @@ export function sidebarModel(boxes, ctx = {}) {
   // player, so "+ n more" never counts a speaker the player leaves out.
   const memberCount = controlled ? groupMemberBoxes(controlled.master, zl, list).length : 0;
   const anchorCount = master ? groupMemberBoxes(master, zl, list).length : 0;
-  // A stereo pair plays on its own (#792): while it is pinned, nothing can
-  // be added to it.
+  // A stereo pair can join a group but cannot lead one (#792: a zone on a
+  // pair master never starts the audio): while a pair leads the pinned
+  // group, nothing can be added to it. A pair is offered to OTHER groups as
+  // its one row, by its pair master (groupCandidates).
   const pairAlone = !!master && inAnyStereoPair(master, zl);
   const groupable = !!master && !pairAlone;
   const candidates = new Set(groupable ? groupCandidates(master, zl, list).map((b) => b.host) : []);
@@ -162,7 +165,10 @@ export function sidebarModel(boxes, ctx = {}) {
     const isMaster = !!master && r.hosts.includes(master.host);
     let action = '';
     let review = null;
-    if (groupable && r.kind === 'str' && !r.inPair && candidates.has(r.host)) {
+    // A pair row is one unit: its host is the pair master (rooms.js), which
+    // is the candidate. A half shown on its own row is not.
+    const unit = r.kind === 'pair' || (r.kind === 'str' && !r.inPair);
+    if (groupable && unit && candidates.has(r.host)) {
       if (pinned && !isMaster && memberHosts.has(r.host)) {
         action = 'remove';
       } else if (!pinned && !r.offline) {

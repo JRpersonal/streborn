@@ -25,7 +25,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { shouldAdoptPresetArt, isStrOriginLocation, isLostStrKey, WEBHOOK_PLACEHOLDER_NAME } from './utils.js';
+import { shouldAdoptPresetArt, isStrOriginLocation, isLostStrKey, isRow2Placeholder, shownBoxPreset, WEBHOOK_PLACEHOLDER_NAME } from './utils.js';
 import { allSource, srcOf } from './test/source.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -226,5 +226,42 @@ describe('a logo arriving late still reaches the key it belongs to', () => {
     expect(shouldAdoptPresetArt('', { slot: 3, art: '' })).toBe(false);
     expect(shouldAdoptPresetArt('http://192.0.2.1:8888/art?u=abc', null)).toBe(false);
     expect(shouldAdoptPresetArt('', null)).toBe(false);
+  });
+});
+
+// #1910: a key with nothing on its single press but a station on its double
+// press holds a placeholder in STR's own /stream/N form, so the firmware
+// reports its press at all. It is not a station on the speaker: the key's
+// single-press tile must stay empty instead of drawing a box-native "2x" tile.
+describe('the row-2 placeholder is not drawn as a station', () => {
+  const own = 'http://127.0.0.1:8888/stream/3';
+
+  it('recognises only the agent-marked placeholder', () => {
+    expect(isRow2Placeholder({ slot: 3, name: '2x', location: own, strOrigin: true, lost: false, row2Key: true })).toBe(true);
+    // The webhook placeholder (#536) stays a box-native tile: a tap presses
+    // the key and fires the webhook.
+    expect(isRow2Placeholder({ slot: 3, name: WEBHOOK_PLACEHOLDER_NAME, location: own, strOrigin: true, lost: false, row2Key: false })).toBe(false);
+    // An agent from before #1910 sends no mark and never wrote one.
+    expect(isRow2Placeholder({ slot: 3, name: '2x', location: own })).toBe(false);
+    // A foreign key is never one, whatever it says.
+    expect(isRow2Placeholder({ slot: 3, name: 'Flow', location: 'https://api.deezer.com/user/me/flow', strOrigin: false, row2Key: true })).toBe(false);
+    expect(isRow2Placeholder(null)).toBe(false);
+  });
+
+  it('leaves the tile empty for the placeholder and keeps every other box preset', () => {
+    const list = [
+      { slot: 3, name: '2x', location: own, strOrigin: true, row2Key: true },
+      { slot: 4, name: WEBHOOK_PLACEHOLDER_NAME, location: 'http://127.0.0.1:8888/stream/4', strOrigin: true },
+      { slot: 5, name: 'Flow', location: 'https://api.deezer.com/user/me/flow', strOrigin: false },
+    ];
+    expect(shownBoxPreset(list, 3)).toBe(null);
+    expect(shownBoxPreset(list, 4)).toBe(list[1]);
+    expect(shownBoxPreset(list, 5)).toBe(list[2]);
+    expect(shownBoxPreset(list, 6)).toBe(null);
+    expect(shownBoxPreset(undefined, 3)).toBe(null);
+  });
+
+  it('is what the grid draws its box-native tiles from', () => {
+    expect(grid).toContain('shownBoxPreset(state.boxPresets, i)');
   });
 });

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/marge"
@@ -52,6 +55,10 @@ type fakeNativeBox struct {
 	stationsErr, selectErr      error
 	listedSource, listedAccount string
 	selected                    []string
+	sourcesErr                  error
+	// removeStarted, when set, is closed as the removal call arrives, and
+	// removeGate then holds it until the test closes the gate.
+	removeStarted, removeGate chan struct{}
 }
 
 func (b *fakeNativeBox) ListServiceStations(_ context.Context, source, account string) ([]boxapi.ServiceStation, error) {
@@ -72,6 +79,10 @@ func (b *fakeNativeBox) SetMusicServiceAccount(_ context.Context, source, displa
 func (b *fakeNativeBox) RemoveMusicServiceAccount(_ context.Context, source, _, user string) error {
 	b.removedSource, b.removedUser = source, user
 	b.removeCalls++
+	if b.removeStarted != nil {
+		close(b.removeStarted)
+		<-b.removeGate
+	}
 	if b.removeErr != nil {
 		return b.removeErr
 	}
@@ -82,6 +93,9 @@ func (b *fakeNativeBox) RemoveMusicServiceAccount(_ context.Context, source, _, 
 }
 
 func (b *fakeNativeBox) GetSources(context.Context) ([]boxapi.Source, error) {
+	if b.sourcesErr != nil {
+		return nil, b.sourcesErr
+	}
 	return b.sources, nil
 }
 
@@ -198,12 +212,79 @@ func TestIHeartProfileIDTooLargeIsACodedError(t *testing.T) {
 		t.Fatalf("raw firmware answer leaked to the client: %s", w.Body.String())
 	}
 
-	// Any other refusal keeps the old plain answer with the speaker's reason.
-	box.setErr = errors.New("box /setMusicServiceAccount: status 500: bad credentials")
+	// Any other refusal is coded too and names the firmware's error, but
+	// never carries its raw answer.
+	box.setErr = firmwareError("/setMusicServiceAccount", "1003", "MUSIC_SERVICE_LOGIN_FAILED", "invalid credentials")
 	w = httptest.NewRecorder()
 	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodPost, "/api/iheart/account", `{"user":"u@example.com","password":"pw"}`, "192.168.1.5:5000", "application/json"))
-	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "bad credentials") {
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"account-refused"`) || !strings.Contains(w.Body.String(), "MUSIC_SERVICE_LOGIN_FAILED") {
 		t.Fatalf("other refusal: %d %s", w.Code, w.Body.String())
+	}
+	assertNoFirmwareLeak(t, w.Body.String())
+}
+
+// testDeviceID stands in for the speaker's MAC in a firmware error envelope.
+// It contains 1047 on purpose: only the typed error value may count.
+const testDeviceID = "AABB1047EEFF"
+
+// firmwareError is the typed error boxapi returns for the speaker's error
+// envelope, with the deviceID attribute the real one carries.
+func firmwareError(path, value, name, detail string) error {
+	return &boxapi.BoxError{
+		Path: path, Status: 500, Value: value, Name: name, Severity: "Unknown", Detail: detail,
+		Body: `<?xml version="1.0" encoding="UTF-8" ?><errors deviceID="` + testDeviceID + `"><error value="` + value +
+			`" name="` + name + `" severity="Unknown">` + detail + `</error></errors>`,
+	}
+}
+
+// assertNoFirmwareLeak fails when an answer to a client carries the
+// firmware's raw error envelope or the speaker's deviceID.
+func assertNoFirmwareLeak(t *testing.T, body string) {
+	t.Helper()
+	if strings.Contains(body, testDeviceID) || strings.Contains(body, "deviceID") || strings.Contains(body, "<errors") {
+		t.Fatalf("raw firmware answer leaked to the client: %s", body)
+	}
+}
+
+func TestSpeakerErrorReason(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{firmwareError("/x", "1047", "SOURCE_ALREADY_REMOVED", "gone"), "speaker error 1047 SOURCE_ALREADY_REMOVED"},
+		{firmwareError("/x", "", "SOME_ERROR", ""), "speaker error SOME_ERROR"},
+		{firmwareError("/x", "1005", `bad name="x"`, ""), "speaker error 1005"},
+		{&boxapi.BoxError{Path: "/x", Status: 503, Body: "<html>busy</html>"}, "speaker answered HTTP 503"},
+		{context.DeadlineExceeded, "the speaker did not answer in time"},
+		{errors.New("dial tcp 192.0.2.1:8090: connection refused"), "the speaker could not be reached"},
+	}
+	for _, tc := range cases {
+		if got := speakerErrorReason(tc.err); got != tc.want {
+			t.Errorf("speakerErrorReason(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+}
+
+func TestIsSourceAlreadyRemoved(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{firmwareError("/removeMusicServiceAccount", "1047", "SOURCE_ALREADY_REMOVED", ""), true},
+		{firmwareError("/removeMusicServiceAccount", "1047", "", ""), true},
+		{firmwareError("/removeMusicServiceAccount", "", "source_already_removed", ""), true},
+		{errors.New("box /removeMusicServiceAccount: 500: ... 1047 SOURCE_ALREADY_REMOVED"), true},
+		// The deviceID contains 1047; another error must not count.
+		{firmwareError("/removeMusicServiceAccount", "1005", "UNKNOWN_SOURCE_ERROR", ""), false},
+		{errors.New("status 500"), false},
+		{nil, false},
+	}
+	for _, tc := range cases {
+		if got := isSourceAlreadyRemoved(tc.err); got != tc.want {
+			t.Errorf("isSourceAlreadyRemoved(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }
 
@@ -286,12 +367,148 @@ func TestRemovalRefusedIsAnError(t *testing.T) {
 	t.Parallel()
 	s, p, box := nativeTestServer(true)
 	p.users["IHEART"] = "u@example.com"
-	box.removeErr = errors.New("status 500")
+	box.removeErr = firmwareError("/removeMusicServiceAccount", "1005", "UNKNOWN_SOURCE_ERROR", "refused")
 	w := httptest.NewRecorder()
 	s.handleNativeAccount("IHEART")(w, nativeReq(http.MethodDelete, "/api/iheart/account", "", "192.168.1.5:5000", ""))
 	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"remove-refused"`) || len(p.cleared) != 0 {
 		t.Fatalf("refused: status %d %s, cleared %v", w.Code, w.Body.String(), p.cleared)
 	}
+	if !strings.Contains(w.Body.String(), "UNKNOWN_SOURCE_ERROR") {
+		t.Fatalf("refusal does not name the firmware's error: %s", w.Body.String())
+	}
+	assertNoFirmwareLeak(t, w.Body.String())
+}
+
+// #1937: a second DELETE reached the speaker after the first had removed the
+// account, and the speaker's SOURCE_ALREADY_REMOVED went back to the app as
+// a 502 with its raw XML. That answer is the removal the caller asked for.
+func TestRemovalAlreadyRemovedIsSuccess(t *testing.T) {
+	t.Parallel()
+	s, p, box := nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
+	var logBuf syncBuffer
+	s.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	p.users["PANDORA"] = "u@example.com"
+	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "UNAVAILABLE"}}
+	box.removeErr = firmwareError("/removeMusicServiceAccount", "1047", "SOURCE_ALREADY_REMOVED", "SOURCE_ALREADY_REMOVED")
+	w := httptest.NewRecorder()
+	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"ok":true}` {
+		t.Fatalf("already removed: status %d %s", w.Code, w.Body.String())
+	}
+	if box.removeCalls != 1 || len(p.cleared) != 1 || p.users["PANDORA"] != "" {
+		t.Fatalf("cleanup skipped: calls %d, cleared %v, users %v", box.removeCalls, p.cleared, p.users)
+	}
+	if log := logBuf.String(); !strings.Contains(log, "level=INFO") || !strings.Contains(log, "already removed") {
+		t.Fatalf("no info line for the already removed account: %s", log)
+	}
+
+	// The /sources re-check still runs: listed READY afterwards is still-linked.
+	s, p, box = nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
+	p.users["PANDORA"] = "u@example.com"
+	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "READY", SourceAccount: "u@example.com"}}
+	box.removeErr = firmwareError("/removeMusicServiceAccount", "1047", "SOURCE_ALREADY_REMOVED", "")
+	w = httptest.NewRecorder()
+	s.handleNativeAccount("PANDORA")(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"still-linked"`) {
+		t.Fatalf("already removed but listed: status %d %s", w.Code, w.Body.String())
+	}
+}
+
+// #1937: three DELETEs at once. Only one removal reaches the speaker, and
+// every caller gets its answer.
+func TestConcurrentRemovalsSendOneRemoval(t *testing.T) {
+	t.Parallel()
+	s, p, box := nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
+	var logBuf syncBuffer
+	s.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	p.users["PANDORA"] = "u@example.com"
+	box.sources = []boxapi.Source{{Source: "PANDORA", Status: "READY", SourceAccount: "u@example.com"}}
+	box.sourcesAfterRemove = []boxapi.Source{{Source: "PANDORA", Status: "UNAVAILABLE"}}
+	box.removeStarted, box.removeGate = make(chan struct{}), make(chan struct{})
+
+	h := s.handleNativeAccount("PANDORA")
+	const callers = 3
+	codes := make([]int, callers)
+	bodies := make([]string, callers)
+	var wg sync.WaitGroup
+	call := func(i int) {
+		defer wg.Done()
+		w := httptest.NewRecorder()
+		h(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+		codes[i], bodies[i] = w.Code, w.Body.String()
+	}
+	wg.Add(1)
+	go call(0)
+	<-box.removeStarted
+	for i := 1; i < callers; i++ {
+		wg.Add(1)
+		go call(i)
+	}
+	// Hold the first removal until both later callers wait for it.
+	deadline := time.Now().Add(5 * time.Second)
+	for strings.Count(logBuf.String(), "a removal is already running") < callers-1 {
+		if time.Now().After(deadline) {
+			close(box.removeGate)
+			t.Fatalf("later callers never joined the running removal: %s", logBuf.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(box.removeGate)
+	wg.Wait()
+
+	for i := range codes {
+		if codes[i] != http.StatusOK || strings.TrimSpace(bodies[i]) != `{"ok":true}` {
+			t.Errorf("caller %d: status %d %s", i, codes[i], bodies[i])
+		}
+	}
+	if box.removeCalls != 1 || len(p.cleared) != 1 {
+		t.Fatalf("removals sent %d, cleared %v; want one each", box.removeCalls, p.cleared)
+	}
+
+	// A DELETE after it finished is safe too: nothing left, 200, no call.
+	w := httptest.NewRecorder()
+	h(w, nativeReq(http.MethodDelete, "/api/pandora/account", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusOK || box.removeCalls != 1 {
+		t.Fatalf("repeat: status %d %s, calls %d", w.Code, w.Body.String(), box.removeCalls)
+	}
+}
+
+// A caller that gives up while another removal runs gets a coded answer, and
+// the running one is not disturbed.
+func TestRemovalWaiterTimesOut(t *testing.T) {
+	t.Parallel()
+	s, p, box := nativeTestServer(true)
+	s.nativeRemoveTiming = &nativeRemoveTiming{settle: 0}
+	p.users["IHEART"] = "u@example.com"
+	box.removeStarted, box.removeGate = make(chan struct{}), make(chan struct{})
+	done := make(chan nativeRemoveResult)
+	go func() { done <- s.removeNativeAccountShared(context.Background(), "IHEART", "iHeartRadio") }()
+	<-box.removeStarted
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if res := s.removeNativeAccountShared(ctx, "IHEART", "iHeartRadio"); res.status != http.StatusServiceUnavailable || res.body["code"] != "remove-busy" {
+		t.Fatalf("waiter: %+v", res)
+	}
+	close(box.removeGate)
+	if res := <-done; res.status != http.StatusOK {
+		t.Fatalf("first removal: %+v", res)
+	}
+}
+
+// The status snapshot (GET /api/us-services, diagnostic bundle) names a
+// failed /sources read without the firmware's raw answer.
+func TestNativeBoxSourcesErrorHidesFirmwareAnswer(t *testing.T) {
+	t.Parallel()
+	s, _, box := nativeTestServer(true)
+	box.sourcesErr = firmwareError("/sources", "1005", "SOME_ERROR", "")
+	got := s.nativeBoxSources(context.Background())
+	if !strings.Contains(got["error"]["error"], "SOME_ERROR") {
+		t.Fatalf("error = %v", got["error"])
+	}
+	assertNoFirmwareLeak(t, got["error"]["error"])
 }
 
 func TestRemovalWithNothingLinkedStaysOK(t *testing.T) {

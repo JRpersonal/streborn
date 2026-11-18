@@ -286,7 +286,12 @@ export function wireActionSections(ctx) {
       tfrBtn.textContent = t('settingsView.trueFactoryResetRunning');
       try {
         const r = await TrueFactoryReset(box.host);
-        if (r && r.ok) {
+        if (r && r.ok && r.buttonReset) {
+          // A speaker with its Wi-Fi in its radio chip (scm ST20/ST30,
+          // Portable): only Bose's own button reset clears it, so the last
+          // step is the owner's, and the speaker has not restarted.
+          reportDone(tfrBtn, t('settingsView.trueFactoryResetButtonNeeded', { name: box.friendlyName || box.name || box.host }));
+        } else if (r && r.ok) {
           reportDone(tfrBtn, t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
           // Speaker reboots into OOB, will not be on the LAN for a
           // while. Trigger discovery in 60 s so the UI catches it

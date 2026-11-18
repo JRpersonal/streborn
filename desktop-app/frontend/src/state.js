@@ -18,7 +18,7 @@ export const state = {
   recentAllBoxes: false,
   recentBoxKey: null,
   settingsBox: null,   // The box whose settings are currently being edited
-  wlanStoreFor: null,  // host whose Settings should open on the Wi-Fi form ("Save Wi-Fi" banner)
+  wifiCopy: {},        // host -> the last attempt to keep STR's copy of its Wi-Fi (wificopy.js)
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
   presetRow: 1,        // the row of keys the grid shows: 1 = pressed once, 2 = pressed twice (#1110)

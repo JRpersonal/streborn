@@ -45,18 +45,107 @@ func (m *Manager) PlaylistMeta(ctx context.Context, uri string) (cover, title st
 // playlistMetaAt is PlaylistMeta with both endpoints as parameters, so a test
 // can answer as Spotify.
 func (m *Manager) playlistMetaAt(ctx context.Context, uri, oembedURL, webAPIBase string) (cover, title string) {
-	cover, title = m.oembedMeta(ctx, uri, oembedURL)
+	page := metaPageURI(uri)
+	askedEngine := false
+	if page != uri {
+		// The page asked below is the artist's, not the list's own. The name
+		// the engine has for the list itself is the one the speaker's own
+		// Spotify shows ("<artist> Popular"), so it goes first and the
+		// artist's name is only the fallback.
+		title = m.engineContextName(ctx, uri)
+		askedEngine = true
+	}
+	oc, ot := m.oembedMeta(ctx, page, oembedURL)
+	cover = oc
+	if title == "" {
+		title = ot
+	}
 	if cover != "" && title != "" {
 		return cover, title
 	}
-	wc, wt := m.webAPIMeta(ctx, uri, webAPIBase)
+	if title == "" && !askedEngine {
+		title = m.engineContextName(ctx, uri)
+	}
+	if cover != "" && title != "" {
+		return cover, title
+	}
+	wc, wt := m.webAPIMeta(ctx, page, webAPIBase)
 	if cover == "" {
 		cover = wc
 	}
 	if title == "" {
 		title = wt
 	}
+	if title == "" {
+		// Every lookup came back empty, so the key keeps the placeholder.
+		// Without this line a bundle could not tell a context nobody was asked
+		// about from one Spotify did not answer for (#1940). Bounded: each
+		// caller asks once per playlist and run. The URI is a public
+		// identifier, not an account detail.
+		m.logger.Info("spotify: found no name for a Spotify context, its key keeps the placeholder",
+			"uri", uri, "page", page, "cover", cover != "")
+	}
 	return cover, title
+}
+
+// metaPageURI is the URI whose public page names a context. Most contexts are
+// their own page. The Spotify app's artist page plays the artist's popular
+// tracks as a list that wraps the artist,
+// "spotify:list:popular-release-segments-main-roles:artist_<id>", and neither
+// oEmbed nor the Web API has a page for that list: both were skipped and a key
+// saved from an artist page stayed "Spotify" while the same save on a stock
+// speaker was named (#1940). Such a list is looked up through the artist it
+// wraps. Anything else is returned unchanged.
+func metaPageURI(uri string) string {
+	parts := strings.Split(uri, ":")
+	if len(parts) < 3 || parts[0] != "spotify" || parts[1] != "list" {
+		return uri
+	}
+	id, ok := strings.CutPrefix(parts[len(parts)-1], "artist_")
+	if !ok || !isSpotifyID(id) {
+		return uri
+	}
+	return "spotify:artist:" + id
+}
+
+// isSpotifyID reports whether s looks like a Spotify base-62 ID, so a wrapper
+// list whose last part merely starts with "artist_" is not turned into a page
+// URL that carries arbitrary text.
+func isSpotifyID(s string) bool {
+	if s == "" || len(s) > 32 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// engineContextName is the name the engine itself reports for the context it
+// is playing, when that context is uri. The engine reads it with its own login
+// while it loads the context, so it names a private playlist too and costs no
+// Web API call; the Web API lookup it spares is the one Spotify answers with
+// 429 often enough that a saved key kept the placeholder "Spotify" (#1940).
+// "" when the engine plays something else, says nothing or cannot be asked.
+func (m *Manager) engineContextName(ctx context.Context, uri string) string {
+	if !m.Ready() {
+		return ""
+	}
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		ContextURI  string `json:"context_uri"`
+		ContextName string `json:"context_name"`
+	}
+	if json.Unmarshal(data, &st) != nil || st.ContextName == "" ||
+		normalizeContextURI(st.ContextURI) != normalizeContextURI(uri) {
+		return ""
+	}
+	return strings.TrimSpace(st.ContextName)
 }
 
 // webAPIMeta asks the Spotify Web API for a context's name and cover with the
@@ -422,11 +511,18 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	// report no song until the new one is known (recalldisplay.go, #1077). The
 	// read above runs first on purpose: a /status that shows the new track is
 	// what ends the gate.
+	now := time.Now()
 	m.mu.Lock()
-	recallPending := m.recallDisplayPendingLocked(time.Now())
+	recallPending := m.recallDisplayPendingLocked(now)
 	m.mu.Unlock()
 	if recallPending {
 		track, artist, cover = "", "", ""
+	}
+	// The same rule for the refusal fields: while a recall is switching
+	// accounts they still describe the account being left (accountswitchinfo.go).
+	premiumRequired, keyRefused := m.PremiumRequired(), m.AudioKeyRefused()
+	if m.refusalOfDepartingAccount(now, recallPending, premiumRequired) {
+		premiumRequired, keyRefused, refused, refusedName = false, false, false, ""
 	}
 	resp := struct {
 		Ready   bool   `json:"ready"`
@@ -509,12 +605,12 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Context:            context,
 		Account:            account,
 		AccountNames:       m.AccountNames(),
-		PremiumRequired:    m.PremiumRequired(),
+		PremiumRequired:    premiumRequired,
 		CanRecall:          m.CanRecall(r.Context()),
 		Product:            product,
 		LowDisk:            lowDisk,
 		LowDiskFreeKB:      lowDiskFreeKB,
-		AudioKeyRefused:    m.AudioKeyRefused(),
+		AudioKeyRefused:    keyRefused,
 		AccountRefused:     refused,
 		AccountRefusedName: refusedName,
 		GroupedRefusal:     m.GroupedRefusal(),

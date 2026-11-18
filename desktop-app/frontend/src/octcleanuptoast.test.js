@@ -55,7 +55,7 @@ describe('the banner names the speaker asking a dead cloud address', () => {
   });
 
   it('is not dismissible: nothing plays on such a speaker', () => {
-    const banner = srcBetween('const foreignCloud = boxes.filter', 'const noWifi = boxes.filter');
+    const banner = srcBetween('const foreignCloud = boxes.filter', 'const storm = stormBannerBoxes');
     expect(banner).not.toContain('warnDismissed');
   });
 

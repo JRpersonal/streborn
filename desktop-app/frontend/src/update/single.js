@@ -21,7 +21,7 @@ import {
   showUpdateNoNetworkNotice,
 } from './failreport.js';
 import { noteOTAResult } from './otastuck.js';
-import { fmtMB, stickMounted, weakWifiSignal } from './preflight.js';
+import { fmtMB, mayStayDark, stickMounted, weakWifiSignal } from './preflight.js';
 import { BOX_BUSY_TOKEN, UPDATE_STEPS, withStep } from './shared.js';
 import { ustate } from './state.js';
 
@@ -162,6 +162,17 @@ async function runSingleBoxUpdate(targetBox) {
       if (!ok) return; // user cancelled: no OTA, no reboot
     }
   } catch { /* headroom unknown: do not block the update */ }
+
+  // Restart pre-flight: a speaker whose old STR ends the update with a
+  // restart this speaker type may not come back from, where the app cannot
+  // route around it (mayStayDark, preflight.js). Said before anything moves,
+  // with the one thing to do should it happen; the owner decides.
+  try {
+    if (await mayStayDark(targetBox)) {
+      const ok = await confirmWarn(t('update.darkRiskTitle'), t('update.darkRiskBody', { name: getBoxLabel(targetBox) }));
+      if (!ok) return; // user cancelled: nothing was touched
+    }
+  } catch { /* plan unknown: do not block the update */ }
 
   // Drive both update buttons together (banner up top + stick info section)
   const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
@@ -376,7 +387,9 @@ async function runSingleBoxUpdate(targetBox) {
       // the restart with a dark box and no plan, so this gets the staged
       // checklist (darkafterupdate.js). The SoundTouch 300 is left to its own
       // power-cycle notice below, which is the one step it needs.
-      showDarkAfterUpdate(targetBox);
+      // A coprocessor Wi-Fi speaker with every port closed hung in its own
+      // restart: the checklist leads with unplugging it (unplugFirst).
+      showDarkAfterUpdate(targetBox, { unplugFirst: !!result.unplugFirst });
     } else {
       // Timed out. The Go sequence has already journaled the verdict,
       // classified why, retried the one class of failure a retry actually

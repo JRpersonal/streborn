@@ -40,6 +40,7 @@ All request and response bodies are JSON.
 | `POST` | `/api/prev` | - | Previous track. |
 | `GET`  | `/api/position` | - | Where the speaker is inside the track: `{"ok":true,"positionSec":N,"durationSec":N,"seekable":bool}`. `durationSec` is `0` for radio. `seekable` says whether `/api/seek` would take a jump right now. |
 | `POST` | `/api/seek` | `{"positionSec":90}` | Jump to that second of the playing track. Only for a music-library file the speaker fetches itself (alone or as the current track of a folder) while it plays. Answers `{"ok":true,"positionSec":N,"durationSec":N}`, or `{"error":"...","reason":"..."}` with `409` (`not-seekable` for radio, Spotify and proxied tracks, `not-playing` while paused or stopped, `length-unknown`), `400` (`bad-position`, `out-of-range`) or `502` (`seek-refused`, `speaker-unreachable`). |
+| `POST` | `/api/spotify/liked` | `{"liked":true}` / `{"liked":false}` | Save the playing Spotify song to Liked Songs, or remove it from there: what the remote's thumbs keys do, for an app. Only while STR's own Spotify is what the speaker plays (also paused); a speaker with a display shows LIKED or REMOVED. The song goes to the Liked Songs of the Spotify account the SPEAKER's engine is logged in with, which may differ from the account on the phone that asks. Answers `{"ok":true,"liked":bool,"uri":"spotify:track:...","name":"...","repeat":bool}` (`repeat`: the same request for the same song a moment ago, nothing written twice), or `{"error":"...","reason":"..."}` with `409` (`not-playing` when STR's Spotify is not what plays, `no-track`, `not-a-song`, `no-engine` on a speaker without the Spotify engine), `400` (`bad-body`, or plain text for invalid JSON) or `502` when the engine or Spotify refused (`engine-too-old`, `no-session`, `unauthorized-401`, `forbidden-403`, `rate-limited-429`, `rejected-400`, `timeout`, `failed`). An agent that has this reports `"spotifyLiked":"true"` in `/api/agent/version`. |
 | `GET`  | `/api/stream/title` | - | Live radio title of the stream STR is proxying: `{"title":"Artist - Title","swapped":bool}`. `title` is `""` when the station sends none. `swapped` says the station below is flagged and its title was already turned round. |
 | `GET`  | `/api/stream/title-swap` | - | `{"stations":[...],"swapped":bool}`: the stream URLs flagged as sending their title "Title - Artist", and whether the station playing now is one of them. |
 | `POST` | `/api/stream/title-swap` | `{"swap":true}` | Flag (or with `false` unflag) a station whose live title arrives as "Title - Artist" instead of "Artist - Title". Without `"station":"<stream url>"` it acts on the station playing now (`409` when nothing is). The flag is kept per station in `/mnt/nv/streborn/title-swap.json` and applies to everything that shows the title: the speaker display, the app, Recently played and the phone remote. Answers `{"ok":true,"station":"...","swapped":bool,"title":"<live title now>"}`. |
@@ -68,6 +69,7 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | `PUT`  | `/api/presets` | `[{...},...]` | Write a whole set (at most 12, slots 1-12) in one go; slots the set does not name are left alone. |
 | `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`12`. |
 | `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-12, also between the rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
+| `POST` | `/api/box/preset-copy` | `{"targets":["<ip>"]}` or `{"all":true}` | Copy this speaker's keys to other STR speakers, the way the desktop app's Transfer does: this agent writes the set onto each target (`PUT /api/presets`, key by key on an older target), syncs its hardware keys and, when a Spotify key goes along, hands on this speaker's Spotify login. Both rows go to a target that keeps two. Targets must be in this speaker's peer list (`/api/peers`; `all` means every peer that answered the last sweep). Answers `200` with `{"keys","rows","done","total","results":[{"name","ip","ok","copied","row1Only","notCopied","spotify","code","conflict","error"}]}` once every target is done; `code` is `already-on-slot` (with `conflict` `{name,slot}`, nothing written there), `unreachable`, `refused` or `unknown-speaker`. `409` with `code` `busy`, `no-presets` or `no-targets`. LAN only. |
 | `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
 | `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`12`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
@@ -124,10 +126,38 @@ Pandora client plays the station, STR only hands it the item.
 
 Both answer `409` with `{"code":"service-off"}` when Pandora is not enabled on
 the speaker and `{"code":"not-linked"}` when it lists no Pandora account, and
-`502` with the firmware's message when the speaker refuses (`navigate-failed`,
-`select-failed`). To keep a station on a key, start it and then save the key
+`502` with a short reason when the speaker refuses (`navigate-failed`,
+`select-failed`, or `sources-unreadable` when its source list cannot be read).
+To keep a station on a key, start it and then save the key
 with `PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`: the agent
 takes the item from what the speaker plays.
+
+### Unlinking a Pandora or iHeartRadio account
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `DELETE` | `/api/pandora/account` | - | Remove the Pandora account from the speaker and from STR. |
+| `DELETE` | `/api/iheart/account` | - | The same for iHeartRadio. |
+
+Both need the service enabled on the speaker (`409` otherwise, as above). The
+call asks the speaker to remove the account and then re-reads its source list
+to confirm, so it takes **1 to 5 seconds**. Do not retry while one is still
+in flight; wait for its answer.
+
+| Status | Body | Meaning |
+| ------ | ---- | ------- |
+| `200` | `{"ok":true}` | The account is gone, also when it already was. |
+| `502` | `{"code":"remove-refused","error":"..."}` | The speaker refused the removal. |
+| `502` | `{"code":"still-linked","error":"..."}` | The speaker still lists the account as ready afterwards. |
+| `500` | `{"code":"clear-failed","error":"..."}` | STR could not drop its own copy of the account. |
+| `503` | `{"code":"remove-busy","error":"..."}` | Another removal of the same account was still running when this request gave up waiting (after 15 seconds). |
+
+A repeated `DELETE` is safe. Requests that arrive while a removal runs do not
+send a second one to the speaker: they wait and get the same answer as the
+first. A request after the account is gone answers `200` without touching the
+speaker. The `error` text is a short English sentence for people; branch on
+`code`. It never carries the speaker's raw reply, which stays in the agent
+log.
 
 ## Favourites
 
@@ -149,8 +179,8 @@ from the speaker's notes.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/alarms` | - | The alarm document plus a read-only `status` block. |
-| `PUT`  | `/api/alarms` | the whole document | Replaces it wholesale. LAN only. |
+| `GET`  | `/api/alarms` | - | The alarm document, its `rev`, plus a read-only `status` block. |
+| `PUT`  | `/api/alarms` | the whole document, ideally with the `rev` it was read at | Replaces it wholesale. With `rev`, only while that is still the stored revision, otherwise `409`. LAN only. |
 
 An alarm is
 `{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
@@ -174,9 +204,32 @@ or is snoozed, `ring` (`{"id","ringing","snoozedUntil","snoozes"}`); it is
 ignored on the way in. `nextFire` comes from the speaker, so it is the honest answer to "when
 will this actually go off", including its zone and its clock.
 
+**Revisions: do not undo another app's change.** Every app that edits the
+alarms (STR's phone page, a third-party remote) sends the WHOLE document, so an
+app that saves an old copy silently undoes whatever another app changed since
+it read it: an alarm switched off from one app came back on when the phone page
+saved its copy (discussion #1918). `rev` prevents that:
+
+- `GET` answers `"rev":<n>`, a number that goes up by one with every save
+  (`0` for a document not saved since revisions exist). It survives an agent
+  restart.
+- Send that `rev` back with the `PUT`. If another app saved in between, the
+  speaker stores nothing and answers `409` with the current document (same
+  shape as `GET`, with its current `rev`). Apply your user's one change to
+  that document (find alarms by `id`, never by position) and `PUT` again with
+  the new `rev`.
+- A `PUT` without `rev` replaces the document whatever is stored, the way it
+  always did, so older apps keep working. A `PUT` that sends `rev` must handle
+  `409`. Note that `0` is a real revision, not "none".
+- A successful `PUT` answers the stored document with its new `rev`; keep that
+  one for the next save rather than the one you sent.
+
+An agent from before revisions answers no `rev` and ignores one sent to it.
+
 ```bash
 curl -s $BOX/api/alarms
 curl -s -X PUT $BOX/api/alarms -H 'Content-Type: application/json' -d '{
+  "rev":4,
   "zone":"Europe/Berlin",
   "alarms":[{"id":"weekdays","enabled":true,"hour":6,"minute":30,
              "days":[1,2,3,4,5],"slot":3,"volume":25,"autoOff":60,"snooze":9}]}'
@@ -201,7 +254,7 @@ alone.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/box/zone` | - | The live zone, plus `remembered` when none is live and `permanent` when the saved group is the durable kind. |
+| `GET`    | `/api/box/zone` | - | The live zone, plus `remembered` when none is live, `permanent` when the saved group is the durable kind, and `setAside` (`{"master","name","members":[...]}`) while a temporary group holds a permanent one aside. |
 | `POST`   | `/api/box/zone` | the whole group | Forms or REPLACES the group. Send the full member list every time. |
 | `DELETE` | `/api/box/zone` | - | Takes the live group apart. The saved group survives; add `?forget=1` to delete that too. |
 | `GET`    | `/api/box/zone/volume` | - | `{"grouped","stereo","members":[...],"average"}`. A member that did not answer reports `volume: -1` rather than disappearing. |
@@ -230,12 +283,20 @@ own when the speakers carry the default, and it never writes that name back over
 
 Two fields decide more than they look like they do.
 
-**`permanent` is not carried forward.** The document is stored exactly as sent,
-so a POST that omits it turns a durable group into an ordinary one: it stops
-re-forming when the master plays, and the next `DELETE` clears it for good. A
-client that adds or removes ONE member must read `permanent` from
-`GET /api/box/zone` first and send it back. (Found in a third-party client,
-2026-09-14, where adding a speaker silently demoted the saved group.)
+**`permanent` is not carried forward.** The document is stored exactly as sent.
+A POST without `permanent` on top of a durable group does not delete that group
+(agent v1.4.0 and later): the master's agent sets the durable group aside, the
+new group is an ordinary one, and the next `DELETE` without `forget` brings the
+durable group back as it was. So a client that adds or removes ONE member and
+leaves `permanent` out gets a change that lasts only until the group ends. To
+make the change itself durable, read `permanent` from `GET /api/box/zone` first
+and send it back. A POST with `"permanent":true` replaces the durable group and
+drops anything set aside; `DELETE ?forget=1` deletes both. Only one group is
+kept aside. Since agent v1.6.5 `GET` reports it as `setAside`, so a client can
+name the group a `permanent:true` form would replace; older agents do not report
+it. Agents before v1.4.0 overwrite the durable
+group instead. (Found in a third-party client, 2026-09-14, where adding a
+speaker silently demoted the saved group.)
 
 **A 200 is not a success.** The dissolve answers
 `{"ok":false,"remaining":N,"error":"..."}` when the speaker took the request and
@@ -247,7 +308,7 @@ shows a green tick over a group that is still playing.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, and `"presetRows":"2"` on an agent with the second preset row (slots 7-12). The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `"presetRows":"2"` on an agent with the second preset row (slots 7-12), and `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`, and for a music-library entry (`source` `upnp`) `mime` and `durationSec`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
@@ -286,6 +347,22 @@ address ranges.
 | `PUT`    | `/api/box/wlan` | `{"ssid":"...","password":"..."}` | Move the speaker to another network. Optional `hidden`, `open`, `force`, `forgetOthers`. On a cabled speaker the network is only stored (`"status":"stored"`). A speaker that is already on that network with the password a confirmed switch recorded answers `"status":"unchanged"` with `"unchanged":true` and leaves its connection alone. |
 | `DELETE` | `/api/box/wlan` | `{"reboot":false}` (optional) | Forget the Wi-Fi altogether, for a speaker that should run on its network cable only (#969). See below. |
 | `POST`   | `/api/box/wlan/forget-others` | `{"reboot":false}` (optional) | Forget every stored network but the one the speaker is on. Wi-Fi speakers only. |
+| `PUT`    | `/api/box/wlan/copy` | `{"ssid":"...","password":"..."}` | Give STR its own copy of the network the speaker is ALREADY on, store-only: writes `wlan-creds` (and the supersede baseline) and nothing else, never the radio, the firmware's store, `wpa_supplicant.conf`, the apply marker or a restart. See below. |
+
+`PUT /api/box/wlan/copy` fills in a missing copy, it never replaces one. It
+answers `200` with `{"status":"stored-copy","stored":true,"evidence":"..."}`
+only where the agent itself reports `wlanCreds: "missing"` (a coprocessor
+chassis without STR's copy), and `409` with `{"code":"..."}` otherwise:
+`already-has-copy`, `retired` (the owner moved the speaker outside STR),
+`not-needed` (the chassis keeps its Wi-Fi by itself), `speaker-in-setup`,
+`no-firmware-profile` (the firmware reports no stored Wi-Fi profile at all, the
+one state in which run.sh would push the copy at an online speaker),
+`other-network` (the speaker names, or stores, a different network) or `busy`
+(a Wi-Fi change is running). `400` with `"code":"invalid"` for an empty SSID,
+a password shorter than 8 or longer than 64 characters, or a line break in
+either. The copy is used exactly like any other: by the offline rescue when the
+speaker has no lease 90 s into a boot. An agent older than the endpoint answers
+the path with its phone page, so a client must check for the JSON status.
 
 `DELETE /api/box/wlan` only runs when the speaker is on a network cable AND the
 request reached it over that cable: its default route must leave through a

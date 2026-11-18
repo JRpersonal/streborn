@@ -123,6 +123,12 @@ type Server struct {
 	// answer from the last successful read across such a moment.
 	memberIDs   map[string]string
 	memberIDsMu sync.RWMutex
+	// memberTypes remembers, per member IP, the model its firmware /info
+	// reported (guarded by memberIDsMu). Only a SoundTouch 10 can be half of a
+	// stereo pair, and /getGroup hangs on the scm/BCO chassis, so the pair
+	// read of a group member is asked of the speakers that can pair at all
+	// (zoneformpairs.go).
+	memberTypes map[string]string
 	// mediaServers remembers which DLNA/UPnP media servers the user turned into
 	// native music sources, because the speaker forgets them on reboot. nil when
 	// not wired; the endpoints then still drive the box but nothing is restored
@@ -161,6 +167,9 @@ type Server struct {
 	// playModeKey runs the presses of a key bound to shuffle or repeat. See
 	// playmodekey.go.
 	playModeKey playModeKeyState
+	// likeKey runs the presses of the thumbs up and thumbs down keys on a
+	// Spotify song. See likekey.go.
+	likeKey likeKeyState
 	// radioStep runs the remote's Next/Prev while a radio key plays. See
 	// radiostep.go.
 	radioStep   radioStepState
@@ -207,6 +216,10 @@ type Server struct {
 	// the evaluation that started them. The tests wait on it; nothing in
 	// production does yet, but a graceful shutdown would.
 	alarmBackground sync.WaitGroup
+	// keyLabelWrites tracks the store write of a label recovered at a key
+	// recall (storeKeyTrackLabel), which runs after the recall answered. Same
+	// role as alarmBackground: the tests wait on it before their TempDir goes.
+	keyLabelWrites sync.WaitGroup
 	// ring is the alarm that is ringing (or snoozed) right now, if any. RAM
 	// only: see alarmsnooze.go.
 	ring alarmRing
@@ -242,6 +255,9 @@ type Server struct {
 	zoneTiming      *zoneTiming
 	fetchZoneFn     func(ctx context.Context, host string) (boxapi.Zone, error)
 	fetchDeviceIDFn func(ctx context.Context, host string) string
+	// fetchGroupFn reads a speaker's stereo pair (/getGroup); nil is
+	// production (fetchGroup in zoneformpairs.go).
+	fetchGroupFn func(ctx context.Context, host string) (boxapi.Group, error)
 	// The zone member seams: the box calls the join-volume match, the member
 	// takeover, the group wake, the pair standby, the dissolve sweeps and the
 	// default-group rejoin make. Every real implementation reaches a speaker
@@ -346,6 +362,12 @@ type Server struct {
 	// switches; the keys then do nothing.
 	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
 	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
+	// spotifyLikeCurrent saves the playing song to Liked Songs and
+	// spotifyUnlikeCurrent removes it, for the remote's thumbs up and thumbs
+	// down keys (#1165, likekey.go). nil when the engine cannot; the keys
+	// then do nothing.
+	spotifyLikeCurrent   func(ctx context.Context) (SpotifyLikedTrack, error)
+	spotifyUnlikeCurrent func(ctx context.Context) (SpotifyLikedTrack, error)
 	// skipRepushMu guards the skip re-attach bookkeeping: hwSkipAt marks a
 	// recent hardware skip (whose flow re-attaches the box itself), and
 	// lastSkipRepushAt debounces the soft-skip re-push so a burst of presses
@@ -386,10 +408,13 @@ type Server struct {
 	// optimistically reporting "playing" and failing silently (#45 Pierre). nil
 	// until wired.
 	spotifyCanRecall func(ctx context.Context) bool
-	// spotifyPremiumRequired reports whether the logged-in Spotify account is
-	// free/open and so cannot do the autonomous recall playback (#45). nil until
+	// spotifyPremiumRequired reports whether a recall of a key saved under the
+	// given account would play under a free/open account and so cannot do the
+	// autonomous recall playback (#45). Another account's key the speaker can
+	// switch to is not judged by the logged-in account (#1947). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
-	spotifyPremiumRequired func() bool
+	// why goes into the gate's log line and nowhere else.
+	spotifyPremiumRequired func(account string) (required bool, why string)
 
 	// phoneLangSeen counts the Accept-Language values the remote page was asked
 	// for, so a diagnostic shows what the phones actually claim rather than what
@@ -508,6 +533,8 @@ type Server struct {
 	// requests cannot run applyWLANChange concurrently and interleave their
 	// writes to wlan-creds / wpa_supplicant.conf.
 	wlanMu sync.Mutex
+	// presetCopyMu keeps one phone-driven preset copy at a time (presetcopy.go).
+	presetCopyMu sync.Mutex
 	// Test seams of PUT /api/box/wlan, nil in production: which Wi-Fi stack
 	// the chassis has (detectWlanMechanism), whether the supplicant is
 	// associated to a network (wpaAssociatedTo), and the background switch
@@ -515,6 +542,9 @@ type Server struct {
 	wlanMechFn       func() (iface, mech string)
 	wlanAssociatedFn func(iface, ssid string) bool
 	wlanApplyFn      func(iface, mech, ssid, password string, hidden, forgetOthers bool)
+	// wlanCopyFactsFn stands in for what PUT /api/box/wlan/copy reads off the
+	// speaker (wlancopy.go), nil in production.
+	wlanCopyFactsFn func() wlanCopyFacts
 
 	// boxNowReadFn is THE test seam for "what does this speaker play right
 	// now": every own-box now_playing read in this package goes through
@@ -831,6 +861,19 @@ type Server struct {
 	exhaustedStandbySendFn func(ctx context.Context, host string) error
 	hushReadNowPlayingFn   func(ctx context.Context, host string) nowPlayingSnapshot
 	hushStopFn             func(ctx context.Context) error
+	// Carrying on after an agent update (resume_update.go): the in-memory
+	// state, the engine transfers under way, and the marker path, clock and
+	// effects the tests replace (empty / nil = production).
+	updResume          updateResumeState
+	engineUploads      atomic.Int32
+	updateResumePath   string
+	updateResumeTiming *updateResumeTiming
+	updateResumeFx     *updateResumeFx
+	// nativeRemoveMu guards nativeRemoveFlights, the account removal running
+	// per service (usservices.go). A DELETE that arrives while one runs
+	// waits for it and gets its answer instead of sending a second removal.
+	nativeRemoveMu      sync.Mutex
+	nativeRemoveFlights map[string]*nativeRemoveFlight
 	// setVolumeFn overrides the start-volume write for tests. nil = the box.
 	setVolumeFn func(ctx context.Context, vol int) error
 	// startVolumeMu guards startVolumeAt, when the start level was last
@@ -1136,13 +1179,21 @@ type BoxPreset struct {
 	// here: the desktop is the place to explain a dead key, not to hide it.
 	StrOrigin bool `json:"strOrigin"`
 	// Lost is the agent's verdict on a StrOrigin slot: the store has nothing
-	// on it AND no webhook-only key claims it, so a press plays nothing. The
+	// on it AND no placeholder key claims it, so a press plays nothing. The
 	// second condition is why the verdict is made here and not on the
-	// desktop: a webhook-only key (#536) carries a placeholder in STR's own
-	// form and is kept out of the store on purpose, and the desktop sees
+	// desktop: a key with only a webhook (#536) or only a second-row station
+	// (#1910) carries a placeholder in STR's own form and is kept out of the
+	// store's first row on purpose, and the desktop sees
 	// neither the store nor the webhook slots. Stamped alongside StrOrigin
 	// at the composition root.
 	Lost bool `json:"lost"`
+	// Row2Key marks a StrOrigin slot as the placeholder the agent keeps on a
+	// key with nothing on its single press but a station on its double press
+	// (#1910): the firmware refuses an empty key and never reports its press,
+	// so the slot holds STR's own form, and a single press plays the second
+	// row. The desktop shows such a key's single press as empty, not as a
+	// station on the speaker. Stamped alongside Lost.
+	Row2Key bool `json:"row2Key"`
 }
 
 // recentCardCtx is the current source card for a source, retained so the live
@@ -1699,6 +1750,9 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	// resume down briefly so it does not blast the room right after the update
 	// (a genuine power outage leaves no marker and resumes as before).
 	s.consumeOTARebootMarker()
+	// ... unless it was playing when the update arrived: then it carries on
+	// once the firmware is back (resume_update.go).
+	s.loadUpdateResume()
 	// Finish a self-update that rebooted into this agent (selfupdate.go).
 	s.resumeSelfUpdate()
 	// The hidden game's remote code starts a round through this server, which
@@ -1749,6 +1803,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
 	// answers a plain 404, which cannot be confused with anything.
 	mux.HandleFunc("/api/box/preset-move", s.handlePresetMove)
+	mux.HandleFunc(presetCopyAPIPath, s.handlePresetCopy)
 	mux.HandleFunc("/api/box/save-playing", s.handleSavePlaying)
 	mux.HandleFunc("/api/presets/", s.handlePresetSlot)
 	mux.HandleFunc("/api/play", s.handlePlay)
@@ -1771,6 +1826,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/seek", s.handleSeek)
+	// Registered on every speaker, also one without a Spotify engine (it
+	// answers 409 there): an unregistered path falls through to the index,
+	// whose 200 + HTML would read as success.
+	mux.HandleFunc("/api/spotify/liked", s.handleSpotifyLiked)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves
@@ -1801,6 +1860,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/wlan/scan", s.handleBoxWLANScan)
+	mux.HandleFunc("/api/box/wlan/copy", s.handleBoxWLANCopy)
 	mux.HandleFunc("/api/box/wlan/networks", s.handleBoxWLANNetworks)
 	mux.HandleFunc("/api/box/wlan/forget-others", s.handleBoxWLANForgetOthers)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)

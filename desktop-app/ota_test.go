@@ -117,3 +117,23 @@ func TestSSHHandshakeFailureText(t *testing.T) {
 		t.Errorf("what the speaker did answer belongs in the text, got %q", got)
 	}
 }
+
+// The journal names the figure the gate compares, not only the raw size: the
+// old "need=19660960B -> ok" read like 1.2 MB of headroom.
+func TestNANDHeadroomLineNamesTheOnFlashNeed(t *testing.T) {
+	line := nandHeadroomLine("20900000", "27400000", 20900000, 19660960)
+	onFlash := nandNeedCompressed(19660960)
+	for _, want := range []string{
+		"free=20900000B", "total=27400000B", "binary=19660960B",
+		fmt.Sprintf("on-flash need=%dB", onFlash),
+		fmt.Sprintf("headroom=%dB", 20900000-onFlash),
+		"-> ok",
+	} {
+		if !strings.Contains(line, want) {
+			t.Errorf("headroom line lacks %q: %q", want, line)
+		}
+	}
+	if tight := nandHeadroomLine("9000000", "27400000", 9000000, 19660960); !strings.Contains(tight, "TIGHT") {
+		t.Errorf("a box below the on-flash need reads ok: %q", tight)
+	}
+}

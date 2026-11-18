@@ -347,6 +347,24 @@ func (s *Store) ReplacePresetSlots() []int {
 	return slots
 }
 
+// PresetSlots returns the preset key slots (1..6) that carry an enabled
+// webhook in ANY mode, ascending. A key with nothing on it is refused by the
+// speaker and never reports its press, so the reconcile keeps a placeholder on
+// every such key that has a webhook behind it, additional mode included
+// (#536, #1910). A nil Store answers nil.
+func (s *Store) PresetSlots() []int {
+	if s == nil {
+		return nil
+	}
+	var slots []int
+	for slot := 1; slot <= 6; slot++ {
+		if _, ok := s.Button(fmt.Sprintf("preset%d", slot)); ok {
+			slots = append(slots, slot)
+		}
+	}
+	return slots
+}
+
 // FireButton fires the webhook configured for id if enabled. Rate-limited per
 // id. Returns whether a configured+enabled action existed, so the caller can
 // log a press even when it was rate-limited.
@@ -385,6 +403,25 @@ func (s *Store) FireKey(ctx context.Context, id string) string {
 		}
 	}
 	return ""
+}
+
+// KeyConfigured reports whether a press of the per-key id would fire a
+// webhook: the key's own trigger, or for a thumbs key the legacy shared
+// thumbs action. nil-safe.
+func (s *Store) KeyConfigured(id string) bool {
+	if s == nil {
+		return false
+	}
+	if _, ok := s.Button(id); ok {
+		return true
+	}
+	if id != KeyThumbsUp && id != KeyThumbsDown {
+		return false
+	}
+	s.mu.RLock()
+	a := s.cfg.Thumb
+	s.mu.RUnlock()
+	return a.Enabled && a.Configured()
 }
 
 // Fire runs a single action immediately (used by the manual test endpoint).

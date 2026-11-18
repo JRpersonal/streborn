@@ -12,9 +12,11 @@ import { expectDriftList } from '../helpers/mockclient.mjs';
 import { KILL_ANIM, scan } from '../helpers/a11y.mjs';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PHONE } from '../../testkit/demo-data.mjs';
+import { PHONE, STATUS_IDLE } from '../../testkit/demo-data.mjs';
 
 const UNMOCKED_FILE = 'baselines/unmocked-phone.json';
+// E2E_SHOTS=<dir> also saves a screenshot of Play in standby there.
+const SHOTS = process.env.E2E_SHOTS || '';
 
 const TABS = ['Play', 'Browse', 'Speakers', 'More'];
 
@@ -143,6 +145,34 @@ test.describe('actions', () => {
       .filter((c) => c.method === 'POST' && new URL(c.url).pathname.startsWith('/api/play/'))
       .map((c) => new URL(c.url).pathname)).toEqual(['/api/play/1']);
     await expect(page.locator('#presets .preset').first()).toHaveClass(/\bactive\b/);
+  });
+
+  // #1920: the Play key of the Bose remote starts a speaker with what it
+  // played last. The page's one Play/Pause button did nothing in standby.
+  test.describe('on a speaker in standby', () => {
+    test.use({ phoneOverrides: {
+      '/api/status': { contentType: 'application/xml', body: STATUS_IDLE },
+      '/api/box/power': { body: { on: true } },
+    } });
+
+    test('Play wakes the speaker with what it played last, and sends nothing else', async ({ phone }) => {
+      const { page, handler } = phone;
+      await bootDone(page);
+      const pp = page.locator('#btnPause');
+      await expect(pp).toBeVisible();
+      await expect(pp).toBeEnabled();
+      await expect(pp).toHaveAttribute('aria-label', 'Play');
+      await expect(page.locator('#powerBtn')).toHaveAttribute('aria-pressed', 'false');
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-play-in-standby.png` });
+      const before = handler.calls.length;
+      const sent = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/box/power');
+      await pp.click();
+      expect(JSON.parse((await sent).postData())).toEqual({ on: true });
+      await expect(page.locator('#powerBtn')).toHaveAttribute('aria-pressed', 'true');
+      const posts = handler.calls.slice(before).filter((c) => c.method !== 'GET').map((c) => new URL(c.url).pathname);
+      expect(posts).toEqual(['/api/box/power']);
+      expect(await page.locator('.transport button').count()).toBe(6);
+    });
   });
 
   // #1869: the start volume the desktop app has, on the phone page. The
