@@ -637,3 +637,132 @@ func TestUpdateResumePushesTheRecordThroughTheRenderer(t *testing.T) {
 		t.Fatalf("marker still there, stat err = %v", err)
 	}
 }
+
+// nativeWakeServer is a restarted agent whose speaker was playing a native
+// radio preset: on waking, the firmware announces that preset again, which
+// records the same station as a fresh play (NoteNativeLastPlay). Everything
+// else is the production path, renderer included.
+func nativeWakeServer(t *testing.T) (*Server, *soapRecorder) {
+	t.Helper()
+	s, rec := resumeTestServer(t, `<nowPlaying source="STANDBY"></nowPlaying>`)
+	s.updateResumePath = filepath.Join(t.TempDir(), "resume-after-update")
+	tm := productionUpdateResumeTiming
+	tm.settle, tm.volumeSettle, tm.selfStartGap = 5*time.Millisecond, 5*time.Millisecond, 5*time.Millisecond
+	s.updateResumeTiming = &tm
+	// Started three minutes ago, as in the field run: an announcement within
+	// seconds of STR's own play would count as its echo and change nothing.
+	s.play.mu.Lock()
+	s.play.last.ts = time.Now().Add(-3 * time.Minute)
+	s.play.mu.Unlock()
+	lp, _ := s.play.snapshot()
+	b, _ := json.Marshal(updateResumeMarker{BoxURL: lp.boxURL, PlayTS: lp.ts, Volume: -1, At: time.Now().Add(-2 * time.Minute)})
+	if err := os.WriteFile(s.updateResumePath, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.loadUpdateResume()
+	fx := *s.updateResumeEffects()
+	fx.wake = func() { s.NoteNativeLastPlay(lp.boxURL, lp.title, lp.art, lp.mime) }
+	s.updateResumeFx = &fx
+	return s, rec
+}
+
+// Field test of 2026-11-18, Portable: a native radio preset played, the
+// update restarted the speaker, and the resume gave up with "something else
+// was played since the update" although nothing else had been. The waking
+// firmware had announced the same preset, the record got a new timestamp, and
+// the timestamp comparison read that as a newer choice. The speaker stayed on
+// INVALID_SOURCE, silent.
+func TestUpdateResumeSurvivesTheFirmwareAnnouncingTheSameStation(t *testing.T) {
+	t.Parallel()
+	s, rec := nativeWakeServer(t)
+	before, _ := s.play.snapshot()
+	s.ResumeAfterUpdate()
+	waitUpdateResume(t, s)
+	after, _ := s.play.snapshot()
+	if after.ts.Equal(before.ts) || !after.fromBox {
+		t.Fatal("test setup: the wake did not re-record the station as the firmware's own")
+	}
+	if !waitForSOAP(rec, time.Second) {
+		t.Fatal("the same station announced again by the waking firmware called the resume off")
+	}
+	if got := strings.Join(rec.list(), ","); !strings.Contains(got, "SetAVTransportURI") {
+		t.Fatalf("SOAP actions = %s, want the station pushed", got)
+	}
+}
+
+// When the firmware does start the announced station by itself, nothing is
+// pushed on top of it.
+func TestUpdateResumeLeavesAFirmwareSelfStartAlone(t *testing.T) {
+	t.Parallel()
+	s, rec := nativeWakeServer(t)
+	s.playStateFn = func() (standby, busy bool) { return false, true }
+	s.ResumeAfterUpdate()
+	waitUpdateResume(t, s)
+	if waitForSOAP(rec, 100*time.Millisecond) {
+		t.Fatalf("pushed onto a station the speaker had started itself: %v", rec.list())
+	}
+	if _, err := os.Stat(s.updateResumePath); !os.IsNotExist(err) {
+		t.Fatalf("marker still there, stat err = %v", err)
+	}
+}
+
+func TestUpdateResumeSupersededIsAboutTheStation(t *testing.T) {
+	t.Parallel()
+	ts := time.Now()
+	m := updateResumeMarker{BoxURL: updateResumeTestURL, PlayTS: ts}
+	if updateResumeSuperseded(m, &lastPlayInfo{boxURL: updateResumeTestURL, ts: ts.Add(3 * time.Minute), fromBox: true}) {
+		t.Fatal("the same station recorded again counts as superseded")
+	}
+	if !updateResumeSuperseded(m, &lastPlayInfo{boxURL: "http://127.0.0.1:8888/stream/5", ts: ts}) {
+		t.Fatal("another station does not count as superseded")
+	}
+	if !updateResumeSuperseded(m, nil) {
+		t.Fatal("no record does not count as superseded")
+	}
+}
+
+// A stop asked for after the restart is the user's last word, also when the
+// station on record is still the same.
+func TestUpdateResumeNotAfterAStopSinceTheRestart(t *testing.T) {
+	t.Parallel()
+	s, box := newUpdateResumeServer(t)
+	armUpdateResume(t, s, box, time.Minute, 20)
+	s.NoteExplicitStop()
+	s.ResumeAfterUpdate()
+	waitUpdateResume(t, s)
+	if box.pushCount() != 0 || box.wakes != 0 {
+		t.Fatal("a speaker the user stopped after the restart was started again")
+	}
+}
+
+// The Portable of the field test played at 5 and restarted at 30. The level
+// must be back down before the speaker is woken, not after the first notes.
+func TestUpdateResumeTurnsDownBeforeTheWake(t *testing.T) {
+	t.Parallel()
+	s, box := newUpdateResumeServer(t)
+	armUpdateResume(t, s, box, time.Minute, 5)
+	box.vol = 30
+	var order []string
+	var mu sync.Mutex
+	note := func(what string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, what)
+	}
+	fx := *s.updateResumeFx
+	setVolume, wake, push := fx.setVolume, fx.wake, fx.push
+	fx.setVolume = func(v int) error { note("volume"); return setVolume(v) }
+	fx.wake = func() { note("wake"); wake() }
+	fx.push = func(m updateResumeMarker) (bool, error) { note("push"); return push(m) }
+	s.updateResumeFx = &fx
+	s.ResumeAfterUpdate()
+	waitUpdateResume(t, s)
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(order, ","); got != "volume,wake,push" {
+		t.Fatalf("order = %s, want volume,wake,push", got)
+	}
+	if len(box.volSets) != 1 || box.volSets[0] != 5 {
+		t.Fatalf("volume writes = %v, want [5]", box.volSets)
+	}
+}

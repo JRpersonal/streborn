@@ -58,9 +58,11 @@ const defaultUpdateResumePath = "/mnt/nv/streborn/resume-after-update"
 // was unplugged in between, and music starting on its own then is a surprise.
 const updateResumeMaxAge = 15 * time.Minute
 
-// updateResumeMarker is the marker file. BoxURL and PlayTS name the play on
-// record (last-play.json) the resume is for: a record that changed since is
-// somebody's newer choice and is left alone.
+// updateResumeMarker is the marker file. BoxURL names the play on record
+// (last-play.json) the resume is for: another station on record since is
+// somebody's newer choice and is left alone. PlayTS is when that play
+// started; a newer time on the same station only means it was announced or
+// started again (see updateResumeSuperseded).
 type updateResumeMarker struct {
 	BoxURL string    `json:"boxURL"`
 	PlayTS time.Time `json:"playTS"`
@@ -89,20 +91,26 @@ type updateResumeTiming struct {
 	// a boot the renderer can refuse the first one.
 	pushes  int
 	pushGap time.Duration
+	// selfStartChecks and selfStartGap bound how long a firmware that
+	// announced the station on waking gets to start it by itself.
+	selfStartChecks int
+	selfStartGap    time.Duration
 	// volumeSettle is how long after the start the level is checked again
 	// (the firmware settles its own volume as the source comes up).
 	volumeSettle time.Duration
 }
 
 var productionUpdateResumeTiming = updateResumeTiming{
-	settle:       2 * time.Second,
-	clockWait:    60 * time.Second,
-	clockStep:    3 * time.Second,
-	boxReads:     5,
-	boxReadGap:   4 * time.Second,
-	pushes:       3,
-	pushGap:      5 * time.Second,
-	volumeSettle: startVolumeApplyDelay,
+	settle:          2 * time.Second,
+	clockWait:       60 * time.Second,
+	clockStep:       3 * time.Second,
+	boxReads:        5,
+	boxReadGap:      4 * time.Second,
+	pushes:          3,
+	pushGap:         5 * time.Second,
+	selfStartChecks: 4,
+	selfStartGap:    1500 * time.Millisecond,
+	volumeSettle:    startVolumeApplyDelay,
 }
 
 // updateResumeFx is what the resume does to the world. Production reaches the
@@ -471,8 +479,14 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 		s.logger.Info("resume after update: the Spotify engine is being delivered, starting the speaker again once that is done")
 		return true
 	}
-	if cur := s.play.current(); resumeIsStale(m.BoxURL, m.PlayTS, cur) {
-		return skip("the play on record changed since the update, or is gone")
+	if cur := s.play.current(); updateResumeSuperseded(m, cur) {
+		return skip("another station is on record than the one the update interrupted, or none", s.updateResumeRecordArgs(m, cur)...)
+	}
+	// Stop requests live in memory only, so any on record is from after the
+	// restart: the user's last word. (The follow-up was checked for this
+	// before it was armed.)
+	if !m.followUp && s.explicitStopAfter(time.Time{}) {
+		return skip("playback was stopped or paused after the restart")
 	}
 	var np nowPlayingSnapshot
 	for i := 0; ; i++ {
@@ -502,20 +516,22 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 	s.lastUserStopMu.Lock()
 	s.lastUserStop = time.Time{}
 	s.lastUserStopMu.Unlock()
-	var err error
+	var (
+		err  error
+		done bool
+	)
 	for i := 0; i < tm.pushes; i++ {
 		if i > 0 {
 			fx.sleep(tm.pushGap)
 		}
-		var done bool
 		if done, err = fx.push(m); err == nil {
 			if done {
-				return skip("the speaker started playing by itself")
+				s.logger.Info("resume after update: the speaker started the station again by itself, nothing to push", "url", m.BoxURL)
 			}
 			break
 		}
 		if errors.Is(err, errUpdateResumeSuperseded) {
-			return skip("something else was played since the update")
+			return skip("another station was started while the speaker woke up", s.updateResumeRecordArgs(m, s.play.current())...)
 		}
 		s.logger.Info("resume after update: the speaker did not take the stream yet", "attempt", i+1, "err", err)
 	}
@@ -523,9 +539,12 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 		s.logger.Warn("resume after update: could not start the speaker again", "err", err, "url", m.BoxURL)
 		return false
 	}
-	if m.followUp {
+	switch {
+	case done:
+		// logged above
+	case m.followUp:
 		s.logger.Info("resume after update: carried on again after the Spotify engine delivery", "url", m.BoxURL)
-	} else {
+	default:
 		s.logger.Info("resume after update: the speaker carries on with what it was playing before the update",
 			"url", m.BoxURL, "title", s.updateResumeTitle(m.BoxURL), "ageSec", int(fx.now().Sub(m.At).Seconds()))
 	}
@@ -542,9 +561,12 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 	return false
 }
 
-// lowerVolumeTo turns the speaker down to the level it had before the update
-// when it came back louder. It never turns it up: a speaker that came back
-// quieter stays quieter.
+// lowerVolumeTo ends at the level the speaker had before the update when it
+// came back louder (a Portable that played at 5 restarted at 30). It never
+// turns it up: a speaker that came back quieter stays quieter. Called before
+// the wake, so the level is down before there is any audio, and once more
+// after the start, because the firmware settles its own volume as the source
+// comes up.
 func (s *Server) lowerVolumeTo(fx *updateResumeFx, want int) {
 	if want < 0 {
 		return
@@ -560,9 +582,32 @@ func (s *Server) lowerVolumeTo(fx *updateResumeFx, want int) {
 	s.logger.Info("resume after update: the speaker came back louder, turned it down to the level it had", "from", cur, "to", want)
 }
 
-// errUpdateResumeSuperseded: a newer play took the record while the resume
-// waited for the speaker's command lock.
-var errUpdateResumeSuperseded = errors.New("a newer play started")
+// errUpdateResumeSuperseded: another station took the record while the
+// resume waited for the speaker.
+var errUpdateResumeSuperseded = errors.New("another station was started")
+
+// updateResumeSuperseded reports whether the play on record is no longer the
+// station the marker is for.
+//
+// The station decides, not the record's timestamp. A speaker that wakes up
+// announces the native radio preset it was on, and that announcement is
+// recorded as a fresh play of the SAME station (NoteNativeLastPlay): same
+// URL, new time. Comparing the time took that for somebody's newer choice,
+// so a Portable that had played a native preset stayed silent after its
+// update (field test of 2026-11-18: the record changed during the wake and
+// the speaker sat on INVALID_SOURCE).
+func updateResumeSuperseded(m updateResumeMarker, cur *lastPlayInfo) bool {
+	return cur == nil || cur.boxURL != m.BoxURL
+}
+
+// updateResumeRecordArgs are both sides of that comparison for a log line.
+func (s *Server) updateResumeRecordArgs(m updateResumeMarker, cur *lastPlayInfo) []any {
+	args := []any{"markerURL", m.BoxURL, "markerPlayTS", m.PlayTS.UTC().Format(time.RFC3339Nano)}
+	if cur == nil {
+		return append(args, "recordURL", "(none)")
+	}
+	return append(args, "recordURL", cur.boxURL, "recordPlayTS", cur.ts.UTC().Format(time.RFC3339Nano), "recordFromSpeaker", cur.fromBox)
+}
 
 // pushUpdateResume starts the play on record again through the power-on
 // resume's own push (resumePushLocked).
@@ -570,10 +615,28 @@ func (s *Server) pushUpdateResume(m updateResumeMarker) (done bool, err error) {
 	if s.renderer == nil {
 		return false, errNoRenderer
 	}
+	cur := s.play.current()
+	if updateResumeSuperseded(m, cur) {
+		return false, errUpdateResumeSuperseded
+	}
+	// The same station recorded anew since the marker was written: the
+	// waking firmware announced it and is trying to start it by itself (or
+	// somebody just started it). It gets a bounded moment to do so, because
+	// a push into that start cuts it off. A start that does not come, as on
+	// the Portable right after its boot, is ours to make.
+	if !cur.ts.Equal(m.PlayTS) {
+		fx, tm := s.updateResumeEffects(), s.updateResumeTimes()
+		for i := 0; i < tm.selfStartChecks; i++ {
+			if _, busy := s.boxPlayState(); busy {
+				return true, nil
+			}
+			fx.sleep(tm.selfStartGap)
+		}
+	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	cur := s.play.current()
-	if resumeIsStale(m.BoxURL, m.PlayTS, cur) {
+	cur = s.play.current()
+	if updateResumeSuperseded(m, cur) {
 		return false, errUpdateResumeSuperseded
 	}
 	// A wake can make the firmware, or the power-on resume it triggers,
