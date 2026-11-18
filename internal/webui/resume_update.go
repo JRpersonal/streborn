@@ -95,6 +95,10 @@ type updateResumeTiming struct {
 	// announced the station on waking gets to start it by itself.
 	selfStartChecks int
 	selfStartGap    time.Duration
+	// volumeChecks and volumeCheckGap bound the read-back of the level
+	// after the wake.
+	volumeChecks   int
+	volumeCheckGap time.Duration
 	// volumeSettle is how long after the start the level is checked again
 	// (the firmware settles its own volume as the source comes up).
 	volumeSettle time.Duration
@@ -110,6 +114,8 @@ var productionUpdateResumeTiming = updateResumeTiming{
 	pushGap:         5 * time.Second,
 	selfStartChecks: 4,
 	selfStartGap:    1500 * time.Millisecond,
+	volumeChecks:    6,
+	volumeCheckGap:  500 * time.Millisecond,
 	volumeSettle:    startVolumeApplyDelay,
 }
 
@@ -418,6 +424,11 @@ func (s *Server) ResumeAfterUpdate() bool {
 
 func (s *Server) runUpdateResume(m updateResumeMarker) {
 	keep := s.attemptUpdateResume(m)
+	if !keep {
+		// Normally gone already (it is removed before the stream starts);
+		// this covers every reason the resume was called off.
+		s.dropUpdateResumeMarker()
+	}
 	st := &s.updResume
 	st.mu.Lock()
 	st.running = false
@@ -428,9 +439,6 @@ func (s *Server) runUpdateResume(m updateResumeMarker) {
 	}
 	st.mu.Unlock()
 	if !keep {
-		// Normally gone already (it is removed before the stream starts);
-		// this covers every reason the resume was called off.
-		s.dropUpdateResumeMarker()
 		return
 	}
 	// The transfer may have ended while the lines above ran.
@@ -510,8 +518,15 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 	// Used up from here on, whatever the start below does: a stream that
 	// takes the speaker down must not be tried again by the next boot.
 	s.dropUpdateResumeMarker()
-	s.lowerVolumeTo(fx, m.Volume)
+	s.lowerVolumeTo(fx, m.Volume, "before the wake")
 	fx.wake()
+	// The wake is where the level is lost: the firmware applies its own
+	// power-on volume when it leaves standby, a moment after the wake
+	// returns (Portable, field run of 2026-11-18: 5 before the update, set
+	// back to 5 before the wake, 30 again half a second into it). So the
+	// level is brought down and read back here, before any stream is pushed
+	// and before a firmware that starts the station by itself is audible.
+	s.holdVolumeDown(fx, tm, m.Volume)
 	// The hush latched a deliberate stop; this start is wanted.
 	s.lastUserStopMu.Lock()
 	s.lastUserStop = time.Time{}
@@ -557,29 +572,58 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 	}
 	st.mu.Unlock()
 	fx.sleep(tm.volumeSettle)
-	s.lowerVolumeTo(fx, m.Volume)
+	s.lowerVolumeTo(fx, m.Volume, "after playback started")
 	return false
 }
 
-// lowerVolumeTo ends at the level the speaker had before the update when it
-// came back louder (a Portable that played at 5 restarted at 30). It never
-// turns it up: a speaker that came back quieter stays quieter. Called before
-// the wake, so the level is down before there is any audio, and once more
-// after the start, because the firmware settles its own volume as the source
-// comes up.
-func (s *Server) lowerVolumeTo(fx *updateResumeFx, want int) {
+// holdVolumeDown brings the level down after the wake and keeps reading it
+// back until it stayed down for two readings in a row, or the bound is
+// reached. A level that could not be read counts as not confirmed.
+func (s *Server) holdVolumeDown(fx *updateResumeFx, tm *updateResumeTiming, want int) {
 	if want < 0 {
 		return
 	}
-	cur, ok := fx.volume()
-	if !ok || cur <= want {
-		return
+	calm := 0
+	for i := 0; i < tm.volumeChecks; i++ {
+		if i > 0 {
+			fx.sleep(tm.volumeCheckGap)
+		}
+		switch changed, ok := s.lowerVolumeTo(fx, want, "after the wake"); {
+		case !ok || changed:
+			calm = 0
+		default:
+			if calm++; calm >= 2 {
+				return
+			}
+		}
+	}
+	if calm == 0 {
+		s.logger.Warn("resume after update: the level could not be confirmed after the wake, the station may start louder than before the update", "want", want)
+	}
+}
+
+// lowerVolumeTo ends at the level the speaker had before the update when it
+// is louder now (a Portable that played at 5 restarted at 30). It never turns
+// it up: a speaker that came back quieter stays quieter. step names the
+// moment for the log; every change is one INFO line. changed reports that
+// the level was set, ok that it is known to be at or below want now.
+func (s *Server) lowerVolumeTo(fx *updateResumeFx, want int, step string) (changed, ok bool) {
+	if want < 0 {
+		return false, true
+	}
+	cur, read := fx.volume()
+	if !read {
+		return false, false
+	}
+	if cur <= want {
+		return false, true
 	}
 	if err := fx.setVolume(want); err != nil {
-		s.logger.Warn("resume after update: could not turn the speaker back down to its level", "err", err, "from", cur, "to", want)
-		return
+		s.logger.Warn("resume after update: could not turn the speaker back down to its level", "err", err, "from", cur, "to", want, "step", step)
+		return false, false
 	}
-	s.logger.Info("resume after update: the speaker came back louder, turned it down to the level it had", "from", cur, "to", want)
+	s.logger.Info("resume after update: the speaker was louder than before the update, turned it down to the level it had", "from", cur, "to", want, "step", step)
+	return true, true
 }
 
 // errUpdateResumeSuperseded: another station took the record while the

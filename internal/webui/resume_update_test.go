@@ -119,7 +119,9 @@ func (b *fakeUpdateResumeBox) pushCount() int {
 func newUpdateResumeServer(t *testing.T) (*Server, *fakeUpdateResumeBox) {
 	t.Helper()
 	box := &fakeUpdateResumeBox{
-		t:     time.Now(),
+		// A second behind the real clock, which stamps the stop latches:
+		// "stopped after the hush" must not hang on the timer resolution.
+		t:     time.Now().Add(-time.Second),
 		np:    nowPlayingSnapshot{Source: "STANDBY"},
 		vol:   20,
 		volOK: true,
@@ -132,6 +134,7 @@ func newUpdateResumeServer(t *testing.T) (*Server, *fakeUpdateResumeBox) {
 	// stays next to the real one, which the stop latches are stamped with.
 	tm := productionUpdateResumeTiming
 	tm.settle, tm.clockStep, tm.boxReadGap, tm.pushGap, tm.volumeSettle = 1, 1, 1, 1, 1
+	tm.volumeCheckGap, tm.selfStartGap = 1, 1
 	tm.clockWait = 20
 	s.updateResumeTiming = &tm
 	s.play.last = &lastPlayInfo{boxURL: updateResumeTestURL, title: "Last Station", ts: box.t.Add(-time.Hour)}
@@ -764,5 +767,115 @@ func TestUpdateResumeTurnsDownBeforeTheWake(t *testing.T) {
 	}
 	if len(box.volSets) != 1 || box.volSets[0] != 5 {
 		t.Fatalf("volume writes = %v, want [5]", box.volSets)
+	}
+}
+
+// Second field run, same Portable: the level was back at 5 before the wake,
+// and the WAKE put it at 30 again, because the firmware applies its own
+// power-on volume when it leaves standby. The station then started at 30.
+// Audio must never start above the level the speaker had: the level is
+// brought down after the wake and before the push, which is also before a
+// firmware that starts the station by itself (detected inside the push) is
+// left to play.
+func TestUpdateResumeTurnsDownAgainAfterTheWake(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		// lateReads is how many level reads after the wake still show the
+		// old level before the firmware applies its own.
+		lateReads int
+		wantOrder string
+	}{
+		{name: "the wake resets the level at once", wantOrder: "volume,wake,volume,push"},
+		{name: "the firmware applies its level a moment after the wake", lateReads: 1, wantOrder: "volume,wake,volume,push"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s, box := newUpdateResumeServer(t)
+			armUpdateResume(t, s, box, time.Minute, 5)
+			box.vol = 30
+			var (
+				mu         sync.Mutex
+				order      []string
+				woken      bool
+				readsSince int
+				reset      bool
+				volAtPush  = -1
+			)
+			fx := *s.updateResumeFx
+			volume, setVolume, wake, push := fx.volume, fx.setVolume, fx.wake, fx.push
+			fx.volume = func() (int, bool) {
+				mu.Lock()
+				if woken && !reset {
+					if readsSince >= tt.lateReads {
+						reset = true
+						box.mu.Lock()
+						box.vol = 30 // the firmware's power-on level
+						box.mu.Unlock()
+					}
+					readsSince++
+				}
+				mu.Unlock()
+				return volume()
+			}
+			fx.setVolume = func(v int) error {
+				mu.Lock()
+				order = append(order, "volume")
+				mu.Unlock()
+				return setVolume(v)
+			}
+			fx.wake = func() {
+				mu.Lock()
+				order = append(order, "wake")
+				woken = true
+				mu.Unlock()
+				wake()
+			}
+			fx.push = func(m updateResumeMarker) (bool, error) {
+				v, _ := volume()
+				mu.Lock()
+				order = append(order, "push")
+				volAtPush = v
+				mu.Unlock()
+				return push(m)
+			}
+			s.updateResumeFx = &fx
+			s.ResumeAfterUpdate()
+			waitUpdateResume(t, s)
+			mu.Lock()
+			defer mu.Unlock()
+			if !reset {
+				t.Fatal("test setup: the firmware never applied its power-on level")
+			}
+			if volAtPush != 5 {
+				t.Fatalf("level when the stream was pushed = %d, want 5 (order %v)", volAtPush, order)
+			}
+			if got := strings.Join(order, ","); got != tt.wantOrder {
+				t.Fatalf("order = %s, want %s", got, tt.wantOrder)
+			}
+			box.mu.Lock()
+			defer box.mu.Unlock()
+			if box.vol != 5 {
+				t.Fatalf("level at the end = %d, want 5", box.vol)
+			}
+		})
+	}
+}
+
+// A level that cannot be read after the wake must not hold the resume up
+// for long, and nothing is written blind.
+func TestUpdateResumeUnreadableLevelAfterTheWakeIsBounded(t *testing.T) {
+	t.Parallel()
+	s, box := newUpdateResumeServer(t)
+	armUpdateResume(t, s, box, time.Minute, 5)
+	box.volOK = false
+	s.ResumeAfterUpdate()
+	waitUpdateResume(t, s)
+	if box.pushCount() != 1 {
+		t.Fatalf("pushes = %d, want 1", box.pushCount())
+	}
+	if len(box.volSets) != 0 {
+		t.Fatalf("volume writes without a reading: %v", box.volSets)
 	}
 }
