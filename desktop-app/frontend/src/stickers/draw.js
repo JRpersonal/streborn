@@ -138,6 +138,36 @@ function drawPlaylistIcon(ctx, x, y, size, color) {
   ctx.restore();
 }
 
+// The ST Reborn mark as the app header shows it, on its 64 unit grid: the six
+// keys as dots and a line whose middle is a heartbeat. The line and the dots
+// take the sticker's ink, the heartbeat keeps its red.
+function drawBrand(ctx, b) {
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.scale(b.size / 64, b.size / 64);
+  ctx.fillStyle = b.color;
+  for (const cy of [14, 26]) {
+    for (const cx of [22, 32, 42]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = b.color;
+  ctx.beginPath();
+  ctx.moveTo(4, 44); ctx.lineTo(22, 44);
+  ctx.moveTo(42, 44); ctx.lineTo(60, 44);
+  ctx.stroke();
+  ctx.strokeStyle = '#cc0000';
+  ctx.beginPath();
+  ctx.moveTo(22, 44); ctx.lineTo(26, 48); ctx.lineTo(30, 32); ctx.lineTo(34, 54); ctx.lineTo(38, 40); ctx.lineTo(42, 44);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Scissors as paths, handles left and blades pointing right at rot 0. Drawn,
 // not typed: the glyph is missing from many fonts and looks different in each
 // that has it.
@@ -228,6 +258,7 @@ function drawPiece(ctx, k, p, images) {
   for (const ic of p.icons) drawPlaylistIcon(ctx, ic.x, ic.y, ic.size, ic.color);
   for (const tx of p.texts) drawText(ctx, k, tx);
   if (p.qr) drawQr(ctx, p.qr, images);
+  if (p.brand) drawBrand(ctx, p.brand);
 
   // The cut line, dashed, in a colour that shows on this background.
   outlinePath(ctx, p.outline);

@@ -75,6 +75,24 @@ describe('model to sticker', () => {
     expect(plain.outline).toHaveLength(4);
   });
 
+  it('puts the ST Reborn mark into the left column of the ST20 and ST30 sticker, mirroring the code', () => {
+    const page = lay([speaker('Den', 'SoundTouch 30'), speaker('Hall', 'Wave SoundTouch'), speaker('Kitchen', 'SoundTouch 10')]).pages[0];
+    const wide = page.pieces.find((x) => x.speaker === 0);
+    expect(wide.brand).toBeTruthy();
+    // Same size and height as the code, and as far from the left edge as the code is from the right.
+    expect(wide.brand.size).toBeCloseTo(wide.qr.size, 5);
+    expect(wide.brand.y).toBeCloseTo(wide.qr.y, 5);
+    expect(wide.brand.x).toBeCloseTo(wide.w - (wide.qr.x + wide.qr.size), 5);
+    const name = wide.texts.find((t) => t.text === 'ST Reborn');
+    expect(name).toBeTruthy();
+    expect(name.x).toBeCloseTo(wide.brand.x + wide.brand.size / 2, 5);
+    // Models without the left column carry no mark.
+    for (const p of page.pieces.filter((x) => x.speaker !== 0)) {
+      expect(p.brand).toBeNull();
+      expect(p.texts.some((t) => t.text === 'ST Reborn')).toBe(false);
+    }
+  });
+
   it('keeps the pieces of an ST10 edge to edge, with scissors at both shared cuts', () => {
     const page = lay([speaker('Kitchen', 'SoundTouch 10')]).pages[0];
     const [back, front, qr] = page.pieces;
@@ -173,7 +191,7 @@ describe('keys', () => {
     expect(piece.tiles).toHaveLength(6);
     expect(piece.tiles.map((x) => x.letter)).toEqual(['J', '', '', '', '', '']);
     expect(piece.tiles.every((x) => !x.icon)).toBe(true);
-    expect(textsOf(piece)).toEqual(['1', 'Jazz', '2', '3', '4', '5', '6', 'Den']);
+    expect(textsOf(piece)).toEqual(['1', 'Jazz', '2', '3', '4', '5', '6', 'Den', 'ST Reborn']);
   });
 
   it('fills in keys the speaker did not report', () => {
