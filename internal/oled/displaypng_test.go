@@ -109,6 +109,7 @@ func TestRenderAllScreensPNG(t *testing.T) {
 		"notice-shuffle-on":      Shuffle(true),
 		"notice-repeat-all":      Repeat("context"),
 		"notice-repeat-one":      Repeat("track"),
+		"notice-liked":           Liked("Here Comes the Sun"),
 	} {
 		buf := make([]byte, FrameSize)
 		newNoticeRenderer(n).frame(0.6, buf)

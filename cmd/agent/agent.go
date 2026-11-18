@@ -1282,7 +1282,10 @@ func (a *agent) buildBoxLink() error {
 		// thumbs key, and the radio-key step on Next/Previous (#1619).
 		onSleepFixedKey: webuiSrv.SleepFixedKeyPress,
 		onPlayModeKey:   webuiSrv.PlayModeKeyPress,
-		onRadioStepKey:  webuiSrv.RadioStepKey,
+		// Thumbs up with nothing else on the key saves the playing Spotify
+		// song to Liked Songs (#1165).
+		onLikeKey:      webuiSrv.LikeKeyPress,
+		onRadioStepKey: webuiSrv.RadioStepKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).

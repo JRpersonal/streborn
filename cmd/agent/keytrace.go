@@ -180,6 +180,15 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		go h.onSnoozeKey(id)
 		return
 	}
+	if id == webhooks.KeyThumbsUp && h.onLikeKey != nil && !h.webhooks.KeyConfigured(id) {
+		// Thumbs up that carries nothing (no group, no key action, no
+		// webhook) saves the playing Spotify song to Liked Songs (#1165). The
+		// handler does nothing on any other source. Off the reader's
+		// goroutine: a press reads the speaker and asks the engine. Thumbs
+		// down stays without a default.
+		go h.onLikeKey()
+		return
+	}
 	if h.webhooks == nil {
 		return
 	}

@@ -167,6 +167,9 @@ type Server struct {
 	// playModeKey runs the presses of a key bound to shuffle or repeat. See
 	// playmodekey.go.
 	playModeKey playModeKeyState
+	// likeKey runs the presses of the thumbs up key on a Spotify song. See
+	// likekey.go.
+	likeKey likeKeyState
 	// radioStep runs the remote's Next/Prev while a radio key plays. See
 	// radiostep.go.
 	radioStep   radioStepState
@@ -359,6 +362,10 @@ type Server struct {
 	// switches; the keys then do nothing.
 	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
 	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
+	// spotifyLikeCurrent saves the playing song to Liked Songs, for the
+	// remote's thumbs up key (#1165, likekey.go). nil when the engine cannot;
+	// the key then does nothing.
+	spotifyLikeCurrent func(ctx context.Context) (SpotifyLikedTrack, error)
 	// skipRepushMu guards the skip re-attach bookkeeping: hwSkipAt marks a
 	// recent hardware skip (whose flow re-attaches the box itself), and
 	// lastSkipRepushAt debounces the soft-skip re-push so a burst of presses

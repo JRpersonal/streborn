@@ -30,6 +30,7 @@ var (
 	_ webui.SpotifyStatusPages     = (*spotifyEngine)(nil)
 	_ webui.SpotifyEngineLifecycle = (*spotifyEngine)(nil)
 	_ webui.SpotifyRemoteKeys      = (*spotifyEngine)(nil)
+	_ webui.SpotifyLibrary         = (*spotifyEngine)(nil)
 	_ webui.SpotifyRecallRecovery  = (*spotifyEngine)(nil)
 )
 
@@ -108,6 +109,16 @@ func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
 }
 func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
 	return e.m.CycleRepeat(ctx)
+}
+
+// webui.SpotifyLibrary
+func (e *spotifyEngine) LikeCurrentTrack(ctx context.Context) (webui.SpotifyLikedTrack, error) {
+	tr, err := e.m.LikeCurrentTrack(ctx)
+	out := webui.SpotifyLikedTrack{URI: tr.URI, Name: tr.Name, Repeat: tr.Repeat}
+	if err != nil {
+		return out, &webui.SpotifyLikeError{Reason: spotify.LikeFailureReason(err), Err: err}
+	}
+	return out, nil
 }
 
 // webui.SpotifyRecallRecovery

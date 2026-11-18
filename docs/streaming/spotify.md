@@ -454,6 +454,37 @@ or an unreachable engine means the old toggle-and-skip staging, unchanged.
 The warm same-context fast path (pressing the playing preset again) still
 toggles and skips, because there the skip is the point.
 
+### Liked Songs from the remote's thumbs up key (`liked.go`, `webui/likekey.go`)
+
+Thumbs up while STR's Spotify plays saves the current song to the account's
+Liked Songs (discussion #1165; the key rules are in `docs/AUTOMATION.md`).
+`LikeCurrentTrack` reads the loaded song from the engine's `/status` and
+posts it to the engine's `POST /library/liked` as
+`{"uris":["spotify:track:..."],"liked":true}`. It never sends `false`.
+
+No Web API call and no OAuth scope are involved. The engine writes to
+Spotify's internal collection service (`spclient` `/collection/v2/write`)
+with the session it plays with. The access token `POST /token` hands out is
+deliberately not used: whether it carries `user-library-modify` for
+`PUT /v1/me/tracks` is not known, and the Web API is the part Spotify
+rate-limits for hours on some households (see the plan read above).
+
+The route is in the fork since the 2026-10 upstream merge (upstream
+`479f3fc`, `feat: add POST /library/liked and /library/playlists/add_tracks`).
+It is not in the `features` list of `GET /`, so an older build is told by its
+answer on the press itself: the engine's router is `net/http`'s `ServeMux`,
+which answers an unknown route with 404 (or 405) and a text body, while the
+daemon's own error answers carry no body. That reads as `engine-too-old`.
+The daemon's other answers: 200 saved, 204 no session, 400 not a track URI,
+403 passed on from Spotify, 502 or 500 for everything else Spotify refused
+(a 401 or 429 from the collection service arrives as one of those two, the
+daemon does not pass them on as such; STR still maps a 401 or 429 should a
+later build do so).
+
+Not field-tested yet (2026-11-18): the write has never run against Spotify
+from STR, including whether the collection service accepts it for every
+account the engine can play with.
+
 ### Volume: the speaker owns it, the app's slider follows (`volumesync.go`)
 
 The engine runs with `external_volume`, so a Connect volume command only

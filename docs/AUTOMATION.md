@@ -332,6 +332,36 @@ playlist plays`). Nothing is stored: a Spotify preset's own shuffle and repeat
 flags still apply on its next recall. Thumbs keys only, same one-thing-per-key
 rules as the sleep timer.
 
+## Thumbs up saves the Spotify song (no setting)
+
+A thumbs up key that carries nothing (no group, no key action, no webhook of
+its own and no shared thumbs webhook) has a default while STR's own Spotify
+is what the speaker plays, also paused: the press saves the current song to
+the Liked Songs of the account the engine is logged in with (discussion
+#1165). A speaker with a panel shows LIKED and the song's name; one without
+stays silent. A second press on the same song inside 30 seconds writes
+nothing again. Thumbs down has no default: it neither skips nor removes.
+
+On every other source the press does nothing in STR (`thumbs up pressed, but
+Spotify on STR is not what plays; nothing saved`), the speaker's own Spotify
+Connect entry included. STR never consumes the key: it reads the press from
+the key trace, so whatever the firmware does with it on a source of its own
+still happens.
+
+Only a press the key trace named counts (see "How the lower remote keys are
+told apart"). A speaker whose trace is silent reports both thumbs keys as the
+same bare frame, and STR does not guess there: a guess could save a song on
+a thumbs down.
+
+The agent log has one line per press: `thumbs up: saved the playing song to
+Liked Songs` with the track URI, or a WARN `thumbs up pressed, but the song
+was not saved to Liked Songs` with a `reason`: `engine-too-old` (the
+speaker's Spotify engine predates the library functions, update it from the
+desktop app), `no-session`, `no-track`, `not-a-song` (a podcast episode),
+`unauthorized-401`, `forbidden-403`, `rate-limited-429`, `rejected-400`,
+`timeout` or `failed`. How the write works is in
+[`docs/streaming/spotify.md`](streaming/spotify.md).
+
 ## Back and Forward on the remote
 
 The firmware cannot skip STR's stream itself; it reports the press

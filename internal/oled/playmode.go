@@ -34,6 +34,28 @@ func Repeat(mode string) Notice {
 	return keyNotice(NoticePlayMode, iconRepeat, 0, "REPEAT OFF", "Plays to the end", playModeNoticeHold, 2)
 }
 
+// Liked: the playing Spotify song was saved to the account's Liked Songs
+// (the remote's thumbs up key, #1165). name is the song, cut to one line.
+func Liked(name string) Notice {
+	if name == "" {
+		name = "Liked Songs"
+	}
+	return keyNotice(NoticePlayMode, iconHeart, 0, "LIKED", name, playModeNoticeHold, 2)
+}
+
+// heartIcon is a filled heart: two discs over a downward wedge.
+func (c canvas) heartIcon() {
+	const cx, cy, rad = iconX + 16, iconY + 12, 6
+	c.disc(cx-rad, cy, rad, 15)
+	c.disc(cx+rad, cy, rad, 15)
+	// The wedge runs from the discs' widest line down to the tip.
+	const half, depth = 2*rad - 1, 13
+	for i := 0; i <= depth; i++ {
+		w := half - half*i/depth
+		c.line(cx-w, cy+2+i, cx+w, cy+2+i, 15)
+	}
+}
+
 // shuffleIcon is two crossing arrows.
 func (c canvas) shuffleIcon() {
 	const x0, x1, top, bot = iconX + 3, iconX + 27, iconY + 9, iconY + 23
