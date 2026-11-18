@@ -77,6 +77,16 @@ refused account never produces) removes it again. `/spotify/info` reports
 now-playing area and the UI 2.0 Spotify accounts card, the phone page under
 its now-playing line, both only while STR's Spotify is the source.
 
+While a recall switches accounts the refusal fields (`premiumRequired`,
+`audioKeyRefused`, `accountRefused`, `accountRefusedName`) are reported empty,
+because until the restarted engine is up they still describe the account being
+left (`accountswitchinfo.go`, discussion #1947: the "free account" notice sat
+over a Premium account's key for the eight seconds of the switch). A switch is
+read from state that already exists: the restart a cross-account recall just
+made, or a recall in flight while the logged-in account gates as free (the
+gate refuses that account's own keys before a recall is marked, so it can only
+be another account's key). A recall on the account that stays keeps its notice.
+
 Under the notice a folded "Why, and what you can try" says the reason and
 the decisive test. A free account (`product` free/open, or
 `premiumRequired`) gets its own words: Spotify on (STR) needs Premium,
