@@ -7,7 +7,7 @@ import { t } from '../../i18n/index.js';
 import { logoImgTag, monogramDataUri, spotifyCoverImgTag } from '../../logos.js';
 import { isNativeServicePreset, nativeServiceActive, nativeServiceBadge } from '../../nativeservice.js';
 import { spotifyAccountName } from '../../spotifyaccountlabel.js';
-import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds } from '../../spotifynowplaying.js';
+import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds, spotifyKeyGone } from '../../spotifynowplaying.js';
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
 import { syncStickerEntry } from '../../stickers/dialog.js';
@@ -98,6 +98,9 @@ export function renderPresets() {
       state.nowSpotifySlot = null;
     }
   }
+  // The remembered key was emptied or now holds something else than Spotify:
+  // forget it, or it blocks the context match below and no key lights (#1975).
+  if (spotifyKeyGone(state.presets, state.nowSpotifySlot)) state.nowSpotifySlot = null;
   // Playback no key started (the Spotify app, then a hold that saved it on a
   // key) never gets a per-slot URL: light the key that holds the playing
   // context, by URI only (#1217). The stale check above drops it again once
