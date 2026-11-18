@@ -382,9 +382,9 @@ func (m *Manager) PremiumRequiredForWhy(account string) (required bool, why stri
 	account = strings.TrimSpace(account)
 	active := m.activeAccount()
 	reason := premiumWhyNoAccount
-	switch {
-	case account == "":
-	case account == active:
+	switch account {
+	case "":
+	case active:
 		reason = premiumWhySameAcct
 	default:
 		_, found, err := m.readAccountCredential(account)
