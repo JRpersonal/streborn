@@ -317,6 +317,12 @@ func lastPlayURL(lp *lastPlayInfo) string {
 // ResumeLastPlay it does NOT clear the user-stop: a reconnect is not the explicit
 // "play it again" a real power press is.
 func (s *Server) RecoverAfterReconnect() {
+	// A speaker that was playing when an agent update restarted it carries
+	// on, whatever the power-on setting says (resume_update.go). That resume
+	// owns this reconnect.
+	if s.ResumeAfterUpdate() {
+		return
+	}
 	if s.renderer == nil {
 		return
 	}
