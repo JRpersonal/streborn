@@ -332,35 +332,54 @@ playlist plays`). Nothing is stored: a Spotify preset's own shuffle and repeat
 flags still apply on its next recall. Thumbs keys only, same one-thing-per-key
 rules as the sleep timer.
 
-## Thumbs up saves the Spotify song (no setting)
+## Thumbs up and thumbs down on a Spotify song (no setting)
 
-A thumbs up key that carries nothing (no group, no key action, no webhook of
-its own and no shared thumbs webhook) has a default while STR's own Spotify
-is what the speaker plays, also paused: the press saves the current song to
-the Liked Songs of the account the engine is logged in with (discussion
-#1165). A speaker with a panel shows LIKED and the song's name; one without
-stays silent. A second press on the same song inside 30 seconds writes
-nothing again. Thumbs down has no default: it neither skips nor removes.
+A thumbs key that carries nothing (no group, no key action, no webhook of its
+own and no shared thumbs webhook) has a default while STR's own Spotify is
+what the speaker plays, also paused (discussion #1165):
 
-On every other source the press does nothing in STR (`thumbs up pressed, but
-Spotify on STR is not what plays; nothing saved`), the speaker's own Spotify
-Connect entry included. STR never consumes the key: it reads the press from
-the key trace, so whatever the firmware does with it on a source of its own
-still happens.
+- **Thumbs up** saves the current song to the Liked Songs of the account the
+  engine is logged in with.
+- **Thumbs down** removes the current song from that list. It only removes:
+  it does not skip, Forward does that. A song that was not in the list is
+  not an error.
+
+Each key is judged on its own: a webhook on thumbs up leaves thumbs down its
+default, and the other way round. A speaker with a panel shows LIKED or
+REMOVED and the song's name; one without stays silent.
+
+The last press wins. A second press of the same key on the same song inside
+30 seconds writes nothing again, but the other key is never held back: up and
+then down removes the song, down and then up saves it.
+
+On every other source a press does nothing in STR (`thumbs up pressed, but
+Spotify on STR is not what plays; nothing saved`, `thumbs down pressed, ...;
+nothing removed`), the speaker's own Spotify Connect entry included. STR
+never consumes the keys: it reads the press from the key trace, so whatever
+the firmware does with them on a source of its own still happens.
 
 Only a press the key trace named counts (see "How the lower remote keys are
-told apart"). A speaker whose trace is silent reports both thumbs keys as the
-same bare frame, and STR does not guess there: a guess could save a song on
-a thumbs down.
+told apart": `THUMBS_UP` is key 5, `THUMBS_DOWN` key 6). A speaker whose trace
+is silent reports both thumbs keys as the same bare frame, and STR does not
+guess there: a guess could remove a song on a thumbs up.
+
+Field state (2026-11-18): thumbs up is confirmed on a Portable (taigan), from
+the key to the song appearing in Liked Songs. Thumbs down follows the same
+path with the documented key number and has not been pressed on a speaker
+yet. For the SoundTouch 10 (sm2) only the thumbs up analytics line
+(`like-pressed, THUMBS_UP`) was ever captured; the thumbs down line is
+assumed to have the same shape (`<word>-pressed, THUMBS_DOWN, ir-remote`),
+which is what the parser matches.
 
 The agent log has one line per press: `thumbs up: saved the playing song to
-Liked Songs` with the track URI, or a WARN `thumbs up pressed, but the song
-was not saved to Liked Songs` with a `reason`: `engine-too-old` (the
-speaker's Spotify engine predates the library functions, update it from the
-desktop app), `no-session`, `no-track`, `not-a-song` (a podcast episode),
-`unauthorized-401`, `forbidden-403`, `rate-limited-429`, `rejected-400`,
-`timeout` or `failed`. How the write works is in
-[`docs/streaming/spotify.md`](streaming/spotify.md).
+Liked Songs` or `thumbs down: removed the playing song from Liked Songs` with
+the track URI and name, or a WARN (`... the song was not saved to Liked
+Songs`, `... was not removed from Liked Songs`) with a `reason`:
+`engine-too-old` (the speaker's Spotify engine predates the library
+functions, update it from the desktop app), `no-session`, `no-track`,
+`not-a-song` (a podcast episode), `unauthorized-401`, `forbidden-403`,
+`rate-limited-429`, `rejected-400`, `timeout` or `failed`. How the write
+works is in [`docs/streaming/spotify.md`](streaming/spotify.md).
 
 ## Back and Forward on the remote
 

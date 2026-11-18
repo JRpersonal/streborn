@@ -253,3 +253,108 @@ func TestIsTrackURI(t *testing.T) {
 		}
 	}
 }
+
+// likedValues decodes the liked flag of every write the engine got, in order.
+func (e *likedEngine) likedValues(t *testing.T) []bool {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]bool, 0, len(e.posts))
+	for _, p := range e.posts {
+		var body struct {
+			URIs  []string `json:"uris"`
+			Liked *bool    `json:"liked"`
+		}
+		if err := json.Unmarshal([]byte(p), &body); err != nil || body.Liked == nil || len(body.URIs) != 1 {
+			t.Fatalf("write %q is not a one-song liked request (%v)", p, err)
+		}
+		out = append(out, *body.Liked)
+	}
+	return out
+}
+
+func TestUnlikeCurrentTrackRemovesTheLoadedSong(t *testing.T) {
+	m, e := newLikedEngine(t, likedStatusTrack, nil)
+	tr, err := m.UnlikeCurrentTrack(context.Background())
+	if err != nil {
+		t.Fatalf("removal failed: %v", err)
+	}
+	if tr.URI != "spotify:track:4uLU6hMCjMI75M1A2tKUQC" || tr.Name != "A Song" || tr.Repeat {
+		t.Fatalf("track = %+v", tr)
+	}
+	// liked must be present and false: a missing value is a bad request.
+	if got := e.likedValues(t); len(got) != 1 || got[0] {
+		t.Fatalf("writes = %v, want one liked=false", got)
+	}
+	if !strings.Contains(e.posts[0], `"liked":false`) {
+		t.Fatalf("body %s does not carry liked=false", e.posts[0])
+	}
+}
+
+// The last press wins: inside the repeat window a removal after a save is
+// written, and so is a save after a removal. Only the same action twice in a
+// row is answered from memory.
+func TestLikeAndUnlikeDoNotSwallowEachOther(t *testing.T) {
+	m, e := newLikedEngine(t, likedStatusTrack, nil)
+	ctx := context.Background()
+	step := func(what string, f func(context.Context) (LikedTrack, error), wantRepeat bool) {
+		t.Helper()
+		tr, err := f(ctx)
+		if err != nil || tr.Repeat != wantRepeat {
+			t.Fatalf("%s: track=%+v err=%v, want repeat=%v", what, tr, err, wantRepeat)
+		}
+	}
+	step("up", m.LikeCurrentTrack, false)
+	step("down right after up", m.UnlikeCurrentTrack, false)
+	step("down again", m.UnlikeCurrentTrack, true)
+	step("up right after down", m.LikeCurrentTrack, false)
+	step("up again", m.LikeCurrentTrack, true)
+	step("down once more", m.UnlikeCurrentTrack, false)
+	want := []bool{true, false, true, false}
+	got := e.likedValues(t)
+	if len(got) != len(want) {
+		t.Fatalf("writes = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("writes = %v, want %v", got, want)
+		}
+	}
+}
+
+// A removal maps the engine's answers like a save does, writes nothing for a
+// podcast episode, and a failed removal is not remembered.
+func TestUnlikeCurrentTrackFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		code   int
+		want   error
+		reason string
+	}{
+		{"no session", http.StatusNoContent, ErrLikeNoSession, "no-session"},
+		{"unauthorized", http.StatusUnauthorized, ErrLikeUnauthorized, "unauthorized-401"},
+		{"forbidden", http.StatusForbidden, ErrLikeForbidden, "forbidden-403"},
+		{"rate limited", http.StatusTooManyRequests, ErrLikeRateLimited, "rate-limited-429"},
+		{"fault", http.StatusInternalServerError, ErrLikeFailed, "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, e := newLikedEngine(t, likedStatusTrack, func(w http.ResponseWriter) { w.WriteHeader(tc.code) })
+			_, err := m.UnlikeCurrentTrack(context.Background())
+			if !errors.Is(err, tc.want) || LikeFailureReason(err) != tc.reason {
+				t.Fatalf("err = %v (%s), want %v (%s)", err, LikeFailureReason(err), tc.want, tc.reason)
+			}
+			// Not remembered: the next press writes again.
+			_, _ = m.UnlikeCurrentTrack(context.Background())
+			if e.postCount() != 2 {
+				t.Fatalf("writes = %d, want 2", e.postCount())
+			}
+		})
+	}
+	m, e := newLikedEngine(t, `{"track":{"uri":"spotify:episode:512ojhOuo1ktJprKbVcKyQ","name":"An Episode"}}`, nil)
+	if _, err := m.UnlikeCurrentTrack(context.Background()); !errors.Is(err, ErrLikeNotATrack) {
+		t.Fatalf("episode: err = %v", err)
+	}
+	if e.postCount() != 0 {
+		t.Fatal("a removal was written for a podcast episode")
+	}
+}

@@ -113,7 +113,16 @@ func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
 
 // webui.SpotifyLibrary
 func (e *spotifyEngine) LikeCurrentTrack(ctx context.Context) (webui.SpotifyLikedTrack, error) {
-	tr, err := e.m.LikeCurrentTrack(ctx)
+	return likedResult(e.m.LikeCurrentTrack(ctx))
+}
+
+func (e *spotifyEngine) UnlikeCurrentTrack(ctx context.Context) (webui.SpotifyLikedTrack, error) {
+	return likedResult(e.m.UnlikeCurrentTrack(ctx))
+}
+
+// likedResult carries a save or a removal over the seam, with the reason
+// word for a failure.
+func likedResult(tr spotify.LikedTrack, err error) (webui.SpotifyLikedTrack, error) {
 	out := webui.SpotifyLikedTrack{URI: tr.URI, Name: tr.Name, Repeat: tr.Repeat}
 	if err != nil {
 		return out, &webui.SpotifyLikeError{Reason: spotify.LikeFailureReason(err), Err: err}

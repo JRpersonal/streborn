@@ -14,6 +14,8 @@ func TestPlayModeNoticeTexts(t *testing.T) {
 		{Repeat("off"), "REPEAT OFF", "Plays to the end"},
 		{Liked("A Song"), "LIKED", "A Song"},
 		{Liked(""), "LIKED", "Liked Songs"},
+		{Unliked("A Song"), "REMOVED", "A Song"},
+		{Unliked(""), "REMOVED", "Liked Songs"},
 	} {
 		if tc.n.Kind != NoticePlayMode || tc.n.Line1 != tc.l1 || tc.n.Line2 != tc.l2 {
 			t.Errorf("notice = %q / %q, want %q / %q", tc.n.Line1, tc.n.Line2, tc.l1, tc.l2)
@@ -24,7 +26,7 @@ func TestPlayModeNoticeTexts(t *testing.T) {
 
 // Both notices draw their icon and their text.
 func TestPlayModeNoticesDraw(t *testing.T) {
-	for _, n := range []Notice{Shuffle(true), Repeat("context"), Liked("A Song")} {
+	for _, n := range []Notice{Shuffle(true), Repeat("context"), Liked("A Song"), Unliked("A Song")} {
 		buf := make([]byte, FrameSize)
 		newNoticeRenderer(n).frame(1, buf)
 		if litIn(buf, iconX, iconY, 34, 32) < 40 {

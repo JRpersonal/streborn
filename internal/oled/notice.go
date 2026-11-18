@@ -81,6 +81,7 @@ const (
 	iconShuffle
 	iconRepeat
 	iconHeart
+	iconHeartOff
 )
 
 // Notice is one message for the panel. Build it with the constructors below.
@@ -730,6 +731,8 @@ func (r *noticeRenderer) draw(t float64, buf []byte) {
 		c.repeatIcon()
 	case iconHeart:
 		c.heartIcon()
+	case iconHeartOff:
+		c.heartOffIcon()
 	case iconKey:
 		c.presetKey(n.Key, false)
 		for i, l := range []string{n.Line1, n.Line2, n.Line3} {

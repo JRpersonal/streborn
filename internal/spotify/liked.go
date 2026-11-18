@@ -1,5 +1,6 @@
-// liked.go: saving the song that plays to the account's Liked Songs, for the
-// remote's thumbs up key (discussion #1165).
+// liked.go: saving the song that plays to the account's Liked Songs and
+// removing it again, for the remote's thumbs up and thumbs down keys
+// (discussion #1165).
 //
 // No Web API call and no OAuth scope are involved. The engine's own
 // POST /library/liked writes to Spotify's internal collection service
@@ -33,10 +34,12 @@ import (
 // likedPath is the engine route that saves to and removes from Liked Songs.
 const likedPath = "/library/liked"
 
-// likeRepeatWindow is how long a second like of the same song is answered
-// from memory instead of being written again: a doubled key event or an
-// impatient second press must not write twice (each write re-stamps the
-// song's "added" date in the list).
+// likeRepeatWindow is how long a second like (or a second removal) of the
+// same song is answered from memory instead of being written again: a doubled
+// key event or an impatient second press must not write twice (each save
+// re-stamps the song's "added" date in the list). Only the SAME action is
+// remembered: a removal right after a save, or a save right after a removal,
+// is always written, so the last press wins.
 const likeRepeatWindow = 30 * time.Second
 
 // The reasons a like did not happen. Each is its own error so the caller can
@@ -63,11 +66,11 @@ var (
 	ErrLikeFailed = errors.New("saving to Liked Songs failed")
 )
 
-// LikedTrack is the song a like was about.
+// LikedTrack is the song a like or a removal was about.
 type LikedTrack struct {
 	URI  string
 	Name string
-	// Repeat is true when this song was already saved by a press inside
+	// Repeat is true when the same action already ran for this song inside
 	// likeRepeatWindow and nothing was written this time.
 	Repeat bool
 }
@@ -80,9 +83,21 @@ func isTrackURI(uri string) bool {
 }
 
 // LikeCurrentTrack saves the song the engine has loaded to the logged-in
-// account's Liked Songs. It never removes one. The returned track is filled
-// whenever the song was known, also on an error, so the caller can name it.
+// account's Liked Songs. The returned track is filled whenever the song was
+// known, also on an error, so the caller can name it.
 func (m *Manager) LikeCurrentTrack(ctx context.Context) (LikedTrack, error) {
+	return m.setCurrentTrackLiked(ctx, true)
+}
+
+// UnlikeCurrentTrack removes the song the engine has loaded from the
+// logged-in account's Liked Songs. A song that was not in the list is not an
+// error: the collection service takes the removal either way, and STR does
+// not ask first. The track is filled as for LikeCurrentTrack.
+func (m *Manager) UnlikeCurrentTrack(ctx context.Context) (LikedTrack, error) {
+	return m.setCurrentTrackLiked(ctx, false)
+}
+
+func (m *Manager) setCurrentTrackLiked(ctx context.Context, liked bool) (LikedTrack, error) {
 	if m == nil || m.client == nil {
 		return LikedTrack{}, ErrLikeNoSession
 	}
@@ -99,30 +114,31 @@ func (m *Manager) LikeCurrentTrack(ctx context.Context) (LikedTrack, error) {
 	}
 
 	m.mu.Lock()
-	repeat := m.likedURI == tr.URI && time.Since(m.likedAt) < likeRepeatWindow
+	repeat := m.likedURI == tr.URI && m.likedState == liked && time.Since(m.likedAt) < likeRepeatWindow
 	m.mu.Unlock()
 	if repeat {
 		tr.Repeat = true
 		return tr, nil
 	}
 
-	if err := m.setLiked(ctx, tr.URI); err != nil {
+	if err := m.setLiked(ctx, tr.URI, liked); err != nil {
 		return tr, err
 	}
 	m.mu.Lock()
-	m.likedURI, m.likedAt = tr.URI, time.Now()
+	m.likedURI, m.likedState, m.likedAt = tr.URI, liked, time.Now()
 	m.mu.Unlock()
 	return tr, nil
 }
 
-// setLiked posts one song to the engine's /library/liked with liked=true and
-// turns the answer into one of the errors above. Not through apiPost: this is
+// setLiked posts one song to the engine's /library/liked, liked=true to save
+// it and false to remove it, and turns the answer into one of the errors
+// above. The value is always sent: the engine refuses a request without it. Not through apiPost: this is
 // no player command, so it must not open the own-command echo window.
-func (m *Manager) setLiked(ctx context.Context, uri string) error {
+func (m *Manager) setLiked(ctx context.Context, uri string, liked bool) error {
 	body, err := json.Marshal(struct {
 		URIs  []string `json:"uris"`
 		Liked bool     `json:"liked"`
-	}{URIs: []string{uri}, Liked: true})
+	}{URIs: []string{uri}, Liked: liked})
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrLikeFailed, err)
 	}
@@ -163,7 +179,7 @@ func likeAnswerError(status int, hasBody bool) error {
 	return fmt.Errorf("%w: the engine answered %d", ErrLikeFailed, status)
 }
 
-// LikeFailureReason is a short, stable word for why LikeCurrentTrack failed,
+// LikeFailureReason is a short, stable word for why a save or a removal failed,
 // for the log: a bundle can be searched for it.
 func LikeFailureReason(err error) string {
 	switch {

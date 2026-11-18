@@ -454,20 +454,30 @@ or an unreachable engine means the old toggle-and-skip staging, unchanged.
 The warm same-context fast path (pressing the playing preset again) still
 toggles and skips, because there the skip is the point.
 
-### Liked Songs from the remote's thumbs up key (`liked.go`, `webui/likekey.go`)
+### Liked Songs from the remote's thumbs keys (`liked.go`, `webui/likekey.go`)
 
 Thumbs up while STR's Spotify plays saves the current song to the account's
-Liked Songs (discussion #1165; the key rules are in `docs/AUTOMATION.md`).
-`LikeCurrentTrack` reads the loaded song from the engine's `/status` and
-posts it to the engine's `POST /library/liked` as
-`{"uris":["spotify:track:..."],"liked":true}`. It never sends `false`.
+Liked Songs, thumbs down removes it (discussion #1165; the key rules are in
+`docs/AUTOMATION.md`). `LikeCurrentTrack` and `UnlikeCurrentTrack` read the
+loaded song from the engine's `/status` and post it to the engine's
+`POST /library/liked` as `{"uris":["spotify:track:..."],"liked":true}` or
+`"liked":false`. The value is always sent: the engine answers 400 without it.
+
+A repeat of the same action on the same song inside 30 s is answered from
+memory (a save re-stamps the song's "added" date). The memory holds the
+action as well as the song, so a removal right after a save and a save right
+after a removal are always written. STR does not ask whether the song is in
+the list before removing it (`GET /library/liked` exists for that): the
+collection write carries the removal either way, so a song that was not
+liked is not an error and costs no second round trip.
 
 No Web API call and no OAuth scope are involved. The engine writes to
-Spotify's internal collection service (`spclient` `/collection/v2/write`)
-with the session it plays with. The access token `POST /token` hands out is
-deliberately not used: whether it carries `user-library-modify` for
-`PUT /v1/me/tracks` is not known, and the Web API is the part Spotify
-rate-limits for hours on some households (see the plan read above).
+Spotify's internal collection service (`spclient` `/collection/v2/write`,
+`is_removed` for a removal) with the session it plays with. The access token
+`POST /token` hands out is deliberately not used: whether it carries
+`user-library-modify` for `PUT /v1/me/tracks` is not known, and the Web API
+is the part Spotify rate-limits for hours on some households (see the plan
+read above).
 
 The route is in the fork since the 2026-10 upstream merge (upstream
 `479f3fc`, `feat: add POST /library/liked and /library/playlists/add_tracks`).
@@ -475,15 +485,15 @@ It is not in the `features` list of `GET /`, so an older build is told by its
 answer on the press itself: the engine's router is `net/http`'s `ServeMux`,
 which answers an unknown route with 404 (or 405) and a text body, while the
 daemon's own error answers carry no body. That reads as `engine-too-old`.
-The daemon's other answers: 200 saved, 204 no session, 400 not a track URI,
+The daemon's other answers: 200 written, 204 no session, 400 not a track URI,
 403 passed on from Spotify, 502 or 500 for everything else Spotify refused
 (a 401 or 429 from the collection service arrives as one of those two, the
 daemon does not pass them on as such; STR still maps a 401 or 429 should a
 later build do so).
 
-Not field-tested yet (2026-11-18): the write has never run against Spotify
-from STR, including whether the collection service accepts it for every
-account the engine can play with.
+Field state (2026-11-18): the save is confirmed on a Portable with the
+release engine (key trace, write, panel notice, the song in Liked Songs). The
+removal has not run against Spotify from STR yet.
 
 ### Volume: the speaker owns it, the app's slider follows (`volumesync.go`)
 

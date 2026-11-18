@@ -110,6 +110,7 @@ func TestRenderAllScreensPNG(t *testing.T) {
 		"notice-repeat-all":      Repeat("context"),
 		"notice-repeat-one":      Repeat("track"),
 		"notice-liked":           Liked("Here Comes the Sun"),
+		"notice-unliked":         Unliked("Here Comes the Sun"),
 	} {
 		buf := make([]byte, FrameSize)
 		newNoticeRenderer(n).frame(0.6, buf)

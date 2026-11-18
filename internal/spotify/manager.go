@@ -235,11 +235,12 @@ type Manager struct {
 	// older process does not land in the new one.
 	engineFeatures    map[string]bool
 	engineFeaturesGen uint64
-	// likedURI and likedAt are the last song LikeCurrentTrack saved to Liked
-	// Songs and when, so a repeated press on the same song writes once
-	// (liked.go). Memory only.
-	likedURI string
-	likedAt  time.Time
+	// likedURI, likedState and likedAt are the last song written to Liked
+	// Songs (saved: true, removed: false) and when, so a repeated press of
+	// the same key on the same song writes once (liked.go). Memory only.
+	likedURI   string
+	likedState bool
+	likedAt    time.Time
 	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
 	// request play" stderr line, so a bare /player/play 500 can carry the real
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).

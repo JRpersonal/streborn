@@ -43,16 +43,38 @@ func Liked(name string) Notice {
 	return keyNotice(NoticePlayMode, iconHeart, 0, "LIKED", name, playModeNoticeHold, 2)
 }
 
-// heartIcon is a filled heart: two discs over a downward wedge.
+// Unliked: the playing Spotify song was removed from the account's Liked
+// Songs (the remote's thumbs down key, #1165). name is the song, cut to one
+// line.
+func Unliked(name string) Notice {
+	if name == "" {
+		name = "Liked Songs"
+	}
+	return keyNotice(NoticePlayMode, iconHeartOff, 0, "REMOVED", name, playModeNoticeHold, 2)
+}
+
+// heartIcon is a filled heart.
 func (c canvas) heartIcon() {
-	const cx, cy, rad = iconX + 16, iconY + 12, 6
-	c.disc(cx-rad, cy, rad, 15)
-	c.disc(cx+rad, cy, rad, 15)
+	c.heart(iconX+16, iconY+12, 6, 15)
+}
+
+// heartOffIcon is the outline of the same heart: a filled heart with a
+// smaller one cut out of it.
+func (c canvas) heartOffIcon() {
+	c.heart(iconX+16, iconY+12, 6, 15)
+	c.heart(iconX+16, iconY+13, 4, 0)
+}
+
+// heart draws a filled heart around cx with its lobes centred on cy: two
+// discs of radius rad over a downward wedge.
+func (c canvas) heart(cx, cy, rad, lvl int) {
+	c.disc(cx-rad, cy, rad, lvl)
+	c.disc(cx+rad, cy, rad, lvl)
 	// The wedge runs from the discs' widest line down to the tip.
-	const half, depth = 2*rad - 1, 13
+	half, depth := 2*rad-1, 2*rad+1
 	for i := 0; i <= depth; i++ {
 		w := half - half*i/depth
-		c.line(cx-w, cy+2+i, cx+w, cy+2+i, 15)
+		c.line(cx-w, cy+2+i, cx+w, cy+2+i, lvl)
 	}
 }
 
