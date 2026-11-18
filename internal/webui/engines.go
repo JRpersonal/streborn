@@ -138,6 +138,38 @@ type SpotifyRemoteKeys interface {
 	CycleRepeat(ctx context.Context) (mode string, err error)
 }
 
+// SpotifyLikedTrack is the song a thumbs up or thumbs down was about.
+type SpotifyLikedTrack struct {
+	URI  string
+	Name string
+	// Repeat: the same key did this for the same song a moment ago, nothing
+	// was written.
+	Repeat bool
+}
+
+// SpotifyLikeError is a save or a removal that did not happen, with a short stable word
+// for the reason ("engine-too-old", "forbidden-403", ...) beside the error.
+type SpotifyLikeError struct {
+	Reason string
+	Err    error
+}
+
+func (e *SpotifyLikeError) Error() string { return e.Err.Error() }
+func (e *SpotifyLikeError) Unwrap() error { return e.Err }
+
+// SpotifyLibrary saves the playing song to the account's Liked Songs and
+// removes it, for the remote's thumbs up and thumbs down keys (#1165).
+// Without it the keys do nothing.
+type SpotifyLibrary interface {
+	// LikeCurrentTrack (spotifyLikeCurrent): save the song the engine has
+	// loaded. The track is filled whenever the song was known, also on an
+	// error.
+	LikeCurrentTrack(ctx context.Context) (SpotifyLikedTrack, error)
+	// UnlikeCurrentTrack (spotifyUnlikeCurrent): remove the song the engine
+	// has loaded. A song that was not in the list is not an error.
+	UnlikeCurrentTrack(ctx context.Context) (SpotifyLikedTrack, error)
+}
+
 // SpotifyRecallRecovery lets the recall verify keep a song the engine already
 // loaded. Without it the last retry re-Plays the playlist as before.
 type SpotifyRecallRecovery interface {
@@ -187,6 +219,10 @@ func WithSpotify(e SpotifyEngine) Option {
 			s.spotifyHeardPrev = k.HeardPrev
 			s.spotifyToggleShuffle = k.ToggleShuffle
 			s.spotifyCycleRepeat = k.CycleRepeat
+		}
+		if l, ok := e.(SpotifyLibrary); ok {
+			s.spotifyLikeCurrent = l.LikeCurrentTrack
+			s.spotifyUnlikeCurrent = l.UnlikeCurrentTrack
 		}
 		if r, ok := e.(SpotifyRecallRecovery); ok {
 			s.spotifyHoldsContext = r.HoldsContext

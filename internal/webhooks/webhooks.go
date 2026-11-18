@@ -405,6 +405,25 @@ func (s *Store) FireKey(ctx context.Context, id string) string {
 	return ""
 }
 
+// KeyConfigured reports whether a press of the per-key id would fire a
+// webhook: the key's own trigger, or for a thumbs key the legacy shared
+// thumbs action. nil-safe.
+func (s *Store) KeyConfigured(id string) bool {
+	if s == nil {
+		return false
+	}
+	if _, ok := s.Button(id); ok {
+		return true
+	}
+	if id != KeyThumbsUp && id != KeyThumbsDown {
+		return false
+	}
+	s.mu.RLock()
+	a := s.cfg.Thumb
+	s.mu.RUnlock()
+	return a.Enabled && a.Configured()
+}
+
 // Fire runs a single action immediately (used by the manual test endpoint).
 func (s *Store) Fire(ctx context.Context, a Action) (int, error) {
 	return s.fireOnce(ctx, a)

@@ -113,6 +113,12 @@ type presetWsHandler struct {
 	// onPlayModeKey switches shuffle or steps repeat on a Spotify playlist
 	// (webui.PlayModeKeyPress, #1679). nil-safe.
 	onPlayModeKey func(action string)
+	// onLikeKey saves the playing Spotify song to Liked Songs
+	// (webui.LikeKeyPress, #1165): thumbs up with nothing else on the key.
+	// onUnlikeKey removes it (webui.UnlikeKeyPress): thumbs down with
+	// nothing else on the key. Both nil-safe.
+	onLikeKey   func()
+	onUnlikeKey func()
 	// onRadioStepKey steps to the next or previous radio key when the key
 	// trace reports Next or Previous (webui.RadioStepKey, #1619). nil-safe.
 	onRadioStepKey func(forward bool)
