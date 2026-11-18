@@ -1002,6 +1002,10 @@ picture.
   <flag files>                one-line markers: ota-reboot, play-mode,
                               resume-on-power-on, enable-ssh, devtools, and about
                               fifteen more. Some the agent writes, some are support knobs.
+  resume-after-update         written by an agent update that restarts a PLAYING speaker
+                              (which play, at which volume, when); the restarted agent
+                              plays it again once and removes the file. Ignored when
+                              older than 15 minutes.
 ```
 
 Every one of those JSON files is written through `internal/atomicfile`:

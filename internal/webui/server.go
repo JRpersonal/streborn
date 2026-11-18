@@ -851,6 +851,14 @@ type Server struct {
 	exhaustedStandbySendFn func(ctx context.Context, host string) error
 	hushReadNowPlayingFn   func(ctx context.Context, host string) nowPlayingSnapshot
 	hushStopFn             func(ctx context.Context) error
+	// Carrying on after an agent update (resume_update.go): the in-memory
+	// state, the engine transfers under way, and the marker path, clock and
+	// effects the tests replace (empty / nil = production).
+	updResume          updateResumeState
+	engineUploads      atomic.Int32
+	updateResumePath   string
+	updateResumeTiming *updateResumeTiming
+	updateResumeFx     *updateResumeFx
 	// nativeRemoveMu guards nativeRemoveFlights, the account removal running
 	// per service (usservices.go). A DELETE that arrives while one runs
 	// waits for it and gets its answer instead of sending a second removal.
@@ -1732,6 +1740,9 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	// resume down briefly so it does not blast the room right after the update
 	// (a genuine power outage leaves no marker and resumes as before).
 	s.consumeOTARebootMarker()
+	// ... unless it was playing when the update arrived: then it carries on
+	// once the firmware is back (resume_update.go).
+	s.loadUpdateResume()
 	// Finish a self-update that rebooted into this agent (selfupdate.go).
 	s.resumeSelfUpdate()
 	// The hidden game's remote code starts a round through this server, which
