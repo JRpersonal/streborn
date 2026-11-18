@@ -146,21 +146,35 @@ export function applyPowerButton() {
   btn.setAttribute('aria-pressed', String(on));
 }
 
-async function togglePower(btn) {
+function togglePower(btn) {
+  return setPower(!powerShown(), btn, showError);
+}
+
+// powerOnFromPlay is the Play button on a speaker in standby or with nothing
+// loaded (#1920, playbutton.js): the same "on" as the power toggle, so the
+// speaker wakes and the agent brings back what it played last. btn is the
+// button that was pressed, held disabled while the wake runs so a second
+// click does not push the last station twice. The volume is never touched.
+export function powerOnFromPlay(btn, onError) {
+  return setPower(true, btn, onError);
+}
+
+// setPower sends the speaker on or off through the agent and keeps the power
+// toggle on the target meanwhile. onError gets the error and the speaker.
+async function setPower(target, btn, onError) {
   const box = state.currentBox;
   if (!box) { showToast(t('speaker.noneSelected')); return; }
-  const target = !powerShown();
   powerHold = { host: box.host, on: target, until: Infinity };
   applyPowerButton();
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   try {
     await SetBoxPower(box.host, box.port, target);
     powerHold.until = Date.now() + POWER_HOLD_AFTER_MS;
   } catch (e) {
     powerHold = null;
-    showError(e);
+    onError(e, box);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
     applyPowerButton();
   }
   // The same follow-up reads as the phone remote; the last one lands after the

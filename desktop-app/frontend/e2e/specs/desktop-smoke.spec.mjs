@@ -13,6 +13,9 @@ import { settle } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
 import { PRESETS } from '../../testkit/demo-data.mjs';
 
+// E2E_SHOTS=<dir> also saves a screenshot of the Play button in standby there.
+const SHOTS = process.env.E2E_SHOTS || '';
+
 // Every classic tab, with an element only that view renders once it loaded.
 const TABS = [
   ['box', '#statusMain'],
@@ -131,6 +134,30 @@ test.describe('the power toggle on a sleeping speaker', () => {
     await expect(power).toHaveClass(/\bon\b/);
     await expect(power).toHaveAttribute('aria-pressed', 'true');
     await mock.expectCalled('SelectBoxSource', { times: 0 });
+  });
+
+  // #1920: the Play key of the Bose remote starts a speaker with what it
+  // played last. The one Play/Pause button read Pause here and did nothing.
+  test('the Play/Pause button offers Play, and a click wakes the speaker with what it played last', async ({ app, mock }) => {
+    const { page } = app;
+    const pp = page.locator('#pauseBtn');
+    await expect(pp).toBeVisible();
+    await expect(pp).toBeEnabled();
+    await expect(pp).toContainText(en('controls.play'));
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-play-in-standby.png` });
+    await mock.resetCalls();
+    await pp.click();
+    await mock.expectCalled('SetBoxPower', { times: 1 });
+    expect((await mock.last('SetBoxPower')).args).toEqual(['demobox.local', 8888, true]);
+    // The speaker plays again: the power toggle is lit and the same button
+    // pauses now.
+    await expect(page.locator('#powerBtn')).toHaveClass(/\bon\b/);
+    await expect(pp).toContainText(en('controls.pause'));
+    // Nothing else was sent: no resume to an empty transport, no volume.
+    expect(await mock.count('Resume')).toBe(0);
+    expect(await mock.count('Pause')).toBe(0);
+    expect(await mock.count('SetBoxVolume')).toBe(0);
+    expect(await page.locator('#pauseBtn').count()).toBe(1);
   });
 });
 

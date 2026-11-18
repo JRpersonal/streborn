@@ -193,14 +193,17 @@ export function folderRowHTML(c) {
 //   opts.meta      the line under the title
 //   opts.duration  the formatted length, '' when not known
 //   opts.status    the row's current feedback
-export function trackRowHTML(it, { key, attr, value, speaker = '', meta = '', duration = '', status = null } = {}) {
+//   opts.playing   this track plays right now: the row is drawn in the
+//                  playing colour with moving bars in place of its icon
+//                  (#1874, library.css), and carries aria-current
+export function trackRowHTML(it, { key, attr, value, speaker = '', meta = '', duration = '', status = null, playing = false } = {}) {
   const title = it.title || it.streamURL || '';
   const playName = speaker
     ? t('ui2.library.playTrackOn', { title, name: speaker })
     : t('ui2.library.playTrack', { title });
   const data = `data-${attr}="${escapeAttr(String(value))}"`;
   return `
-      <li class="lib2-item lib2-track library-row-track">
+      <li class="lib2-item lib2-track library-row-track${playing ? ' is-now' : ''}" data-skey="${escapeAttr(key || '')}"${playing ? ' aria-current="true"' : ''}>
         <span class="lib2-icon">${ICONS.track}</span>
         <span class="lib2-text">
           <span class="lib2-name">${escapeHtml(title)}</span>

@@ -23,6 +23,8 @@ const LR = ROSTER.livingRoom;
 const BR = ROSTER.bedroom;
 const NAS = MEDIA_SERVERS[0].friendlyName;
 const [OPENING, BLUE, LATE] = LIBRARY_TREE.c1a.items;
+// E2E_SHOTS=<dir> also saves screenshots of the playing-track mark there.
+const SHOTS = process.env.E2E_SHOTS || '';
 
 const lib = (page) => page.locator('#ui2MainInner > #view-library');
 const heading = (page) => lib(page).locator('#lib2LevelTitle');
@@ -133,6 +135,38 @@ test.describe('UI 2.0 Library', () => {
     await expect(rowStatus(page, BLUE)).toHaveClass(/lib2-status--ok/);
     // Only this row says so.
     await expect(rowStatus(page, LATE)).toHaveText('');
+  });
+
+  test('3b. the row of the track that plays is marked, and the mark follows the music (#1874)', async ({ app, mock }) => {
+    const { page } = app;
+    await walkToTracks(page);
+    await expect(lib(page).locator('.lib2-track.is-now')).toHaveCount(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-ui2-library-nothing-playing.png` });
+    await track(page, BLUE).locator('.lib2-play').click();
+    await mock.expectCalled('PlayURL', { pred: (c) => c.args[2] === BLUE.streamURL });
+    await runFor(page, 2_500);
+    await expect(track(page, BLUE)).toHaveClass(/is-now/);
+    await expect(track(page, BLUE)).toHaveAttribute('aria-current', 'true');
+    await expect(lib(page).locator('.lib2-track.is-now')).toHaveCount(1);
+    // Bars stand where the note icon was, and the title takes the colour of
+    // the "Playing on ..." line under it.
+    await expect(track(page, BLUE).locator('.lib2-icon svg')).toBeHidden();
+    const colours = await track(page, BLUE).evaluate((row) => [
+      getComputedStyle(row.querySelector('.lib2-name')).color,
+      getComputedStyle(row.querySelector('.lib2-status')).color,
+    ]);
+    expect(colours[0]).toBe(colours[1]);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-ui2-library-playing-track.png` });
+    // The speaker moves on to the next track by itself: the open list
+    // follows without being drawn again.
+    await page.evaluate(([h, it]) => {
+      window.__strMock.state.item[h] = { name: it.title, location: it.streamURL, art: '' };
+    }, [LR.host, LATE]);
+    // One round of the status poll, which runs every 15 seconds.
+    await runFor(page, 16_000);
+    await expect(track(page, LATE)).toHaveClass(/is-now/);
+    await expect(track(page, BLUE)).not.toHaveClass(/is-now/);
+    await expect(track(page, BLUE)).not.toHaveAttribute('aria-current', 'true');
   });
 
   test('4. a speaker chosen in the sidebar is named at once and gets the folder', async ({ app, mock }) => {
@@ -433,5 +467,26 @@ test.describe('the classic Library', () => {
     await v.locator('.library-row-folder', { hasText: 'Evening Sessions' }).click();
     await expect(v.locator('.lib-play-folder-btn')).toBeVisible();
     await expect(v.locator('.library-row-track')).toHaveCount(3);
+  });
+
+  test('16. marks the row of the track that plays (#1874)', async ({ app, mock }) => {
+    const { page } = app;
+    await page.locator('.tab-btn[data-view="library"]').click();
+    const v = page.locator('#view-library');
+    await v.locator('.library-row-folder', { hasText: 'Music' }).click();
+    await v.locator('.library-row-folder', { hasText: 'Evening Sessions' }).click();
+    const row = (it) => v.locator('.library-row-track', { hasText: it.title });
+    await expect(v.locator('.library-row-track.is-now')).toHaveCount(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-library-nothing-playing.png` });
+    await row(BLUE).locator('.lib-play-btn').click();
+    await mock.expectCalled('PlayURL', { pred: (c) => c.args[2] === BLUE.streamURL });
+    await expect(row(BLUE)).toHaveClass(/is-now/, { timeout: 15_000 });
+    await expect(v.locator('.library-row-track.is-now')).toHaveCount(1);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-library-playing-track.png` });
+    await page.evaluate(([h, it]) => {
+      window.__strMock.state.item[h] = { name: it.title, location: it.streamURL, art: '' };
+    }, [LR.host, LATE]);
+    await expect(row(LATE)).toHaveClass(/is-now/, { timeout: 15_000 });
+    await expect(row(BLUE)).not.toHaveClass(/is-now/);
   });
 });
