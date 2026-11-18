@@ -62,6 +62,8 @@ for (const ui2 of [false, true]) {
       await mock.resetCalls();
       await name.click();
       await expect(name).not.toHaveClass(/title-open/);
+      // No arrow either: the tile does not open, so it must not promise to.
+      await expect(name).not.toHaveClass(/title-cut/);
       expect((await name.evaluate(lines)).shown).toBeLessThanOrEqual(2);
       if (!ui2) await mock.expectCalled('PlaySlot', { times: 1 });
     });
@@ -72,6 +74,28 @@ for (const ui2 of [false, true]) {
 // length and a second click closes it. Only the text reacts, so the row's
 // buttons keep their action, and a title that fits does nothing.
 const cut = (el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+// arrow describes the mark at the end of a title: its ::after box against the
+// title's own box, and which way it points.
+function arrow(el) {
+  const cs = getComputedStyle(el, '::after');
+  if (cs.content === 'none') return { content: 'none' };
+  const box = el.getBoundingClientRect();
+  const rtl = getComputedStyle(el).direction === 'rtl';
+  const size = parseFloat(cs.width);
+  const fromEnd = parseFloat(rtl ? cs.left : cs.right);
+  const bottom = parseFloat(cs.bottom);
+  // matrix(a, b, ...): rotate(45deg) has b > 0 (down), rotate(-135deg) b < 0.
+  const b = parseFloat(cs.transform.replace('matrix(', '').split(',')[1]);
+  return {
+    content: cs.content,
+    down: b > 0,
+    rtl,
+    // Wholly inside the title, in the room kept free for it.
+    inside: fromEnd >= 0 && bottom >= 0 && bottom + size <= box.height,
+    atEnd: fromEnd + size <= parseFloat(getComputedStyle(el)[rtl ? 'paddingLeft' : 'paddingRight']),
+  };
+}
+
 const LONG_STATION = { ...STATIONS[0], name: LONG, stationuuid: 'long1' };
 
 test.describe('classic layout: a cut-off title in the station results', () => {
@@ -93,6 +117,15 @@ test.describe('classic layout: a cut-off title in the station results', () => {
     await expect(title).toHaveText(LONG);
     expect(await title.evaluate(cut)).toBe(true);
     const before = (await title.boundingBox()).height;
+    // A cut-off title says that it opens: a small arrow at its end, pointing
+    // down, drawn as a shape and not as a glyph. A title that fits has none,
+    // and the arrow does not make its row any taller than the others.
+    const short = rows.filter({ hasText: STATIONS[1].name }).locator('.result-name-text');
+    await expect(title).toHaveClass(/title-cut/);
+    await expect(short).not.toHaveClass(/title-cut/);
+    expect(await title.evaluate(arrow)).toMatchObject({ content: '""', down: true, inside: true, atEnd: true });
+    expect((await short.evaluate(arrow)).content).toBe('none');
+    expect(before).toBe((await short.boundingBox()).height);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-results-title-cut-off.png` });
 
     await mock.resetCalls();
@@ -102,6 +135,8 @@ test.describe('classic layout: a cut-off title in the station results', () => {
     expect((await title.boundingBox()).height).toBeGreaterThan(before);
     // Reading a title starts nothing.
     expect(await mock.count('PlayURL')).toBe(0);
+    // Open, the arrow points up.
+    expect(await title.evaluate(arrow)).toMatchObject({ content: '""', down: false, inside: true, atEnd: true });
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-results-title-open.png` });
 
     // The row's own action is where it was.
@@ -111,14 +146,53 @@ test.describe('classic layout: a cut-off title in the station results', () => {
 
     await title.click();
     await expect(title).not.toHaveClass(/title-open/);
+    await expect(title).toHaveClass(/title-cut/);
     expect(await title.evaluate(cut)).toBe(true);
+    expect((await title.evaluate(arrow)).down).toBe(true);
 
     // A title that fits is left alone, and so is the rest of a row.
-    const short = rows.filter({ hasText: STATIONS[1].name }).locator('.result-name-text');
     await short.click();
     await expect(short).not.toHaveClass(/title-open/);
     await row.locator('.result-meta').click();
     await expect(title).not.toHaveClass(/title-open/);
+  });
+
+  test('the arrow follows the room: it comes when a title no longer fits and goes when it fits again', async ({ app }) => {
+    const { page } = app;
+    await page.locator('#searchQ').fill('charts');
+    await page.locator('#searchBtn').click();
+    const noise = [];
+    page.on('console', (m) => { if (/ResizeObserver loop/.test(m.text())) noise.push(m.text()); });
+    await expect(page.locator('#searchResults .result-row')).toHaveCount(STATIONS.length);
+    // By position: the test rewrites this row's name further down.
+    const short = page.locator('#searchResults .result-row').nth(1).locator('.result-name-text');
+    await expect(short).toHaveText(STATIONS[1].name);
+    await expect(short).not.toHaveClass(/title-cut/);
+    // The window gets narrower (here: the title's own line does).
+    await short.evaluate((el) => { el.parentElement.style.maxWidth = '40px'; });
+    await expect(short).toHaveClass(/title-cut/);
+    await short.evaluate((el) => { el.parentElement.style.maxWidth = ''; });
+    await expect(short).not.toHaveClass(/title-cut/);
+    // A name written into a row that stays is measured again.
+    await short.evaluate((el, long) => { el.textContent = long; }, LONG);
+    await expect(short).toHaveClass(/title-cut/);
+    // And a short one again: the arrow goes.
+    await short.evaluate((el) => { el.textContent = 'Jazz'; });
+    await expect(short).not.toHaveClass(/title-cut/);
+    // Following the size never trips the browser's observer-loop guard.
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    expect(noise).toEqual([]);
+  });
+
+  test('in a right-to-left language the arrow sits at the left end', async ({ app }) => {
+    const { page } = app;
+    await page.locator('#searchQ').fill('charts');
+    await page.locator('#searchBtn').click();
+    const title = page.locator('#searchResults .result-row').filter({ hasText: '#TOP 100' }).locator('.result-name-text');
+    await expect(title).toHaveClass(/title-cut/);
+    await page.evaluate(() => { document.documentElement.dir = 'rtl'; });
+    expect(await title.evaluate(arrow)).toMatchObject({ rtl: true, inside: true, atEnd: true });
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-results-title-cut-off-rtl.png` });
   });
 
   test('an opened title is open again when the list is drawn again', async ({ app }) => {
@@ -147,6 +221,8 @@ test.describe('classic layout: a cut-off title in Recently played', () => {
     const name = card.locator('.rc-name');
     await expect(name).toBeVisible();
     expect(await name.evaluate(cut)).toBe(true);
+    await expect(name).toHaveClass(/title-cut/);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/desktop-classic-recent-title-cut-off.png` });
     await name.click();
     await expect(name).toHaveClass(/title-open/);
     expect(await name.evaluate(cut)).toBe(false);

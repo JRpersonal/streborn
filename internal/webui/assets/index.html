@@ -166,6 +166,14 @@ header .dev.haspeers .cnt:not(:empty) { display:inline-block; min-width:18px; pa
 /* A cut-off title a tap opened to its full length (#1811, titlePress below). */
 .clamp2.title-open, .nowcard .now.clamp2.title-open { -webkit-line-clamp:unset; line-clamp:unset; overflow:visible; }
 .cut1.title-open { overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
+/* The small arrow that says a cut-off title opens: down while it is closed
+   (.title-cut, set by titleMarkCut below only while the title really is cut
+   off), up while it is open. Two borders of a turned square, not a font glyph.
+   It sits in the title's own end padding, out of the flow, so it never changes
+   a row's height; the padding is part of the title, so it is tapped with it. */
+.clamp2.title-cut, .cut1.title-cut, .clamp2.title-open, .cut1.title-open { position:relative; padding-inline-end:26px; cursor:pointer; }
+.clamp2.title-cut::after, .cut1.title-cut::after, .clamp2.title-open::after, .cut1.title-open::after { content:''; position:absolute; inset-inline-end:8px; bottom:.5em; bottom:calc(.5lh - 2px); width:7px; height:7px; box-sizing:border-box; border:solid var(--muted); border-width:0 2px 2px 0; transform:rotate(45deg); }
+.clamp2.title-open::after, .cut1.title-open::after { bottom:.25em; bottom:calc(.5lh - 6px); transform:rotate(-135deg); }
 .nowcard .st { font-size:13px; color:var(--muted); margin-top:3px; }
 .nowcard.loading { opacity:.6; }
 .trackprog { display:flex; align-items:center; gap:8px; margin-top:8px; font-variant-numeric:tabular-nums; }
@@ -1956,6 +1964,12 @@ function onBass(v) {
 // lists are drawn again when they change, so the opened names are remembered
 // and opened again on what comes back. The same rule as the desktop app's
 // titleexpand.js.
+//
+// A title that can be opened carries a small arrow at its end (.title-cut in
+// the stylesheet), down while closed and up while open, and only while it
+// really is cut off: without it nobody could tell that a cut title opens. A
+// ResizeObserver keeps it true when the phone is turned, the language changes
+// or a hidden list is shown. No timer.
 var TITLE_SEL = '.clamp2, .cut1';
 var TITLE_CTRL = 'button, a, input, select, textarea, label, summary, [role="button"], .preset';
 var TITLE_MAX_OPEN = 50;
@@ -1971,6 +1985,58 @@ function titleCutOff(el) {
 function titleName(el) {
   return String(el.textContent || '').trim();
 }
+// titleMark: does a title carry the arrow? An opened one always, a closed one
+// only while it is cut off, never one inside a control.
+function titleMark(inControl, open, cutOff) {
+  if (inControl) return false;
+  return open || cutOff;
+}
+// titleMarkCut sets the arrow on the closed titles among els. A title is
+// measured WITHOUT the arrow's room, or one that just fits would stay marked
+// for ever: all marks off, measure all, marks on, two layouts for any list.
+function titleMarkCut(els) {
+  var closed = [];
+  els.forEach(function (el) {
+    if (!document.documentElement.contains(el) || el.classList.contains('title-open') || el.closest(TITLE_CTRL)) return;
+    el.classList.remove('title-cut');
+    closed.push(el);
+  });
+  var cut = closed.map(titleCutOff);
+  closed.forEach(function (el, i) {
+    if (titleMark(false, false, cut[i])) el.classList.add('title-cut');
+  });
+}
+function titlesIn(node) {
+  var found = Array.prototype.slice.call(node.querySelectorAll(TITLE_SEL));
+  if (node.matches && node.matches(TITLE_SEL)) found.push(node);
+  return found;
+}
+// titleWatch has a title measured when it is drawn, when its text changes and
+// whenever its box changes. The measuring happens at the start of the next
+// frame, everything that is due in one go, and never inside the size
+// observer's own report: the arrow's room can change a title's size by a few
+// pixels, and changing an observed size in there raises "ResizeObserver loop
+// completed with undelivered notifications". A title that was just drawn is
+// measured before its first paint. Without ResizeObserver: everything again
+// when the window changes its size.
+var titleDue = null;
+function titleMeasureSoon(el) {
+  if (!titleDue) {
+    titleDue = [];
+    window.requestAnimationFrame(function () { var els = titleDue; titleDue = null; titleMarkCut(els); });
+  }
+  if (titleDue.indexOf(el) < 0) titleDue.push(el);
+}
+var titleWatch = titleMeasureSoon, titleUnwatch = function () {};
+if (window.ResizeObserver) {
+  var titleSizes = new ResizeObserver(function (entries) {
+    entries.forEach(function (e) { titleMeasureSoon(e.target); });
+  });
+  titleWatch = function (el) { titleSizes.observe(el, { box: 'border-box' }); titleMeasureSoon(el); };
+  titleUnwatch = function (el) { titleSizes.unobserve(el); };
+} else {
+  window.addEventListener('resize', function () { titlesIn(document.documentElement).forEach(titleMeasureSoon); });
+}
 function titleRemember(name, on) {
   openTitles = openTitles.filter(function (n) { return n !== name; });
   if (on && name) openTitles.push(name);
@@ -1985,17 +2051,24 @@ document.addEventListener('click', function (ev) {
   if (!press) return;
   el.classList.toggle('title-open', press === 'open');
   titleRemember(titleName(el), press === 'open');
+  if (press === 'close') titleMarkCut([el]);
 });
 if (window.MutationObserver) {
+  titlesIn(document.documentElement).forEach(titleWatch);
   new MutationObserver(function (muts) {
-    if (!openTitles.length) return;
     muts.forEach(function (m) {
+      Array.prototype.forEach.call(m.removedNodes, function (node) {
+        if (node.nodeType === 1) titlesIn(node).forEach(titleUnwatch);
+      });
+      // New text written into a title that stays where it is.
+      var changed = m.addedNodes.length && m.target.nodeType === 1 ? m.target.closest(TITLE_SEL) : null;
+      if (changed) titleWatch(changed);
       Array.prototype.forEach.call(m.addedNodes, function (node) {
         if (node.nodeType !== 1) return;
-        var found = Array.prototype.slice.call(node.querySelectorAll(TITLE_SEL));
-        if (node.matches(TITLE_SEL)) found.push(node);
-        found.forEach(function (el) {
+        titlesIn(node).forEach(function (el) {
+          if (el.closest(TITLE_CTRL)) return;
           if (openTitles.indexOf(titleName(el)) >= 0 && !el.closest(TITLE_CTRL)) el.classList.add('title-open');
+          titleWatch(el);
         });
       });
     });

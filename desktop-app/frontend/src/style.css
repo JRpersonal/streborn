@@ -837,6 +837,37 @@ body {
   white-space: normal;
 }
 
+/* The small arrow that says a cut-off title opens: down while it is closed
+   (.title-cut, set by titleexpand.js only while the title really is cut off),
+   up while it is open. Drawn as two borders of a turned square, not as a font
+   glyph, so it is there on every desktop. It sits in the title's own end
+   padding, out of the flow, so it never changes a row's height, and that
+   padding exists only while the arrow does. Symmetric, so the same shape is
+   right in a right-to-left language; only its side changes. */
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2):is(.title-cut, .title-open) {
+  position: relative;
+  padding-inline-end: 18px;
+  cursor: pointer;
+}
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2):is(.title-cut, .title-open)::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 5px;
+  bottom: 0.5em;
+  bottom: calc(0.5lh - 2px);
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: solid var(--c-muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+:is(.result-name-text, .rc-name, .rc-tr-main, .clamp-2).title-open::after {
+  bottom: 0.3em;
+  bottom: calc(0.5lh - 5px);
+  transform: rotate(-135deg);
+}
+
 /* ---------- Topbar ---------- */
 .topbar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .topbar-head { display: flex; align-items: center; gap: 10px; }
