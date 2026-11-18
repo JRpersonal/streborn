@@ -2,7 +2,7 @@
 // and the app must show the saved key without waiting out its 15 s timer.
 import { describe, expect, it } from 'vitest';
 import { presetRevChanged, queueSlotActive } from './utils.js';
-import { spotifySlotForContext } from './spotifynowplaying.js';
+import { spotifySlotForContext, spotifyKeyGone } from './spotifynowplaying.js';
 import { srcOf } from './test/source.js';
 
 describe('spotifySlotForContext', () => {
@@ -84,5 +84,25 @@ describe('the app wiring', () => {
   it('renderPresets lights the Spotify key by its context', () => {
     const fn = srcOf('renderPresets');
     expect(fn).toContain('spotifySlotForContext(state.presets, state.spotifyNow)');
+  });
+});
+
+describe('spotifyKeyGone', () => {
+  const presets = [
+    { slot: 3, type: 'radio', uri: '' },
+    { slot: 9, type: 'spotify', uri: 'spotify:playlist:abc' },
+  ];
+  it('reports an emptied key, so the context match can light the key that holds the playlist (#1975)', () => {
+    expect(spotifyKeyGone(presets, 8)).toBe(true);
+    expect(spotifySlotForContext(presets, { context: 'spotify:playlist:abc' })).toBe(9);
+  });
+  it('reports a key that now holds something else than Spotify', () => {
+    expect(spotifyKeyGone(presets, 3)).toBe(true);
+  });
+  it('keeps a key that still is a Spotify key, no remembered key, and an unloaded list', () => {
+    expect(spotifyKeyGone(presets, 9)).toBe(false);
+    expect(spotifyKeyGone(presets, null)).toBe(false);
+    expect(spotifyKeyGone([], 8)).toBe(false);
+    expect(spotifyKeyGone(null, 8)).toBe(false);
   });
 });

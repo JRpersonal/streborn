@@ -41,6 +41,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/JRpersonal/streborn/sticksetup"
 )
 
 // bootstrapMargePort is the LAN port the throwaway marge responder binds during
@@ -272,6 +274,30 @@ var setupBracketStates = []string{
 	`<setupState state="SETUP_IDENTIFY_DEVICE_LEAVE"/>`,
 }
 
+// repeatLanguageIfSetupSaysUnset sets the speaker's language again when its own
+// /setup answer says SETUP_LANG_NOT_SET at the moment it refuses the account.
+// The install sets the language at its start, but the plain unlock that runs
+// before this bootstrap reboots the speaker, and a never-set-up Wave came back
+// from that reboot with the language unset again and refused the account with
+// 1038, with and without the setup bracket (2026-11-18, v1.8.0). The language
+// is the first gate of Bose's own setup, so it is repeated here, right before
+// the account is asked for again. Whether that is what lifts the refusal is NOT
+// proven; the answer and the state after it go to the unlock log.
+func repeatLanguageIfSetupSaysUnset(setupBody string, lang int, post boxPoster, get func(path string) string, log *strings.Builder) bool {
+	if !strings.Contains(setupBody, "SETUP_LANG_NOT_SET") {
+		return false
+	}
+	body := fmt.Sprintf("<sysLanguage>%d</sysLanguage>", lang)
+	status, answer, err := post("/language", body)
+	if err != nil {
+		fmt.Fprintf(log, "language repeat: POST /language %s: %v\n", body, err)
+		return false
+	}
+	fmt.Fprintf(log, "language repeat: POST /language %s: HTTP %d: %s\n", body, status, answer)
+	get("/setup")
+	return status == http.StatusOK
+}
+
 // pairInsideSetupBracket repeats the dummy-account request the way the Bose app
 // sent it: inside the setup state machine. It is the second attempt for a
 // speaker that refused the bare request (a never-set-up Wave answered it with
@@ -375,14 +401,20 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	if accountRefused {
 		// The speaker said no instead of timing out. Record what it thinks its
 		// own setup state is, then ask again the way the Bose app did.
-		for _, path := range []string{"/soundTouchConfigurationStatus", "/setup"} {
+		get := func(path string) string {
 			body, gerr := a.boseGet(host, path)
 			if gerr != nil {
 				body = "not readable: " + gerr.Error()
 			}
-			fmt.Fprintf(&log, "GET %s: %s\n", path, strings.Join(strings.Fields(body), " "))
+			body = strings.Join(strings.Fields(body), " ")
+			fmt.Fprintf(&log, "GET %s: %s\n", path, body)
+			return body
 		}
-		accountRefused = !pairInsideSetupBracket(boxPosterFor(host), &log)
+		get("/soundTouchConfigurationStatus")
+		post := boxPosterFor(host)
+		langRepeated := repeatLanguageIfSetupSaysUnset(get("/setup"), sticksetup.SysLanguageForLocale(a.appLocale()), post, get, &log)
+		accountRefused = !pairInsideSetupBracket(post, &log)
+		a.logger.Info("telnet-bootstrap: language state before the second account request", "host", host, "languageRepeated", langRepeated)
 		a.logger.Info("telnet-bootstrap: the speaker refused the bare dummy account; repeated it inside the setup state machine", "host", host, "acceptedNow", !accountRefused)
 	}
 	// Wait for the association to actually PERSIST the account before injecting.
