@@ -94,6 +94,12 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// twice, #1110). The apps show row 2 only when this is present, so an
 	// older agent that would refuse slot 7 never gets offered one.
 	out["presetRows"] = strconv.Itoa(presets.Rows)
+	// This agent saves the playing Spotify song to Liked Songs and removes it
+	// for an app (POST /api/spotify/liked, spotifyliked_http.go). A companion
+	// app shows its thumbs only when this is present.
+	if s.spotifyLikeCurrent != nil && s.spotifyUnlikeCurrent != nil {
+		out["spotifyLiked"] = "true"
+	}
 	// The speaker's effective country and where it came from ("str": the
 	// wizard or app setting, "box": the firmware's countryCode). A US speaker
 	// gets the firmware's own Pandora and iHeartRadio back (usservices.go).

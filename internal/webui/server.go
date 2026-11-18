@@ -1825,6 +1825,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/seek", s.handleSeek)
+	// Registered on every speaker, also one without a Spotify engine (it
+	// answers 409 there): an unregistered path falls through to the index,
+	// whose 200 + HTML would read as success.
+	mux.HandleFunc("/api/spotify/liked", s.handleSpotifyLiked)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves
