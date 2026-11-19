@@ -1852,7 +1852,7 @@
   "banner.retryAppUpdate": "İndirmeyi yeniden dene",
   "banner.updateInterrupted": "İndirmeyi bağlantı kesti. Bozulan bir şey yok ve bildirilecek bir şey de yok. Tekrar çevrimiçi olunca düğmeye yeniden bas.",
   "banner.manualHint": "Bu, uygulamanın kendisini günceller ve çalışan sürümün yerine geçer. Daha önce elle indirdiğin kurulum dosyalarını silebilirsin.",
-  "banner.wingetStarted": "winget ile güncelleniyor. ST Reborn şimdi kapanacak ve winget işini bitirince kendiliğinden yeniden açılacak.",
+  "banner.wingetStarted": "Güncelleniyor. ST Reborn şimdi kapanacak ve işi bitince kendiliğinden yeniden açılacak.",
   "banner.wingetNotYet": "winget {{version}} sürümünü henüz sunmuyor ya da ona ulaşılamadı. Yeni sürümler oraya genellikle yayından birkaç gün sonra gelir. Daha sonra tekrar dene ya da bunu bir terminalde çalıştır:",
   "banner.wingetManual": "Bu kopya winget ile kuruldu, bu yüzden güncellemeyi winget yapar, ama ST Reborn onu başlatamadı. Lütfen bunu bir terminalde çalıştır:",
   "banner.wingetFailed": "winget ile güncelleme tamamlanamadı (winget çıkış kodu {{code}}). Lütfen bunu bir terminalde çalıştır:",
