@@ -140,17 +140,44 @@ func waitListenerReady(ctx context.Context, addr string, timeout time.Duration, 
 	}
 }
 
+// stubServerIdleTimeout reaps idle keep-alive connections on the cloud-stub
+// listeners (marge on :80, bmx, marge-tls). Without it a keep-alive connection
+// the Bose firmware opens and then abandons (its ~60s marge check, a firmware
+// reboot, a Wi-Fi blip that half-opens the socket) is held open forever: there
+// is no ReadTimeout either, so nothing ever closes it. File descriptors are a
+// PER-PROCESS resource, so those leaked connections accumulate until the agent
+// hits "too many open files", at which point every one of its listeners stops
+// accepting, the phone page (served by this same process) among them, while the
+// firmware's own :8090 keeps answering because it is a separate process. That
+// is the field signature of the 2026-11-19 report (a user's phone page dead for
+// two days while the Bose app still worked). The webui server already carries
+// this timeout; these sibling servers did not. The stubs serve only short XML
+// and a bounded forward, so like the webui server they take IdleTimeout and
+// ReadHeaderTimeout but no Read/Write timeout.
+const stubServerIdleTimeout = 120 * time.Second
+
+// stubHTTPServer builds the http.Server for a cloud-stub listener with the
+// timeouts that keep it from leaking connections (see stubServerIdleTimeout).
+// tlsConfig is nil for a plain HTTP listener. Factored out so the timeout
+// settings are covered by a test; startHTTP and startHTTPS only add the
+// listener plumbing around it.
+func stubHTTPServer(addr string, handler http.Handler, tlsConfig *tls.Config, logger *slog.Logger, name string) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       stubServerIdleTimeout,
+		ErrorLog:          newHTTPErrorLog(logger, name),
+	}
+}
+
 func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, logger *slog.Logger) {
 	logger.Warn("listener phase: spawn", "comp", name, "addr", addr)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		srv := &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 10 * time.Second,
-			ErrorLog:          newHTTPErrorLog(logger, name),
-		}
+		srv := stubHTTPServer(addr, handler, nil, logger, name)
 		logger.Warn("listener phase: calling ListenTCP", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
 		if err != nil {
@@ -183,13 +210,7 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		srv := &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			TLSConfig:         tlsConfig,
-			ReadHeaderTimeout: 10 * time.Second,
-			ErrorLog:          newHTTPErrorLog(logger, name),
-		}
+		srv := stubHTTPServer(addr, handler, tlsConfig, logger, name)
 		logger.Warn("listener phase: calling ListenTCP TLS", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
 		if err != nil {
