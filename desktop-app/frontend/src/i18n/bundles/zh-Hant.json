@@ -924,6 +924,7 @@
   "credits.researchTitle": "研究與逆向工程",
   "credits.researchIntro": "STR 沒有附上他們的任何程式碼，但少了他們公開的成果，STR 好幾個核心機制根本不會存在。他們大多完全不接受任何贊助。",
   "credits.donate": "贊助",
+  "credits.translationsTitle": "翻譯",
   "footer.saveLogs": "儲存診斷紀錄",
   "footer.saveLogsHint": "把應用程式紀錄和每台喇叭的狀態打包成一個 zip，可以附在 GitHub issue 上。IP 和裝置 ID 都會匿名化。",
   "footer.saveLogsDone": "已儲存 {{size}} KB 到 {{path}}",

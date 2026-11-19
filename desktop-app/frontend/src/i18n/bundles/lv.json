@@ -872,6 +872,7 @@
   "credits.researchTitle": "Pētniecība un reversā inženierija",
   "credits.researchIntro": "STR neiekļauj viņu kodu, taču vairāki tās galvenie mehānismi nepastāvētu bez tā, ko šie projekti publicēja. Lielākā daļa nepieņem nekādu atbalstu.",
   "credits.donate": "Ziedot",
+  "credits.translationsTitle": "Tulkojumi",
   "footer.saveLogs": "Saglabāt diagnostikas žurnālus",
   "footer.saveLogsHint": "Iepako lietotnes žurnālu + katra skaļruņa statusu zip failā, ko varat pievienot GitHub problēmai. IP adreses un ierīču ID tiek anonimizēti.",
   "footer.saveLogsDone": "Saglabāts {{size}} KB uz {{path}}",

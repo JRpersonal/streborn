@@ -924,6 +924,7 @@
   "credits.researchTitle": "Ricerca e reverse engineering",
   "credits.researchIntro": "STR non include alcun loro codice, ma diversi dei suoi meccanismi centrali non esisterebbero senza quanto questi progetti hanno pubblicato. La maggior parte di essi non accetta alcun sostegno.",
   "credits.donate": "Dona",
+  "credits.translationsTitle": "Traduzioni",
   "footer.saveLogs": "Salva i log diagnostici",
   "footer.saveLogsHint": "Raccoglie il log dell'app e lo stato di ogni altoparlante in uno zip da allegare a una issue su GitHub. IP e ID dei dispositivi vengono resi anonimi.",
   "footer.saveLogsDone": "Salvati {{size}} KB in {{path}}",

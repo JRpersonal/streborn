@@ -1068,6 +1068,13 @@ const OSS_CREDITS = [
   { name: 'DuckDuckGo icons', license: 'service', url: 'https://duckduckgo.com', role: 'station logos' },
 ];
 
+// Community members who translated STR's interface into their language. Each
+// entry carries the language endonym and the contributor, linked to their
+// profile where they gave one.
+const TRANSLATION_CREDITS = [
+  { lang: 'Italiano', by: 'micheledimeo', url: 'https://github.com/micheledimeo' },
+];
+
 // Projects that contributed KNOWLEDGE rather than code. STR ships none of their
 // source, but several of its central mechanisms would not exist without their
 // published findings, so they are credited in their own section. `donate` is
@@ -1150,7 +1157,14 @@ function showCredits() {
     + `<p class="credit-section-intro">${escapeHtml(t('credits.researchIntro'))}</p>`
     + RESEARCH_CREDITS.map(c => row(c, c.donate
       ? ` <a href="#" class="footer-link credit-name credit-donate" data-url="${escapeAttr(c.donate)}">${escapeHtml(t('credits.donate'))}</a>`
-      : '')).join('');
+      : '')).join('')
+    + `<h3 class="credit-section">${escapeHtml(t('credits.translationsTitle'))}</h3>`
+    + TRANSLATION_CREDITS.map(c => `<div class="credit-row"><div>`
+      + `<span class="credit-lang">${escapeHtml(c.lang)}</span> `
+      + (c.url
+        ? `<a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.by)}</a>`
+        : `<span class="credit-by">${escapeHtml(c.by)}</span>`)
+      + `</div></div>`).join('');
   body.querySelectorAll('.credit-name[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });

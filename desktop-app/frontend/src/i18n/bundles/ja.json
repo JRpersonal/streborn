@@ -872,6 +872,7 @@
   "credits.researchTitle": "調査とリバースエンジニアリング",
   "credits.researchIntro": "STRはこれらのプロジェクトのコードを同梱していませんが、中心的な仕組みのいくつかは、彼らが公開した成果なしには存在しませんでした。ほとんどは支援を一切受け付けていません。",
   "credits.donate": "寄付する",
+  "credits.translationsTitle": "翻訳",
   "footer.saveLogs": "診断ログを保存",
   "footer.saveLogsHint": "アプリのログとスピーカーごとの状態をzipにまとめ、GitHubのチケットに添付できます。IPとデバイスIDは匿名化されます。",
   "footer.saveLogsDone": "{{size}} KB を {{path}} に保存しました",

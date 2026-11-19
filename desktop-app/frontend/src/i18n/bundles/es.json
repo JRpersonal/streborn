@@ -872,6 +872,7 @@
   "credits.researchTitle": "Investigación e ingeniería inversa",
   "credits.researchIntro": "STR no incluye nada de su código, pero varios de sus mecanismos centrales no existirían sin lo que estos proyectos publicaron. La mayoría no acepta ningún tipo de apoyo.",
   "credits.donate": "Donar",
+  "credits.translationsTitle": "Traducciones",
   "footer.saveLogs": "Guardar registros de diagnóstico",
   "footer.saveLogsHint": "Agrupa el registro de la aplicación y el estado por altavoz en un zip que puedes adjuntar a un ticket de GitHub. Las IP y los identificadores de dispositivo se anonimizan.",
   "footer.saveLogsDone": "{{size}} KB guardados en {{path}}",
