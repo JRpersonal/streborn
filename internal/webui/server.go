@@ -318,6 +318,11 @@ type Server struct {
 	// from another household member's session gets that member's account, not a
 	// stale one). nil when Spotify is not configured.
 	spotifyContext func() string
+	// playingKeyAcct is the engine's login as last read for the playing-key
+	// header, reused for playingKeyAccountTTL (spotify_playing_key.go).
+	playingKeyAcctMu sync.Mutex
+	playingKeyAcct   string
+	playingKeyAcctAt time.Time
 	// spotifyShuffle reports go-librespot's live shuffle state, used by the
 	// preset-save path to stamp the shuffle flag onto a Spotify preset saved
 	// from the running playback. nil when Spotify is not configured.

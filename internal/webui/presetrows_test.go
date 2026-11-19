@@ -145,7 +145,7 @@ func TestAgentVersionAdvertisesTwoPresetRows(t *testing.T) {
 // The now-playing key header names a row-2 Spotify slot as it is (7..12).
 func TestPlayingKeyNamesASecondRowSlot(t *testing.T) {
 	list := []presets.Preset{{Slot: 10, Type: "spotify", URI: "spotify:playlist:abc"}}
-	if got := playingSpotifySlot("http://127.0.0.1:8888/spotify/stream-10.ogg", "", list); got != 10 {
+	if got := playingSpotifySlot("http://127.0.0.1:8888/spotify/stream-10.ogg", "", nil, list); got != 10 {
 		t.Fatalf("playingSpotifySlot = %d, want 10", got)
 	}
 }
