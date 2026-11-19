@@ -223,6 +223,40 @@ func (s *Server) PanelSpotifyTrack(track, artist string) {
 	}
 }
 
+// panelUPnPSource is the firmware's source name the speaker is on while STR
+// plays its own streams through UPnP, the Spotify relay among them. A stop,
+// standby or a switch to Bluetooth/AUX moves boxSource off it.
+const panelUPnPSource = "UPNP"
+
+// CurrentSpotifyTitle returns the live Spotify song as "Artist - Title" (just
+// the title when the engine named no artist) while Spotify is the speaker's
+// current playback, and ("", false) otherwise. It is the fallback the stream
+// proxy's /api/stream/title consults when the radio StreamTitle is empty,
+// which is the case during a Spotify preset-key play: the Spotify stream runs
+// through the proxy with no ICY metadata, yet the engine knows the song.
+// Requested by a companion-app developer so remote apps show the song then.
+//
+// Staleness: spotifyNow is kept even after playback stops (so Spotify started
+// from the app later shows at once), so returning it blindly would serve a
+// stale song after Stop or standby. It is gated on the panel model instead of
+// a timestamp, which a long track would outlive: Spotify must be the active
+// kind (a switch to radio or a library file changes panel.kind) and not ended,
+// AND the speaker must still be on the UPnP source it plays Spotify through (a
+// stop, standby or a switch to Bluetooth/AUX moves boxSource off it via
+// PanelSourceChanged). Each of those turns the fallback off at once.
+func (s *Server) CurrentSpotifyTitle() (string, bool) {
+	s.panelMu.Lock()
+	defer s.panelMu.Unlock()
+	if s.panel.kind != panelSpotify || s.panel.ended || s.boxSource != panelUPnPSource {
+		return "", false
+	}
+	track, artist := s.spotifyNow[0], s.spotifyNow[1]
+	if track == "" {
+		return "", false
+	}
+	return joinArtistTitle(artist, track), true
+}
+
 // PanelSpotifyActive is "the speaker was just pointed at the Spotify stream"
 // from the Spotify app: the panel shows the engine's current song.
 func (s *Server) PanelSpotifyActive() {

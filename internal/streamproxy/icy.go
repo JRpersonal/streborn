@@ -26,6 +26,17 @@ func (s *Server) SetOnTitle(fn func(title string)) { s.onTitle = fn }
 // stream within titleEndGrace). Set once at wiring time.
 func (s *Server) SetOnTitleEnd(fn func()) { s.onTitleEnd = fn }
 
+// SetSpotifyTitleProvider registers the fallback /api/stream/title consults
+// when the radio StreamTitle is empty: it returns the live Spotify song and
+// true while a Spotify stream is the speaker's current playback. Set once at
+// wiring time. A func value rather than an import keeps streamproxy clear of
+// internal/webui, which depends on streamproxy.
+func (s *Server) SetSpotifyTitleProvider(fn func() (string, bool)) {
+	s.titleMu.Lock()
+	s.spotifyTitle = fn
+	s.titleMu.Unlock()
+}
+
 // CurrentTitle returns the live ICY StreamTitle of the stream being proxied
 // right now, or "" if the station sends no metadata or none has arrived yet.
 func (s *Server) CurrentTitle() string {
@@ -364,7 +375,19 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	s.titleMu.Lock()
 	title, station := s.curTitle, s.curTitleURL
+	spotify := s.spotifyTitle
 	s.titleMu.Unlock()
+	swapped := s.swap.has(station)
+	// Fallback for a Spotify preset key: the Spotify stream runs through the
+	// proxy as a /spotify/ URL with no ICY StreamTitle, so curTitle is empty.
+	// The agent does know the live Spotify song, so when the radio title is
+	// empty and Spotify is the current playback, show that instead. The swap
+	// toggle is a per-radio-station setting and never applies here.
+	if title == "" && spotify != nil {
+		if t, ok := spotify(); ok && t != "" {
+			title, swapped = t, false
+		}
+	}
 	// swapped tells the app which way its "artist and title are the wrong way
 	// round" toggle stands for this station (titleswap.go). json.Marshal
 	// escapes every control character, so a hostile StreamTitle cannot break
@@ -372,7 +395,7 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	b, _ := json.Marshal(struct {
 		Title   string `json:"title"`
 		Swapped bool   `json:"swapped"`
-	}{title, s.swap.has(station)})
+	}{title, swapped})
 	_, _ = w.Write(b)
 }
 
