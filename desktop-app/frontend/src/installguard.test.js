@@ -42,7 +42,7 @@ describe('the guard strings', () => {
   const keys = ['setup.installUpdateFinishing', 'setup.installRefusedRemoveStick', 'update.tookLongerToast'];
 
   it('exist in every bundle', () => {
-    expect(Object.keys(bundles).length).toBe(13);
+    expect(Object.keys(bundles).length).toBe(14);
     for (const [lang, b] of Object.entries(bundles)) {
       for (const k of keys) expect(b[k], `${lang} ${k}`).toBeTruthy();
     }

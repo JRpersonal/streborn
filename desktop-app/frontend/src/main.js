@@ -233,6 +233,7 @@ const LOCALE_FLAG_CC = {
   de: 'DE',
   fr: 'FR',
   es: 'ES',
+  it: 'IT',
   ja: 'JP',
   uk: 'UA',
 };
@@ -2584,6 +2585,13 @@ const ROOM_NAMES_BY_LOCALE = {
     'Chambre d\'amis', 'Couloir', 'Entrée',
     'Jardin', 'Terrasse', 'Balcon', 'Atelier',
     'Salle de loisirs', 'Sous-sol', 'Grenier', 'Garage',
+  ],
+  it: [
+    'Soggiorno', 'Camera da letto', 'Cucina', 'Sala da pranzo',
+    'Bagno', 'Studio', 'Ufficio', 'Cameretta',
+    'Camera degli ospiti', 'Corridoio', 'Ingresso',
+    'Giardino', 'Patio', 'Balcone', 'Laboratorio',
+    'Sala hobby', 'Cantina', 'Soffitta', 'Garage',
   ],
   es: [
     'Salón', 'Dormitorio', 'Cocina', 'Comedor',

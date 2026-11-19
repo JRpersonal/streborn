@@ -237,7 +237,7 @@ describe('the hold strings', () => {
   ];
 
   it('exist in every bundle with their placeholders', () => {
-    expect(Object.keys(bundles).length).toBe(13);
+    expect(Object.keys(bundles).length).toBe(14);
     for (const [lang, b] of Object.entries(bundles)) {
       for (const k of keys) expect(b[k], `${lang} ${k}`).toBeTruthy();
       expect(b['setup.installHeldNote'], lang).toContain('{{min}}');

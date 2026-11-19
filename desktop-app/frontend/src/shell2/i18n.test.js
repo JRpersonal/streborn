@@ -34,8 +34,8 @@ const KEYS = [...new Set([
 const placeholders = (s) => [...String(s).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
 
 describe('UI 2.0 strings', () => {
-  it('ships all thirteen bundles', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+  it('ships all fourteen bundles', () => {
+    expect(Object.keys(bundles)).toHaveLength(14);
   });
 
   it('finds the new keys in the code', () => {

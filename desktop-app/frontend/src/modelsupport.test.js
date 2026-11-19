@@ -98,7 +98,7 @@ describe('modelNoteKey', () => {
   it('has every note in all bundles', () => {
     const dir = new URL('./i18n/bundles/', import.meta.url);
     const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
-    expect(files.length).toBe(13);
+    expect(files.length).toBe(14);
     for (const f of files) {
       const b = JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
       for (const k of ['setup.limitedNote', 'setup.unverifiedNote', 'setup.notSoundTouchNote']) {

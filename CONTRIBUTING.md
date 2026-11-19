@@ -99,7 +99,7 @@ For a release-like local build of the desktop app with the embedded helpers and 
 - **Language.** All code, comments, identifiers, commit messages,
   and PR descriptions are in English. User-facing UI strings live
   in i18n bundles. Every new key must be added to **all** bundles in
-  `desktop-app/frontend/src/i18n/bundles/` (13 locales today): English and
+  `desktop-app/frontend/src/i18n/bundles/` (14 locales today): English and
   German written by hand, the other locales translated with the same care.
   A key that exists only in `en.json` silently falls back to English for
   everyone else, which is the gap #514 had to close repeatedly.

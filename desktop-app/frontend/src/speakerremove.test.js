@@ -1,7 +1,7 @@
 // "Remove from list" (#1852): the gate (only an entry that is not reachable,
 // never one an update is restarting), what the list and the selections look
 // like afterwards, what each answer of the backend leads to, the words in all
-// thirteen languages, and where the two layouts draw the action.
+// fourteen languages, and where the two layouts draw the action.
 import { describe, it, expect, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import {
@@ -144,8 +144,8 @@ describe('removeEntry', () => {
 });
 
 describe('remove from list strings', () => {
-  it('has every key in all thirteen languages with the English placeholders', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+  it('has every key in all fourteen languages with the English placeholders', () => {
+    expect(Object.keys(bundles)).toHaveLength(14);
     for (const [code, b] of Object.entries(bundles)) {
       for (const k of KEYS) {
         expect(typeof b[k] === 'string' && b[k].trim().length > 0, `${code}: ${k}`).toBe(true);
