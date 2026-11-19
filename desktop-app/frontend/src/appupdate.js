@@ -30,7 +30,7 @@ import {
   showError,
   showToast,
 } from './utils.js';
-import { wingetInstallLabel, wingetOutcomeView } from './wingetupdate.js';
+import { wingetOutcomeView } from './wingetupdate.js';
 
 // Injected main.js helpers (see initAppUpdate); called as deps.<name>. The
 // default is a no-op so the module stays importable before main.js has run.
@@ -143,12 +143,12 @@ export async function checkAppUpdate(manual) {
     // Label makes the target unambiguous: this updates THE APP itself, not the
     // speaker (a non-technical user clicked the speaker-update expecting the app
     // to update, and ended up with two .exe copies downloaded by hand).
-    // A copy winget installed updates through winget (see wingetupdate.js), and
-    // the button says so before it is pressed.
+    // A copy winget installed updates through winget (see wingetupdate.js), but
+    // the button reads like any other update: winget is the mechanism, not
+    // something the user needs to know about or decide, so naming it in the
+    // button only confused people.
     const viaWinget = !!(state.appInfo && state.appInfo.installedViaWinget);
-    const installLabel = viaWinget
-      ? wingetInstallLabel(t)
-      : (isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow'));
+    const installLabel = isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow');
     banner.innerHTML = `
       <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#8593;</span><span><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></span></div>
       <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>

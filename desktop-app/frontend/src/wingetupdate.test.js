@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wingetInstallLabel, wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
+import { wingetOutcomeView, wingetFailureView } from './wingetupdate.js';
 import en from './i18n/bundles/en.json';
 import de from './i18n/bundles/de.json';
 
@@ -7,10 +7,6 @@ const t = (key, vars) => `${key}${vars ? JSON.stringify(vars) : ''}`;
 const CMD = 'winget upgrade --id JRpersonal.STReborn --exact --silent --accept-source-agreements --accept-package-agreements';
 
 describe('winget app update', () => {
-  it('labels the button so the user knows winget does the update', () => {
-    expect(wingetInstallLabel(t)).toBe('banner.updateViaWinget');
-  });
-
   it('says the app closes when the helper started', () => {
     const v = wingetOutcomeView({ started: true, command: CMD, reason: 'started' }, 'v1.0.3', t);
     expect(v.kind).toBe('started');
@@ -43,7 +39,7 @@ describe('winget app update', () => {
   });
 
   it('has real English and German text for every key it uses', () => {
-    for (const k of ['banner.updateViaWinget', 'banner.wingetStarted', 'banner.wingetNotYet',
+    for (const k of ['banner.wingetStarted', 'banner.wingetNotYet',
       'banner.wingetManual', 'banner.wingetFailed', 'banner.wingetCopy']) {
       expect(en[k], k).toBeTruthy();
       expect(de[k], k).toBeTruthy();
