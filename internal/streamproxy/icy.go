@@ -26,12 +26,24 @@ func (s *Server) SetOnTitle(fn func(title string)) { s.onTitle = fn }
 // stream within titleEndGrace). Set once at wiring time.
 func (s *Server) SetOnTitleEnd(fn func()) { s.onTitleEnd = fn }
 
+// SpotifyTitleMeta is the live Spotify song the fallback provider returns: the
+// combined "Artist - Title" string the box display and existing readers use,
+// plus the components a companion app needs to render the real cover art on its
+// own. Track is the song name alone, Artist the performer alone, Art the album
+// cover image URL. Any component the engine did not supply is left empty.
+type SpotifyTitleMeta struct {
+	Title  string
+	Track  string
+	Artist string
+	Art    string
+}
+
 // SetSpotifyTitleProvider registers the fallback /api/stream/title consults
 // when the radio StreamTitle is empty: it returns the live Spotify song and
 // true while a Spotify stream is the speaker's current playback. Set once at
 // wiring time. A func value rather than an import keeps streamproxy clear of
 // internal/webui, which depends on streamproxy.
-func (s *Server) SetSpotifyTitleProvider(fn func() (string, bool)) {
+func (s *Server) SetSpotifyTitleProvider(fn func() (SpotifyTitleMeta, bool)) {
 	s.titleMu.Lock()
 	s.spotifyTitle = fn
 	s.titleMu.Unlock()
@@ -378,14 +390,21 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	spotify := s.spotifyTitle
 	s.titleMu.Unlock()
 	swapped := s.swap.has(station)
+	// track, artist and art stay empty for a radio stream and ride along only
+	// when the Spotify fallback fires, so an existing reader of title/swapped
+	// is unaffected (the three fields are omitempty).
+	var track, artist, art string
 	// Fallback for a Spotify preset key: the Spotify stream runs through the
 	// proxy as a /spotify/ URL with no ICY StreamTitle, so curTitle is empty.
 	// The agent does know the live Spotify song, so when the radio title is
 	// empty and Spotify is the current playback, show that instead. The swap
-	// toggle is a per-radio-station setting and never applies here.
+	// toggle is a per-radio-station setting and never applies here. The
+	// components let a companion app render the live cover art itself; they are
+	// present only in this one case, under the same gate as the title.
 	if title == "" && spotify != nil {
-		if t, ok := spotify(); ok && t != "" {
-			title, swapped = t, false
+		if meta, ok := spotify(); ok && meta.Title != "" {
+			title, swapped = meta.Title, false
+			track, artist, art = meta.Track, meta.Artist, meta.Art
 		}
 	}
 	// swapped tells the app which way its "artist and title are the wrong way
@@ -395,7 +414,10 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	b, _ := json.Marshal(struct {
 		Title   string `json:"title"`
 		Swapped bool   `json:"swapped"`
-	}{title, swapped})
+		Track   string `json:"track,omitempty"`
+		Artist  string `json:"artist,omitempty"`
+		Art     string `json:"art,omitempty"`
+	}{title, swapped, track, artist, art})
 	_, _ = w.Write(b)
 }
 

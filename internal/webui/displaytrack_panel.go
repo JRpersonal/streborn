@@ -60,6 +60,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/oled"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 )
 
 // trackPanelSink is the panel side of the setting.
@@ -128,6 +129,10 @@ type panelState struct {
 	// spotifyNow is the Spotify engine's current song (track, artist), kept
 	// even while something else plays.
 	spotifyNow [2]string
+	// spotifyCover is the album cover URL of spotifyNow, kept alongside it and
+	// served under the identical staleness gate (CurrentSpotifyMeta) so a
+	// companion app can render the real cover during a Spotify preset-key play.
+	spotifyCover string
 	// boxSource is the source the speaker last switched to (the agent's
 	// gabbo hook, PanelSourceChanged); empty until the first switch.
 	boxSource string
@@ -209,10 +214,12 @@ func (s *Server) panelRadioTitle(raw string) {
 
 // PanelSpotifyTrack is the Spotify engine's "the song changed". It is kept
 // even while something else plays, so Spotify started from the app later
-// shows its song at once.
-func (s *Server) PanelSpotifyTrack(track, artist string) {
+// shows its song at once. cover is the album art URL, kept beside the song so
+// CurrentSpotifyMeta can hand it to a companion app under the same gate.
+func (s *Server) PanelSpotifyTrack(track, artist, cover string) {
 	s.panelMu.Lock()
 	s.spotifyNow = [2]string{track, artist}
+	s.spotifyCover = cover
 	isSpotify := s.panel.kind == panelSpotify
 	if isSpotify {
 		s.panel.artist, s.panel.title, s.panel.raw = artist, track, joinArtistTitle(artist, track)
@@ -228,33 +235,42 @@ func (s *Server) PanelSpotifyTrack(track, artist string) {
 // standby or a switch to Bluetooth/AUX moves boxSource off it.
 const panelUPnPSource = "UPNP"
 
-// CurrentSpotifyTitle returns the live Spotify song as "Artist - Title" (just
-// the title when the engine named no artist) while Spotify is the speaker's
-// current playback, and ("", false) otherwise. It is the fallback the stream
-// proxy's /api/stream/title consults when the radio StreamTitle is empty,
-// which is the case during a Spotify preset-key play: the Spotify stream runs
-// through the proxy with no ICY metadata, yet the engine knows the song.
-// Requested by a companion-app developer so remote apps show the song then.
+// CurrentSpotifyMeta returns the live Spotify song while Spotify is the
+// speaker's current playback, and (zero, false) otherwise. Title is
+// "Artist - Title" (just the title when the engine named no artist); Track,
+// Artist and Art carry the components so a companion app can render the real
+// cover. It is the fallback the stream proxy's /api/stream/title consults when
+// the radio StreamTitle is empty, which is the case during a Spotify preset-key
+// play: the Spotify stream runs through the proxy with no ICY metadata, yet the
+// engine knows the song. Requested by a companion-app developer so remote apps
+// show the song and its cover then.
 //
-// Staleness: spotifyNow is kept even after playback stops (so Spotify started
-// from the app later shows at once), so returning it blindly would serve a
-// stale song after Stop or standby. It is gated on the panel model instead of
-// a timestamp, which a long track would outlive: Spotify must be the active
-// kind (a switch to radio or a library file changes panel.kind) and not ended,
-// AND the speaker must still be on the UPnP source it plays Spotify through (a
-// stop, standby or a switch to Bluetooth/AUX moves boxSource off it via
-// PanelSourceChanged). Each of those turns the fallback off at once.
-func (s *Server) CurrentSpotifyTitle() (string, bool) {
+// Staleness: spotifyNow (and its cover) are kept even after playback stops (so
+// Spotify started from the app later shows at once), so returning them blindly
+// would serve a stale song after Stop or standby. The whole reply is gated on
+// the panel model instead of a timestamp, which a long track would outlive:
+// Spotify must be the active kind (a switch to radio or a library file changes
+// panel.kind) and not ended, AND the speaker must still be on the UPnP source
+// it plays Spotify through (a stop, standby or a switch to Bluetooth/AUX moves
+// boxSource off it via PanelSourceChanged). Each of those turns the fallback
+// off at once. The cover rides the exact same gate: it is read from the same
+// locked state only when the gate passes, so it can never outlive the song.
+func (s *Server) CurrentSpotifyMeta() (streamproxy.SpotifyTitleMeta, bool) {
 	s.panelMu.Lock()
 	defer s.panelMu.Unlock()
 	if s.panel.kind != panelSpotify || s.panel.ended || s.boxSource != panelUPnPSource {
-		return "", false
+		return streamproxy.SpotifyTitleMeta{}, false
 	}
 	track, artist := s.spotifyNow[0], s.spotifyNow[1]
 	if track == "" {
-		return "", false
+		return streamproxy.SpotifyTitleMeta{}, false
 	}
-	return joinArtistTitle(artist, track), true
+	return streamproxy.SpotifyTitleMeta{
+		Title:  joinArtistTitle(artist, track),
+		Track:  track,
+		Artist: artist,
+		Art:    s.spotifyCover,
+	}, true
 }
 
 // PanelSpotifyActive is "the speaker was just pointed at the Spotify stream"
