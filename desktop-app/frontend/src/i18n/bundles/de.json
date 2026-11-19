@@ -1851,7 +1851,6 @@
   "banner.retryAppUpdate": "Download erneut versuchen",
   "banner.updateInterrupted": "Der Download wurde von der Verbindung unterbrochen. Es ist nichts kaputt und nichts zu melden. Drücke den Knopf einfach noch einmal, sobald du wieder online bist.",
   "banner.manualHint": "Das aktualisiert die App selbst und ersetzt die laufende Version. Von Hand heruntergeladene Installationsdateien kannst du löschen.",
-  "banner.updateViaWinget": "Mit winget aktualisieren",
   "banner.wingetStarted": "Update läuft über winget. ST Reborn schließt sich jetzt und startet von selbst neu, sobald winget fertig ist.",
   "banner.wingetNotYet": "winget bietet Version {{version}} noch nicht an oder war nicht erreichbar. Neue Versionen kommen dort meist ein paar Tage nach dem Release an. Versuch es später noch mal oder führe das hier in einem Terminal aus:",
   "banner.wingetManual": "Diese Kopie wurde mit winget installiert, deshalb übernimmt winget das Update. ST Reborn konnte winget aber nicht starten. Führe bitte das hier in einem Terminal aus:",
