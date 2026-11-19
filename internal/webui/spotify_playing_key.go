@@ -85,6 +85,32 @@ func accountBoundSpotifyURI(uri string) bool {
 	return u == likedSongsAliasURI || u == "spotify:collection" || strings.HasPrefix(u, "spotify:collection:")
 }
 
+// presetsCollide reports whether saving p would land on the same thing other
+// already holds, so the save is refused (loss-free) rather than silently
+// deleting other. A radio station collides by stream URL, a Spotify key by its
+// URI. The exception is an account-bound Spotify context (Liked Songs, the bare
+// collection): every account's Liked Songs carry the same alias URI
+// (37i9dQZF1F5p3rmiWPIYgZ), so URI alone would refuse a second household member
+// their own Liked Songs key just because someone else saved theirs (#1983).
+// When both keys name an account, such a context collides only for the SAME
+// account; when either account is unknown (the speaker's own Spotify client
+// reports none, the same blind spot as the key highlight) it falls back to URI
+// alone, so two indistinguishable Liked Songs keys still cannot be created.
+// Normal playlists, albums and tracks are unchanged.
+func presetsCollide(p, other presets.Preset) bool {
+	switch {
+	case p.Type == "spotify" && p.URI != "" && other.URI == p.URI:
+		if accountBoundSpotifyURI(p.URI) && p.Account != "" && other.Account != "" {
+			return p.Account == other.Account
+		}
+		return true
+	case p.Type != "spotify" && p.StreamURL != "" && other.StreamURL == p.StreamURL:
+		return true
+	default:
+		return false
+	}
+}
+
 // spotifySlotForURI is the lowest Spotify key holding uri, or 0. The store
 // refuses one playlist on two keys (#836), so a second match is an older
 // store; the lowest wins so the highlight does not hop between polls.
