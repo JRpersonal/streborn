@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -68,6 +69,13 @@ func (s *Server) setTitle(url, title string) {
 	// (titlecharset.go), never left as bytes: json.Marshal would turn each
 	// into U+FFFD on the way to the apps.
 	title, charset := s.charsets.toUTF8(url, title)
+	// Some stations encode their non-ASCII letters as HTML character references
+	// in the StreamTitle instead of sending the bytes: Rádio pohádka sends
+	// "Náro&#382;ný" for "Nárožný" and "ob&#283;&#357;" for "oběť" (#1982).
+	// Decode them to the real characters, numeric (&#382; / &#x17e;) and named
+	// (&amp;) alike. A bare ampersand that opens no entity, as in
+	// "Macourek & Nárožný", is left as it is, so a normal title is untouched.
+	title = html.UnescapeString(title)
 	// An ad-insertion cue is not a title. It is dropped whole, so the display
 	// keeps what it showed before the break.
 	if isAdMarkerTitle(title) {
