@@ -1851,7 +1851,7 @@
   "banner.retryAppUpdate": "Retry download",
   "banner.updateInterrupted": "The download was interrupted by the connection. Nothing is broken and there is nothing to report; press the button again once you are back online.",
   "banner.manualHint": "This updates the app itself and replaces the running version. You can delete any installer files you downloaded by hand earlier.",
-  "banner.wingetStarted": "Updating via winget. ST Reborn closes now and starts again by itself once winget is done.",
+  "banner.wingetStarted": "Updating. ST Reborn closes now and starts again by itself once it is done.",
   "banner.wingetNotYet": "winget does not offer version {{version}} yet, or could not be reached. New versions usually arrive there a few days after the release. Try again later, or run this in a terminal:",
   "banner.wingetManual": "This copy was installed with winget, so winget does the update, but ST Reborn could not start it. Please run this in a terminal:",
   "banner.wingetFailed": "The update via winget did not go through (winget exit code {{code}}). Please run this in a terminal:",

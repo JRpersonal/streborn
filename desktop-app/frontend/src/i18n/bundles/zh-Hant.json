@@ -1851,7 +1851,7 @@
   "banner.retryAppUpdate": "重試下載",
   "banner.updateInterrupted": "下載被連線中斷了。沒有東西壞掉，也沒有需要回報的事。等連線恢復後再按一次按鈕就好。",
   "banner.manualHint": "這會更新應用程式本身，並取代正在執行的版本。之前手動下載的安裝檔案都可以刪掉。",
-  "banner.wingetStarted": "正在透過 winget 更新。ST Reborn 現在會關閉，winget 完成後會自動重新啟動。",
+  "banner.wingetStarted": "正在更新。ST Reborn 現在會關閉，完成後會自動重新啟動。",
   "banner.wingetNotYet": "winget 尚未提供版本 {{version}}，或無法連線到 winget。新版本通常在發布後幾天才會出現在 winget。請稍後再試，或在終端機中執行：",
   "banner.wingetManual": "這份程式是透過 winget 安裝的，因此由 winget 負責更新，但 ST Reborn 無法啟動 winget。請在終端機中執行：",
   "banner.wingetFailed": "透過 winget 更新未能完成（winget 結束代碼 {{code}}）。請在終端機中執行：",
