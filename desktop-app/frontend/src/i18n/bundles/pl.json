@@ -985,6 +985,7 @@
   "settingsView.webhookKeyPlayPause": "Odtwarzaj/Pauza (pilot)",
   "settingsView.webhookModeKeyNote": "Tylko dodatkowo. Głośnik zgłasza, który klawisz naciśnięto, więc ten wyzwalacz działa dokładnie dla tego klawisza. Wspólna pozycja kciuka działa, gdy klawisz kciuka nie ma własnego wyzwalacza.",
   "settingsView.webhookKeyTraceNote": "Wstecz, Dalej, Kciuk w górę, Kciuk w dół i Odtwarzaj/Pauza to osobne wyzwalacze: głośnik sam zgłasza, który klawisz naciśnięto, na pilocie i na górnym panelu.",
+  "settingsView.webhookPandoraNote": "W usłudze oceniającej utwory, takiej jak Pandora, przyciski kciuka nadal polubią lub pominą bieżący utwór. STR nie może tego wyłączyć; dodaje tylko Twój webhook lub akcję na tym, co głośnik już robi.",
   "settingsView.webhookRemoteHint": "Kliknij klawisz na pilocie, aby go skonfigurować.",
   "settingsView.webhookRemoteLegendOn": "na tym klawiszu jest wyzwalacz",
   "settingsView.webhookRemoteLegendSel": "klawisz, który edytujesz",

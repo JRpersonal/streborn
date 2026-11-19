@@ -985,6 +985,7 @@
   "settingsView.webhookKeyPlayPause": "Oynat/Duraklat (kumanda)",
   "settingsView.webhookModeKeyNote": "Yalnızca ek olarak. Hoparlör hangi tuşa basıldığını bildirir, bu yüzden bu tetikleyici tam olarak bu tuş için çalışır. Ortak başparmak girişi, bir başparmak tuşunun kendi tetikleyicisi yoksa çalışır.",
   "settingsView.webhookKeyTraceNote": "Geri, İleri, Beğen, Beğenme ve Oynat/Duraklat ayrı tetikleyicilerdir: hoparlörün kendisi kumandada ve üst panelde hangi tuşa basıldığını bildirir.",
+  "settingsView.webhookPandoraNote": "Pandora gibi şarkıları puanlayan bir serviste, başparmak tuşları yine de çalan parçayı beğenir veya atlar. STR bunu kapatamaz; yalnızca webhook'unuzu veya eyleminizi hoparlörün zaten yaptığının üzerine ekler.",
   "settingsView.webhookRemoteHint": "Ayarlamak için kumandadaki bir tuşa tıklayın.",
   "settingsView.webhookRemoteLegendOn": "bu tuşta bir tetikleyici var",
   "settingsView.webhookRemoteLegendSel": "düzenlediğiniz tuş",

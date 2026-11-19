@@ -985,6 +985,7 @@
   "settingsView.webhookKeyPlayPause": "Atskaņot/Pauze (pults)",
   "settingsView.webhookModeKeyNote": "Tikai papildus. Skaļrunis ziņo, kurš taustiņš nospiests, tāpēc tas nostrādā tieši šim taustiņam. Kopīgais īkšķa ieraksts nostrādā, ja īkšķa taustiņam nav sava trigera.",
   "settingsView.webhookKeyTraceNote": "Atpakaļ, Uz priekšu, Patīk, Nepatīk un Atskaņot/Pauze ir atsevišķi trigeri: skaļrunis pats ziņo, kurš taustiņš nospiests, uz pults un augšējā panelī.",
+  "settingsView.webhookPandoraNote": "Pakalpojumā, kas vērtē dziesmas, piemēram Pandora, īkšķa taustiņi joprojām atzīmē kā patīk vai izlaiž pašreizējo ierakstu. STR to nevar izslēgt; tas tikai pievieno tavu tīmekļa āķi (webhook) vai darbību tam, ko skaļrunis jau dara.",
   "settingsView.webhookRemoteHint": "Noklikšķini uz pults taustiņa, lai to iestatītu.",
   "settingsView.webhookRemoteLegendOn": "šim taustiņam ir trigeris",
   "settingsView.webhookRemoteLegendSel": "taustiņš, ko tu rediģē",

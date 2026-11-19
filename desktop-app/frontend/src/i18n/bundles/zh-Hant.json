@@ -1103,6 +1103,7 @@
   "settingsView.webhookKeyPlayPause": "播放／暫停（遙控器）",
   "settingsView.webhookModeKeyNote": "僅為附加。喇叭會回報按下的是哪個鍵，因此此觸發只針對這個鍵。當讚／倒讚鍵沒有自己的觸發時，才會使用共用的讚／倒讚項目。",
   "settingsView.webhookKeyTraceNote": "上一首、下一首、讚、倒讚與播放／暫停是各自獨立的觸發：喇叭本身會回報按下的是哪個鍵，無論是遙控器還是機頂面板。",
+  "settingsView.webhookPandoraNote": "在 Pandora 這類會為歌曲評分的服務上，大拇指按鍵仍會對目前曲目按讚或略過。STR 無法關閉這點，只會在喇叭既有的動作之上加入你的 Webhook 或動作。",
   "settingsView.webhookRemoteHint": "點選遙控器上的鍵來設定。",
   "settingsView.webhookRemoteLegendOn": "此鍵已設定觸發",
   "settingsView.webhookRemoteLegendSel": "正在編輯的鍵",

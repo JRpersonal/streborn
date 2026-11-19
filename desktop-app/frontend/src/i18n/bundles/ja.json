@@ -985,6 +985,7 @@
   "settingsView.webhookKeyPlayPause": "再生/一時停止（リモコン）",
   "settingsView.webhookModeKeyNote": "追加のみ。スピーカーがどのキーが押されたかを報告するため、このキーに対してのみ発火します。サムキーに固有のトリガーがない場合は共通のサム項目が発火します。",
   "settingsView.webhookKeyTraceNote": "戻る、進む、サムアップ、サムダウン、再生/一時停止は別々のトリガーです。リモコンでも本体上面でも、スピーカー自身がどのキーが押されたかを報告します。",
+  "settingsView.webhookPandoraNote": "Pandora など曲を評価するサービスでは、サムズキーは再生中の曲を高評価にしたりスキップしたりし続けます。STR はこれをオフにできません。スピーカーがすでに行う動作の上に、あなたの Webhook や操作を追加するだけです。",
   "settingsView.webhookRemoteHint": "リモコンのキーをクリックして設定します。",
   "settingsView.webhookRemoteLegendOn": "このキーにはトリガーが設定されています",
   "settingsView.webhookRemoteLegendSel": "編集中のキー",

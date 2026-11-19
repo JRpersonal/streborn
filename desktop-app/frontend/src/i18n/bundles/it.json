@@ -1103,6 +1103,7 @@
   "settingsView.webhookKeyPlayPause": "Play/Pausa (telecomando)",
   "settingsView.webhookModeKeyNote": "Solo aggiuntivo. L'altoparlante riporta quale tasto è stato premuto, quindi il trigger scatta esattamente per questo tasto. La voce condivisa dei pollici scatta quando un tasto pollice non ha un trigger proprio.",
   "settingsView.webhookKeyTraceNote": "Indietro, Avanti, Pollice su, Pollice giù e Play/Pausa sono trigger separati: è l'altoparlante stesso a riportare quale tasto è stato premuto, sul telecomando e sul pannello superiore.",
+  "settingsView.webhookPandoraNote": "Su un servizio che valuta i brani, come Pandora, i tasti pollice continuano a mettere mi piace o a saltare il brano in corso. STR non può disattivarlo; aggiunge solo il tuo webhook o la tua azione sopra a quello che il diffusore fa già.",
   "settingsView.webhookRemoteHint": "Clicca un tasto del telecomando per configurarlo.",
   "settingsView.webhookRemoteLegendOn": "questo tasto ha un trigger impostato",
   "settingsView.webhookRemoteLegendSel": "il tasto che stai modificando",
