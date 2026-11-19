@@ -1197,7 +1197,7 @@ func (a *agent) buildWebui() error {
 	// the current playback so a stale song is never served after Stop or
 	// standby. A func value avoids importing webui into streamproxy, which
 	// depends on streamproxy, so no import cycle forms.
-	streamProxySrv.SetSpotifyTitleProvider(webuiSrv.CurrentSpotifyTitle)
+	streamProxySrv.SetSpotifyTitleProvider(webuiSrv.CurrentSpotifyMeta)
 
 	a.webuiSrv = webuiSrv
 	return nil
@@ -1530,7 +1530,7 @@ func (a *agent) buildBoxLink() error {
 		webuiSrv.NoteRecentSpotifyTrack(webui.SpotifyNowPlaying{
 			Track: tc.Track, Artist: tc.Artist, Cover: tc.Cover, TrackURI: tc.TrackURI, ContextURI: tc.ContextURI,
 		})
-		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
+		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist, tc.Cover)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
 	notePanelSource = webuiSrv.PanelSourceChanged

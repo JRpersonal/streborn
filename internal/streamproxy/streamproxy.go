@@ -169,15 +169,16 @@ type Server struct {
 	// stream whose title it had (no successor within titleEndGrace). Used to
 	// take the track off the speaker's panel.
 	onTitleEnd func()
-	// spotifyTitle, if set, returns the live Spotify song ("Artist - Title")
-	// and true while a Spotify stream is the speaker's current playback. A
-	// Spotify preset key streams through the proxy as a /spotify/ URL that
-	// carries no ICY StreamTitle, so curTitle is empty and /api/stream/title
-	// would answer with nothing; this is the fallback the handler consults in
-	// that one case. A plain func value (not an import of internal/webui) so
-	// streamproxy stays free of that dependency and no import cycle forms.
-	// Guarded by titleMu like the title fields it stands beside.
-	spotifyTitle func() (string, bool)
+	// spotifyTitle, if set, returns the live Spotify song (the combined
+	// "Artist - Title" plus its components) and true while a Spotify stream is
+	// the speaker's current playback. A Spotify preset key streams through the
+	// proxy as a /spotify/ URL that carries no ICY StreamTitle, so curTitle is
+	// empty and /api/stream/title would answer with nothing; this is the
+	// fallback the handler consults in that one case. A plain func value (not
+	// an import of internal/webui) so streamproxy stays free of that dependency
+	// and no import cycle forms. Guarded by titleMu like the title fields it
+	// stands beside.
+	spotifyTitle func() (SpotifyTitleMeta, bool)
 	// onUpstreamFailure, if set, is called with every terminal upstream
 	// failure: the upstream URL and its HTTP status (0 for a network-level
 	// failure). The play queue ends a track the media server answers 404/410

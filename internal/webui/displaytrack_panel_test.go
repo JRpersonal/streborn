@@ -290,7 +290,7 @@ func setFlag(t *testing.T, path string, on bool) {
 func TestPanelSpotify(t *testing.T) {
 	s, fp, _ := newTrackServer(t, true)
 	s.HandleStreamTitle("Queen - Under Pressure")
-	s.PanelSpotifyTrack("Flowers", "Miley Cyrus") // engine song while radio plays: kept, not shown
+	s.PanelSpotifyTrack("Flowers", "Miley Cyrus", "") // engine song while radio plays: kept, not shown
 	if shown, _ := fp.snapshot(); len(shown) != 1 {
 		t.Fatalf("Spotify song shown over the radio: %+v", shown)
 	}
@@ -304,7 +304,7 @@ func TestPanelSpotify(t *testing.T) {
 	if shown, cleared := fp.snapshot(); len(shown) != 2 || len(cleared) != 0 {
 		t.Fatalf("radio leftovers reached Spotify's screen: shown %+v cleared %v", shown, cleared)
 	}
-	s.PanelSpotifyTrack("Espresso", "Sabrina Carpenter")
+	s.PanelSpotifyTrack("Espresso", "Sabrina Carpenter", "")
 	if shown, _ := fp.snapshot(); len(shown) != 3 || shown[2].Title != "Espresso" {
 		t.Fatalf("next Spotify song: %+v", shown)
 	}
