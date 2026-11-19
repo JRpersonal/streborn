@@ -1,7 +1,7 @@
 // The check step of the UI 2.0 setup wizard (checkmodel.js, check.js),
 // without a DOM: which firmware gets which route, when "continue without
 // updating" is offered, what counts as confirmed, and that every string exists
-// in all thirteen bundles.
+// in all fourteen bundles.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { setLocale } from '../../i18n/index.js';
@@ -216,7 +216,7 @@ describe('strings', () => {
 
   it('finds the keys in the code', () => {
     expect(used.size).toBeGreaterThan(30);
-    expect(Object.keys(bundles)).toHaveLength(13);
+    expect(Object.keys(bundles)).toHaveLength(14);
   });
 
   for (const [code, b] of Object.entries(bundles)) {

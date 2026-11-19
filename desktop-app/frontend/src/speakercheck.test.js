@@ -20,8 +20,8 @@ const res = (verdict, extra = {}) => ({ host: '192.0.2.20', verdict, pcNetworks:
 describe('speaker check strings', () => {
   const keys = speakerCheckKeys();
 
-  it('has every key in all thirteen languages with the English placeholders', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+  it('has every key in all fourteen languages with the English placeholders', () => {
+    expect(Object.keys(bundles)).toHaveLength(14);
     for (const [code, b] of Object.entries(bundles)) {
       for (const k of keys) {
         expect(typeof b[k] === 'string' && b[k].trim().length > 0, `${code}: ${k}`).toBe(true);
