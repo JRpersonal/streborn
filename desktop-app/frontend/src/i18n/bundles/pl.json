@@ -872,6 +872,7 @@
   "credits.researchTitle": "Badania i inżynieria wsteczna",
   "credits.researchIntro": "STR nie zawiera ich kodu, ale kilka jego kluczowych mechanizmów nie istniałoby bez tego, co te projekty opublikowały. Większość z nich nie przyjmuje żadnego wsparcia.",
   "credits.donate": "Wesprzyj",
+  "credits.translationsTitle": "Tłumaczenia",
   "footer.saveLogs": "Zapisz logi diagnostyczne",
   "footer.saveLogsHint": "Pakuje log aplikacji + status każdego głośnika do pliku zip, który możesz dołączyć do zgłoszenia na GitHub. Adresy IP i identyfikatory urządzeń są anonimizowane.",
   "footer.saveLogsDone": "Zapisano {{size}} KB w {{path}}",

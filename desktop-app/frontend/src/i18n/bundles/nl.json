@@ -872,6 +872,7 @@
   "credits.researchTitle": "Onderzoek en reverse engineering",
   "credits.researchIntro": "STR bevat geen code van deze projecten, maar verschillende kernmechanismen zouden niet bestaan zonder wat zij hebben gepubliceerd. De meeste accepteren geen enkele steun.",
   "credits.donate": "Doneren",
+  "credits.translationsTitle": "Vertalingen",
   "footer.saveLogs": "Diagnostische logs opslaan",
   "footer.saveLogsHint": "Bundelt het app-log + de status per speaker in een zip die je aan een GitHub-issue kunt toevoegen. IP's en apparaat-ID's worden geanonimiseerd.",
   "footer.saveLogsDone": "{{size}} KB opgeslagen in {{path}}",

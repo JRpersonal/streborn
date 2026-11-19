@@ -872,6 +872,7 @@
   "credits.researchTitle": "Tyrimai ir atvirkštinė inžinerija",
   "credits.researchIntro": "STR neplatina jų kodo, tačiau kelių esminių jos mechanizmų nebūtų be to, ką šie projektai paskelbė. Dauguma jų nepriima jokios paramos.",
   "credits.donate": "Paremti",
+  "credits.translationsTitle": "Vertimai",
   "footer.saveLogs": "Išsaugoti diagnostikos žurnalus",
   "footer.saveLogsHint": "Supakuoja programos žurnalą + kiekvieno garsiakalbio būseną į zip failą, kurį galite pridėti prie GitHub problemos. IP adresai ir įrenginių ID anonimizuojami.",
   "footer.saveLogsDone": "Išsaugota {{size}} KB į {{path}}",
