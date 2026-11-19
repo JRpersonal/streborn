@@ -1103,6 +1103,7 @@
   "settingsView.webhookKeyPlayPause": "Play/Pause (remote)",
   "settingsView.webhookModeKeyNote": "Additional only. The speaker reports which key was pressed, so this fires for exactly this key. The shared thumbs entry fires when a thumbs key has no trigger of its own.",
   "settingsView.webhookKeyTraceNote": "Back, Forward, Thumbs up, Thumbs down and Play/Pause are separate triggers: the speaker itself reports which key was pressed, on the remote and on the top panel.",
+  "settingsView.webhookPandoraNote": "On a service that rates songs, like Pandora, the thumbs keys also like or skip the current track. STR cannot switch that off; it only adds your webhook or action on top of what the speaker already does.",
   "settingsView.webhookRemoteHint": "Click a key on the remote to set it up.",
   "settingsView.webhookRemoteLegendOn": "a trigger is set on this key",
   "settingsView.webhookRemoteLegendSel": "the key you are editing",

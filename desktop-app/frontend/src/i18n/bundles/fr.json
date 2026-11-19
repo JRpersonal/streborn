@@ -985,6 +985,7 @@
   "settingsView.webhookKeyPlayPause": "Lecture/Pause (télécommande)",
   "settingsView.webhookModeKeyNote": "Uniquement en plus. L'enceinte indique quelle touche a été pressée, ce déclencheur ne réagit donc qu'à cette touche. L'entrée pouces commune se déclenche quand une touche pouce n'a pas de déclencheur propre.",
   "settingsView.webhookKeyTraceNote": "Retour, Avance, Pouce levé, Pouce baissé et Lecture/Pause sont des déclencheurs séparés : l'enceinte elle-même indique quelle touche a été pressée, sur la télécommande comme sur le dessus de l'appareil.",
+  "settingsView.webhookPandoraNote": "Sur un service qui note les titres, comme Pandora, les touches pouce continuent d'aimer ou de passer le titre en cours. STR ne peut pas le désactiver; il ajoute seulement votre webhook ou action par-dessus ce que l'enceinte fait déjà.",
   "settingsView.webhookRemoteHint": "Cliquez sur une touche de la télécommande pour la configurer.",
   "settingsView.webhookRemoteLegendOn": "un déclencheur est défini sur cette touche",
   "settingsView.webhookRemoteLegendSel": "la touche en cours de modification",
