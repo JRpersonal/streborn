@@ -155,6 +155,9 @@ type Server struct {
 	// swap is the per-station "artist and title are the wrong way round"
 	// flag store (titleswap.go).
 	swap titleSwapStore
+	// charsets remembers, per station, which code page its titles that are
+	// not UTF-8 are in (titlecharset.go).
+	charsets titleCharsets
 	// titleGens counts handler starts per stream URL so a handler that ends
 	// can tell whether a successor already took the same stream over (see
 	// clearTitleOnEnd; the wipe is delayed and cancelled by a takeover).
