@@ -99,6 +99,12 @@ func TestSanitizeSmooth(t *testing.T) {
 		// Greek and Cyrillic are drawn as written, not dropped
 		{"Γιάννης Πάριος – Θα με θυμηθείς", 160, "Γιάννης Πάριος – Θα με θυμηθείς"},
 		{"Океан Ельзи – Обійми", 160, "Океан Ельзи – Обійми"},
+		// Czech is drawn with its own letters, in both cases (#1982)
+		{"Příliš žluťoučký kůň úpěl ďábelské ódy", 160, "Příliš žluťoučký kůň úpěl ďábelské ódy"},
+		{"PŘÍLIŠ ŽLUŤOUČKÝ KŮŇ ÚPĚL ĎÁBELSKÉ ÓDY", 160, "PŘÍLIŠ ŽLUŤOUČKÝ KŮŇ ÚPĚL ĎÁBELSKÉ ÓDY"},
+		// written with combining accents (file tags from a Mac): the base
+		// letters stay, the marks the font cannot place are dropped
+		{"Příliš žluťoučký", 160, "Prilis zlutoucky"},
 		{"Männer und Frauen", 6, "Männer"},
 	} {
 		if got := sanitizeSmooth(c.in, c.limit); got != c.want {
