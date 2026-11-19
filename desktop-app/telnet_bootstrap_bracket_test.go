@@ -133,3 +133,22 @@ func TestRepeatLanguageTransportErrorIsLoggedNotFatal(t *testing.T) {
 		t.Errorf("the failure belongs in the unlock log, got:\n%s", log.String())
 	}
 }
+
+func TestAccountRetryPlan(t *testing.T) {
+	cases := []struct {
+		name                 string
+		refused, uuidStored  bool
+		attempt, maxAttempts int
+		want                 string
+	}{
+		{"stored ends it", true, true, 1, 3, "continue"},
+		{"not refused continues", false, false, 1, 3, "continue"},
+		{"refused with attempts left", true, false, 1, 3, "retry"},
+		{"refused on the last attempt", true, false, 3, 3, "stop"},
+	}
+	for _, c := range cases {
+		if got := accountRetryPlan(c.refused, c.uuidStored, c.attempt, c.maxAttempts); got != c.want {
+			t.Errorf("%s: accountRetryPlan(%v,%v,%d,%d) = %q, want %q", c.name, c.refused, c.uuidStored, c.attempt, c.maxAttempts, got, c.want)
+		}
+	}
+}
