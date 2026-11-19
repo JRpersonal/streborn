@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   RECALL_EXPECT_MS, acceptSpotifyReply, beginRecall, normalizeSpotifyContext,
   recallSettled, snapshotFromReply, spotifySlotStillHolds, spotifySongText,
-  nativeSpotifySlot,
+  nativeSpotifySlot, spotifySlotForContext, accountBoundSpotifyContext,
 } from './spotifynowplaying.js';
 import { allSource, srcOf } from './test/source.js';
 
@@ -122,7 +122,56 @@ describe('spotifySlotStillHolds', () => {
   });
 
   it('is what renderPresets asks before keeping the remembered slot', () => {
-    expect(main).toContain('!spotifySlotStillHolds(held.uri, state.spotifyNow)');
+    expect(main).toContain('!spotifySlotStillHolds(held.uri, state.spotifyNow, held.account)');
+  });
+});
+
+// Liked Songs has one URI for every account. Key 10 was saved from one
+// household member's Liked Songs and lit up while another member played theirs
+// (discussion #1983: the stored URI and the speaker's reported location were
+// both spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ).
+describe('a Liked Songs key lights only for the account that saved it (#1983)', () => {
+  const LIKED = 'spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ';
+  const container = (uri) => `/playback/container/${btoa(uri)}`;
+  const presets = [
+    { slot: 4, type: 'spotify', name: 'Mix', uri: 'spotify:playlist:MIX', account: 'first-user' },
+    { slot: 10, type: 'spotify', name: 'Liked Songs', uri: LIKED, account: 'first-user' },
+  ];
+
+  it('knows the forms that are the same URI for every account', () => {
+    expect(accountBoundSpotifyContext(LIKED)).toBe(true);
+    expect(accountBoundSpotifyContext('spotify:collection')).toBe(true);
+    expect(accountBoundSpotifyContext('spotify:collection:tracks')).toBe(true);
+    expect(accountBoundSpotifyContext('spotify:user:first-user:collection')).toBe(false);
+    expect(accountBoundSpotifyContext('spotify:playlist:MIX')).toBe(false);
+    expect(accountBoundSpotifyContext('')).toBe(false);
+  });
+
+  it('stays dark while the speaker\'s own Spotify plays Liked Songs, it names no account', () => {
+    expect(nativeSpotifySlot(presets, container(LIKED))).toBe(null);
+    expect(nativeSpotifySlot(presets, container('spotify:playlist:MIX'))).toBe(4);
+  });
+
+  it('lights on STR\'s engine for the saving account and for nobody else', () => {
+    expect(spotifySlotForContext(presets, { context: LIKED, account: 'first-user' })).toBe(10);
+    expect(spotifySlotForContext(presets, { context: LIKED, account: 'second-user' })).toBe(null);
+    expect(spotifySlotForContext(presets, { context: LIKED, account: '' })).toBe(null);
+    const noOwner = [{ slot: 10, type: 'spotify', uri: LIKED, account: '' }];
+    expect(spotifySlotForContext(noOwner, { context: LIKED, account: 'first-user' })).toBe(null);
+  });
+
+  it('leaves every other playlist matching by URI, whoever plays it', () => {
+    expect(spotifySlotForContext(presets, { context: 'spotify:playlist:MIX', account: 'second-user' })).toBe(4);
+    expect(spotifySlotForContext(presets, { context: 'spotify:playlist:MIX' })).toBe(4);
+  });
+
+  it('drops a recalled Liked Songs key once another account plays its own', () => {
+    expect(spotifySlotStillHolds(LIKED, { context: LIKED, account: 'second-user' }, 'first-user')).toBe(false);
+    expect(spotifySlotStillHolds(LIKED, { context: LIKED, account: 'first-user' }, 'first-user')).toBe(true);
+    // No proof either way keeps the light the recall gave it.
+    expect(spotifySlotStillHolds(LIKED, { context: LIKED, account: '' }, 'first-user')).toBe(true);
+    expect(spotifySlotStillHolds(LIKED, { context: LIKED, account: 'second-user' }, '')).toBe(true);
+    expect(spotifySlotStillHolds('spotify:playlist:MIX', { context: 'spotify:playlist:MIX', account: 'second-user' }, 'first-user')).toBe(true);
   });
 });
 

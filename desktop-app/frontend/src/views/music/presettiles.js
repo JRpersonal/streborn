@@ -95,7 +95,7 @@ export function renderPresets() {
     // The Spotify app took over the "(STR)" speaker: same generic location, but
     // the engine now plays a context the key does not hold (#1077, issue 14).
     const held = state.presets.find(x => x.slot === state.nowSpotifySlot);
-    if (held && held.type === 'spotify' && !spotifySlotStillHolds(held.uri, state.spotifyNow)) {
+    if (held && held.type === 'spotify' && !spotifySlotStillHolds(held.uri, state.spotifyNow, held.account)) {
       state.nowSpotifySlot = null;
     }
   }
