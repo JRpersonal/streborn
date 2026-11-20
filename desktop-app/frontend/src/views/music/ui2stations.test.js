@@ -74,6 +74,17 @@ describe('station rows', () => {
     expect(stationRowHTML(bad, 0, {})).toContain('class="ui2-st is-broken"');
   });
 
+  // #1905: favourites the directory never checked read "Not reachable".
+  it('never calls a favourite broken that the directory did not check', () => {
+    const library = { stationuuid: 'upnp:folder:12', name: 'Scott Stapp Collection', url: 'http://192.0.2.5:8200/x', source: 'upnp' };
+    const fromRecent = { stationuuid: 'Exclusively Rush|http://stream.example/rush', name: 'Exclusively Rush', url: 'http://stream.example/rush' };
+    const notYetChecked = { ...ROCK, lastcheckok: 0, lastchecktime: '' };
+    expect(stationBroken(library)).toBe(false);
+    expect(stationBroken(fromRecent)).toBe(false);
+    expect(stationBroken(notYetChecked)).toBe(false);
+    expect(stationRowHTML(library, 0, {})).not.toContain('Not reachable');
+  });
+
   it('carries the row status as text with its kind', () => {
     expect(rowStatusHTML({ kind: 'error', text: 'Did not play <x>' }))
       .toBe('<span class="ui2-st-status is-error" role="status">Did not play &lt;x&gt;</span>');
