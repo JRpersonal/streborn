@@ -247,6 +247,11 @@ func (s *Server) reconcileZoneOnce(playKick bool) {
 		// stereo pair alone; the firmware persists it across reboot/standby itself.
 		return
 	}
+	if playKick {
+		// The group is about to be woken and re-formed: use the members'
+		// current addresses, not the ones stored when it was set up (#2006).
+		z = s.refreshGroupIPs(z)
+	}
 	if z.Mirror() {
 		if playKick {
 			// The master just started music: the stored members come along,
