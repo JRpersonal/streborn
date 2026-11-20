@@ -68,9 +68,9 @@ func (s *Server) LikeKeyPress() { s.thumbsKeyPress(true) }
 func (s *Server) UnlikeKeyPress() { s.thumbsKeyPress(false) }
 
 func (s *Server) thumbsKeyPress(up bool) {
-	key, write, last := "thumbs down", s.spotifyUnlikeCurrent, &s.likeKey.lastDown
+	key, last := "thumbs down", &s.likeKey.lastDown
 	if up {
-		key, write, last = "thumbs up", s.spotifyLikeCurrent, &s.likeKey.lastUp
+		key, last = "thumbs up", &s.likeKey.lastUp
 	}
 	k := &s.likeKey
 	k.mu.Lock()
@@ -81,45 +81,78 @@ func (s *Server) thumbsKeyPress(up bool) {
 		return
 	}
 	*last = now
-
-	if write == nil {
-		s.logger.Debug(key + " pressed, this speaker has no Spotify engine; the key does nothing here")
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), likeKeyTimeout)
 	defer cancel()
+	s.setLikedLocked(ctx, up, key, key+" pressed")
+}
+
+// likeRefusal is why a save or a removal did not happen, as a short stable
+// word: "no-engine" (this speaker has no Spotify engine that can),
+// "not-playing" (STR's Spotify is not what plays), or the engine's own word
+// (likeFailureReason).
+type likeRefusal struct {
+	reason string
+	err    error
+}
+
+// setLiked saves (up) or removes the playing Spotify song for a caller that
+// is not a key: the control API (spotifyliked_http.go). It waits its turn
+// behind a key press, so both reach Spotify in the order they arrived.
+func (s *Server) setLiked(ctx context.Context, up bool, who, did string) (SpotifyLikedTrack, *likeRefusal) {
+	s.likeKey.mu.Lock()
+	defer s.likeKey.mu.Unlock()
+	return s.setLikedLocked(ctx, up, who, did)
+}
+
+// setLikedLocked is the one place a song is saved to or removed from Liked
+// Songs: the check that STR's Spotify is what plays, the engine's write (with
+// its memory of a repeat), the log line and the notice on the display. who
+// and did word the log lines: "thumbs up" and "thumbs up pressed" for a key,
+// "control API" and "control API asked" for an app. The caller holds
+// likeKey.mu.
+func (s *Server) setLikedLocked(ctx context.Context, up bool, who, did string) (SpotifyLikedTrack, *likeRefusal) {
+	write := s.spotifyUnlikeCurrent
+	if up {
+		write = s.spotifyLikeCurrent
+	}
+	if write == nil {
+		s.logger.Debug(did + ", this speaker has no Spotify engine; nothing to do here")
+		return SpotifyLikedTrack{}, &likeRefusal{reason: "no-engine"}
+	}
 	if !s.spotifyIsStreaming() && !s.boxSourceIsSpotify(ctx) {
 		if up {
-			s.logger.Info("thumbs up pressed, but Spotify on STR is not what plays; nothing saved")
+			s.logger.Info(did + ", but Spotify on STR is not what plays; nothing saved")
 		} else {
-			s.logger.Info("thumbs down pressed, but Spotify on STR is not what plays; nothing removed")
+			s.logger.Info(did + ", but Spotify on STR is not what plays; nothing removed")
 		}
-		return
+		return SpotifyLikedTrack{}, &likeRefusal{reason: "not-playing"}
 	}
 	tr, err := write(ctx)
 	if err != nil {
-		msg := "thumbs down pressed, but the song was not removed from Liked Songs"
+		msg := did + ", but the song was not removed from Liked Songs"
 		if up {
-			msg = "thumbs up pressed, but the song was not saved to Liked Songs"
+			msg = did + ", but the song was not saved to Liked Songs"
 		}
-		s.logger.Warn(msg, "reason", likeFailureReason(err), "err", err, "track", tr.URI)
-		return
+		reason := likeFailureReason(err)
+		s.logger.Warn(msg, "reason", reason, "err", err, "track", tr.URI)
+		return tr, &likeRefusal{reason: reason, err: err}
 	}
 	switch {
 	case up && tr.Repeat:
-		s.logger.Info("thumbs up pressed again on the same song, already saved to Liked Songs a moment ago", "track", tr.URI)
+		s.logger.Info(did+" again on the same song, already saved to Liked Songs a moment ago", "track", tr.URI)
 	case up:
-		s.logger.Info("thumbs up: saved the playing song to Liked Songs", "track", tr.URI, "name", tr.Name)
+		s.logger.Info(who+": saved the playing song to Liked Songs", "track", tr.URI, "name", tr.Name)
 	case tr.Repeat:
-		s.logger.Info("thumbs down pressed again on the same song, already removed from Liked Songs a moment ago", "track", tr.URI)
+		s.logger.Info(did+" again on the same song, already removed from Liked Songs a moment ago", "track", tr.URI)
 	default:
-		s.logger.Info("thumbs down: removed the playing song from Liked Songs", "track", tr.URI, "name", tr.Name)
+		s.logger.Info(who+": removed the playing song from Liked Songs", "track", tr.URI, "name", tr.Name)
 	}
 	if up {
 		s.showPlayModeNotice(oled.Liked(tr.Name))
 	} else {
 		s.showPlayModeNotice(oled.Unliked(tr.Name))
 	}
+	return tr, nil
 }
 
 // likeFailureReason is the short, stable word for why a save or a removal

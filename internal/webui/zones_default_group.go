@@ -206,6 +206,39 @@ var wakeMemberClient = &http.Client{Timeout: 12 * time.Second}
 // presets) from driving the firmware with back-to-back setZone rounds.
 const defaultGroupFormCooldown = 30 * time.Second
 
+// refreshGroupIPs updates the stored members' addresses from the speaker list
+// the agent already holds (no browse, no probe) and returns z with them. A
+// member the router gave a new address was otherwise skipped as unreachable on
+// every play from then on (#2006: "ST10 ungroups", mesh, DHCP renewal).
+// Only peers that answered the last sweep count, so a stale roster entry never
+// replaces a working hint.
+func (s *Server) refreshGroupIPs(z zones.Zone) zones.Zone {
+	if s.cachedPeersFn == nil || len(z.Slaves) == 0 {
+		return z
+	}
+	fresh := map[string]string{}
+	for _, p := range s.cachedPeersFn() {
+		if p.Reachable && p.DeviceID != "" && p.IP != "" {
+			fresh[p.DeviceID] = p.IP
+		}
+	}
+	nz, n := zones.ApplyIPs(z, fresh)
+	if n == 0 {
+		return z
+	}
+	for i, m := range nz.Slaves {
+		if m.IP != z.Slaves[i].IP {
+			s.logger.Info("group: member has a new address, using it", "deviceID", m.DeviceID, "was", z.Slaves[i].IP, "now", m.IP)
+		}
+	}
+	if s.zones != nil {
+		if _, err := s.zones.RefreshIPs(fresh); err != nil {
+			s.logger.Warn("group: could not store the new member addresses", "err", err)
+		}
+	}
+	return nz
+}
+
 // formDefaultGroupOnPlay re-forms the persisted group because this master just
 // started music. Wakes stored members in parallel, skips members that are
 // deliberately elsewhere, then one native setZone when the live zone does not

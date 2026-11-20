@@ -48,8 +48,9 @@ export {
   updateFavModeBtn,
 } from './favorites.js';
 export { openPandoraPick, updatePandoraModeBtn } from './pandora.js';
-export { openPick, showSlotPicker } from './picker.js';
-export { presetMoveOffer } from './save.js';
+export { openPick, putStationOnKey, showSlotPicker } from './picker.js';
+export { presetMoveOffer, saveCurrentToSlot, saveSpotifyToSlot } from './save.js';
+export { loadFavStore } from './favorites.js';
 export { dissolveIncompleteMessage, effectivePlayTarget, groupEditPendingHosts, renderGroupControl, toggleGroupMember } from './group.js';
 
 // mountMusicView builds #view-box and attaches the static handlers, in the

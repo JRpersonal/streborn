@@ -72,8 +72,16 @@ releases later.
   answers both questions: which speaker you control (one click on its row)
   and who plays along (`+` on an idle speaker adds it to what's playing,
   `−` takes a member out again). Choosing a row and its `+` are two
-  different clicks. A stereo pair is one row, "Living room (stereo)",
-  because it only plays as a whole. The playing group stays pinned on
+  different clicks. A speaker that plays something else of its own gets a
+  `+` too, but joining ends that music, so its `+` first opens a review in
+  its own row that names what stops and what plays instead ("Kitchen stops
+  Jazz24 and plays FluxFM"), with Add and Cancel (Escape cancels). A paused
+  speaker gets the same review, worded for what it holds ("Kitchen ends its
+  paused Jazz24 and plays FluxFM", Cancel leaves it paused), since joining
+  ends a paused session just as silently; until 15 November it counted as
+  idle. An idle speaker or one in standby joins at once, and so does one
+  that plays or paused the very station the group plays. A stereo pair is one row,
+  "Living room (stereo)", because it only plays as a whole. The playing group stays pinned on
   top (the one you control first when several play; with nothing playing,
   the speaker you control, so a group can be put together before Play);
   with many speakers the rest of the list scrolls on its own. Offline
@@ -145,6 +153,24 @@ releases later.
   three; and the donate buttons at the foot of the sidebar are neutral in
   colour, on screen as before, with the brand colours kept on Help and info.
   No control left and no flow changed.
+- **Hold a key to change it** (15 November 2026). A short press plays a key,
+  as on the speaker. Holding it for about 0.7 s (a bar fills along its foot;
+  with less motion asked for it stands full at once) opens the key's choices
+  in one card under the keys, named with key and speaker: save what is
+  playing, find a station, choose a favourite, rename, clear. An empty key has
+  nothing to play and opens them on a short press. From the keyboard:
+  Shift+Enter, the context-menu key or Shift+F10, said in the hint over the
+  keys. Until then a 1.1 s hold saved what was playing straight onto the key,
+  the only way to change a key from the grid and easy to do by accident; that
+  save is now the first choice, and a hold never also plays. Save, rename and
+  clear are done in the card, through the flows the key already had
+  (`views/music/ui2keyedit.js`). "Find a station" and "Choose a favorite"
+  open the one key editor instead, Speakers > the speaker > Keys and alarms
+  (see "Assigning keys in one place" below), with that key chosen and the
+  Radio source in front: the keyboard in the station search, or on the first
+  favourite. Until 15 November they led to a station's "Put on key" on Radio,
+  a second way to write a key from a choice. The classic layout keeps its
+  hold-to-save.
 
 ## What we add
 
@@ -156,6 +182,47 @@ releases later.
 - **One place for updates**, for the app and every speaker, matching the
   speaker self-update from the phone (docs/SELF-UPDATE.md).
 - **Spotify with keys:** put the playlist that is playing on a key directly.
+- **Play/Pause on every playing row of the sidebar** (15 November 2026).
+  A single speaker, a group's master and a stereo pair that play (or are
+  paused) carry their own round Play/Pause next to the name, shown on hover
+  and on keyboard focus and always on a touch screen. It pauses or resumes
+  that row's music and does not change the speaker you control: choosing
+  stays the click on the name. A group is paused through its master, so a
+  member's row has none; the master's says it pauses the speakers playing
+  along too. The button waits for the speaker before it says done, and a
+  refusal is a note in its own row. It waits for the binding as long as the
+  binding itself may take (Resume up to 15 s, #830), counts the confirm
+  window from its answer, and confirms a pause only from a play-state read
+  that worked. A stereo pair whose master is offline has no button: the
+  other half does not own the pair's transport. `shell2/sessionplay.js`.
+- **Back to where it plays from.** Next to the player's title a small button
+  names the tab the music comes from (Radio, Library or Spotify) and opens
+  it; a music-library folder opens at that folder, under its trail. Inputs
+  without a tab of their own (Bluetooth, AUX, TV, AirPlay) get no button
+  (`shell2/gotosource.js`).
+- **Assigning keys in one place** (15 November 2026). Keys and alarms opens
+  with the speaker's keys (both rows where the speaker keeps a second one)
+  next to a source browser: Radio (favourites and a station search), Library
+  (folder by folder: a folder or a song) and Spotify (the playlists, albums
+  and artists the speaker played lately). One key is chosen, the first empty
+  one to start with, and the hint says what a save would replace; coming from
+  a hold on a Radio key, that key is chosen (`openSpeakers('speaker', { key })`,
+  `aimKeyEditor`). "Put
+  what's playing on key N" keeps every source the speaker agent can keep
+  (`POST /api/box/save-playing`; Spotify, Pandora and iHeartRadio through
+  their own saves). The outcome stays in the editor's own line: done only
+  after the read-back, "already on key 2" with "Move it to key N" right
+  there instead of a dialog, and a refusal in plain words
+  (`shell2/speakers/keyeditor.js`).
+- **Finding a speaker in the sidebar** (15 November 2026). Once the list has
+  more than ten rows (ten fit the default window whole), a search field
+  sits above it. It narrows the other
+  speakers by name (a stereo pair also by the name of either half), model and
+  what they play (the source, named in the app's language and in English, and
+  the station, from the every-speaker poll); the pinned group stays as it
+  is, since it is what the player controls. Escape clears it, in the field and on a row, and
+  a search that finds nothing says so inline in the list, with a button to
+  clear it. The code is `shell2/spksearch.js`.
 - **Wishes stay visible**, small and muted at the far end of the tab row,
   next to Help and info. The Ideas vote is the backlog.
 - **Three themes:** dark, light and high contrast; only color tokens change.

@@ -18,6 +18,7 @@ import en from './bundles/en.json';
 import de from './bundles/de.json';
 import fr from './bundles/fr.json';
 import es from './bundles/es.json';
+import it from './bundles/it.json';
 import ja from './bundles/ja.json';
 import uk from './bundles/uk.json';
 import nl from './bundles/nl.json';
@@ -35,7 +36,7 @@ import zhHant from './bundles/zh-Hant.json';
 // language; the Bose box sysLanguage enum has no Ukrainian, so a UA box
 // display falls back to English (deliberately NOT Russian). See
 // project_bose_language_enum.
-const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr, ar, 'zh-Hant': zhHant };
+const BUNDLES = { en, de, fr, es, it, ja, uk, nl, pl, lt, lv, tr, ar, 'zh-Hant': zhHant };
 
 // RTL_LOCALES drive the document text direction. Arabic is right-to-left; every
 // other shipped locale is left-to-right. applyDirection mirrors the whole UI by

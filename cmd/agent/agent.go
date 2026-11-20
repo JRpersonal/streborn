@@ -1191,6 +1191,13 @@ func (a *agent) buildWebui() error {
 	// On a speaker whose panel STR draws the track on (internal/oled), the
 	// end of the stream takes it off again.
 	streamProxySrv.SetOnTitleEnd(webuiSrv.HandleStreamEnded)
+	// A Spotify preset key streams through the proxy with no ICY StreamTitle,
+	// so /api/stream/title would answer empty. Hand the proxy the live Spotify
+	// song as a fallback for that one case; the webui gates it on Spotify being
+	// the current playback so a stale song is never served after Stop or
+	// standby. A func value avoids importing webui into streamproxy, which
+	// depends on streamproxy, so no import cycle forms.
+	streamProxySrv.SetSpotifyTitleProvider(webuiSrv.CurrentSpotifyMeta)
 
 	a.webuiSrv = webuiSrv
 	return nil
@@ -1528,7 +1535,7 @@ func (a *agent) buildBoxLink() error {
 		webuiSrv.NoteRecentSpotifyTrack(webui.SpotifyNowPlaying{
 			Track: tc.Track, Artist: tc.Artist, Cover: tc.Cover, TrackURI: tc.TrackURI, ContextURI: tc.ContextURI,
 		})
-		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist)
+		webuiSrv.PanelSpotifyTrack(tc.Track, tc.Artist, tc.Cover)
 	})
 	refreshTrackPanel = webuiSrv.RefreshTrackPanel
 	notePanelSource = webuiSrv.PanelSourceChanged

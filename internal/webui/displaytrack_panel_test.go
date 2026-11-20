@@ -23,6 +23,8 @@ type fakeTrackPanel struct {
 	shown     []oled.TrackText
 	cleared   []string
 	inputs    []inputClock
+	// inputTracks are the ShowSourceTrack calls
+	inputTracks []inputClock
 	// inputClears are the ClearSourceClock calls, by source
 	inputClears []string
 }
@@ -43,6 +45,16 @@ func (f *fakeTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
 	f.mu.Lock()
 	f.inputs = append(f.inputs, inputClock{source, t})
 	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) ShowSourceTrack(source string, t oled.TrackText) {
+	f.mu.Lock()
+	f.inputTracks = append(f.inputTracks, inputClock{source, t})
+	f.mu.Unlock()
+}
+func (f *fakeTrackPanel) inputTrackSnapshot() []inputClock {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]inputClock(nil), f.inputTracks...)
 }
 func (f *fakeTrackPanel) ClearSourceClock(source, _ string) {
 	f.mu.Lock()
@@ -278,7 +290,7 @@ func setFlag(t *testing.T, path string, on bool) {
 func TestPanelSpotify(t *testing.T) {
 	s, fp, _ := newTrackServer(t, true)
 	s.HandleStreamTitle("Queen - Under Pressure")
-	s.PanelSpotifyTrack("Flowers", "Miley Cyrus") // engine song while radio plays: kept, not shown
+	s.PanelSpotifyTrack("Flowers", "Miley Cyrus", "") // engine song while radio plays: kept, not shown
 	if shown, _ := fp.snapshot(); len(shown) != 1 {
 		t.Fatalf("Spotify song shown over the radio: %+v", shown)
 	}
@@ -292,7 +304,7 @@ func TestPanelSpotify(t *testing.T) {
 	if shown, cleared := fp.snapshot(); len(shown) != 2 || len(cleared) != 0 {
 		t.Fatalf("radio leftovers reached Spotify's screen: shown %+v cleared %v", shown, cleared)
 	}
-	s.PanelSpotifyTrack("Espresso", "Sabrina Carpenter")
+	s.PanelSpotifyTrack("Espresso", "Sabrina Carpenter", "")
 	if shown, _ := fp.snapshot(); len(shown) != 3 || shown[2].Title != "Espresso" {
 		t.Fatalf("next Spotify song: %+v", shown)
 	}

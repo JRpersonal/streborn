@@ -19,6 +19,14 @@ function lines(el) {
   return { shown: Math.round(el.getBoundingClientRect().height / lh), cut: el.scrollHeight > el.clientHeight + 1 };
 }
 
+// arrowDown: which way the mark at the end of a title points. null: no mark.
+// matrix(a, b, ...): rotate(45deg) has b > 0 (down), rotate(-135deg) b < 0.
+function arrowDown(el) {
+  const cs = getComputedStyle(el, '::after');
+  if (cs.content === 'none') return null;
+  return parseFloat(cs.transform.replace('matrix(', '').split(',')[1]) > 0;
+}
+
 test.use({
   phonePlaying: { name: LONG, loc: 'http://example.com/long', key: '1' },
   phoneOverrides: { '/api/presets': { body: [{ ...PHONE.PRESETS[0], name: SHOWN }, ...PHONE.PRESETS.slice(1)] } },
@@ -50,9 +58,15 @@ test('a tap on the cut-off now-playing title opens it, and it stays open over th
   const now = page.locator('#status .now');
   await expect(now).toHaveAttribute('title', SHOWN);
   expect((await now.evaluate(lines)).cut).toBe(true);
+  // A cut-off title says that it opens: a small arrow at its end, down while
+  // closed and up while open. It does not change the title's two lines.
+  await expect(now).toHaveClass(/title-cut/);
+  expect((await now.evaluate(lines)).shown).toBe(2);
+  expect(await now.evaluate(arrowDown)).toBe(true);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-now-title-cut-off.png` });
   await now.click();
   await expect(now).toHaveClass(/title-open/);
+  expect(await now.evaluate(arrowDown)).toBe(false);
   const open = await now.evaluate(lines);
   expect(open.cut).toBe(false);
   expect(open.shown).toBeGreaterThan(2);
@@ -62,9 +76,12 @@ test('a tap on the cut-off now-playing title opens it, and it stays open over th
   await expect(now).toHaveClass(/title-open/);
   await now.click();
   await expect(now).not.toHaveClass(/title-open/);
+  await expect(now).toHaveClass(/title-cut/);
   expect((await now.evaluate(lines)).cut).toBe(true);
   await page.evaluate(() => window.refreshStatus());
   await expect(now).not.toHaveClass(/title-open/);
+  // Drawn again by the poll, and marked again.
+  await expect(now).toHaveClass(/title-cut/);
 });
 
 test('a tap on a key tile name plays the key and opens nothing', async ({ phone }) => {
@@ -77,6 +94,8 @@ test('a tap on a key tile name plays the key and opens nothing', async ({ phone 
     .filter((c) => c.method === 'POST' && new URL(c.url).pathname.startsWith('/api/play/'))
     .map((c) => new URL(c.url).pathname)).toEqual(['/api/play/1']);
   await expect(name).not.toHaveClass(/title-open/);
+  // No arrow on a key tile: it does not open, so it must not promise to.
+  await expect(page.locator('#presets .title-cut')).toHaveCount(0);
 });
 
 test.describe('Recently played', () => {
@@ -91,6 +110,10 @@ test.describe('Recently played', () => {
     const name = row.locator('.clamp2');
     await name.scrollIntoViewIfNeeded();
     expect((await name.evaluate(lines)).cut).toBe(true);
+    await expect(name).toHaveClass(/title-cut/);
+    // A name that fits has no arrow.
+    expect(await page.locator('.station .clamp2:not(.title-cut)').count()).toBeGreaterThan(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-recent-title-cut-off.png` });
     await name.click();
     await expect(name).toHaveClass(/title-open/);
     expect((await name.evaluate(lines)).cut).toBe(false);

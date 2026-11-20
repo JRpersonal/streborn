@@ -179,6 +179,7 @@ import {
   clearNoticeDismissal,
 } from './utils.js';
 import { isPlaying, strBoxes } from './boxes.js';
+import { statusNowItem } from './shell2/playclaim.js';
 import { boxRecordChange } from './boxstate.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -232,6 +233,7 @@ const LOCALE_FLAG_CC = {
   de: 'DE',
   fr: 'FR',
   es: 'ES',
+  it: 'IT',
   ja: 'JP',
   uk: 'UA',
 };
@@ -297,7 +299,7 @@ import {
 // Library (DLNA MediaServer browse) view, extracted from this monolith, same
 // pattern as the views above. openLibrary is the entry point switchView calls;
 // showSlotPicker is a main.js-local helper it reuses, injected below.
-import { openLibrary, initLibraryView, libraryNowPlaying } from './views/library.js';
+import { openLibrary, initLibraryView, libraryNowPlaying, showLibraryFolder } from './views/library.js';
 // USB stick setup / install wizard view (extracted from this monolith, same
 // pattern as the views above). renderSetupTargetPicker is the entry point
 // switchView calls; refreshDrives + loadWifiProfiles are also called from
@@ -311,6 +313,7 @@ import {
   installRunActive,
 } from './views/setup.js';
 import { confirmLeaveWizard, wizardBusy } from './shell2/setup/wizard.js';
+import { closeKeyCopyReview } from './shell2/keycopyreview.js';
 // UI 2.0 phase 5: what one speaker needs is said on that speaker (the wedge
 // and box issue banners, the update failure report); preview only.
 import { setSpeakerAttentionRunner, speakerAttention } from './shell2/attention.js';
@@ -329,6 +332,7 @@ import {
   favStationsJSON,
   initMusicView,
   isFav,
+  loadFavStore,
   loadMusicTabVolume,
   loadPresets,
   loadStickRegion,
@@ -344,11 +348,14 @@ import {
   presetMoveOffer,
   pollTrackPosition,
   purgeMusicStateForSpeaker,
+  putStationOnKey,
   refreshSourceButtons,
   refreshStatus,
   renderGroupControl,
   renderNowPlayingBar,
   renderTrackProgress,
+  saveCurrentToSlot,
+  saveSpotifyToSlot,
   showSlotPicker,
   syncFavRemovals,
   syncSearchModeButtons,
@@ -360,6 +367,8 @@ import {
   updateFilterIndicators,
   updatePandoraModeBtn,
 } from './views/music/index.js';
+import { boxSourceLabel } from './views/music/presets.js';
+import { nowLineOf } from './shell2/spksearch.js';
 // The speaker update (one speaker and Update all), extracted from this monolith
 // into src/update/. Same pattern again: initUpdateFlow injects the main.js-local
 // helpers the runners call (see update/deps.js).
@@ -953,6 +962,9 @@ function switchView(view) {
   // action, not to greet the user on every return to the tab (#882, the
   // "stereo pair cannot be grouped" note that survived every screen change).
   if (view !== 'multiroom') { stopMultiroomLive(); resetMultiroomNotes(); }
+  // A UI 2.0 review of a copy of keys lives under the Radio view's keys; it
+  // does not wait, unseen, on another view for an answer.
+  if (view !== 'box') closeKeyCopyReview();
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   $('view-wishes').classList.toggle('hidden', view !== 'wishes');
   // The UI 2.0 Speakers list is a view of the preview shell only
@@ -1056,6 +1068,13 @@ const OSS_CREDITS = [
   { name: 'DuckDuckGo icons', license: 'service', url: 'https://duckduckgo.com', role: 'station logos' },
 ];
 
+// Community members who translated STR's interface into their language. Each
+// entry carries the language endonym and the contributor, linked to their
+// profile where they gave one.
+const TRANSLATION_CREDITS = [
+  { lang: 'Italiano', by: 'micheledimeo', url: 'https://github.com/micheledimeo' },
+];
+
 // Projects that contributed KNOWLEDGE rather than code. STR ships none of their
 // source, but several of its central mechanisms would not exist without their
 // published findings, so they are credited in their own section. `donate` is
@@ -1138,7 +1157,14 @@ function showCredits() {
     + `<p class="credit-section-intro">${escapeHtml(t('credits.researchIntro'))}</p>`
     + RESEARCH_CREDITS.map(c => row(c, c.donate
       ? ` <a href="#" class="footer-link credit-name credit-donate" data-url="${escapeAttr(c.donate)}">${escapeHtml(t('credits.donate'))}</a>`
-      : '')).join('');
+      : '')).join('')
+    + `<h3 class="credit-section">${escapeHtml(t('credits.translationsTitle'))}</h3>`
+    + TRANSLATION_CREDITS.map(c => `<div class="credit-row"><div>`
+      + `<span class="credit-lang">${escapeHtml(c.lang)}</span> `
+      + (c.url
+        ? `<a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.by)}</a>`
+        : `<span class="credit-by">${escapeHtml(c.by)}</span>`)
+      + `</div></div>`).join('');
   body.querySelectorAll('.credit-name[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });
@@ -1409,6 +1435,9 @@ function safeMountShell2() {
   try {
     const ok = mountShell2({
       switchView,
+      // The player's "Show in Library" opens the folder that plays
+      // (shell2/gotosource.js).
+      showLibraryFolder,
       pickBox: pickBoxFromShell,
       boxNeedsUpdate,
       boxCannotReachInternet,
@@ -1418,6 +1447,11 @@ function safeMountShell2() {
       pairName: (pair) => pairDisplayName(pair, renderBoxSelect),
       toggleGroupMember,
       groupEditPendingHosts,
+      // The sidebar's own Play/Pause on a playing row asks who plays now
+      // right after its press, so the row confirms without the 15 s wait
+      // (skipped during a speaker update or an install: the press then
+      // falls back to its deadline).
+      refreshBoxPlaying: () => refreshBoxPlaying(true),
       // The Speakers area (shell2/speakers): opening one speaker's page picks
       // it the way the classic Settings dropdown does (lock-step).
       speakerPicked: speakerPickedInTab,
@@ -1435,6 +1469,10 @@ function safeMountShell2() {
       // Phase 5: the issues of one speaker (shell2/attention.js), for the
       // sidebar chip; filled where the wedge and issue banners render.
       speakerAttention,
+      // The sidebar search also finds a source by the name the key tiles
+      // show ("Internet radio" for LOCAL_INTERNET_RADIO), next to its name
+      // in the app's language (spksearch.js sourceNames).
+      sourceLabel: boxSourceLabel,
       // Help and info (shell2/help): the credits dialog, and a manual app
       // update check like the version line's own link (which also forgets a
       // dismissed notice); the result shows where it always does.
@@ -1444,6 +1482,17 @@ function safeMountShell2() {
       checkSpeaker: CheckSpeaker,
       // "Remove from list" on a speaker that is not reachable (#1852).
       removeSpeaker: removeSpeakerEntry,
+      // The key assignment editor on a speaker's Keys tab: the music views'
+      // own save paths, so a key it writes is stored exactly as Radio,
+      // Library and Spotify store it.
+      keyEditor: {
+        putStationOnKey,
+        saveCurrentToSlot,
+        saveSpotifyToSlot,
+        loadFavStore,
+        loadPresets,
+        refreshStatus,
+      },
       reportProblem: reportProblemWithCheck,
       checkAppUpdate: (manual) => {
         try { clearNoticeDismissal('appUpdate'); } catch {}
@@ -1881,35 +1930,81 @@ async function refreshMusicZones(force) {
 // on their tile). Debounced to at most once per 8s, same cadence and best-effort
 // contract as refreshMusicZones. The currently-selected box is also marked live
 // from state.nowPlayState in the pill renderer, so its icon never lags the poll.
+// force skips the 8 s debounce: the UI 2.0 sidebar's Play/Pause asks right
+// after its press, so its row confirms in about a second instead of on the
+// next 15 s round. A round already in flight started before the press and
+// cannot show it, so a forced call that meets one runs one more round right
+// after it (one slow speaker keeps a round open for the whole Status timeout).
+// Never during a speaker update or an install, the same rule as
+// refreshEverySpeaker: nothing should poll a speaker that is about to restart.
 let _boxPlayingFetchAt = 0;
-async function refreshBoxPlaying() {
+let _boxPlayingRerun = false;
+async function refreshBoxPlaying(force) {
+  if (force && (state.otaInProgress || installRunActive())) return;
   // Offline tiles are excluded: every Status() against them just times out
   // and would delay the whole Promise.allSettled round for nothing.
   const polled = strBoxes(state.boxes).filter(b => b.deviceID && b.host && !b.offline);
   if (!polled.length) return;
   const now = Date.now();
-  if (state.boxPlayingBusy || now - _boxPlayingFetchAt < 8000) return;
+  if (state.boxPlayingBusy) {
+    if (force) _boxPlayingRerun = true;
+    return;
+  }
+  if (!force && now - _boxPlayingFetchAt < 8000) return;
   _boxPlayingFetchAt = now;
   state.boxPlayingBusy = true;
   try {
     const results = await Promise.allSettled(polled.map(b => Status(b.host, b.port)));
     const map = {};
+    // Paused is read in the same round: the UI 2.0 sidebar offers Play on a
+    // paused speaker, so its row keeps a way back to the music. The classic
+    // picker does not read it.
+    const paused = {};
+    // When this round started, per speaker it read successfully. A failed
+    // read lands as "not playing" here, so the UI 2.0 sidebar confirms a
+    // pause only with a read that worked (shell2/sessionplay.js).
+    const readAt = { ...(state.boxPlayReadAt || {}) };
+    // What each speaker plays (name, source, stream) from the same answers:
+    // the UI 2.0 sidebar's join review says what a speaker stops before "+"
+    // takes it into a group, and the name alone cannot tell whether that is
+    // the group's own music (shell2/playclaim.js joinReview, sameMusic).
+    // A paused speaker keeps its entry too: joining ends its paused session,
+    // and the review names what it paused.
+    const items = {};
+    // What each speaker plays (source and station), read from the same
+    // answer: the UI 2.0 sidebar search finds a speaker by it.
+    const lines = {};
     results.forEach((r, i) => {
       let playing = false;
+      let isPaused = false;
       if (r.status === 'fulfilled' && typeof r.value === 'string') {
+        readAt[polled[i].deviceID] = now;
         const xml = r.value;
         const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
         const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
         playing = isPlaying(ps) && src !== 'STANDBY';
+        isPaused = ps === 'PAUSE_STATE' && src !== 'STANDBY';
+        if (playing || isPaused) items[polled[i].deviceID] = statusNowItem(xml);
+        const line = nowLineOf(xml);
+        if (line) lines[polled[i].deviceID] = line;
       }
       map[polled[i].deviceID] = playing;
+      paused[polled[i].deviceID] = isPaused;
     });
     state.boxPlaying = map;
+    state.boxPaused = paused;
+    state.boxPlayReadAt = readAt;
+    state.boxNow = items;
+    state.boxNowLine = lines;
   } catch { /* keep previous marks */ } finally {
     state.boxPlayingBusy = false;
   }
   renderBoxSelect();
   renderShellSpeakers();
+  if (_boxPlayingRerun) {
+    _boxPlayingRerun = false;
+    refreshBoxPlaying(true);
+  }
 }
 
 // Windows Firewall banner (firewallbanner.js). firewallState holds the last
@@ -2504,6 +2599,13 @@ const ROOM_NAMES_BY_LOCALE = {
     'Chambre d\'amis', 'Couloir', 'Entrée',
     'Jardin', 'Terrasse', 'Balcon', 'Atelier',
     'Salle de loisirs', 'Sous-sol', 'Grenier', 'Garage',
+  ],
+  it: [
+    'Soggiorno', 'Camera da letto', 'Cucina', 'Sala da pranzo',
+    'Bagno', 'Studio', 'Ufficio', 'Cameretta',
+    'Camera degli ospiti', 'Corridoio', 'Ingresso',
+    'Giardino', 'Patio', 'Balcone', 'Laboratorio',
+    'Sala hobby', 'Cantina', 'Soffitta', 'Garage',
   ],
   es: [
     'Salón', 'Dormitorio', 'Cocina', 'Comedor',

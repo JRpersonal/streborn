@@ -57,9 +57,9 @@ type TrackText struct {
 	Station, Artist, Title string
 	Clock, Hour12          bool
 
-	// still marks the clock on one of the speaker's own inputs
-	// (ShowSourceClock): no playing symbol, nothing moves. Set by
-	// ShowSourceClock only, so it is part of the cache key and of the
+	// still marks a screen on one of the speaker's own inputs
+	// (ShowSourceClock, ShowSourceTrack): no playing symbol, nothing moves.
+	// Set by those two only, so it is part of the cache key and of the
 	// comparison with what is shown.
 	still bool
 
@@ -212,13 +212,28 @@ func ShowTrack(t TrackText) { tracks.show(t) }
 // it. Returns at once.
 func ShowSourceClock(source string, t TrackText) { tracks.showSourceClock(source, t) }
 
-// SourceClockLabel reports whether the clock may stand in for the firmware's
-// picture on source, and the name shown on top of it. Only the speaker's
-// plain inputs qualify, the ones where the firmware shows nothing but a
-// connection picture: BLUETOOTH and AUX. Firmware services that draw their own
-// titles (TuneIn, native Spotify, Amazon, Pandora...), AirPlay, a TV or HDMI
-// input (PRODUCT), LOCAL (a soundbar's TV input on some models, not seen on a
-// speaker with a panel) and STANDBY keep the firmware's screen.
+// ShowSourceTrack puts the track screen on the panel while the speaker plays
+// one of its own inputs: t.Station is the input's name on top, t.Artist and
+// t.Title what the input itself reports (the phone's song on Bluetooth), the
+// time in the corner when t.Clock is set. It follows every rule of
+// ShowSourceClock (only while the speaker is still on source, ended by any
+// source change and by ClearSourceClock) and stands as still: no playing
+// symbol and no scrolling, because STR does not follow the play status of an
+// input. Without an artist and a title it is the input clock, and with
+// nothing at all to draw it ends the input screen. Returns at once.
+func ShowSourceTrack(source string, t TrackText) { tracks.showSourceTrack(source, t) }
+
+// SourceClockLabel reports whether STR may put its own screen up on source in
+// place of the firmware's, and the name shown on top of it. Only the
+// speaker's plain inputs qualify: BLUETOOTH and AUX. On AUX the firmware
+// shows a picture of the input and nothing else. On Bluetooth it shows the
+// connection, and where the phone sends the song (AVRCP) the firmware turns
+// through artist, title and album itself (seen on a SoundTouch 20, discussion
+// #1305), which is why the caller draws artist and title there too rather
+// than the clock alone. Firmware services that draw their own titles (TuneIn,
+// native Spotify, Amazon, Pandora...), AirPlay, a TV or HDMI input (PRODUCT),
+// LOCAL (a soundbar's TV input on some models, not seen on a speaker with a
+// panel) and STANDBY keep the firmware's screen.
 func SourceClockLabel(source string) (label string, ok bool) {
 	switch source {
 	case "BLUETOOTH":
@@ -234,8 +249,8 @@ func SourceClockLabel(source string) (label string, ok bool) {
 // leaves nothing held. reason goes to the log.
 func ClearTrack(reason string) { tracks.clear(reason) }
 
-// ClearSourceClock ends the input clock (ShowSourceClock) put up for source,
-// and nothing else: when the speaker has moved on since (another input, or
+// ClearSourceClock ends the input screen (ShowSourceClock, ShowSourceTrack)
+// put up for source, and nothing else: when the speaker has moved on since (another input, or
 // STR's own source with its track screen already back), the call is a no-op.
 // For a caller that decided on the panel from a source read a moment ago.
 // Blocks (bounded) like ClearTrack.
@@ -378,7 +393,22 @@ func (s *trackScreen) show(t TrackText) {
 }
 
 func (s *trackScreen) showSourceClock(source string, t TrackText) {
-	t = TrackText{Station: t.Station, Clock: true, Hour12: t.Hour12, still: true}.sanitized()
+	s.showOnInput(source, TrackText{Station: t.Station, Clock: true, Hour12: t.Hour12, still: true}.sanitized())
+}
+
+func (s *trackScreen) showSourceTrack(source string, t TrackText) {
+	t = TrackText{Station: t.Station, Artist: t.Artist, Title: t.Title, Clock: t.Clock, Hour12: t.Hour12, still: true}.sanitized()
+	if t.empty() {
+		// text the font cannot draw and no clock: nothing of STR's to show
+		s.clearSourceClock(source, "no track text")
+		return
+	}
+	s.showOnInput(source, t)
+}
+
+// showOnInput makes t (sanitised, still) the wanted screen while the speaker
+// is on the input source.
+func (s *trackScreen) showOnInput(source string, t TrackText) {
 	s.mu.Lock()
 	if !s.foreign || s.source != source {
 		now := s.source

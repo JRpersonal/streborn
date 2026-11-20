@@ -36,8 +36,8 @@ export const MODELLED_BINDINGS = [
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
-  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
-  'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev',
+  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'LibraryFolder', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
+  'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev', 'PreviewPresetKeyCopy',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
   'SaveStickerPDF', 'StickerImage',
@@ -158,6 +158,42 @@ export function installDesktopMock({ scenario, demo }) {
     const p = { ...next, slot };
     if (i >= 0) list[i] = p; else { list.push(p); list.sort((x, y) => x.slot - y.slot); }
   };
+  // keyCopyPlan is the Go planKeyCopy (app_presets_keycopy.go) in small: per
+  // chosen key of src, what a copy onto dst does. A key dst already holds
+  // exactly like this is 'same'; a station on a key the copy does not rewrite
+  // is 'onOtherKey', repeated until nothing new collides; a key pressed twice
+  // on a one-row dst is 'notKept'; else 'replace' over another station, or
+  // 'copy'. Each step carries the source preset as `preset`.
+  const keyCopyPlan = (src, dst, slots) => {
+    const max = rowsOf(dst) * 6;
+    const want = new Set(slots || []);
+    const target = presetsFor(dst).filter((p) => p.slot >= 1 && p.name).slice().sort((a, b) => a.slot - b.slot);
+    const station = (p, o) => (p.type === 'spotify' ? !!p.uri && o.uri === p.uri : !!p.stream_url && o.stream_url === p.stream_url);
+    const steps = new Map();
+    let pending = [];
+    for (const p of presetsFor(src).filter((x) => want.has(x.slot) && x.name)) {
+      const cur = target.find((o) => o.slot === p.slot);
+      if (p.slot > max) steps.set(p.slot, { slot: p.slot, name: p.name, action: 'notKept' });
+      else if (cur && JSON.stringify({ ...cur, slot: 0 }) === JSON.stringify({ ...p, slot: 0 })) steps.set(p.slot, { slot: p.slot, name: p.name, action: 'same' });
+      else pending.push(p);
+    }
+    for (;;) {
+      const rewritten = new Set(pending.map((p) => p.slot));
+      const kept = pending.filter((p) => {
+        const other = target.find((o) => o.slot !== p.slot && !rewritten.has(o.slot) && station(p, o));
+        if (other) steps.set(p.slot, { slot: p.slot, name: p.name, action: 'onOtherKey', onSlot: other.slot });
+        return !other;
+      });
+      if (kept.length === pending.length) break;
+      pending = kept;
+    }
+    for (const p of pending) {
+      const cur = target.find((o) => o.slot === p.slot);
+      const replace = cur && !station(p, cur);
+      steps.set(p.slot, { slot: p.slot, name: p.name, action: replace ? 'replace' : 'copy', ...(replace ? { replaces: cur.name } : {}), preset: p });
+    }
+    return [...steps.values()].sort((a, b) => a.slot - b.slot);
+  };
 
   // ---- the model: one answer per binding (names in MODELLED_BINDINGS) ------
   const models = {
@@ -215,23 +251,24 @@ export function installDesktopMock({ scenario, demo }) {
     // The chosen keys only (#1551), with the agent's duplicate guard: a
     // station already on ANOTHER key of the target (one the copy does not
     // rewrite) is left out and named; nothing there is deleted.
+    // Both run keyCopyPlan below, as the Go side runs planKeyCopy for both.
     CopyPresetKeysAcrossBoxes: ([src, , dst, , slots]) => {
-      const max = rowsOf(dst) * 6;
-      const want = new Set(slots || []);
-      const res = { copied: [], skipped: [], notKept: [] };
-      const picked = presetsFor(src).filter((p) => want.has(p.slot) && p.name);
-      const rewritten = new Set(picked.filter((p) => p.slot <= max).map((p) => p.slot));
-      for (const p of picked) {
-        if (p.slot > max) { res.notKept.push(p.slot); continue; }
-        const same = (o) => o.slot !== p.slot && !rewritten.has(o.slot)
-          && ((p.stream_url && o.stream_url === p.stream_url) || (p.uri && o.uri === p.uri));
-        const other = presetsFor(dst).find(same);
-        if (other) { res.skipped.push({ slot: p.slot, name: p.name, onSlot: other.slot }); continue; }
-        putPreset(dst, p.slot, clone(p));
-        res.copied.push(p.slot);
+      const res = { copied: [], skipped: [], notKept: [], same: [] };
+      for (const st of keyCopyPlan(src, dst, slots)) {
+        if (st.action === 'notKept') res.notKept.push(st.slot);
+        else if (st.action === 'same') res.same.push(st.slot);
+        else if (st.action === 'onOtherKey') res.skipped.push({ slot: st.slot, name: st.name, onSlot: st.onSlot });
+        else {
+          putPreset(dst, st.slot, clone(st.preset));
+          res.copied.push(st.slot);
+        }
       }
       return res;
     },
+    // Read-only: what the copy above would do, per chosen key.
+    PreviewPresetKeyCopy: ([src, , dst, , slots]) => ({
+      steps: keyCopyPlan(src, dst, slots).map(({ preset: _preset, ...st }) => st),
+    }),
     MovePreset: ([h, , from, to]) => {
       const list = presetsFor(h);
       const a = list.find((x) => x.slot === from);
@@ -357,6 +394,16 @@ export function installDesktopMock({ scenario, demo }) {
     // A known container id answers its folder (demo-data LIBRARY_TREE), any
     // other the root page.
     BrowseLibrary: ([, id]) => clone((demo.libraryTree && demo.libraryTree[id]) || demo.libraryPage),
+    // A folder as its server describes it: the entry it has in the page that
+    // lists it (the root page or a LIBRARY_TREE folder).
+    LibraryFolder: ([, id]) => {
+      const pages = [demo.libraryPage, ...Object.values(demo.libraryTree || {})];
+      for (const pg of pages) {
+        const hit = ((pg && pg.containers) || []).find((c) => c.id === id);
+        if (hit) return clone(hit);
+      }
+      throw new Error(`browse metadata: no container ${id}`);
+    },
     SearchLibrary: () => clone(demo.librarySearch),
     // A folder play: the speaker plays its first track.
     StartQueue: ([h, , payloadJSON]) => {

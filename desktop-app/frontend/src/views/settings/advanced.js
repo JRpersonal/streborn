@@ -162,6 +162,7 @@ export function renderAdvancedSections() {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span><span class="str-badge" title="${escapeAttr(t('common.strOnlyHint'))}">${escapeHtml(t('common.strOnly'))}</span></summary>
       ${helpBlock(t('settingsView.webhookHelp'))}
       <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookKeyTraceNote'))}</small>
+      <small class="muted small" style="display:block;margin:0 0 8px">${escapeHtml(t('settingsView.webhookPandoraNote'))}</small>
       <div class="rc-wrap" id="webhookKeyMap">
         ${remoteSvg()}
         <div class="rc-side">

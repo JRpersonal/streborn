@@ -17,6 +17,7 @@ import { logoImgTag } from '../../logos.js';
 import { escapeAttr, escapeHtml, formatNumber } from '../../utils.js';
 import { keyButtonHTML } from '../../shell2/keybtn.js';
 import { isPandoraFav } from '../../pandorafav.js';
+import { stationCheckDot } from '../../searchflow.js';
 import { INFO_ICON } from '../../glyphs.js';
 
 // stationKey is a station's identity across renders: the directory's uuid, or
@@ -39,9 +40,14 @@ export function genreLine(s) {
 
 // stationBroken reports whether the directory's last check could not reach
 // the station. A pasted address was never checked and is not broken, nor is a
-// Pandora station, which the speaker's own client plays (#1663).
+// Pandora station, which the speaker's own client plays (#1663). It asks the
+// same question as the current layout's reachability dot (stationCheckDot):
+// only a station the directory actually checked can have failed that check.
+// Before, every favourite without a check result read "Not reachable" in the
+// UI 2.0 Favorites list, library items and stations starred from Recently
+// played included (discussion #1905).
 export function stationBroken(s) {
-  return !!s && !s.synthetic && !isPandoraFav(s) && !s.lastcheckok;
+  return !!s && !isPandoraFav(s) && stationCheckDot(s) === 'bad';
 }
 
 // stationDetails lists what the details panel shows, as [label, value] pairs

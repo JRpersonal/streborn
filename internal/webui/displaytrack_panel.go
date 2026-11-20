@@ -11,11 +11,24 @@ package webui
 //	track off, clock on   station on top, the time large below
 //	track off, clock off  STR leaves the panel to the speaker
 //
-// The clock setting reaches beyond STR's own sources: on the speaker's
-// Bluetooth and AUX inputs, where the firmware shows only a connection
-// picture, STR draws the time large with the input's name on top instead
-// (oled.ShowSourceClock). With the clock off those inputs keep the
-// firmware's picture, as before.
+// The settings reach beyond STR's own sources, to the speaker's Bluetooth and
+// AUX inputs (inputScreenFor):
+//
+//	Bluetooth, track on, the phone sends a song   the input's name on top,
+//	                                              artist and title below, the
+//	                                              time in the corner with the
+//	                                              clock on (oled.ShowSourceTrack)
+//	clock on otherwise                            the input's name on top, the
+//	                                              time large (oled.ShowSourceClock)
+//	anything else                                 the firmware's own screen
+//
+// The firmware's Bluetooth screen is not empty: with a phone that sends the
+// song (AVRCP) it turns through artist, title and album by itself (seen on a
+// SoundTouch 20, discussion #1305). STR used to put the clock alone over
+// that, so switching the clock on took the titles away. The song comes from
+// the speaker's own now-playing documents on the bus (panelBoxNowPlaying),
+// never from a read of STR's. AUX carries no song and gets the clock or the
+// firmware's picture.
 //
 // The old way of showing the track, re-sending the stream with the new title
 // as metadata, makes the speaker re-buffer: about a second of silence at every
@@ -35,6 +48,7 @@ package webui
 // away from STR (the agent's gabbo hooks), and both settings switched off.
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"io"
@@ -44,7 +58,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/oled"
+	"github.com/JRpersonal/streborn/internal/streamproxy"
 )
 
 // trackPanelSink is the panel side of the setting.
@@ -52,6 +68,7 @@ type trackPanelSink interface {
 	Supported() bool
 	Show(oled.TrackText)
 	ShowSourceClock(source string, t oled.TrackText)
+	ShowSourceTrack(source string, t oled.TrackText)
 	ClearSourceClock(source, reason string)
 	Clear(reason string)
 }
@@ -63,6 +80,9 @@ func (oledTrackPanel) Show(t oled.TrackText) { oled.ShowTrack(t) }
 func (oledTrackPanel) Clear(reason string)   { oled.ClearTrack(reason) }
 func (oledTrackPanel) ShowSourceClock(source string, t oled.TrackText) {
 	oled.ShowSourceClock(source, t)
+}
+func (oledTrackPanel) ShowSourceTrack(source string, t oled.TrackText) {
+	oled.ShowSourceTrack(source, t)
 }
 func (oledTrackPanel) ClearSourceClock(source, reason string) {
 	oled.ClearSourceClock(source, reason)
@@ -109,9 +129,17 @@ type panelState struct {
 	// spotifyNow is the Spotify engine's current song (track, artist), kept
 	// even while something else plays.
 	spotifyNow [2]string
+	// spotifyCover is the album cover URL of spotifyNow, kept alongside it and
+	// served under the identical staleness gate (CurrentSpotifyMeta) so a
+	// companion app can render the real cover during a Spotify preset-key play.
+	spotifyCover string
 	// boxSource is the source the speaker last switched to (the agent's
 	// gabbo hook, PanelSourceChanged); empty until the first switch.
 	boxSource string
+	// btNow is the song the speaker reports on its Bluetooth input (artist,
+	// title), from its own now-playing documents; empty when the phone sends
+	// none. Forgotten when the speaker leaves Bluetooth.
+	btNow [2]string
 
 	hour12Mu    sync.Mutex
 	hour12      bool
@@ -186,10 +214,12 @@ func (s *Server) panelRadioTitle(raw string) {
 
 // PanelSpotifyTrack is the Spotify engine's "the song changed". It is kept
 // even while something else plays, so Spotify started from the app later
-// shows its song at once.
-func (s *Server) PanelSpotifyTrack(track, artist string) {
+// shows its song at once. cover is the album art URL, kept beside the song so
+// CurrentSpotifyMeta can hand it to a companion app under the same gate.
+func (s *Server) PanelSpotifyTrack(track, artist, cover string) {
 	s.panelMu.Lock()
 	s.spotifyNow = [2]string{track, artist}
+	s.spotifyCover = cover
 	isSpotify := s.panel.kind == panelSpotify
 	if isSpotify {
 		s.panel.artist, s.panel.title, s.panel.raw = artist, track, joinArtistTitle(artist, track)
@@ -198,6 +228,49 @@ func (s *Server) PanelSpotifyTrack(track, artist string) {
 	if isSpotify {
 		s.refreshTrackPanel()
 	}
+}
+
+// panelUPnPSource is the firmware's source name the speaker is on while STR
+// plays its own streams through UPnP, the Spotify relay among them. A stop,
+// standby or a switch to Bluetooth/AUX moves boxSource off it.
+const panelUPnPSource = "UPNP"
+
+// CurrentSpotifyMeta returns the live Spotify song while Spotify is the
+// speaker's current playback, and (zero, false) otherwise. Title is
+// "Artist - Title" (just the title when the engine named no artist); Track,
+// Artist and Art carry the components so a companion app can render the real
+// cover. It is the fallback the stream proxy's /api/stream/title consults when
+// the radio StreamTitle is empty, which is the case during a Spotify preset-key
+// play: the Spotify stream runs through the proxy with no ICY metadata, yet the
+// engine knows the song. Requested by a companion-app developer so remote apps
+// show the song and its cover then.
+//
+// Staleness: spotifyNow (and its cover) are kept even after playback stops (so
+// Spotify started from the app later shows at once), so returning them blindly
+// would serve a stale song after Stop or standby. The whole reply is gated on
+// the panel model instead of a timestamp, which a long track would outlive:
+// Spotify must be the active kind (a switch to radio or a library file changes
+// panel.kind) and not ended, AND the speaker must still be on the UPnP source
+// it plays Spotify through (a stop, standby or a switch to Bluetooth/AUX moves
+// boxSource off it via PanelSourceChanged). Each of those turns the fallback
+// off at once. The cover rides the exact same gate: it is read from the same
+// locked state only when the gate passes, so it can never outlive the song.
+func (s *Server) CurrentSpotifyMeta() (streamproxy.SpotifyTitleMeta, bool) {
+	s.panelMu.Lock()
+	defer s.panelMu.Unlock()
+	if s.panel.kind != panelSpotify || s.panel.ended || s.boxSource != panelUPnPSource {
+		return streamproxy.SpotifyTitleMeta{}, false
+	}
+	track, artist := s.spotifyNow[0], s.spotifyNow[1]
+	if track == "" {
+		return streamproxy.SpotifyTitleMeta{}, false
+	}
+	return streamproxy.SpotifyTitleMeta{
+		Title:  joinArtistTitle(artist, track),
+		Track:  track,
+		Artist: artist,
+		Art:    s.spotifyCover,
+	}, true
 }
 
 // PanelSpotifyActive is "the speaker was just pointed at the Spotify stream"
@@ -284,15 +357,28 @@ func (s *Server) refreshTrackPanel() {
 		return
 	}
 	if src, label, ok := s.panelInput(); ok {
-		// one of the speaker's own inputs: the clock or the firmware's picture
-		if s.displayClockEnabled() {
-			p.ShowSourceClock(src, oled.TrackText{Station: label, Clock: true, Hour12: s.speakerHour12()})
-			return
+		// one of the speaker's own inputs: its song, the clock or the
+		// firmware's screen
+		switch kind, t := s.inputPanelText(src, label); kind {
+		case onInputTrack:
+			p.ShowSourceTrack(src, t)
+		case onInputClock:
+			p.ShowSourceClock(src, t)
+		default:
+			// nothing of STR's to show here (any more): end the input screen,
+			// but only that. src was read a moment ago; when the speaker has
+			// left the input since, the screen now up belongs to the new
+			// source and stays.
+			//
+			// The firmware gets its flip thread back and draws its own screen
+			// the next time it has something to draw (a new song from the
+			// phone, a volume change); until then the panel can stay black,
+			// which the look after the release logs (oled darkwatch.go). STR
+			// has nothing that asks a playing speaker to repaint: the one
+			// nudge it has is a standby request, for a speaker in standby
+			// only.
+			p.ClearSourceClock(src, "nothing to show")
 		}
-		// the clock was switched off here: end the input clock, but only that.
-		// src was read a moment ago; when the speaker has left the input since,
-		// the screen now up belongs to the new source and stays.
-		p.ClearSourceClock(src, "nothing to show")
 		return
 	}
 	if t, ok := s.panelText(); ok {
@@ -313,19 +399,127 @@ func (s *Server) panelInput() (src, label string, ok bool) {
 	return src, label, ok
 }
 
+// bluetoothSource is the firmware's name of the Bluetooth input, the one
+// input that reports a song.
+const bluetoothSource = "BLUETOOTH"
+
+// inputScreen is what STR does with the panel on one of the speaker's inputs.
+type inputScreen int
+
+const (
+	// onInputFirmware leaves the panel to the firmware's own screen.
+	onInputFirmware inputScreen = iota
+	// onInputClock is the input's name on top and the time large.
+	onInputClock
+	// onInputTrack is the input's name on top, artist and title below, and the
+	// time in the corner with the clock on.
+	onInputTrack
+)
+
+// inputScreenFor decides the screen on the input src from the two display
+// settings and whether the input reports a song (an artist or a title). Only
+// Bluetooth does; there the song wins over the clock alone, because that is
+// what the firmware's own screen shows and what radio gives with both
+// settings on. Without a song the clock setting decides alone, as it always
+// did, and with nothing to show the panel is the firmware's.
+func inputScreenFor(src string, clockOn, trackOn, hasSong bool) inputScreen {
+	switch {
+	case src == bluetoothSource && trackOn && hasSong:
+		return onInputTrack
+	case clockOn:
+		return onInputClock
+	}
+	return onInputFirmware
+}
+
+// inputPanelKind is inputScreenFor for this server, with the song the input
+// reports and the clock setting. It asks the speaker nothing.
+func (s *Server) inputPanelKind(src string) (kind inputScreen, artist, title string, clockOn bool) {
+	trackOn, clockOn := s.displayTrackEnabled(), s.displayClockEnabled()
+	if src == bluetoothSource {
+		s.panelMu.Lock()
+		artist, title = s.btNow[0], s.btNow[1]
+		s.panelMu.Unlock()
+	}
+	return inputScreenFor(src, clockOn, trackOn, artist != "" || title != ""), artist, title, clockOn
+}
+
+// inputPanelText is the screen for the input src with its text. label is the
+// input's name on top. May ask the speaker for its time format.
+func (s *Server) inputPanelText(src, label string) (inputScreen, oled.TrackText) {
+	kind, artist, title, clockOn := s.inputPanelKind(src)
+	if kind == onInputFirmware {
+		return kind, oled.TrackText{}
+	}
+	t := oled.TrackText{Station: label}
+	if kind == onInputTrack {
+		// the same parts the track mode picks on STR's own sources
+		switch s.displayTrackMode() {
+		case "title":
+			t.Title = title
+		case "artist":
+			t.Title = artist
+		default:
+			t.Artist, t.Title = artist, title
+		}
+		if t.Title == "" {
+			t.Artist, t.Title = "", joinArtistTitle(artist, title)
+		}
+	}
+	if clockOn {
+		t.Clock, t.Hour12 = true, s.speakerHour12()
+	}
+	return kind, t
+}
+
+// panelBoxNowPlaying takes a <nowPlaying> document the speaker's own bus
+// just carried (NoteBoxNowPlaying). On the Bluetooth input it holds the song
+// the phone sends: the firmware fills <artist> and <track> from AVRCP, the
+// same fields its own Bluetooth screen turns through. A song that changed
+// while the speaker is on Bluetooth redraws the panel; a document without
+// one (the phone disconnected, an app that sends no titles) takes the song
+// off again. Documents of every other source are not this model's business.
+// Must not block: the bus read loop calls it, and the redraw may ask the
+// speaker for its time format.
+func (s *Server) panelBoxNowPlaying(raw []byte) {
+	if !bytes.Contains(raw, []byte(`"`+bluetoothSource+`"`)) {
+		return
+	}
+	np := boxapi.ParseNowPlaying(raw)
+	if np.Source != bluetoothSource {
+		return
+	}
+	song := [2]string{strings.TrimSpace(np.Artist), strings.TrimSpace(np.Track)}
+	s.panelMu.Lock()
+	changed := s.btNow != song
+	s.btNow = song
+	onBluetooth := s.boxSource == bluetoothSource
+	s.panelMu.Unlock()
+	if changed && onBluetooth && s.trackOnPanel() {
+		go s.refreshTrackPanel()
+	}
+}
+
 // PanelSourceChanged is for the agent's gabbo hook: the speaker switched to
-// src. Switching to Bluetooth or AUX puts the clock up there when the setting
-// asks for it; leaving them is the hook's own business (the panel side drops
-// the input clock on any switch, and a return to STR's source redraws via
-// RefreshTrackPanel). Does not block: it runs on the gabbo read loop, and
-// the redraw may ask the speaker for its time format.
+// src. Switching to Bluetooth or AUX puts STR's screen up there when the
+// settings ask for one; leaving them is the hook's own business (the panel
+// side drops the input screen on any switch, and a return to STR's source
+// redraws via RefreshTrackPanel). Does not block: it runs on the gabbo read
+// loop, and the redraw may ask the speaker for its time format.
 func (s *Server) PanelSourceChanged(src string) {
 	s.panelMu.Lock()
 	s.boxSource = src
+	if src != bluetoothSource {
+		// the song belonged to the Bluetooth session that just ended
+		s.btNow = [2]string{}
+	}
 	s.panelMu.Unlock()
-	// With the clock off there is nothing to do: the panel side has already
-	// let go on the switch, and the firmware's picture stays as before.
-	if _, ok := oled.SourceClockLabel(src); ok && s.trackOnPanel() && s.displayClockEnabled() {
+	if _, ok := oled.SourceClockLabel(src); !ok || !s.trackOnPanel() {
+		return
+	}
+	// With nothing of STR's to show there is nothing to do: the panel side
+	// has already let go on the switch, and the firmware's screen stays.
+	if kind, _, _, _ := s.inputPanelKind(src); kind != onInputFirmware {
 		go s.refreshTrackPanel()
 	}
 }

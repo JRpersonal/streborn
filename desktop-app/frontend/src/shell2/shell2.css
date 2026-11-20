@@ -691,9 +691,13 @@ html.ui2 .ui2-spk-row.is-current .ui2-spk-pick::before {
   background: var(--u-accent);
 }
 /* One line when the name and the pill fit, the pill drops below the name when
-   they do not: a name is never cut to a few letters for a pill. */
+   they do not: a name is never cut to a few letters for a pill. The basis is
+   the name's own width, so the line breaks before the name shrinks: a 6em
+   basis let the pill keep the line and cut the name once a playing row's
+   Play/Pause took its width (sessionplay.js). Only a name longer than the
+   whole row is cut, with an ellipsis. */
 html.ui2 .ui2-spk-name {
-  flex: 1 1 6em;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-weight: var(--u-fw-semibold);
@@ -716,8 +720,73 @@ html.ui2 .ui2-spk-act { border-color: transparent; color: var(--u-muted); }
 html.ui2.a11y-contrast .ui2-spk-act { border-color: var(--u-border); color: var(--u-text); }
 html.ui2 .ui2-spk-act:hover { background: var(--u-raised); color: var(--u-text); }
 html.ui2 .ui2-spk-act.pending { cursor: progress; border-style: dotted; color: var(--u-muted); }
+/* A playing row's own Play/Pause (sessionplay.js): pauses or resumes that
+   row's session without choosing the speaker. Quiet like "+" and "-", and
+   out of sight until the pointer or the keyboard is on the row, so eleven
+   playing rows do not turn the list into a transport bar. It keeps its place
+   while hidden (opacity, never display or visibility), so the keyboard still
+   reaches it and the name never jumps under the pointer. A touch screen has
+   no hover: there it always shows. The glyph is drawn like the player's
+   (shell2.css, the transport) and the words are the button's name. */
+html.ui2 .ui2-spk-tp {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--u-text);
+}
+html.ui2.a11y-contrast .ui2-spk-tp { border-color: var(--u-border); }
+html.ui2 .ui2-spk-tp:hover { background: var(--u-raised); }
+html.ui2 .ui2-spk-tp-glyph {
+  width: 16px;
+  height: 16px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5' y='4' width='5' height='16' rx='1'/%3E%3Crect x='14' y='4' width='5' height='16' rx='1'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html.ui2 .ui2-spk-tp[data-tp="play"] .ui2-spk-tp-glyph {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 4v16l13-8z'/%3E%3C/svg%3E");
+}
+/* Waiting for the speaker: a dotted ring, and the button says it in words
+   (speakers.js). It stays in sight until the speaker answered. */
+html.ui2 .ui2-spk-tp.pending { cursor: progress; border-style: dotted; border-color: var(--u-border); color: var(--u-muted); }
+@media not (pointer: coarse) {
+  html.ui2 .ui2-spk-row:not(:hover, :focus-within) > .ui2-spk-tp:not(.pending) { opacity: 0; }
+}
 html.ui2 .ui2-spk-note,
 html.ui2 .ui2-spk-empty { margin: var(--u-space-1) var(--u-space-3); color: var(--u-muted); font-size: var(--u-fs-xs); }
+
+/* Finding a speaker (spksearch.js): a field above the lists once there are
+   more than ten rows. It is something you type into, so its edge is the
+   3:1 border, never the hairline. */
+html.ui2 .ui2-spk-find {
+  flex: 0 0 auto;
+  padding: var(--u-space-1) var(--u-space-2) 6px;
+}
+html.ui2 .ui2-spk-find[hidden] { display: none; }
+html.ui2 .ui2-spk-q {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--u-target);
+  padding: 0 var(--u-space-3);
+  border: 1px solid var(--u-border);
+  border-radius: var(--u-radius);
+  background: var(--u-surface);
+  color: var(--u-text);
+  font: inherit;
+  font-size: var(--u-fs-md);
+}
+html.ui2 .ui2-spk-q::placeholder { color: var(--u-muted); opacity: 1; }
+/* Nothing matches: the words and the way out, inline in the list. */
+html.ui2 .ui2-spk-nomatch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--u-space-1);
+  padding-inline: var(--u-space-3);
+}
+html.ui2 .ui2-spk-nomatch .ui2-spk-empty { margin-inline: 0; font-size: var(--u-fs-sm); }
 
 /* A short window or a larger text size: fewer pinned rows before that list
    scrolls, so the other speakers keep room. */
@@ -915,6 +984,42 @@ html.ui2 .ui2-player .status-bar .now {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* The title line and the button that opens where the music comes from
+   (gotosource.js) share one row: the line takes what the button leaves, the
+   button keeps its 40px target and gives up its words to an ellipsis before
+   it squeezes the title away. The arrow is drawn, so the button's name is
+   only its words and its label. */
+html.ui2 .ui2-now-row {
+  display: flex;
+  align-items: center;
+  gap: var(--u-space-2);
+  min-width: 0;
+}
+html.ui2 .ui2-now-line { flex: 1 1 auto; min-width: 0; }
+html.ui2 .ui2-go-source {
+  flex: 0 1 auto;
+  gap: var(--u-space-1);
+  max-width: 40%;
+  min-width: 0;
+  padding: 0 var(--u-space-3);
+  font-size: var(--u-fs-sm);
+}
+html.ui2 .ui2-go-source[hidden] { display: none; }
+html.ui2 .ui2-go-source-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+html.ui2 .ui2-go-source::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17L17 7'/%3E%3Cpath d='M9 7h8v8'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The arrow points the way the line reads. */
+html.ui2:dir(rtl) .ui2-go-source::after { transform: scaleX(-1); }
 /* The label is the target of the title-swap checkbox: 40px tall, like every
    other control in the player. */
 html.ui2 .ui2-player .title-swap-row {

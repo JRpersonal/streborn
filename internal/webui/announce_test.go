@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/upnp"
@@ -357,5 +358,25 @@ func TestMP3DurationSec(t *testing.T) {
 	}
 	if got := mp3DurationSec(nil); got != 0 {
 		t.Errorf("empty: %.3f s, want 0", got)
+	}
+}
+
+// The title an announcement is played under is cut between characters: a
+// Czech or German text must not end in half a letter (#1982).
+func TestAnnounceTitleIsCutBetweenCharacters(t *testing.T) {
+	for _, text := range []string{
+		"Dinner is ready",
+		strings.Repeat("ž", 40),
+		strings.Repeat("a", 63) + "ž and more",
+		strings.Repeat("a", 61) + "€ and more",
+		"Příliš žluťoučký kůň úpěl ďábelské ódy, příliš žluťoučký kůň úpěl",
+	} {
+		got := announceTitle(text)
+		if len(got) > announceTitleMax || !utf8.ValidString(got) || !strings.HasPrefix(text, got) {
+			t.Errorf("announceTitle(%q) = %q (%d bytes)", text, got, len(got))
+		}
+		if len(text) <= announceTitleMax && got != text {
+			t.Errorf("a short text was changed: %q -> %q", text, got)
+		}
 	}
 }

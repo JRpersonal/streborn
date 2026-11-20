@@ -431,9 +431,7 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 		if other.Slot == slot {
 			continue
 		}
-		dup := (p.Type == "spotify" && p.URI != "" && other.URI == p.URI) ||
-			(p.Type != "spotify" && p.StreamURL != "" && other.StreamURL == p.StreamURL)
-		if !dup {
+		if !presetsCollide(p, other) {
 			continue
 		}
 		s.logger.Info("preset save refused: this station is already on another slot",

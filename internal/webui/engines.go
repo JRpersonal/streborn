@@ -69,8 +69,10 @@ type SpotifyEngine interface {
 	// PremiumRequiredFor (spotifyPremiumRequired): a recall of a key saved
 	// under account would play under a free/open account, which cannot do
 	// autonomous recall playback. A key of another account the speaker can
-	// switch to is judged by that account, not the current one (#1947).
-	PremiumRequiredFor(account string) bool
+	// switch to is judged by that account, not the current one (#1947). why
+	// is the evidence for the log: which case decided, the logged-in account
+	// in masked form and the plan values read.
+	PremiumRequiredFor(account string) (required bool, why string)
 	// SetRecalling (spotifySetRecalling): mark an in-flight recall.
 	SetRecalling()
 	// SuppressActivate (spotifySuppressActivate): hold the auto-repoint off

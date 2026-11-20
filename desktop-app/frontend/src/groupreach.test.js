@@ -339,8 +339,8 @@ describe('bundles', () => {
     'multiroom.stereoNotReachable': ['{{names}}'],
   };
 
-  it('has every new key in all thirteen bundles, translated, with its placeholder', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+  it('has every new key in all fourteen bundles, translated, with its placeholder', () => {
+    expect(Object.keys(bundles)).toHaveLength(14);
     for (const [code, b] of Object.entries(bundles)) {
       for (const [k, ph] of Object.entries(NEW)) {
         expect(typeof b[k], `${code} ${k}`).toBe('string');

@@ -511,11 +511,18 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	// report no song until the new one is known (recalldisplay.go, #1077). The
 	// read above runs first on purpose: a /status that shows the new track is
 	// what ends the gate.
+	now := time.Now()
 	m.mu.Lock()
-	recallPending := m.recallDisplayPendingLocked(time.Now())
+	recallPending := m.recallDisplayPendingLocked(now)
 	m.mu.Unlock()
 	if recallPending {
 		track, artist, cover = "", "", ""
+	}
+	// The same rule for the refusal fields: while a recall is switching
+	// accounts they still describe the account being left (accountswitchinfo.go).
+	premiumRequired, keyRefused := m.PremiumRequired(), m.AudioKeyRefused()
+	if m.refusalOfDepartingAccount(now, recallPending, premiumRequired) {
+		premiumRequired, keyRefused, refused, refusedName = false, false, false, ""
 	}
 	resp := struct {
 		Ready   bool   `json:"ready"`
@@ -598,12 +605,12 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Context:            context,
 		Account:            account,
 		AccountNames:       m.AccountNames(),
-		PremiumRequired:    m.PremiumRequired(),
+		PremiumRequired:    premiumRequired,
 		CanRecall:          m.CanRecall(r.Context()),
 		Product:            product,
 		LowDisk:            lowDisk,
 		LowDiskFreeKB:      lowDiskFreeKB,
-		AudioKeyRefused:    m.AudioKeyRefused(),
+		AudioKeyRefused:    keyRefused,
 		AccountRefused:     refused,
 		AccountRefusedName: refusedName,
 		GroupedRefusal:     m.GroupedRefusal(),

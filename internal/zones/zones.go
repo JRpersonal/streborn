@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/JRpersonal/streborn/internal/atomicfile"
@@ -164,6 +165,57 @@ func (s *Store) Set(z Zone) error {
 	s.zone = &zc
 	s.mu.Unlock()
 	return s.Save()
+}
+
+// ApplyIPs returns z with every member's address hint replaced by the current
+// address in fresh (deviceID -> IP, deviceIDs compared case-insensitively),
+// and how many hints changed. The master's own hint is left alone: the master
+// is the box running this code. A member fresh does not know keeps its hint.
+func ApplyIPs(z Zone, fresh map[string]string) (Zone, int) {
+	if len(fresh) == 0 || len(z.Slaves) == 0 {
+		return z, 0
+	}
+	byID := make(map[string]string, len(fresh))
+	for id, ip := range fresh {
+		if id != "" && ip != "" {
+			byID[strings.ToUpper(id)] = ip
+		}
+	}
+	out := z
+	out.Slaves = append([]Member(nil), z.Slaves...)
+	n := 0
+	for i, m := range out.Slaves {
+		if ip, ok := byID[strings.ToUpper(m.DeviceID)]; ok && ip != m.IP {
+			out.Slaves[i].IP = ip
+			n++
+		}
+	}
+	return out, n
+}
+
+// RefreshIPs brings the stored address hints of the current group, and of a
+// permanent group set aside behind it, up to date (see ApplyIPs). Nothing else
+// about either group changes, and the store writes only when a hint moved. The
+// package comment always promised this ("re-resolved via discovery at reform
+// time because DHCP leases change"), but nothing did it: a member that got a
+// new address from the router stayed "unreachable" for every later re-form,
+// while the speaker list knew where it was (#2006).
+func (s *Store) RefreshIPs(fresh map[string]string) (int, error) {
+	s.mu.Lock()
+	n := 0
+	if s.zone != nil {
+		z, c := ApplyIPs(*s.zone, fresh)
+		s.zone, n = &z, n+c
+	}
+	if s.standing != nil {
+		z, c := ApplyIPs(*s.standing, fresh)
+		s.standing, n = &z, n+c
+	}
+	s.mu.Unlock()
+	if n == 0 {
+		return 0, nil
+	}
+	return n, s.Save()
 }
 
 // Clear ends the current group and persists. When a permanent group was set

@@ -13,10 +13,13 @@ const bundles = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.j
 // Every ui2.* key the code uses, found in the code itself so a new one cannot
 // be forgotten here.
 const used = new Set();
-for (const f of ['shell2/markup.js', 'shell2/mount.js', 'shell2/rooms.js', 'shell2/speakers.js', 'shell2/pill.js', 'main.js',
-  'shell2/speakers/routes.js', 'shell2/speakers/index.js', 'shell2/speakers/list.js', 'shell2/speakers/speaker.js', 'shell2/speakers/groups.js']) {
+for (const f of ['shell2/markup.js', 'shell2/mount.js', 'shell2/gotosource.js', 'shell2/rooms.js', 'shell2/speakers.js', 'shell2/sessionplay.js', 'shell2/pill.js', 'shell2/playclaim.js', 'main.js', 'shell2/keycopyreview.js', 'shell2/spksearch.js',
+  'shell2/speakers/routes.js', 'shell2/speakers/index.js', 'shell2/speakers/list.js', 'shell2/speakers/speaker.js', 'shell2/speakers/groups.js', 'views/music/ui2keyedit.js', 'shell2/speakers/keyeditor.js', 'shell2/speakers/keyeditormodel.js']) {
   for (const m of fileSource(f).matchAll(/'(ui2\.[a-zA-Z.]+)'/g)) used.add(m[1]);
 }
+// The key assignment editor names its own strings through a short helper,
+// L('title') for ui2.speakers.keyEditor.title.
+for (const m of fileSource('shell2/speakers/keyeditor.js').matchAll(/\bL\('([a-zA-Z]+)'/g)) used.add(`ui2.speakers.keyEditor.${m[1]}`);
 const KEYS = [...new Set([
   ...used,
   ...navLabelKeys(),
@@ -31,8 +34,8 @@ const KEYS = [...new Set([
 const placeholders = (s) => [...String(s).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
 
 describe('UI 2.0 strings', () => {
-  it('ships all thirteen bundles', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+  it('ships all fourteen bundles', () => {
+    expect(Object.keys(bundles)).toHaveLength(14);
   });
 
   it('finds the new keys in the code', () => {

@@ -7,12 +7,6 @@
 //
 // These helpers only decide what the banner says, so they run without a DOM.
 
-// wingetInstallLabel is the banner button for a winget install, so the user
-// knows before clicking that winget, not the app, does the update.
-export function wingetInstallLabel(t) {
-  return t('banner.updateViaWinget');
-}
-
 // wingetOutcomeView turns UpdateViaWinget's answer into what the banner shows:
 //   { kind: 'started', text }            app is about to close
 //   { kind: 'notYet',  text, command }   winget does not offer the version yet

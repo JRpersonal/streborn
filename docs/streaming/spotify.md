@@ -57,6 +57,13 @@ trips the five-refusal run and gets paused by the agent; a newer one trips
 a recall during its back-off fails at once with an explaining message
 instead of waiting out the load timeouts.
 
+A play that fails on a refused key is returned as an error with an
+`AudioKeyDenied` method (`spotify.IsAudioKeyDenied`), whichever of the two
+messages explains it. The app recall asks that method before its last-attempt
+re-play (`webui.isSpotifyKeyDenied`); it used to look for the words "audio key
+denied", which the back-off message does not contain, so a play refused during
+the back-off was answered with another play (discussion #1947).
+
 `AudioKeyRefused()` lasts ten minutes, or until the engine delivers real
 audio again, whichever comes first (discussion #1930: the notice used to
 outlive a preset that played). That first audio page also resets the
@@ -76,6 +83,16 @@ refused account never produces) removes it again. `/spotify/info` reports
 `accountRefusedName`; the desktop app shows a short notice in the
 now-playing area and the UI 2.0 Spotify accounts card, the phone page under
 its now-playing line, both only while STR's Spotify is the source.
+
+While a recall switches accounts the refusal fields (`premiumRequired`,
+`audioKeyRefused`, `accountRefused`, `accountRefusedName`) are reported empty,
+because until the restarted engine is up they still describe the account being
+left (`accountswitchinfo.go`, discussion #1947: the "free account" notice sat
+over a Premium account's key for the eight seconds of the switch). A switch is
+read from state that already exists: the restart a cross-account recall just
+made, or a recall in flight while the logged-in account gates as free (the
+gate refuses that account's own keys before a recall is marked, so it can only
+be another account's key). A recall on the account that stays keeps its notice.
 
 Under the notice a folded "Why, and what you can try" says the reason and
 the decisive test. A free account (`product` free/open, or
@@ -599,6 +616,17 @@ lapsed to free, every Spotify key on the speaker answered
 Premium account was tapped in again (discussion #1947). A key of the
 logged-in account, a key without an account, and a key whose account has no
 usable copy (it would play with the logged-in account) keep the old answer.
+
+Both gate log lines (`... account is free/open, recall needs Premium ...`, app
+and hardware key) say which of those cases decided: `account` is the key's
+account, masked like every other account in the log, and `why` comes from
+`PremiumRequiredForWhy`: the case (`key-has-no-account`,
+`key-account-is-logged-in`, `key-account-has-no-stored-login`,
+`key-account-stored-login-unusable`), the logged-in account (masked), its
+plan as read in this engine run, whether the engine's free-account log line
+latched, and the plan remembered for the key's account. The `presets` section
+of `/api/debug/state` carries the same masked `account` per key, so a bundle
+shows which keys belong to which account without naming anyone.
 
 `/v1/me` is still the only source of the account's display name
 (`accountnames.go`). So when the engine reports the plan but no name is

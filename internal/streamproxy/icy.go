@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // SetOnTitle registers a callback invoked when the live ICY StreamTitle of
@@ -26,6 +26,29 @@ func (s *Server) SetOnTitle(fn func(title string)) { s.onTitle = fn }
 // title belongs to has ended for good (no successor handler for the same
 // stream within titleEndGrace). Set once at wiring time.
 func (s *Server) SetOnTitleEnd(fn func()) { s.onTitleEnd = fn }
+
+// SpotifyTitleMeta is the live Spotify song the fallback provider returns: the
+// combined "Artist - Title" string the box display and existing readers use,
+// plus the components a companion app needs to render the real cover art on its
+// own. Track is the song name alone, Artist the performer alone, Art the album
+// cover image URL. Any component the engine did not supply is left empty.
+type SpotifyTitleMeta struct {
+	Title  string
+	Track  string
+	Artist string
+	Art    string
+}
+
+// SetSpotifyTitleProvider registers the fallback /api/stream/title consults
+// when the radio StreamTitle is empty: it returns the live Spotify song and
+// true while a Spotify stream is the speaker's current playback. Set once at
+// wiring time. A func value rather than an import keeps streamproxy clear of
+// internal/webui, which depends on streamproxy.
+func (s *Server) SetSpotifyTitleProvider(fn func() (SpotifyTitleMeta, bool)) {
+	s.titleMu.Lock()
+	s.spotifyTitle = fn
+	s.titleMu.Unlock()
+}
 
 // CurrentTitle returns the live ICY StreamTitle of the stream being proxied
 // right now, or "" if the station sends no metadata or none has arrived yet.
@@ -42,7 +65,17 @@ func (s *Server) CurrentTitle() string {
 func (s *Server) setTitle(url, title string) {
 	title = strings.TrimRight(title, "\x00")
 	title = strings.TrimSpace(title)
-	title = titleToUTF8(title)
+	// A title that is not UTF-8 is read in the station's code page
+	// (titlecharset.go), never left as bytes: json.Marshal would turn each
+	// into U+FFFD on the way to the apps.
+	title, charset := s.charsets.toUTF8(url, title)
+	// Some stations encode their non-ASCII letters as HTML character references
+	// in the StreamTitle instead of sending the bytes: Rádio pohádka sends
+	// "Náro&#382;ný" for "Nárožný" and "ob&#283;&#357;" for "oběť" (#1982).
+	// Decode them to the real characters, numeric (&#382; / &#x17e;) and named
+	// (&amp;) alike. A bare ampersand that opens no entity, as in
+	// "Macourek & Nárožný", is left as it is, so a normal title is untouched.
+	title = html.UnescapeString(title)
 	// An ad-insertion cue is not a title. It is dropped whole, so the display
 	// keeps what it showed before the break.
 	if isAdMarkerTitle(title) {
@@ -68,11 +101,15 @@ func (s *Server) setTitle(url, title string) {
 	cb := s.onTitle
 	s.titleMu.Unlock()
 	if changed {
+		attrs := []any{"title", title}
 		if raw != title {
-			s.logger.Info("stream proxy ICY title", "title", title, "raw", raw)
-		} else {
-			s.logger.Info("stream proxy ICY title", "title", title)
+			attrs = append(attrs, "raw", raw)
 		}
+		if charset != "" {
+			// not UTF-8: which code page it was read in
+			attrs = append(attrs, "charset", charset)
+		}
+		s.logger.Info("stream proxy ICY title", attrs...)
 	}
 	if fire {
 		cb(title)
@@ -126,27 +163,6 @@ func stripRecordSuffix(title string) string {
 // adCueToken is the machine form of an ad cue: "ad", optional letters, then
 // at least one "_part" of letters or digits, and nothing else.
 var adCueToken = regexp.MustCompile(`^ad[a-z]*(_[a-z0-9]+)+$`)
-
-// titleToUTF8 normalises an ICY StreamTitle to valid UTF-8. Shoutcast/Icecast
-// stations often send the title in Latin-1 (ISO-8859-1), not UTF-8, so an umlaut
-// in a track or artist ("Fürstenfeld", "Böhse Onkelz") arrives as a lone high
-// byte. Left as-is it is invalid UTF-8, and json.Marshal to the app then replaces
-// it with U+FFFD, so the song shows up garbled as "F�rstenfeld". This is the same
-// fix the box names get in boxapi.ensureUTF8: a title that is already valid UTF-8
-// is returned unchanged, otherwise the bytes are read as Latin-1 (a 1:1 map to the
-// first 256 code points, so ASCII is untouched and only high bytes are widened)
-// and re-encoded as UTF-8.
-func titleToUTF8(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-	b := []byte(s)
-	out := make([]byte, 0, len(b)+8)
-	for _, c := range b {
-		out = utf8.AppendRune(out, rune(c))
-	}
-	return string(out)
-}
 
 // clearTitleForNewURL drops a stale title when the proxied stream changes, so
 // the brief window before the new station's first metadata block does not show
@@ -379,7 +395,26 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	s.titleMu.Lock()
 	title, station := s.curTitle, s.curTitleURL
+	spotify := s.spotifyTitle
 	s.titleMu.Unlock()
+	swapped := s.swap.has(station)
+	// track, artist and art stay empty for a radio stream and ride along only
+	// when the Spotify fallback fires, so an existing reader of title/swapped
+	// is unaffected (the three fields are omitempty).
+	var track, artist, art string
+	// Fallback for a Spotify preset key: the Spotify stream runs through the
+	// proxy as a /spotify/ URL with no ICY StreamTitle, so curTitle is empty.
+	// The agent does know the live Spotify song, so when the radio title is
+	// empty and Spotify is the current playback, show that instead. The swap
+	// toggle is a per-radio-station setting and never applies here. The
+	// components let a companion app render the live cover art itself; they are
+	// present only in this one case, under the same gate as the title.
+	if title == "" && spotify != nil {
+		if meta, ok := spotify(); ok && meta.Title != "" {
+			title, swapped = meta.Title, false
+			track, artist, art = meta.Track, meta.Artist, meta.Art
+		}
+	}
 	// swapped tells the app which way its "artist and title are the wrong way
 	// round" toggle stands for this station (titleswap.go). json.Marshal
 	// escapes every control character, so a hostile StreamTitle cannot break
@@ -387,7 +422,10 @@ func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
 	b, _ := json.Marshal(struct {
 		Title   string `json:"title"`
 		Swapped bool   `json:"swapped"`
-	}{title, s.swap.has(station)})
+		Track   string `json:"track,omitempty"`
+		Artist  string `json:"artist,omitempty"`
+		Art     string `json:"art,omitempty"`
+	}{title, swapped, track, artist, art})
 	_, _ = w.Write(b)
 }
 

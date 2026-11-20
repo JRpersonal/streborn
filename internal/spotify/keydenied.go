@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -127,4 +128,52 @@ func (m *Manager) noteKeyRefusalStreamedLocked(now time.Time) bool {
 	m.keyRefusalRun = 0
 	m.keyRefusalClearedAt = now
 	return showing
+}
+
+// keyDeniedItemHint is the message for a play that failed on a single refused
+// audio key, from an engine that does not count a run itself.
+const keyDeniedItemHint = "Spotify refused to deliver the audio for this item (audio key denied). " +
+	"This usually means the Spotify account on the speaker has no Premium subscription, " +
+	"which STR's Spotify engine requires; occasionally the item itself is not licensed for streaming."
+
+// isKeyDenialHint reports whether a playDenialHint answer names a refused audio
+// key. Its third answer, the connection that was not ready yet, does not.
+func isKeyDenialHint(hint string) bool {
+	return hint == keyDeniedBackoffHint || hint == keyDeniedItemHint
+}
+
+// audioKeyDeniedError is a play that failed because Spotify refused the audio
+// key, whichever of the two hints explains it. The recall paths must not answer
+// it with another play: each one asks for a key per track again and feeds the
+// throttle that keeps the refusal alive.
+//
+// A caller outside this package tells it by the AudioKeyDenied method (see
+// IsAudioKeyDenied), not by the wording. The app recall used to look for the
+// text "audio key denied", which only keyDeniedItemHint carries, so a play
+// refused during the engine's back-off was retried (discussion #1947).
+type audioKeyDeniedError struct {
+	msg   string
+	cause error
+}
+
+func (e *audioKeyDeniedError) Error() string        { return e.msg }
+func (e *audioKeyDeniedError) Unwrap() error        { return e.cause }
+func (e *audioKeyDeniedError) AudioKeyDenied() bool { return true }
+
+// NewAudioKeyDeniedError wraps cause (nil when the engine accepted the play and
+// refused the load) as a refused-audio-key play failure explained by hint.
+func NewAudioKeyDeniedError(cause error, hint string) error {
+	if cause == nil {
+		return &audioKeyDeniedError{msg: "spotify play refused: " + hint}
+	}
+	return &audioKeyDeniedError{msg: cause.Error() + ": " + hint, cause: cause}
+}
+
+// IsAudioKeyDenied reports whether err, or an error it wraps, is a play that
+// failed on a refused audio key. It asks for the AudioKeyDenied method rather
+// than the type, so internal/webui, which does not import this package, makes
+// the same test with the same three lines.
+func IsAudioKeyDenied(err error) bool {
+	var denied interface{ AudioKeyDenied() bool }
+	return errors.As(err, &denied) && denied.AudioKeyDenied()
 }

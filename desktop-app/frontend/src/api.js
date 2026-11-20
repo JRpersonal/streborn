@@ -241,12 +241,27 @@ export function QueueServerAlive(host, port, location) {
   return callOptionalBinding('QueueServerAlive', [host, port, location]);
 }
 
+// PreviewPresetKeyCopy says, per chosen key, what copying those keys to one
+// speaker would do there (copied, replacing a station, already the same, on
+// another key there, not kept), without writing anything. UI 2.0 shows it
+// before the copy. Optional binding, per the note above.
+export function PreviewPresetKeyCopy(srcHost, srcPort, dstHost, dstPort, slots) {
+  return callOptionalBinding('PreviewPresetKeyCopy', [srcHost, srcPort, dstHost, dstPort, slots]);
+}
+
 // LibraryRefusedServers lists the media servers that refused to describe
 // themselves to this PC in the recent scans (a SOAP fault where the device
 // description belongs), so the Library can say why they are missing. Optional
 // binding, per the note above.
 export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
+}
+
+// LibraryFolder is one folder of a media server as the server describes it:
+// its title, class and cover, for a folder the UI 2.0 player leads to without
+// a trail walked to it. Optional binding, per the note above.
+export function LibraryFolder(udn, objectID) {
+  return callOptionalBinding('LibraryFolder', [udn, objectID]);
 }
 
 // SearchLibrary searches the whole library of every media server the app

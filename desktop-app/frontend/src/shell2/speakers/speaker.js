@@ -58,7 +58,9 @@
 //                displaySplash, displayNotices, arcade, airplay, announce;
 //   network      wifi (network, switch form, stored networks, forget),
 //                region, musicLib, usServices (Pandora and iHeartRadio);
-//   keys         hwKeys (new: the "Repair speaker buttons" action, taken out
+//   keys         (above the sections: the key assignment editor, keyeditor.js,
+//                in a slot of its own), hwKeys (new: the "Repair speaker
+//                buttons" action, taken out
 //                of the classic syncKeys expert section), keyMap (remote key
 //                map, key actions incl. sleep, snooze and bass, webhooks),
 //                urlPreset, voice;
@@ -88,6 +90,7 @@ import { chipHTML, speakerChipKinds, speakerPillKind, statusPillHTML } from '../
 import { SPEAKER_TABS, SPEAKER_TAB_LABEL_KEYS, normalizeTab, tabIndexFor } from './routes.js';
 import { connectBusy, listStateNow, noSpeakersState } from '../state.js';
 import { attentionCardHTML, attentionItems, attentionSig, runAttentionAction } from '../attention.js';
+import { paintKeyEditor } from './keyeditor.js';
 import './speaker.css';
 
 const tabId = (tab) => `ui2SpkTab-${tab}`;
@@ -246,8 +249,13 @@ export function speakerFrameHTML(tab = SPEAKER_TABS[0]) {
   // about it (main.js showUpdateFailureReport, speakerReportSlot).
   const slots = '<div class="sps-attn-slot" id="ui2SpkAttention" hidden></div>'
     + '<div class="sps-report hidden" id="ui2SpkReport"></div>';
+  // Keys and alarms opens with the key assignment editor (keyeditor.js), in
+  // a slot of its own above the settings body, so a reload of the settings
+  // never takes it down.
+  const keySlot = '<div class="sps-keyedit-slot" id="ui2KeyEditor"></div>';
+  const lead = (k) => (k === 'overview' ? slots : (k === 'keys' ? keySlot : ''));
   const panels = SPEAKER_TABS.map((k) => `<div class="sps-panel" role="tabpanel" id="${panelId(k)}" data-tab="${k}"`
-    + ` aria-labelledby="${tabId(k)}" tabindex="0"${k === on ? '' : ' hidden'}>${k === 'overview' ? slots : ''}</div>`).join('');
+    + ` aria-labelledby="${tabId(k)}" tabindex="0"${k === on ? '' : ' hidden'}>${lead(k)}</div>`).join('');
   return '<div class="sps-head">'
     + '<div class="sps-head-text">'
     + '<h3 class="sps-name" id="ui2SpkPageName"></h3>'
@@ -295,6 +303,11 @@ let lastState = '';
 let lastHalf = '';
 // The ctx of the last settings render (arrangeSpeakerSections).
 let lastArrangeCtx = null;
+// What the key assignment editor needs from the page: the speaker, its name
+// and the music views' save paths (renderSpeakerPage).
+let keyEditorCtx = null;
+// Set when the page or its Keys tab was just opened (the editor reads again).
+let keyEditorEntry = false;
 
 export function currentSpeakerTab() {
   return activeTab;
@@ -310,7 +323,11 @@ export function speakerPanel(tab) {
 // selectSpeakerTab shows one tab's panel, gives that tab the Tab stop and
 // carries the settings body into it.
 export function selectSpeakerTab(tab, { focus = false } = {}) {
-  activeTab = normalizeTab(tab);
+  const next = normalizeTab(tab);
+  // Coming to Keys and alarms: the editor reads the keys again, they may have
+  // changed on Radio, on the speaker or on a phone meanwhile.
+  if (next === 'keys' && activeTab !== 'keys') keyEditorEntry = true;
+  activeTab = next;
   if (!frameRoot) return;
   if (panelsEl) panelsEl.dataset.tab = activeTab;
   frameRoot.querySelectorAll('.sps-tab').forEach((b) => {
@@ -321,6 +338,15 @@ export function selectSpeakerTab(tab, { focus = false } = {}) {
   });
   if (panelsEl) panelsEl.querySelectorAll('.sps-panel').forEach((p) => { p.hidden = !hasHead || p.dataset.tab !== activeTab; });
   placeSettingsBody();
+  paintKeyEditorSlot();
+}
+
+// paintKeyEditorSlot draws the key assignment editor while Keys and alarms is
+// open; on the other tabs it is out of sight and asks the speaker nothing.
+function paintKeyEditorSlot() {
+  if (!panelsEl || activeTab !== 'keys' || !hasHead || !keyEditorCtx) return;
+  paintKeyEditor(panelsEl.querySelector('#ui2KeyEditor'), { ...keyEditorCtx, reread: keyEditorEntry });
+  keyEditorEntry = false;
 }
 
 // placeSettingsBody puts the classic settings body (#settingsBody) where the
@@ -566,6 +592,8 @@ export function renderSpeakerPage(root, ctx = {}) {
   }
   const head = speakerHead(ctx.box, ctx.label);
   hasHead = !!head;
+  keyEditorCtx = head ? { box: ctx.box, name: head.name, deps: ctx.keyEditor || null } : null;
+  if (ctx.entry) keyEditorEntry = true;
   const name = root.querySelector('#ui2SpkPageName');
   const meta = root.querySelector('#ui2SpkPageMeta');
   const stateLine = root.querySelector('#ui2SpkPageState');

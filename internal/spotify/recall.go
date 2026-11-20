@@ -189,7 +189,14 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
 		// a non-Premium account, #311) only appears on go-librespot's stderr.
 		// Attach it so the app's error message explains itself.
-		if hint := m.playDenialHint(); hint != "" {
+		hint := m.playDenialHint()
+		switch {
+		case isKeyDenialHint(hint):
+			// Marked as a refused key, so no caller answers it with another
+			// play (keydenied.go).
+			m.forgiveRefusedRecall()
+			return NewAudioKeyDeniedError(err, hint)
+		case hint != "":
 			return fmt.Errorf("%w: %s", err, hint)
 		}
 		return err
@@ -216,7 +223,8 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		m.clearRecallDisplayLocked()
 		m.mu.Unlock()
 		m.logger.Warn("spotify: the engine refused the recall while it waits after a run of refused audio keys", "uri", uri)
-		return fmt.Errorf("spotify play refused: %s", keyDeniedBackoffHint)
+		m.forgiveRefusedRecall()
+		return NewAudioKeyDeniedError(nil, keyDeniedBackoffHint)
 	}
 	if !loaded && busy && !m.seekFailedSince(playAt) {
 		m.logger.Info("spotify: the engine is still loading the recalled track, waiting for it", "uri", uri)

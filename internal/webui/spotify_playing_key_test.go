@@ -44,7 +44,7 @@ func TestPlayingSpotifySlot(t *testing.T) {
 		{"radio plays", "http://radio.example/stream", "spotify:playlist:TestPlaylistMix0001", 0},
 		{"nothing plays", "", "spotify:playlist:TestPlaylistMix0001", 0},
 	} {
-		if got := playingSpotifySlot(tc.loc, tc.engine, playingKeyPresets); got != tc.want {
+		if got := playingSpotifySlot(tc.loc, tc.engine, nil, playingKeyPresets); got != tc.want {
 			t.Errorf("%s: got key %d, want %d", tc.name, got, tc.want)
 		}
 	}
@@ -57,7 +57,7 @@ func TestPlayingSpotifySlotLowestKeyWins(t *testing.T) {
 		{Slot: 5, Type: "spotify", URI: "spotify:playlist:Dup"},
 		{Slot: 3, Type: "spotify", URI: "spotify:playlist:Dup"},
 	}
-	if got := playingSpotifySlot(container("spotify:playlist:Dup"), "", list); got != 3 {
+	if got := playingSpotifySlot(container("spotify:playlist:Dup"), "", nil, list); got != 3 {
 		t.Errorf("got key %d, want 3", got)
 	}
 }

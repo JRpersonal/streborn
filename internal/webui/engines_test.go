@@ -27,7 +27,7 @@ func (baseSpotifyFake) ArmRecallCut()                                          {
 func (baseSpotifyFake) BoundaryStaleKB() int64                                 { return 0 }
 func (baseSpotifyFake) Ready() bool                                            { return true }
 func (baseSpotifyFake) CanRecall(context.Context) bool                         { return true }
-func (baseSpotifyFake) PremiumRequiredFor(string) bool                         { return false }
+func (baseSpotifyFake) PremiumRequiredFor(string) (bool, string)               { return false, "" }
 func (baseSpotifyFake) SetRecalling()                                          {}
 func (baseSpotifyFake) SuppressActivate(time.Duration)                         {}
 func (baseSpotifyFake) ExpectReattach(time.Duration)                           {}

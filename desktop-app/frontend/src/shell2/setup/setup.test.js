@@ -341,7 +341,7 @@ describe('Wizard strings and styles', () => {
   }
 
   it('ships every bundle and writes German informally with umlauts', () => {
-    expect(Object.keys(bundles)).toHaveLength(13);
+    expect(Object.keys(bundles)).toHaveLength(14);
     expect(bundles.de['ui2.setup.wizard.find.intro']).toContain('Wähle');
     expect(bundles.de['ui2.setup.wizard.state.skipped']).toBe('Übersprungen');
     expect(bundles.de['ui2.setup.wizard.find.offlineNote']).toContain('such');

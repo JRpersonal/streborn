@@ -81,8 +81,8 @@ func (e *spotifyEngine) ArmRecallCut()                      { e.m.ArmRecallCut()
 func (e *spotifyEngine) BoundaryStaleKB() int64             { return e.m.LastBoundaryStaleKB() }
 func (e *spotifyEngine) Ready() bool                        { return e.m.Ready() }
 func (e *spotifyEngine) CanRecall(ctx context.Context) bool { return e.m.CanRecall(ctx) }
-func (e *spotifyEngine) PremiumRequiredFor(account string) bool {
-	return e.m.PremiumRequiredFor(account)
+func (e *spotifyEngine) PremiumRequiredFor(account string) (bool, string) {
+	return e.m.PremiumRequiredForWhy(account)
 }
 func (e *spotifyEngine) SetRecalling()                       { e.m.SetRecalling() }
 func (e *spotifyEngine) SuppressActivate(d time.Duration)    { e.m.SuppressActivate(d) }

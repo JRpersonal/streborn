@@ -325,6 +325,11 @@ type Server struct {
 	// from another household member's session gets that member's account, not a
 	// stale one). nil when Spotify is not configured.
 	spotifyContext func() string
+	// playingKeyAcct is the engine's login as last read for the playing-key
+	// header, reused for playingKeyAccountTTL (spotify_playing_key.go).
+	playingKeyAcctMu sync.Mutex
+	playingKeyAcct   string
+	playingKeyAcctAt time.Time
 	// spotifyShuffle reports go-librespot's live shuffle state, used by the
 	// preset-save path to stamp the shuffle flag onto a Spotify preset saved
 	// from the running playback. nil when Spotify is not configured.
@@ -420,7 +425,8 @@ type Server struct {
 	// autonomous recall playback (#45). Another account's key the speaker can
 	// switch to is not judged by the logged-in account (#1947). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
-	spotifyPremiumRequired func(account string) bool
+	// why goes into the gate's log line and nowhere else.
+	spotifyPremiumRequired func(account string) (required bool, why string)
 
 	// phoneLangSeen counts the Accept-Language values the remote page was asked
 	// for, so a diagnostic shows what the phones actually claim rather than what
@@ -1832,6 +1838,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/seek", s.handleSeek)
+	// Registered on every speaker, also one without a Spotify engine (it
+	// answers 409 there): an unregistered path falls through to the index,
+	// whose 200 + HTML would read as success.
+	mux.HandleFunc("/api/spotify/liked", s.handleSpotifyLiked)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves

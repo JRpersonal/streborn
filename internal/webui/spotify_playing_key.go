@@ -26,12 +26,14 @@
 package webui
 
 import (
+	"context"
 	"encoding/base64"
 	"html"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -66,14 +68,65 @@ func containerSpotifyURI(loc string) string {
 	return legacySpotifyURI(loc)
 }
 
+// likedSongsAliasURI is Liked Songs as Spotify Connect announces it: one
+// playlist id for EVERY account. In the #1983 bundle STR's engine reported it
+// for one household member and the speaker's own Spotify client reported the
+// very same id while another member played theirs.
+const likedSongsAliasURI = "spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ"
+
+// accountBoundSpotifyURI reports whether a context URI names a different list
+// for every account although the URI is the same for all of them: Liked Songs,
+// as the alias above or as the bare collection. For those the URI alone does
+// not say whose list plays. spotify:user:<id>:collection carries its owner and
+// is compared like any other URI. Same rule as accountBoundSpotifyContext in
+// the desktop app (spotifynowplaying.js).
+func accountBoundSpotifyURI(uri string) bool {
+	u := normalizeSpotifyURI(uri)
+	return u == likedSongsAliasURI || u == "spotify:collection" || strings.HasPrefix(u, "spotify:collection:")
+}
+
+// presetsCollide reports whether saving p would land on the same thing other
+// already holds, so the save is refused (loss-free) rather than silently
+// deleting other. A radio station collides by stream URL, a Spotify key by its
+// URI. The exception is an account-bound Spotify context (Liked Songs, the bare
+// collection): every account's Liked Songs carry the same alias URI
+// (37i9dQZF1F5p3rmiWPIYgZ), so URI alone would refuse a second household member
+// their own Liked Songs key just because someone else saved theirs (#1983).
+// When both keys name an account, such a context collides only for the SAME
+// account; when either account is unknown (the speaker's own Spotify client
+// reports none, the same blind spot as the key highlight) it falls back to URI
+// alone, so two indistinguishable Liked Songs keys still cannot be created.
+// Normal playlists, albums and tracks are unchanged.
+func presetsCollide(p, other presets.Preset) bool {
+	switch {
+	case p.Type == "spotify" && p.URI != "" && other.URI == p.URI:
+		if accountBoundSpotifyURI(p.URI) && p.Account != "" && other.Account != "" {
+			return p.Account == other.Account
+		}
+		return true
+	case p.Type != "spotify" && p.StreamURL != "" && other.StreamURL == p.StreamURL:
+		return true
+	default:
+		return false
+	}
+}
+
 // spotifySlotForURI is the lowest Spotify key holding uri, or 0. The store
 // refuses one playlist on two keys (#836), so a second match is an older
 // store; the lowest wins so the highlight does not hop between polls.
-func spotifySlotForURI(list []presets.Preset, uri string) int {
+//
+// playingAccount names the account that plays, or is nil when nothing can
+// name it (the speaker's own Spotify client reports none). It is only asked
+// for a key holding Liked Songs, whose URI is the same for every account:
+// such a key is named only when the account that plays is known to be the one
+// the key was saved under (#1983). It is asked at most once.
+func spotifySlotForURI(list []presets.Preset, uri string, playingAccount func() string) int {
 	want := normalizeSpotifyURI(uri)
 	if want == "" {
 		return 0
 	}
+	bound := accountBoundSpotifyURI(want)
+	account, asked := "", false
 	best := 0
 	for _, p := range list {
 		if p.Type != "spotify" || p.URI == "" || p.Slot < 1 {
@@ -81,6 +134,15 @@ func spotifySlotForURI(list []presets.Preset, uri string) int {
 		}
 		if normalizeSpotifyURI(p.URI) != want {
 			continue
+		}
+		if bound {
+			if !asked && playingAccount != nil {
+				account = strings.TrimSpace(playingAccount())
+			}
+			asked = true
+			if saved := strings.TrimSpace(p.Account); saved == "" || saved != account {
+				continue
+			}
 		}
 		if best == 0 || p.Slot < best {
 			best = p.Slot
@@ -91,8 +153,9 @@ func spotifySlotForURI(list []presets.Preset, uri string) int {
 
 // playingSpotifySlot names the Spotify key that holds what plays, or 0.
 // location is the now-playing location (XML-unescaped), engineContext the
-// context STR's engine plays.
-func playingSpotifySlot(location, engineContext string, list []presets.Preset) int {
+// context STR's engine plays and engineAccount the account it is logged in
+// with (nil: unknown).
+func playingSpotifySlot(location, engineContext string, engineAccount func() string, list []presets.Preset) int {
 	if strings.Contains(location, "/spotify/stream") {
 		if m := perSlotSpotifyStreamRe.FindStringSubmatch(location); m != nil {
 			n, _ := strconv.Atoi(m[1])
@@ -104,12 +167,36 @@ func playingSpotifySlot(location, engineContext string, list []presets.Preset) i
 		}
 		// The generic engine stream: the engine's context decides. An
 		// empty context proves nothing and names no key.
-		return spotifySlotForURI(list, engineContext)
+		return spotifySlotForURI(list, engineContext, engineAccount)
 	}
 	// Anything else that names a Spotify context is the speaker's own
 	// client; the engine may still hold an older, paused context then, and
-	// must not be asked (#1077 issue 15).
-	return spotifySlotForURI(list, containerSpotifyURI(location))
+	// must not be asked (#1077 issue 15). That client names no account
+	// (sourceAccount is the placeholder "SpotifyConnectUserName"), and the
+	// engine's login says nothing about who plays there.
+	return spotifySlotForURI(list, containerSpotifyURI(location), nil)
+}
+
+// playingKeyAccountTTL is how long the engine's login is reused for the
+// playing-key header. Every /api/status poll of every client asks while Liked
+// Songs plays on the engine, and each fresh answer is a request to the engine.
+const playingKeyAccountTTL = 10 * time.Second
+
+// playingKeyAccount is the account STR's engine is logged in with, for the
+// Liked Songs rule in spotifySlotForURI. "" when it cannot be told.
+func (s *Server) playingKeyAccount() string {
+	if s.spotifyUser == nil {
+		return ""
+	}
+	s.playingKeyAcctMu.Lock()
+	defer s.playingKeyAcctMu.Unlock()
+	if !s.playingKeyAcctAt.IsZero() && time.Since(s.playingKeyAcctAt) < playingKeyAccountTTL {
+		return s.playingKeyAcct
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	s.playingKeyAcct, s.playingKeyAcctAt = s.spotifyUser(ctx), time.Now()
+	return s.playingKeyAcct
 }
 
 // setPlayingKeyHeader adds the playing Spotify key to an /api/status answer.
@@ -129,7 +216,7 @@ func (s *Server) setPlayingKeyHeader(w http.ResponseWriter, body []byte) {
 	if s.spotifyContext != nil {
 		engine = s.spotifyContext()
 	}
-	if n := playingSpotifySlot(loc, engine, s.presets.All()); n > 0 {
+	if n := playingSpotifySlot(loc, engine, s.playingKeyAccount, s.presets.All()); n > 0 {
 		w.Header().Set(playingKeyHeader, strconv.Itoa(n))
 	}
 }

@@ -190,14 +190,21 @@ function takeFavRemovals(removals, additions, order) {
   if (!r.changed && !a.changed && !takeOrder) return false;
   saveFavStore(kept);
   updateFavModeBtn();
-  if (state.searchLastMode === 'favorites') {
-    state.searchResults = kept;
-    renderSearchResults();
-  }
+  refreshOpenFavList(kept);
   for (const fn of favChangeListeners) {
     try { fn(); } catch { /* one repaint failing must not stop the others */ }
   }
   return true;
+}
+// refreshOpenFavList repaints the Favorites list when it is the list on
+// screen, so a star set or taken anywhere else (Recently played, a phone, a
+// backup import) shows up in it at once. Before this only the phone path did
+// it, and a station starred in Recently played stayed missing from an open
+// Favorites list until another category was picked and Favorites again (#1811).
+function refreshOpenFavList(arr) {
+  if (state.searchLastMode !== 'favorites') return;
+  state.searchResults = arr;
+  renderSearchResults();
 }
 function favId(s) { return s && (s.stationuuid || (s.name + '|' + (s.url || ''))); }
 // favStationsJSON / mergeFavStations are the backup hooks (#778): export hands
@@ -222,7 +229,10 @@ export function mergeFavStations(json) {
     have.add(id);
     added++;
   }
-  if (added) saveFavStore(arr);
+  if (added) {
+    saveFavStore(arr);
+    refreshOpenFavList(arr);
+  }
   updateFavModeBtn();
   return { added, total: arr.length };
 }
@@ -252,6 +262,7 @@ export function toggleFav(s) {
   else { arr.push(favMinimal({ ...s, starredAt: Date.now() })); nowFav = true; }
   saveFavStore(arr);
   updateFavModeBtn();
+  refreshOpenFavList(arr);
   return nowFav;
 }
 // updateFavModeBtn shows the "Favorites" mode entry next to Top/Search only

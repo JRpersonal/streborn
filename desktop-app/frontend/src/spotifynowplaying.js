@@ -86,6 +86,30 @@ export function snapshotFromReply(reply) {
   };
 }
 
+// Liked Songs as Spotify Connect announces it: one playlist id for EVERY
+// account. In the #1983 bundle STR's engine reported it for one household
+// member and the speaker's own Spotify client reported the very same id while
+// another member played theirs.
+const LIKED_SONGS_ALIAS = 'spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ';
+
+// accountBoundSpotifyContext reports whether a context URI names a different
+// list for every account although the URI is the same for all of them: Liked
+// Songs, as the alias above or as the bare collection. For those the URI alone
+// does not say whose list plays. spotify:user:<id>:collection carries its
+// owner and is compared like any other URI. Same rule as the agent's
+// accountBoundSpotifyURI (internal/webui/spotify_playing_key.go).
+export function accountBoundSpotifyContext(uri) {
+  const u = normalizeSpotifyContext(uri);
+  return u === LIKED_SONGS_ALIAS || u === 'spotify:collection' || u.startsWith('spotify:collection:');
+}
+
+// sameKnownSpotifyAccount is true only when both accounts are known and equal.
+function sameKnownSpotifyAccount(a, b) {
+  const x = String(a || '').trim();
+  const y = String(b || '').trim();
+  return !!x && x === y;
+}
+
 // spotifySlotStillHolds decides whether the remembered Spotify key may stay lit
 // while the speaker reports only the generic /spotify/stream.ogg.
 //
@@ -96,10 +120,19 @@ export function snapshotFromReply(reply) {
 // 14). The two differ in the context: next/prev stays in the key's playlist, a
 // takeover plays something else. An empty context proves nothing (the engine
 // can leave it empty), so the key keeps its light then.
-export function spotifySlotStillHolds(presetUri, snapshot) {
+//
+// Liked Songs has one URI for every account, so there another household member
+// taking over with their own Liked Songs keeps the context and only the account
+// tells (#1983). The key was lit by its own recall, so it is dropped only on
+// proof: both accounts known and different.
+export function spotifySlotStillHolds(presetUri, snapshot, presetAccount = '') {
   const ctx = normalizeSpotifyContext(snapshot && snapshot.context);
   if (!ctx || !presetUri) return true;
-  return ctx === normalizeSpotifyContext(presetUri);
+  if (ctx !== normalizeSpotifyContext(presetUri)) return false;
+  if (!accountBoundSpotifyContext(ctx)) return true;
+  const playing = String((snapshot && snapshot.account) || '').trim();
+  const saved = String(presetAccount || '').trim();
+  return !playing || !saved || playing === saved;
 }
 
 // spotifySlotForContext names the Spotify key that holds what the engine plays,
@@ -112,16 +145,31 @@ export function spotifySlotStillHolds(presetUri, snapshot) {
 // same playlist on two keys (#836), so more than one match is an older store;
 // the lowest key wins then, so the highlight does not hop between renders. An
 // empty context proves nothing and names no key.
+//
+// Liked Songs is the exception to "the URI is enough": every account plays it
+// under the same URI, so a key holding it is named only when the account that
+// plays is known to be the one the key was saved under (#1983).
 export function spotifySlotForContext(presets, snapshot) {
   const ctx = normalizeSpotifyContext(snapshot && snapshot.context);
   if (!ctx) return null;
+  const bound = accountBoundSpotifyContext(ctx);
   let best = null;
   for (const p of presets || []) {
     if (!p || p.type !== 'spotify' || !p.uri) continue;
     if (normalizeSpotifyContext(p.uri) !== ctx) continue;
+    if (bound && !sameKnownSpotifyAccount(p.account, snapshot && snapshot.account)) continue;
     if (best === null || p.slot < best) best = p.slot;
   }
   return best;
+}
+
+// spotifyKeyGone reports whether the key remembered as the playing Spotify key
+// no longer exists as a Spotify key: it was emptied, or something else was
+// saved on it. An empty key list is no evidence (the keys may not be loaded
+// yet), so it never reports true then.
+export function spotifyKeyGone(presets, slot) {
+  if (slot == null || !presets || !presets.length) return false;
+  return !presets.some(p => p && p.slot === slot && p.type === 'spotify');
 }
 
 // nativeSpotifySlot names the Spotify key that holds what the speaker's OWN
@@ -134,6 +182,11 @@ export function spotifySlotForContext(presets, snapshot) {
 // stored on the key, so it is matched on that URI and nothing else. Another
 // playlist, another source or STR's own stream (whose location carries no
 // context) names no key.
+//
+// The speaker names no account for that session (sourceAccount is the fixed
+// placeholder "SpotifyConnectUserName"), so a Liked Songs key, whose URI is the
+// same for every account, is never named from here: it lit up while another
+// household member played their own Liked Songs (#1983).
 export function nativeSpotifySlot(presets, nowLocation) {
   const loc = nowLocation || '';
   if (/\/spotify\/stream/.test(loc)) return null;

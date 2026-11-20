@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
@@ -25,6 +26,24 @@ import (
 // Portable; see the spike notes for the hard constraints this design works around
 // (the box UPnP player rejects https URIs; the radio stream proxy loops a finite
 // file).
+
+// announceTitleMax is how many bytes of the spoken text become the title the
+// speaker is handed with the announcement.
+const announceTitleMax = 64
+
+// announceTitle shortens text to announceTitleMax bytes, cut between
+// characters and never inside one: half a "ž" is invalid UTF-8 in the
+// metadata the speaker is handed.
+func announceTitle(text string) string {
+	if len(text) <= announceTitleMax {
+		return text
+	}
+	cut := announceTitleMax
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(text[:cut])
+}
 
 const (
 	// maxAnnounceBytes caps a fetched announcement so a bad or huge URL cannot
@@ -163,9 +182,7 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = "Announcement"
 	}
-	if len(title) > 64 {
-		title = strings.TrimSpace(title[:64])
-	}
+	title = announceTitle(title)
 	volume := body.Volume
 
 	// Respond now and run the interrupt/play/resume cycle in the background. The

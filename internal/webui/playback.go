@@ -678,7 +678,10 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 				// the account throttle that keeps the denial alive (429, field
 				// 2026-07-26: 51-track storms per press). Remember it so the
 				// verify below never fires the recovery re-Play into that state.
-				keyDenied = strings.Contains(playErr.Error(), "audio key denied")
+				// Asked of the error itself, not of its wording: the engine has
+				// two messages for a refused key and only one of them says
+				// "audio key denied" (spotifykeydenied.go, #1947).
+				keyDenied = isSpotifyKeyDenied(playErr)
 				if isNoSpotifySession(playErr) {
 					s.abandonSessionlessRecall(gen, recallStart, slot)
 					return
