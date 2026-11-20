@@ -194,6 +194,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		case isKeyDenialHint(hint):
 			// Marked as a refused key, so no caller answers it with another
 			// play (keydenied.go).
+			m.forgiveRefusedRecall()
 			return NewAudioKeyDeniedError(err, hint)
 		case hint != "":
 			return fmt.Errorf("%w: %s", err, hint)
@@ -222,6 +223,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 		m.clearRecallDisplayLocked()
 		m.mu.Unlock()
 		m.logger.Warn("spotify: the engine refused the recall while it waits after a run of refused audio keys", "uri", uri)
+		m.forgiveRefusedRecall()
 		return NewAudioKeyDeniedError(nil, keyDeniedBackoffHint)
 	}
 	if !loaded && busy && !m.seekFailedSince(playAt) {

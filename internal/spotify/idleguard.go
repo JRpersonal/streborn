@@ -77,6 +77,27 @@ func (m *Manager) noteAudioDeliveredLocked() (wasTripped bool) {
 	return wasTripped
 }
 
+// forgiveRefusedRecall takes back what a recall counted against the speaker
+// when Spotify refused it the audio key. The guard measures whether the SPEAKER
+// takes audio, and a refused recall never offered it any, so its marks say
+// nothing about the speaker. Counted, they closed the guard on the next
+// legitimate press: one refused key for a lapsed Free account marks twice (the
+// web UI, then Play after the account switch, more than idleGuardCoalesce
+// apart), so the Premium key pressed after it was the third attempt, lost its
+// keep-alive, and the engine paused while the speaker reconnected; the key
+// went red after 30 s with nothing played (#1947, v1.8.2 bundle). No storm can
+// grow out of this: a refused account produces no playback, the engine backs
+// off by itself (keydenied.go) and the recall never re-plays into a denial.
+func (m *Manager) forgiveRefusedRecall() {
+	m.mu.Lock()
+	had := m.idleActivations
+	m.idleActivations, m.idleActivationAt, m.idleGuardWarned = 0, time.Time{}, false
+	m.mu.Unlock()
+	if had > 0 {
+		m.logger.Info("spotify: Spotify refused this recall, so its attempts no longer count against the speaker", "attempts", had)
+	}
+}
+
 // warnIdleGuard is the one line per trip. It names the counts so a bundle shows
 // how far the loop got before the guard closed it.
 func (m *Manager) warnIdleGuard(what string) {

@@ -201,6 +201,27 @@ func TestOneRecallCallingSetRecallingTwiceCountsOnce(t *testing.T) {
 	}
 }
 
+// #1947: a key Spotify refused (lapsed Free account) marked twice, once from
+// the web UI and once from Play after the account switch. The Premium key
+// pressed next was the third attempt and lost its keep-alive.
+func TestARefusedRecallDoesNotCountAgainstTheSpeaker(t *testing.T) {
+	m, _ := guardManager(t)
+	m.SetRecalling() // web UI, refused Free key
+	age(m, 9*time.Second)
+	m.SetRecalling() // Play, after the account switch
+	m.forgiveRefusedRecall()
+	age(m, 15*time.Second)
+	m.SetRecalling() // the Premium key, web UI
+	if !m.engineHot() {
+		t.Fatal("the Premium key after a refused one lost its keep-alive")
+	}
+	age(m, 7*time.Second)
+	m.SetRecalling() // its Play, after switching back
+	if !m.engineHot() {
+		t.Fatal("the Premium key's own second mark tripped the guard")
+	}
+}
+
 func TestAutoSwitchStandsDownAfterTwoAttemptsWithoutAudio(t *testing.T) {
 	m, fired := guardManager(t)
 	for i := 0; i < 5; i++ {
