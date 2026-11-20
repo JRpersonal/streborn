@@ -8,6 +8,7 @@ package spotify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -139,6 +140,34 @@ const spotifyMinFreeBytes = 2 * 1024 * 1024
 // engine, so the supervise loop backs off and re-checks instead of treating it
 // like a crash.
 var errLowDisk = errors.New("insufficient NAND to start go-librespot")
+
+// errRestartRequested marks a run that ended because STR restarted the engine
+// on purpose through runCancel: an account switch for a preset, a new device
+// name, a quality change, a hot-swapped binary. Such an exit is no crash, so
+// the supervise loop neither warns about it nor counts it, and it relaunches
+// after restartRequestedWait instead of the 3 s crash pause. That pause sat in
+// every cross-account preset press (#1947: kill to relaunch took 3.0 s of a
+// 6.7 s switch while the speaker waited on an empty stream).
+var errRestartRequested = errors.New("go-librespot restarted on request")
+
+// restartRequestedWait is the pause before relaunching after a requested
+// restart. The old process is already reaped (cmd.Wait returned), so nothing
+// holds its sockets or files; the short gap only keeps two launches from
+// running back to back if a caller ever restarts twice in a row.
+const restartRequestedWait = 250 * time.Millisecond
+
+// classifyRunExit turns the end of one engine run into the error the supervise
+// loop judges. A run whose own context was cancelled while the manager's was
+// not was restarted on purpose, whatever the process returned.
+func classifyRunExit(waitErr error, runCancelled, managerDone bool) error {
+	if runCancelled && !managerDone {
+		if waitErr != nil {
+			return fmt.Errorf("%w (%w)", errRestartRequested, waitErr)
+		}
+		return errRestartRequested
+	}
+	return waitErr
+}
 
 // freeBytes lives in statfs_linux.go / statfs_other.go: the Linux build does a
 // real statfs, other hosts fail open so the package stays testable on dev
@@ -280,6 +309,7 @@ func (m *Manager) Run(ctx context.Context) {
 		}
 		started := time.Now()
 		err := m.runOnce(ctx)
+		requested := errors.Is(err, errRestartRequested)
 		if err != nil && ctx.Err() == nil && !errors.Is(err, errLowDisk) {
 			if m.consumeStoppedForUpdate() {
 				// The exit was ours (StopEngine ahead of an OTA write), so it
@@ -287,7 +317,11 @@ func (m *Manager) Run(ctx context.Context) {
 				m.logger.Info("spotify: go-librespot stopped for an update, not counting it as a crash")
 				continue
 			}
-			m.logger.Warn("go-librespot exited, restarting", "err", err)
+			if requested {
+				m.logger.Info("spotify: go-librespot restarting on request", "ranMs", time.Since(started).Milliseconds())
+			} else {
+				m.logger.Warn("go-librespot exited, restarting", "err", err)
+			}
 		}
 		// Crash-loop detection: a run that ended almost immediately is a crash,
 		// not real playback (time.Since uses the monotonic clock, so it is
@@ -297,7 +331,7 @@ func (m *Manager) Run(ctx context.Context) {
 		// have missed the network. After a couple of rapid crashes, re-attempt
 		// an HTTP-Date clock correction (rate-limited) so the next launch can
 		// authenticate (#296 root cause).
-		if err != nil && ctx.Err() == nil && time.Since(started) < 20*time.Second {
+		if err != nil && !requested && ctx.Err() == nil && time.Since(started) < 20*time.Second {
 			rapidCrashes++
 			if rapidCrashes >= 2 && clocksync.Implausible(time.Now()) && time.Since(lastClockSync) > 5*time.Minute {
 				lastClockSync = time.Now()
@@ -318,6 +352,9 @@ func (m *Manager) Run(ctx context.Context) {
 		// Healthy playback resets rapidCrashes, so a normal restart still
 		// takes the fast 3 s path.
 		wait := 3 * time.Second
+		if requested {
+			wait = restartRequestedWait
+		}
 		// Spotify refused the saved login: the engine exits fatally on every
 		// start until that login is out of its way, so this is not a crash to
 		// pace like a network outage. afterEngineExit sets the login aside and
@@ -494,7 +531,8 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			break
 		}
 	}
-	return cmd.Wait()
+	waitErr := cmd.Wait()
+	return classifyRunExit(waitErr, runCtx.Err() != nil, ctx.Err() != nil)
 }
 
 // noteLibrespotLine inspects a go-librespot stderr line for the non-Premium
