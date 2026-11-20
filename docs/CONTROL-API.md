@@ -304,6 +304,45 @@ kept the group anyway, and `{"ok":true,"nothing":true}` when there was no group
 to take apart. Both arrive as HTTP 200. Treating either as success is how an app
 shows a green tick over a group that is still playing.
 
+### Volume keys of a permanent group's main speaker
+
+In a permanent group the volume keys on the main speaker, and the IR remote
+pointed at it, turn the whole group up and down (agent after v1.8.0). The
+agent on the main speaker sees the firmware's volume event and moves every
+member that is in the live zone by the same number of steps, from the level
+that member had when the gesture began, clamped to 0..100. That is the group
+slider's rule, so the balance between the speakers stays and a member that ran
+into 0 or 100 gets its spacing back when the key goes the other way. There is
+no setting for it: it belongs to permanent groups, and to nothing else. A group
+that is not permanent, a stereo pair, and a temporary group on top of a
+permanent one behave as before.
+
+Only a key press on the main speaker counts. A level that arrives any other
+way stays with the main speaker and changes the balance: `PUT /api/box/volume`
+(the app's and the phone page's slider for that speaker), the group volume
+routes above (they write every member themselves), the Spotify app's volume
+(the engine already mirrors it to the members), an alarm, the start volume, the
+volume ceiling and STR's own muted wakes. A member's own keys stay local too,
+and so does mute.
+
+How the agent knows it was a key depends on the speaker. Where the firmware's
+key trace names the volume keys (seen on the Portable), a volume event is passed
+on only when the trace shows a key press on the speaker or its remote with it;
+a program writing to the Bose port (`:8090/volume`, or a `VOLUME_UP` sent to
+`:8090/key`) is then left alone. Where the trace never names the volume key
+(the SoundTouch 10 and the other sm2 boards), the agent passes on every volume
+event that none of STR's own writers explains, so there a third-party write to
+the Bose port moves the group like the key does. Home automation that should
+move only the main speaker uses `PUT /api/box/volume`, on every model. The
+`group_volume_follow` section of the diagnostic bundle says which of the two a
+speaker decides by.
+
+A member is written through its own STR agent, which applies that speaker's
+volume ceiling; a member without STR is written on its Bose port. A stored
+member that is asleep, was taken out or is muted is left as it is. A held key
+is passed on as it goes, one request per member at a time, always with the
+newest level.
+
 ## Agent and history
 
 | Method | Path | Body | Notes |

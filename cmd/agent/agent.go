@@ -1236,6 +1236,10 @@ func (a *agent) buildBoxLink() error {
 	spotifyMgr.SetBoxPositionFn(renderer.RelPosition)
 	// The Spotify app stops at the volume ceiling set in STR (maxvolume.go).
 	spotifyMgr.SetVolumeCapFn(webuiSrv.MaxVolume)
+	// The Spotify app's volume is written to the speaker by STR, so the frame
+	// that reports it is not a key press on the speaker and is not passed on
+	// to a permanent group a second time (webui groupvolumefollow.go).
+	spotifyMgr.SetBoxVolumeWriteHook(webuiSrv.NoteOwnVolumeWrite)
 	// publishBoxPresets is the ONE place a box preset list read from the
 	// speaker (a gabbo presetsUpdated frame, the boot seed read, the
 	// reconcile's own /presets read) reaches the webui cache and the
@@ -1303,6 +1307,7 @@ func (a *agent) buildBoxLink() error {
 		onBoxSource:    webuiSrv.NoteBoxSourceChanged,
 		onBoxVolume:    webuiSrv.NoteBoxVolumeLevel,
 		onBoxMute:      webuiSrv.NoteBoxMute,
+		onVolumeKey:    webuiSrv.NoteBoxVolumeKey,
 		// A pair torn down anywhere (the Bose app included) clears STR's record
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.
@@ -1557,6 +1562,11 @@ func (a *agent) buildBoxLink() error {
 	// reads this to tell a refused rewrite from a landed one.
 	setPresetRefusalSource(keyTrace.PresetRefusalsSince)
 	webui.RegisterDebugSection("box_keys", func() any { return keyTrace.Snapshot() })
+	// In a permanent group the main speaker's volume keys move the members.
+	// Where the trace names the volume key, that is what proves a person
+	// pressed it; a trace that stopped proves nothing either way.
+	webuiSrv.SetVolumeKeyTraceHealthyFn(keyTrace.Healthy)
+	webui.RegisterDebugSection("group_volume_follow", func() any { return webuiSrv.GroupVolumeFollowSnapshot() })
 	// The ring is also the wake signal: the firmware logs every standby and
 	// wake transition there, so a speaker switched on at the box or by its
 	// remote is noticed even on a chassis whose gabbo bus never sends the

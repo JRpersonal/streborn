@@ -88,6 +88,7 @@ func (s *Server) applyStartVolume(reason string) {
 		if set == nil {
 			set = func(ctx context.Context, v int) error { return levelsClient(s.boxHost).SetVolume(ctx, v) }
 		}
+		s.noteOwnVolumeWrite(vol)
 		if err := set(ctx, vol); err != nil {
 			s.logger.Warn("start volume: could not set the level", "err", err, "vol", vol, "reason", reason)
 			return

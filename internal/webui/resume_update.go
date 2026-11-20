@@ -221,6 +221,7 @@ func (s *Server) setOwnVolume(vol int) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
+	s.noteOwnVolumeWrite(vol)
 	return levelsClient(s.boxHost).SetVolume(ctx, vol)
 }
 

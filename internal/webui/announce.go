@@ -341,6 +341,7 @@ func (s *Server) readVolume(ctx context.Context) int {
 
 // announceSetVolume writes the box volume for an announcement and its restore.
 func (s *Server) announceSetVolume(ctx context.Context, vol int) error {
+	s.noteOwnVolumeWrite(vol)
 	if s.announceSetVolumeFn != nil {
 		return s.announceSetVolumeFn(ctx, vol)
 	}

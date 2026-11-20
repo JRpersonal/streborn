@@ -286,6 +286,7 @@ func (s *Server) startGame(id string) {
 		// through that.
 		for i := 0; i < 8; i++ {
 			if v := s.readVolume(ctx); v > blockfallMaxVolume {
+				s.noteOwnVolumeWrite(blockfallMaxVolume)
 				_ = boxapi.New(s.boxHost).SetVolume(ctx, blockfallMaxVolume)
 			}
 			time.Sleep(time.Second)
