@@ -192,3 +192,29 @@ describe('Recently played star repaint (#1339)', () => {
     expect(main).toMatch(/onFavRemovalsApplied\(\(\) => \{ if \(state\.view === 'recent'\) repaintRecentFavStars\(\); \}\)/);
   });
 });
+
+// #1811: a station starred in Recently played while the Favorites list was the
+// list on screen stayed missing from it until another category was picked.
+describe('open Favorites list follows a star set elsewhere (#1811)', () => {
+  it('adds a station starred in Recently played to the open Favorites list', () => {
+    state.searchLastMode = 'favorites';
+    state.searchResults = fav.loadFavStore();
+    expect(fav.toggleFav({ stationuuid: 'u-3', name: 'SWR3', url: 'http://example/swr3' })).toBe(true);
+    expect(state.searchResults.map((s) => s.stationuuid)).toEqual(['u-1', 'u-2', 'u-3']);
+  });
+
+  it('drops an unstarred station from the open Favorites list', () => {
+    state.searchLastMode = 'favorites';
+    state.searchResults = fav.loadFavStore();
+    expect(fav.toggleFav({ stationuuid: 'u-1' })).toBe(false);
+    expect(state.searchResults.map((s) => s.stationuuid)).toEqual(['u-2']);
+  });
+
+  it('leaves another list alone', () => {
+    state.searchLastMode = 'top';
+    const top = [{ stationuuid: 'x-1', name: 'Top' }];
+    state.searchResults = top;
+    fav.toggleFav({ stationuuid: 'u-3', name: 'SWR3', url: 'http://example/swr3' });
+    expect(state.searchResults).toBe(top);
+  });
+});
