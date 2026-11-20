@@ -206,22 +206,69 @@ var wakeMemberClient = &http.Client{Timeout: 12 * time.Second}
 // presets) from driving the firmware with back-to-back setZone rounds.
 const defaultGroupFormCooldown = 30 * time.Second
 
-// refreshGroupIPs updates the stored members' addresses from the speaker list
-// the agent already holds (no browse, no probe) and returns z with them. A
-// member the router gave a new address was otherwise skipped as unreachable on
-// every play from then on (#2006: "ST10 ungroups", mesh, DHCP renewal).
-// Only peers that answered the last sweep count, so a stale roster entry never
-// replaces a working hint.
+// groupMemberFirmwareID reads the SoundTouch deviceID a speaker's own firmware
+// reports at ip, or "" when it does not answer. A seam for the tests.
+var groupMemberFirmwareID = func(ctx context.Context, ip string) string {
+	ictx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	info, err := boxapi.New(ip).GetInfo(ictx)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(info.DeviceID)
+}
+
+// refreshGroupIPs finds members whose stored address no longer answers as that
+// member and looks for them among the speakers the agent knows, returning z
+// with the current addresses (and storing them). A member the router gave a
+// new address was otherwise skipped as unreachable on every play from then on
+// (#2006: "ST10 ungroups", mesh, DHCP renewal).
+//
+// The match is by the deviceID each speaker's FIRMWARE reports, read from its
+// /info, never by the peer list's deviceID: on a two-chip chassis the list
+// carries the Wi-Fi chip's MAC while the group stores the SoundTouch ID (the
+// field test of the first version of this fix on 2026-11-20: a SoundTouch 10
+// listed under one MAC while its firmware reported the other, so nothing
+// ever matched). Only peers
+// that answered the last sweep are asked, all at once, two seconds each.
 func (s *Server) refreshGroupIPs(z zones.Zone) zones.Zone {
 	if s.cachedPeersFn == nil || len(z.Slaves) == 0 {
 		return z
 	}
-	fresh := map[string]string{}
-	for _, p := range s.cachedPeersFn() {
-		if p.Reachable && p.DeviceID != "" && p.IP != "" {
-			fresh[p.DeviceID] = p.IP
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	missing := map[string]bool{}
+	for _, m := range z.Slaves {
+		if m.DeviceID == "" {
+			continue
+		}
+		if id := groupMemberFirmwareID(ctx, m.IP); m.IP == "" || !strings.EqualFold(id, m.DeviceID) {
+			missing[strings.ToUpper(m.DeviceID)] = true
 		}
 	}
+	if len(missing) == 0 {
+		return z
+	}
+	var (
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+		fresh = map[string]string{}
+	)
+	for _, p := range s.cachedPeersFn() {
+		if !p.Reachable || p.IP == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			if id := strings.ToUpper(groupMemberFirmwareID(ctx, ip)); id != "" && missing[id] {
+				mu.Lock()
+				fresh[id] = ip
+				mu.Unlock()
+			}
+		}(p.IP)
+	}
+	wg.Wait()
 	nz, n := zones.ApplyIPs(z, fresh)
 	if n == 0 {
 		return z
