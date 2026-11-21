@@ -82,6 +82,10 @@ type Server struct {
 	// missing file = no reflection (the safe default).
 	reflectPath string
 
+	// deezerLoginPath is the file the speaker's own Deezer login is kept in
+	// (deezerlogin.go). Empty = feature off; a missing file = nothing kept.
+	deezerLoginPath string
+
 	// requestLog stores the last N requests for debug purposes
 	// (accessible via /__spy/log on the same listener).
 	requestLog    []SpyEntry

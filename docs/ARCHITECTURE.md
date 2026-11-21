@@ -981,6 +981,8 @@ picture.
   foreign-presets.json        presets the box holds that STR did not write
   marge-group.json, deviceid  the group document marge serves, and the confirmed box id
   box-snapshot.json           one-shot capture of the box's pre-takeover presets
+  deezer-login.json           the speaker's own Deezer login from Sources.xml,
+                              mode 0600, handed back to the speaker only
   mediaservers.json           DLNA servers turned into native box sources
   wlan-creds, wlan-target     SSID and passphrase, IN THE CLEAR, mode 0600
   wpa_supplicant.conf.bak     rollback copy, on NAND because /etc is read-only

@@ -26,10 +26,10 @@ var presetsSamples = []struct {
 }{
 	{"snapshot fixture: STR proxy + Deezer", `<presets>
 <preset id="1"><ContentItem source="UPNP" type="audio" location="http://127.0.0.1:8888/stream/1" sourceAccount="UPnPUserName" isPresetable="true"><itemName>1LIVE</itemName></ContentItem></preset>
-<preset id="3"><ContentItem source="DEEZER" type="tracklisturl" location="/playlist/1234" sourceAccount="1456373802" isPresetable="true"><itemName>My Playlist</itemName></ContentItem></preset>
+<preset id="3"><ContentItem source="DEEZER" type="tracklisturl" location="/playlist/1234" sourceAccount="1234567890" isPresetable="true"><itemName>My Playlist</itemName></ContentItem></preset>
 </presets>`},
 	{"bus fixture: Deezer flow + radio with an empty account", `<presets>` +
-		`<preset id="3"><ContentItem source="DEEZER" type="playlist" location="123456789" sourceAccount="1456373802"><itemName>My Flow</itemName></ContentItem></preset>` +
+		`<preset id="3"><ContentItem source="DEEZER" type="playlist" location="123456789" sourceAccount="1234567890"><itemName>My Flow</itemName></ContentItem></preset>` +
 		`<preset id="1"><ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="http://wdr2.mp3" sourceAccount=""><itemName>WDR 2</itemName></ContentItem></preset>` +
 		`</presets>`},
 	{"firmware layout: declaration, timestamps, containerArt", `<?xml version="1.0" encoding="UTF-8" ?>

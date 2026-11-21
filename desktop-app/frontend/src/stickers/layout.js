@@ -282,7 +282,7 @@ function st10Arc(sp, idx, back, pal, measure) {
   const pads = [[26, 10], [12, 10], [12, 26]];
   // The three cells share what is left after their paddings and the two rules.
   const inner = (W - pads.reduce((a, [l, r]) => a + l + r, 0) - 2 * 1.5) / 3;
-  const s = { num: u(20), tile: u(46), name: u(20), two: u(17) };
+  const s = { num: u(20), tile: u(46), name: u(20), two: u(19) };
   let x = 0;
   pads.forEach(([l, r], i) => {
     // Top and bottom padding: 24 and 6 on the back arc, 6 and 26 on the front.
@@ -327,7 +327,7 @@ function wideSticker(sp, idx, curved, pal, measure) {
   const p = newPiece(idx, 'main', W, H, pal, curved ? (x) => 1.47e-4 * (x - W / 2) ** 2 : null, null);
   const cw = GRID_W / 3;
   const ch = (H - TOP) / 2;
-  const s = { num: u(22), tile: u(56), name: u(22), two: u(17) };
+  const s = { num: u(22), tile: u(56), name: u(22), two: u(19) };
   for (let i = 0; i < 6; i++) {
     const col = i % 3, row = Math.floor(i / 3);
     const x = OFF + col * cw, y = TOP + row * ch;
@@ -352,7 +352,7 @@ function portableGrid(sp, idx, pal, measure) {
     (x) => 313 - 1e-4 * (x - 681) ** 2);
   const cw = W / 3;
   const ch = (H - TOP - BOTTOM) / 2;
-  const s = { num: u(18), tile: u(36), name: u(19), two: u(15) };
+  const s = { num: u(18), tile: u(36), name: u(19), two: u(17) };
   for (let i = 0; i < 6; i++) {
     const col = i % 3, row = Math.floor(i / 3);
     const x = col * cw, y = TOP + row * ch;

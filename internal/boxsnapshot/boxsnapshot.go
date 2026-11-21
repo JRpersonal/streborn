@@ -106,10 +106,10 @@ func DefaultPath() string { return defaultPath }
 func ReflectPath() string { return reflectPath }
 
 // ReflectSource is one account-linked cloud source STR keeps advertising so the
-// box plays it via its own cached account token (e.g. Deezer via its ARL).
+// box plays it via its own cached account token (e.g. Deezer).
 type ReflectSource struct {
 	Source  string `json:"source"`  // e.g. "DEEZER"
-	Account string `json:"account"` // sourceAccount, e.g. "1456373802"
+	Account string `json:"account"` // sourceAccount, e.g. "1234567890"
 	Name    string `json:"name"`    // friendly name, e.g. "Deezer"
 }
 

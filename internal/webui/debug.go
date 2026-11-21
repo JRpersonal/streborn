@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/boxsources"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
@@ -34,6 +35,9 @@ var (
 	sysBlockRoot = "/sys/block"
 	mediaRoot    = "/media"
 	nvRoot       = "/mnt/nv"
+	// boseSourcesGlob is the firmware's source store (boxsources.Glob); a
+	// var so the debug-state test can point it at a temp file.
+	boseSourcesGlob = boxsources.Glob
 )
 
 // sshPersistentEnabled reports whether root SSH is configured to stay open across
@@ -354,6 +358,14 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// STR cleared it (boxsetup.go). In memory, so a reboot resets it, which
 		// is correct: the question is what happened since the box came up.
 		"box_setup_episodes": s.boxSetupDebug(),
+		// The firmware's own source store (Sources.xml), one line per linked
+		// service: the service, the type of its login, and whether a login is
+		// present. It answers what /sources cannot: whether a speaker that
+		// had Deezer (or Pandora, iHeart) before STR still holds that login
+		// on its NAND (docs/streaming/deezer.md). The login itself, the
+		// account and the display name are never read into this section.
+		// Read per request, like every other file here.
+		"bose_sources_file": boxsources.DebugSummary(boseSourcesGlob),
 	}
 	// Preset store summary: one compact line per slot so a diagnostic bundle
 	// shows dead presets (empty/invalid stream URL) directly. Before this the

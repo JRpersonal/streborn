@@ -83,7 +83,7 @@ func TestReflectedTuneInIsNotDuplicatedInCatalogue(t *testing.T) {
 		t.Errorf("the Deezer reflection must keep its shipped shape")
 	}
 
-	full := s.reflectedFullSourcesXML()
+	full := s.reflectedFullSourcesXML(false)
 	if !strings.Contains(full, `<sourceproviderid>25</sourceproviderid><sourcename>TUNEIN</sourcename>`) {
 		t.Errorf("account document lacks the reflected TUNEIN source: %s", full)
 	}

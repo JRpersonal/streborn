@@ -32,16 +32,15 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 			Method:  r.Method,
 			Host:    r.Host,
 			Path:    r.URL.RequestURI(),
-			Headers: r.Header.Clone(),
-			Body:    string(bodyCopy),
+			Headers: maskSpyHeaders(r.Header),
+			Body:    maskSpyBody(string(bodyCopy)),
 		}
-		// A Pandora or iHeartRadio registration can carry the account
-		// credential. The spy log (/__spy/log) prints bodies, so the recorded
-		// copy is masked; the handler below still reads the original.
-		nativeType := nativeRequestType(r.URL.Path, entry.Body)
-		if nativeType != "" {
-			entry.Body = maskCredentials(entry.Body)
-		}
+		// Any source registration can carry the account credential: Pandora
+		// and iHeartRadio, and equally Deezer or any other service the
+		// firmware links. The spy log (/__spy/log) prints bodies and headers
+		// to every LAN client, so the recorded copy is masked whatever the
+		// service; the handler below still reads the original.
+		nativeType := nativeRequestType(r.URL.Path, string(bodyCopy))
 		s.recordSpy(entry)
 		// The firmware's TuneIn client is believed dead on 27.0.6 (no request
 		// to its partner host has ever been seen), so any request to that host
@@ -83,6 +82,70 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// spySecretHeaders are request headers whose values are secrets: the
+// firmware's account token travels in Authorization.
+var spySecretHeaders = []string{"Authorization", "Proxy-Authorization", "Cookie"}
+
+// maskSpyHeaders copies the request headers for the spy log with every
+// secret header value replaced by "***" (an empty value stays empty).
+func maskSpyHeaders(h http.Header) http.Header {
+	out := h.Clone()
+	for _, k := range spySecretHeaders {
+		vs := out.Values(k)
+		if len(vs) == 0 {
+			continue
+		}
+		masked := make([]string, len(vs))
+		for i, v := range vs {
+			if v != "" {
+				masked[i] = "***"
+			}
+		}
+		out[http.CanonicalHeaderKey(k)] = masked
+	}
+	return out
+}
+
+// maskSpyBody blanks every secret a request body can carry before it is
+// recorded: each <credential> value (element text and text="" attribute),
+// whatever service it belongs to, and the <pass> of a credentials document.
+func maskSpyBody(body string) string {
+	if body == "" {
+		return body
+	}
+	return maskElementText(maskCredentials(body), "pass")
+}
+
+// maskElementText replaces the text of every <tag>...</tag> with "***"
+// (empty text stays empty). Only the exact tag is matched, so <pass> does not
+// touch <password> or <passive>.
+func maskElementText(body, tag string) string {
+	open, closeTag := "<"+tag+">", "</"+tag+">"
+	var b strings.Builder
+	rest := body
+	for {
+		i := strings.Index(rest, open)
+		if i < 0 {
+			b.WriteString(rest)
+			return b.String()
+		}
+		b.WriteString(rest[:i+len(open)])
+		rest = rest[i+len(open):]
+		j := strings.Index(rest, closeTag)
+		if j < 0 {
+			// Unterminated: drop the rest rather than record a secret.
+			if strings.TrimSpace(rest) != "" {
+				b.WriteString("***")
+			}
+			return b.String()
+		}
+		if strings.TrimSpace(rest[:j]) != "" {
+			b.WriteString("***")
+		}
+		rest = rest[j:]
+	}
 }
 
 // recordSpy stores an entry in the ring buffer.
