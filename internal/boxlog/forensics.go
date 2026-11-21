@@ -123,6 +123,11 @@ const (
 	ClassMargeError Class = "marge_error"
 	// BoseApp overload.
 	ClassSwamped Class = "swamped"
+	// ClassUSBDisk is the kernel announcing a USB disk coming or going (the
+	// SCSI attach, the partition list, a FAT warning at mount time, the USB
+	// disconnect). Ring only: the agent's music stick code logs its own
+	// reading of the stick once per change (usbdisk.go).
+	ClassUSBDisk Class = "usb_disk"
 )
 
 // Event is one classified firmware line.
@@ -137,6 +142,10 @@ type Event struct {
 	Facility string `json:"facility,omitempty"`
 	// Message is the redacted, truncated message after the DPrint prefix.
 	Message string `json:"message"`
+	// Backlog is a line logread replayed from the ring at its (re)start
+	// rather than one it just delivered (lineIsBacklog). Set for the classes
+	// a hook acts on at the moment of the line (usb_disk); never encoded.
+	Backlog bool `json:"-"`
 }
 
 // Line is one syslog line split into its fields. The ring's format is
@@ -211,6 +220,10 @@ func IsNoise(line string) bool {
 func Classify(l Line) (Class, bool) {
 	m := l.Message
 	switch {
+	// Kernel lines first and only from the kernel: no Bose daemon logs these
+	// shapes, and none of the cases below should see a kernel line.
+	case l.Process == "kernel" && isUSBDiskLine(m):
+		return ClassUSBDisk, true
 	case strings.Contains(m, "PlaybackFailure"):
 		return ClassPlayFailure, true
 	case strings.Contains(m, "SERVER ERROR: Server state"):
@@ -667,7 +680,7 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	// The play clock and the stale-URL stamp are read as "now" by the file
 	// resume, so a line logread -f replays from the ring at its (re)start
 	// must not land there as if it had just been logged (see lineIsBacklog).
-	backlog := (isOffset || class == ClassPlayStaleURL || class == ClassPlayUnderrun) && lineIsBacklog(l.Stamp, now)
+	backlog := (isOffset || class == ClassPlayStaleURL || class == ClassPlayUnderrun || class == ClassUSBDisk) && lineIsBacklog(l.Stamp, now)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
@@ -692,7 +705,7 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 		f.freezeSetupTailLocked(class, now)
 	}
 	f.classified++
-	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg}
+	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg, Backlog: backlog}
 	f.events.push(ev)
 	if class.Playback() {
 		f.lastPlayErr = ev

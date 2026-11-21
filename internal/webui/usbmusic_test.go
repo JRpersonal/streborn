@@ -34,16 +34,22 @@ type fakeStick struct {
 	mu       sync.Mutex
 	mounts   []string
 	mountOps []string
+	// remountErr makes the read-only remount fail; remountNoop makes it
+	// "succeed" while the mount stays read-write.
+	remountErr  error
+	remountNoop bool
 }
 
 func newFakeStick(t *testing.T, variant string) *fakeStick {
 	t.Helper()
 	f := &fakeStick{t: t, sys: t.TempDir(), proc: t.TempDir(), dev: t.TempDir(), files: t.TempDir()}
 	saved := []string{usbMusicSysRoot, usbProcRoot, usbDevRoot, usbMusicMountDir}
-	savedMount, savedUnmount := usbMountFn, usbUnmountFn
+	savedMount, savedUnmount, savedRemount := usbMountFn, usbUnmountFn, usbRemountROFn
+	savedDelays := usbSettleDelays
 	t.Cleanup(func() {
 		usbMusicSysRoot, usbProcRoot, usbDevRoot, usbMusicMountDir = saved[0], saved[1], saved[2], saved[3]
-		usbMountFn, usbUnmountFn = savedMount, savedUnmount
+		usbMountFn, usbUnmountFn, usbRemountROFn = savedMount, savedUnmount, savedRemount
+		usbSettleDelays = savedDelays
 	})
 	usbMusicSysRoot, usbProcRoot, usbDevRoot = f.sys, f.proc, f.dev
 	// The agent's own mount point holds the stick's files once "mounted".
@@ -67,6 +73,25 @@ func newFakeStick(t *testing.T, variant string) *fakeStick {
 			}
 		}
 		f.mounts = keep
+		f.writeMountsLocked()
+		return nil
+	}
+	// busybox "mount -o remount,ro dir": the mount's options turn ro.
+	usbRemountROFn = func(dir string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.mountOps = append(f.mountOps, "remount-ro "+dir)
+		if f.remountErr != nil {
+			return f.remountErr
+		}
+		if f.remountNoop {
+			return nil
+		}
+		for i, m := range f.mounts {
+			if strings.Contains(m, " "+dir+" ") {
+				f.mounts[i] = strings.Replace(m, " rw,", " ro,", 1)
+			}
+		}
 		f.writeMountsLocked()
 		return nil
 	}
@@ -115,6 +140,17 @@ func (f *fakeStick) ops() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.mountOps...)
+}
+
+// remounts counts the read-only remounts asked for.
+func (f *fakeStick) remounts() int {
+	n := 0
+	for _, op := range f.ops() {
+		if strings.HasPrefix(op, "remount-ro ") {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeStick) put(root string, rel ...string) {
@@ -217,8 +253,9 @@ func usbRow(rows []serverRow) (serverRow, bool) {
 }
 
 // ST10/ST20/ST30: Bose udev mounted the stick, so the agent reads from that
-// mount and never mounts anything itself.
-func TestFirmwareMountedMusicStickIsListedAndNotRemounted(t *testing.T) {
+// mount and never mounts anything itself. It switches that read-write mount
+// to read-only, once, and never unmounts it.
+func TestFirmwareMountedMusicStickIsListedAndRemountedReadOnly(t *testing.T) {
 	f := newFakeStick(t, "rhino")
 	media := t.TempDir()
 	f.put(media, "Album/01 a.mp3", "b.flac")
@@ -231,18 +268,22 @@ func TestFirmwareMountedMusicStickIsListedAndNotRemounted(t *testing.T) {
 		row.Location != "http://192.0.2.10:17008/usb/device.xml" || row.Name != "USB stick (Kitchen)" {
 		t.Fatalf("usb row: %+v %v", row, ok)
 	}
-	if ops := f.ops(); len(ops) != 0 {
-		t.Fatalf("a firmware mount must be used as it is, got %v", ops)
+	if ops := f.ops(); len(ops) != 1 || ops[0] != "remount-ro "+media {
+		t.Fatalf("a firmware mount is only switched to read-only in place, got %v", ops)
 	}
 	snap := s.USBMusicDebug().(usbMusicSnapshot)
 	if !snap.Served || snap.MountedBy != "firmware" || snap.Classification != "music" || snap.FATType != "FAT32" ||
-		snap.ClusterBytes != 32<<10 || snap.Variant != "rhino" {
+		snap.ClusterBytes != 32<<10 || snap.Variant != "rhino" || !snap.RemountedRO || snap.RemountError != "" ||
+		!strings.HasPrefix(snap.MountOptions, "ro,") || snap.MountDir != media {
 		t.Fatalf("snapshot: %+v", snap)
 	}
-	// A second look changes nothing and logs nothing new.
+	// A second look changes nothing, remounts nothing and logs nothing new.
 	listServers(t, s)
 	if n := strings.Count(logs.String(), "usb music: serving the music stick"); n != 1 {
 		t.Fatalf("the serving decision must be logged once, got %d:\n%s", n, logs.String())
+	}
+	if n := strings.Count(logs.String(), "switched the firmware's mount of the music stick to read-only"); n != 1 || f.remounts() != 1 {
+		t.Fatalf("the remount must happen and be logged once, got %d remounts, %d lines:\n%s", f.remounts(), n, logs.String())
 	}
 	if _, err := json.Marshal(s.USBMusicDebug()); err != nil {
 		t.Fatalf("debug section must encode: %v", err)
@@ -334,6 +375,14 @@ func TestSticksThatAreNotServedSayWhy(t *testing.T) {
 				if ops := f.ops(); ops[len(ops)-1] != "umount "+f.files {
 					t.Fatalf("an install stick must not stay mounted by STR: %v", ops)
 				}
+			}
+			// Only a music stick is switched to read-only: an install or
+			// recovery stick keeps its read-write mount for STR's scripts.
+			if n := f.remounts(); n != 0 {
+				t.Fatalf("a refused stick must never be remounted, got %v", f.ops())
+			}
+			if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.RemountedRO {
+				t.Fatalf("snapshot: %+v", snap)
 			}
 			// Nothing about it is browsable.
 			if _, _, ok := s.usbServed(true); ok {

@@ -12,16 +12,24 @@ package webui
 //
 //   - Nothing on the stick is ever written. Where the firmware mounted it
 //     (/media/sda1, read-write, iocharset=iso8859-1; live on the ST10 and the
-//     Portable) the agent reads from that mount; where nothing did, the agent
-//     mounts it itself READ-ONLY at usbMusicMountDir, and only when a user
-//     opens the Library, never at boot. File names are read in the mount's
-//     iocharset (usbmedia/charset.go).
+//     Portable) the agent reads from that mount and, once the stick is
+//     classified as a music stick, switches that mount to read-only in place
+//     (mount -o remount,ro): a stick pulled from a read-write mount came back
+//     with a dirty FAT, and sticks have been damaged that way. Never an
+//     install stick, never a stick whose classification failed, and the
+//     firmware's mount is never unmounted. Where nothing mounted the stick,
+//     the agent mounts it itself READ-ONLY at usbMusicMountDir, and only when
+//     a user opens the Library, never at boot. File names are read in the
+//     mount's iocharset (usbmedia/charset.go).
 //   - A stick with any STR or Bose marker (usbmedia.InstallMarkers) is an
 //     install stick and is never served, music on it or not.
 //   - No timer and no poll. The state is looked at when the agent starts
-//     (detection only, no mount) and when a client asks: the server list, a
-//     browse, a file. Each look is a sysfs glob and one read of /proc/mounts;
-//     the stick itself is only read when its state changed.
+//     (detection only, no mount), when the kernel logs a USB disk attached or
+//     gone (OnUSBDiskLine, from the syslog the agent follows anyway), and
+//     when a client asks: the server list, a browse, a file. Each look is a
+//     sysfs glob and one read of /proc/mounts; the stick itself is only read
+//     when its state changed. Every look also remounts a firmware mount of a
+//     music stick read-only if it is still read-write.
 //   - Each change of state is logged once at INFO. Requests are not logged.
 //
 // The speaker's own renderer is handed http://127.0.0.1:8888/usb/file/...
@@ -58,6 +66,15 @@ var (
 	usbMountFn = mountMusicStickReadOnly
 	// usbUnmountFn undoes a mount the agent made itself.
 	usbUnmountFn = func(dir string) error { return runQuiet("umount", "-l", dir) }
+	// usbRemountROFn switches the firmware's mount at dir to read-only in
+	// place. busybox mount; vfat takes a remount to ro on a 3.14 kernel as
+	// long as no file on it is open for writing, which nothing of STR's ever
+	// is. The result is checked in /proc/mounts afterwards, not assumed.
+	usbRemountROFn = func(dir string) error { return runQuiet("mount", "-o", "remount,ro", dir) }
+	// usbSettleDelays pace the looks after the kernel attached a USB disk:
+	// the firmware mounts it a moment after the kernel line, so one event
+	// looks up to four times over about ten seconds, then stops.
+	usbSettleDelays = []time.Duration{time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second}
 	// usbOwnIPsFn lists this speaker's own addresses.
 	usbOwnIPsFn = ownInterfaceIPs
 	// usbLoopbackBase is where the agent reaches its own /usb/ routes.
@@ -107,14 +124,24 @@ type usbMusicSnapshot struct {
 	WaitingForLibrary bool `json:"waiting_for_library,omitempty"`
 	// RootFolders and RootFiles are known once a client listed the top level;
 	// the stick is never counted on its own.
-	RootListed  bool      `json:"root_listed"`
-	RootFolders int       `json:"root_folders,omitempty"`
-	RootFiles   int       `json:"root_files,omitempty"`
-	Browses     int       `json:"browses"`
-	FileReads   int       `json:"file_reads"`
-	LastError   string    `json:"last_error,omitempty"`
-	CheckedAt   time.Time `json:"checked_at"`
-	Checks      int       `json:"checks"`
+	RootListed  bool   `json:"root_listed"`
+	RootFolders int    `json:"root_folders,omitempty"`
+	RootFiles   int    `json:"root_files,omitempty"`
+	Browses     int    `json:"browses"`
+	FileReads   int    `json:"file_reads"`
+	LastError   string `json:"last_error,omitempty"`
+	// RemountedRO: STR switched the firmware's read-write mount of this
+	// music stick to read-only, and /proc/mounts shows it read-only.
+	// RemountError is why the last attempt failed, while the mount is still
+	// read-write; the stick is served from it all the same.
+	RemountedRO  bool   `json:"remounted_ro"`
+	RemountError string `json:"remount_error,omitempty"`
+	// LastKernelEvent is the last USB disk line the kernel logged that the
+	// agent looked at the stick for ("attached" or "gone"), with its time.
+	LastKernelEvent   string    `json:"last_kernel_event,omitempty"`
+	LastKernelEventAt time.Time `json:"last_kernel_event_at,omitzero"`
+	CheckedAt         time.Time `json:"checked_at"`
+	Checks            int       `json:"checks"`
 }
 
 // usbMusicState is the one stick this agent serves, or none.
@@ -127,7 +154,32 @@ type usbMusicState struct {
 	updateID uint32
 	snap     usbMusicSnapshot
 	logged   string
+	// remount is the read-only remount of the firmware's mount of the stick
+	// being served (usbEnsureReadOnlyLocked).
+	remount usbRemountState
+	// settling is set while one kernel attach line's looks are running, so
+	// the next lines of the same insert do not start another round.
+	settling bool
+	// kernelEvent and kernelEventAt are the last kernel USB disk line.
+	kernelEvent   string
+	kernelEventAt time.Time
 }
+
+// usbRemountState is the read-only remount of one firmware mount.
+type usbRemountState struct {
+	dev, dir string
+	done     bool
+	err      string
+	at       time.Time
+	loggedOK bool
+	// loggedErr is the error last logged, so a failure is logged once, not
+	// on every look.
+	loggedErr string
+}
+
+// usbRemountRetryGap is how soon a failed remount may be tried again. Only a
+// look tries it (a client, the kernel line, the agent start), never a timer.
+const usbRemountRetryGap = time.Minute
 
 // USBMusicDebug is the "usb_music" debug-state section. Reading it looks at
 // the stick (detection only, it never mounts), so a bundle shows a stick that
@@ -138,7 +190,10 @@ func (s *Server) USBMusicDebug() any {
 
 // USBMusicStartupCheck looks at the stick once when the agent starts, so the
 // log and the debug state say what is plugged in. It never mounts: at boot the
-// install scripts may still be looking at the stick themselves.
+// install scripts may still be looking at the stick themselves. A firmware
+// mount of a stick classified as a music stick (no STR or Bose marker, which
+// is also what makes the boot scripts leave it alone, #2027) is switched to
+// read-only here, as on every look.
 func (s *Server) USBMusicStartupCheck() {
 	s.usbRefresh(false)
 }
@@ -157,9 +212,11 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		Browses:   prev.Browses,
 		FileReads: prev.FileReads,
 	}
+	snap.LastKernelEvent, snap.LastKernelEventAt = u.kernelEvent, u.kernelEventAt
 	parts := usbmedia.Partitions(usbMusicSysRoot)
 	if len(parts) == 0 {
 		s.usbDropLocked("the stick was removed")
+		u.remount = usbRemountState{}
 		s.usbCommitLocked(snap)
 		return snap
 	}
@@ -184,6 +241,9 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 	if u.lib != nil && u.dev == part && mounted && m.Dir == u.dir {
 		keep := prev
 		keep.CheckedAt, keep.Checks, keep.Variant = snap.CheckedAt, snap.Checks, snap.Variant
+		keep.LastKernelEvent, keep.LastKernelEventAt = snap.LastKernelEvent, snap.LastKernelEventAt
+		keep.MountOptions = m.Options
+		s.usbEnsureReadOnlyLocked(&keep, m)
 		u.snap = keep
 		return keep
 	}
@@ -291,8 +351,128 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 	if snap.NameCharset == "" {
 		snap.NameCharset = "unknown"
 	}
+	if mounted && !own {
+		s.usbEnsureReadOnlyLocked(&snap, m)
+	}
 	s.usbCommitLocked(snap)
 	return snap
+}
+
+// usbEnsureReadOnlyLocked switches the firmware's read-write mount of a music
+// stick to read-only, once, and records the result in snap. Only a stick the
+// firmware mounted (the agent's own mount is read-only from the start) and
+// only one classified as a music stick: an install or recovery stick keeps its
+// read-write mount for STR's own scripts, and a stick whose classification
+// failed never gets here. The mount is never unmounted, and nothing is held
+// open on it beyond the directory handle serving already has.
+//
+// A failure is logged once and the stick is served from the read-write mount
+// as before; it is tried again on a later look, at most once a minute.
+func (s *Server) usbEnsureReadOnlyLocked(snap *usbMusicSnapshot, m usbmedia.Mount) {
+	u := &s.usb
+	if snap.MountedBy != "firmware" || snap.Classification != usbmedia.KindMusic.String() || !snap.Served {
+		return
+	}
+	r := &u.remount
+	if r.dev != snap.Device || r.dir != m.Dir {
+		*r = usbRemountState{dev: snap.Device, dir: m.Dir}
+	}
+	if m.ReadOnly() {
+		snap.RemountedRO, snap.RemountError = r.done, ""
+		return
+	}
+	if r.err != "" && time.Since(r.at) < usbRemountRetryGap {
+		snap.RemountedRO, snap.RemountError = false, r.err
+		return
+	}
+	err := usbRemountROFn(m.Dir)
+	r.at = time.Now()
+	if err == nil {
+		// What the kernel applied, not what was asked for.
+		raw, rerr := os.ReadFile(filepath.Join(usbProcRoot, "mounts"))
+		if rerr == nil {
+			if am, ok := usbmedia.MountOf(usbmedia.ParseMounts(string(raw)), snap.Device); ok && am.Dir == m.Dir {
+				snap.MountOptions = am.Options
+				if !am.ReadOnly() {
+					err = fmt.Errorf("the mount is still read-write after the remount (%s)", am.Options)
+				}
+			}
+		}
+	}
+	if err != nil {
+		r.done, r.err = false, err.Error()
+		snap.RemountedRO, snap.RemountError = false, r.err
+		if r.loggedErr != r.err {
+			r.loggedErr = r.err
+			s.logger.Warn("usb music: could not switch the firmware's mount of the music stick to read-only; serving it from the read-write mount",
+				"device", snap.Device, "mount", m.Dir, "options", m.Options, "err", err)
+		}
+		return
+	}
+	r.done, r.err = true, ""
+	snap.RemountedRO, snap.RemountError = true, ""
+	if !r.loggedOK {
+		r.loggedOK = true
+		s.logger.Info("usb music: switched the firmware's mount of the music stick to read-only",
+			"device", snap.Device, "mount", m.Dir, "options", snap.MountOptions)
+	}
+}
+
+// OnUSBDiskLine is the kernel's syslog line about a USB disk (boxlog
+// usbdisk.go): attached is true for an attach or a FAT mount line, false for a
+// USB disconnect. It runs on the syslog reader's goroutine and returns at once.
+//
+// An attach starts one round of looks (usbSettleDelays, about ten seconds in
+// all), because the firmware mounts the stick a moment after the kernel line:
+// the round ends at the first look that finds the stick served or refused, and
+// at the latest after the last delay. Further lines of the same insert while a
+// round runs start nothing. A look never mounts anything itself (that waits
+// for the Library, as at the agent start), but it does switch the firmware's
+// mount of a music stick to read-only. A disconnect is one look, which stops
+// serving a pulled stick and takes away a mount the agent made.
+func (s *Server) OnUSBDiskLine(attached bool) {
+	u := &s.usb
+	u.mu.Lock()
+	u.kernelEventAt = time.Now()
+	u.kernelEvent = "gone"
+	if attached {
+		u.kernelEvent = "attached"
+	}
+	if !attached {
+		u.mu.Unlock()
+		go s.usbRefresh(false)
+		return
+	}
+	if u.settling {
+		u.mu.Unlock()
+		return
+	}
+	u.settling = true
+	delays := append([]time.Duration(nil), usbSettleDelays...)
+	u.mu.Unlock()
+	go s.usbSettleAfterAttach(delays)
+}
+
+// usbSettleAfterAttach is the round of looks one attach line starts.
+func (s *Server) usbSettleAfterAttach(delays []time.Duration) {
+	defer func() {
+		s.usb.mu.Lock()
+		s.usb.settling = false
+		s.usb.mu.Unlock()
+	}()
+	var snap usbMusicSnapshot
+	looks := 0
+	for _, d := range delays {
+		time.Sleep(d)
+		snap = s.usbRefresh(false)
+		looks++
+		if snap.Present && (snap.Served || snap.Refusal != "") {
+			break
+		}
+	}
+	s.logger.Info("usb music: looked at the stick after the kernel attached a USB disk",
+		"looks", looks, "present", snap.Present, "served", snap.Served, "refusal", snap.Refusal,
+		"waitingForLibrary", snap.WaitingForLibrary, "remountedRO", snap.RemountedRO)
 }
 
 // usbDropLocked stops serving, closes the stick and takes away a mount the
