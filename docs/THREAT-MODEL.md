@@ -86,8 +86,9 @@ Each boundary is covered in detail in
   download its music, with no authentication. Nothing else on it can be
   reached: every path goes through `os.Root` (no `..`, no absolute path, no
   symlink out), only audio files and cover images are served by name, the
-  agent's own mount is `ro,nosuid,nodev,noexec`, nothing is ever written to
-  the stick, and a stick carrying any STR or Bose marker (an install stick
+  agent's own mount is `ro,nosuid,nodev,noexec`, the firmware's read-write
+  mount of a music stick is remounted read-only (never an install stick's),
+  nothing is ever written to the stick, and a stick carrying any STR or Bose marker (an install stick
   with `wlan.pass`, a firmware image) is never served at all. Only the
   speaker's own stick files may be probed over loopback (`isUSBLoopbackFile`);
   every other loopback URL stays refused by the SSRF guard.

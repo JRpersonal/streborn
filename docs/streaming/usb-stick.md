@@ -1,7 +1,7 @@
 # Music from a USB stick in the speaker
 
-Status: **v1 implemented, not yet confirmed on a speaker** (Ideas #1136,
-27 votes). Section `v1` below says what ships, on which models, and how to
+Status: **v1 implemented; run on the ST10 and the Portable (2026-11-21),
+not yet confirmed on the ST20 and the ST30** (Ideas #1136, 27 votes). Section `v1` below says what ships, on which models, and how to
 test it on hardware. Sections 1 to 9 are the feasibility spike (draft PR
 #2018) the design came from, kept as the background for every decision.
 
@@ -66,20 +66,51 @@ it cannot play from a stick, instead of failing.
 - **Looking for a stick** reads `/sys/block/sd*`, `/proc/mounts`, and the
   first 512 bytes of the partition (to tell FAT32 from exFAT and NTFS, and to
   read the cluster size). It happens once when the agent starts (detection
-  and a log line only, nothing is mounted at boot) and when a client asks:
-  the server list (`/api/library/servers`), a browse, a file. No timer, no
-  poll, no netlink listener. A stick plugged in while the Library is open
-  shows up the next time the list is loaded ("Search again" in the app,
-  reopening the library on the phone).
+  and a log line only, the agent mounts nothing at boot), when the kernel
+  logs a USB disk coming or going (below), and when a client asks: the
+  server list (`/api/library/servers`), a browse, a file, the debug state.
+  No timer, no poll, no netlink listener. A stick plugged in while the
+  Library is open shows up the next time the list is loaded ("Search again"
+  in the app, reopening the library on the phone).
+- **The kernel's own lines are the trigger.** The kernel logs through klogd
+  into the busybox syslog ring the agent already follows with `logread -f`
+  (`internal/boxlog`; a rhino capture of 2026-09-06 carries
+  `kern.info kernel: usb 1-1: new high-speed USB device number 4 using musb-hdrc`).
+  `boxlog` classifies three kernel shapes as `usb_disk`
+  (`internal/boxlog/usbdisk.go`): `sd 0:0:0:0: [sda] Attached SCSI removable disk`
+  (or `Attached SCSI disk`) and `FAT-fs (sda1): ...` (a FAT warning at mount
+  time) mean attached, `usb 1-1: USB disconnect` means gone. Lines that
+  `logread` replays from the ring when it (re)starts are not acted on. An
+  attach starts one round of at most four looks over about ten seconds (1,
+  2, 3, 4 s apart), because the firmware mounts the stick a moment after the
+  kernel line; the round ends at the first look that finds the stick served
+  or refused, and further lines of the same insert start nothing. A
+  disconnect is one look, which stops serving and takes away a mount the
+  agent made. Not checked live yet: that these exact lines reach the ring on
+  every chassis (the attach line itself has not been captured on a speaker;
+  the boxlog `usb_disk` events in a bundle answer it). Where they do not,
+  the other looks still find the stick.
 - **Only the first partition** of the first USB disk counts.
-- **STR reads, never writes.** Where the firmware mounted the stick (ST10,
-  ST20, ST30 and, live, the Portable too) the agent reads that mount and
-  never remounts it. That mount is the firmware's and it is **read-write**
-  (see Live results). Where nothing mounted the stick (a hot-plug the
-  firmware did not mount), the agent mounts it itself with
-  `ro,nosuid,nodev,noexec` (UTF-8 names first, plain if the kernel lacks the
-  codepage) at `/tmp/str-music`, on tmpfs. Nothing is ever written, renamed
-  or deleted on a stick by STR, and no fsck is run.
+- **STR reads, never writes, and makes the mount read-only.** Where the
+  firmware mounted the stick (ST10, ST20, ST30 and, live, the Portable too)
+  that mount is **read-write** (see Live results), and a stick pulled from
+  it came back with a dirty FAT. So as soon as the agent has classified the
+  stick as a music stick (no marker, see below), it runs
+  `mount -o remount,ro /media/sda1` (busybox) on the firmware's mount and
+  reads `/proc/mounts` back to see that it took (`remounted_ro` in the debug
+  state). Only a music stick: an install or recovery stick keeps its `rw`
+  mount for STR's own scripts, and a stick whose classification failed is
+  left as it is. The firmware's mount is never unmounted, and nothing is
+  held open on it beyond the one directory handle serving needs. A remount
+  that fails is logged once, the stick is served from the `rw` mount as
+  before, and it is tried again on a later look at most once a minute
+  (`remount_error`). Every look remounts a mount that is still `rw`: the
+  kernel line, the agent start, the server list, a browse, a file. Where
+  nothing mounted the stick (a hot-plug the firmware did not mount), the
+  agent mounts it itself with `ro,nosuid,nodev,noexec` (UTF-8 names first,
+  plain if the kernel lacks the codepage) at `/tmp/str-music`, on tmpfs, when
+  the Library is opened. Nothing is ever written, renamed or deleted on a
+  stick by STR, and no fsck is run.
 - **File names are decoded from the mount's `iocharset`**
   (`internal/usbmedia/charset.go`). The firmware's mount is
   `iocharset=iso8859-1`, so `01 Ärger.mp3` arrives as the Latin-1 byte
@@ -115,7 +146,29 @@ it cannot play from a stick, instead of failing.
 - **Files** only by extension: `.mp3 .flac .m4a .aac .ogg .oga .wav .wma`,
   served with `http.ServeContent` (Range, for seeking and FLAC headers),
   the MIME from the extension, and the DLNA `contentFeatures` /
-  `transferMode` headers. Every path goes through `os.Root`, so `..`,
+  `transferMode` headers.
+- **Hi-res files are listed, and refused when played.** The speaker plays
+  FLAC and WAV up to 48 kHz only (Live results). Listing reads no file, so
+  a 96 kHz FLAC is listed like any other. When one is played, the agent
+  reads the sample rate from the header (`usbmedia.ReadAudioFormat`: FLAC
+  STREAMINFO, after an optional ID3v2 tag; the WAV `fmt ` chunk; a few dozen
+  bytes, at most 256 KB into the file). M4A keeps its rate in the `moov`
+  box, which may sit at the end of the file, so it is not read and an M4A
+  plays as before. Above 48 kHz the file is not handed to the speaker:
+  a single play (`/api/play`, a song key from the app or the phone) is
+  refused with `code:"library-file-hires"` and "This speaker cannot play
+  this file: it has a sample rate above 48 kHz."; a folder steps over the
+  track (`queueItem.Skip`, the track stays in the list so the key still
+  matches its folder) and says how many it skipped (`skippedHiRes`); a
+  folder of nothing else is refused like a single file; a hardware key
+  plays nothing and the log says why (`internal/webui/usbhires.go`).
+- **A file the speaker still cannot decode.** When the speaker answers a
+  stick file with `AUDIO_ERROR_DECODER` (a format the header check does not
+  read), the agent notes it, and `GET /api/queue` carries `usbRefused`
+  while that file is the last play. The phone page shows "The speaker could
+  not decode this file from the USB stick. It plays MP3, AAC, Ogg, WMA, and
+  FLAC or WAV up to 48 kHz." where "Stopped" would stand; the desktop app
+  shows the same instead of its generic format guess. Every path goes through `os.Root`, so `..`,
   absolute paths and symlinks cannot leave the stick, and only audio and
   cover names can be fetched at all. `/usb/` is LAN-only (`isLocalLAN`).
 - **URLs.** A client is handed URLs built from the Host it used, so the
@@ -147,13 +200,16 @@ it cannot play from a stick, instead of failing.
   Format it as FAT32, then copy the music onto it again."
 - Phone remote: a "USB stick" button next to the media servers, or the
   refusal line under them.
-- Both say how to pull a served stick out safely: "Before you pull the USB
-  stick out, switch Kitchen to standby or play something else there."
-  (`library.usbPullHint` in the app, `usbPullHint` on the phone). The
-  firmware's mount is read-write, and a stick pulled while it is busy can be
-  left with a dirty or damaged FAT; partitions have been damaged that way
-  before. STR itself never writes, so the risk is the firmware's, but the
-  user is the one pulling the stick.
+- No hint about pulling the stick out: the agent switches the firmware's
+  mount of a music stick to read-only (How it works), so the stick can be
+  pulled at any time. (A first version told the user to switch the speaker
+  to standby first; it was dropped for the remount.)
+- A hi-res file: "This speaker cannot play this file: it has a sample rate
+  above 48 kHz." (`library.usbHiRes` in the app, a short "Above 48 kHz" on a
+  key tile, `usbHiRes` on the phone). A folder with such files: "Songs in
+  this folder with a sample rate above 48 kHz are skipped, because this
+  speaker cannot play them (2 skipped)." (`library.usbHiResSkipped`,
+  `usbHiResSkipped`).
 - Keys: a song or a folder from the stick saved on a key plays the loopback
   URL. Such a key belongs to the speaker that holds the stick; copied to
   another speaker it points at that speaker's own stick and fails per track.
@@ -167,9 +223,15 @@ it cannot play from a stick, instead of failing.
 `iso8859-1`, `iso8859-15` or `unknown`, while served), `classification` (`music` or
 `install`), `served`, `refusal`, `waiting_for_library` (a FAT stick nothing
 mounted yet), the lazily known `root_listed` / `root_folders` / `root_files`,
-`browses`, `file_reads`, `last_error`, `checked_at`, `checks`. The agent log
-has one INFO line per change of state (`usb music: ...`), never one per
-request.
+`browses`, `file_reads`, `last_error`, `remounted_ro` (STR switched the
+firmware's mount to read-only and `/proc/mounts` shows it), `remount_error`
+(why the last attempt failed, while the mount is still `rw`),
+`last_kernel_event` / `last_kernel_event_at` (`attached` or `gone`, the last
+kernel USB disk line), `last_decoder_error` (the last stick file the speaker
+could not decode), `checked_at`, `checks`. The kernel lines themselves are in
+`box_syslog_events` as class `usb_disk`. The agent log has one INFO line per
+change of state (`usb music: ...`), one for the remount (or one WARN for its
+failure), and one per kernel attach round, never one per request.
 
 ### Size
 
@@ -188,11 +250,11 @@ bytes). Nothing touches NAND at run time.
 - **Phone remote search** does not include the stick yet (browsing does).
 - **SSDP and the native `STORED_MUSIC` source** (stage 2, Q4): the stick is
   not visible to the Bose app or to other speakers' own menus.
-- **Hot-plug events.** No netlink listener; a stick is noticed when a client
-  next asks.
+- **Hot-plug events.** No netlink listener; the kernel's own syslog lines
+  are the trigger (How it works), and a client's next look is the fallback.
 - **More than one partition**, exFAT/NTFS support (the kernel has none,
-  T3), hi-res FLAC/ALAC/96 kHz WAV (offered by extension, may fail per
-  track, T5; see Live results).
+  T3), and the sample rate of an M4A (ALAC above 48 kHz still reaches the
+  speaker and fails per track).
 
 ### Live results, 2026-11-21
 
@@ -206,11 +268,13 @@ ST10 (`rhino`) and Portable (`taigan`), FW 27.0.6, stick A, PR #2028.
   file URL, because the names were taken as UTF-8. Fixed: names are decoded
   from the mount's `iocharset` (How it works).
 - **The mount is the firmware's and read-write.** STR never writes to it,
-  but the firmware keeps it mounted `rw`, so pulling the stick while it is
-  mounted can leave the FAT dirty, and partitions have been damaged that way
-  before. The app and the phone page therefore tell the user to switch the
-  speaker to standby or play something else before pulling the stick (What
-  the user sees).
+  but after stick A was pulled from the speaker, Windows reported its FAT as
+  dirty ("Warning"; chkdsk found no damage), and sticks have been damaged
+  that way before. A first fix told the user to switch to standby before
+  pulling; the maintainer decided against it, and the agent now remounts the
+  firmware's mount of a music stick read-only (How it works). Whether
+  `remount,ro` takes on these boxes is the first thing to check on the next
+  run (`remounted_ro`, `mount_options`).
 - **A play without `mime`** went through the stream proxy and failed
   (`AUDIO_ERROR_BAD_URL`, the proxy log said `stream target 192.0.2.1
   blocked (loopback/link-local`); with `mime` it played over UPnP from
@@ -218,23 +282,26 @@ ST10 (`rhino`) and Portable (`taigan`), FW 27.0.6, stick A, PR #2028.
   works).
 - **Formats on the Portable, volume 5** (answers Q5):
 
-  | File | Result |
-  | --- | --- |
-  | MP3 | plays |
-  | FLAC 16 bit / 44.1 kHz | plays |
-  | M4A (AAC) | plays |
-  | Ogg Vorbis | plays |
-  | WAV 44.1 kHz | plays |
-  | FLAC 24 bit / 96 kHz | fails, `AUDIO_ERROR_DECODER` |
-  | ALAC `.m4a` | the speaker reports `PLAY_STATE`; whether it is audible is still to be checked |
-  | WAV 96 kHz | stays `BUFFERING` |
+  | File | Speaker | STR since this run |
+  | --- | --- | --- |
+  | MP3 | plays | plays |
+  | FLAC 16 bit / 44.1 kHz | plays (heard) | plays |
+  | M4A (AAC) | plays (heard) | plays |
+  | Ogg Vorbis | plays (heard) | plays |
+  | WAV 44.1 kHz | plays (heard) | plays |
+  | ALAC `.m4a` | plays (heard) | plays |
+  | FLAC 24 bit / 96 kHz | fails, `AUDIO_ERROR_DECODER` | listed; refused when played, skipped in a folder |
+  | WAV 96 kHz | stays `BUFFERING`, never plays | listed; refused when played, skipped in a folder |
 
-  Hi-res files stay listed in v1 (the extension cannot tell them apart
-  without reading the header). Whether a queue moves on past a 96 kHz WAV
-  that stays `BUFFERING` is not checked yet.
-- **The speaker name** in `/api/library/servers` and in the stick's
-  `device.xml` is UTF-8 on the wire (`USB stick (Küche)`,
-  `USB stick (BüroPortable)`, checked byte for byte on the live Portable).
+  The MP3 (`01 Ärger.mp3`) first answered 404, the umlaut path bug fixed
+  above. Hi-res files stay listed (the listing reads no file); the sample
+  rate is read from the header when one is played (How it works), so a
+  queue no longer reaches a 96 kHz WAV that would stay `BUFFERING`.
+- **The speaker name** is UTF-8 on the wire. On the live Portable,
+  `USB stick (BüroPortable)` was checked byte for byte in
+  `/api/library/servers`; the ST10's name `Küche` was checked through
+  `/api/agent/version` and `/info`, which carry the same name the stick's
+  entry is built from.
   A reading of `KÃ¼che` comes from a client that decodes the answer in a
   Windows code page instead of UTF-8, not from the agent;
   `TestTheStickNameKeepsANonASCIISpeakerName` pins the bytes.
@@ -251,9 +318,13 @@ ST10 and the ST30 check `now_playing` silently (volume 0 or muted).
    `{"kind":"usb","udn":"uuid:str-usb-...","location":"http://192.0.2.10:8888/usb/device.xml",...}`.
    `curl .../api/debug/state` and read `usb_music`: `served:true`,
    `mounted_by:"firmware"`, `mount_dir:"/media/sda1"`, `fat_type:"FAT32"`,
-   `cluster_bytes:32768`, and `proc_mounts` shows the `iocharset`. If the
-   firmware did NOT mount it (T1 answers no), `mounted_by:"agent"`,
-   `mount_dir:"/tmp/str-music"`, `mount_options:"ro"`.
+   `cluster_bytes:32768`, `remounted_ro:true`, `mount_options` starting
+   with `ro,`, and `proc_mounts` shows the `iocharset` and `ro`.
+   `last_kernel_event:"attached"` says the kernel line arrived; if it is
+   empty, the attach line did not reach the ring and the stick was found by
+   the server list instead. If the firmware did NOT mount it (T1 answers
+   no), `mounted_by:"agent"`, `mount_dir:"/tmp/str-music"`,
+   `mount_options:"ro"`.
 2. **Browse.** Desktop app (a build from this branch): Library, Search
    again. "USB stick (<name>)" is listed; open `Album 1`. Check: `01 Ärger`
    shows its umlaut, order is 01, 02, 03, 04, 05, the cover shows, the
@@ -285,9 +356,12 @@ ST10 and the ST30 check `now_playing` silently (volume 0 or muted).
    `mount_options:"ro"`, and on the speaker (SSH, read-only)
    `grep str-music /proc/mounts` shows `ro,nosuid,nodev,noexec`. Play
    `01 Ärger.mp3`, `02 Test.flac`, `03.m4a`, `04.ogg`, `05.wav` at volume 5
-   and note per file: plays, refused, or hangs. Then the hi-res and ALAC
-   files (Q5). Pull the stick: `/tmp/str-music` is unmounted
-   (`usb_music.mount_dir` empty).
+   and note per file: plays, refused, or hangs. Then `hires-2496.flac` and
+   `wav-96k.wav`: the app says the speaker cannot play them and the speaker
+   is not touched; "Play folder" on `Album 1` skips both and says "(2
+   skipped)". Pull the stick: `/tmp/str-music` is unmounted
+   (`usb_music.mount_dir` empty), and on a firmware mount the stick shows no
+   dirty FAT on a PC.
 7. **Refusals.** Stick B (exFAT) in the ST10: the Library line "is not
    formatted as FAT32", `usb_music.refusal:"not-fat32"`. An STR install
    stick in the ST10: "is an ST Reborn install stick", nothing listed, and
@@ -608,11 +682,18 @@ there when a music stick is in, and absent otherwise.
   `/listMediaServers` list a server on the box's own IP, and does
   `STORED_MUSIC` play from it on a whitelisted chassis?
 - **Q5** 24-bit/96 kHz FLAC, ALAC `.m4a`, 96 kHz WAV: play, fail cleanly,
-  or wedge the renderer? Portable, 2026-11-21: FLAC 24/96 fails with
-  `AUDIO_ERROR_DECODER`, ALAC reports `PLAY_STATE` (audible result
-  pending), WAV 96 kHz stays `BUFFERING`.
+  or wedge the renderer? Answered on the Portable, 2026-11-21: FLAC 24/96
+  fails with `AUDIO_ERROR_DECODER`, WAV 96 kHz stays `BUFFERING`, ALAC
+  plays (heard). STR now refuses FLAC and WAV above 48 kHz itself.
 - **Q6** Does `umount` of a read-only stick work on these boxes? (A `rw`
   `umount /media/sda1` answered "Invalid argument" once.)
+- **Q7** Does `mount -o remount,ro /media/sda1` take on the firmware's
+  `vfat` mount (ST10, Portable, then ST20/ST30), and does the firmware mind
+  a read-only stick? `remounted_ro` and `remount_error` in `usb_music`
+  answer the first part.
+- **Q8** Do the kernel's `Attached SCSI removable disk` and `USB disconnect`
+  lines reach the syslog ring on every chassis? The `usb_disk` events in
+  `box_syslog_events` and `last_kernel_event` answer it.
 
 ## 9. Hardware test plan (for Jens)
 
@@ -669,16 +750,25 @@ stick formatted NTFS.
   file serving), `charset.go` (file names from the mount's `iocharset` to
   UTF-8 and back). Tested against the repo's own `dlna` client, which is
   what the desktop app and the phone page browse with.
+- `internal/usbmedia/samplerate.go`: the sample rate from a FLAC or WAV
+  header.
+- `internal/boxlog/usbdisk.go`: the kernel's USB disk lines (`usb_disk`) and
+  the hook the agent looks at the stick from.
 - `internal/webui/usbmusic.go`: the stick state (detect, mount read-only
-  where needed, classify, serve, drop), the `/usb/` routes, the stick's
-  entry in `/api/library/servers`, the loopback resolve that lets every
-  existing library path browse the stick, `usbLoopbackURL`, `usbFileMIME`
-  (a stick file always plays directly), and the `usb_music` debug section. Registered in `cmd/agent/agent.go`.
+  where needed, remount the firmware's mount read-only, classify, serve,
+  drop), `OnUSBDiskLine`, the `/usb/` routes, the stick's entry in
+  `/api/library/servers`, the loopback resolve that lets every existing
+  library path browse the stick, `usbLoopbackURL`, `usbFileMIME` (a stick
+  file always plays directly), and the `usb_music` debug section. Registered
+  in `cmd/agent/agent.go`.
+- `internal/webui/usbhires.go`: the hi-res refusal, the folder skip, the
+  decoder note.
 - `desktop-app/library_usb.go`: asks every STR speaker for its stick during
   the Library scan; `LibraryUSBNotices` for the refusal lines.
 - Frontend: `views/library.js` (`localizeUSBServers`, `libraryUSBNote`,
-  `libraryUSBPullHint`) and
-  the phone page's `loadBrowseServers` with its `I18N6` strings.
+  `isUSBFileURL`, `usbHiResSkippedNote`), `utils.js` (`friendlyErrorText`
+  for `library-file-hires`) and the phone page's `loadBrowseServers`,
+  `playRefusal` and status line with their `I18N6` strings.
 
 The spike prototype's size measurement (a throwaway `main`, GOARM=5,
 `-s -w`) was +64 KiB; the finished v1 adds 128 KiB to the agent.

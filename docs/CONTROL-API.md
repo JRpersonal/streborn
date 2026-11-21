@@ -396,6 +396,24 @@ announcement), so any DLNA client can browse it at its `location`:
 A stick URL played on the speaker that holds the stick is fetched by it over
 `127.0.0.1:8888`; the agent rewrites its own LAN address there by itself.
 
+The speaker plays FLAC and WAV up to 48 kHz only. A FLAC or WAV on the stick
+above that is listed, but not handed to the speaker:
+
+- `POST /api/play` with such a file, and `POST /api/play/<slot>` on a key
+  that holds one, answer `422`
+  `{"error":"This speaker cannot play this file: it has a sample rate above 48 kHz.","code":"library-file-hires","sampleRate":96000,"title":"..."}`
+  (plus `"slot"` for a key). Nothing is sent to the speaker.
+- A folder (`POST /api/queue`, `POST /api/library/play-folder`, a folder
+  card, a folder key) steps over such tracks. The `/api/queue` answer
+  carries `"skippedHiRes":<n>` and marks each one `"skipped":true` in
+  `items`; `play-folder` and `replay-card` carry `"skippedHiRes":<n>`. A
+  folder of nothing else answers `422` with the same `code` and
+  `"folder":true`.
+- When the speaker refuses to decode a stick file anyway
+  (`AUDIO_ERROR_DECODER`), `GET /api/queue` carries
+  `"usbRefused":{"title":"...","reason":"decoder","at":"<RFC 3339>"}` while
+  that file is still the last play and no folder runs.
+
 ## Wi-Fi
 LAN-only, like every other call here, and refused from outside the private
 address ranges.
