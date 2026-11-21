@@ -125,11 +125,11 @@ type usbMusicState struct {
 	logged   string
 }
 
-// USBMusicDebug is the "usb_music" debug-state section.
+// USBMusicDebug is the "usb_music" debug-state section. Reading it looks at
+// the stick (detection only, it never mounts), so a bundle shows a stick that
+// was plugged in after the agent started even if nobody opened the Library.
 func (s *Server) USBMusicDebug() any {
-	s.usb.mu.Lock()
-	defer s.usb.mu.Unlock()
-	return s.usb.snap
+	return s.usbRefresh(false)
 }
 
 // USBMusicStartupCheck looks at the stick once when the agent starts, so the
