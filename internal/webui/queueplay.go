@@ -26,11 +26,12 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			// A file on this speaker's own USB stick is fetched over loopback.
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
 			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
 			Art:      usbLoopbackURL(it.Art),
-			Mime:     it.Mime,
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,
@@ -1734,11 +1735,12 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			// A file on this speaker's own USB stick is fetched over loopback.
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
 			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
 			Art:      usbLoopbackURL(it.Art),
-			Mime:     it.Mime,
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,

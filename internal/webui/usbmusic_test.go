@@ -492,6 +492,61 @@ func TestOwnStickURLsAreFetchedOverLoopback(t *testing.T) {
 	}
 }
 
+// A stick file played through POST /api/play without a MIME went the radio
+// way: through the stream proxy, whose SSRF guard refuses the speaker's own
+// address ("stream target ... blocked (loopback/link-local"), and the speaker
+// answered AUDIO_ERROR_BAD_URL. A stick file is always played directly, with
+// the MIME of its extension, whatever the caller sent.
+func TestAStickFileIsPlayedDirectlyWithOrWithoutAMime(t *testing.T) {
+	prev := usbOwnIPsFn
+	usbOwnIPsFn = func() []net.IP { return []net.IP{net.ParseIP("192.0.2.1")} }
+	t.Cleanup(func() { usbOwnIPsFn = prev })
+	const lan = "http://192.0.2.1:17008/usb/file/Album%201/02%20b.flac"
+	const loop = "http://127.0.0.1:8888/usb/file/Album%201/02%20b.flac"
+	for name, body := range map[string]string{
+		"no mime":    `{"url":"` + lan + `","title":"02 b"}`,
+		"wrong mime": `{"url":"` + lan + `","title":"02 b","mime":"audio/mpeg"}`,
+		"loopback":   `{"url":"` + loop + `","title":"02 b"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := newPlayTestServer(t)
+			w := postPlayBody(t, s, body)
+			if w.Code != http.StatusOK {
+				t.Fatalf("play: %d %s", w.Code, w.Body.String())
+			}
+			tr := activeFileTrack(t, s)
+			if tr.boxURL != loop || tr.mime != "audio/flac" {
+				t.Fatalf("the speaker was handed %q as %q, want the stick file directly as audio/flac", tr.boxURL, tr.mime)
+			}
+		})
+	}
+
+	// The same for a folder queue and a key.
+	items := toQueueItems([]queueStartItem{{URL: lan}, {URL: "http://192.0.2.50:8000/radio"}})
+	if items[0].Mime != "audio/flac" || !queuePlaysDirect(items[0].URL, items[0].Mime) || items[1].Mime != "" {
+		t.Fatalf("queue items: %+v", items)
+	}
+	if q := presetItemsToQueue([]presets.PresetItem{{URL: loop}}); q[0].Mime != "audio/flac" {
+		t.Fatalf("folder key item: %+v", q[0])
+	}
+	s, _ := newPlayTestServer(t)
+	if m := s.directFileMime(context.Background(), presets.Preset{Slot: 1, StreamURL: loop}); m != "audio/flac" {
+		t.Fatalf("a key on a stick file: mime %q", m)
+	}
+	// Only this speaker's stick: another speaker's is not touched, and a stick
+	// URL that names no playable file keeps what the caller sent.
+	for _, c := range []struct{ url, mime, want string }{
+		{"http://192.0.2.11:8888/usb/file/a.mp3", "", ""},
+		{"http://127.0.0.1:8888/usb/art/cover.jpg", "", ""},
+		{"http://127.0.0.1:8888/usb/file/notes.txt", "audio/mpeg", "audio/mpeg"},
+		{"http://127.0.0.1:8888/usb/file/B%FCcher/01%20%C4rger.mp3", "", "audio/mpeg"},
+	} {
+		if got := usbFileMIME(usbLoopbackURL(c.url), c.mime); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.url, got, c.want)
+		}
+	}
+}
+
 // The firmware mounts the stick vfat with iocharset=iso8859-1 (ST10 and
 // Portable, live), so "01 Ärger.mp3" arrives as the Latin-1 byte 0xC4. The
 // listing shows the umlaut, and the URL keeps the bytes the speaker fetches.

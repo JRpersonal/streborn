@@ -152,6 +152,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	}
 	// A file on this speaker's own USB stick is fetched over loopback.
 	req.URL, req.Icon = usbLoopbackURL(req.URL), usbLoopbackURL(req.Icon)
+	// ...and always played directly with the MIME of its extension, whether
+	// the caller named one or not (usbFileMIME).
+	req.Mime = usbFileMIME(req.URL, req.Mime)
 	if req.URL == "" {
 		http.Error(w, "url required", http.StatusBadRequest)
 		return

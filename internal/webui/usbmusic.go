@@ -582,6 +582,27 @@ func isUSBLoopbackFile(raw string) bool {
 	return strings.HasPrefix(raw, usbLoopbackBase+usbmedia.FilePrefix)
 }
 
+// usbFileMIME returns the MIME a URL is played with when it is a file on this
+// speaker's own stick in the loopback form (usbLoopbackURL first), derived
+// from the extension exactly as the stick serves it; mime unchanged for every
+// other URL. A stick file must always take the direct UPnP path: without a
+// MIME a play went the radio way, through the stream proxy, whose SSRF guard
+// rightly refuses this speaker's own address, and the speaker answered
+// AUDIO_ERROR_BAD_URL. The proxy's guard stays as it is.
+func usbFileMIME(raw, mime string) string {
+	if !isUSBLoopbackFile(raw) {
+		return mime
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return mime
+	}
+	if m := usbmedia.MIMEFor(u.Path); m != "" {
+		return m
+	}
+	return mime
+}
+
 // usbProbeClient is the client a length probe of a stick file uses: plain, no
 // SSRF guard, for exactly the URLs isUSBLoopbackFile accepts.
 func usbProbeClient() *http.Client { return &http.Client{Timeout: 5 * time.Second} }
