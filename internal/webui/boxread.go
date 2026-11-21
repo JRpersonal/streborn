@@ -15,8 +15,7 @@ import (
 // comes through here: the recall verify, the queue watcher, the standby
 // checks, the hold-to-save, the display-message gate, the announcement and
 // /api/status itself. One fetch path means one body limit, one feed into the
-// /api/status micro-cache, one record in the :8090 outage tracker and one
-// test seam (Server.boxNowReadFn) instead of the nine fields and seven
+// /api/status micro-cache and one test seam (Server.boxNowReadFn) instead of the nine fields and seven
 // package variables this replaced.
 //
 // What is deliberately NOT unified is the policy for an unreadable speaker.
@@ -29,8 +28,8 @@ import (
 var errNoBoxHost = errors.New("box host not configured")
 
 // readBoxNow reads the speaker's now_playing fresh, within ctx's deadline
-// (callers wrap their own; the boxapi default is 6 s). The outage tracker
-// sees the verdict and a 200 body feeds the /api/status micro-cache, so a
+// (callers wrap their own; the boxapi default is 6 s). A 200 body feeds the
+// /api/status micro-cache, so a
 // phone poll right after an internal read is served without a second trip
 // to the firmware.
 func (s *Server) readBoxNow(ctx context.Context) (*boxapi.NowPlaying, error) {
@@ -40,11 +39,10 @@ func (s *Server) readBoxNow(ctx context.Context) (*boxapi.NowPlaying, error) {
 	if s.boxHost == "" {
 		return nil, errNoBoxHost
 	}
+	// The :8090 outage tracker hears about this read from boxapi itself
+	// (ObserveReachability, wired by the agent), like every other read of
+	// the speaker's own firmware, so it is not fed here a second time.
 	np, err := boxapi.New(s.boxHost).NowPlaying(ctx)
-	// A firmware error reply is still a fetch that reached the firmware;
-	// only a transport failure counts as the webserver being down.
-	var be *boxapi.BoxError
-	s.noteBoseAppFetch(err == nil || errors.As(err, &be))
 	if err != nil {
 		return nil, err
 	}

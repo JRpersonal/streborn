@@ -387,8 +387,12 @@ func (s *Server) RecallRefusal() (active bool, since time.Time) {
 // rejecting sources as not-logged-in while the re-login self-heal runs). "" =
 // no known box-side problem. Surfaced via /api/stream-status so the desktop
 // app can name the real cause instead of cycling station alternates.
+//
+// A firmware webserver that stopped answering (BoxHealth
+// "firmware-unresponsive") is not a stream hint: the stream path runs over
+// UPnP (:8091), which keeps working in that state.
 func (s *Server) BoxStateHint() string {
-	if status, _ := s.BoxHealth(); status == "wedged" {
+	if wedged, _ := s.wedgeLatched(); wedged {
 		return "wedged"
 	}
 	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
@@ -397,14 +401,32 @@ func (s *Server) BoxStateHint() string {
 	return ""
 }
 
-// BoxHealth reports "ok" or "wedged" (plus the latch time for the latter).
+// BoxHealth reports the speaker-side state that only a power cycle clears, as
+// /api/agent/version's boxHealth, plus since when it holds:
+//
+//	"ok"                     nothing known
+//	"firmware-unresponsive"  the speaker's own webserver (:8090) has stopped
+//	                         answering while the agent runs (boseapp_health.go)
+//	"wedged"                 the speaker answers but never plays what it
+//	                         accepts (the wedge latch above)
+//
+// The unresponsive firmware wins: it is the more basic fault, and a wedge
+// strike needs a readable now_playing, so the two hardly ever meet.
 func (s *Server) BoxHealth() (status string, since time.Time) {
-	s.wedge.mu.Lock()
-	defer s.wedge.mu.Unlock()
-	if s.wedge.wedged {
-		return "wedged", s.wedge.since
+	if down, at := s.boseappUnresponsive(time.Now()); down {
+		return "firmware-unresponsive", at
+	}
+	if wedged, at := s.wedgeLatched(); wedged {
+		return "wedged", at
 	}
 	return "ok", time.Time{}
+}
+
+// wedgeLatched reports the wedge latch alone, and when it latched.
+func (s *Server) wedgeLatched() (bool, time.Time) {
+	s.wedge.mu.Lock()
+	defer s.wedge.mu.Unlock()
+	return s.wedge.wedged, s.wedge.since
 }
 
 // BoxHealthStrikes reports the current wedge-strike count and when the most

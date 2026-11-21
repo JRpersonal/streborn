@@ -2,9 +2,9 @@
 // (UI 2.0 phase 5; docs/UI-2.0.md, rule 3: errors where they happen).
 //
 // The classic layout has two window-wide banners that name speakers:
-// #boxWedgeBanner (a speaker that accepts playback and never plays; unplug it
-// once) and #boxIssueBanner (no internet, leftovers of another tool, a
-// foreign cloud address, a refusal storm, a refused key
+// #boxWedgeBanner (a speaker that accepts playback and never plays, or whose
+// Bose software stopped answering; unplug it once) and #boxIssueBanner (no
+// internet, leftovers of another tool, a foreign cloud address, a refusal storm, a refused key
 // press, a long press STR could not keep, a stale folder key, a dropout on a
 // weak Wi-Fi signal, a name the firmware cannot survive). In the preview those banners are hidden
 // (banners.css) and the same words and the same buttons stand where the
@@ -28,17 +28,18 @@ import { state } from '../state.js';
 import { labelOf } from '../boxes.js';
 import { groupKeyErrorBanners } from '../groupkeys.js';
 import { restarts } from '../restartwait.js';
+import { isPortableSpeaker } from '../speakercheck.js';
 
 // The order the items show in, the classic banner's own order (the wedge
 // banner sits above the issue banner).
 export const ATTENTION_KINDS = Object.freeze([
-  'wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
+  'fwDead', 'wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
   'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName',
 ]);
 
 // The kinds that stop the speaker from playing at all: the chip says so in
 // the danger colour. The others are worth knowing (warn).
-const BLOCKING = new Set(['wedged', 'noNet', 'foreignCloud', 'storm', 'badName']);
+const BLOCKING = new Set(['fwDead', 'wedged', 'noNet', 'foreignCloud', 'storm', 'badName']);
 
 const hostOf = (b) => (b && b.host) || '';
 
@@ -53,6 +54,7 @@ export function speakerIssuesFrom(parts = {}, label = labelOf) {
     if (!host) return;
     (out[host] = out[host] || []).push({ ...item, host, name: label(b) || host });
   };
+  for (const b of parts.fwDead || []) add(b, { kind: 'fwDead', portable: isPortableSpeaker(b) });
   for (const b of parts.wedged || []) add(b, { kind: 'wedged' });
   for (const b of parts.noNet || []) add(b, { kind: 'noNet' });
   for (const b of parts.conflict || []) add(b, { kind: 'conflict', mod: b.conflictingMod || '' });
@@ -86,6 +88,10 @@ export function attentionItems(host, issues = state.speakerIssues) {
 export function itemText(item) {
   const name = item.name;
   switch (item.kind) {
+    case 'fwDead': return {
+      title: t('speaker.fwDeadTitle'),
+      text: t(item.portable ? 'speaker.fwDeadBannerPortable' : 'speaker.fwDeadBanner', { name }),
+    };
     case 'wedged': return { title: t('speaker.wedgedTitle'), text: t('speaker.wedgedBanner', { name }) };
     case 'noNet': return { title: t('speaker.noInternetBanner', { name }), text: t('speaker.noInternetHint') };
     case 'conflict': return { text: t('speaker.conflictModBanner', { name, mod: item.mod }) };

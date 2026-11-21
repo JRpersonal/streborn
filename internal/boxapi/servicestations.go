@@ -206,7 +206,7 @@ func (c *Client) SelectContentItem(ctx context.Context, item string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}

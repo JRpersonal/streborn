@@ -14,6 +14,7 @@
 // be dismissed per speaker, and a dismissal holds for a day rather than until
 // the next dropout, which on a speaker with poor reception would be minutes.
 
+import { needsPowerCycle } from './boxes.js';
 import { boxCannotReachInternet } from './nointernet.js';
 
 // The two grades the update pre-flight also calls weak (main.js).
@@ -28,7 +29,7 @@ export const WEAK_WIFI_DISMISS_MS = 24 * 60 * 60 * 1000;
 // there the station cannot play at all, whatever the signal.
 export function boxHasWeakWifiDropout(box) {
   return !!(box && WEAK.has(box.weakWifiDropout) && !box.offline && box.kind !== 'stock'
-    && box.boxHealth !== 'wedged' && !boxCannotReachInternet(box));
+    && !needsPowerCycle(box) && !boxCannotReachInternet(box));
 }
 
 // weakWifiDismissActive: a dismissal stamp (ms, from localStorage; 0 or NaN

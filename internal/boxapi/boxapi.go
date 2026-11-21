@@ -706,7 +706,7 @@ func (c *Client) Standby(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -974,7 +974,7 @@ func (c *Client) SiteSurvey(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1017,7 +1017,7 @@ func (c *Client) getXMLReport(ctx context.Context, path string, dst any) (widene
 	if err != nil {
 		return false, err
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return false, err
 	}
@@ -1068,7 +1068,7 @@ func (c *Client) postXML(ctx context.Context, path, body string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -1099,7 +1099,7 @@ func (c *Client) postXMLInto(ctx context.Context, path, body string, dst any) er
 		return err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}

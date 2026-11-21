@@ -39,3 +39,14 @@ export function labelVia(fn, b) {
 export function isPlaying(playState) {
   return playState === 'PLAY_STATE' || playState === 'BUFFERING_STATE';
 }
+
+// POWER_CYCLE_HEALTH are the agent's boxHealth values that only a power cycle
+// clears: "wedged" (the speaker accepts playback and never plays) and
+// "firmware-unresponsive" (the speaker's own Bose software stopped answering
+// while STR runs on). Both get the "unplug it" banner.
+export const POWER_CYCLE_HEALTH = Object.freeze(['wedged', 'firmware-unresponsive']);
+
+// needsPowerCycle: the speaker reports one of POWER_CYCLE_HEALTH.
+export function needsPowerCycle(box) {
+  return !!box && POWER_CYCLE_HEALTH.includes(box.boxHealth);
+}
