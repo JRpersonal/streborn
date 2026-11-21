@@ -27,6 +27,7 @@ import { extractHost, logoImgTag, stationLogoChain } from '../../logos.js';
 import { playFailedForNoInternet } from '../../nointernet.js';
 import {
   addStationGuideFold,
+  emptiedSearchCloses,
   isStreamURL,
   listButtonCloses,
   normalizeDetailedSearch,
@@ -133,6 +134,22 @@ export function closeSearchList() {
   syncSearchModeButtons();
 }
 
+// searchInputChanged follows every edit of the search field, in both layouts
+// (the preview moves the same field): it marks a field with a query, and an
+// emptied field takes the results of the last search off the screen at once,
+// without a click on Search (discussion #1587). The query is forgotten too, so
+// a filter change afterwards opens the top list instead of searching again for
+// the text that was deleted.
+export function searchInputChanged() {
+  const q = $('searchQ');
+  if (!q) return;
+  const value = q.value || '';
+  q.classList.toggle('has-query', !!value.trim());
+  if (!emptiedSearchCloses(value, state.searchLastMode, state.searchListOpen)) return;
+  state.searchLastQuery = '';
+  closeSearchList();
+}
+
 // listButtonClick makes a list button a toggle: a click on the pressed button
 // closes its list, any other click opens it. Native <button>s, so Enter and
 // Space take the same path.
@@ -214,6 +231,9 @@ async function searchByStreamURL(url) {
     list = [syntheticStationForURL(url)];
   }
   ui2Busy(false);
+  // The field was emptied while the lookup ran: the list is closed and the
+  // answer belongs to nothing on screen, same as a name search (#1587).
+  if (!state.searchListOpen) return;
   state.searchResults = list;
   renderSearchResults();
 }
@@ -1043,9 +1063,7 @@ export function mountSearch() {
   { const ab = $('addStationOpenBtn'); if (ab) ab.onclick = () => { try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
   $('loadMoreBtn').onclick = () => loadMore();
   $('searchQ').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
-  $('searchQ').oninput = () => {
-    $('searchQ').classList.toggle('has-query', !!$('searchQ').value.trim());
-  };
+  $('searchQ').oninput = () => searchInputChanged();
   $('searchCountry').onchange = () => {
     state.searchCountry = $('searchCountry').value;
     // A country change resets the language to "all". Otherwise a

@@ -10,7 +10,27 @@ import {
   searchModePressed,
   listButtonCloses,
   stationCheckDot,
+  emptiedSearchCloses,
 } from './searchflow.js';
+
+describe('emptiedSearchCloses (#1587)', () => {
+  it('clears the results of a search once the field is empty', () => {
+    expect(emptiedSearchCloses('', 'search', true)).toBe(true);
+    expect(emptiedSearchCloses('   ', 'search', true)).toBe(true);
+    expect(emptiedSearchCloses(null, 'search', true)).toBe(true);
+  });
+  it('keeps the results while something is still typed', () => {
+    expect(emptiedSearchCloses('ru', 'search', true)).toBe(false);
+  });
+  it('leaves the top list, Favorites and Pandora on screen', () => {
+    expect(emptiedSearchCloses('', 'top', true)).toBe(false);
+    expect(emptiedSearchCloses('', 'favorites', true)).toBe(false);
+    expect(emptiedSearchCloses('', 'pandora', true)).toBe(false);
+  });
+  it('has nothing to clear when no list is open', () => {
+    expect(emptiedSearchCloses('', 'search', false)).toBe(false);
+  });
+});
 
 describe('listButtonCloses (#1521)', () => {
   it('closes when the button of the open list is clicked again', () => {
