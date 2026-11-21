@@ -321,7 +321,6 @@
   "library.usbNotFAT32": "{{name}} 中的 USB 隨身碟不是 FAT32 格式。請將它格式化為 FAT32，然後重新複製音樂進去。",
   "library.usbBigClusters": "{{name}} 中的 USB 隨身碟使用大於 32 KB 的叢集，喇叭無法讀取。請以叢集不超過 32 KB 的 FAT32 重新格式化。",
   "library.usbUnreadable": "無法讀取 {{name}} 中的 USB 隨身碟。請拔下它，在電腦上檢查後再插回。",
-  "library.usbPullHint": "拔下 USB 隨身碟之前，請先將 {{name}} 切換到待機，或選擇其他音源。",
   "banner.recommendation": "建議：",
   "banner.sshRecommend": "這台喇叭的 SSH 存取是開啟的。把喇叭重新開機一次就會關閉，否則網路上的其他人也連得進去。",
   "banner.sshPersistentNote": "此揚聲器的 SSH 存取是刻意開啟的。你可以在揚聲器設定中的「此揚聲器的 SSH 存取」將它關閉。",

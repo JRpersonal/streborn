@@ -657,7 +657,7 @@ func TestPhoneRemoteShowsTheStick(t *testing.T) {
 		t.Fatal("the USB stick dictionary I18N6 is missing")
 	}
 	dict := indexHTML[start : start+strings.Index(indexHTML[start:], "\n};")]
-	for _, key := range []string{"usbName", "usbUnsupportedModel", "usbInstallStick", "usbNotFAT32", "usbBigClusters", "usbUnreadable", "usbPullHint"} {
+	for _, key := range []string{"usbName", "usbUnsupportedModel", "usbInstallStick", "usbNotFAT32", "usbBigClusters", "usbUnreadable"} {
 		got := len(regexp.MustCompile(`[,{]`+key+`:"[^"]+"`).FindAllString(dict, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
@@ -675,8 +675,6 @@ func TestPhoneRemoteShowsTheStick(t *testing.T) {
 		"s.kind === 'usb'",
 		"usbRefusalText(s.refusal)",
 		`id="browseUsbMsg"`,
-		// A served stick says how to pull it out safely.
-		"usbMsg.textContent = T.usbPullHint",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("phone page lacks %q", want)

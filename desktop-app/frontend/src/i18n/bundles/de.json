@@ -321,7 +321,6 @@
   "library.usbNotFAT32": "Der USB-Stick in {{name}} ist nicht mit FAT32 formatiert. Formatiere ihn mit FAT32 und kopiere die Musik danach wieder darauf.",
   "library.usbBigClusters": "Der USB-Stick in {{name}} nutzt Cluster über 32 KB, die der Lautsprecher nicht lesen kann. Formatiere ihn neu mit FAT32 und Clustern von höchstens 32 KB.",
   "library.usbUnreadable": "Der USB-Stick in {{name}} lässt sich nicht lesen. Zieh ihn ab, prüf ihn am Computer und steck ihn wieder ein.",
-  "library.usbPullHint": "Bevor du den USB-Stick abziehst, schalte {{name}} in den Standby oder spiel dort etwas anderes ab.",
   "banner.recommendation": "Empfehlung:",
   "banner.sshRecommend": "Der SSH-Zugang zu diesem Lautsprecher ist offen. Starte den Lautsprecher einmal neu, um ihn wieder zu schließen. Sonst kann er von anderen im Netzwerk erreicht werden.",
   "banner.sshPersistentNote": "Der SSH-Zugang zu diesem Lautsprecher ist bewusst offen. Du kannst ihn in den Lautsprecher-Einstellungen unter \"SSH-Zugang zum Lautsprecher\" wieder ausschalten.",

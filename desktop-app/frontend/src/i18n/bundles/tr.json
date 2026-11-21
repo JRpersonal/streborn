@@ -308,7 +308,6 @@
   "library.usbNotFAT32": "{{name}} içindeki USB bellek FAT32 olarak biçimlendirilmemiş. FAT32 olarak biçimlendir, ardından müziği yeniden kopyala.",
   "library.usbBigClusters": "{{name}} içindeki USB bellek, hoparlörün okuyamadığı 32 KB üzerindeki kümeler kullanıyor. En fazla 32 KB kümelerle FAT32 olarak yeniden biçimlendir.",
   "library.usbUnreadable": "{{name}} içindeki USB bellek okunamadı. Çıkar, bir bilgisayarda kontrol et ve yeniden tak.",
-  "library.usbPullHint": "USB belleği çıkarmadan önce {{name}} cihazını bekleme moduna al ya da başka bir kaynak seç.",
   "banner.recommendation": "Öneri:",
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
   "banner.sshPersistentNote": "Bu hoparlöre SSH erişimi bilerek açık bırakılmış. Hoparlör ayarlarında “Bu hoparlöre SSH erişimi” altından yeniden kapatabilirsin.",
