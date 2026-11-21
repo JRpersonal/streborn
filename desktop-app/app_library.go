@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -593,9 +594,6 @@ const (
 	// phone page's 15 s), so it is 20 s now, with the Search action held to
 	// its old 12 s inside it. A walk the deadline cuts short is marked Partial.
 	librarySearchPerServer = 20 * time.Second
-	// librarySearchActionBudget is the Search action's share (both attempts):
-	// a Search that hangs still leaves the walk at least 8 s.
-	librarySearchActionBudget = 12 * time.Second
 	// librarySearchMaxPerServer caps the hits asked from one server; a longer
 	// list is a query to narrow, not a page to scroll.
 	librarySearchMaxPerServer = 200
@@ -603,6 +601,10 @@ const (
 	// server's log line names.
 	librarySearchMaxReadErrors = 5
 )
+
+// librarySearchActionBudget is the Search action's share (both attempts): a
+// Search that hangs still leaves the walk at least 8 s. A var for the tests.
+var librarySearchActionBudget = 12 * time.Second
 
 // The ways a server's hits can have come back, as logged per server.
 const (
@@ -646,9 +648,25 @@ func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string)
 	titleRetry := field == dlna.SearchAny || field == dlna.SearchTitle
 	var out serverSearch
 
+	// A server whose Search action hung before is walked straight away: it
+	// would hang again and leave the walk no time (searchHungServers).
+	if searchHungBefore(srv) {
+		out.SearchErr = errSearchHungBefore
+		return librarySearchWalk(ctx, srv, query, field, out)
+	}
+
 	actx, acancel := context.WithTimeout(ctx, librarySearchActionBudget)
 	res, err := dlna.SearchBy(actx, srv, query, field, librarySearchMaxPerServer)
 	path := searchPathSearch
+	if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		// The action's own budget ran out with no answer, not a refusal: the
+		// server is still busy with the query, so a title-only retry would
+		// only queue behind it.
+		out.SearchErr = err
+		noteSearchHung(srv)
+		acancel()
+		return librarySearchWalk(ctx, srv, query, field, out)
+	}
 	if err != nil {
 		out.SearchErr = err
 		if titleRetry {
@@ -670,9 +688,41 @@ func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string)
 		return out
 	}
 
-	// The Search action failed or found nothing: walk the tree. Its root
-	// answering is what tells a server that refuses Search from one that is
-	// not there at all.
+	return librarySearchWalk(ctx, srv, query, field, out)
+}
+
+// errSearchHungBefore is the SearchErr of a server walked without asking,
+// because its Search action hung earlier in this session.
+var errSearchHungBefore = errors.New("not asked: its Search action hung earlier in this session, walking its folders instead")
+
+// searchHungServers remembers, for this run of the app, the servers whose
+// Search action ran out of time without any answer. Windows Media Player's
+// share did that on the #1705 reporter's PC (2026-11-21): it never answered
+// the query, the first folder read of the walk then queued behind it and timed
+// out too, and the PC was reported as not answering although browsing it
+// worked. Such a server is walked straight away from then on. Kept in memory
+// only: a restart of the app, or of the server, asks again.
+var searchHungServers sync.Map
+
+func searchServerKey(srv dlna.Server) string {
+	if srv.UDN != "" {
+		return srv.UDN
+	}
+	return srv.CDSControlURL
+}
+
+func searchHungBefore(srv dlna.Server) bool {
+	_, ok := searchHungServers.Load(searchServerKey(srv))
+	return ok
+}
+
+func noteSearchHung(srv dlna.Server) { searchHungServers.Store(searchServerKey(srv), true) }
+
+// librarySearchWalk is the bounded browse walk of dlna.WalkSearch, for a
+// server whose Search action failed, found nothing or is not asked. Its root
+// answering is what tells a server that refuses Search from one that is not
+// there at all.
+func librarySearchWalk(ctx context.Context, srv dlna.Server, query, field string, out serverSearch) serverSearch {
 	walk := dlna.WalkSearch(ctx, srv, query, field, dlna.WalkOptions{
 		MaxHits: librarySearchMaxPerServer,
 		OnReadError: func(container string, start int, err error) {
