@@ -29,6 +29,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // Kind is what a mounted stick is for.
@@ -159,14 +160,19 @@ func hidden(name string) bool {
 
 // Entry is one child in a Browse page.
 type Entry struct {
-	// ID is the object id: the stick-relative slash path, "0" for the root.
-	ID     string
+	// ID is the object id: the stick-relative slash path as UTF-8 text, "0"
+	// for the root (charset.go).
+	ID string
+	// Path is the same path as the filesystem names it, in the mount's
+	// iocharset: what the file URL is built from. Equal to ID on a utf8 mount.
+	Path   string
 	Title  string
 	Folder bool
 	// MIME is set for a playable file.
 	MIME string
-	// Cover is the object id of the folder's cover image for a file, "" when
-	// the folder has none. Found in the one directory read, never by a stat.
+	// Cover is the on-disk path (like Path) of the folder's cover image, ""
+	// when the folder has none. Found in the one directory read, never by a
+	// stat.
 	Cover string
 }
 
@@ -189,17 +195,63 @@ const MaxDirEntries = 10000
 
 // Library serves one mounted stick.
 type Library struct {
-	root *os.Root
+	root  *os.Root
+	names nameCodec
 }
 
-// Open opens the stick mounted at dir. The caller decides whether to call it:
-// Classify first, and only for KindMusic.
+// Open opens the stick mounted at dir, with the file name charset unknown
+// (OpenMounted). The caller decides whether to call it: Classify first, and
+// only for KindMusic.
 func Open(dir string) (*Library, error) {
+	return OpenMounted(dir, "")
+}
+
+// OpenMounted opens the stick mounted at dir with the options /proc/mounts
+// lists for it, so file names are read in the mount's iocharset (NameCharset).
+func OpenMounted(dir, mountOptions string) (*Library, error) {
 	r, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err
 	}
-	return &Library{root: r}, nil
+	return &Library{root: r, names: nameCodec{charset: NameCharset(mountOptions)}}, nil
+}
+
+// Charset is the file name charset the stick is read with (NameCharset).
+func (l *Library) Charset() string { return l.names.charset }
+
+// onDisk turns a stick-relative UTF-8 path (an object id, already checked by
+// relPath) into the path the filesystem names. A charset that maps one text to
+// a single name needs no look; for an unknown one the first candidate that
+// exists wins. fs.ErrNotExist when the text cannot be a name on this mount.
+func (l *Library) onDisk(rel string) (string, error) {
+	if rel == "." {
+		return rel, nil
+	}
+	cands := l.names.encode(rel)
+	switch len(cands) {
+	case 0:
+		return "", fs.ErrNotExist
+	case 1:
+		return cands[0], nil
+	}
+	for _, c := range cands {
+		if _, err := l.root.Lstat(c); err == nil {
+			return c, nil
+		}
+	}
+	return cands[0], nil
+}
+
+// idOf is the object id (UTF-8) of an on-disk path.
+func (l *Library) idOf(raw string) string {
+	if raw == "." || raw == "" {
+		return "0"
+	}
+	segs := strings.Split(raw, "/")
+	for i, s := range segs {
+		segs[i] = l.names.decode(s)
+	}
+	return strings.Join(segs, "/")
 }
 
 // Close releases the root handle, which must happen before an unmount.
@@ -216,11 +268,16 @@ func relPath(id string) (string, error) {
 	if id == "0" || id == "" {
 		return ".", nil
 	}
-	if strings.Contains(id, "\\") || !fs.ValidPath(id) {
+	// fs.ValidPath's rules, except that the bytes need not be UTF-8: an
+	// on-disk path on an iso8859-1 mount is not (charset.go).
+	if strings.ContainsAny(id, "\\\x00") {
 		return "", ErrBadID
 	}
-	// A hidden folder or file is not listed, so it cannot be named either.
 	for _, seg := range strings.Split(id, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return "", ErrBadID
+		}
+		// A hidden folder or file is not listed, so it cannot be named either.
 		if hidden(seg) {
 			return "", ErrBadID
 		}
@@ -264,7 +321,11 @@ func (l *Library) list(id string) ([]Entry, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	f, err := l.root.Open(rel)
+	raw, err := l.onDisk(rel)
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := l.root.Open(raw)
 	if err != nil {
 		return nil, false, err
 	}
@@ -280,22 +341,23 @@ func (l *Library) list(id string) ([]Entry, bool, error) {
 	var dirs, files []Entry
 	cover, coverAt := "", len(coverNames)
 	for _, de := range des {
-		name := de.Name()
-		if hidden(name) {
+		rawName := de.Name()
+		if hidden(rawName) {
 			continue
 		}
-		child := name
+		name := l.names.decode(rawName)
+		child, rawChild := name, rawName
 		if rel != "." {
-			child = rel + "/" + name
+			child, rawChild = rel+"/"+name, raw+"/"+rawName
 		}
 		switch {
 		case de.IsDir():
-			dirs = append(dirs, Entry{ID: child, Title: name, Folder: true})
+			dirs = append(dirs, Entry{ID: child, Path: rawChild, Title: name, Folder: true})
 		case de.Type().IsRegular():
 			if m := MIMEFor(name); m != "" {
-				files = append(files, Entry{ID: child, Title: strings.TrimSuffix(name, path.Ext(name)), MIME: m})
+				files = append(files, Entry{ID: child, Path: rawChild, Title: strings.TrimSuffix(name, path.Ext(name)), MIME: m})
 			} else if r := coverRank(name); r >= 0 && r < coverAt {
-				cover, coverAt = child, r
+				cover, coverAt = rawChild, r
 			}
 		}
 		// Symlinks and devices are skipped outright: FAT has none, and on any
@@ -324,9 +386,13 @@ func (l *Library) Lookup(id string) (Entry, error) {
 		return Entry{}, err
 	}
 	if rel == "." {
-		return Entry{ID: "0", Title: "", Folder: true}, nil
+		return Entry{ID: "0", Path: ".", Title: "", Folder: true}, nil
 	}
-	fi, err := l.root.Lstat(rel)
+	raw, err := l.onDisk(rel)
+	if err != nil {
+		return Entry{}, err
+	}
+	fi, err := l.root.Lstat(raw)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -336,22 +402,24 @@ func (l *Library) Lookup(id string) (Entry, error) {
 	}
 	switch {
 	case fi.IsDir():
-		e := Entry{ID: rel, Title: name, Folder: true}
-		e.Cover = l.folderCover(rel)
+		e := Entry{ID: rel, Path: raw, Title: name, Folder: true}
+		e.Cover = l.folderCover(raw)
 		return e, nil
 	case fi.Mode().IsRegular():
 		m := MIMEFor(name)
 		if m == "" {
 			return Entry{}, fs.ErrNotExist
 		}
-		return Entry{ID: rel, Title: strings.TrimSuffix(name, path.Ext(name)), MIME: m,
-			Cover: l.folderCover(path.Dir(rel))}, nil
+		return Entry{ID: rel, Path: raw, Title: strings.TrimSuffix(name, path.Ext(name)), MIME: m,
+			Cover: l.folderCover(path.Dir(raw))}, nil
 	}
 	return Entry{}, fs.ErrNotExist
 }
 
 // folderCover finds a folder's cover by name, best first, with one stat per
-// candidate. Only Lookup uses it; a Browse finds the cover in its own read.
+// candidate, and returns its on-disk path. rel is the folder's on-disk path.
+// The cover names are ASCII, so they are the same in every charset. Only
+// Lookup uses it; a Browse finds the cover in its own read.
 func (l *Library) folderCover(rel string) string {
 	for _, c := range coverNames {
 		for _, ext := range []string{".jpg", ".jpeg", ".png"} {
@@ -368,9 +436,11 @@ func (l *Library) folderCover(rel string) string {
 }
 
 // OpenFile opens a playable file for serving (http.ServeContent gives Range
-// support, which the renderer needs for a seekable file).
-func (l *Library) OpenFile(id string) (*os.File, error) {
-	rel, err := relPath(id)
+// support, which the renderer needs for a seekable file). p is the path a file
+// URL carries: the on-disk path (Entry.Path). The object id (the UTF-8 form)
+// is accepted too, for a client that built the URL from the title text.
+func (l *Library) OpenFile(p string) (*os.File, error) {
+	rel, err := relPath(p)
 	if err != nil || rel == "." {
 		return nil, ErrBadID
 	}
@@ -381,8 +451,9 @@ func (l *Library) OpenFile(id string) (*os.File, error) {
 }
 
 // OpenArt opens a folder's cover image. Only the cover names, only images.
-func (l *Library) OpenArt(id string) (*os.File, error) {
-	rel, err := relPath(id)
+// p is an on-disk path or an object id, as for OpenFile.
+func (l *Library) OpenArt(p string) (*os.File, error) {
+	rel, err := relPath(p)
 	if err != nil || rel == "." {
 		return nil, ErrBadID
 	}
@@ -393,9 +464,17 @@ func (l *Library) OpenArt(id string) (*os.File, error) {
 }
 
 // openRegular opens rel and refuses anything that is not a regular file. The
-// Lstat first keeps a symlink from being followed even inside the stick.
+// Lstat first keeps a symlink from being followed even inside the stick. rel
+// is tried as the on-disk path first, then as an object id mapped back to one.
 func (l *Library) openRegular(rel string) (*os.File, error) {
 	fi, err := l.root.Lstat(rel)
+	if errors.Is(err, fs.ErrNotExist) && utf8.ValidString(rel) {
+		if raw, rerr := l.onDisk(rel); rerr == nil && raw != rel {
+			if rfi, lerr := l.root.Lstat(raw); lerr == nil {
+				rel, fi, err = raw, rfi, nil
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -415,16 +494,18 @@ const (
 
 // FileURL is the address the renderer is handed for a file. base is the
 // scheme+authority the caller wants (http://127.0.0.1:8888 for the box's own
-// renderer, the Host the client used otherwise). The real file name stays the
-// last path segment because the Bose renderer judges playability by the URL's
+// renderer, the Host the client used otherwise); p is the on-disk path
+// (Entry.Path), percent-encoded byte for byte, so a Latin-1 name stays the
+// bytes the filesystem knows it by. The real file name stays the last path
+// segment because the Bose renderer judges playability by the URL's
 // extension.
-func FileURL(base, id string) string {
-	return strings.TrimRight(base, "/") + FilePrefix + escapeID(id)
+func FileURL(base, p string) string {
+	return strings.TrimRight(base, "/") + FilePrefix + escapeID(p)
 }
 
-// ArtURL is the address of a folder's cover image.
-func ArtURL(base, id string) string {
-	return strings.TrimRight(base, "/") + ArtPrefix + escapeID(id)
+// ArtURL is the address of a folder's cover image (p as for FileURL).
+func ArtURL(base, p string) string {
+	return strings.TrimRight(base, "/") + ArtPrefix + escapeID(p)
 }
 
 func escapeID(id string) string {

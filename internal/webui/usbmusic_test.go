@@ -492,6 +492,57 @@ func TestOwnStickURLsAreFetchedOverLoopback(t *testing.T) {
 	}
 }
 
+// The firmware mounts the stick vfat with iocharset=iso8859-1 (ST10 and
+// Portable, live), so "01 Ärger.mp3" arrives as the Latin-1 byte 0xC4. The
+// listing shows the umlaut, and the URL keeps the bytes the speaker fetches.
+func TestALatin1FirmwareMountShowsUmlautsAndPlays(t *testing.T) {
+	f := newFakeStick(t, "taigan")
+	media := t.TempDir()
+	album := filepath.Join(media, "Album 1")
+	if err := os.Mkdir(album, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(album, "01 \xC4rger.mp3"), []byte("x"), 0o644); err != nil {
+		t.Skipf("this filesystem cannot hold a Latin-1 name: %v", err)
+	}
+	if des, err := os.ReadDir(album); err != nil || len(des) != 1 || des[0].Name() != "01 \xC4rger.mp3" {
+		t.Skip("this filesystem does not keep a Latin-1 name byte for byte; Linux CI runs this")
+	}
+	f.plug(fatSector("fat32", 64))
+	f.mu.Lock()
+	f.mounts = append(f.mounts, "/dev/sda1 "+media+" vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro 0 0")
+	f.writeMountsLocked()
+	f.mu.Unlock()
+	s, _ := usbTestServer(t)
+	srv := startUSBAgent(t, s)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/library/browse?udn="+s.usbUDN()+"&id=Album%201", nil)
+	req.Host = "192.0.2.10:8888"
+	s.handleLibraryBrowse(rr, req)
+	var page struct {
+		Tracks []struct{ Title, URL, Mime string } `json:"tracks"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &page); err != nil || len(page.Tracks) != 1 {
+		t.Fatalf("browse: %s", rr.Body.String())
+	}
+	tr := page.Tracks[0]
+	if tr.Title != "01 Ärger" || tr.URL != srv.URL+"/usb/file/Album%201/01%20%C4rger.mp3" || tr.Mime != "audio/mpeg" {
+		t.Fatalf("track: %+v", tr)
+	}
+	resp, err := http.Get(tr.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the speaker could not fetch the file: %d", resp.StatusCode)
+	}
+	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.NameCharset != "iso8859-1" {
+		t.Fatalf("snapshot: %+v", snap)
+	}
+}
+
 func TestUSBUDNIsStablePerSpeaker(t *testing.T) {
 	s, _ := usbTestServer(t)
 	if s.usbUDN() != "uuid:str-usb-aabbccddeeff" || !s.isUSBUDN("uuid:STR-USB-AABBCCDDEEFF") || s.isUSBUDN("uuid:other") {

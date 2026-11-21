@@ -11,10 +11,11 @@ package webui
 // The rules (docs/streaming/usb-stick.md):
 //
 //   - Nothing on the stick is ever written. Where the firmware mounted it
-//     (/media/sda1 on the ST10, ST20 and ST30) the agent reads from that mount;
-//     where nothing did (the Portable never auto-mounts), the agent mounts it
-//     itself READ-ONLY at usbMusicMountDir, and only when a user opens the
-//     Library, never at boot.
+//     (/media/sda1, read-write, iocharset=iso8859-1; live on the ST10 and the
+//     Portable) the agent reads from that mount; where nothing did, the agent
+//     mounts it itself READ-ONLY at usbMusicMountDir, and only when a user
+//     opens the Library, never at boot. File names are read in the mount's
+//     iocharset (usbmedia/charset.go).
 //   - A stick with any STR or Bose marker (usbmedia.InstallMarkers) is an
 //     install stick and is never served, music on it or not.
 //   - No timer and no poll. The state is looked at when the agent starts
@@ -94,6 +95,9 @@ type usbMusicSnapshot struct {
 	// read-only mount STR made itself).
 	MountedBy    string `json:"mounted_by,omitempty"`
 	MountOptions string `json:"mount_options,omitempty"`
+	// NameCharset is the charset file names are read in while served: "utf8",
+	// "iso8859-1" (the firmware's own mount), "iso8859-15" or "unknown".
+	NameCharset string `json:"name_charset,omitempty"`
 	// Classification is "music" or "install" once the stick was looked at.
 	Classification string `json:"classification,omitempty"`
 	Served         bool   `json:"served"`
@@ -242,6 +246,13 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		}
 		dir, own = usbMusicMountDir, true
 		snap.MountDir, snap.MountedBy, snap.MountOptions = dir, "agent", "ro"
+		// The options the kernel actually applied, the name charset among
+		// them: which of the two mounts took is only known from here.
+		if raw, err := os.ReadFile(filepath.Join(usbProcRoot, "mounts")); err == nil {
+			if am, ok := usbmedia.MountOf(usbmedia.ParseMounts(string(raw)), part); ok && am.Dir == dir {
+				snap.MountOptions = am.Options
+			}
+		}
 	}
 
 	kind, cerr := usbmedia.Classify(dir)
@@ -262,7 +273,9 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		s.usbCommitLocked(snap)
 		return snap
 	}
-	lib, err := usbmedia.Open(dir)
+	// File names come in the mount's iocharset: the firmware's own mount is
+	// iso8859-1, so they are decoded from it (usbmedia/charset.go).
+	lib, err := usbmedia.OpenMounted(dir, snap.MountOptions)
 	if err != nil {
 		snap.Refusal, snap.LastError = usbRefusalUnreadable, err.Error()
 		if own {
@@ -274,6 +287,10 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 	u.lib, u.dev, u.dir, u.ownMount = lib, part, dir, own
 	u.updateID++
 	snap.Served = true
+	snap.NameCharset = lib.Charset()
+	if snap.NameCharset == "" {
+		snap.NameCharset = "unknown"
+	}
 	s.usbCommitLocked(snap)
 	return snap
 }
@@ -313,7 +330,7 @@ func (s *Server) usbCommitLocked(snap usbMusicSnapshot) {
 	case snap.Served:
 		s.logger.Info("usb music: serving the music stick", "device", snap.Device, "fs", snap.Filesystem,
 			"fat", snap.FATType, "clusterBytes", snap.ClusterBytes, "mount", snap.MountDir,
-			"mountedBy", snap.MountedBy, "options", snap.MountOptions)
+			"mountedBy", snap.MountedBy, "options", snap.MountOptions, "names", snap.NameCharset)
 	case snap.WaitingForLibrary:
 		s.logger.Info("usb music: FAT stick found, not mounted yet; mounted read-only when the Library is opened",
 			"device", snap.Device, "clusterBytes", snap.ClusterBytes)

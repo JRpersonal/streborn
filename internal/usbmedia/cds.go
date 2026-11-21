@@ -228,7 +228,8 @@ const didlHead = `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/
 
 // writeEntry appends one container or item. A folder's title is its name, a
 // file's its name without the extension, and a file's album the folder it sits
-// in: no tag is read (docs/streaming/usb-stick.md, section 5).
+// in: no tag is read (docs/streaming/usb-stick.md, section 5). Ids and titles
+// are the UTF-8 text, the res and cover URLs the on-disk bytes (charset.go).
 func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 	parent := Parent(e.ID)
 	if e.ID == "0" {
@@ -251,7 +252,7 @@ func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 	if e.Cover != "" {
 		b.WriteString(`<upnp:albumArtURI>` + esc(ArtURL(base, e.Cover)) + `</upnp:albumArtURI>`)
 	}
-	b.WriteString(`<res protocolInfo="http-get:*:` + esc(e.MIME) + `:DLNA.ORG_OP=01;DLNA.ORG_CI=0">` + esc(FileURL(base, e.ID)) + `</res>`)
+	b.WriteString(`<res protocolInfo="http-get:*:` + esc(e.MIME) + `:DLNA.ORG_OP=01;DLNA.ORG_CI=0">` + esc(FileURL(base, e.Path)) + `</res>`)
 	b.WriteString(`</item>`)
 }
 

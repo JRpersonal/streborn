@@ -24,6 +24,12 @@ func serveStick(t *testing.T, root string) (*httptest.Server, Info) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return serveLibrary(t, lib)
+}
+
+// serveLibrary serves an opened stick (serveStick).
+func serveLibrary(t *testing.T, lib *Library) (*httptest.Server, Info) {
+	t.Helper()
 	t.Cleanup(func() { _ = lib.Close() })
 	info := Info{UDN: "uuid:str-usb-test", FriendlyName: "USB stick (Kitchen)", UpdateID: 3}
 	mux := http.NewServeMux()
