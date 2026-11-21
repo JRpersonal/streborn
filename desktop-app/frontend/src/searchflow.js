@@ -138,3 +138,12 @@ export function searchModePressed(mode, listOpen) {
 export function listButtonCloses(btnId, mode, listOpen) {
   return !!searchModePressed(mode, listOpen)[btnId];
 }
+
+// emptiedSearchCloses says whether an edit of the search field clears the list:
+// the field is now empty and the list on screen is the result of a name or URL
+// search. Emptying the field used to leave the old results standing until
+// Search was clicked again (discussion #1587). The top list, Favorites and
+// Pandora are not answers to what was typed, so an empty field leaves them be.
+export function emptiedSearchCloses(value, mode, listOpen) {
+  return String(value == null ? '' : value).trim() === '' && mode === 'search' && !!listOpen;
+}

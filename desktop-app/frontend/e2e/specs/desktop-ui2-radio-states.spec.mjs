@@ -9,6 +9,7 @@
 import { test, expect } from '../fixtures.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
+import { openTopList } from '../helpers/ui2radio.mjs';
 import { ROSTER, STATIONS } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
@@ -43,6 +44,7 @@ test.describe('UI 2.0 Radio states', () => {
 
     test('1. says so in place of the list, and Try again asks again', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       const err = state(page);
       await expect(err).toHaveClass(/lib2-state--error/);
       await expect(err).toHaveAttribute('role', 'alert');
@@ -70,6 +72,7 @@ test.describe('UI 2.0 Radio states', () => {
 
     test('2. the error does not take the keyboard off the tab that asked', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(state(page)).toBeVisible();
       await tab(page, 'favorites').click();
       await mock.resetCalls();
@@ -83,6 +86,7 @@ test.describe('UI 2.0 Radio states', () => {
 
   test('3. the list on its way: a status line, the panel busy until it arrives', async ({ app, mock }) => {
     const { page } = app;
+    await openTopList(page);
     await expect(rows(page)).toHaveCount(STATIONS.length);
     await mock.set('RadioSearchDetailed', { delayMs: 1500 });
     await reopenTop(page);
@@ -97,6 +101,7 @@ test.describe('UI 2.0 Radio states', () => {
   test.describe('empty lists', () => {
     test('4. nothing matches: Clear filters asks again without them, and the guide opens', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       await mock.set('RadioSearchDetailed', { value: { stations: [], relaxed: false } });
       await page.locator('#ui2Filters > summary').click();
@@ -115,6 +120,7 @@ test.describe('UI 2.0 Radio states', () => {
 
     test('5. nothing matches: "How to add a missing station" opens the guide on its summary', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       await mock.set('RadioSearchDetailed', { value: { stations: [], relaxed: false } });
       await reopenTop(page);
@@ -128,6 +134,7 @@ test.describe('UI 2.0 Radio states', () => {
 
     test('6. the speaker filter hides everything: "Show HTTPS stations too" turns it off', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       const opus = { name: 'Opus Only FM', url: 'https://example.com/opus', url_resolved: 'https://example.com/opus', stationuuid: 'opus', codec: 'OGG', bitrate: 128, lastcheckok: 1 };
       await mock.set('RadioSearchDetailed', { value: { stations: [opus], relaxed: false } });
@@ -141,6 +148,7 @@ test.describe('UI 2.0 Radio states', () => {
 
     test('7. no favorites yet: says how to keep one, and Open Discover goes there', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       await tab(page, 'favorites').click();
       const empty = state(page);
@@ -160,6 +168,7 @@ test.describe('UI 2.0 Radio states', () => {
     test('8. says "Sent", and "Playing" only once the speaker plays it', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
+      await openTopList(page);
       const r = row(page, JAZZ.name);
       await r.locator('[data-act="play"]').click();
       await expect(r.locator('.ui2-st-status')).toHaveText(en('ui2.radio.starting', { speaker: LR.friendlyName }));
@@ -188,6 +197,7 @@ test.describe('UI 2.0 Radio states', () => {
     test('9. says it in the row with the speaker\'s Wi-Fi as a button, no window-wide dialog', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
+      await openTopList(page);
       const r = row(page, JAZZ.name);
       await r.locator('[data-act="play"]').click();
       await waitForRowStatus(page, r, /internet/);
@@ -212,6 +222,7 @@ test.describe('UI 2.0 Radio states', () => {
     test('9b. only the new station says "Playing on", never the old one too', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
+      await openTopList(page);
       const playing = en('ui2.radio.playing', { speaker: LR.friendlyName });
       const jazz = row(page, JAZZ.name);
       const fip = row(page, STATIONS[4].name);
