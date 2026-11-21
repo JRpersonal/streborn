@@ -116,6 +116,26 @@ for (const [layout, ui2] of [['the current layout', false], ['the UI 2.0 preview
       expect(api.RadioSearchDetailed).toHaveBeenCalledTimes(1);
     });
 
+    it('answers Search on an empty field with an empty list, not the top list', async () => {
+      api.RadioSearchDetailed.mockResolvedValue({ stations: RUSH, relaxed: false });
+      await searchFor('rush');
+      type('');
+      await el('searchBtn').onclick();
+      await flush();
+      expect(el('searchResults').innerHTML).toBe('');
+      expect(state.searchListOpen).toBe(false);
+      expect(api.RadioSearchDetailed).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers Search on a field of only spaces with an empty list', async () => {
+      api.RadioSearchDetailed.mockResolvedValue({ stations: RUSH, relaxed: false });
+      type('   ');
+      await el('searchBtn').onclick();
+      await flush();
+      expect(el('searchResults').innerHTML).toBe('');
+      expect(api.RadioSearchDetailed).not.toHaveBeenCalled();
+    });
+
     it('keeps the results while part of the text is deleted', async () => {
       api.RadioSearchDetailed.mockResolvedValue({ stations: RUSH, relaxed: false });
       await searchFor('rush');
