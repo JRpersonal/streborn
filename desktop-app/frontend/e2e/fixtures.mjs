@@ -11,6 +11,9 @@
 //   ready       selector that means "booted" (null: the layout's default)
 //   preInit     an init script added BEFORE the mock (e.g. storage that throws)
 //   phoneLang, phoneView, phoneGrouped, phoneOverrides   for the phone fixture
+//   phoneLayout   'classic' (default: seeds str.ui2Preview=0 when nothing is
+//                 stored, so the classic specs keep their layout), 'unset'
+//                 (seeds nothing: the page's own default, UI 2.0 since phase 6)
 //   phonePresetRows, phoneRow2, phonePlaying   the second row of keys (phone-mock.mjs)
 //
 // Fixtures:
@@ -67,6 +70,7 @@ export const test = base.extend({
   ready: [null, { option: true }],
   preInit: [null, { option: true }],
   phoneLang: ['en', { option: true }],
+  phoneLayout: ['classic', { option: true }],
   phoneView: ['', { option: true }],
   phoneGrouped: [false, { option: true }],
   phoneOverrides: [{}, { option: true }],
@@ -109,17 +113,21 @@ export const test = base.extend({
     expect(errors, 'uncaught page errors').toEqual([]);
   },
 
-  phone: async ({ page, netGuard, phoneLang, phoneView, phoneGrouped, phoneOverrides, phonePresetRows, phoneRow2, phonePlaying }, use) => {
+  phone: async ({ page, netGuard, phoneLang, phoneLayout, phoneView, phoneGrouped, phoneOverrides, phonePresetRows, phoneRow2, phonePlaying }, use) => {
     void netGuard;
     const handler = phoneHandler({
       ...loadPhoneAssets(), view: phoneView, grouped: phoneGrouped, overrides: phoneOverrides,
       presetRows: phonePresetRows, row2: phoneRow2, playing: phonePlaying,
     });
-    await page.addInitScript((lang) => {
+    await page.addInitScript(([lang, layout]) => {
       try {
         localStorage.setItem('str.remote.lang', lang);
+        // Only when nothing is stored, so a layout switch survives its reload.
+        if (layout === 'classic' && localStorage.getItem('str.ui2Preview') === null) {
+          localStorage.setItem('str.ui2Preview', '0');
+        }
       } catch (e) {}
-    }, phoneLang);
+    }, [phoneLang, phoneLayout]);
     // Owns every request: it serves the placeholder origin and aborts the rest.
     await page.route('**/*', handler.handle);
     const errors = [];
