@@ -231,6 +231,9 @@ async function searchByStreamURL(url) {
     list = [syntheticStationForURL(url)];
   }
   ui2Busy(false);
+  // The field was emptied while the lookup ran: the list is closed and the
+  // answer belongs to nothing on screen, same as a name search (#1587).
+  if (!state.searchListOpen) return;
   state.searchResults = list;
   renderSearchResults();
 }
