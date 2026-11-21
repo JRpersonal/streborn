@@ -114,7 +114,7 @@ func TestHeldPresetForeignOrUnreadableIsRefused(t *testing.T) {
 	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	cases := []marge.HeldItem{
 		{Slot: 2, Source: "UPNP", Type: "audio", Location: boxurl.StreamSlot(4), SourceAccount: "UPnPUserName"},
-		{Slot: 2, Source: "DEEZER", Type: "playlist", Location: "123456789", SourceAccount: "1456373802"},
+		{Slot: 2, Source: "DEEZER", Type: "playlist", Location: "123456789", SourceAccount: "1234567890"},
 		heldRadio(2, "/station?data=@@@", "x"),
 		heldRadio(2, "http://example.com/live.mp3", "x"),
 	}

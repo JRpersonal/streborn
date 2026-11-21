@@ -103,7 +103,7 @@ func TestReflectDeezerSource(t *testing.T) {
 	// source, so the box keeps it and plays via its cached ARL.
 	dir := t.TempDir()
 	rp := dir + "/reflect-sources.json"
-	if err := os.WriteFile(rp, []byte(`[{"source":"DEEZER","account":"1456373802","name":"Deezer"}]`), 0o644); err != nil {
+	if err := os.WriteFile(rp, []byte(`[{"source":"DEEZER","account":"1234567890","name":"Deezer"}]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -130,11 +130,11 @@ func TestReflectDeezerSource(t *testing.T) {
 	// (see reflectedFullSourcesXML). The earlier name-id shape survived here as
 	// an entry but the box downgraded the source to UNAVAILABLE at every boot
 	// sync (live case 2026-08-21).
-	full := get("/streaming/account/1456373802/full")
+	full := get("/streaming/account/1234567890/full")
 	for _, want := range []string{
 		`<sourceproviderid>14</sourceproviderid>`,
 		`<sourcename>DEEZER</sourcename>`,
-		`<username>1456373802</username>`,
+		`<username>1234567890</username>`,
 		`<sourceSettings/>`,
 		`<credential type="token"></credential>`,
 	} {

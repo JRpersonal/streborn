@@ -34,7 +34,7 @@ func TestParseSources(t *testing.T) {
 	const body = `<?xml version="1.0" encoding="UTF-8"?>
 <sources deviceID="AABBCCDDEEFF">
 <sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true" multiroomallowed="true">AUX IN</sourceItem>
-<sourceItem source="DEEZER" sourceAccount="1456373802" status="READY" isLocal="false" multiroomallowed="true">DeezerUser</sourceItem>
+<sourceItem source="DEEZER" sourceAccount="1234567890" status="READY" isLocal="false" multiroomallowed="true">DeezerUser</sourceItem>
 <sourceItem source="SPOTIFY" sourceAccount="SpotifyConnectUserName" status="UNAVAILABLE" isLocal="false" multiroomallowed="true">SpotifyConnectUserName</sourceItem>
 </sources>`
 	dev, sources, err := parseSources([]byte(body))
@@ -47,7 +47,7 @@ func TestParseSources(t *testing.T) {
 	if len(sources) != 3 {
 		t.Fatalf("got %d sources, want 3", len(sources))
 	}
-	if sources[1].Source != "DEEZER" || sources[1].SourceAccount != "1456373802" {
+	if sources[1].Source != "DEEZER" || sources[1].SourceAccount != "1234567890" {
 		t.Errorf("deezer source mis-parsed: %+v", sources[1])
 	}
 }
@@ -55,7 +55,7 @@ func TestParseSources(t *testing.T) {
 func TestParsePresets(t *testing.T) {
 	const body = `<presets>
 <preset id="1"><ContentItem source="UPNP" type="audio" location="http://127.0.0.1:8888/stream/1" sourceAccount="UPnPUserName" isPresetable="true"><itemName>1LIVE</itemName></ContentItem></preset>
-<preset id="3"><ContentItem source="DEEZER" type="tracklisturl" location="/playlist/1234" sourceAccount="1456373802" isPresetable="true"><itemName>My Playlist</itemName></ContentItem></preset>
+<preset id="3"><ContentItem source="DEEZER" type="tracklisturl" location="/playlist/1234" sourceAccount="1234567890" isPresetable="true"><itemName>My Playlist</itemName></ContentItem></preset>
 </presets>`
 	presets, err := parsePresets([]byte(body))
 	if err != nil {
@@ -172,7 +172,7 @@ func TestAnalyze(t *testing.T) {
 	}
 	sources := []Source{
 		{Source: "AUX", Status: "READY"},
-		{Source: "DEEZER", Status: "READY", SourceAccount: "1456373802"},
+		{Source: "DEEZER", Status: "READY", SourceAccount: "1234567890"},
 		{Source: "AMAZON", Status: "UNAVAILABLE"}, // unavailable -> not flagged via sources
 		{Source: "SPOTIFY", Status: "UNAVAILABLE"},
 	}
