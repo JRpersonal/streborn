@@ -439,11 +439,13 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	// to say so, and the press goes ahead as it always did. The log says why.
 	s.logHardwareLibraryVerdict(slot, p.Name, s.healLibraryKeyIfMoved(ctx, slot, &p))
 	// A file on this speaker's USB stick with a sample rate the speaker
-	// cannot play is not handed to it (usbhires.go). No screen to say so: the
-	// press is claimed, nothing plays, the log says why.
+	// cannot play is not handed to it (usbhires.go). The press is claimed,
+	// nothing plays, the log says why, and a speaker with a screen says so
+	// there (displaymsg.go guards decide whether it can).
 	if f, hi := s.usbHiResFormat(usbLoopbackURL(p.StreamURL)); hi {
 		s.logger.Warn("preset slot recall (hardware): the key's file on the USB stick has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
 			"slot", slot, "name", p.Name, "sampleRate", f.SampleRate)
+		s.ShowKeyMessage(DisplayMsgUSBHiRes)
 		return true
 	}
 	mime := s.directFileMime(ctx, p)

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
 )
@@ -239,4 +241,54 @@ func TestThePlayQueueStepsOverSkippedTracks(t *testing.T) {
 	if q.isActive() {
 		t.Fatal("a queue of skipped tracks must not be active")
 	}
+}
+
+// waitDisplayAttempt waits for the display message decision of kind, which
+// ShowKeyMessage takes beside the caller.
+func waitDisplayAttempt(t *testing.T, s *Server, kind DisplayMsgKind) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.displayMsg.mu.Lock()
+		got := s.displayMsg.attempt.Kind
+		s.displayMsg.mu.Unlock()
+		if got == kind {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("no display message %q was asked for", kind)
+}
+
+// A hardware press on a key whose stick file (or whole folder) is above
+// 48 kHz asks the display to say so. The switch is off here, so the guard
+// records the decision without touching the speaker.
+func TestAHardwareKeyOnAHiResStickFileAsksTheDisplay(t *testing.T) {
+	s, _ := hiResStickServer(t)
+	off := filepath.Join(t.TempDir(), "display-messages")
+	if err := os.WriteFile(off, []byte("off"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.displayMsg.path = off
+
+	p := presets.Preset{Slot: 2, Name: "hires", Type: "radio", StreamURL: stickLoop + "hires-2496.flac"}
+	if !s.recallLibraryFileSlot(context.Background(), 2, p) {
+		t.Fatal("the press must be claimed")
+	}
+	waitDisplayAttempt(t, s, DisplayMsgUSBHiRes)
+
+	s.displayMsg.mu.Lock()
+	s.displayMsg.attempt = displayMsgRecord{}
+	s.displayMsg.mu.Unlock()
+	folder := presets.Preset{Slot: 3, Name: "hires folder", Type: "queue", Items: []presets.PresetItem{
+		{URL: stickLoop + "hires-2496.flac", Title: "hires"},
+		{URL: stickLoop + "wav-96k.wav", Title: "wav96"},
+	}}
+	if err := s.presets.SetSlot(folder); err != nil {
+		t.Fatal(err)
+	}
+	if !s.RecallSlot(context.Background(), 3) {
+		t.Fatal("the folder press must be claimed")
+	}
+	waitDisplayAttempt(t, s, DisplayMsgUSBHiRes)
 }

@@ -142,6 +142,7 @@ func (s *Server) RecallSlotPress(ctx context.Context, slot int, press SlotPress)
 	if marked, n := s.usbMarkHiRes(items); n > 0 && playableCount(marked) == 0 {
 		s.logger.Warn("preset slot recall (hardware): every track of the key's folder has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
 			"slot", slot, "name", p.Name, "tracks", len(items))
+		s.ShowKeyMessage(DisplayMsgUSBHiRes)
 		return true
 	}
 	// Bind this slot as the in-flight queue recall BEFORE the queue starts, so a
