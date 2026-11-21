@@ -242,6 +242,9 @@ func (s *Server) keyRecallLength(ctx context.Context, p presets.Preset, mime str
 		clientFn = defaultKeyLengthClient
 	}
 	cl := clientFn()
+	if cl != nil && isUSBLoopbackFile(p.StreamURL) {
+		cl = usbProbeClient() // the guarded client refuses loopback
+	}
 	if mime == "" || cl == nil {
 		return recallLength{d: stored}
 	}

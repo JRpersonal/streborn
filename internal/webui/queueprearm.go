@@ -103,6 +103,9 @@ var defaultPrearmProbe = probeMP3Length
 // from its first frame. exact is true only for a Xing/Info or VBRI frame count.
 func probeMP3Length(ctx context.Context, url string) (time.Duration, bool) {
 	cl := customFileProbeClient()
+	if isUSBLoopbackFile(url) {
+		cl = usbProbeClient() // the guarded client refuses loopback
+	}
 	verdict, size := probeFileStep(ctx, cl, http.MethodHead, url)
 	if verdict == fileUnknown {
 		verdict, size = probeFileStep(ctx, cl, http.MethodGet, url)

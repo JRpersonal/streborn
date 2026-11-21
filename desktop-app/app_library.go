@@ -281,6 +281,10 @@ type LibraryServer struct {
 	// browse then failed, and nothing in the app had said the server was
 	// never seen alive (#770).
 	NotAnswering bool `json:"notAnswering"`
+	// USBSpeaker names the speaker this server is the music stick of (#1136);
+	// empty for every other server. The Library labels it in the user's
+	// language and offers no "put on the speakers" for it.
+	USBSpeaker string `json:"usbSpeaker,omitempty"`
 }
 
 // libraryEntry is one server on its way to the frontend list: the
@@ -407,8 +411,10 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 		ssdpErr error
 		known   []dlna.Server
 		local   []dlna.Server
+		sticks  []usbStick
+		notices []LibraryUSBNotice
 	)
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
 		ssdp, ssdpErr = dlna.DiscoverServers(a.appCtx(), time.Duration(timeoutSec)*time.Second)
@@ -420,6 +426,11 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	go func() {
 		defer wg.Done()
 		local = a.probeWellKnownLocalServers(a.appCtx())
+	}()
+	// The music sticks in the speakers: no SSDP, each agent lists its own.
+	go func() {
+		defer wg.Done()
+		sticks, notices = a.speakerUSBSticks(a.appCtx())
 	}()
 	wg.Wait()
 
@@ -459,8 +470,18 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 			dark++
 		}
 	}
+	// A stick is listed after the network's servers and never remembered.
+	usbAt := map[string]string{}
+	for _, st := range sticks {
+		if _, dup := usbAt[st.Server.UDN]; dup {
+			continue
+		}
+		usbAt[st.Server.UDN] = st.Speaker
+		entries = append(entries, libraryEntry{Server: st.Server})
+	}
 	a.logger.Info("library: media server scan done",
 		"ssdp", len(ssdp), "known", len(known), "local", len(local),
+		"usbSticks", len(usbAt), "usbRefused", len(notices),
 		"total", len(entries), "notAnswering", dark)
 
 	a.libraryMu.Lock()
@@ -468,6 +489,7 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	for _, e := range entries {
 		a.libraryServers[e.Server.UDN] = e.Server
 	}
+	a.usbNotices = notices
 	a.libraryMu.Unlock()
 
 	out := make([]LibraryServer, 0, len(entries))
@@ -481,6 +503,7 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 			Address:      e.Server.Address,
 			Manual:       e.Manual,
 			NotAnswering: e.NotAnswering,
+			USBSpeaker:   usbAt[e.Server.UDN],
 		})
 	}
 	return out, nil

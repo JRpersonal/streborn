@@ -25,6 +25,7 @@ import {
   ProbeTrackDelivery,
   ListMediaServers,
   LibraryRefusedServers,
+  LibraryUSBNotices,
   LibraryFolder,
   SearchLibrary,
   BrowseLibrary,
@@ -85,6 +86,7 @@ export function initLibraryView(d) {
 const libState = {
   servers: [],
   refused: [],        // media servers that refused to describe themselves to this PC
+  usbNotices: [],     // USB sticks in a speaker that are not offered, and why (#1136)
   currentUDN: '',
   stack: [{ id: '0', title: '' }],
   page: null,
@@ -338,7 +340,13 @@ async function loadMediaServers(opts = {}) {
   renderLibrary();
   try {
     const list = await ListMediaServers(3);
-    libState.servers = list || [];
+    libState.servers = localizeUSBServers(list || []);
+    // A stick in a speaker that cannot be offered says why, in one line.
+    try {
+      libState.usbNotices = (await LibraryUSBNotices()) || [];
+    } catch {
+      libState.usbNotices = []; // older build without the binding
+    }
     // A server that answers this PC's description request with a SOAP fault is
     // not listed, and without a word about it the user only sees whatever else
     // that host announces (a QNAP's admin device, which cannot be browsed).
@@ -454,6 +462,35 @@ export function libraryRefusedNote(refused) {
   return list.map(r =>
     `<div class="library-server-dark-note" title="${escapeAttr(r.detail || '')}">${escapeHtml(t('library.serverRefusesPC', { address: r.address }))}</div>`,
   ).join('');
+}
+
+// USB_NOTICE_KEYS maps the agent's reason a stick is not offered to its line.
+const USB_NOTICE_KEYS = {
+  'unsupported-model': 'library.usbUnsupportedModel',
+  'install-stick': 'library.usbInstallStick',
+  'not-fat32': 'library.usbNotFAT32',
+  'big-clusters': 'library.usbBigClusters',
+  unreadable: 'library.usbUnreadable',
+};
+
+// libraryUSBNote is one line per USB stick a speaker holds but cannot offer:
+// what is wrong with it and what to do, named by the speaker it is in. An
+// unknown code (a newer agent) still says that the stick could not be read.
+export function libraryUSBNote(notices) {
+  const list = (notices || []).filter(n => n && n.speaker && n.code);
+  if (!list.length) return '';
+  return list.map(n =>
+    `<div class="library-server-dark-note">${escapeHtml(t(USB_NOTICE_KEYS[n.code] || 'library.usbUnreadable', { name: n.speaker }))}</div>`,
+  ).join('');
+}
+
+// localizeUSBServers names a speaker's music stick in the user's language. The
+// agent calls it "USB stick (Kitchen)" in English, for generic UPnP clients;
+// every place the Library shows or files a server's name then reads this one.
+export function localizeUSBServers(list) {
+  return (list || []).map(s => (s && s.usbSpeaker
+    ? { ...s, friendlyName: t('library.usbServerName', { name: s.usbSpeaker }), modelName: '' }
+    : s));
 }
 
 // libraryServerLabel is the text the server picker shows for one entry. An entry
@@ -1772,7 +1809,9 @@ function ui2FolderRowsHTML() {
 // Media Server.
 function ui2ServerToolsHTML() {
   const cur = libState.servers.find((s) => s.udn === libState.currentUDN);
-  if (!cur) return '';
+  // A speaker's USB stick is no network server: the other speakers cannot
+  // take it as a source of their own, and nothing was added by hand.
+  if (!cur || cur.usbSpeaker) return '';
   const remove = cur.manual
     ? `<button type="button" class="u-btn u-btn--secondary" id="libManualRemoveBtn">${escapeHtml(t('library.removeServerBtn'))}</button>`
     : '';
@@ -1896,10 +1935,11 @@ function ui2ServersHTML() {
       title: t('ui2.library.noServersTitle'),
       body: t('ui2.library.noServersBody'),
       actions: [{ id: 'libRefreshBtn', label: t('ui2.library.searchAgain'), primary: true }],
-    }) + libraryRefusedNote(libState.refused) + manual(true);
+    }) + libraryRefusedNote(libState.refused) + libraryUSBNote(libState.usbNotices) + manual(true);
   }
   return levelHeadHTML(t('ui2.library.serversTitle'))
     + libraryRefusedNote(libState.refused)
+    + libraryUSBNote(libState.usbNotices)
     + `<ul class="lib2-list" data-list="servers">${serverRowsHTML(libState.servers)}</ul>`
     + `<div class="lib2-tool-row"><button type="button" class="u-btn u-btn--secondary" id="libRefreshBtn">${escapeHtml(t('ui2.library.searchAgain'))}</button></div>`
     + manual(false);
@@ -2165,7 +2205,7 @@ function renderLibrary() {
     //
     // Whole-household by default, because a server belongs to the house rather
     // than to one speaker, and every speaker discovers it under the same id.
-    const onSpeakersBtn = libState.currentUDN
+    const onSpeakersBtn = libState.currentUDN && !(cur && cur.usbSpeaker)
       ? `<button class="btn btn-mini" id="libOnSpeakersBtn" title="${escapeAttr(t('library.onSpeakersHint'))}">${escapeHtml(t('library.onSpeakersBtn'))}</button>`
       : '';
     serverPicker = `
@@ -2252,7 +2292,7 @@ function renderLibrary() {
   const wholeSearch = libState.servers.length > 0 ? libraryWholeSearchBox() : '';
   if (libState.search.active) body = libraryWholeSearchBody();
 
-  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + manualAdd + wholeSearch + body;
+  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + libraryUSBNote(libState.usbNotices) + manualAdd + wholeSearch + body;
   wireWholeSearch(el);
 
   // Wire interactions.

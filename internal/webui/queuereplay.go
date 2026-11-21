@@ -335,6 +335,10 @@ func (s *Server) replaySlotFolderCard(w http.ResponseWriter, r *http.Request, sl
 // mediaServerRegistered reports whether this UDN is one of the servers the user
 // picked as a music source.
 func (s *Server) mediaServerRegistered(udn string) bool {
+	// The stick in this speaker needs no registration: it is this agent's own.
+	if s.isUSBUDN(udn) {
+		return true
+	}
 	for _, reg := range s.mediaServers.List() {
 		if udnKey(reg.ID) == udnKey(udn) {
 			return true

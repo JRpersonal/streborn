@@ -2100,6 +2100,11 @@ func (a *agent) wireLate() error {
 		a.mdnsMu.Unlock()
 		return ann.Snapshot()
 	})
+	// Music from a USB stick in the speaker (Ideas #1136): what is plugged in is
+	// looked at once now (detection only, nothing is mounted at boot) and then
+	// only when a client opens the Library. No timer, no poll.
+	webui.RegisterDebugSection("usb_music", webuiSrv.USBMusicDebug)
+	go webuiSrv.USBMusicStartupCheck()
 	// Let the web UI's preset sync store slots natively too, on the same terms
 	// as the agent's own reconcile: only when the box reports the radio source
 	// registered, otherwise "" and the UPnP form is kept.

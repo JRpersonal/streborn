@@ -258,6 +258,9 @@ func (s *Server) rememberMediaServerLocationAs(key, loc string) {
 // registeredName returns the friendly name the user registered a server under,
 // looked up by its normalised UDN key, or "" when no registered server matches.
 func (s *Server) registeredName(key string) string {
+	if key != "" && key == udnKey(s.usbUDN()) {
+		return s.usbFriendlyName()
+	}
 	if s.mediaServers == nil {
 		return ""
 	}

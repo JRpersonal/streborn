@@ -26,9 +26,10 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
+			Art:      usbLoopbackURL(it.Art),
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
@@ -1733,9 +1734,10 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
+			Art:      usbLoopbackURL(it.Art),
 			Mime:     it.Mime,
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
