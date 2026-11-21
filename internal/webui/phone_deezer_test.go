@@ -11,9 +11,9 @@ import (
 // card talks to the agent's endpoints, and a Deezer link never goes to the
 // radio directory.
 func TestPhonePageDeezer(t *testing.T) {
-	start := strings.Index(indexHTML, "var I18N6 = {")
+	start := strings.Index(indexHTML, "var I18N7 = {")
 	if start < 0 {
-		t.Fatal("the Deezer dictionary I18N6 is missing")
+		t.Fatal("the Deezer dictionary I18N7 is missing")
 	}
 	dict := indexHTML[start : start+strings.Index(indexHTML[start:], "\n};")]
 	en := regexp.MustCompile(`(?m)^  en:\{.*$`).FindString(dict)
@@ -37,7 +37,7 @@ func TestPhonePageDeezer(t *testing.T) {
 		t.Error("the German Deezer strings must use du")
 	}
 	for _, want := range []string{
-		"var base6 = I18N6.en, sel6 = I18N6[code] || base6;",
+		"var base7 = I18N7.en, sel7 = I18N7[code] || base7;",
 		`<div class="card" id="dzCard" hidden>`,
 		`<input type="password" id="dzPass" class="dzin" autocomplete="off">`,
 		"apiDetail('/api/deezer/account', 'POST', { user: user, password: pass }, 30000);",
