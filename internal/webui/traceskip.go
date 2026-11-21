@@ -33,6 +33,7 @@ package webui
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -221,7 +222,21 @@ func (s *Server) traceSkipApplies(ctx context.Context) bool {
 		return true
 	case "UPNP":
 		loc := np.Location()
-		return loc == "" || boxapi.StreamPath(loc) == boxapi.StreamPath(s.play.currentURL())
+		return loc == "" || sameStreamPath(loc, s.play.currentURL())
 	}
 	return false
+}
+
+// sameStreamPath reports whether the speaker's location is the stream STR
+// last pointed it at, by path and query, so the host spelling (127.0.0.1 or
+// the LAN address) does not matter. boxapi.StreamPath knows only the radio
+// keys' /stream/N and answers "" for a Spotify stream and for any foreign
+// URL alike, which made every stream compare equal.
+func sameStreamPath(loc, want string) bool {
+	a, errA := url.Parse(strings.TrimSpace(loc))
+	b, errB := url.Parse(strings.TrimSpace(want))
+	if errA != nil || errB != nil || b.Path == "" {
+		return false
+	}
+	return a.Path == b.Path && a.RawQuery == b.RawQuery
 }

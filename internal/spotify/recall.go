@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/anonymise"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 )
 
 // normalizeContextURI unwraps an ephemeral autoplay STATION context
@@ -544,7 +545,13 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	// for a moment. A paused engine is resumed where it stood instead, since
 	// that press asks for the music back, not for another song.
 	skipped := false
-	if opts.Shuffle {
+	if recallintent.KeepTrack(ctx) {
+		// STR's own recall after a skip (webui spotifyRecoverAfterSkip): the
+		// listener just picked this track with Next or Back, so it stays. No
+		// reshuffle either, that would also move off it.
+		m.clearSkipCut()
+		m.logger.Info("spotify: warm recall keeps the playing track (STR's recovery after a skip, not a key press)", "uri", uri)
+	} else if opts.Shuffle {
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
 		_ = m.apiPost(ctx, "/player/next", "")

@@ -366,7 +366,11 @@ type Server struct {
 	// acknowledged immediately and drained back-to-back by one worker, so a
 	// slow go-librespot ack can never stack button presses into a minute-long
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
-	spotifySkipCh   chan spotifySkipReq
+	spotifySkipCh chan spotifySkipReq
+	// spotifySkipSeq counts the Spotify skips handed to the queue, so a skip's
+	// recovery (spotifyRecoverAfterSkip) can tell that a newer press came in
+	// while it waited.
+	spotifySkipSeq  atomic.Uint64
 	spotifySkipOnce sync.Once
 	// spotifyHeardPrev is Back on a Spotify playlist, from the remote and
 	// the apps alike: the song before inside the first seconds heard, a
@@ -970,6 +974,9 @@ type Server struct {
 	// mean production.
 	groupFollowerFn func() (bool, string)
 	traceSkipWait   time.Duration
+	// skipRecoverWaits replaces the two looks of a skip's recovery
+	// (spotifyRecoverAfterSkip, 5 s and 4 s). Zero means production.
+	skipRecoverWaits [2]time.Duration
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

@@ -2,11 +2,14 @@ package webui
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
 // tracePressAsync runs one traced press with a short wait and reports whether
@@ -159,5 +162,29 @@ func TestGroupFollowerLeavesRemoteTrackKeysToItsMainSpeaker(t *testing.T) {
 	defer alone.mu.Unlock()
 	if len(alone.steps) != 1 {
 		t.Fatalf("a speaker on its own did not step: %v", alone.steps)
+	}
+}
+
+// The check that a skip left the speaker playing stands down once a newer
+// press came in: on the ST30 the check of a Next fired one second into the
+// Back that followed it, read the Back's teardown as "not playing", and its
+// recall moved the playlist on (2026-11-21).
+func TestSkipRecoveryStandsDownForANewerSkip(t *testing.T) {
+	var buf syncBuffer
+	s := &Server{
+		logger:           slog.New(slog.NewTextHandler(&buf, nil)),
+		renderer:         &upnp.Renderer{},
+		boxNowReadFn:     scriptNowPlaying("INVALID_SOURCE", "", ""),
+		skipRecoverWaits: [2]time.Duration{50 * time.Millisecond, 50 * time.Millisecond},
+	}
+	s.play.record(&lastPlayInfo{boxURL: boxurl.SpotifySlot(2)})
+	s.spotifyRecoverAfterSkip()
+	s.spotifySkipSeq.Add(1) // the newer press
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(buf.String(), "a newer skip came in") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := buf.String(); !strings.Contains(got, "a newer skip came in") || strings.Contains(got, "clean slot recall") {
+		t.Fatalf("the recovery did not stand down for the newer skip:\n%s", got)
 	}
 }

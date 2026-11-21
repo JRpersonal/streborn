@@ -12,6 +12,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
@@ -1866,6 +1867,7 @@ func (s *Server) enqueueSpotifySkip(req spotifySkipReq) {
 		s.spotifySkipCh = make(chan spotifySkipReq, 3)
 		go s.spotifySkipWorker()
 	})
+	s.spotifySkipSeq.Add(1)
 	select {
 	case s.spotifySkipCh <- req:
 	default:
@@ -2108,11 +2110,27 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		return
 	}
 	slot := slotFromSpotifyStreamURL(boxURL)
+	seq := s.spotifySkipSeq.Load()
+	// A newer press owns the speaker from here: its teardown is what this
+	// check would see as "not playing", and a recall into it undid the press
+	// (Jens' ST30, 2026-11-21: the check of a Next fired one second into the
+	// Back that followed it). The newer skip schedules a check of its own.
+	superseded := func() bool {
+		if s.spotifySkipSeq.Load() == seq {
+			return false
+		}
+		s.logger.Info("spotify skip recovery: a newer skip came in, leaving the speaker to it", "slot", slot)
+		return true
+	}
+	first, second := 5*time.Second, 4*time.Second
+	if s.skipRecoverWaits[0] > 0 {
+		first, second = s.skipRecoverWaits[0], s.skipRecoverWaits[1]
+	}
 	go func() {
-		time.Sleep(5 * time.Second)
+		time.Sleep(first)
 		// Do not fight a deliberate stop, and do not thrash a box that reported
 		// not-logged-in (a re-login is already in flight, re-pushing can wedge it).
-		if s.userStoppedRecently() || s.recentLoginError() {
+		if s.userStoppedRecently() || s.recentLoginError() || superseded() {
 			return
 		}
 		// Soft skip (and any box that re-synced on its own): already playing, leave it.
@@ -2125,8 +2143,8 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		// PLAY_STATE, so a single early check would fire a recall that
 		// restarts the track the user just skipped to. One more beat, then
 		// decide for real.
-		time.Sleep(4 * time.Second)
-		if s.userStoppedRecently() || s.recentLoginError() {
+		time.Sleep(second)
+		if s.userStoppedRecently() || s.recentLoginError() || superseded() {
 			return
 		}
 		if s.boxSpotifyReallyPlaying() {
@@ -2136,10 +2154,11 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		// A soft skip that (unusually) left the box not playing recovers with the
 		// same proven clean slot recall the hardware path uses - identical to
 		// /api/play/<slot>, which reloads the context and hands the box a clean
-		// track boundary. For a shuffle preset (slots 4/5) that lands a fresh track;
-		// a resume preset restarts its context.
+		// track boundary. It keeps the track the skip landed on: the warm
+		// recall's "same key again moves on" is for a person's press, and here
+		// it skipped the song the listener had just chosen.
 		if presets.ValidSlot(slot) {
-			s.recallSlotClean(context.Background(), slot)
+			s.recallSlotClean(recallintent.WithKeepTrack(context.Background()), slot)
 			s.logger.Info("spotify skip recovery: clean slot recall after a skip left the box not playing", "slot", slot)
 			return
 		}
