@@ -18,9 +18,8 @@ import (
 
 // ---- Presets CRUD ----
 
-// invalidSlotMsg is the 400 answer for a preset slot outside 1..MaxSlot
-// (two rows of six, #1110).
-const invalidSlotMsg = "invalid slot, must be 1-12"
+// invalidSlotMsg is the 400 answer for a preset slot outside 1..MaxSlot.
+const invalidSlotMsg = "invalid slot, must be 1-60"
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	if s.presets == nil {
@@ -52,8 +51,8 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 const maxBulkPresetBody = presets.MaxSlot << 20
 
 // handlePresetsBulkPut writes a WHOLE preset set in one go: PUT /api/presets
-// with a JSON array of at most twelve presets, each on a slot 1-12 (7-12 is
-// the second row, #1110). Slots the
+// with a JSON array of at most MaxSlot presets, each on a slot 1-MaxSlot.
+// Extra rows are reachable through repeated hardware-key presses. Slots the
 // payload does not name are left untouched.
 //
 // It exists because the per-slot duplicate guard is the wrong rule for a

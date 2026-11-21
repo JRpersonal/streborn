@@ -8,7 +8,7 @@
 // speaker and an overall kind for the toast or the UI 2.0 status line.
 // Pure (no DOM, no api.js), so it is vitest-covered.
 
-import { keyLabel, keyNum } from './presetrows.js';
+import { keyLabel, keyNum, MAX_SLOT } from './presetrows.js';
 
 // keyList is "Key 1, Key 1 · 2×" for a list of slots.
 function keyList(slots, t) {
@@ -79,6 +79,6 @@ export function chosenSlots(checkboxes) {
   return [...(checkboxes || [])]
     .filter((c) => c && c.checked)
     .map((c) => parseInt(c.value, 10))
-    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12)
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= MAX_SLOT)
     .sort((a, b) => a - b);
 }

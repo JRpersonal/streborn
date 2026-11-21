@@ -4,8 +4,8 @@ package webui
 //
 // While a radio station from a preset key plays, the remote's Next goes to the
 // next key that holds a radio station and Previous to the one before, like the
-// channel keys on a TV remote. All twelve keys count, the second row (a key
-// pressed twice) included, in slot order: 1..6, then 2x1..2x6. Keys that are
+// channel keys on a TV remote. All eighteen keys count, including repeated
+// press rows, in slot order. Keys that are
 // empty or hold something other than a radio station (a Spotify playlist, a
 // music-library folder or song, a speaker service) are stepped over, so the
 // next press steps again instead of landing on a playlist where the same keys
@@ -254,8 +254,11 @@ func (s *Server) showRadioStepNotice(slot int, name string) {
 		return
 	}
 	key := presets.KeyOf(slot)
-	if presets.IsRow2(slot) {
+	switch presets.RowOf(slot) {
+	case 2:
 		name = "2x " + name
+	case 3:
+		name = "3x " + name
 	}
 	oled.Show(oled.PresetPlaying(key, name))
 }

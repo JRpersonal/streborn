@@ -152,7 +152,7 @@ func stampLostBoxPresets(bps []webui.BoxPreset, store *presets.Store, wh *webhoo
 	for i := range bps {
 		k, isHolder := claimed[bps[i].Slot]
 		bps[i].Lost = bps[i].StrOrigin && !stored[bps[i].Slot] && !isHolder
-		bps[i].Row2Key = bps[i].StrOrigin && isHolder && k.playsRow2
+		bps[i].Row2Key = bps[i].StrOrigin && isHolder && (k.playsRow2 || k.row > 1)
 	}
 	return bps
 }

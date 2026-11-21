@@ -287,8 +287,8 @@ button.btn:active { background:var(--press); }
 .preset.empty { color:var(--muted); border-style:dashed; cursor:default; }
 .preset.active { border-color:transparent; box-shadow:0 0 0 2px var(--accent) inset; }
 .preset.active .num { color:var(--accent); }
-/* The second row of keys (#1110): a hardware key pressed twice quickly plays
-   slot 6+n. One compact "1x | 2x" switch picks which six the grid shows; the
+/* The extra rows of keys (#1110, #1657): a hardware key pressed more than
+   once quickly plays the matching slot. One compact switch picks which six the grid shows; the
    grid itself stays 2x3. The switch shares the heading line, so the keys keep
    the place #1371 gave them above the fold. Each segment is a 44x40 target;
    only the 26px pill inside is drawn. The label keeps its own block layout and
@@ -325,7 +325,8 @@ button.btn:active { background:var(--press); }
 .pickhead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .pickhead { flex-wrap:wrap; margin-bottom:4px; }
 .pickhead > :first-child { flex:1 1 auto; min-width:0; margin:0; }
-.rowsw { display:inline-flex; flex:none; margin-left:auto; }
+.rowsw { display:inline-flex; flex:0 1 auto; max-width:100%; margin-left:auto; overflow-x:auto; scrollbar-width:thin; }
+.rowsw button { flex:0 0 44px; }
 .rowsw button { position:relative; min-width:44px; height:40px; padding:0; margin:0; background:none; border:0; color:var(--muted); font:inherit; font-size:13px; font-weight:600; cursor:pointer; display:flex; align-items:center; -webkit-tap-highlight-color:transparent; }
 .rowsw button .seg { display:block; flex:1; height:26px; line-height:24px; box-sizing:border-box; padding:0 10px; text-align:center; white-space:nowrap; border:1px solid var(--line); background:var(--card2); }
 .rowsw button:first-child .seg { border-radius:8px 0 0 8px; }
@@ -339,7 +340,7 @@ button.btn:active { background:var(--press); }
    or the second row is new and still empty (a ring, until opened once). */
 .rowsw .rdot { position:absolute; top:3px; right:3px; width:8px; height:8px; border-radius:50%; background:var(--accent); border:2px solid var(--bg, var(--card)); box-sizing:content-box; }
 .rowsw .rdot.new { background:var(--card2); box-shadow:inset 0 0 0 2px var(--accent); }
-/* An empty second row: six empty keys (a hold saves onto them) under one
+/* An empty extra row: six empty keys (a hold saves onto them) under one
    line that says what the row is and links to the Find tab. */
 .row2hint { margin:-2px 12px 6px; font-size:12px; line-height:16px; color:var(--muted); }
 /* Under the hint the six empty keys are a little shorter, so the line costs
@@ -878,14 +879,14 @@ html.ui2 .tabbar button .ti { display:none; }
 </div>
 </div>
 
-<!-- The heading line of the keys. On an agent that knows the second row of
-     keys (a hardware key pressed twice, #1110) the 1x/2x switch sits on this
+<!-- The heading line of the keys. On an agent that knows multiple preset
+     rows (#1110, #1657) the press-count switch sits on this
      same line, so the keys stay where #1371 put them; on any other agent the
      wrapper adds nothing and the heading is exactly what it was. -->
 <div class="phead" id="presetHead">
 <div class="label" id="lblPresets" style="margin:18px 12px 8px">Presets</div>
 <!-- The tools of the heading line: Transfer (copy these keys to other
-     speakers, #1591) and the 1x/2x switch. Hidden while neither is offered. -->
+     speakers, #1591) and the press-count switch. Hidden while neither is offered. -->
 <div class="phtools" id="presetTools" hidden>
 <button type="button" class="xferbtn" id="btnXfer" aria-expanded="false" aria-controls="xferCard" hidden><span class="seg"><svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="11" height="14" rx="2"></rect><path d="M10 12h11"></path><path d="M17 8l4 4-4 4"></path></svg><span class="xflbl" id="btnXferLbl">Transfer</span></span></button>
 <div class="rowsw" id="presetRowSw" role="group" aria-label="Key rows" hidden></div>
@@ -894,7 +895,7 @@ html.ui2 .tabbar button .ti { display:none; }
 <!-- The transfer itself, opened from the heading line: which speaker, what it
      replaces there, then the answer per speaker. Filled by renderXfer*. -->
 <div class="card xfercard" id="xferCard" hidden></div>
-<!-- One line over an empty second row: what it is and where to fill it. -->
+<!-- One line over an empty extra row: what it is and where to fill it. -->
 <div class="row2hint" id="row2Hint" hidden><span id="row2HintTxt"></span> <button type="button" class="linkbtn" id="btnRow2Find"></button></div>
 <div class="grid" id="presets"></div>
 
@@ -2856,39 +2857,39 @@ async function loadPresets() {
   paintXferBtn();
 }
 
-/* The second row of keys (#1110)
+/* The extra rows of keys (#1110, #1657)
    =========================================================================
-   A hardware key pressed twice quickly plays slot 6+n, so the store holds up
-   to twelve keys: slots 1-6 are the keys pressed once, 7-12 the same keys
-   pressed twice. The page never shows 7..12: a second-row key is "2× 3" on
-   its tile, "Key 3 twice" to a screen reader and "key 3 · 2×" in a sentence.
-   Only an agent that says presetRows "2" on /api/agent/version gets any of
-   this; on every other agent the page is exactly what it was. */
+   A hardware key pressed the matching number of times quickly plays its
+   extra row, so the store holds up to sixty keys. The page labels each row
+   with its press count, never with its storage slot. */
 var presetRowsOK = false;
-// presetRow is the row the Play tab shows, 1 or 2.
+var presetRowsCount = 1;
+// presetRow is the row the Play tab shows, 1..presetRowsCount.
 var presetRow = 1;
-// litSlot is the key the highlight is on (1..12), 0 when none. It is kept by
+// litSlot is the key the highlight is on (1..60), 0 when none. It is kept by
 // slot, not by tile, so a rebuild or a switch of rows puts it back on the
 // right key and never on "the third tile" of the other row.
 var litSlot = 0;
 var ROW2_SEEN_KEY = 'str.remote.row2Seen';
 
-function slotRow(n) { return Number(n) > 6 ? 2 : 1; }
-function rowSlots(row) { var o = (row === 2) ? 6 : 0; return [1, 2, 3, 4, 5, 6].map(function (i) { return i + o; }); }
-// keyName is the key in a sentence ("key {n}"): "3" or "3 · 2×".
-function keyName(n) { n = Number(n); return n > 6 ? (n - 6) + ' · 2×' : String(n); }
-// keyNum is the small number on a tile: "#3" or "2× 3".
-function keyNum(n) { n = Number(n); return n > 6 ? '2× ' + (n - 6) : '#' + n; }
-// keySR is what a screen reader hears for the number: "#3" or "Key 3 twice".
-function keySR(n) { n = Number(n); return n > 6 ? fmt(T.keyTwice, { n: n - 6 }) : '#' + n; }
-// keyNumHTML is the tile number as markup: on row 2 the "2× 3" is shown and
-// "Key 3 twice" is what a screen reader reads in its place.
+function slotRow(n) { n = Number(n); return n > 0 ? Math.ceil(n / 6) : 1; }
+function slotKey(n) { n = Number(n); return n > 0 ? ((n - 1) % 6) + 1 : n; }
+function rowSlots(row) { var o = (Number(row) - 1) * 6; return [1, 2, 3, 4, 5, 6].map(function (i) { return i + o; }); }
+function keyName(n) { n = Number(n); var row = slotRow(n); return row > 1 ? slotKey(n) + ' · ' + row + '×' : String(n); }
+function keyNum(n) { n = Number(n); var row = slotRow(n); return row > 1 ? row + '× ' + slotKey(n) : '#' + n; }
+function keySR(n) {
+  n = Number(n); var row = slotRow(n);
+  return row === 1 ? '#' + n : row === 2 ? fmt(T.keyTwice, { n: slotKey(n) }) : row === 3 ? fmt(T.keyThrice || 'Key {n} three times', { n: slotKey(n) }) : fmt(T.keyTimes || 'Key {n} pressed {times} times', { n: slotKey(n), times: row });
+}
+// keyNumHTML shows the press count and hardware key, then gives screen readers
+// the complete spoken label in place of that compact mark.
 function keyNumHTML(n) {
   n = Number(n);
   if (n <= 6) return escapeHtml('#' + n);
   return '<span aria-hidden="true">' + escapeHtml(keyNum(n)) + '</span><span class="vh">' + escapeHtml(keySR(n) + ',') + '</span>';
 }
-function row2Filled(list) { return (list || []).some(function (p) { return p && p.slot > 6 && p.slot <= 12; }); }
+function rowFilled(list, row) { var lo = (row - 1) * 6; return (list || []).some(function (p) { return p && p.slot > lo && p.slot <= lo + 6; }); }
+function anyExtraRowsFilled(list) { return (list || []).some(function (p) { return p && p.slot > 6 && p.slot <= presetRowsCount * 6; }); }
 function row2Seen() { try { return localStorage.getItem(ROW2_SEEN_KEY) === '1'; } catch (e) { return true; } }
 function markRow2Seen() { try { localStorage.setItem(ROW2_SEEN_KEY, '1'); } catch (e) {} }
 
@@ -2899,7 +2900,7 @@ function buildRowSwitch(host, opts) {
   host.innerHTML = '';
   host.setAttribute('role', 'group');
   host.setAttribute('aria-label', T.rowSw);
-  [1, 2].forEach(function (row) {
+  Array.from({ length: presetRowsCount }, function (_, i) { return i + 1; }).forEach(function (row) {
     var b = document.createElement('button');
     b.type = 'button';
     b.dataset.row = String(row);
@@ -2911,7 +2912,7 @@ function buildRowSwitch(host, opts) {
     seg.textContent = row + '×';
     b.appendChild(seg);
     var dot = opts.dot ? opts.dot(row) : '';
-    var name = ' ' + (row === 2 ? T.rowTwice : T.rowOnce);
+    var name = ' ' + (row === 1 ? T.rowOnce : row === 2 ? T.rowTwice : row === 3 ? (T.rowThrice || 'pressed three times') : fmt(T.rowTimes || 'pressed {n} times', { n: row }));
     if (dot) {
       var d = document.createElement('span');
       d.className = 'rdot' + (dot === 'new' ? ' new' : '');
@@ -2952,7 +2953,7 @@ function paintPresetRowSwitch() {
     dot: function (row) {
       if (row === presetRow) return '';
       if (litSlot && slotRow(litSlot) === row) return 'play';
-      if (row === 2 && !row2Filled(lastPresetList) && !row2Seen()) return 'new';
+      if (row === 2 && !rowFilled(lastPresetList, row) && !row2Seen()) return 'new';
       return '';
     },
   });
@@ -2962,10 +2963,13 @@ function paintPresetRowSwitch() {
 // the grid; an agent that loses the feature (a downgrade) drops back to row 1.
 function notePresetRows(av) {
   if (!av) return;
-  var ok = String(av.presetRows || '') === '2';
-  if (ok === presetRowsOK) return;
+  var next = Number.parseInt(String(av.presetRows || ''), 10);
+  if (!Number.isInteger(next) || next < 1 || next > 10) next = 1;
+  var ok = next >= 2;
+  if (next === presetRowsCount && ok === presetRowsOK) return;
+  presetRowsCount = next;
   presetRowsOK = ok;
-  if (!ok) presetRow = 1;
+  presetRow = Math.min(presetRow, next);
   // Repaint only a grid painted from a list; the offline note stays as it is.
   if (lastPresetSig !== null) renderPresetGrid();
   else paintPresetRowSwitch();
@@ -2979,16 +2983,16 @@ function renderPresetGrid() {
   const row = presetRowsOK ? presetRow : 1;
   paintPresetRowSwitch();
   grid.innerHTML = '';
-  // Nothing on the second row yet: one line over its six empty keys says
+  // An empty extra row gets one line over its six empty keys that says
   // what the row is and links to the Find tab. The keys stay, so a hold
   // saves onto them like onto any empty key.
   var hint = document.getElementById('row2Hint');
   if (hint) {
-    var empty2 = row === 2 && !row2Filled(list);
+    var empty2 = row > 1 && !rowFilled(list, row);
     hint.hidden = !empty2;
     grid.classList.toggle('row2-empty', empty2);
     if (empty2) {
-      document.getElementById('row2HintTxt').textContent = T.row2Empty;
+      document.getElementById('row2HintTxt').textContent = row === 2 ? T.row2Empty : row === 3 ? (T.row3Empty || 'Press a key three times quickly to play these.') : fmt(T.rowExtraEmpty || 'Press a key {n} times quickly to play these.', { n: row });
       document.getElementById('btnRow2Find').textContent = T.row2Find;
     }
   }
@@ -3056,8 +3060,9 @@ function setLit(n) {
 // 5 s status poll does not replace a segment under a finger or a focus ring.
 var lastSwitchDots = '';
 function paintPresetRowSwitchDots() {
-  var other = presetRow === 1 ? 2 : 1;
-  var key = presetRow + ':' + ((litSlot && slotRow(litSlot) === other) ? 'play' : '') + ':' + (row2Filled(lastPresetList) ? 'f' : '') + (row2Seen() ? 's' : '');
+  var other = presetRow === presetRowsCount ? 1 : presetRow + 1;
+  var key = presetRow + ':' + presetRowsCount + ':' + (litSlot ? slotRow(litSlot) : 0) + ':'
+    + [2, 3].map(function (r) { return rowFilled(lastPresetList, r) ? 'f' : 'e'; }).join('') + ':' + (row2Seen() ? 's' : '');
   if (key === lastSwitchDots) return;
   lastSwitchDots = key;
   var sw = document.getElementById('presetRowSw');
@@ -3070,8 +3075,8 @@ function paintPresetRowSwitchDots() {
    The desktop app's Transfer, from the phone. The page only ever talks to its
    own speaker, so it asks THIS speaker's agent to do the copy
    (POST /api/box/preset-copy): the agent writes the keys onto the targets
-   with the same requests the desktop app sends them, both rows when a target
-   keeps two, plus the Spotify login when a Spotify key goes along, and
+   with the same requests the desktop app sends them, all rows a target keeps,
+   plus the Spotify login when a Spotify key goes along, and
    answers per speaker. Offered while another speaker answers and this one
    holds at least one key. */
 var xferOpen = false;
@@ -3178,9 +3183,12 @@ function renderXferForm() {
   }
   if (keepVal && sel.querySelector('option[value="' + keepVal.replace(/"/g, '') + '"]')) sel.value = keepVal;
   card.appendChild(sel);
-  // What it replaces: both rows only when this speaker has keys on the second.
-  var both = presetRowsOK && row2Filled(lastPresetList);
-  var warn = xferEl('p', 'xfwarn', both ? T.xfReplBoth : T.xfReplRow);
+  // What it replaces: later rows only when this speaker has extra-row keys.
+  var both = presetRowsOK && anyExtraRowsFilled(lastPresetList);
+  var warnText = presetRowsCount >= 3 && both
+    ? (T.xfReplAll || 'Every preset row set here replaces the same key on the speaker you choose; its other keys stay as they are.')
+    : (both ? T.xfReplBoth : T.xfReplRow);
+  var warn = xferEl('p', 'xfwarn', warnText);
   warn.id = 'xferScope';
   card.appendChild(warn);
   if ((lastPresetList || []).some(function (p) { return p && p.type === 'spotify'; })) {
@@ -3227,7 +3235,7 @@ function xferSummary(res, all) {
   results.forEach(function (r) {
     var l = xferLine(r, one);
     if (l) lines.push(l);
-    if (r.ok && r.row1Only) lines.push(fmt(T.xfRow1, { name: r.name || r.ip }));
+    if (r.ok && r.row1Only) lines.push(fmt(T.xfRowsNotKept || 'Some preset rows were not copied because the target supports fewer rows.', { name: r.name || r.ip }));
   });
   return { kind: done === results.length ? 'ok' : (done ? 'warn' : 'error'), lines: lines };
 }
@@ -4158,9 +4166,9 @@ function nativeSlot(loc, list) {
 function markPlaying(loc, queue, spKey, state) {
   var grid = document.getElementById('presets');
   if (!grid) return;
-  // Keys 7..12 are the second row (#1110); an agent without it never names them.
+  // Keys 7..60 are the extra rows; an agent without them never names them.
   var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
-    (spKey >= 1 && spKey <= 12 ? spKey : 0) || queueSlot(queue, lastPresetList);
+    (spKey >= 1 && spKey <= 60 ? spKey : 0) || queueSlot(queue, lastPresetList);
   if (state !== 'PLAY_STATE' && state !== 'BUFFERING_STATE' && state !== 'PAUSE_STATE') n = 0;
   if (pendingStart.slot) {
     if (n === pendingStart.slot) {
@@ -6799,7 +6807,7 @@ function alarmEditorHtml(a) {
   }).join('');
   // The six keys of one row; on an agent with the second row of keys (#1110)
   // the 1x/2x switch picks which, starting on the row the alarm's key is on.
-  if (alarmPickFor !== a) { alarmPickFor = a; alarmPickRow = presetRowsOK ? slotRow(a.slot) : 1; }
+  if (alarmPickFor !== a) { alarmPickFor = a; alarmPickRow = presetRowsOK ? Math.min(slotRow(a.slot), presetRowsCount) : 1; }
   if (!presetRowsOK) alarmPickRow = 1;
   var slots = '';
   rowSlots(alarmPickRow).forEach(function(i) {

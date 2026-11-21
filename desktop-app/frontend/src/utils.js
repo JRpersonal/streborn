@@ -10,6 +10,7 @@ import { t } from './i18n/index.js';
 import { formatClock } from './format.js';
 import { labelOf as getBoxLabel } from './boxes.js';
 import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from './libraryserveroff.js';
+import { MAX_SLOT } from './presetrows.js';
 
 export const $ = (id) => document.getElementById(id);
 
@@ -1109,12 +1110,15 @@ export function orionStationPayload(loc) {
 // this covers the v0.9.75 agent, which does not.
 export function isStrOriginLocation(loc) {
   const s = String(loc || '');
-  // Keys 1 to 12: a speaker with the second row of keys (#1110) has slots
-  // 7 to 12 in the same proxy forms.
-  if (/^http:\/\/127\.0\.0\.1:\d+\/(?:stream\/(?:1[0-2]|[1-9])|spotify\/stream(?:-(?:1[0-2]|[1-9]))?\.ogg)$/.test(s)) return true;
+  // Every STR preset row uses the same agent-owned proxy forms.
+  const stream = /^http:\/\/127\.0\.0\.1:\d+\/stream\/(\d+)$/.exec(s);
+  if (stream && Number(stream[1]) >= 1 && Number(stream[1]) <= MAX_SLOT) return true;
+  const spotify = /^http:\/\/127\.0\.0\.1:\d+\/spotify\/stream(?:-(\d+))?\.ogg$/.exec(s);
+  if (spotify && (!spotify[1] || (Number(spotify[1]) >= 1 && Number(spotify[1]) <= MAX_SLOT))) return true;
   const payload = orionStationPayload(s);
   const url = payload && typeof payload.streamUrl === 'string' ? payload.streamUrl : '';
-  return /^http:\/\/127\.0\.0\.1:\d+\/stream\/(?:1[0-2]|[1-9])$/.test(url);
+  const nested = /^http:\/\/127\.0\.0\.1:\d+\/stream\/(\d+)$/.exec(url);
+  return !!nested && Number(nested[1]) >= 1 && Number(nested[1]) <= MAX_SLOT;
 }
 
 // WEBHOOK_PLACEHOLDER_NAME is what the agent writes into a "webhook only" key
@@ -1402,6 +1406,6 @@ export function artCarriesBoxForm(art) {
 // the generic URL.
 export function optimisticSpotifyLocation(loopback, slot) {
   const n = Number(slot);
-  if (Number.isInteger(n) && n >= 1 && n <= 12) return `${loopback}/spotify/stream-${n}.ogg`;
+  if (Number.isInteger(n) && n >= 1 && n <= MAX_SLOT) return `${loopback}/spotify/stream-${n}.ogg`;
   return `${loopback}/spotify/stream.ogg`;
 }

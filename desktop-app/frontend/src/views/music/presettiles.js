@@ -199,7 +199,7 @@ export function renderPresets() {
     const div = document.createElement('div');
     div.className = 'preset' + (p || bp ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '') + (bp ? ' box-native' : '');
     div.dataset.slot = i;
-    if (slotRow(i) === 2) div.classList.add('row2');
+    if (slotRow(i) > 1) div.classList.add('row2');
     if (p) {
       const stateLabel = presetStateLabel(i, isActive, hasErr);
       const hint = state.nowLocation && !isActive
@@ -515,14 +515,16 @@ export async function renameOutcome(slot, name, err, report = null, box = state.
 // front of its number ("2× Key 1"); assistive technology reads the full label
 // ("Key 1 · 2×") instead of the two visual pieces.
 function keyNumHTML(slot) {
-  if (slotRow(slot) !== 2) return escapeHtml(keyLabel(slot, t));
-  return `<span class="row2-badge" aria-hidden="true">${escapeHtml(t('preset.row2.badge'))}</span>`
+  const row = slotRow(slot);
+  if (row === 1) return escapeHtml(keyLabel(slot, t));
+  const badge = row === 2 ? t('preset.row2.badge') : row === 3 ? t('preset.row3.badge') : t('preset.row.badge', { row });
+  return `<span class="row2-badge" aria-hidden="true">${escapeHtml(badge)}</span>`
     + `<span class="row2-key" aria-hidden="true">${escapeHtml(t('preset.key', { n: slotKey(slot) }))}</span>`
     + `<span class="visually-hidden">${escapeHtml(keyLabel(slot, t))}</span>`;
 }
 
-// renderPresetRowChrome draws the Once | Twice tabs above the grid and the
-// one-sentence explainer of an empty second row. On a speaker with one row
+// renderPresetRowChrome draws the press-count tabs above the grid and the
+// one-sentence explainer of an empty extra row. On a speaker with one row
 // both stay hidden and the grid carries no tab semantics, so the classic
 // layout is exactly what it was.
 function renderPresetRowChrome(rows, shownRow, playingRows) {
@@ -544,14 +546,20 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
   const tab = (row) => {
     const selected = row === shownRow;
     const playing = playingRows.has(row) && !selected;
-    const count = row === 2 ? count2 : 0;
+    const count = rowCount(state.presets, row);
     // The name comes from the content, so it always starts with what the tab
     // shows ("Twice 2 New", WCAG 2.5.3) and goes on, for a screen reader, with
     // the speaker, how many keys are in use and whether one of them plays.
-    const more = [t(row === 2 ? 'preset.row2.tabTwiceName' : 'preset.row2.tabOnceName', { speaker })];
+    const more = [row === 1
+      ? t('preset.row2.tabOnceName', { speaker })
+      : row === 2 ? t('preset.row2.tabTwiceName', { speaker })
+        : row === 3 ? t('preset.row3.tabThriceName', { speaker })
+          : t('preset.row.tabName', { row, speaker })];
     if (count) more.push(t('preset.row2.tabCountName', { n: count }));
     if (playing) more.push(t('preset.row2.tabPlayingName'));
-    const visible = t(row === 2 ? 'preset.row2.tabTwice' : 'preset.row2.tabOnce');
+    const visible = row === 1
+      ? t('preset.row2.tabOnce')
+      : row === 2 ? t('preset.row2.tabTwice') : row === 3 ? t('preset.row3.tabThrice') : t('preset.row.tab', { row });
     return `<button type="button" role="tab" class="preset-row-tab" id="presetRowTab${row}" data-row="${row}"`
       + ` aria-selected="${selected ? 'true' : 'false'}" aria-controls="presets" tabindex="${selected ? '0' : '-1'}">`
       + `<span class="prt-label">${escapeHtml(visible)}</span>`
@@ -563,16 +571,16 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
   };
   tabs.setAttribute('role', 'tablist');
   tabs.setAttribute('aria-label', t('preset.row2.tablistName', { speaker }));
-  tabs.innerHTML = tab(1) + tab(2);
+  tabs.innerHTML = Array.from({ length: rows }, (_, i) => tab(i + 1)).join('');
   tabs.classList.remove('hidden');
   grid.setAttribute('role', 'tabpanel');
   grid.setAttribute('aria-labelledby', 'presetRowTab' + shownRow);
   wireRowTabs(tabs, (row) => selectPresetRow(row, true));
   if (intro) {
-    const showIntro = shownRow === 2 && count2 === 0;
+    const showIntro = shownRow > 1 && rowCount(state.presets, shownRow) === 0;
     intro.classList.toggle('hidden', !showIntro);
     intro.innerHTML = showIntro
-      ? `<p>${escapeHtml(t('preset.row2.introBody'))}</p>`
+      ? `<p>${escapeHtml(shownRow === 2 ? t('preset.row2.introBody') : shownRow === 3 ? t('preset.row3.introBody') : t('preset.row.intro', { row: shownRow }))}</p>`
         + `<button type="button" class="btn btn-mini" id="presetRow2SearchBtn">${escapeHtml(t('preset.row2.introSearch'))}</button>`
       : '';
     const go = $('presetRow2SearchBtn');
@@ -583,7 +591,8 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
 // selectPresetRow switches the key grid to a row. focusTab keeps the keyboard
 // on the tab that was just chosen, since the redraw replaces the buttons.
 export function selectPresetRow(row, focusTab) {
-  const next = row === 2 ? 2 : 1;
+  const rows = boxPresetRows(state.currentBox, state.presets);
+  const next = clampRow(row, rows);
   if (next === 2) markRow2Seen();
   if (state.presetRow === next && !focusTab) return;
   state.presetRow = next;

@@ -18,7 +18,7 @@ import (
 // KeyCopySkip is one chosen key that did not land on the target.
 type KeyCopySkip struct {
 	// Slot is the key on the source (and the key it would have taken on the
-	// target): 1..6, or 7..12 for the keys pressed twice.
+	// target): 1..6, 7..12 when pressed twice, or 13..18 when pressed three times.
 	Slot int    `json:"slot"`
 	Name string `json:"name"`
 	// OnSlot is the target's key that already holds this station (the
@@ -32,8 +32,8 @@ type KeyCopySkip struct {
 type KeyCopyResult struct {
 	Copied  []int         `json:"copied"`
 	Skipped []KeyCopySkip `json:"skipped"`
-	// NotKept are chosen keys pressed twice (7..12) that the target cannot
-	// hold, because its agent keeps one row of keys only.
+	// NotKept are chosen extra-row keys the target cannot hold at its active
+	// row setting.
 	NotKept []int `json:"notKept"`
 	// Same are chosen keys the target already held exactly like the source.
 	// Their station did not change; they are still sent along so the speaker's
@@ -62,15 +62,13 @@ const (
 	// keyStepOnOtherKey: the station already sits on another key of the
 	// target that the copy does not rewrite (the duplicate guard, #836).
 	keyStepOnOtherKey = "onOtherKey"
-	// keyStepNotKept: a key pressed twice (7..12) on a target that keeps one
-	// row of keys only.
+	// keyStepNotKept: a chosen extra-row key above the target's active limit.
 	keyStepNotKept = "notKept"
 )
 
 // KeyCopyStep is what a copy would do with one chosen key on one target.
 type KeyCopyStep struct {
-	// Slot is the key on the source and on the target: 1..6, or 7..12 for
-	// the keys pressed twice.
+	// Slot is the key on the source and on the target, 1..60.
 	Slot int `json:"slot"`
 	// Name is the source key's station.
 	Name string `json:"name"`
@@ -370,7 +368,7 @@ func (p keyCopyPlan) result() KeyCopyResult {
 	return res
 }
 
-// CopyPresetKeysAcrossBoxes copies only the given keys (slots 1..12) of the
+// CopyPresetKeysAcrossBoxes copies only the given keys (slots 1..60) of the
 // source speaker onto the same keys of the target, and leaves every other key
 // of the target alone.
 //
@@ -467,7 +465,7 @@ func chosenKeys(presets []Preset, slots []int, maxSlot int) (set []Preset, notKe
 		want[s] = true
 	}
 	notKept = []int{}
-	for _, p := range presetsUpTo(presets, 2*presetRowSize) {
+	for _, p := range presetsUpTo(presets, presetMaxRows*presetRowSize) {
 		if !want[p.Slot] {
 			continue
 		}

@@ -85,9 +85,9 @@ describe('chosenSlots', () => {
   it('reads the ticked keys in slot order', () => {
     const boxes = [
       { checked: true, value: '8' }, { checked: false, value: '2' }, { checked: true, value: '1' },
-      { checked: true, value: '13' }, { checked: true, value: 'x' },
+      { checked: true, value: '13' }, { checked: true, value: '19' }, { checked: true, value: 'x' },
     ];
-    expect(chosenSlots(boxes)).toEqual([1, 8]);
+    expect(chosenSlots(boxes)).toEqual([1, 8, 13]);
     expect(chosenSlots(null)).toEqual([]);
   });
 });

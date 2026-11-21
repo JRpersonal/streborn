@@ -43,7 +43,7 @@ export function editorKeys(box, presets, t) {
   for (let slot = 1; slot <= max; slot++) {
     const p = list.find((x) => x && x.slot === slot);
     const name = p && p.name ? String(p.name) : '';
-    out.push({ slot, label: keyLabel(slot, t), name, empty: !name, row: slot > ROW_SIZE ? 2 : 1 });
+    out.push({ slot, label: keyLabel(slot, t), name, empty: !name, row: Math.ceil(slot / ROW_SIZE) });
   }
   return out;
 }

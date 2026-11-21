@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -375,13 +376,16 @@ func (a *App) LogSpotifySaveGate(host string, slot int, canRecall, premiumRequir
 
 // presetRowSize is how many keys one row holds: the six hardware keys.
 const presetRowSize = 6
+const presetMaxRows = 10
 
-// presetRowsFromVersion reads how many rows of keys an agent keeps from its
-// /api/agent/version answer: 2 when it reports presetRows "2" (slots 7 to 12
-// are the keys pressed twice, #1110), 1 for every agent that predates it.
+// presetRowsFromVersion reads the configured number of rows from an agent's
+// /api/agent/version answer. Older agents report 2 for the double-press row or
+// no value for the original six keys.
 func presetRowsFromVersion(ver map[string]string) int {
-	if ver != nil && ver["presetRows"] == "2" {
-		return 2
+	if ver != nil {
+		if rows, err := strconv.Atoi(ver["presetRows"]); err == nil && rows >= 1 && rows <= presetMaxRows {
+			return rows
+		}
 	}
 	return 1
 }
@@ -395,6 +399,23 @@ func (a *App) boxPresetMaxSlot(host string, port int) int {
 		return presetRowSize
 	}
 	return presetRowSize * presetRowsFromVersion(ver)
+}
+
+// boxPresetMaxSupportedSlot is the highest slot the agent can store, whether
+// or not those rows are currently active for hardware presses. Backups and
+// reinstalls use this so temporarily disabled rows are preserved.
+func (a *App) boxPresetMaxSupportedSlot(host string, port int) int {
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		return presetRowSize
+	}
+	rows := presetRowsFromVersion(ver)
+	if ver != nil {
+		if max, parseErr := strconv.Atoi(ver["presetRowsMax"]); parseErr == nil && max >= rows && max <= presetMaxRows {
+			rows = max
+		}
+	}
+	return presetRowSize * rows
 }
 
 // presetsUpTo keeps the named presets on slots 1..maxSlot, in their order. It
@@ -414,9 +435,8 @@ func presetsUpTo(presets []Preset, maxSlot int) []Preset {
 
 // CopyPresetsAcrossBoxes copies every preset from a source speaker to a target
 // speaker, preserving radio vs Spotify type and all fields, then re-syncs the
-// target's hardware keys so buttons 1-6 reflect the copy. Both rows of keys
-// (slots 1-12, #1110) go across when the target's agent keeps the second
-// row; a target without it gets row 1 only and the app says so. Used by the
+// target's hardware keys so buttons 1-6 reflect the copy. Every active row
+// supported by both agents is copied. Used by the
 // box-to-box preset copy so the user does not have to re-enter stations on
 // every speaker. Returns the number of presets copied.
 func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string, dstPort int) (int, error) {
@@ -448,10 +468,13 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	}
 	// The set the transfer is about: the same filter the per-slot loop applies,
 	// up to the last slot the target keeps.
-	maxSlot := a.boxPresetMaxSlot(dstHost, dstPort)
-	set := presetsUpTo(presets, maxSlot)
-	if dropped := len(presetsUpTo(presets, 2*presetRowSize)) - len(set); dropped > 0 {
-		a.logger.Info("copy presets: the target keeps one row of keys, the keys pressed twice stay on the source",
+	sourceMax := a.boxPresetMaxSlot(srcHost, srcPort)
+	targetMax := a.boxPresetMaxSlot(dstHost, dstPort)
+	maxSlot := min(sourceMax, targetMax)
+	sourceSet := presetsUpTo(presets, sourceMax)
+	set := presetsUpTo(sourceSet, maxSlot)
+	if dropped := len(sourceSet) - len(set); dropped > 0 {
+		a.logger.Info("copy presets: the target keeps fewer preset rows, some later-press keys stay on the source",
 			"src", srcHost, "dst", dstHost, "notCopied", dropped)
 	}
 	copied := 0

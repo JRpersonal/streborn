@@ -6,8 +6,8 @@
 // the playlist that plays. The editor puts the speaker's keys side by side with
 // a source browser, so the whole job happens in one place:
 //
-//   - the keys of the speaker on the left (both rows on a speaker that keeps a
-//     second one), one of them chosen, with what it holds and what a save
+//   - the keys of the speaker on the left (all active rows on a speaker that
+//     supports them), one of them chosen, with what it holds and what a save
 //     would replace;
 //   - "Put what's playing on key N" under them, for every source the speaker
 //     agent can keep: a station or a library song or folder through the agent's
@@ -42,7 +42,7 @@ import { t } from '../../i18n/index.js';
 import { state } from '../../state.js';
 import { escapeAttr, escapeHtml, savePlayingFallsThrough } from '../../utils.js';
 import { sameBoxIdentity } from '../../groups.js';
-import { keyNum } from '../../presetrows.js';
+import { boxPresetRows, keyNum } from '../../presetrows.js';
 import { nativeServiceLabel } from '../../nativeservice.js';
 import { libraryTrackRef, saveLibraryTrackPreset } from '../../librarytrackref.js';
 import {
@@ -348,10 +348,10 @@ function keysHTML(keys) {
       + `<button type="button" class="u-btn u-btn--secondary kae-keys-retry" data-kf="keysretry">${escapeHtml(t('ui2.speakers.speaker.tryAgain'))}</button></div>`;
   }
   if (!ed.presets) return `<p class="kae-state" role="status">${escapeHtml(L('keysLoading', { name: speaker }))}</p>`;
-  const rows = [1, 2].map((row) => {
+  const rows = Array.from({ length: boxPresetRows(box, ed.presets) }, (_, i) => i + 1).map((row) => {
     const list = keys.filter((k) => k.row === row);
     if (!list.length) return '';
-    const head = row === 2 ? `<p class="kae-row-label">${escapeHtml(L('rowTwice'))}</p>` : '';
+    const head = row === 1 ? '' : `<p class="kae-row-label">${escapeHtml(row === 2 ? L('rowTwice') : row === 3 ? L('rowThrice') : t('preset.row.tab', { row }))}</p>`;
     return head + `<div class="kae-keylist">${list.map((k) => {
       const on = k.slot === ed.slot;
       return `<button type="button" class="kae-key${on ? ' is-chosen' : ''}${k.empty ? ' is-empty' : ''}" data-slot="${k.slot}" data-kf="key-${k.slot}" aria-pressed="${on}">`

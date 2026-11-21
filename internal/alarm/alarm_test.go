@@ -85,8 +85,8 @@ func TestValidateRejects(t *testing.T) {
 		{"hour too big", docWith(func(a *Alarm) { a.Hour = 24 }), "hour outside"},
 		{"negative hour", docWith(func(a *Alarm) { a.Hour = -1 }), "hour outside"},
 		{"minute too big", docWith(func(a *Alarm) { a.Minute = 60 }), "minute outside"},
-		{"slot zero", docWith(func(a *Alarm) { a.Slot = 0 }), "preset 1 to 12"},
-		{"slot thirteen", docWith(func(a *Alarm) { a.Slot = 13 }), "preset 1 to 12"},
+		{"slot zero", docWith(func(a *Alarm) { a.Slot = 0 }), "preset 1 to 60"},
+		{"slot sixty-one", docWith(func(a *Alarm) { a.Slot = 61 }), "preset 1 to 60"},
 		{"volume over 100", docWith(func(a *Alarm) { a.Volume = 101 }), "between 0 and 100"},
 		{"negative switch-off", docWith(func(a *Alarm) { a.AutoOff = -1 }), "switch-off time"},
 		{"switch-off over the cap", docWith(func(a *Alarm) { a.AutoOff = MaxAutoOffMinutes + 1 }), "switch-off time"},
@@ -178,7 +178,7 @@ func TestStoreRoundTrip(t *testing.T) {
 
 func TestStoreSetRejectsInvalid(t *testing.T) {
 	s := New()
-	err := s.Set(Document{Alarms: []Alarm{{Enabled: true, Hour: 6, Slot: 13, Days: []int{1}}}})
+	err := s.Set(Document{Alarms: []Alarm{{Enabled: true, Hour: 6, Slot: 19, Days: []int{1}}}})
 	if err == nil {
 		t.Fatal("Set has to validate before it writes")
 	}

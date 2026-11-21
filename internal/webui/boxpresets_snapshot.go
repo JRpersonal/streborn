@@ -46,7 +46,7 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	var nativeKeys []presets.Preset
 	for _, p := range s.presets.All() {
 		if !presets.IsBoxSlot(p.Slot) {
-			// Row 2 (7..12, #1110) is STR's own; the speaker has six keys.
+			// Rows 2 to 10 (7..60, #1110, #1657) are STR's own; the speaker has six keys.
 			continue
 		}
 		if p.IsNative() {

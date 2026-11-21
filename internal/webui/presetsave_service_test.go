@@ -66,9 +66,9 @@ func TestSavePresetSlotRefusesLikeThePut(t *testing.T) {
 		t.Error("the refused duplicate was stored anyway")
 	}
 
-	_, ref = s.savePresetSlot(ctx, presetSaveRequest{Slot: 13, Preset: presets.Preset{Name: "X"}})
+	_, ref = s.savePresetSlot(ctx, presetSaveRequest{Slot: 19, Preset: presets.Preset{Name: "X"}})
 	if ref == nil || ref.Status != 400 || ref.JSON != nil {
-		t.Errorf("slot 13: %+v, want a plain-text 400", ref)
+		t.Errorf("slot 19: %+v, want a plain-text 400", ref)
 	}
 
 	saved, ref := s.savePresetSlot(ctx, presetSaveRequest{Slot: 3, Preset: presets.Preset{Name: "Jazz", StreamURL: "http://stream.example/jazz"}})
@@ -124,8 +124,8 @@ func TestHandlePresetSlotPutWire(t *testing.T) {
 	}{
 		{"no store", 1, relax, func(t *testing.T) *Server { s := newSaveGateServer(t); s.presets = nil; return s },
 			http.StatusServiceUnavailable, "presets store not initialized\n"},
-		{"slot out of range", 13, relax, newSaveGateServer,
-			http.StatusBadRequest, "invalid slot, must be 1-12\n"},
+		{"slot out of range", 19, relax, newSaveGateServer,
+			http.StatusBadRequest, "invalid slot, must be 1-60\n"},
 		{"bad json", 1, `{"name":`, newSaveGateServer,
 			http.StatusBadRequest, "invalid json: unexpected EOF\n"},
 		{"empty folder", 1, `{"name":"Folder","type":"queue"}`, newSaveGateServer,

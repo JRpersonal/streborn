@@ -231,7 +231,7 @@ export function syncUi2Keys() {
     tile.dataset.ui2Key = '1';
     const slot = parseInt(tile.dataset.slot, 10);
     keyStatusLine(tile, box, slot);
-    // "3" on the first row, "3 · 2×" on the second (#1110).
+    // "3" on the first row, then the hardware key with its press count (#1110, #1657).
     const n = keyNum(slot, t);
     const body = tile.querySelector('.preset-body');
     if (fresh) wireKeyEdit(tile, slot);

@@ -343,7 +343,11 @@ type presetWsHandler struct {
 	// doublePress pairs selection frames into double presses, group tracks
 	// whether the speaker is in a zone or pair (doublepress.go, #1110).
 	doublePress doublePressDetector
-	group       groupMembership
+	// pressSequence counts distinct standalone key frames for one-, two-, and
+	// repeated-press preset rows. Grouped speakers use their key trace instead.
+	pressSequence pressSequenceDetector
+	selectionSeq  atomic.Uint64
+	group         groupMembership
 	// row2Single remembers the single press that played a key's second row
 	// because the key has nothing on row 1 (#1910), so the second half of a
 	// double press of that key does not start the same station again.
@@ -351,6 +355,9 @@ type presetWsHandler struct {
 	// playSlotFn recalls a preset slot through the app's path (webui
 	// PlaySlotForKey): how a double press plays the second row. nil = off.
 	playSlotFn func(ctx context.Context, slot int) (string, error)
+	// presetRowsFn reads the per-speaker number of active hardware press rows.
+	// nil defaults to the maximum for older callers and tests.
+	presetRowsFn func() int
 	// Test seams for the double-press detector. nil = the real ones:
 	// ownSelection, the key trace's PhysicalPressesSince, a /getZone read.
 	ownSelectionFn func(key int) bool
@@ -590,6 +597,7 @@ func recallActiveWithin(d time.Duration) bool {
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
+	order := h.selectionSeq.Add(1)
 	noteRecallActivity()
 	if h.holdSaver != nil {
 		h.holdSaver.NoteSelection()
@@ -604,28 +612,37 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// A second press of the same key moments after the first plays the key's
 	// second-row preset (#1110, doublepress.go). The first press has already
 	// started row 1 by now; it is never held back waiting for a second one.
-	plan, row2, first := h.planPress(slot, pressAt)
-	if plan != planSingle && h.row2Single.startedBy(slot, first) {
+	plan, selected, first := h.planPress(slot, pressAt)
+	row2Already := plan != planSingle && h.row2Single.startedBy(slot, first)
+	if plan == planConfirm && !row2Already {
+		// The first frame of this physical tap already started row 2 for a key
+		// whose row 1 is empty. Its paired echo must not start the same station
+		// again, even on later taps in one grouped burst.
+		row2Already = h.row2Single.startedWithin(slot, pressAt, doublePressWindow)
+	}
+	selectedRow := presets.RowOf(selected.Slot)
+	if plan == planExtraRow && selectedRow == 2 && row2Already {
 		// A key with nothing on row 1 played its second row on the first
 		// press already (ordinaryPress). Starting it again would only cut the
 		// buffering station off and restart it; the webhook stays with the
 		// first press as on every double press.
 		h.logger.Info("double press on key "+strconv.Itoa(slot)+": row 2 already starting from the first press (nothing on row 1)",
-			"key", slot, "slot", row2.Slot, "gapMs", pressAt.Sub(first).Milliseconds())
+			"key", slot, "slot", selected.Slot, "gapMs", pressAt.Sub(first).Milliseconds())
 		return
 	}
 	switch plan {
-	case planRow2:
+	case planExtraRow:
 		// Bumped here on the read loop, so the first press's recall stands
 		// down from this instant on. The webhook stays with the first press.
 		seq := h.pressSeq.Add(1)
-		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
+		go h.playExtraRow(ctx, seq, slot, selected, selectedRow, pressAt.Sub(first), true,
+			strconv.Itoa(selectedRow)+" presses within the window")
 		return
 	case planConfirm:
 		// Inside a group one press can arrive as two frames. The first press's
 		// recall keeps running while the key trace is asked; this frame is
 		// either row 2 or, as before, an ordinary press of the key.
-		go h.confirmDoublePress(ctx, slot, first, pressAt, row2, location, title)
+		go h.confirmDoublePress(ctx, order, slot, first, pressAt, row2Already, location, title)
 		return
 	}
 	h.ordinaryPress(ctx, pressAt, slot, location, title, true)

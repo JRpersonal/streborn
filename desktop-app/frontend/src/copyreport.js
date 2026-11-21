@@ -8,6 +8,8 @@
 // slots named in the message failed, the rest of the source's valid slots
 // copied. Pure and vitest-covered (no DOM, no api.js import).
 
+import { MAX_SLOT } from './presetrows.js';
+
 // summarizePresetCopyError parses the combined per-slot message. Returns
 // null when the message does not look like a per-slot report (a transport
 // error, "read source presets: ...", etc. — those really are all-or-nothing).
@@ -50,10 +52,10 @@ export function presetCopyConflict(message) {
 }
 
 // countValidPresetSlots mirrors the Go-side copy filter (a named slot the
-// target can hold: 1..12 on a speaker with the second row of keys, #1110,
-// 1..6 on one without) so "total - failed" equals what the backend attempted.
-// maxSlot is the target's highest slot; it defaults to both rows.
-export function countValidPresetSlots(presets, maxSlot = 12) {
+// target can hold: slots 1..60 on an agent with all ten rows, fewer on older
+// agents) so "total - failed" equals what the backend attempted.
+// maxSlot is the target's highest slot; it defaults to the current ten rows.
+export function countValidPresetSlots(presets, maxSlot = MAX_SLOT) {
   return (presets || []).filter(
     (p) => p && p.slot >= 1 && p.slot <= maxSlot && p.name,
   ).length;

@@ -82,7 +82,7 @@ type Server struct {
 	// the box is demonstrably pulling audio this very moment, regardless of
 	// how long ago the connection was OPENED.
 	openFetches int
-	slotFetch   [presets.MaxSlot + 1]time.Time // index 1..12 (both rows): when the box last OPENED the slot
+	slotFetch   [presets.MaxSlot + 1]time.Time // index 1..MaxSlot: when the box last OPENED the slot
 	// slotFetchEnd / slotOpen make the per-slot signal liveness-aware: a
 	// 36ms-2.4s fetch that dies in the box's re-login source bounce used to
 	// satisfy "opened since the press" and certified a dead recall as healthy

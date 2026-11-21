@@ -13,8 +13,8 @@ import (
 	"github.com/JRpersonal/streborn/internal/presets"
 )
 
-// The second preset row (#1110): slots 7..12 are stored and served exactly like
-// 1..6 by every preset endpoint, and never reach the speaker's own list.
+// The extra preset rows are stored and served exactly like slots 1..6 by every
+// preset endpoint, and never reach the speaker's own list.
 
 func TestSecondRowSlotsAreStoredLikeTheFirst(t *testing.T) {
 	s := newSaveGateServer(t)
@@ -65,21 +65,21 @@ func TestDuplicateGuardNamesASecondRowSlot(t *testing.T) {
 	}
 }
 
-func TestBulkPutTakesBothRows(t *testing.T) {
+func TestBulkPutTakesTenRows(t *testing.T) {
 	s, store := newBulkServer(t)
 	var set []presets.Preset
 	for slot := 1; slot <= presets.MaxSlot; slot++ {
 		set = append(set, radioPreset(slot, fmt.Sprintf("s%d", slot), fmt.Sprintf("http://example.com/%d", slot)))
 	}
 	if rec := bulkPut(t, s, set); rec.Code != http.StatusOK {
-		t.Fatalf("twelve presets: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("sixty presets: %d %s", rec.Code, rec.Body.String())
 	}
-	if got := slotNames(store); len(got) != 12 || got[12] != "s12" {
+	if got := slotNames(store); len(got) != presets.MaxSlot || got[presets.MaxSlot] != fmt.Sprintf("s%d", presets.MaxSlot) {
 		t.Fatalf("store after the bulk put: %v", got)
 	}
-	set = append(set, radioPreset(13, "s13", "http://example.com/13"))
+	set = append(set, radioPreset(presets.MaxSlot+1, "too many", "http://example.com/too-many"))
 	if rec := bulkPut(t, s, set); rec.Code != http.StatusBadRequest {
-		t.Fatalf("thirteen presets: %d, want 400", rec.Code)
+		t.Fatalf("too many presets: %d, want 400", rec.Code)
 	}
 }
 

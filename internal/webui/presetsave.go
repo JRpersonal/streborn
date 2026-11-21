@@ -88,7 +88,7 @@ func writePresetRefusal(w http.ResponseWriter, ref *presetRefusal) {
 }
 
 // presetUnavailable is the pair of answers every per-slot request gets
-// before its verb is looked at: no store, or a slot outside 1-12.
+// before its verb is looked at: no store, or a slot outside 1-60.
 func (s *Server) presetUnavailable(slot int) *presetRefusal {
 	if s.presets == nil {
 		return textPresetRefusal(http.StatusServiceUnavailable, "presets store not initialized")

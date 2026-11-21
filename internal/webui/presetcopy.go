@@ -21,8 +21,8 @@ package webui
 //  4. POST /spotify/credential   only when the set holds a Spotify key: this
 //     speaker's login goes along, so those keys play there too
 //
-// The semantics are the desktop app's: both rows go across when the target
-// keeps the second row (#1110) and only the first when it does not, a station
+// The semantics are the desktop app's: all rows the target keeps go across
+// and later rows are omitted when the target supports fewer, a station
 // that already sits on a key the set does not rewrite makes the target refuse
 // the whole set (409 already-on-slot, nothing written), and the Spotify login
 // is best effort, so a failed login transfer never fails the copy.
@@ -120,8 +120,8 @@ type presetCopyResult struct {
 	IP     string `json:"ip"`
 	OK     bool   `json:"ok"`
 	Copied int    `json:"copied"`
-	// Row1Only: the target keeps one row of keys, so the keys pressed twice
-	// stayed here; NotCopied says how many.
+	// Row1Only stays as the existing response field name; it marks that one or
+	// more extra rows exceeded the target's active row count. NotCopied is how many.
 	Row1Only  bool                `json:"row1Only,omitempty"`
 	NotCopied int                 `json:"notCopied,omitempty"`
 	Spotify   string              `json:"spotify,omitempty"`
@@ -275,8 +275,8 @@ func presetCopyFindAgent(ctx context.Context, p presetCopyPeer) (base string, ro
 				continue
 			}
 			rows = 1
-			if v.PresetRows == "2" {
-				rows = 2
+			if n, parseErr := strconv.Atoi(v.PresetRows); parseErr == nil && n >= 1 && n <= presets.Rows {
+				rows = n
 			}
 			return b, rows, nil
 		}
@@ -322,7 +322,7 @@ func (s *Server) copyPresetsToPeer(ctx context.Context, p presetCopyPeer, src []
 	set := presetCopySet(src, rows*presets.BoxSlots)
 	if dropped := len(src) - len(set); dropped > 0 {
 		res.Row1Only, res.NotCopied = true, dropped
-		s.logger.Info("preset copy: the target keeps one row of keys, the keys pressed twice stay here",
+		s.logger.Info("preset copy: some extra rows exceed the target's active row count",
 			"peer", p.Name, "notCopied", dropped)
 	}
 	if len(set) > 0 {
@@ -475,7 +475,7 @@ func (s *Server) handlePresetCopy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "too many targets", "code": presetCopyCodeInvalid})
 		return
 	}
-	src := presetCopySet(s.presets.All(), presets.MaxSlot)
+	src := presetCopySet(s.presets.All(), s.PresetRows()*presets.BoxSlots)
 	if len(src) == 0 {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "this speaker has no keys to copy", "code": presetCopyCodeNoPresets})
 		return
@@ -501,7 +501,7 @@ func (s *Server) handlePresetCopy(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("preset copy: asked for a speaker the peer list does not hold, not contacted", "ip", ip)
 		results = append(results, presetCopyResult{Name: ip, IP: ip, Code: presetCopyCodeUnknown})
 	}
-	ans := presetCopyAnswer{Keys: len(src), Rows: presets.Rows, Total: len(results), Results: results}
+	ans := presetCopyAnswer{Keys: len(src), Rows: s.PresetRows(), Total: len(results), Results: results}
 	for _, res := range results {
 		if res.OK {
 			ans.Done++

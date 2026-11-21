@@ -34,10 +34,10 @@ const webhookPlaceholderName = "Webhook"
 const row2PlaceholderName = "2x"
 
 // boxRowPresets returns the presets that belong on the speaker's own keys:
-// row 1, slots 1..6. The second row (7..12, #1110) lives only in STR's store
-// and is reached by a double press, so every pass that maps the store onto
-// the speaker's preset list starts from this, never from store.All(): a
-// row-2 slot counted as "missing on the box" would be re-written (and
+// row 1, slots 1..6. The extra rows (7..60, #1110, #1657) live only in STR's
+// store and are reached by repeated presses, so every pass that maps the store
+// onto the speaker's preset list starts from this, never from store.All(): an
+// extra-row slot counted as "missing on the box" would be re-written (and
 // refused) on every pass, forever.
 func boxRowPresets(all []presets.Preset) []presets.Preset {
 	out := make([]presets.Preset, 0, len(all))
@@ -57,6 +57,7 @@ type keyPlaceholder struct {
 	// the second-row slot holds a preset and no replace-mode webhook withholds
 	// the single press's playback.
 	playsRow2 bool
+	row       int
 }
 
 // name is what the box shows for the key.
@@ -64,13 +65,16 @@ func (k keyPlaceholder) name() string {
 	if k.playsRow2 {
 		return row2PlaceholderName
 	}
+	if k.row > 1 {
+		return fmt.Sprintf("%dx", k.row)
+	}
 	return webhookPlaceholderName
 }
 
 // placeholderKeys returns, ascending, the keys 1..6 that need a placeholder:
 // no row-1 preset in the store, yet a press of the key must reach STR because
 // the key's second row holds a preset (#1910) or an enabled per-key webhook of
-// either mode is configured for it (#536). all is the WHOLE store, both rows.
+// either mode is configured for it (#536). all is the WHOLE store, all rows.
 //
 // The reason is the same for all of them. An EMPTY preset key is refused by
 // the speaker itself: it blinks orange and emits no presetSelectionUpdated
@@ -94,12 +98,20 @@ func (k keyPlaceholder) name() string {
 func placeholderKeys(wh *webhooks.Store, all []presets.Preset) []keyPlaceholder {
 	row1 := make(map[int]bool, len(all))
 	row2 := make(map[int]bool, len(all))
+	extraRow := make(map[int]int, len(all))
 	for _, p := range all {
 		switch {
 		case presets.IsBoxSlot(p.Slot):
 			row1[p.Slot] = true
 		case presets.IsRow2(p.Slot):
 			row2[presets.KeyOf(p.Slot)] = true
+		default:
+			if row := presets.RowOf(p.Slot); row > 1 {
+				key := presets.KeyOf(p.Slot)
+				if extraRow[key] == 0 || row < extraRow[key] {
+					extraRow[key] = row
+				}
+			}
 		}
 	}
 	hooked := map[int]bool{}
@@ -112,13 +124,15 @@ func placeholderKeys(wh *webhooks.Store, all []presets.Preset) []keyPlaceholder 
 	}
 	var out []keyPlaceholder
 	for key := 1; key <= presets.BoxSlots; key++ {
-		if row1[key] || (!row2[key] && !hooked[key]) {
+		if row1[key] || (!row2[key] && extraRow[key] == 0 && !hooked[key]) {
 			continue
 		}
 		// A replace-mode key stays a webhook key on its single press even
 		// with a second row: that press withholds playback, and its double
 		// press plays the second row as on any other key.
-		out = append(out, keyPlaceholder{slot: key, playsRow2: row2[key] && !replace[key]})
+		out = append(out, keyPlaceholder{
+			slot: key, playsRow2: row2[key] && !replace[key], row: extraRow[key],
+		})
 	}
 	return out
 }

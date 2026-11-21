@@ -81,8 +81,8 @@ type Alarm struct {
 	// Days are the weekdays this alarm repeats on, 0=Sunday .. 6=Saturday,
 	// matching time.Weekday. Never empty: see Validate.
 	Days []int `json:"days"`
-	// Slot is the preset to recall, 1 to 12 (7 to 12 is the second row of
-	// presets, a key pressed twice, #1110).
+	// Slot is the preset to recall, 1 to presets.MaxSlot. Each group of six
+	// slots is another press-count row, after the speaker's six hardware keys.
 	Slot int `json:"slot"`
 	// Volume is the level to set when the alarm fires, 1 to 100. Zero means
 	// leave the speaker at whatever level it remembers.

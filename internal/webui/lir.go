@@ -318,10 +318,10 @@ func (s *Server) handleOrionToken(w http.ResponseWriter, _ *http.Request) {
 // descriptor for preset key N (boxurl.StreamSlot): this agent's loopback
 // proxy, one route per key. Strict on purpose, the reconcile prune keys
 // DELETION off it: the ad-hoc raw proxy of an app play, a station's own URL
-// and any other port or host shape must never match. Slots 7..12 (the second
-// row, #1110) are STR's own shape too: a row-2 station the speaker plays
+// and any other port or host shape must never match. Slots 7..60 (the extra
+// rows, #1110, #1657) are STR's own shape too: a station the speaker plays
 // natively carries one, and a hold on another key keeps it as is.
-var ownSlotStreamRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/stream/([1-9]|1[0-2])$`)
+var ownSlotStreamRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/stream/([1-9]|[1-5][0-9]|60)$`)
 
 // StationLocationOwnSlot reports whether loc is a native station location STR
 // wrote for one of its own preset keys, and which key the stream belongs to.

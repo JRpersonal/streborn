@@ -76,7 +76,7 @@ describe('labels', () => {
     expect(nowKeyTag(2, t)).toBe('Key 2');
     expect(nowKeyTag(7, t)).toBe('Key 1 · 2×');
     expect(nowKeyTag(null, t)).toBe('');
-    expect(nowKeyTag(13, t)).toBe('');
+    expect(nowKeyTag(13, t)).toBe('Key 1 · 3×');
     expect(nowKeyTag(2, translator('de'))).toBe('Taste 2');
   });
 
@@ -89,9 +89,9 @@ describe('labels', () => {
   it('is translated in every bundle, with the same placeholders and no dashes', () => {
     const en = bundle('en');
     const keys = Object.keys(en).filter((k) => k.startsWith('preset.row2.')
-      || /^settingsView\.copyPresets(HelpAll|Row1Only|Row1OnlyList)$/.test(k)
+      || /^settingsView\.copyPresetsHelpAll$/.test(k)
       || k === 'presets.transferReplacesBoth');
-    expect(keys.length).toBe(17);
+    expect(keys.length).toBe(15);
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');
     for (const l of langs) {
       const b = bundle(l);
@@ -114,7 +114,9 @@ describe('capability gate', () => {
     expect(boxPresetRows({ kind: 'str', presetRows: '1' })).toBe(1);
     expect(boxPresetRows(null)).toBe(1);
     expect(boxPresetRows({ kind: 'stock', presetRows: '2' })).toBe(1);
+    expect(boxPresetRows({ kind: 'str', presetRows: '3' })).toBe(3);
     expect(boxMaxSlot({ kind: 'str', presetRows: '2' })).toBe(12);
+    expect(boxMaxSlot({ kind: 'str', presetRows: '3' })).toBe(18);
     expect(boxMaxSlot({ kind: 'str' })).toBe(6);
   });
 
@@ -158,7 +160,7 @@ describe('counts and the New marker', () => {
 });
 
 describe('copying to other speakers', () => {
-  const src = [{ slot: 1, name: 'A' }, { slot: 7, name: 'B' }, { slot: 13, name: 'never' }, { slot: 2, name: '' }];
+  const src = [{ slot: 1, name: 'A' }, { slot: 7, name: 'B' }, { slot: 19, name: 'never' }, { slot: 2, name: '' }];
   it('keeps both rows for a target with two rows and row 1 for one without', () => {
     expect(presetsWithin(src, 2).map((p) => p.slot)).toEqual([1, 7]);
     expect(presetsWithin(src, 1).map((p) => p.slot)).toEqual([1]);
@@ -202,6 +204,8 @@ describe('locations of row-2 keys', () => {
     expect(activeSlotFromLocation('http://127.0.0.1:8888/spotify/stream-12.ogg')).toBe(12);
     expect(isStrOriginLocation('http://127.0.0.1:8888/stream/12')).toBe(true);
     expect(isStrOriginLocation('http://127.0.0.1:8888/spotify/stream-10.ogg')).toBe(true);
-    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/13')).toBe(false);
+    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/13')).toBe(true);
+    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/60')).toBe(true);
+    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/61')).toBe(false);
   });
 });

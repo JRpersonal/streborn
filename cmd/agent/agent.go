@@ -1419,9 +1419,10 @@ func (a *agent) buildBoxLink() error {
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlotPress,
-		// A key pressed twice plays its second-row preset (slots 7..12, #1110)
-		// through the app's own recall path; the speaker never holds those.
-		playSlotFn: webuiSrv.PlaySlotForKey,
+		// Repeated key presses play extra-row presets (slots 7..60, #1110,
+		// #1657) through the app's own recall path; the speaker never holds those.
+		playSlotFn:   webuiSrv.PlaySlotForKey,
+		presetRowsFn: webuiSrv.PresetRows,
 	}
 	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
 	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this

@@ -36,8 +36,8 @@ export function showSlotPicker({ title, subtitle, onPick, box, report = null }) 
   opener = openerMark(document.activeElement);
   $('pickTitle').textContent = title;
   $('pickSub').textContent = subtitle || '';
-  // The second row of keys (#1110): the window opens on the row the key grid
-  // shows, and the Once | Twice switch above the slots changes it. A picker
+  // The extra rows of keys: the window opens on the row the key grid shows,
+  // and the press-count switch above the slots changes it. A picker
   // for another speaker than the selected one asks that speaker's record; the
   // store on screen belongs to the selected one.
   const target = box || state.currentBox;
@@ -52,8 +52,7 @@ export function showSlotPicker({ title, subtitle, onPick, box, report = null }) 
   if (first) first.focus();
 }
 
-// renderPickSlots draws the row switch (when the speaker has two rows) and the
-// six slots of the chosen row, each with what is on it now.
+// renderPickSlots draws the row switch and the six slots of the chosen row.
 function renderPickSlots({ row, rows, onPick, target, report = null }) {
   const switcher = $('pickRows');
   if (switcher) {
@@ -64,13 +63,21 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
       switcher.removeAttribute('aria-label');
     } else {
       const speaker = target ? getBoxLabel(target) : '';
-      const tab = (r) => `<button type="button" role="tab" class="preset-row-tab" id="pickRowTab${r}" data-row="${r}"`
+      const tab = (r) => {
+        const label = r === 1 ? t('preset.row2.tabOnce') : r === 2 ? t('preset.row2.tabTwice') : r === 3 ? t('preset.row3.tabThrice') : t('preset.row.tab', { row: r });
+        const full = r === 1
+          ? t('preset.row2.tabOnceName', { speaker })
+          : r === 2 ? t('preset.row2.tabTwiceName', { speaker })
+            : r === 3 ? t('preset.row3.tabThriceName', { speaker })
+              : t('preset.row.tabName', { row: r, speaker });
+        return `<button type="button" role="tab" class="preset-row-tab" id="pickRowTab${r}" data-row="${r}"`
         + ` aria-selected="${r === row ? 'true' : 'false'}" aria-controls="pickGrid" tabindex="${r === row ? '0' : '-1'}">`
-        + `<span class="prt-label">${escapeHtml(t(r === 2 ? 'preset.row2.tabTwice' : 'preset.row2.tabOnce'))}</span>`
-        + `<span class="visually-hidden">, ${escapeHtml(t(r === 2 ? 'preset.row2.tabTwiceName' : 'preset.row2.tabOnceName', { speaker }))}</span></button>`;
+        + `<span class="prt-label">${escapeHtml(label)}</span>`
+        + `<span class="visually-hidden">, ${escapeHtml(full)}</span></button>`;
+      };
       switcher.setAttribute('role', 'tablist');
       switcher.setAttribute('aria-label', t('preset.row2.tablistName', { speaker }));
-      switcher.innerHTML = tab(1) + tab(2);
+      switcher.innerHTML = Array.from({ length: rows }, (_, i) => tab(i + 1)).join('');
       switcher.classList.remove('hidden');
       wireRowTabs(switcher, (r) => {
         if (r === 2) markRow2Seen();
@@ -92,10 +99,10 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
   for (const i of rowSlots(row)) {
     const p = state.presets.find(x => x.slot === i);
     const b = document.createElement('button');
-    b.className = 'pick-slot' + (p ? ' has' : '') + (row === 2 ? ' row2' : '');
+    b.className = 'pick-slot' + (p ? ' has' : '') + (row > 1 ? ' row2' : '');
     b.dataset.slot = String(i);
-    const num = row === 2
-      ? '<span class="row2-badge" aria-hidden="true">' + escapeHtml(t('preset.row2.badge')) + '</span>'
+    const num = row > 1
+      ? '<span class="row2-badge" aria-hidden="true">' + escapeHtml(row === 2 ? t('preset.row2.badge') : row === 3 ? t('preset.row3.badge') : t('preset.row.badge', { row })) + '</span>'
         + '<span class="row2-key" aria-hidden="true">' + escapeHtml(t('preset.key', { n: slotKey(i) })) + '</span>'
         + '<span class="visually-hidden">' + escapeHtml(keyLabel(i, t)) + '</span>'
       : escapeHtml(keyLabel(i, t));

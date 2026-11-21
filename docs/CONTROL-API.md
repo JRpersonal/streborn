@@ -32,7 +32,7 @@ All request and response bodies are JSON.
 | ------ | ---- | ---- | ----- |
 | `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
 | `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. `codec` is the station codec (`MP3`, `AAC`, `AAC+`); an HE-AAC stream without it can play silence. Do not send `mime` for a stream: it marks a music-library file and hands the URL straight to the speaker. |
-| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
+| `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`60`; rows 2-10 are reached by repeated hardware-key presses (see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
 | `POST` | `/api/resume` | - | Resume. |
 | `POST` | `/api/stop` | - | Stop. |
@@ -65,15 +65,15 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/presets` | - | The STR preset store (what the twelve slots point at). |
-| `PUT`  | `/api/presets` | `[{...},...]` | Write a whole set (at most 12, slots 1-12) in one go; slots the set does not name are left alone. |
-| `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`12`. |
-| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-12, also between the rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
-| `POST` | `/api/box/preset-copy` | `{"targets":["<ip>"]}` or `{"all":true}` | Copy this speaker's keys to other STR speakers, the way the desktop app's Transfer does: this agent writes the set onto each target (`PUT /api/presets`, key by key on an older target), syncs its hardware keys and, when a Spotify key goes along, hands on this speaker's Spotify login. Both rows go to a target that keeps two. Targets must be in this speaker's peer list (`/api/peers`; `all` means every peer that answered the last sweep). Answers `200` with `{"keys","rows","done","total","results":[{"name","ip","ok","copied","row1Only","notCopied","spotify","code","conflict","error"}]}` once every target is done; `code` is `already-on-slot` (with `conflict` `{name,slot}`, nothing written there), `unreachable`, `refused` or `unknown-speaker`. `409` with `code` `busy`, `no-presets` or `no-targets`. LAN only. |
-| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
-| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`12`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
+| `GET`  | `/api/presets` | - | The STR preset store (up to sixty slots across ten rows). |
+| `PUT`  | `/api/presets` | `[{...},...]` | Write a whole set (at most 60, slots 1-60) in one go; slots the set does not name are left alone. |
+| `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`60`. |
+| `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-60, including between rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
+| `POST` | `/api/box/preset-copy` | `{"targets":["<ip>"]}` or `{"all":true}` | Copy this speaker's keys to other STR speakers, the way the desktop app's Transfer does: this agent writes the set onto each target (`PUT /api/presets`, key by key on an older target), syncs its hardware keys and, when a Spotify key goes along, hands on this speaker's Spotify login. All rows the target supports are copied; later rows are omitted when the target supports fewer. Targets must be in this speaker's peer list (`/api/peers`; `all` means every peer that answered the last sweep). Answers `200` with `{"keys","rows","done","total","results":[{"name","ip","ok","copied","row1Only","notCopied","spotify","code","conflict","error"}]}` once every target is done; `code` is `already-on-slot` (with `conflict` `{name,slot}`, nothing written there), `unreachable`, `refused` or `unknown-speaker`. `409` with `code` `busy`, `no-presets` or `no-targets`. LAN only. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-60): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
+| `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`60`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
-| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so the second row is not reachable here; use `/api/play/<slot>`. |
+| `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so extra rows are not directly reachable here; use `/api/play/<slot>`. |
 
 `POST /api/play/<slot>` is usually what you want to start a preset from
 automation; `presets/recall` mirrors a physical button press.
@@ -82,20 +82,23 @@ A station lives on one key at a time. Saving one that is already on another
 key is refused with `409` and `{"code":"already-on-slot","slot":N,"name":"..."}`,
 because clearing that other key without being asked is how presets got lost.
 `POST /api/box/preset-move` is the explicit way to do it: it writes the new key
-and frees the old one in a single store write. The rule spans both rows, so the
-`slot` in that answer can be `7`-`12`.
+and frees the old one in a single store write. The rule spans all preset rows,
+so the `slot` in that answer can be `7`-`60`.
 
-### The second row (slots 7-12)
+### Repeated-press preset rows (slots 7-60)
 
-Slots `7`-`12` are a second row of six presets: slot `6+n` is preset key `n`
-pressed twice quickly. The agent stores them exactly like `1`-`6` and every
-preset endpoint above, the alarms and `/api/play/<slot>` accept them. They
-never reach the speaker's own preset list (its keys are 1 to 6), so
-`/api/box/presets` and `/api/box/presets/recall` stay at 1-6, and a row-2 slot
-plays the way `/api/play/<slot>` plays any slot (`/stream/7`-`/stream/12`,
-`/spotify/stream-7.ogg`-`stream-12.ogg`). An agent that has the second row
-reports `"presetRows":"2"` in `/api/agent/version`; an older one has no such
-key and answers `400` for slot 7 and up.
+STR stores up to ten rows of six presets. For row `r` and hardware key `n`
+(1-6), the slot is `(r-1)*6+n`. Pressing a hardware key `r` times quickly
+plays row `r`; row 1 is the speaker's own six keys. Rows 2-10 stay in STR's
+store and never reach the speaker's own preset list, so `/api/box/presets` and
+`/api/box/presets/recall` still accept only slots 1-6. The preset endpoints,
+alarms, and `/api/play/<slot>` accept slots 1-60.
+
+The active count is set per speaker in the desktop app under **Settings >
+Advanced > Preset rows**, or with `PUT /api/presets/rows` and JSON
+`{"rows":1}` through `{"rows":10}`. `/api/agent/version` reports the active
+count in `presetRows` and the supported maximum in `presetRowsMax`. Older
+agents without these fields still support only the rows they already know.
 
 On the speaker itself, tapping key `n` and then holding it down (press it a
 second time within a moment and keep it down until the display says
@@ -184,7 +187,7 @@ from the speaker's notes.
 
 An alarm is
 `{"id","enabled","name","hour","minute","days","slot","volume","autoOff","snooze"}`:
-`days` are weekdays with `0` = Sunday, `slot` is a preset 1-12, `volume` is
+`days` are weekdays with `0` = Sunday, `slot` is a preset 1-60, `volume` is
 1-100 or `0` to leave the speaker's own level alone, `autoOff` switches the
 speaker off that many minutes after the alarm starts (1-720, or `0` for never),
 and `snooze` is how many minutes a snoozed alarm stays quiet (`5`, `9`, `10` or
@@ -347,7 +350,8 @@ newest level.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `"presetRows":"2"` on an agent with the second preset row (slots 7-12), and `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `presetRows` for active rows 1-10 and `presetRowsMax` for the supported maximum, and `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `PUT`    | `/api/presets/rows` | `{"rows":N}` | Sets the active preset row count, 1-10. Each row adds six slots; changes take effect on the next key press. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`, and for a music-library entry (`source` `upnp`) `mime` and `durationSec`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |

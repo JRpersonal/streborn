@@ -71,7 +71,7 @@ describe('recalling a speaker\'s own key', () => {
 
 describe('Transfer', () => {
   const run = (val, report = null) => presets.runPresetTransfer({
-    box: KITCHEN, targets: [OFFICE, BEDROOM], val, twoRows: false, sourcePresets: [], report,
+    box: KITCHEN, targets: [OFFICE, BEDROOM], val, hasExtraRows: false, sourcePresets: [], report,
   });
 
   it('without a report: the progress and done toasts, as before', async () => {

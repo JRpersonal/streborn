@@ -205,10 +205,13 @@ func (s *Server) checkAlarmKeys(d, stored alarm.Document, fresh []bool) error {
 }
 
 // alarmKeyLabel names a slot the way the user presses it: "2" for the key,
-// "2 pressed twice" for the second row (#1110).
+// "2 pressed twice" or "2 pressed three times" for later rows.
 func alarmKeyLabel(slot int) string {
-	if presets.IsRow2(slot) {
+	switch presets.RowOf(slot) {
+	case 2:
 		return strconv.Itoa(presets.KeyOf(slot)) + " pressed twice"
+	case 3:
+		return strconv.Itoa(presets.KeyOf(slot)) + " pressed three times"
 	}
 	return strconv.Itoa(slot)
 }

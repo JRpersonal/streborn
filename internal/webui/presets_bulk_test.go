@@ -226,7 +226,7 @@ func TestBulkPresetPutRejectsAMalformedSet(t *testing.T) {
 			radioPreset(5, "e", "http://example.com/5"), radioPreset(6, "f", "http://example.com/6"),
 			radioPreset(6, "g", "http://example.com/7"),
 		}, http.StatusBadRequest},
-		{"slot out of range", []presets.Preset{radioPreset(13, "a", "http://example.com/1")}, http.StatusBadRequest},
+		{"slot out of range", []presets.Preset{radioPreset(19, "a", "http://example.com/1")}, http.StatusBadRequest},
 		{"same slot twice", []presets.Preset{
 			radioPreset(1, "a", "http://example.com/1"), radioPreset(1, "b", "http://example.com/2"),
 		}, http.StatusBadRequest},

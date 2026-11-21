@@ -237,9 +237,9 @@ func (a *App) ImportBackup() (map[string]any, error) {
 		}
 		wrote := 0
 		var slotErr error
-		// Both rows of keys (#1110) where the speaker keeps them, row 1 on one
-		// whose agent predates the second row.
-		for _, p := range presetsUpTo(s.Presets, a.boxPresetMaxSlot(target.Host, target.Port)) {
+		// Restore every row the target agent can store, including rows currently
+		// disabled for hardware presses.
+		for _, p := range presetsUpTo(s.Presets, a.boxPresetMaxSupportedSlot(target.Host, target.Port)) {
 			if err := a.boxPut(target.Host, target.Port, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p); err != nil {
 				a.logger.Warn("backup: restoring a preset failed",
 					"host", target.Host, "slot", p.Slot, "err", err)

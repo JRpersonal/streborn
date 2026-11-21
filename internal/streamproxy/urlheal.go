@@ -89,9 +89,9 @@ func unwrapSelfProxy(raw string) string {
 	return raw
 }
 
-// selfProxySlotRe matches the agent's own per-slot proxy path (/stream/1..12,
-// both preset rows).
-var selfProxySlotRe = regexp.MustCompile(`^/stream/([1-9]|1[0-2])$`)
+// selfProxySlotRe matches the agent's own per-slot proxy path (/stream/1..60,
+// all preset rows).
+var selfProxySlotRe = regexp.MustCompile(`^/stream/([1-9]|[1-5][0-9]|60)$`)
 
 // selfProxySlotRef reports whether raw points at this agent's own
 // /stream/<slot> proxy (the box-visible preset location, never a valid

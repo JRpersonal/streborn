@@ -778,6 +778,10 @@ export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) 
   return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 
+export function SetPresetRows(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetPresetRows'](arg1, arg2, arg3);
+}
+
 export function SetResumeOnPowerOn(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetResumeOnPowerOn'](arg1, arg2, arg3);
 }

@@ -38,6 +38,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // NoticesFlagPath is the per-speaker switch for the notices. Absent means on.
@@ -157,10 +159,12 @@ func SavedOnRowTwo(key int, name string) Notice {
 func RowTwoLabel(key int) string { return "2X " + strconv.Itoa(key) }
 
 // AlreadyOnKey: a save was refused because the item already sits on other.
-// A second-row slot (7..12) is named by its key pressed twice.
+// An extra-row slot is named by its key's press count.
 func AlreadyOnKey(other int) Notice {
-	if other > 6 && other <= 12 {
-		return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other-6, "ON "+RowTwoLabel(other-6), "Already saved", 3*time.Second, 2)
+	if row := (other-1)/presets.BoxSlots + 1; other > presets.BoxSlots && other <= presets.MaxSlot {
+		key := (other-1)%presets.BoxSlots + 1
+		label := strconv.Itoa(row) + "X " + strconv.Itoa(key)
+		return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, key, "ON "+label, "Already saved", 3*time.Second, 2)
 	}
 	return keyNotice(NoticeAlreadyOnKey, iconKeyEqual, other, "ON KEY "+strconv.Itoa(other), "Already saved", 3*time.Second, 2)
 }

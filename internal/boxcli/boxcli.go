@@ -21,8 +21,8 @@ import (
 
 // ErrNotBoxSlot is returned by every command that writes, removes or presses a
 // speaker preset when the slot is not one of the firmware's six keys. STR's
-// second preset row (slots 7..12, #1110) lives only in the agent's own store;
-// the firmware's keys are 1..6, so a row-2 slot must never reach the box.
+// extra rows (slots 7..60, #1110, #1657) live only in the agent's own store;
+// the firmware's keys are 1..6, so an extra-row slot must never reach the box.
 var ErrNotBoxSlot = errors.New("not a speaker preset key (1..6)")
 
 // checkBoxSlot is the one guard every box preset write goes through.
@@ -571,7 +571,7 @@ func firstLine(s string) string {
 
 // PresetSpec is a box preset specification for SyncAllPresets.
 type PresetSpec struct {
-	Slot      int    // 1..6; row-2 slots (7..12) are skipped, never sent
+	Slot      int    // 1..6; extra-row slots (7..60) are skipped, never sent
 	Name      string // displayed name (quoted if it contains a space)
 	StreamURL string // direct stream URL for UPnP
 	// NativeLocation, when set, stores the slot as a native

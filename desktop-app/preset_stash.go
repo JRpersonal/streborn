@@ -173,9 +173,9 @@ func (a *App) stashPresetsBeforeUninstall(host string, port int, deviceID string
 			err = serr
 		}
 	}
-	// Both rows of keys (#1110): the store of an agent with the second row
-	// holds slots 7 to 12 too, and they are kept like the rest.
-	kept := presetsUpTo(presets, 2*presetRowSize)
+	// Keep all rows the current agent can store, including rows disabled for
+	// hardware presses, so a later install can restore the whole set.
+	kept := presetsUpTo(presets, presetMaxRows*presetRowSize)
 	if len(kept) == 0 {
 		a.logger.Info("uninstall_str: no preset keys to keep for a later install", "host", host, "err", err)
 		return 0
@@ -229,7 +229,7 @@ func (a *App) restorePresetStash(host string, port int, deviceID string) int {
 	restored := 0
 	var slotErrs []string
 	// The fresh agent takes the keys pressed twice only when it keeps them.
-	for _, p := range presetsUpTo(st.Presets, a.boxPresetMaxSlot(host, port)) {
+	for _, p := range presetsUpTo(st.Presets, a.boxPresetMaxSupportedSlot(host, port)) {
 		if err := a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p); err != nil {
 			a.logger.Warn("install_str: the speaker rejected a kept preset key", "host", host, "slot", p.Slot, "err", err)
 			slotErrs = append(slotErrs, fmt.Sprintf("preset %d (%s): %v", p.Slot, p.Name, err))

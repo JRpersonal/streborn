@@ -2,18 +2,16 @@ package main
 
 import "testing"
 
-// The second row of six keys (#1110): slots 7 to 12 are the hardware keys
-// pressed twice. A copy carries both rows to a speaker whose agent keeps them
-// and row 1 only to one whose agent predates them, which would refuse a
-// row-2 slot.
+// Rows 2 and 3 hold the keys pressed twice and three times. A copy carries
+// every active row the target also keeps.
 
-func twoRows() []Preset {
+func threeRows() []Preset {
 	return []Preset{
 		{Slot: 1, Name: "1LIVE", Type: "radio", StreamURL: "http://example.com/1"},
 		{Slot: 6, Name: "WDR 5", Type: "radio", StreamURL: "http://example.com/6"},
 		{Slot: 7, Name: "Radio Bob", Type: "radio", StreamURL: "http://example.com/7"},
 		{Slot: 12, Name: "Sunshine Live", Type: "radio", StreamURL: "http://example.com/12"},
-		{Slot: 13, Name: "never a key", Type: "radio", StreamURL: "http://example.com/13"},
+		{Slot: 13, Name: "Radio One", Type: "radio", StreamURL: "http://example.com/13"},
 	}
 }
 
@@ -26,7 +24,7 @@ func TestPresetRowsFromVersion(t *testing.T) {
 		{map[string]string{"version": "v1.0.20"}, 1},
 		{map[string]string{"presetRows": "1"}, 1},
 		{map[string]string{"presetRows": "2"}, 2},
-		{map[string]string{"presetRows": "3"}, 1},
+		{map[string]string{"presetRows": "3"}, 3},
 	}
 	for _, c := range cases {
 		if got := presetRowsFromVersion(c.ver); got != c.want {
@@ -36,7 +34,7 @@ func TestPresetRowsFromVersion(t *testing.T) {
 }
 
 func TestPresetsUpToKeepsNamedSlotsInRange(t *testing.T) {
-	in := append(twoRows(), Preset{Slot: 3, Name: ""}, Preset{Slot: 0, Name: "zero"})
+	in := append(threeRows(), Preset{Slot: 3, Name: ""}, Preset{Slot: 0, Name: "zero"})
 	slots := func(ps []Preset) []int {
 		var out []int
 		for _, p := range ps {
@@ -53,7 +51,8 @@ func TestPresetsUpToKeepsNamedSlotsInRange(t *testing.T) {
 }
 
 func TestCopyCarriesBothRowsToATargetThatKeepsThem(t *testing.T) {
-	src := newFakeBox(t, "127.0.0.2", twoRows())
+	src := newFakeBox(t, "127.0.0.2", threeRows())
+	src.presetRows = "3"
 	dst := newFakeBox(t, "127.0.0.3", nil)
 	dst.bulk = true
 	dst.presetRows = "2"
@@ -71,12 +70,13 @@ func TestCopyCarriesBothRowsToATargetThatKeepsThem(t *testing.T) {
 		t.Errorf("the keys pressed twice did not arrive: %v", dst.written)
 	}
 	if _, ok := dst.written[13]; ok {
-		t.Errorf("slot 13 is no key and must never be written: %v", dst.written)
+		t.Errorf("row 3 should not be written to a target set to two rows: %v", dst.written)
 	}
 }
 
 func TestCopyKeepsRowOneOnlyForAnOlderTarget(t *testing.T) {
-	src := newFakeBox(t, "127.0.0.2", twoRows())
+	src := newFakeBox(t, "127.0.0.2", threeRows())
+	src.presetRows = "3"
 	dst := newFakeBox(t, "127.0.0.3", nil) // no presetRows: an agent before #1110
 	dst.bulk = true
 	installProbe(t, func() bool { return true })
@@ -97,7 +97,8 @@ func TestCopyKeepsRowOneOnlyForAnOlderTarget(t *testing.T) {
 }
 
 func TestCopyPerSlotFallbackCarriesBothRows(t *testing.T) {
-	src := newFakeBox(t, "127.0.0.2", twoRows())
+	src := newFakeBox(t, "127.0.0.2", threeRows())
+	src.presetRows = "3"
 	dst := newFakeBox(t, "127.0.0.3", nil) // no bulk endpoint, but the second row
 	dst.presetRows = "2"
 	installProbe(t, func() bool { return true })

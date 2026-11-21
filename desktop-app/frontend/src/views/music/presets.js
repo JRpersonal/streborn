@@ -552,17 +552,17 @@ export function wirePresetTransferRow() {
     const allOpt = targets.length > 1
       ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
       : '';
-    // A speaker with the second row of keys (#1110) copies both rows. The
+    // A speaker with extra press-count rows copies every active row. The
     // intro is neutral; the line under it follows the key choice (#1551): all
     // ticked replaces the keys on the target, some ticked keeps the others.
-    const twoRows = boxPresetRows(box, state.presets) >= 2;
+    const hasExtraRows = boxPresetRows(box, state.presets) >= 2;
     const sourcePresets = state.presets.slice();
     const sourceKeys = transferableKeys(sourcePresets, boxMaxSlot(box, sourcePresets));
     const intro = sourceKeys.length
       ? t('presets.transferIntro')
-      : t(twoRows ? 'settingsView.copyPresetsHelpAll' : 'settingsView.copyPresetsHelp');
+      : t(hasExtraRows ? 'settingsView.copyPresetsHelpExtra' : 'settingsView.copyPresetsHelp');
     const body = `<p>${escapeHtml(intro)}</p>`
-      + `<p id="presetXferScope">${escapeHtml(transferScopeText(twoRows, true))}</p>`
+      + `<p id="presetXferScope">${escapeHtml(transferScopeText(hasExtraRows, true))}</p>`
       + transferKeysMarkup(sourceKeys)
       + `<select id="presetXferTarget" class="preset-xfer-select" style="width:100%;box-sizing:border-box;">${opts}${allOpt}</select>`;
     const asked = confirmWarn(t('settingsView.copyPresetsHeading'), body, {
@@ -570,7 +570,7 @@ export function wirePresetTransferRow() {
       confirmClass: 'btn btn-warning',
     });
     // The dialog body is in place as soon as confirmWarn returns.
-    wireTransferKeys(twoRows);
+    wireTransferKeys(hasExtraRows);
     const ok = await asked;
     if (!ok) return;
     const sel = document.querySelector('#presetXferTarget');
@@ -607,7 +607,7 @@ export function wirePresetTransferRow() {
       btn.textContent = t('settingsView.copyPresetsBusyBtn');
       try {
         if (someKeys) await runKeyTransfer({ box, targets, val, slots, report });
-        else await runPresetTransfer({ box, targets, val, twoRows, sourcePresets, report });
+        else await runPresetTransfer({ box, targets, val, hasExtraRows, sourcePresets, report });
       } finally {
         btn.textContent = origLabel;
       }
@@ -670,14 +670,14 @@ export function transferableKeys(presets, maxSlot) {
 // transferScopeText is the line under the intro: with every key ticked the
 // copy replaces the keys on the target; with a choice only the ticked keys go
 // and the target's other keys stay as they are.
-export function transferScopeText(twoRows, allTicked) {
+export function transferScopeText(hasExtraRows, allTicked) {
   if (!allTicked) return t('presets.transferKeysNote');
-  return t(twoRows ? 'presets.transferReplacesBoth' : 'presets.transferReplacesRow');
+  return t(hasExtraRows ? 'presets.transferReplacesExtra' : 'presets.transferReplacesRow');
 }
 
 // transferKeysMarkup is the key choice in the transfer dialog: one ticked box
 // per key that holds something, named "Key 2" or "Key 1 · 2×" plus the
-// station, and an All / None pair for the long list of two rows.
+// station, and an All / None pair for the long multi-row list.
 function transferKeysMarkup(keys) {
   if (!keys.length) return '';
   const rows = keys.map((p) => `<label class="preset-xfer-key">`
@@ -696,12 +696,12 @@ function transferKeysMarkup(keys) {
 
 // wireTransferKeys hooks up the All / None buttons of the key choice and
 // keeps the scope line in step with what is ticked.
-function wireTransferKeys(twoRows) {
+function wireTransferKeys(hasExtraRows) {
   const boxes = () => [...document.querySelectorAll('#presetXferKeys input[type="checkbox"]')];
   const sync = () => {
     const line = document.querySelector('#presetXferScope');
     const list = boxes();
-    if (line) line.textContent = transferScopeText(twoRows, list.length === 0 || list.every((c) => c.checked));
+    if (line) line.textContent = transferScopeText(hasExtraRows, list.length === 0 || list.every((c) => c.checked));
   };
   document.querySelectorAll('#presetXferKeys [data-xfer-keys]').forEach((b) => {
     b.onclick = (ev) => {
@@ -755,7 +755,7 @@ export async function runKeyTransfer({ box, targets, val, slots, report = null }
 // Transfer button, ui2radio.js transferReport), takes every message instead of
 // the toasts and the error dialog, with the source and target speakers named.
 // What it calls done is the target agents' own answer to the copy.
-export async function runPresetTransfer({ box, targets, val, twoRows, sourcePresets, report = null }) {
+export async function runPresetTransfer({ box, targets, val, hasExtraRows, sourcePresets, report = null }) {
   const source = getBoxLabel(box);
   const all = val === '__ALL__';
   const one = all ? null : targets.find(b => b.host === val.split('|')[0]);
@@ -778,10 +778,10 @@ export async function runPresetTransfer({ box, targets, val, twoRows, sourcePres
         try {
           await CopyPresetsAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0);
           done++;
-          if (twoRows && copyRowsNote(sourcePresets, tb) === 'row1Only') row1Only.push(getBoxLabel(tb));
+          if (hasExtraRows && copyRowsNote(sourcePresets, tb) === 'row1Only') row1Only.push(getBoxLabel(tb));
         } catch { failed.push(getBoxLabel(tb)); }
       }
-      const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRow1OnlyList', { names: row1Only.join(', ') }) : '';
+      const rowMsg = row1Only.length ? ' ' + t('settingsView.copyPresetsRowsNotKeptList', { names: row1Only.join(', ') }) : '';
       if (report) {
         if (failed.length) report(t('ui2.feedback.transferPartial', { done, total: targets.length, failed: failed.join(', '), source }) + rowMsg, done ? 'warn' : 'error');
         else report(t('ui2.feedback.transferAllDone', { n: targets.length, source }) + rowMsg, 'ok');
@@ -793,8 +793,8 @@ export async function runPresetTransfer({ box, targets, val, twoRows, sourcePres
       const target = targets.find(b => b.host === thost);
       targetName = target ? getBoxLabel(target) : thost;
       const n = await CopyPresetsAcrossBoxes(box.host, box.port || 0, thost, tport);
-      const rowMsg = twoRows && copyRowsNote(sourcePresets, target) === 'row1Only'
-        ? ' ' + t('settingsView.copyPresetsRow1Only', { target: targetName })
+      const rowMsg = hasExtraRows && copyRowsNote(sourcePresets, target) === 'row1Only'
+        ? ' ' + t('settingsView.copyPresetsRowsNotKept', { target: targetName })
         : '';
       if (report) report(t('ui2.feedback.transferDone', { n, target: targetName, source }) + rowMsg, 'ok');
       else showToast(t('settingsView.copyPresetsDone', { n, target: targetName }) + rowMsg);
