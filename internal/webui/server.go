@@ -179,7 +179,11 @@ type Server struct {
 	likeKey likeKeyState
 	// radioStep runs the remote's Next/Prev while a radio key plays. See
 	// radiostep.go.
-	radioStep   radioStepState
+	radioStep radioStepState
+	// traceSkip pairs the key trace's Next/Prev with the gabbo skip frame on
+	// Spotify and the play queue, so a press the frame missed still skips.
+	// See traceskip.go.
+	traceSkip   traceSkipState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -960,6 +964,12 @@ type Server struct {
 	// (playmodekey.go). nil means production.
 	radioStepPlayFn func(ctx context.Context, slot int) error
 	playModeShowFn  func(n oled.Notice)
+	// groupFollowerFn replaces the zone read that tells whether this speaker
+	// follows a group (zonePushWouldFightGroup), and traceSkipWait how long a
+	// traced Next/Prev waits for its gabbo frame (traceskip.go). Zero values
+	// mean production.
+	groupFollowerFn func() (bool, string)
+	traceSkipWait   time.Duration
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").

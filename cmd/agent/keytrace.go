@@ -121,13 +121,15 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		return
 	}
 	oled.FeedKey(ev.Name)
-	if (ev.Name == "NEXT_TRACK" || ev.Name == "PREV_TRACK") && h.onRadioStepKey != nil {
+	if (ev.Name == "NEXT_TRACK" || ev.Name == "PREV_TRACK") && h.onTrackKey != nil {
 		// While a radio key plays, Next and Previous step through the radio
-		// keys (#1619); the webui pairs this report with the gabbo skip frame
-		// of the same press and does nothing on any other source. Off the
-		// reader's goroutine: a step recalls a station. The key's webhook
-		// below still fires, as it always did.
-		go h.onRadioStepKey(ev.Name == "NEXT_TRACK")
+		// keys (#1619); on Spotify and the play queue a press the gabbo skip
+		// frame did not report (a quick second press) skips. The webui pairs
+		// this report with the frame of the same press, so one press acts
+		// once. Off the reader's goroutine: it waits for the frame and may
+		// recall a station. The key's webhook below still fires, as it always
+		// did.
+		go h.onTrackKey(ev.Name == "NEXT_TRACK")
 	}
 	if ev.Name == "AUX_INPUT" && h.keyActions.Action(keyactions.KeyAux) == keyactions.ActionSnooze && h.onAuxSnoozeKey != nil {
 		// AUX has no webhook trigger here (its webhook follows the source

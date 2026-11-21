@@ -2191,14 +2191,23 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 // plays, Next and Previous step to the next or previous radio key (#1619,
 // radiostep.go).
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
+	// A group follower plays its main speaker's audio; what it last played
+	// itself is from before it joined, and a skip or a re-attach of that would
+	// take it out of the group (traceskip.go).
+	if s.followsGroupForKeys(ctx) {
+		return "group-follower", nil
+	}
 	slot := s.currentSpotifySlot()
 	if !presets.ValidSlot(slot) {
 		// A radio key steps to the next or previous radio key (#1619).
 		if src, handled := s.stepRadioPreset(ctx, forward); handled {
 			return src, nil
 		}
+		s.traceSkip.noteFrame(time.Now())
 		return s.transportSkip(ctx, forward)
 	}
+	// The key trace reports this press too; it must not skip a second time.
+	s.traceSkip.noteFrame(time.Now())
 	// Hold the competing auto-repoint off for the whole handover: the box is
 	// tearing its UPnP source down right now while go-librespot still plays, so
 	// maybeActivate is primed to fire the instant it sees no sink.
