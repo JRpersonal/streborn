@@ -15,6 +15,7 @@ vi.mock('./api.js', () => ({
   RemoveManualMediaServer: vi.fn(),
   PlayURL: vi.fn(),
   StartQueue: vi.fn(),
+  GetQueue: vi.fn(),
   SaveLibraryPreset: vi.fn(),
   SaveFolderPreset: vi.fn(),
   Status: vi.fn(),
@@ -22,7 +23,9 @@ vi.mock('./api.js', () => ({
   boxFetch: vi.fn(),
 }));
 
-const { libraryUSBNote, localizeUSBServers } = await import('./views/library.js');
+const { libraryUSBNote, localizeUSBServers, isUSBFileURL, usbHiResSkippedNote } = await import('./views/library.js');
+const { friendlyErrorText } = await import('./utils.js');
+const api = await import('./api.js');
 const { setLocale } = await import('./i18n/index.js');
 const read = (loc) => JSON.parse(
   readFileSync(new URL(`./i18n/bundles/${loc}.json`, import.meta.url), 'utf8'));
@@ -102,5 +105,62 @@ describe('the USB stick strings', () => {
       expect(de[k]).not.toMatch(/\bSie\b|—/);
       expect(de[k]).not.toMatch(/ae|oe|ue/);
     }
+  });
+});
+
+// A file on the stick above 48 kHz is refused by the agent with the code
+// library-file-hires (friendlyError passes "code: message"), and a folder steps
+// over such files and says how many (skippedHiRes in the speaker's queue).
+describe('hi-res files on the USB stick', () => {
+  beforeAll(() => { setLocale('en'); });
+
+  it('tells a stick file from any other', () => {
+    expect(isUSBFileURL('http://192.0.2.10:8888/usb/file/Album%201/a.flac')).toBe(true);
+    expect(isUSBFileURL('http://192.0.2.50:9000/MediaItems/1.flac')).toBe(false);
+    expect(isUSBFileURL('http://192.0.2.10:8888/usb/art/cover.jpg')).toBe(false);
+    expect(isUSBFileURL(null)).toBe(false);
+  });
+
+  it('turns the refusal into the sentence, in the user language', () => {
+    const raw = 'library-file-hires: This speaker cannot play this file: it has a sample rate above 48 kHz.';
+    expect(friendlyErrorText(raw)).toBe(en['library.usbHiRes']);
+    expect(friendlyErrorText(`PlayURL: ${raw}`)).toBe(en['library.usbHiRes']);
+    setLocale('de');
+    expect(friendlyErrorText(raw)).toContain('über 48 kHz');
+    setLocale('en');
+  });
+
+  it('asks the speaker once, only for a folder with stick files', async () => {
+    api.GetQueue.mockReset();
+    api.GetQueue.mockResolvedValue({ active: true, skippedHiRes: 2 });
+    const box = { host: '192.0.2.10', port: 8888 };
+    expect(await usbHiResSkippedNote(box, [{ url: 'http://192.0.2.50:9000/a.flac' }])).toBe('');
+    expect(api.GetQueue).not.toHaveBeenCalled();
+    const note = await usbHiResSkippedNote(box, [{ url: 'http://192.0.2.10:8888/usb/file/a.flac' }]);
+    expect(note).toContain('(2 skipped)');
+    expect(api.GetQueue).toHaveBeenCalledTimes(1);
+    api.GetQueue.mockResolvedValue({ active: true });
+    expect(await usbHiResSkippedNote(box, [{ url: 'http://192.0.2.10:8888/usb/file/a.flac' }])).toBe('');
+    api.GetQueue.mockRejectedValue(new Error('offline'));
+    expect(await usbHiResSkippedNote(box, [{ url: 'http://192.0.2.10:8888/usb/file/a.flac' }])).toBe('');
+  });
+
+  it('has its strings in every bundle, translated, German informal and without dashes', () => {
+    const keys = { 'library.usbHiRes': '', 'library.usbHiResSkipped': '{{n}}', 'library.usbCannotDecode': '{{title}}', 'play.errHiRes': '' };
+    const bundles = ['de', 'fr', 'es', 'it', 'nl', 'pl', 'tr', 'uk', 'lt', 'lv', 'ar', 'ja', 'zh-Hant'];
+    for (const [k, ph] of Object.entries(keys)) {
+      expect(en[k], k).toBeTruthy();
+      expect(en[k]).not.toMatch(/[–—]/);
+      for (const loc of bundles) {
+        const b = read(loc);
+        expect(b[k], `${loc} ${k}`).toBeTruthy();
+        expect(b[k], `${loc} ${k} untranslated`).not.toBe(en[k]);
+        expect(b[k], `${loc} ${k} dash`).not.toMatch(/[–—]/);
+        if (ph) expect(b[k], `${loc} ${k} placeholder`).toContain(ph);
+      }
+    }
+    const de = read('de');
+    for (const k of Object.keys(keys)) expect(de[k]).not.toMatch(/\bSie\b|\bIhre?\b/);
+    expect(de['library.usbHiResSkipped']).toContain('übersprungen');
   });
 });

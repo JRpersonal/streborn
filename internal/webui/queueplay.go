@@ -137,6 +137,13 @@ func (s *Server) RecallSlotPress(ctx context.Context, slot int, press SlotPress)
 	if len(items) == 0 {
 		return false
 	}
+	// A folder of nothing but files on this speaker's USB stick that it
+	// cannot play (sample rate above 48 kHz, usbhires.go) does not wake it.
+	if marked, n := s.usbMarkHiRes(items); n > 0 && playableCount(marked) == 0 {
+		s.logger.Warn("preset slot recall (hardware): every track of the key's folder has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
+			"slot", slot, "name", p.Name, "tracks", len(items))
+		return true
+	}
 	// Bind this slot as the in-flight queue recall BEFORE the queue starts, so a
 	// box-native /stream/<slot> fetch that races ahead of the first track load can
 	// hold for it (the ST20 source-switch race) instead of 404-ing into silence.
@@ -592,6 +599,25 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	}
 	if len(items) == 0 {
 		return errors.New("empty queue")
+	}
+	// Files on this speaker's USB stick that the speaker cannot play are
+	// stepped over, not handed to it (usbhires.go). A folder of nothing else
+	// is refused before the speaker is woken.
+	hiRes := 0
+	if spec.resume != nil {
+		st := *spec.resume
+		st.items, hiRes = s.usbMarkHiRes(st.items)
+		spec.resume = &st
+		items = st.items
+	} else {
+		items, hiRes = s.usbMarkHiRes(items)
+	}
+	if hiRes > 0 {
+		s.logger.Info("usb music: the folder has tracks with a sample rate above 48 kHz, which this speaker cannot play; the queue steps over them",
+			"skipped", hiRes, "tracks", len(items))
+	}
+	if hiRes > 0 && playableCount(items) == 0 {
+		return errUSBFolderAllHiRes
 	}
 	if spec.resume != nil {
 		s.queue.restore(*spec.resume)
@@ -1797,6 +1823,10 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 				s.writeGroupedPlayError(w, err)
 				return
 			}
+			if ref := usbFolderRefusal(err); ref != nil {
+				writePlayRefusal(w, ref)
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -2465,6 +2495,7 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 	} else {
 		snap.File = s.loneFileInfo()
 		snap.LastEnd = s.queueLastEndShown()
+		snap.USBRefused = s.usbDecodeRefusalShown()
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

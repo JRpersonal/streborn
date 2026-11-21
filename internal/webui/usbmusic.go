@@ -140,8 +140,11 @@ type usbMusicSnapshot struct {
 	// agent looked at the stick for ("attached" or "gone"), with its time.
 	LastKernelEvent   string    `json:"last_kernel_event,omitempty"`
 	LastKernelEventAt time.Time `json:"last_kernel_event_at,omitzero"`
-	CheckedAt         time.Time `json:"checked_at"`
-	Checks            int       `json:"checks"`
+	// LastDecoderError is the last stick file the speaker could not decode
+	// (AUDIO_ERROR_DECODER), with the error's name (usbhires.go).
+	LastDecoderError string    `json:"last_decoder_error,omitempty"`
+	CheckedAt        time.Time `json:"checked_at"`
+	Checks           int       `json:"checks"`
 }
 
 // usbMusicState is the one stick this agent serves, or none.
@@ -163,6 +166,12 @@ type usbMusicState struct {
 	// kernelEvent and kernelEventAt are the last kernel USB disk line.
 	kernelEvent   string
 	kernelEventAt time.Time
+	// decodeURL, decodeTitle and decodeAt are the last stick file the
+	// speaker could not decode, decodeErr the line the debug state shows.
+	decodeURL   string
+	decodeTitle string
+	decodeAt    time.Time
+	decodeErr   string
 }
 
 // usbRemountState is the read-only remount of one firmware mount.
@@ -213,6 +222,7 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		FileReads: prev.FileReads,
 	}
 	snap.LastKernelEvent, snap.LastKernelEventAt = u.kernelEvent, u.kernelEventAt
+	snap.LastDecoderError = u.decodeErr
 	parts := usbmedia.Partitions(usbMusicSysRoot)
 	if len(parts) == 0 {
 		s.usbDropLocked("the stick was removed")
@@ -242,6 +252,7 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		keep := prev
 		keep.CheckedAt, keep.Checks, keep.Variant = snap.CheckedAt, snap.Checks, snap.Variant
 		keep.LastKernelEvent, keep.LastKernelEventAt = snap.LastKernelEvent, snap.LastKernelEventAt
+		keep.LastDecoderError = snap.LastDecoderError
 		keep.MountOptions = m.Options
 		s.usbEnsureReadOnlyLocked(&keep, m)
 		u.snap = keep

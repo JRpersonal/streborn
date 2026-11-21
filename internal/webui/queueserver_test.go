@@ -124,7 +124,7 @@ func TestPhonePageNamesTheGoneMusicServer(t *testing.T) {
 	for _, code := range []string{
 		"q.lastEnd.reason === 'server_gone'",
 		"(upnpPlay || upSrc === 'INVALID_SOURCE') ? await currentQueue()",
-		"song || goneLine || human[state] || T.stopped",
+		"song || goneLine || usbLine || human[state] || T.stopped",
 	} {
 		if !strings.Contains(indexHTML, code) {
 			t.Errorf("the phone page lost %q", code)

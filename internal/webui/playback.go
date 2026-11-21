@@ -170,6 +170,12 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
 		return
 	}
+	// A file on this speaker's USB stick with a sample rate the speaker
+	// cannot play is refused before the speaker is touched (usbhires.go).
+	if ref := s.usbHiResRefusal(req.URL, req.Title, 0); ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
 	// A client that names no MIME for a file this agent knows as a
 	// music-library file (a third-party remote replaying a Recently-played
 	// card) still gets a library play, not a radio one (#1871).
@@ -545,6 +551,9 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// here pinned the folder's first song to the front of every shuffled
 		// start from the app and the phone (#1701).
 		if err := s.startQueueLocked(playCtx, items, -1, shuffle, rep, card); err != nil {
+			if ref := usbFolderRefusal(err); ref != nil {
+				return playResult{}, ref
+			}
 			return playResult{}, playFailed("Folder could not be played", err)
 		}
 		recallDelivered = true

@@ -33,6 +33,7 @@ import {
   RemoveManualMediaServer,
   PlayURL,
   StartQueue,
+  GetQueue,
   SaveFolderPreset,
   Status,
   EnableBoxMediaServer,
@@ -482,6 +483,26 @@ export function libraryUSBNote(notices) {
   return list.map(n =>
     `<div class="library-server-dark-note">${escapeHtml(t(USB_NOTICE_KEYS[n.code] || 'library.usbUnreadable', { name: n.speaker }))}</div>`,
   ).join('');
+}
+
+// isUSBFileURL reports whether a track URL is a file on a speaker's USB stick
+// (the agent serves those under /usb/file/, #1136).
+export function isUSBFileURL(url) {
+  return /\/usb\/file\//.test(String(url || ''));
+}
+
+// usbHiResSkippedNote is the line for a folder whose songs on the speaker's
+// USB stick above 48 kHz the speaker's queue steps over, '' when none are.
+// It asks the speaker's queue once, and only for a folder with stick files.
+export async function usbHiResSkippedNote(box, items) {
+  if (!box || !(items || []).some((it) => isUSBFileURL(it && it.url))) return '';
+  try {
+    const q = await GetQueue(box.host, box.port);
+    const n = (q && Number(q.skippedHiRes)) || 0;
+    return n > 0 ? t('library.usbHiResSkipped', { n }) : '';
+  } catch {
+    return '';
+  }
 }
 
 // localizeUSBServers names a speaker's music stick in the user's language. The
@@ -1103,9 +1124,14 @@ async function verifyLibraryPlayback(item, target, report) {
   // the state a blocked or unreachable probe lands in, and the app can be kept
   // from a server the speaker reaches perfectly well, so it keeps the older
   // format wording rather than inventing a verdict.
-  const msg = probe.known && !probe.delivered
+  let msg = probe.known && !probe.delivered
     ? t('library.serverNotDelivering', { title: item.title || '' })
     : t('library.formatMaybeUnsupported', { title: item.title || '' });
+  // A file the speaker's own USB stick delivers that the speaker would not
+  // play: the speaker could not decode it (#1136), so say what it plays.
+  if (isUSBFileURL(item.streamURL) && !(probe.known && !probe.delivered)) {
+    msg = t('library.usbCannotDecode', { title: item.title || '' });
+  }
   if (report) report({ ok: false, msg });
   else showToast(msg, 9000);
 }
@@ -1276,6 +1302,9 @@ async function libraryPlayFolder(fromId) {
     // A stereo pair is not in the zone map, so its following half is only
     // known once it refuses: the folder then starts on the leading half (#1878).
     target = await playOnMasterIfGrouped(target, state.boxes, (b) => StartQueue(b.host, b.port, JSON.stringify(payload)));
+    // Songs on the speaker's USB stick above 48 kHz are stepped over, and
+    // the folder says how many (#1136).
+    const hiResNote = await usbHiResSkippedNote(target, items);
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
     state.lastLibraryPlay = null;
@@ -1295,12 +1324,16 @@ async function libraryPlayFolder(fromId) {
       waitForPlayState(target, Date.now() + 26000).then((v) => {
         if (openFolderId() !== folder) return; // another folder is open by now
         if (v === 'gone') setLibStatus('folder', null);
-        else if (v === 'playing') setLibStatus('folder', { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
-        else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
+        else if (v === 'playing') {
+          setLibStatus('folder', hiResNote
+            ? { tone: 'warn', text: `${t('ui2.library.folderPlaying', { name: spk })} ${hiResNote}` }
+            : { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
+        } else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
       });
       return;
     }
-    showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree));
+    showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree)
+      + (hiResNote ? ` ${hiResNote}` : ''), hiResNote ? 9000 : undefined);
   } catch (e) {
     if (ui2()) {
       if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });

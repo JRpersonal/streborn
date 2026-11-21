@@ -242,6 +242,9 @@ export async function play(slot) {
     // One whose server answers but no longer has the music: the toast says
     // why that usually happens and how to get the key playing again (#919).
     if (goneServer !== null) showToast(libraryFileGoneNotice(goneServer, t));
+    // A key on a file of the speaker's USB stick above 48 kHz: the tile says
+    // so in short, the toast in a sentence (#1136).
+    if (errStr.includes('library-file-hires')) showToast(t('library.usbHiRes'));
     // Half of an old stereo pair: the whole sentence, with where to fix it.
     // "Not ready" on every key, for an hour, is what this replaces (2026-10-04).
     const stale = deps.stereoStaleForError(errStr, (state.currentBox && state.currentBox.host) || '');
@@ -293,6 +296,8 @@ function friendlyPlayError(s, host) {
   // First: this refusal is the agent's raw JSON body, and the preset's name in
   // it could hold any of the words the checks below look for (#1339).
   if (libraryServerOffName(s) !== null) return t('play.errMusicServerOff');
+  // A key on a file of the speaker's USB stick above 48 kHz (#1136).
+  if (l.includes('library-file-hires')) return t('play.errHiRes');
   // Before box_not_ready: a speaker stuck as half of an old stereo pair is
   // "not ready" forever, and the escalation ladder below would send its owner to
   // pull the plug and mail logs, neither of which helps.

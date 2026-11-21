@@ -621,6 +621,9 @@ export function friendlyErrorText(msg) {
   if (text.includes('radio directory unreachable')) {
     return t('radio.mirrorsDown');
   }
+  // A file on the speaker's USB stick above 48 kHz (#1136): the agent's code
+  // comes first in the reduced "code: message" form, its English sentence after.
+  if (text.includes('library-file-hires')) return t('library.usbHiRes');
   // File-gone first: its check is exact on the body's code, the server-off
   // one also answers for a bare code without a body.
   const goneServer = libraryFileGoneName(text);
