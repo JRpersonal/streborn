@@ -245,14 +245,17 @@ database, the account, the friendly name and the Wi-Fi profile. It does not
 touch `/mnt/nv/streborn/`, and that directory holds everything STR consists
 of on the speaker: the agent binary, the boot hook (`run-override.sh`), the
 per-speaker CA and its private key, the preset store, the persisted Spotify
-credential and the SSH opt-in marker if one was set. After a factory reset the
+credential, the speaker's own Deezer login if it had one (kept from the
+firmware's `Sources.xml`, see `docs/streaming/deezer.md`) and the SSH opt-in
+marker if one was set. After a factory reset the
 speaker boots straight back into STR.
 
 What that means for an owner:
 
 - **Passing a speaker on.** A factory reset alone hands the next owner a
   speaker that still runs STR, with the previous owner's presets and, if
-  Spotify was used, a stored Spotify credential on its NAND. Before a speaker
+  Spotify was used, a stored Spotify credential on its NAND, and a kept Deezer
+  login if the speaker had one. Before a speaker
   changes hands, use Speaker Settings → **Remove STR** in the desktop app. It
   deletes `/mnt/nv/streborn/` and the boot hook and returns the speaker to
   stock firmware; **True Factory Reset** then clears the Bose side as well.
