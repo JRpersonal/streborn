@@ -107,7 +107,7 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if e, ok := s.usbLibraryEntry(r.Host); ok {
-		out = append(out, srvOut{UDN: e.UDN, Name: e.Name, Kind: e.Kind, Location: e.Location, Refusal: e.Refusal})
+		out = append(out, srvOut(e))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
