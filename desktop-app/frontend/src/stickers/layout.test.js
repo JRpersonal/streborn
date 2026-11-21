@@ -40,6 +40,20 @@ describe('model to sticker', () => {
     expect(stickerKind('soundtouch 20 series III')).toBe('st20');
   });
 
+  it('keeps a two-line name and its pressed-twice line inside the sticker', () => {
+    // The fullest cell there is: a name that wraps to two lines and a second
+    // entry on every key. Nothing may run past the top or bottom of its piece.
+    const full = [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Deutschlandfunk Kultur Nova', { name: 'Morning Mix Nova', kind: 'playlist' }));
+    const { pages } = lay(['SoundTouch 10', 'SoundTouch Portable', 'SoundTouch 30', 'Wave SoundTouch']
+      .map((m) => speaker('Kitchen', m, 'dark', full)));
+    for (const p of pages[0].pieces) {
+      for (const t of p.texts) {
+        expect(t.y - t.size / 2).toBeGreaterThanOrEqual(0);
+        expect(t.y + t.size / 2).toBeLessThanOrEqual(p.h);
+      }
+    }
+  });
+
   it('gives every other model the plain sticker', () => {
     // A SoundTouch 300 is a soundbar, not a 30.
     for (const m of ['SoundTouch 300', 'Wave SoundTouch', 'SoundTouch SA-5', '', undefined]) {
