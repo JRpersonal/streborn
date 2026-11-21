@@ -1095,13 +1095,9 @@ type Server struct {
 	groupReadFails     int
 	groupReadSkipUntil time.Time
 
-	// BoseApp (:8090) outage episodes, fed by the /api/status fetch path. The
-	// 2026-08-18 ST20 freeze was only provable by counting statusStaleWarned
-	// transitions by hand; this records the episodes so a bundle answers "how
-	// long and how often was the firmware webserver dead" directly. Guarded by
-	// statusMu. boseappDownSince is zero while :8090 answers.
-	boseappDownSince time.Time
-	boseappOutages   []boseappOutage
+	// boseapp is the :8090 outage tracker (boseapp_health.go), fed by every
+	// read of the speaker's own firmware webserver.
+	boseapp boseappTracker
 
 	// queue is the agent-side DLNA library play queue (#202 follow-up). It
 	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the

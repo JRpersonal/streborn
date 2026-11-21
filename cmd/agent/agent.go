@@ -1488,6 +1488,11 @@ func (a *agent) buildBoxLink() error {
 	// provable by hand-counting stale-status WARNs) and the box-owned preset
 	// slots STR preserves in the marge answer (the Deezer slot-3 loss class).
 	webui.RegisterDebugSection("boseapp_health", func() any { return webuiSrv.BoseAppHealth() })
+	// Every read of this speaker's :8090 the agent makes anyway (boxapi and
+	// the autopair heartbeat) feeds that record, so a firmware webserver that
+	// stopped answering is noticed without a probe of its own and turns into
+	// boxHealth "firmware-unresponsive" (the power-cycle hint).
+	boxapi.ObserveReachability(a.flags.boxHost, webuiSrv.NoteBoseAppReach)
 	// What drawing the playback screen costs: how long STR held the panel,
 	// how often it drew, and the CPU time of BoseApp and the agent, so two
 	// readings a few minutes apart (screen on, screen off) give the

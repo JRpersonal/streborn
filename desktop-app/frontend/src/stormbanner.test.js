@@ -17,6 +17,14 @@ describe('restart notice versus the unplug banner', () => {
     expect(stormBannerBoxes(boxes).map(b => b.name)).toEqual(['C', 'D']);
   });
 
+  it('leaves a speaker whose Bose software stopped answering out too', () => {
+    const boxes = [
+      { name: 'A', storm1036: true, boxHealth: 'firmware-unresponsive' },
+      { name: 'B', recallRefusal: true, boxHealth: 'ok' },
+    ];
+    expect(stormBannerBoxes(boxes).map(b => b.name)).toEqual(['B']);
+  });
+
   it('copes with no speaker list', () => {
     expect(stormBannerBoxes(undefined)).toEqual([]);
   });

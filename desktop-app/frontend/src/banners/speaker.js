@@ -5,10 +5,12 @@
 // the main.js monolith; main.js-local helpers arrive through deps.js.
 
 import { EventsOn, KeepSpeakerWiFiCopy, RebootBox, RemoveConflictingMod, RepairSpeakerName, RestoreSTRCloud } from '../api.js';
+import { needsPowerCycle } from '../boxes.js';
 import { runConflictCleanup } from '../conflictcleanup.js';
 import { groupKeyErrorBanners } from '../groupkeys.js';
 import { t } from '../i18n/index.js';
 import { noInternetBoxes } from '../nointernet.js';
+import { wedgeBannerLines } from '../powercycle.js';
 import { localizeStillRestarting, restarts } from '../restartwait.js';
 import { speakerIssuesFrom } from '../shell2/attention.js';
 import { renderShellSpeakers } from '../shell2/mount.js';
@@ -30,18 +32,21 @@ import { keepWifiCopies, paintWifiCopyNote } from '../wificopy.js';
 import { deps } from './deps.js';
 import { warnDismissKey, warnDismissed } from './dismiss.js';
 
-// checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports
-// the wedged-control state (transport accepted, never plays; only a
-// power-cycle clears it - see the agent's wedge detection). Global banner so
-// the hint is visible on every tab.
+// checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports a
+// state only a power cycle clears (needsPowerCycle): the wedged control
+// (transport accepted, never plays; the agent's wedge detection) or Bose
+// software that stopped answering (the agent's :8090 outage tracker). Global
+// banner so the hint is visible on every tab.
 export function checkWedgeBanner() {
   const el = $('boxWedgeBanner');
   if (!el) return;
-  const wedged = (state.boxes || []).filter(b => b && b.boxHealth === 'wedged');
-  noteSpeakerIssues({ wedged });
-  if (!wedged.length) { el.classList.add('hidden'); return; }
-  const names = wedged.map(b => getBoxLabel(b)).join(', ');
-  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(t('speaker.wedgedTitle'))}</b> ${escapeHtml(t('speaker.wedgedBanner', { name: names }))}</span></div>`;
+  const boxes = (state.boxes || []).filter(needsPowerCycle);
+  const wedged = boxes.filter(b => b.boxHealth === 'wedged');
+  const fwDead = boxes.filter(b => b.boxHealth === 'firmware-unresponsive');
+  noteSpeakerIssues({ wedged, fwDead });
+  const lines = wedgeBannerLines(wedged, fwDead, getBoxLabel);
+  if (!lines.length) { el.classList.add('hidden'); return; }
+  el.innerHTML = lines.map(l => `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(l.title)}</b> ${escapeHtml(l.text)}</span></div>`).join('');
   el.classList.remove('hidden');
 }
 

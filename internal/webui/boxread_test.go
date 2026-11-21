@@ -79,12 +79,16 @@ func TestReadBoxNowFeedsOutageTrackerAndCache(t *testing.T) {
 		// A host:port is not a bare host, so the read fails instantly.
 		boxHost: "127.0.0.1:1",
 	}
+	// The agent wires boxapi's reachability verdict into the tracker; the
+	// read itself no longer feeds it, so the test wires it the same way.
+	boxapi.ObserveReachability(s.boxHost, s.NoteBoseAppReach)
+	t.Cleanup(func() { boxapi.ObserveReachability("", nil) })
 	if _, err := s.readBoxNowWithin(time.Second); err == nil {
 		t.Fatal("read of an unreachable speaker succeeded")
 	}
-	s.statusMu.Lock()
-	down := !s.boseappDownSince.IsZero()
-	s.statusMu.Unlock()
+	s.boseapp.mu.Lock()
+	down := !s.boseapp.downSince.IsZero()
+	s.boseapp.mu.Unlock()
 	if !down {
 		t.Error("a failed read did not open a :8090 outage")
 	}

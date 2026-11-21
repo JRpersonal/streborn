@@ -33,8 +33,26 @@ describe('speakerIssuesFrom', () => {
   });
 
   it('knows every classic banner kind', () => {
-    expect(ATTENTION_KINDS).toEqual(['wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
+    expect(ATTENTION_KINDS).toEqual(['fwDead', 'wedged', 'noNet', 'conflict', 'foreignCloud', 'storm',
       'keyErr', 'holdErr', 'staleKey', 'weakWifi', 'badName']);
+  });
+
+  // The speaker's own Bose software stopped answering (boxHealth
+  // firmware-unresponsive): unplug it, or for a Portable, whose battery stays
+  // in, restart it with AUX on the charger. It blocks playing, so danger.
+  it('says Bose software that stopped answering on that speaker, with the Portable\'s own restart', () => {
+    const st30 = { host: '192.0.2.20', friendlyName: 'Living room', model: 'SoundTouch 30' };
+    const portable = { host: '192.0.2.21', friendlyName: 'Garden', model: 'SoundTouch Portable' };
+    const issues = speakerIssuesFrom({ fwDead: [st30, portable] }, label);
+    expect(issues[st30.host].map((i) => i.kind)).toEqual(['fwDead']);
+    expect(attentionChip(issues[st30.host]).kind).toBe('danger');
+    const html = attentionCardHTML(issues[st30.host], 'Living room');
+    expect(html).toContain(t('speaker.fwDeadTitle'));
+    expect(html).toContain(escapeHtml(t('speaker.fwDeadBanner', { name: 'Living room' })));
+    const pHtml = attentionNoteHTML(issues[portable.host]);
+    expect(pHtml).toContain(escapeHtml(t('speaker.fwDeadBannerPortable', { name: 'Garden' })));
+    expect(pHtml).not.toContain(escapeHtml(t('speaker.fwDeadBanner', { name: 'Garden' })));
+    expect(itemActions({ kind: 'fwDead' })).toEqual([]);
   });
 
   // A speaker without STR's copy of its Wi-Fi is not something the owner has

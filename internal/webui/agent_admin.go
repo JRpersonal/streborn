@@ -137,11 +137,18 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if at := oled.LastRoundAt(); !at.IsZero() {
 		out["arcadeAt"] = strconv.FormatInt(at.Unix(), 10)
 	}
-	// Wedged-control state (see wedge.go): the desktop app and the phone
-	// remote read this to tell the user a power-cycle is needed.
+	// Power-cycle states (see BoxHealth: "wedged", "firmware-unresponsive"):
+	// the desktop app and the phone remote read this to tell the user a
+	// power-cycle is needed.
 	if status, since := s.BoxHealth(); status != "ok" {
 		out["boxHealth"] = status
 		out["boxHealthSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
+		// A Portable cannot be power-cycled by pulling the plug (its battery
+		// is not removable), so the phone remote, which has no model of its
+		// own to go by, gets told to give the Portable's restart instead.
+		if readWlanMode() == "taigan-bco" {
+			out["batteryPowered"] = "true"
+		}
 	} else {
 		out["boxHealth"] = "ok"
 	}
