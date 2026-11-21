@@ -53,7 +53,7 @@ gone when it is out.
 | ST10 (`rhino`) | **served** | the firmware's own mount at `/media/sda1` (OTG adapter needed) |
 | ST20 (`spotty`, `sm2` and `scm`) | **served** | the firmware's own mount; Series I on SETUP B |
 | ST30 (`mojo`, `sm2` and `scm`) | **served, caution** | the firmware's own mount. VBUS drops under load (`sm2`) and a left-in stick once took an `scm` ST30 off the network: hardware test T2 decides whether it stays on |
-| Portable (`taigan`) | **served, caution** | nothing auto-mounts, so the agent mounts it **read-only** at `/tmp/str-music` when the Library is opened (OTG adapter needed, draws on the battery) |
+| Portable (`taigan`) | **served, caution** | the firmware's own mount at `/media/sda1` (live 2026-11-21, against the spike's expectation). Where nothing mounted it, the agent mounts it **read-only** at `/tmp/str-music` when the Library is opened (OTG adapter needed, draws on the battery) |
 | Wave (`lisa`), SA-4/SA-5, ST300, CineMate, Lifestyle, Link Adapter | not served | no USB host port. If such a speaker ever reports a USB disk, the Library says "this speaker cannot play music from a USB stick" |
 
 The gate is one table, `usbMusicChassis` in `internal/webui/usbmusic.go`. If
@@ -72,12 +72,22 @@ it cannot play from a stick, instead of failing.
   shows up the next time the list is loaded ("Search again" in the app,
   reopening the library on the phone).
 - **Only the first partition** of the first USB disk counts.
-- **Read-only, always.** Where the firmware mounted the stick (ST10, ST20,
-  ST30) the agent reads that mount and never remounts it. Where nothing did
-  (Portable, or a hot-plug the firmware did not mount), the agent mounts it
-  itself with `ro,nosuid,nodev,noexec` (UTF-8 names first, plain if the
-  kernel lacks the codepage) at `/tmp/str-music`, on tmpfs. Nothing is ever
-  written, renamed or deleted on a stick, and no fsck is run.
+- **STR reads, never writes.** Where the firmware mounted the stick (ST10,
+  ST20, ST30 and, live, the Portable too) the agent reads that mount and
+  never remounts it. That mount is the firmware's and it is **read-write**
+  (see Live results). Where nothing mounted the stick (a hot-plug the
+  firmware did not mount), the agent mounts it itself with
+  `ro,nosuid,nodev,noexec` (UTF-8 names first, plain if the kernel lacks the
+  codepage) at `/tmp/str-music`, on tmpfs. Nothing is ever written, renamed
+  or deleted on a stick by STR, and no fsck is run.
+- **File names are decoded from the mount's `iocharset`**
+  (`internal/usbmedia/charset.go`). The firmware's mount is
+  `iocharset=iso8859-1`, so `01 Ärger.mp3` arrives as the Latin-1 byte
+  `0xC4`. Titles and object ids are the UTF-8 text (`01 Ärger`); file and
+  cover URLs carry the on-disk bytes (`01%20%C4rger.mp3`), so the renderer
+  fetches exactly what the filesystem holds. A URL in the UTF-8 form is
+  found too. A `utf8` mount has both forms equal; a mount whose charset is
+  not listed reads valid UTF-8 as UTF-8 and anything else as Latin-1.
 - **Install sticks are never served**: any of the names in
   `usbmedia.InstallMarkers` at the top level (case-insensitive) makes it an
   install, recovery or Bose firmware stick. The list is the same as
@@ -117,6 +127,14 @@ it cannot play from a stick, instead of failing.
   phone page browses the stick through the agent itself over loopback, so it
   gets the loopback form directly. Another speaker plays the stick by its
   LAN URL, while the speaker holding it is on.
+- **A stick file always plays directly.** A URL on this speaker's own stick
+  is handed to the renderer over UPnP with the MIME of its extension
+  (`usbFileMIME`), whether the caller sent a `mime` or not: `/api/play`,
+  `/api/queue`, a folder key and a song key alike. Without that, a play with
+  no `mime` went the radio way, through the stream proxy, whose SSRF guard
+  refuses the speaker's own address (`stream target ... blocked
+  (loopback/link-local`), and the speaker answered `AUDIO_ERROR_BAD_URL`.
+  The proxy's guard is unchanged.
 - **The UDN** is `uuid:str-usb-<device id>`, stable per speaker, so a key
   saved from the stick and the app's last-opened server survive a restart.
 
@@ -129,6 +147,13 @@ it cannot play from a stick, instead of failing.
   Format it as FAT32, then copy the music onto it again."
 - Phone remote: a "USB stick" button next to the media servers, or the
   refusal line under them.
+- Both say how to pull a served stick out safely: "Before you pull the USB
+  stick out, switch Kitchen to standby or play something else there."
+  (`library.usbPullHint` in the app, `usbPullHint` on the phone). The
+  firmware's mount is read-write, and a stick pulled while it is busy can be
+  left with a dirty or damaged FAT; partitions have been damaged that way
+  before. STR itself never writes, so the risk is the firmware's, but the
+  user is the one pulling the stick.
 - Keys: a song or a folder from the stick saved on a key plays the loopback
   URL. Such a key belongs to the speaker that holds the stick; copied to
   another speaker it points at that speaker's own stick and fails per track.
@@ -138,7 +163,8 @@ it cannot play from a stick, instead of failing.
 
 `/api/debug/state` carries `usb_music`: `present`, `variant`, `device`,
 `filesystem`, `fat_type`, `cluster_bytes`, `mount_dir`, `mounted_by`
-(`firmware` or `agent`), `mount_options`, `classification` (`music` or
+(`firmware` or `agent`), `mount_options`, `name_charset` (`utf8`,
+`iso8859-1`, `iso8859-15` or `unknown`, while served), `classification` (`music` or
 `install`), `served`, `refusal`, `waiting_for_library` (a FAT stick nothing
 mounted yet), the lazily known `root_listed` / `root_folders` / `root_files`,
 `browses`, `file_reads`, `last_error`, `checked_at`, `checks`. The agent log
@@ -166,7 +192,52 @@ bytes). Nothing touches NAND at run time.
   next asks.
 - **More than one partition**, exFAT/NTFS support (the kernel has none,
   T3), hi-res FLAC/ALAC/96 kHz WAV (offered by extension, may fail per
-  track, T5).
+  track, T5; see Live results).
+
+### Live results, 2026-11-21
+
+ST10 (`rhino`) and Portable (`taigan`), FW 27.0.6, stick A, PR #2028.
+
+- **Both automount the stick** at `/media/sda1`, `vfat`, read-write. The
+  spike expected the Portable not to (section 2, live 2026-06-11); on this
+  run it did. `/proc/mounts` on both:
+  `rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro`.
+- **`iocharset=iso8859-1`** made `01 Ärger` show as `01 �rger` and broke the
+  file URL, because the names were taken as UTF-8. Fixed: names are decoded
+  from the mount's `iocharset` (How it works).
+- **The mount is the firmware's and read-write.** STR never writes to it,
+  but the firmware keeps it mounted `rw`, so pulling the stick while it is
+  mounted can leave the FAT dirty, and partitions have been damaged that way
+  before. The app and the phone page therefore tell the user to switch the
+  speaker to standby or play something else before pulling the stick (What
+  the user sees).
+- **A play without `mime`** went through the stream proxy and failed
+  (`AUDIO_ERROR_BAD_URL`, the proxy log said `stream target 192.0.2.1
+  blocked (loopback/link-local`); with `mime` it played over UPnP from
+  `127.0.0.1:8888`. Fixed: a stick file always plays directly (How it
+  works).
+- **Formats on the Portable, volume 5** (answers Q5):
+
+  | File | Result |
+  | --- | --- |
+  | MP3 | plays |
+  | FLAC 16 bit / 44.1 kHz | plays |
+  | M4A (AAC) | plays |
+  | Ogg Vorbis | plays |
+  | WAV 44.1 kHz | plays |
+  | FLAC 24 bit / 96 kHz | fails, `AUDIO_ERROR_DECODER` |
+  | ALAC `.m4a` | the speaker reports `PLAY_STATE`; whether it is audible is still to be checked |
+  | WAV 96 kHz | stays `BUFFERING` |
+
+  Hi-res files stay listed in v1 (the extension cannot tell them apart
+  without reading the header). Whether a queue moves on past a 96 kHz WAV
+  that stays `BUFFERING` is not checked yet.
+- **The speaker name** in `/api/library/servers` and in the stick's
+  `device.xml` is UTF-8 on the wire (`USB stick (Küche)`,
+  `USB stick (BüroPortable)`, checked byte for byte on the live Portable).
+  A reading of `KÃ¼che` comes from a client that decodes the answer in a
+  Windows code page instead of UTF-8, not from the agent;
+  `TestTheStickNameKeepsANonASCIISpeakerName` pins the bytes.
 
 ### v1 test steps on a speaker
 
@@ -206,8 +277,10 @@ ST10 and the ST30 check `now_playing` silently (volume 0 or muted).
    by hand every few seconds for two minutes. If the speaker drops off the
    network: pull the stick, note it in the PR, and `mojo` leaves
    `usbMusicChassis`.
-6. **Portable, audible at volume 5.** Insert stick A (OTG adapter).
-   Before opening the Library, `usb_music` (reading it only detects) says
+6. **Portable, audible at volume 5.** Insert stick A (OTG adapter). On
+   2026-11-21 the firmware mounted it (`mounted_by:"firmware"`,
+   `name_charset:"iso8859-1"`); the rest of this step is for a stick it does
+   not mount. Before opening the Library, `usb_music` (reading it only detects) says
    `waiting_for_library:true` and `mounted_by` is empty. Open the Library in the app: `mounted_by:"agent"`,
    `mount_options:"ro"`, and on the speaker (SSH, read-only)
    `grep str-music /proc/mounts` shows `ro,nosuid,nodev,noexec`. Play
@@ -241,7 +314,7 @@ and from the maintainer's live ST300 session.
 | ST20 (`spotty`, `scm`) | USB-A | yes | **yes**, `eth0` is the USB-CDC coprocessor | **Limited.** Needs the load test below. |
 | ST30 (`mojo`, `sm2`) | USB-A | yes | no | **Limited.** VBUS drops under read load, seen by three users during installs (`VBUS_ERROR in a_wait_vrise`, `error -110`). Low-power stick or powered hub. |
 | ST30 (`mojo`, `scm`) | USB-A | yes | **yes** | **Not recommended.** A stick left in blackholed all inbound traffic within minutes (`over-current condition on port 1`), confirmed by removing it. |
-| Portable (`taigan`, `scm`) | micro-USB | yes, with an OTG adapter | **yes** | **Limited.** Does not auto-mount, so the agent mounts itself. The stick draws from the battery. |
+| Portable (`taigan`, `scm`) | micro-USB | yes, with an OTG adapter | **yes** | **Limited.** Did not auto-mount on 2026-06-11, did on 2026-11-21 (`/media/sda1`, `rw`); where nothing mounts it the agent mounts it itself. The stick draws from the battery. |
 | Wave (`lisa`), SA-4, SA-5 (`burns`), ST300 (`ginger`), CineMate, Lifestyle (`bardeen`/`lisa`), Wireless Link Adapter (`binky`) | setup/service port only | **no known host mode.** The ST300's SETUP port enumerates as a device (CDC-ACM serial, RNDIS in update mode), not as a host. None of these reads a stick at boot. | n/a | **Not usable.** |
 
 ### Does the firmware have a USB or local-file source?
@@ -278,8 +351,11 @@ To the firmware, STR is then just one more media server, like the NAS.
   `rw`, `errors=remount-ro` on the ST10, ST20 and ST30 (`/media` is a tmpfs).
   Whether this also happens when a stick is **hot-plugged** into a running
   box has never been checked. That is test T1.
-- **The Portable does not auto-mount** (live 2026-06-11). `/dev/sda1`
-  exists but nothing is mounted, and `/media/sda1` is a stale directory.
+- **The Portable did not auto-mount** on 2026-06-11 (`/dev/sda1` existed,
+  nothing was mounted, `/media/sda1` was a stale directory). On 2026-11-21
+  it **did**: `/media/sda1`, `vfat`, `rw`, the same options as the ST10 (see
+  v1, Live results). The agent's own read-only mount stays as the fallback
+  for a stick nothing mounted.
 - **FAT is left dirty**, because the box never unmounts cleanly. A dirty
   FAT plus a large write flips the mount read-only mid-write. A read-only
   music mount avoids that whole class of problem: nothing is ever written,
@@ -293,8 +369,10 @@ To the firmware, STR is then just one more media server, like the NAS.
   driver may or may not be built in. `/proc/filesystems` answers this, and
   it is not in the diagnostic yet. That is test T3.
 - **Character set:** the mount options in `/proc/mounts` (`iocharset`,
-  `codepage`) decide whether file names with umlauts arrive as UTF-8. The
-  debug state already carries `proc_mounts`, so test T1 shows this too.
+  `codepage`) decide whether file names with umlauts arrive as UTF-8. Live
+  on ST10 and Portable they do not: `codepage=437,iocharset=iso8859-1`, so
+  names arrive as Latin-1 bytes and the agent decodes them (v1, How it
+  works).
 
 Code that already touches sticks, and has to stay out of a music stick's way:
 
@@ -520,6 +598,8 @@ there when a music stick is in, and absent otherwise.
 
 - **Q1** Does Bose udev mount a stick hot-plugged into a running ST10,
   ST20 or ST30, and with which options (`iocharset`, `codepage`, `rw`)?
+  Answered for the ST10 and the Portable (2026-11-21): yes, at `/media/sda1`,
+  `rw`, `codepage=437,iocharset=iso8859-1`. ST20 and ST30 are still open.
 - **Q2** Does continuous stick reading on `scm` (ST30, Portable) or on the
   `sm2` ST30 trip VBUS or over-current, and does the LAN survive it?
 - **Q3** Which filesystems does the kernel offer (`/proc/filesystems`,
@@ -528,7 +608,9 @@ there when a music stick is in, and absent otherwise.
   `/listMediaServers` list a server on the box's own IP, and does
   `STORED_MUSIC` play from it on a whitelisted chassis?
 - **Q5** 24-bit/96 kHz FLAC, ALAC `.m4a`, 96 kHz WAV: play, fail cleanly,
-  or wedge the renderer?
+  or wedge the renderer? Portable, 2026-11-21: FLAC 24/96 fails with
+  `AUDIO_ERROR_DECODER`, ALAC reports `PLAY_STATE` (audible result
+  pending), WAV 96 kHz stays `BUFFERING`.
 - **Q6** Does `umount` of a read-only stick work on these boxes? (A `rw`
   `umount /media/sda1` answered "Invalid argument" once.)
 
@@ -584,16 +666,18 @@ stick formatted NTFS.
   Lookup, OpenFile, OpenArt, all through `os.Root`), `detect.go`
   (partitions from sysfs, `/proc/mounts`, the boot-sector sniff),
   `cds.go` (device and service description, the Browse control endpoint,
-  file serving). Tested against the repo's own `dlna` client, which is
+  file serving), `charset.go` (file names from the mount's `iocharset` to
+  UTF-8 and back). Tested against the repo's own `dlna` client, which is
   what the desktop app and the phone page browse with.
 - `internal/webui/usbmusic.go`: the stick state (detect, mount read-only
   where needed, classify, serve, drop), the `/usb/` routes, the stick's
   entry in `/api/library/servers`, the loopback resolve that lets every
-  existing library path browse the stick, `usbLoopbackURL`, and the
-  `usb_music` debug section. Registered in `cmd/agent/agent.go`.
+  existing library path browse the stick, `usbLoopbackURL`, `usbFileMIME`
+  (a stick file always plays directly), and the `usb_music` debug section. Registered in `cmd/agent/agent.go`.
 - `desktop-app/library_usb.go`: asks every STR speaker for its stick during
   the Library scan; `LibraryUSBNotices` for the refusal lines.
-- Frontend: `views/library.js` (`localizeUSBServers`, `libraryUSBNote`) and
+- Frontend: `views/library.js` (`localizeUSBServers`, `libraryUSBNote`,
+  `libraryUSBPullHint`) and
   the phone page's `loadBrowseServers` with its `I18N6` strings.
 
 The spike prototype's size measurement (a throwaway `main`, GOARM=5,
