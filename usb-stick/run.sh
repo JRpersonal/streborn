@@ -54,6 +54,70 @@ if [ ! -e "$STICK/run.sh" ] && [ ! -e "$STICK/streborn-armv7l" ]; then
         fi
     done
 fi
+# Defined HERE, above their first caller, for the same reason as
+# install_boot_script below: sh runs this file top to bottom.
+# usb-stick/tests/foreign_stick_test.sh guards the order.
+stick_has_str_marker() {
+    # Returns 0 when the directory $1 is the top level of an STR or Bose stick.
+    #
+    # KEEP BYTE-IDENTICAL to its twin in the other file (usb-stick/rc.local and
+    # usb-stick/run.sh, for the reason given at install_boot_script), together
+    # with usb_stick_mounts and foreign_stick_only below.
+    # usb-stick/tests/foreign_stick_test.sh fails if the copies drift.
+    #
+    # A stick that is not ours (a music stick left in the speaker) must not be
+    # waited on, fscked, mounted over or written to. A marker is any file STR's
+    # install wizard puts on a stick (sticksetup.PayloadFileNames: the
+    # usb-stick templates, the agent, the Spotify engine, the version stamp and
+    # the wizard's config files; sticksetup's tests fail when a payload file is
+    # missing here), the keep-open debug switch, or a file the Bose firmware
+    # itself reacts to (remote_services, Update.stu). What STR only ever writes
+    # ONTO a stick it already recognised (setup.log, cap*.ogg) is deliberately
+    # not a marker: a music stick an older STR scribbled on would otherwise
+    # stay "ours" for good. FAT matches names without regard to case; Update.stu
+    # is also listed in the other spellings a case-sensitive file system shows.
+    [ -n "${1:-}" ] && [ -d "$1" ] || return 1
+    for _shsm in \
+        run.sh install.sh rc.local autostart.sh provision-wlan.sh \
+        iptables-setup.sh setup-tls.sh presets.json version.txt str-shim.so \
+        streborn-armv7l streborn go-librespot remote_services keep-open \
+        wlan.conf wlan.ssid wlan.pass region.conf name.conf name.raw lang.conf \
+        Update.stu update.stu UPDATE.STU; do
+        [ -e "$1/$_shsm" ] && return 0
+    done
+    return 1
+}
+
+usb_stick_mounts() {
+    # Prints the mount point of every mounted USB stick file system, one per
+    # line. Bose's udev mount.sh puts a stick at /media/sd<x><n>, the places
+    # the boot scripts search for STR's stick, so that is what counts. Only
+    # the mount point is matched, never a bare /dev/sd* device: what else a
+    # host has mounted from one (a test runner's own disk) is not a stick.
+    # PROC_MOUNTS is a test seam and nothing else; on the speaker it is
+    # /proc/mounts.
+    [ -r "${PROC_MOUNTS:-/proc/mounts}" ] || return 0
+    while read -r _usm_dev _usm_mnt _usm_rest; do
+        case "$_usm_mnt" in
+            /media/sd*) echo "$_usm_mnt" ;;
+        esac
+    done < "${PROC_MOUNTS:-/proc/mounts}"
+}
+
+foreign_stick_only() {
+    # Returns 0 when at least one USB stick is mounted and none of the mounted
+    # ones carries an STR or Bose marker: the only stick in the speaker is the
+    # user's own. The boot then goes on as if no stick were in. Returns 1 when
+    # nothing is mounted (yet), so a stick that is still mounting is waited on
+    # as before, and when any mounted stick is ours.
+    _fso_rc=1
+    for _fso_mnt in $(usb_stick_mounts); do
+        stick_has_str_marker "$_fso_mnt" && return 1
+        _fso_rc=0
+    done
+    return $_fso_rc
+}
+
 PERSIST="/mnt/nv/streborn"
 # The active log lives in tmpfs (/tmp) so the NAND flash is not worn out
 # in continuous operation. On every start we save the previous log to
@@ -384,7 +448,9 @@ start_stick_log_mirror() {
     (
         sleep 60
         while :; do
-            if [ -d "$STICK" ] && [ -r "$SETUP_LOG_NAND" ]; then
+            # Only onto an STR stick: a music stick left in the speaker is
+            # the user's, and gets no setup.log (stick_has_str_marker).
+            if [ -d "$STICK" ] && [ -r "$SETUP_LOG_NAND" ] && stick_has_str_marker "$STICK"; then
                 # sync after the rename so the FAT directory entry + cluster
                 # chain actually reach the stick. Without it the write sits in
                 # the OS buffer and a power-cycle (users cut power to reboot the
@@ -468,7 +534,9 @@ initial_snapshot() {
     # /media/sda1/setup.log: No such file or directory" to the console every
     # boot. The NAND setup.log (setup_log) is unaffected and still records the
     # boot. When a stick IS present the guard passes and behaviour is unchanged.
-    if [ -d "$STICK" ] && [ -w "$STICK" ]; then
+    # A stick that is not an STR stick (a music stick left in) is never written
+    # to, so the marker check is part of the gate.
+    if [ -d "$STICK" ] && [ -w "$STICK" ] && stick_has_str_marker "$STICK"; then
         {
             echo ""
             echo "########################################################################"
@@ -499,6 +567,11 @@ initial_snapshot() {
     setup_log "mounts: $(mount 2>/dev/null | awk '{print $1\":\"$3\":\"$6}' | tr '\n' '|' | head -c 600)"
     # Probe writability of the four paths we care about.
     for p in /etc /mnt/nv /tmp /media/sda1; do
+        # The probe creates a file, so it never runs on a user's own stick.
+        if [ "$p" = /media/sda1 ] && ! stick_has_str_marker "$p"; then
+            setup_log "writable: $p not probed (no STR stick there)"
+            continue
+        fi
         if [ -d "$p" ] && touch "$p/.streborn-write-probe" 2>/dev/null; then
             rm -f "$p/.streborn-write-probe"
             setup_log "writable: $p YES"
@@ -763,7 +836,10 @@ cleanup_nand() {
     #    (Rust) Spotify spike. cap*.ogg: Ogg captures from passthrough debug.
     #    bin/*.new: interrupted atomic-replace temp files from a failed OTA.
     rm -f /mnt/nv/sp-oauth.out 2>/dev/null
-    rm -f /mnt/nv/streborn/cap*.ogg "$STICK"/cap*.ogg 2>/dev/null
+    #    The stick's copies only on an STR stick: on a user's own stick a
+    #    cap*.ogg is their file, not our debug leftover.
+    rm -f /mnt/nv/streborn/cap*.ogg 2>/dev/null
+    stick_has_str_marker "$STICK" && rm -f "$STICK"/cap*.ogg 2>/dev/null
     rm -f /mnt/nv/streborn/bin/*.new /mnt/nv/streborn/lib/*.new 2>/dev/null
 
     #    streborn-install: the SSH-repair install stages the ~28 MB file set into
@@ -976,6 +1052,13 @@ stage_ram_binary() {
 # stickless: we add ZERO delay to the normal NAND-only steady-state
 # boot. Only when a stick IS plugged (block device present, filesystem
 # possibly still mounting) do we wait, up to 25s, for /media/sda1.
+#
+# A stick that is mounted but carries no STR or Bose marker is the user's own
+# (a music stick left in). It used to cost the full 25s wait here, then an
+# fsck and a second rw mount over Bose's own mount of it. Now the wait stops
+# as soon as foreign_stick_only says so, the recovery below is skipped, and the
+# boot goes on as if no stick were in.
+_stick_foreign=""
 if [ -e /sys/block/sda ] || [ -e /dev/sda1 ]; then
     _stick_wait=0
     while [ $_stick_wait -lt 25 ]; do
@@ -983,10 +1066,15 @@ if [ -e /sys/block/sda ] || [ -e /dev/sda1 ]; then
             [ $_stick_wait -gt 0 ] && setup_log "stick: filesystem mounted after ${_stick_wait}s wait"
             break
         fi
+        if foreign_stick_only; then
+            _stick_foreign=1
+            setup_log "stick: only a non-STR USB stick is mounted ($(usb_stick_mounts | tr '\n' ' ')), leaving it alone and booting as if no stick were in (after ${_stick_wait}s)"
+            break
+        fi
         sleep 1
         _stick_wait=$((_stick_wait + 1))
     done
-    if [ "$_stick_wait" -ge 25 ]; then
+    if [ -z "$_stick_foreign" ] && [ "$_stick_wait" -ge 25 ]; then
         # The kernel auto-mount fails when a previous box left the stick's FAT
         # "dirty" (it was unplugged or powered off before its filesystem was
         # clean). The next box then never mounts it and reports it as absent
@@ -1008,8 +1096,38 @@ if [ -e /sys/block/sda ] || [ -e /dev/sda1 ]; then
         # whole disks as a last resort for an unpartitioned stick. An unmatched
         # glob stays literal and is filtered out by the [ -b ] test, so this is
         # safe when no stick (or no such device) is present.
+        #
+        # A device that is not an STR stick is never fscked or mounted rw:
+        #   * one that is already mounted somewhere is looked at where it is,
+        #     and left alone when it carries no marker (fscking a mounted file
+        #     system, or mounting it a second time, corrupts it);
+        #   * one that is not mounted is first mounted READ-ONLY to look for a
+        #     marker, and left alone when it has none. Only when that read-only
+        #     look finds a marker, or cannot be made at all (the case the
+        #     recovery was written for), does the fsck + rw mount below run,
+        #     exactly as before.
         for _dev in /dev/sd*[0-9] /dev/mmcblk*p[0-9] /dev/sda /dev/sdb /dev/sdc /dev/sdd; do
             [ -b "$_dev" ] || continue
+            _dev_mnt=""
+            if [ -r "${PROC_MOUNTS:-/proc/mounts}" ]; then
+                _dev_mnt=$(awk -v d="$_dev" '$1 == d { print $2; exit }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null)
+            fi
+            if [ -n "$_dev_mnt" ] && ! stick_has_str_marker "$_dev_mnt"; then
+                setup_log "stick: $_dev is mounted at $_dev_mnt and is not an STR stick, leaving it alone"
+                continue
+            fi
+            if [ -z "$_dev_mnt" ] && mount -t vfat -o ro "$_dev" /media/sda1 2>/dev/null; then
+                _dev_str=""
+                stick_has_str_marker /media/sda1 && _dev_str=1
+                if ! umount /media/sda1 2>/dev/null; then
+                    setup_log "stick: could not unmount the read-only look at $_dev, leaving it alone"
+                    continue
+                fi
+                if [ -z "$_dev_str" ]; then
+                    setup_log "stick: $_dev is not an STR stick (no STR marker at its top level), leaving it alone"
+                    continue
+                fi
+            fi
             [ -n "$_fsck" ] && "$_fsck" -a "$_dev" >/dev/null 2>&1
             if mount -t vfat -o rw "$_dev" /media/sda1 2>/dev/null; then
                 if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/install.sh ]; then
@@ -3041,7 +3159,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
 
         # Flush the recon to the stick NOW: M_air below may reboot, and this
         # boot's trace must survive. One bulk copy is boot-safe (not per-line).
-        if [ -d "$STICK" ] && [ -w "$STICK" ]; then
+        if [ -d "$STICK" ] && [ -w "$STICK" ] && stick_has_str_marker "$STICK"; then
             cp "$SETUP_LOG_NAND" "$SETUP_LOG" 2>/dev/null && sync 2>/dev/null
         fi
         setup_log "M_jukebox: === END (winner=$WINNER) ==="
@@ -5470,6 +5588,10 @@ log "bootstrap complete"
 # cleanup behavior.
 if [ -e "$STICK/keep-open" ]; then
     setup_log "keep-open marker on stick — skipping umount for live debug"
+elif ! stick_has_str_marker "$STICK"; then
+    # No STR stick at $STICK: either none is in, or the one that is in is the
+    # user's own (a music stick). Neither is ours to unmount or remount.
+    setup_log "post-bootstrap: no STR stick at $STICK, nothing to unmount"
 else
 #
 # Detached background block so run.sh can return immediately
