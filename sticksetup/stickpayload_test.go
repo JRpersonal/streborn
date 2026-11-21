@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -181,5 +182,62 @@ func TestOtherFilesSummaryNamesNothing(t *testing.T) {
 	}
 	if n, size, exts := OtherFilesSummary(filepath.Join(dir, "missing")); n != 0 || size != 0 || len(exts) != 0 {
 		t.Errorf("an unreadable root: %d, %d, %v", n, size, exts)
+	}
+}
+
+// bootScriptMarkers returns the names stick_has_str_marker in the given boot
+// script treats as "this is an STR or Bose stick".
+func bootScriptMarkers(t *testing.T, script string) map[string]bool {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "usb-stick", script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := strings.ReplaceAll(string(b), "\r\n", "\n")
+	start := strings.Index(src, "\nstick_has_str_marker() {\n")
+	if start < 0 {
+		t.Fatalf("stick_has_str_marker not found in %s", script)
+	}
+	body := src[start:]
+	if end := strings.Index(body, "\n}\n"); end > 0 {
+		body = body[:end]
+	}
+	from := strings.Index(body, "for _shsm in")
+	to := strings.Index(body, "; do")
+	if from < 0 || to < from {
+		t.Fatalf("marker list not found in %s's stick_has_str_marker", script)
+	}
+	set := map[string]bool{}
+	for _, f := range strings.Fields(body[from+len("for _shsm in") : to]) {
+		if f != `\` {
+			set[f] = true
+		}
+	}
+	return set
+}
+
+// A stick the install wizard wrote must never look like a user's own stick to
+// the boot scripts: they would then not wait for it, not fsck it and not read
+// it. So every payload file is a marker. Files STR writes onto a stick it
+// already recognised (setup.log, cap*.ogg) must not be: a music stick an older
+// STR wrote them onto would otherwise count as STR's for good.
+func TestBootScriptMarkersCoverThePayload(t *testing.T) {
+	for _, script := range []string{"run.sh", "rc.local"} {
+		markers := bootScriptMarkers(t, script)
+		for _, n := range PayloadFileNames() {
+			if !markers[n] {
+				t.Errorf("%s: payload file %q is not an STR stick marker in stick_has_str_marker", script, n)
+			}
+		}
+		for _, n := range []string{"Update.stu", "remote_services"} {
+			if !markers[n] {
+				t.Errorf("%s: Bose marker %q missing from stick_has_str_marker", script, n)
+			}
+		}
+		for _, n := range []string{"setup.log", "setup.log.mirror", "cap1.ogg"} {
+			if markers[n] {
+				t.Errorf("%s: %q must not be a marker", script, n)
+			}
+		}
 	}
 }

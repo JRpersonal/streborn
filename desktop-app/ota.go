@@ -1399,38 +1399,38 @@ func (a *App) writeStickFiles(host string) {
 	a.unmountStick(host, mp, dev)
 }
 
-// mountStick locates the STR USB stick on the box and ensures it is mounted,
-// returning the mount point and backing block device (e.g. /dev/sda1). It
-// reuses an existing vfat mount that already carries install.sh; otherwise it
-// mounts the first candidate vfat partition that does at /tmp/str-stick. ok is
-// false when no STR stick is present. The mount persists across the SSH session
-// so the subsequent per-file writes reach it.
-func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
-	// POSIX-sh (busybox) script: no awk/bashisms. For each candidate stick
-	// device, unmount any existing mount, fsck it, then mount fresh at
-	// /tmp/str-stick and keep the one that carries install.sh.
-	//
-	// The fsck is essential (live 2026-06-11, Portable): the speaker does NOT
-	// cleanly unmount the stick, so its FAT is left dirty ("Volume was not
-	// properly unmounted"). A fresh RW mount is fine for a small write, but the
-	// 11 MB agent binary trips a FAT inconsistency partway and the default
-	// errors=remount-ro flips the filesystem read-only, so the next file write
-	// fails with "Input/output error" and the stick is left half-updated. The
-	// box then boot-syncs its OLD files back onto NAND, reverting the OTA. A
-	// fsck.vfat -a clears the dirty FAT first so the whole set writes cleanly
-	// (verified live: an 11 MB write that failed before succeeded after fsck).
-	// A stick that has sat in the box since a previous session is sometimes not
-	// re-enumerated as a block node after a reboot/standby, so the device probe
-	// found nothing and we wrongly logged "no stick" (Jens, live 2026-06-17:
-	// "USB stick detection is still unreliable; the inserted stick may need
-	// re-mounting before the OTA"). So before probing we nudge the SCSI layer to
-	// rescan, then run the device loop up to 3 times with a 1 s settle so a stick
-	// that appears a beat late is still caught. The marker check matches the
-	// agent's stickReallyMounted (#179): any STR program file, not just
-	// install.sh, so a stick written by any sticksetup vintage is recognised. The
-	// devices actually seen are echoed for diagnostics when the probe still finds
-	// nothing.
-	const script = `PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
+// mountStickScript is the POSIX-sh (busybox) script mountStick runs over SSH:
+// no awk/bashisms. For each candidate stick device it first makes sure the
+// stick is STR's, then unmounts any existing mount, fscks it, mounts it fresh
+// at /tmp/str-stick and keeps the one that carries an STR program file.
+//
+// A stick that is NOT STR's (a music stick left in the speaker) is never
+// unmounted, fscked or mounted read-write. A mounted one is judged where it is
+// mounted; an unmounted one gets a read-only look first and is skipped when
+// that look finds no marker. Only when the read-only look finds a marker, or
+// cannot be made at all, does the fsck + fresh mount below run, as before.
+//
+// The fsck is essential (live 2026-06-11, Portable): the speaker does NOT
+// cleanly unmount the stick, so its FAT is left dirty ("Volume was not
+// properly unmounted"). A fresh RW mount is fine for a small write, but the
+// 11 MB agent binary trips a FAT inconsistency partway and the default
+// errors=remount-ro flips the filesystem read-only, so the next file write
+// fails with "Input/output error" and the stick is left half-updated. The
+// box then boot-syncs its OLD files back onto NAND, reverting the OTA. A
+// fsck.vfat -a clears the dirty FAT first so the whole set writes cleanly
+// (verified live: an 11 MB write that failed before succeeded after fsck).
+// A stick that has sat in the box since a previous session is sometimes not
+// re-enumerated as a block node after a reboot/standby, so the device probe
+// found nothing and we wrongly logged "no stick" (Jens, live 2026-06-17:
+// "USB stick detection is still unreliable; the inserted stick may need
+// re-mounting before the OTA"). So before probing we nudge the SCSI layer to
+// rescan, then run the device loop up to 3 times with a 1 s settle so a stick
+// that appears a beat late is still caught. The marker check matches the
+// agent's stickReallyMounted (#179): any STR program file, not just
+// install.sh, so a stick written by any sticksetup vintage is recognised. The
+// devices actually seen are echoed for diagnostics when the probe still finds
+// nothing.
+const mountStickScript = `PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
 MP=""; DEV=""; SEEN=""
 mkdir -p /tmp/str-stick
 # Best-effort USB/SCSI re-enumeration for a stick inserted but not yet showing
@@ -1444,6 +1444,8 @@ while [ "$attempt" -le 3 ]; do
     case " $SEEN " in *" $dev "*) ;; *) SEEN="$SEEN $dev" ;; esac
     cur=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
     if [ -n "$cur" ]; then
+      # Mounted but not STR's (a music stick): leave it exactly as it is.
+      has_marker "$cur" || continue
       umount "$cur" 2>/dev/null
       # Still mounted (umount busy)? Use that mount as-is; do NOT fsck a mounted FS
       # or mount the same device twice (a double vfat mount corrupts writes).
@@ -1455,6 +1457,15 @@ while [ "$attempt" -le 3 ]; do
     fi
     # Device is unmounted now: fsck the (possibly dirty) FAT, then mount fresh.
     umount /tmp/str-stick 2>/dev/null
+    # One that was not mounted at all gets a read-only look first, so a stick
+    # that is not STR's is never fscked or mounted read-write. When even the
+    # read-only mount fails, go on as before: that is the dirty stick the fsck
+    # is there for.
+    if [ -z "$cur" ] && mount -t vfat -o ro "$dev" /tmp/str-stick 2>/dev/null; then
+      if has_marker /tmp/str-stick; then look=str; else look=foreign; fi
+      umount /tmp/str-stick 2>/dev/null || continue
+      [ "$look" = str ] || continue
+    fi
     fsck.vfat -a "$dev" >/dev/null 2>&1 || dosfsck -a -w "$dev" >/dev/null 2>&1
     if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
       if has_marker /tmp/str-stick; then MP=/tmp/str-stick; DEV="$dev"; break; fi
@@ -1467,7 +1478,15 @@ while [ "$attempt" -le 3 ]; do
 done
 echo "STR_STICK_SEEN=$SEEN"
 if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else echo STR_STICK_NONE; fi`
-	out, err := boxSSHOutput(host, script, 45*time.Second)
+
+// mountStick locates the STR USB stick on the box and ensures it is mounted,
+// returning the mount point and backing block device (e.g. /dev/sda1). It
+// reuses an existing vfat mount that already carries install.sh; otherwise it
+// mounts the first candidate vfat partition that does at /tmp/str-stick. ok is
+// false when no STR stick is present. The mount persists across the SSH session
+// so the subsequent per-file writes reach it.
+func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
+	out, err := boxSSHOutput(host, mountStickScript, 45*time.Second)
 	if err != nil {
 		a.logger.Info("OTA stick refresh: stick probe/mount failed", "host", host, "err", err, "out", strings.TrimSpace(out))
 		return "", "", false
