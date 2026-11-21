@@ -52,6 +52,23 @@ func TestHeldIHeartStationIsKeptToo(t *testing.T) {
 	}
 }
 
+// A Deezer album the speaker plays by its id (docs/streaming/deezer.md): a
+// held key keeps it as the speaker's own item, like a Pandora station.
+func TestHeldDeezerItemIsKeptAsANativePreset(t *testing.T) {
+	store := holdTestStore(t)
+	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	item := marge.HeldItem{Slot: 3, Source: "DEEZER", Type: "album", Location: "376222197",
+		SourceAccount: "user@example.com", ItemName: "Paschtaschutta"}
+	if err := keep(item); err != nil {
+		t.Fatalf("Deezer item refused: %v", err)
+	}
+	got, _ := store.Get(3)
+	if !got.IsNative() || got.Source != "Deezer" || got.Native.Source != "DEEZER" ||
+		got.Native.ItemType != "album" || got.Native.Location != "376222197" || got.Name != "Paschtaschutta" {
+		t.Fatalf("stored %+v / %+v", got, got.Native)
+	}
+}
+
 // The boot-time sync re-states every slot. A key the user renamed in the app
 // must keep its name, and no write may happen.
 func TestHeldNativeReStateIsNoWriteAndKeepsARename(t *testing.T) {
@@ -95,7 +112,7 @@ func TestHeldNativeAlreadyOnAnotherKeyIsRefused(t *testing.T) {
 // Sources STR does not keep stay refused, and the radio path is unchanged.
 func TestHeldUnknownSourcesStillRefused(t *testing.T) {
 	store := holdTestStore(t)
-	for _, src := range []string{"UPNP", "DEEZER", "SPOTIFY", "SOURCE#150", ""} {
+	for _, src := range []string{"UPNP", "AMAZON", "SPOTIFY", "SOURCE#150", ""} {
 		_, _, err := heldPresetCandidate(store, heldLive{}, marge.HeldItem{Slot: 2, Source: src, Location: "x", ItemName: "x"})
 		if !errors.Is(err, errNotKeepable) {
 			t.Fatalf("source %q: err=%v, want errNotKeepable", src, err)

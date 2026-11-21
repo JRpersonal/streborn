@@ -69,6 +69,11 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 				slog.Int("bodyBytes", len(bodyCopy)))
 		}
 
+		// Deezer (deezernewlogin.go): inside a login attempt's window every
+		// request is recorded with the attempt; outside it, one that names
+		// Deezer gets an INFO line. Path and size only, never the body.
+		s.noteDeezerRequest(r, entry.Path, len(bodyCopy), deezerRequestNamed(r.URL.Path, string(bodyCopy)))
+
 		// At debug level so the periodic Bose Lisa polls (every few min)
 		// do not flood the log. On errors INFO/WARN is logged in the
 		// handler.

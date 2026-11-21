@@ -208,7 +208,7 @@ export async function saveCurrentToSlot(slot, report = null, { onConflict = null
     return;
   }
 
-  // Pandora or iHeartRadio playing: the speaker's own client plays it and the
+  // Pandora, iHeartRadio or Deezer playing: the speaker's own client plays it and the
   // item lives only on the speaker, so the agent reads it from there and keeps
   // it on the key as the speaker's own item. No stream URL is involved.
   if (nativeServiceSaveable(state.nowSource)) {

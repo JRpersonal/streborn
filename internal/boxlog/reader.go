@@ -351,6 +351,12 @@ func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.sectionSna
 // SSIDs hashed, so a bundle carries the minutes before a report.
 func (r *Reader) TailSnapshot() []string { return r.forensics.tailSnapshot() }
 
+// DeezerTailSnapshot is the box_syslog_deezer debug section: every firmware
+// line about Deezer or a music-service account call this run, redacted, so
+// the Deezer login test (docs/streaming/deezer.md, A2) can be read from a
+// bundle taken minutes later.
+func (r *Reader) DeezerTailSnapshot() map[string]any { return r.forensics.deezerSnapshot() }
+
 // SetupTailSnapshot is the box_setup_tail debug section: the ring as it stood
 // when the firmware's setup state machine first spoke, plus the lines that
 // followed. Empty on a box that never entered setup, which is the answer for

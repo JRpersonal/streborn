@@ -71,7 +71,7 @@ func TestNativeServiceLabelAndSameItem(t *testing.T) {
 			t.Errorf("%s -> %q/%v", src, got, ok)
 		}
 	}
-	for _, src := range []string{"DEEZER", "LOCAL_INTERNET_RADIO", "SPOTIFY", ""} {
+	for _, src := range []string{"AMAZON", "LOCAL_INTERNET_RADIO", "SPOTIFY", ""} {
 		if _, ok := NativeServiceLabel(src); ok {
 			t.Errorf("%s must not be a native service", src)
 		}

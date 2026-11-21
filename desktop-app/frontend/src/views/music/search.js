@@ -58,6 +58,8 @@ import { effectivePlayTarget } from './group.js';
 import { scheduleLiveBitrate, scheduleLiveTitle } from './live.js';
 import { renderNowPlayingBar } from './nowplaying.js';
 import { openPandoraPick, playPandoraRow, renderPandoraStations } from './pandora.js';
+import { isDeezerLink } from '../../deezer.js';
+import { renderDeezerLinkCard } from './deezerlink.js';
 import { openPick } from './picker.js';
 import { renderPresets } from './presettiles.js';
 import { refreshStatus } from './status.js';
@@ -170,6 +172,9 @@ async function doSearch() {
   syncSearchModeButtons();
   state.searchOffset = 0;
   if (!q) { return doTop(); }
+  // A pasted Deezer link plays on the speaker's own Deezer client, not as a
+  // stream: checked first, since it is an https URL too (deezerlink.js).
+  if (isDeezerLink(q)) { renderDeezerLinkCard(q); return; }
   // A pasted stream URL is not a name query: look it up in the directory
   // by URL (a known station renders as a normal result, logo and all), or
   // fall back to a single synthetic play-this-URL card.

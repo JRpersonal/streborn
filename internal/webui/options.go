@@ -326,6 +326,14 @@ func WithNativeServices(b NativeServicesBackend) Option {
 	return func(s *Server) { s.native = b }
 }
 
+// WithDeezer wires the stand-in's side of a Deezer login (the kept login and
+// the forensics of a new one, internal/marge/deezernewlogin.go) to
+// /api/deezer/account. Nil leaves that endpoint answering 501; Deezer links
+// (/api/deezer/play) need only the speaker.
+func WithDeezer(b DeezerBackend) Option {
+	return func(s *Server) { s.deezer = b }
+}
+
 // WithRegionResolver wires the region resolver: PUT /api/region feeds it, and
 // /api/agent/version reports the effective region from it.
 func WithRegionResolver(r *region.Resolver) Option {
