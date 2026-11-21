@@ -333,13 +333,24 @@ var numericProviderID = map[string]string{
 // radio source (3) and the media servers (10+). A source whose enum has no
 // known numeric id is skipped rather than guessed: a wrong reference risks the
 // whole account document.
-func (s *Server) reflectedFullSourcesXML() string {
+//
+// A carried-over DEEZER source whose account matches the login the speaker
+// held before STR (deezerlogin.go) carries that login as its credential,
+// revealed only when reveal is set (the speaker itself asking over loopback).
+// Every other source keeps the empty credential it always had.
+func (s *Server) reflectedFullSourcesXML(reveal bool) string {
 	const ts = "2020-01-01T00:00:00.000+00:00"
 	var b strings.Builder
 	for _, r := range s.reflectedAccountSources() {
+		cred := `<credential type="token"></credential>`
+		if r.typ == "DEEZER" {
+			if typ, val, ok := s.keptDeezerFor(r.account, reveal); ok {
+				cred = `<credential type="` + xmlEscapeText(typ) + `">` + xmlEscapeText(val) + `</credential>`
+			}
+		}
 		b.WriteString(`<source id="` + r.id + `" type="Audio">` +
 			`<createdOn>` + ts + `</createdOn>` +
-			`<credential type="token"></credential>` +
+			cred +
 			`<name>` + xmlEscapeText(r.name) + `</name>` +
 			`<sourceproviderid>` + r.providerID + `</sourceproviderid>` +
 			`<sourcename>` + xmlEscapeText(r.typ) + `</sourcename>` +
@@ -388,7 +399,58 @@ func (s *Server) reflectedAccountSources() []reflectedAccountSource {
 		})
 		i++
 	}
+	// A Deezer login the speaker held before STR (deezerlogin.go) is named
+	// even when the reflect file has no entry for it: the snapshot that seeds
+	// that file reads /sources, which an older STR had already emptied.
+	if k, ok := s.keptDeezer(); ok && !hasReflectedAccount(out, "DEEZER", k.Account) {
+		name := strings.TrimSpace(k.DisplayName)
+		if name == "" {
+			name = "Deezer"
+		}
+		out = append(out, reflectedAccountSource{
+			id: strconv.Itoa(100 + i), typ: "DEEZER", providerID: numericProviderID["DEEZER"], name: name, account: k.Account,
+		})
+	}
 	return out
+}
+
+// hasReflectedAccount reports whether the list names typ with this account.
+func hasReflectedAccount(list []reflectedAccountSource, typ, account string) bool {
+	for _, r := range list {
+		if r.typ == typ && strings.EqualFold(strings.TrimSpace(r.account), strings.TrimSpace(account)) {
+			return true
+		}
+	}
+	return false
+}
+
+// keptDeezerListXML is the kept Deezer login as an entry of the account
+// source list (GET .../sources), which the firmware reads right after a
+// registration to promote the source to READY. "" when none is kept.
+func (s *Server) keptDeezerListXML(reveal bool) string {
+	r, ok := s.keptDeezerSource()
+	if !ok {
+		return ""
+	}
+	typ, val, _ := s.keptDeezerFor(r.account, reveal)
+	return `<source id="` + r.id + `" type="Audio" status="READY">` +
+		`<credential type="` + xmlEscapeText(typ) + `">` + xmlEscapeText(val) + `</credential>` +
+		`<name>` + xmlEscapeText(r.name) + `</name><username>` + xmlEscapeText(r.account) + `</username>` +
+		`<sourceproviderid>14</sourceproviderid><sourcename>DEEZER</sourcename></source>`
+}
+
+// keptDeezerSource is the /full entry that carries the kept Deezer login.
+func (s *Server) keptDeezerSource() (reflectedAccountSource, bool) {
+	k, ok := s.keptDeezer()
+	if !ok {
+		return reflectedAccountSource{}, false
+	}
+	for _, r := range s.reflectedAccountSources() {
+		if r.typ == "DEEZER" && strings.EqualFold(strings.TrimSpace(r.account), k.Account) {
+			return r, true
+		}
+	}
+	return reflectedAccountSource{}, false
 }
 
 // respondProviderSettings responds to /streaming/account/<id>/provider_settings.
@@ -462,7 +524,7 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request)
 		`<mode>global</mode>` +
 		`<preferredLanguage>en</preferredLanguage>` +
 		`<providerSettings/>` +
-		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + s.nativeFullXML(fromLoopback(r)) + `</sources>` +
+		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML(fromLoopback(r)) + s.nativeFullXML(fromLoopback(r)) + `</sources>` +
 		`</account>`))
 }
 
@@ -706,6 +768,13 @@ func (s *Server) respondAddSource(w http.ResponseWriter, r *http.Request) {
 		}
 		s.noteNativeRegistration(typ, r, string(body), false)
 	}
+	// Deezer: answered as the Deezer source it is, and a credential it
+	// carries is kept (deezerlogin.go). Filing it as a media server, as the
+	// generic answer below does, dropped the login.
+	if isDeezerRegistration(string(body)) {
+		s.respondDeezerAddSource(w, r, string(body))
+		return
+	}
 	username := firstXMLValue(string(body), "username")
 	providerID := firstXMLValue(string(body), "sourceproviderid")
 	s.logger.Info("addSource callback answered", slog.String("comp", "marge"),
@@ -765,7 +834,7 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, r *http.Request) {
 	for _, r := range regs {
 		b.WriteString(renderAccountSource(format, r))
 	}
-	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String() + s.nativeListXML(fromLoopback(r))
+	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String() + s.nativeListXML(fromLoopback(r)) + s.keptDeezerListXML(fromLoopback(r))
 	var body string
 	switch format {
 	case "wrap":

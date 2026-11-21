@@ -26,6 +26,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxlog"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
+	"github.com/JRpersonal/streborn/internal/boxsources"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/clocksync"
@@ -461,6 +462,10 @@ func (a *agent) buildStores() error {
 	return nil
 }
 
+// keptDeezerLoginPath is where the speaker's own Deezer login is kept (mode
+// 0600, never leaves the speaker; see internal/marge/deezerlogin.go).
+const keptDeezerLoginPath = "/mnt/nv/streborn/deezer-login.json"
+
 // buildMarge creates the marge stand-in (streaming.bose.com) with its stores
 // and forensic sections, starts the deviceID correction and the pair
 // adoption, and records why this agent started.
@@ -474,10 +479,17 @@ func (a *agent) buildMarge() error {
 	// registrations; check the keys once more after the last one.
 	bootAccountResync := newAccountResync(accountResyncBootWindow, accountResyncDelay,
 		askPresetRecheckAfterAccountRead(logger))
+	// Keep the Deezer login the speaker already holds (docs/streaming/deezer.md).
+	// Read here, before the stand-in below listens, so the firmware's own
+	// Sources.xml is read before STR answers its first account sync of this
+	// boot. One file read per start; a speaker without a Deezer login gets no
+	// file and no change.
+	marge.CaptureKeptDeezerLogin(boxsources.Glob, keptDeezerLoginPath, logger.With("comp", "marge"))
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
 		marge.WithAccountFetchHook(bootAccountResync.noteAccountRead),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
+		marge.WithKeptDeezerLogin(keptDeezerLoginPath),
 		// Persist the stereo-pair record so the firmware's group poll keeps
 		// getting the same answer across agent restarts (a "not grouped"
 		// fallback after a restart is what invited the firmware to re-create
@@ -588,6 +600,11 @@ func (a *agent) buildMarge() error {
 	webui.RegisterDebugSection("preset_recovery", presetRecoveryStatus)
 	webui.RegisterDebugSection("marge_recent_requests", func() any {
 		return margeSrv.RecentRequestLines(60)
+	})
+	// Whether a Deezer login is kept for the account document, its type and
+	// origin: never the login, never the account.
+	webui.RegisterDebugSection("deezer_login", func() any {
+		return margeSrv.DeezerLoginSnapshot()
 	})
 	// The stereo-pair record as THIS box's marge stores it. A bundle from each
 	// member shows in one glance whether the pair view diverged (the RIGHT box
