@@ -14,7 +14,7 @@ import (
 // box does not list at all is treated as restorable rather than silently dropped.
 func TestPartitionRestorable(t *testing.T) {
 	cloud := []boxsnapshot.Preset{
-		{Slot: 3, Source: "DEEZER", SourceAccount: "1456373802"},
+		{Slot: 3, Source: "DEEZER", SourceAccount: "1234567890"},
 		{Slot: 4, Source: "DEEZER_HIFI"},
 		{Slot: 5, Source: "AMAZON"},
 	}

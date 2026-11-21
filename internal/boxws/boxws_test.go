@@ -224,7 +224,7 @@ func TestHandleMessage_PresetsUpdatedCapturesForeignSource(t *testing.T) {
 	// (Deezer) with their full ContentItem so it can show/preserve/recall them
 	// (Option C). One Deezer playlist preset plus one radio preset.
 	frame := `<updates><presetsUpdated><presets>` +
-		`<preset id="3"><ContentItem source="DEEZER" type="playlist" location="123456789" sourceAccount="1456373802"><itemName>My Flow</itemName></ContentItem></preset>` +
+		`<preset id="3"><ContentItem source="DEEZER" type="playlist" location="123456789" sourceAccount="1234567890"><itemName>My Flow</itemName></ContentItem></preset>` +
 		`<preset id="1"><ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="http://wdr2.mp3" sourceAccount=""><itemName>WDR 2</itemName></ContentItem></preset>` +
 		`</presets></presetsUpdated></updates>`
 	c.handleMessage(context.Background(), []byte(frame))
@@ -242,7 +242,7 @@ func TestHandleMessage_PresetsUpdatedCapturesForeignSource(t *testing.T) {
 		return
 	}
 	if deezer.Source != "DEEZER" || deezer.Type != "playlist" || deezer.Location != "123456789" ||
-		deezer.SourceAccount != "1456373802" || deezer.Name != "My Flow" {
+		deezer.SourceAccount != "1234567890" || deezer.Name != "My Flow" {
 		t.Fatalf("Deezer preset fields wrong: %+v", *deezer)
 	}
 }

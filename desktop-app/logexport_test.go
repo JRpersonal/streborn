@@ -101,14 +101,14 @@ func TestAnonymizeBoseSourcesXML(t *testing.T) {
 		`<sourceItem source="BLUETOOTH" status="UNAVAILABLE" isLocal="true" multiroomallowed="true" />` +
 		`<sourceItem source="QPLAY" sourceAccount="QPlay1UserName" status="UNAVAILABLE" isLocal="true" multiroomallowed="true">QPlay1UserName</sourceItem>` +
 		`<sourceItem source="SPOTIFY" sourceAccount="SpotifyConnectUserName" status="UNAVAILABLE" isLocal="false" multiroomallowed="true">SpotifyConnectUserName</sourceItem>` +
-		`<sourceItem source="DEEZER" sourceAccount="1456373802" status="READY" isLocal="false" multiroomallowed="true">DeezerUser</sourceItem>` +
+		`<sourceItem source="DEEZER" sourceAccount="1234567890" status="READY" isLocal="false" multiroomallowed="true">DeezerUser</sourceItem>` +
 		`<sourceItem source="PANDORA" sourceAccount="listener@example.com" status="READY" isLocal="false" multiroomallowed="true">listener@example.com</sourceItem>` +
 		`</sources>`
 	got := anonymizeBoseSourcesXML(xml)
 
 	// The account id, the nickname that belongs to it, the address, and the
 	// device id must all be gone.
-	for _, leaked := range []string{`1456373802`, `DeezerUser`, `listener@example.com`, `0000000000C3`} {
+	for _, leaked := range []string{`1234567890`, `DeezerUser`, `listener@example.com`, `0000000000C3`} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("anonymized /sources still contains %q:\n%s", leaked, got)
 		}
@@ -130,7 +130,7 @@ func TestAnonymizeBoseSourcesXML(t *testing.T) {
 }
 
 func TestLooksLikeAccountIdentity(t *testing.T) {
-	personal := []string{"1456373802", "user@example.com", "31abcdefghijklmnop"}
+	personal := []string{"1234567890", "user@example.com", "31abcdefghijklmnop"}
 	notPersonal := []string{"", "AUX", "AUX1", "TV", "CBL-Sat", "BD-DVD", "HDMI 1",
 		"QPlay1UserName", "SpotifyConnectUserName", "AirPlay2DefaultUserName",
 		"StoredMusicUserName"}
@@ -303,14 +303,14 @@ func TestAnonymizeBoxSnapshotJSON(t *testing.T) {
 	in := `{"capturedAt":1750000000,"deviceID":"0000000000C3",
 	  "presets":[{"slot":3,"source":"DEEZER","type":"tracklistRadio",
 	    "location":"https://api.deezer.com/user/me/flow",
-	    "sourceAccount":"1456373802","name":"Flux"}],
-	  "sources":[{"source":"DEEZER","sourceAccount":"1456373802","status":"READY","displayName":"DeezerUser"},
+	    "sourceAccount":"1234567890","name":"Flux"}],
+	  "sources":[{"source":"DEEZER","sourceAccount":"1234567890","status":"READY","displayName":"DeezerUser"},
 	             {"source":"AUX","sourceAccount":"AUX","status":"READY","displayName":"AUX IN"}],
 	  "lostServices":["DEEZER"]}`
 
 	out := anonymizeBoxSnapshotJSON(in)
 
-	for _, leaked := range []string{"1456373802", "DeezerUser"} {
+	for _, leaked := range []string{"1234567890", "DeezerUser"} {
 		if strings.Contains(out, leaked) {
 			t.Errorf("account identity %q survived anonymisation:\n%s", leaked, out)
 		}
@@ -330,8 +330,8 @@ func TestAnonymizeBoxSnapshotJSON(t *testing.T) {
 // Unparseable input must not be passed through: a blob we cannot walk is a blob
 // we cannot promise carries no account.
 func TestAnonymizeBoxSnapshotJSONDropsWhatItCannotCheck(t *testing.T) {
-	out := anonymizeBoxSnapshotJSON(`not json at all, account=1456373802`)
-	if strings.Contains(out, "1456373802") {
+	out := anonymizeBoxSnapshotJSON(`not json at all, account=1234567890`)
+	if strings.Contains(out, "1234567890") {
 		t.Errorf("unparseable snapshot leaked its content: %s", out)
 	}
 	if anonymizeBoxSnapshotJSON("   ") != "" {
