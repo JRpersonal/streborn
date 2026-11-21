@@ -375,8 +375,28 @@ for a radio station and filed it under `radio`. Later agents recognise the
 file, but only `/api/queue/replay-card` plays more than the first track of
 an album.
 
-## Wi-Fi
+## Music library and a USB stick in the speaker
 
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`  | `/api/library/servers` | - | The media servers registered on this speaker, `[{"udn","name"}]`. While a USB stick is in the speaker, the last entry is the stick: `{"udn":"uuid:str-usb-<id>","name":"USB stick (<speaker>)","kind":"usb","location":"http://<host>/usb/device.xml"}`, with `location` built from the address you used (`:8888` or `:17008`). A stick that is not served has no `udn` and carries `"refusal"` instead: `install-stick`, `not-fat32`, `big-clusters`, `unreadable` or `unsupported-model`. Opening this list is also what lets the speaker mount a stick nothing mounted yet (read-only). |
+| `GET`  | `/api/library/browse?udn=<udn>&id=<container>&start=<n>` | - | One page of a folder of a registered server or of the stick: `{"server","folders":[{"id","title"}],"tracks":[{"title","url","art","mime",...}],"total","start","count"}`, or `{"offline":true,"server":"<name>"}`. `id` empty is the top level. Play a track with `POST /api/play` and its `url` and `mime`. |
+
+The stick itself is a UPnP ContentDirectory (LAN only, no SSDP
+announcement), so any DLNA client can browse it at its `location`:
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| `GET`  | `/usb/device.xml` | Device description (`MediaServer:1`). `404` when no music stick is served. |
+| `GET`  | `/usb/cds.xml` | ContentDirectory service description. |
+| `POST` | `/usb/control` | SOAP: `Browse` (`BrowseDirectChildren`, `BrowseMetadata`), `GetSystemUpdateID`, `GetSearchCapabilities`, `GetSortCapabilities`. `Search` answers UPnP error 401; an unknown object 701. Object ids are the stick-relative paths, `0` is the top level. |
+| `GET`  | `/usb/file/<path>` | A file, only `.mp3 .flac .m4a .aac .ogg .oga .wav .wma`, with Range support. The URL ends in the file's real name, which the speaker's renderer needs. |
+| `GET`  | `/usb/art/<path>` | A folder's cover: `cover`, `folder`, `front` or `albumart` as `.jpg`, `.jpeg` or `.png`. |
+
+A stick URL played on the speaker that holds the stick is fetched by it over
+`127.0.0.1:8888`; the agent rewrites its own LAN address there by itself.
+
+## Wi-Fi
 LAN-only, like every other call here, and refused from outside the private
 address ranges.
 
