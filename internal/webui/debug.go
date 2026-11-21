@@ -224,9 +224,13 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 
 	state := map[string]any{
 		"agent_log_tail": redactNetworkNamesInLog(readTail("/tmp/streborn-agent.log")),
-		"agent_log_nand": redactNetworkNamesInLog(readTailN("/mnt/nv/streborn/agent.log", 32*1024)),
+		// 96 KB, not 32: on a speaker playing Spotify the engine's own lines
+		// filled 32 KB in about thirteen minutes, so a bundle taken a quarter
+		// of an hour after a group misbehaved no longer showed the start of
+		// the session it was taken for (Jens' ST30, 2026-11-21).
+		"agent_log_nand": redactNetworkNamesInLog(readTailN("/mnt/nv/streborn/agent.log", 96*1024)),
 		// The CURRENT boot's agent log from its very first line, not a blind
-		// tail. agent_log_nand above is the last 32 KB of a file that spans
+		// tail. agent_log_nand above is the last 96 KB of a file that spans
 		// several boots, and on a chatty box that window no longer reaches back
 		// to the boot that failed: in the #873 bundles the failing boot's first
 		// lines were already gone at export time, so the one question a
