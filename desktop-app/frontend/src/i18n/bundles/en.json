@@ -321,6 +321,7 @@
   "library.usbNotFAT32": "The USB stick in {{name}} is not formatted as FAT32. Format it as FAT32, then copy the music onto it again.",
   "library.usbBigClusters": "The USB stick in {{name}} uses clusters larger than 32 KB, which the speaker cannot read. Format it again as FAT32 with clusters of 32 KB or less.",
   "library.usbUnreadable": "The USB stick in {{name}} could not be read. Unplug it, check it on a computer and plug it in again.",
+  "library.usbPullHint": "Before you pull the USB stick out, switch {{name}} to standby or play something else there.",
   "banner.recommendation": "Recommendation:",
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
   "banner.sshPersistentNote": "SSH access to this speaker is deliberately open. You can switch it off again in the speaker settings, under \"SSH access to this speaker\".",

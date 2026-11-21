@@ -484,6 +484,15 @@ export function libraryUSBNote(notices) {
   ).join('');
 }
 
+// libraryUSBPullHint is the one line shown while a speaker's music stick is
+// open: how to pull it out safely. STR never writes to the stick, but the
+// speaker's own firmware mounts it read-write, and a stick pulled while that
+// mount is busy can be left with a damaged FAT. '' for any other server.
+export function libraryUSBPullHint(server) {
+  if (!server || !server.usbSpeaker) return '';
+  return `<p class="lib2-hint">${escapeHtml(t('library.usbPullHint', { name: server.usbSpeaker }))}</p>`;
+}
+
 // localizeUSBServers names a speaker's music stick in the user's language. The
 // agent calls it "USB stick (Kitchen)" in English, for generic UPnP clients;
 // every place the Library shows or files a server's name then reads this one.
@@ -1810,8 +1819,10 @@ function ui2FolderRowsHTML() {
 function ui2ServerToolsHTML() {
   const cur = libState.servers.find((s) => s.udn === libState.currentUDN);
   // A speaker's USB stick is no network server: the other speakers cannot
-  // take it as a source of their own, and nothing was added by hand.
-  if (!cur || cur.usbSpeaker) return '';
+  // take it as a source of their own, and nothing was added by hand. What
+  // belongs to it is how to pull it out safely.
+  if (!cur) return '';
+  if (cur.usbSpeaker) return `<div class="lib2-server-tools">${libraryUSBPullHint(cur)}</div>`;
   const remove = cur.manual
     ? `<button type="button" class="u-btn u-btn--secondary" id="libManualRemoveBtn">${escapeHtml(t('library.removeServerBtn'))}</button>`
     : '';
@@ -2219,6 +2230,7 @@ function renderLibrary() {
       </div>
       ${notAnsweringNote}
       ${libraryUMSNote(cur)}
+      ${libraryUSBPullHint(cur)}
       <div class="library-onspeakers-msg" id="libOnSpeakersMsg"></div>`;
   }
 

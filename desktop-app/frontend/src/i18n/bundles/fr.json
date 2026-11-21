@@ -308,6 +308,7 @@
   "library.usbNotFAT32": "La clé USB dans {{name}} n'est pas formatée en FAT32. Formate-la en FAT32, puis copie à nouveau la musique dessus.",
   "library.usbBigClusters": "La clé USB dans {{name}} utilise des clusters de plus de 32 Ko, que l'enceinte ne peut pas lire. Reformate-la en FAT32 avec des clusters de 32 Ko au plus.",
   "library.usbUnreadable": "La clé USB dans {{name}} n'a pas pu être lue. Retire-la, vérifie-la sur un ordinateur, puis rebranche-la.",
+  "library.usbPullHint": "Avant de retirer la clé USB, mets {{name}} en veille ou choisis une autre source.",
   "banner.recommendation": "Recommandation :",
   "banner.sshRecommend": "L'accès SSH à cette enceinte est ouvert. Redémarrez l'enceinte une fois pour le refermer, sinon elle reste accessible aux autres sur votre réseau.",
   "banner.sshPersistentNote": "L’accès SSH à cette enceinte est volontairement ouvert. Vous pouvez le désactiver dans les réglages de l’enceinte, sous « Accès SSH à cette enceinte ».",

@@ -22,7 +22,7 @@ vi.mock('./api.js', () => ({
   boxFetch: vi.fn(),
 }));
 
-const { libraryUSBNote, localizeUSBServers } = await import('./views/library.js');
+const { libraryUSBNote, libraryUSBPullHint, localizeUSBServers } = await import('./views/library.js');
 const { setLocale } = await import('./i18n/index.js');
 const read = (loc) => JSON.parse(
   readFileSync(new URL(`./i18n/bundles/${loc}.json`, import.meta.url), 'utf8'));
@@ -79,9 +79,29 @@ describe('libraryUSBNote', () => {
   });
 });
 
+// The speaker's firmware mounts the stick read-write, so a stick pulled while
+// that mount is busy can be left with a damaged FAT. The open stick says how to
+// pull it out safely; no other server does.
+describe('libraryUSBPullHint', () => {
+  beforeAll(() => { setLocale('en'); });
+
+  it('tells how to pull the open stick out safely, in the user language', () => {
+    expect(libraryUSBPullHint({ udn: 'u', usbSpeaker: 'Kitchen' })).toContain('switch Kitchen to standby');
+    setLocale('de');
+    expect(libraryUSBPullHint({ udn: 'u', usbSpeaker: 'Küche' })).toContain('schalte Küche in den Standby');
+    setLocale('en');
+  });
+
+  it('says nothing for a network server or nothing at all, and escapes the name', () => {
+    expect(libraryUSBPullHint({ udn: 'uuid:nas', friendlyName: 'NAS' })).toBe('');
+    expect(libraryUSBPullHint(null)).toBe('');
+    expect(libraryUSBPullHint({ usbSpeaker: '<b>x</b>' })).not.toContain('<b>x</b>');
+  });
+});
+
 describe('the USB stick strings', () => {
   const keys = ['library.usbServerName', 'library.usbUnsupportedModel', 'library.usbInstallStick',
-    'library.usbNotFAT32', 'library.usbBigClusters', 'library.usbUnreadable'];
+    'library.usbNotFAT32', 'library.usbBigClusters', 'library.usbUnreadable', 'library.usbPullHint'];
   const bundles = ['de', 'fr', 'es', 'it', 'nl', 'pl', 'tr', 'uk', 'lt', 'lv', 'ar', 'ja', 'zh-Hant'];
 
   it('are in every bundle, translated, with the speaker placeholder', () => {

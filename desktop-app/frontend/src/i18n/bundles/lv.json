@@ -308,6 +308,7 @@
   "library.usbNotFAT32": "USB zibatmiņa ierīcē {{name}} nav formatēta kā FAT32. Formatē to kā FAT32 un pēc tam vēlreiz iekopē mūziku.",
   "library.usbBigClusters": "USB zibatmiņa ierīcē {{name}} izmanto klasterus, kas lielāki par 32 KB, un skaļrunis tos nevar nolasīt. Formatē to vēlreiz kā FAT32 ar klasteriem līdz 32 KB.",
   "library.usbUnreadable": "USB zibatmiņu ierīcē {{name}} neizdevās nolasīt. Izņem to, pārbaudi datorā un ievieto atpakaļ.",
+  "library.usbPullHint": "Pirms izņem USB zibatmiņu, pārslēdz {{name}} gaidstāves režīmā vai izvēlies citu avotu.",
   "banner.recommendation": "Ieteikums:",
   "banner.sshRecommend": "SSH piekļuve šim skaļrunim ir atvērta. Vienreiz pārstartējiet skaļruni, lai to atkal aizvērtu, citādi tam var piekļūt citi jūsu tīklā.",
   "banner.sshPersistentNote": "SSH piekļuve šai skandāi ir atstāta atvērta apzināti. To vari izslēgt skandās iestatījumos sadaļā „SSH piekļuve šai skandāi”.",

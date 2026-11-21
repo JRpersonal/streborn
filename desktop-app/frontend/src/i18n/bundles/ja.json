@@ -308,6 +308,7 @@
   "library.usbNotFAT32": "{{name}}のUSBメモリーはFAT32でフォーマットされていません。FAT32でフォーマットしてから、音楽をもう一度コピーしてください。",
   "library.usbBigClusters": "{{name}}のUSBメモリーは32 KBを超えるクラスターを使っており、スピーカーが読み取れません。クラスター32 KB以下のFAT32でフォーマットし直してください。",
   "library.usbUnreadable": "{{name}}のUSBメモリーを読み取れませんでした。取り外してパソコンで確認し、もう一度差し込んでください。",
+  "library.usbPullHint": "USBメモリーを抜く前に、{{name}}をスタンバイにするか、別のソースを選んでください。",
   "banner.recommendation": "推奨:",
   "banner.sshRecommend": "このスピーカーへの SSH アクセスが開いています。スピーカーを一度再起動して閉じてください。そのままだとネットワーク上の他の人からアクセスされる可能性があります。",
   "banner.sshPersistentNote": "このスピーカーの SSH 接続は意図的に開いています。スピーカー設定の「このスピーカーへの SSH 接続」でオフにできます。",

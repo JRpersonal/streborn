@@ -308,6 +308,7 @@
   "library.usbNotFAT32": "La memoria USB de {{name}} no está formateada en FAT32. Formatéala en FAT32 y vuelve a copiar la música en ella.",
   "library.usbBigClusters": "La memoria USB de {{name}} usa clústeres de más de 32 KB, que el altavoz no puede leer. Vuelve a formatearla en FAT32 con clústeres de 32 KB como máximo.",
   "library.usbUnreadable": "No se pudo leer la memoria USB de {{name}}. Desconéctala, compruébala en un ordenador y vuelve a conectarla.",
+  "library.usbPullHint": "Antes de sacar la memoria USB, pon {{name}} en espera o elige otra fuente.",
   "banner.recommendation": "Recomendación:",
   "banner.sshRecommend": "El acceso SSH a este altavoz está abierto. Reinicia el altavoz una vez para cerrarlo de nuevo; de lo contrario, otras personas de tu red pueden acceder a él.",
   "banner.sshPersistentNote": "El acceso SSH a este altavoz está abierto a propósito. Puedes desactivarlo en los ajustes del altavoz, en «Acceso SSH a este altavoz».",

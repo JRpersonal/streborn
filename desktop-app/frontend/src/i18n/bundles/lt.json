@@ -308,6 +308,7 @@
   "library.usbNotFAT32": "USB atmintukas, esantis {{name}}, nesuformatuotas FAT32 formatu. Suformatuok jį FAT32 formatu ir vėl nukopijuok muziką.",
   "library.usbBigClusters": "USB atmintukas, esantis {{name}}, naudoja didesnius nei 32 KB klasterius, kurių garsiakalbis negali nuskaityti. Iš naujo suformatuok jį FAT32 formatu su ne didesniais kaip 32 KB klasteriais.",
   "library.usbUnreadable": "Nepavyko nuskaityti USB atmintuko, esančio {{name}}. Ištrauk jį, patikrink kompiuteryje ir vėl įkišk.",
+  "library.usbPullHint": "Prieš ištraukdamas USB atmintuką, perjunk {{name}} į budėjimo režimą arba pasirink kitą šaltinį.",
   "banner.recommendation": "Rekomendacija:",
   "banner.sshRecommend": "SSH prieiga prie šio garsiakalbio yra atvira. Vieną kartą paleiskite garsiakalbį iš naujo, kad ją vėl uždarytumėte, kitaip jį gali pasiekti kiti jūsų tinkle.",
   "banner.sshPersistentNote": "SSH prieiga prie šios kolonėlės palikta atvira sąmoningai. Ją gali išjungti kolonėlės nustatymuose, dalyje „SSH prieiga prie šios kolonėlės“.",
