@@ -242,18 +242,6 @@ func (l *Library) onDisk(rel string) (string, error) {
 	return cands[0], nil
 }
 
-// idOf is the object id (UTF-8) of an on-disk path.
-func (l *Library) idOf(raw string) string {
-	if raw == "." || raw == "" {
-		return "0"
-	}
-	segs := strings.Split(raw, "/")
-	for i, s := range segs {
-		segs[i] = l.names.decode(s)
-	}
-	return strings.Join(segs, "/")
-}
-
 // Close releases the root handle, which must happen before an unmount.
 func (l *Library) Close() error { return l.root.Close() }
 
