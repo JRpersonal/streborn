@@ -598,6 +598,41 @@ func TestALatin1FirmwareMountShowsUmlautsAndPlays(t *testing.T) {
 	}
 }
 
+// The stick's name carries the speaker's name as UTF-8, byte for byte, in the
+// server list and in the device description ("Küche", not "KÃ¼che").
+func TestTheStickNameKeepsANonASCIISpeakerName(t *testing.T) {
+	f := newFakeStick(t, "rhino")
+	media := t.TempDir()
+	f.put(media, "a.mp3")
+	f.plug(fatSector("fat32", 64))
+	f.firmwareMount(media, "vfat")
+	s, _ := usbTestServer(t)
+	s.boxNameFn = func() (string, string) { return "Küche", "SoundTouch 10" }
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/library/servers", nil)
+	req.Host = "192.0.2.10:8888"
+	s.handleLibraryServers(rr, req)
+	if body := rr.Body.Bytes(); !bytes.Contains(body, []byte("USB stick (K\xc3\xbcche)")) || bytes.Contains(body, []byte("\xc3\x83")) {
+		t.Fatalf("server list: %q", body)
+	}
+	srv := startUSBAgent(t, s)
+	resp, err := http.Get(srv.URL + "/usb/device.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(resp.Body)
+	if !bytes.Contains(buf.Bytes(), []byte("<friendlyName>USB stick (K\xc3\xbcche)</friendlyName>")) {
+		t.Fatalf("description: %q", buf.String())
+	}
+	ds, err := dlna.DescribeServer(context.Background(), srv.URL+"/usb/device.xml")
+	if err != nil || ds.FriendlyName != "USB stick (Küche)" {
+		t.Fatalf("described as %q, %v", ds.FriendlyName, err)
+	}
+}
+
 func TestUSBUDNIsStablePerSpeaker(t *testing.T) {
 	s, _ := usbTestServer(t)
 	if s.usbUDN() != "uuid:str-usb-aabbccddeeff" || !s.isUSBUDN("uuid:STR-USB-AABBCCDDEEFF") || s.isUSBUDN("uuid:other") {
