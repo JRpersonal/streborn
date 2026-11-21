@@ -20,9 +20,12 @@ ever drops the frozen eSDK. The rest of this document is the spike trail.
 ## Known limitation: accounts in Spotify's PlayPlay-DRM cohort (2026)
 
 Since roughly December 2025 Spotify has been forcing a per-account DRM
-migration: accounts created after a cutoff somewhere in 2024/2025 get
-**every** legacy AES audio-key request refused with `code 1`, while older
-accounts on the same device, track, and network keep playing. This hits
+migration: affected accounts get **every** legacy AES audio-key request
+refused with `code 1`, while other accounts on the same device, track, and
+network keep playing. Newer accounts (created from about 2024 on) are hit
+most often, but account age is not a reliable rule: an account from 2022
+(#1077, 2026-11-21) and one more than eight years old (#1737) were refused
+too, as were older accounts reported on librespot-org/librespot#1649. This hits
 every open-source Spotify Connect client (go-librespot, librespot-org,
 spotifyd); official/eSDK partner clients use the licensed PlayPlay path
 and are unaffected, so the box's NATIVE Spotify Connect keeps working for
@@ -41,8 +44,9 @@ and client-token changes are all documented not to help, and implementing
 PlayPlay upstream was rejected as a DMCA hazard (go-librespot#317). Our
 fork already carries the mitigations that exist (alternative-track
 relinking, PR #267; skip-on-refusal, commit bad77f3). Discriminator for
-support: a pre-2024 account plays on the same (STR) device while the new
-account does not. Upstream tracking: librespot-org/librespot#1649,
+support: another account plays on the same (STR) device while this one
+does not. That proves the speaker and the engine fine and the refusal
+per account; asking for the account's creation date only gives a hint. Upstream tracking: librespot-org/librespot#1649,
 devgianlu/go-librespot#279. First field case: #78 (2026-08-01).
 
 Engine builds from JRpersonal/go-librespot#9 on (#480) stop on the third
