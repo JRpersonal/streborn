@@ -182,11 +182,14 @@ async function doSearch() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   const q = $('searchQ').value.trim();
   state.searchLastQuery = q;
-  state.searchLastMode = q ? 'search' : 'top';
+  state.searchLastMode = 'search';
+  // Search with an empty field answers with an empty list (discussion #1587):
+  // it used to open the top list, which reads as results for nothing typed.
+  // The top list has its own button. A search still on its way is dropped.
+  if (!q) { closeSearchList(); return; }
   state.searchListOpen = true;
   syncSearchModeButtons();
   state.searchOffset = 0;
-  if (!q) { return doTop(); }
   // A pasted stream URL is not a name query: look it up in the directory
   // by URL (a known station renders as a normal result, logo and all), or
   // fall back to a single synthetic play-this-URL card.
