@@ -1312,9 +1312,9 @@ func (a *agent) buildBoxLink() error {
 		onPlayModeKey:   webuiSrv.PlayModeKeyPress,
 		// Thumbs up with nothing else on the key saves the playing Spotify
 		// song to Liked Songs, thumbs down removes it (#1165).
-		onLikeKey:      webuiSrv.LikeKeyPress,
-		onUnlikeKey:    webuiSrv.UnlikeKeyPress,
-		onRadioStepKey: webuiSrv.RadioStepKey,
+		onLikeKey:   webuiSrv.LikeKeyPress,
+		onUnlikeKey: webuiSrv.UnlikeKeyPress,
+		onTrackKey:  webuiSrv.RemoteTrackKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).

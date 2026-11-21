@@ -660,7 +660,10 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// station context before the save-side unwrap existed.
 		uri, name, art, account, shuffle, repeat := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle, p.Repeat
 		go func() {
-			bg := context.Background()
+			// The caller's values travel with the recall (a recovery that
+			// must keep the track, recallintent), its deadline does not: the
+			// recall outlives the request that started it.
+			bg := context.WithoutCancel(ctx)
 			t0 := time.Now()
 			warm := s.spotifyReady == nil || s.spotifyReady()
 			if s.spotifyReady != nil && !s.spotifyReady() {

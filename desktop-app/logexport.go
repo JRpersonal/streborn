@@ -683,7 +683,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// truncated body is not valid JSON, so the old cap silently dropped the
 		// entire debugState from the bundle. The payload has grown past it: two
 		// dozen inline fields, several at their own 8 KB tail cap, the NAND
-		// agent log at 32 KB, the boot-marker log at 48 KB, the box setup tail,
+		// agent log at 96 KB, the boot-marker log at 48 KB, the box setup tail,
 		// plus every RegisterDebugSection provider. A box that actually had a
 		// setup episode is the box whose tails are FULL, so the very bundle
 		// that has to settle the question was the likeliest to arrive empty.

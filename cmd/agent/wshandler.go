@@ -119,9 +119,11 @@ type presetWsHandler struct {
 	// nothing else on the key. Both nil-safe.
 	onLikeKey   func()
 	onUnlikeKey func()
-	// onRadioStepKey steps to the next or previous radio key when the key
-	// trace reports Next or Previous (webui.RadioStepKey, #1619). nil-safe.
-	onRadioStepKey func(forward bool)
+	// onTrackKey answers Next or Previous as the key trace reports them
+	// (webui.RemoteTrackKey): a radio key steps to the next one (#1619), and
+	// a Spotify or queue press the gabbo skip frame missed still skips.
+	// nil-safe.
+	onTrackKey func(forward bool)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.

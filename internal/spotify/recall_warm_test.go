@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/recallintent"
 )
 
 // makeWarm makes m look like a box is attached and audibly streaming the
@@ -381,5 +383,29 @@ func TestRecallCutWindowAndStaleSnapshot(t *testing.T) {
 	m.noteSkipBoundary()
 	if got := m.LastBoundaryStaleKB(); got != 0 {
 		t.Errorf("LastBoundaryStaleKB = %d, want 0 (never negative)", got)
+	}
+}
+
+// STR's own recall after a skip (webui spotifyRecoverAfterSkip) keeps the
+// track the listener just chose: no next, no reshuffle, for a shuffle preset
+// and a resume preset alike (Jens' ST30, 2026-11-21: Back landed two songs on).
+func TestPlayWarmRecoveryRecallKeepsTheTrack(t *testing.T) {
+	for _, shuffle := range []bool{true, false} {
+		m, calls, cleanup := mockLibrespot(t)
+		const ctxURI = "spotify:playlist:abc"
+		makeWarm(m, ctxURI)
+		m.ArmRecallCut()
+		if err := m.Play(recallintent.WithKeepTrack(context.Background()), ctxURI, PlayOptions{Shuffle: shuffle}); err != nil {
+			t.Fatalf("Play: %v", err)
+		}
+		for _, p := range pathsOf(calls()) {
+			if p == "/player/next" || p == "/player/shuffle_context" || p == "/player/play" {
+				t.Errorf("shuffle=%v: a recovery recall called %s (calls %v)", shuffle, p, pathsOf(calls()))
+			}
+		}
+		if m.skipCutArmed() {
+			t.Errorf("shuffle=%v: no track boundary is coming, the cut must be cleared", shuffle)
+		}
+		cleanup()
 	}
 }

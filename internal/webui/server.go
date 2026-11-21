@@ -179,7 +179,11 @@ type Server struct {
 	likeKey likeKeyState
 	// radioStep runs the remote's Next/Prev while a radio key plays. See
 	// radiostep.go.
-	radioStep   radioStepState
+	radioStep radioStepState
+	// traceSkip pairs the key trace's Next/Prev with the gabbo skip frame on
+	// Spotify and the play queue, so a press the frame missed still skips.
+	// See traceskip.go.
+	traceSkip   traceSkipState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -362,7 +366,11 @@ type Server struct {
 	// acknowledged immediately and drained back-to-back by one worker, so a
 	// slow go-librespot ack can never stack button presses into a minute-long
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
-	spotifySkipCh   chan spotifySkipReq
+	spotifySkipCh chan spotifySkipReq
+	// spotifySkipSeq counts the Spotify skips handed to the queue, so a skip's
+	// recovery (spotifyRecoverAfterSkip) can tell that a newer press came in
+	// while it waited.
+	spotifySkipSeq  atomic.Uint64
 	spotifySkipOnce sync.Once
 	// spotifyHeardPrev is Back on a Spotify playlist, from the remote and
 	// the apps alike: the song before inside the first seconds heard, a
@@ -960,6 +968,15 @@ type Server struct {
 	// (playmodekey.go). nil means production.
 	radioStepPlayFn func(ctx context.Context, slot int) error
 	playModeShowFn  func(n oled.Notice)
+	// groupFollowerFn replaces the zone read that tells whether this speaker
+	// follows a group (zonePushWouldFightGroup), and traceSkipWait how long a
+	// traced Next/Prev waits for its gabbo frame (traceskip.go). Zero values
+	// mean production.
+	groupFollowerFn func() (bool, string)
+	traceSkipWait   time.Duration
+	// skipRecoverWaits replaces the two looks of a skip's recovery
+	// (spotifyRecoverAfterSkip, 5 s and 4 s). Zero means production.
+	skipRecoverWaits [2]time.Duration
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
