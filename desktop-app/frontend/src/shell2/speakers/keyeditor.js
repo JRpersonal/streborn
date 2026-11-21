@@ -351,7 +351,7 @@ function keysHTML(keys) {
   const rows = Array.from({ length: boxPresetRows(box, ed.presets) }, (_, i) => i + 1).map((row) => {
     const list = keys.filter((k) => k.row === row);
     if (!list.length) return '';
-    const head = row === 1 ? '' : `<p class="kae-row-label">${escapeHtml(row === 2 ? L('rowTwice') : row === 3 ? L('rowThrice') : t('preset.row.tab', { row }))}</p>`;
+    const head = row === 1 ? '' : `<p class="kae-row-label">${escapeHtml(row === 2 ? L('rowTwice') : L('rowThrice'))}</p>`;
     return head + `<div class="kae-keylist">${list.map((k) => {
       const on = k.slot === ed.slot;
       return `<button type="button" class="kae-key${on ? ' is-chosen' : ''}${k.empty ? ' is-empty' : ''}" data-slot="${k.slot}" data-kf="key-${k.slot}" aria-pressed="${on}">`

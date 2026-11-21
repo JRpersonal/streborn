@@ -2866,7 +2866,7 @@ var presetRowsOK = false;
 var presetRowsCount = 1;
 // presetRow is the row the Play tab shows, 1..presetRowsCount.
 var presetRow = 1;
-// litSlot is the key the highlight is on (1..60), 0 when none. It is kept by
+// litSlot is the key the highlight is on (1..18), 0 when none. It is kept by
 // slot, not by tile, so a rebuild or a switch of rows puts it back on the
 // right key and never on "the third tile" of the other row.
 var litSlot = 0;
@@ -2964,7 +2964,7 @@ function paintPresetRowSwitch() {
 function notePresetRows(av) {
   if (!av) return;
   var next = Number.parseInt(String(av.presetRows || ''), 10);
-  if (!Number.isInteger(next) || next < 1 || next > 10) next = 1;
+  if (!Number.isInteger(next) || next < 1 || next > 3) next = 1;
   var ok = next >= 2;
   if (next === presetRowsCount && ok === presetRowsOK) return;
   presetRowsCount = next;
@@ -4166,7 +4166,7 @@ function nativeSlot(loc, list) {
 function markPlaying(loc, queue, spKey, state) {
   var grid = document.getElementById('presets');
   if (!grid) return;
-  // Keys 7..60 are the extra rows; an agent without them never names them.
+  // Keys 7..18 are the extra rows; an agent without them never names them.
   var n = playingSlot(loc, lastPresetList) || nativeSlot(loc, lastPresetList) ||
     (spKey >= 1 && spKey <= 60 ? spKey : 0) || queueSlot(queue, lastPresetList);
   if (state !== 'PLAY_STATE' && state !== 'BUFFERING_STATE' && state !== 'PAUSE_STATE') n = 0;

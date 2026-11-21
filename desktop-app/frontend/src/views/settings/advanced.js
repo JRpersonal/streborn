@@ -15,7 +15,6 @@ import { normalizeKeyActions, sleepOn, snoozeOn, bassOn, isBassAction, actionOn,
 import {
   BoxAgentVersion,
   SetPreset,
-  SetPresetRows,
   RestoreBoxSnapshot,
   RebootBox,
   BrowserOpenURL,
@@ -121,17 +120,6 @@ export function renderAdvancedSections() {
   return {
     group: 'advanced',
     html: `
-    <div data-ui2-sec="presetRows" class="settings-section">
-      <h3>${escapeHtml(t('settingsView.presetRowsHeading'))}</h3>
-      <div class="setting-row">
-        <label for="presetRowsCount">${escapeHtml(t('settingsView.presetRowsLabel'))}</label>
-        <select id="presetRowsCount" disabled><option>${escapeHtml(t('common.loading'))}</option></select>
-        <button class="btn btn-mini" id="presetRowsSave" disabled>${escapeHtml(t('common.save'))}</button>
-      </div>
-      <small class="muted small">${escapeHtml(t('settingsView.presetRowsHelp'))}</small>
-      <small class="muted small hidden" id="presetRowsStatus" role="status"></small>
-    </div>
-
     <details data-ui2-sec="announce" class="settings-section settings-expert" id="announceSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       ${helpBlock(t('settingsView.announceHelp'))}
@@ -316,60 +304,6 @@ export function renderAdvancedSections() {
 
 export function wireAdvancedSections(ctx) {
   const { box } = ctx;
-
-  // This per-speaker setting keeps the desktop app, phone remote, and
-  // hardware key behavior in sync.
-  const rowsSelect = $('presetRowsCount');
-  const rowsSave = $('presetRowsSave');
-  const rowsStatus = $('presetRowsStatus');
-  const rowsSection = document.querySelector('[data-ui2-sec="presetRows"]');
-  if (rowsSelect && rowsSave) {
-    (async () => {
-      try {
-        const version = await BoxAgentVersion(box.host, box.port);
-        const current = Math.max(1, Math.min(10, parseInt(version.presetRows, 10) || 1));
-        const maxRows = Math.min(10, parseInt(version.presetRowsMax, 10) || 1);
-        if (maxRows < 2) {
-          if (rowsSection) rowsSection.hidden = true;
-          return;
-        }
-        const supported = Math.max(current, maxRows);
-        rowsSelect.innerHTML = Array.from({ length: supported }, (_, i) => i + 1).map(n =>
-          `<option value="${n}">${escapeHtml(t('settingsView.presetRowsOption', { rows: n, keys: n * 6 }))}</option>`,
-        ).join('');
-        rowsSelect.value = String(current);
-        rowsSelect.disabled = false;
-        rowsSave.disabled = false;
-      } catch {
-        if (rowsStatus) {
-          rowsStatus.textContent = t('settingsView.presetRowsUnavailable');
-          rowsStatus.classList.remove('hidden');
-        }
-      }
-    })();
-    rowsSave.onclick = async () => {
-      const rows = parseInt(rowsSelect.value, 10);
-      rowsSave.disabled = true;
-      try {
-        await SetPresetRows(box.host, box.port, rows);
-        const value = String(rows);
-        box.presetRows = value;
-        for (const known of state.boxes || []) {
-          if (known && known.host === box.host) known.presetRows = value;
-        }
-        if (state.currentBox && state.currentBox.host === box.host) {
-          state.currentBox.presetRows = value;
-          state.presetRow = Math.min(state.presetRow || 1, rows);
-          await deps.loadPresets();
-        }
-        reportDone(rowsSave, t('settingsView.presetRowsSaved'));
-      } catch (e) {
-        reportError(rowsSave, e);
-      } finally {
-        rowsSave.disabled = false;
-      }
-    };
-  }
 
   // Voice control: STR itself will never speak to Alexa (the old skill was
   // Bose's cloud talking to Bose's cloud, and a new one would mean an account,

@@ -517,7 +517,7 @@ export async function renameOutcome(slot, name, err, report = null, box = state.
 function keyNumHTML(slot) {
   const row = slotRow(slot);
   if (row === 1) return escapeHtml(keyLabel(slot, t));
-  const badge = row === 2 ? t('preset.row2.badge') : row === 3 ? t('preset.row3.badge') : t('preset.row.badge', { row });
+  const badge = row === 2 ? t('preset.row2.badge') : t('preset.row3.badge');
   return `<span class="row2-badge" aria-hidden="true">${escapeHtml(badge)}</span>`
     + `<span class="row2-key" aria-hidden="true">${escapeHtml(t('preset.key', { n: slotKey(slot) }))}</span>`
     + `<span class="visually-hidden">${escapeHtml(keyLabel(slot, t))}</span>`;
@@ -553,13 +553,12 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
     const more = [row === 1
       ? t('preset.row2.tabOnceName', { speaker })
       : row === 2 ? t('preset.row2.tabTwiceName', { speaker })
-        : row === 3 ? t('preset.row3.tabThriceName', { speaker })
-          : t('preset.row.tabName', { row, speaker })];
+        : t('preset.row3.tabThriceName', { speaker })];
     if (count) more.push(t('preset.row2.tabCountName', { n: count }));
     if (playing) more.push(t('preset.row2.tabPlayingName'));
     const visible = row === 1
       ? t('preset.row2.tabOnce')
-      : row === 2 ? t('preset.row2.tabTwice') : row === 3 ? t('preset.row3.tabThrice') : t('preset.row.tab', { row });
+      : row === 2 ? t('preset.row2.tabTwice') : t('preset.row3.tabThrice');
     return `<button type="button" role="tab" class="preset-row-tab" id="presetRowTab${row}" data-row="${row}"`
       + ` aria-selected="${selected ? 'true' : 'false'}" aria-controls="presets" tabindex="${selected ? '0' : '-1'}">`
       + `<span class="prt-label">${escapeHtml(visible)}</span>`
@@ -580,7 +579,7 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
     const showIntro = shownRow > 1 && rowCount(state.presets, shownRow) === 0;
     intro.classList.toggle('hidden', !showIntro);
     intro.innerHTML = showIntro
-      ? `<p>${escapeHtml(shownRow === 2 ? t('preset.row2.introBody') : shownRow === 3 ? t('preset.row3.introBody') : t('preset.row.intro', { row: shownRow }))}</p>`
+      ? `<p>${escapeHtml(shownRow === 2 ? t('preset.row2.introBody') : t('preset.row3.introBody'))}</p>`
         + `<button type="button" class="btn btn-mini" id="presetRow2SearchBtn">${escapeHtml(t('preset.row2.introSearch'))}</button>`
       : '';
     const go = $('presetRow2SearchBtn');

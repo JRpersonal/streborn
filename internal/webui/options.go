@@ -76,7 +76,7 @@ func (s *Server) nativePresetLocation(name, streamURL, art string) string {
 // itself, and a Spotify preset needs STR to tell the local engine which
 // playlist to load.
 //
-// An extra-row slot (7..60, #1110, #1657) is a no-op: it lives only in STR's store and is
+// An extra-row slot (7..18, #1110, #1657) is a no-op: it lives only in STR's store and is
 // reached by a double press, never through the firmware's own preset list.
 func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL, art string, isSpotify bool) error {
 	if !presets.IsBoxSlot(slot) {

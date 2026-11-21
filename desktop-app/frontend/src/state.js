@@ -21,7 +21,7 @@ export const state = {
   wifiCopy: {},        // host -> the last attempt to keep STR's copy of its Wi-Fi (wificopy.js)
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
-  presetRow: 1,        // the row of keys the grid shows: press count 1-10 (#1110, #1657)
+  presetRow: 1,        // the row of keys the grid shows: press count 1-3 (#1110, #1657)
   boxSnapshot: null,   // agent's pre-takeover snapshot (warns about lost cloud sources like Deezer)
   searchResults: [],
   drives: [],

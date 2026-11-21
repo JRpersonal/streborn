@@ -206,7 +206,7 @@ func (s *Server) holdSwapKeys(ctx context.Context, slot, other int, kind string)
 				s.logger.Warn("box preset sync failed", "slot", other, "err", err)
 			}
 		} else if presets.IsBoxSlot(other) {
-			// An extra-row key (7..60) was never on the speaker, nothing to remove.
+			// An extra-row key (7..18) was never on the speaker, nothing to remove.
 			if err := boxcli.RemovePreset(boxCtx, s.boxHost, other); err != nil {
 				s.logger.Warn("preset swap: box-side RemovePreset failed", "slot", other, "err", err)
 			}

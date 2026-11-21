@@ -43,14 +43,14 @@ describe('summarizePresetCopyError', () => {
 });
 
 describe('countValidPresetSlots', () => {
-  it('mirrors the backend filter: slot 1..60 with a non-empty name', () => {
+  it('mirrors the backend filter: slot 1..18 with a non-empty name', () => {
     expect(countValidPresetSlots([
       { slot: 1, name: 'A' },
       { slot: 6, name: 'B' },
       { slot: 7, name: 'Key 1 pressed twice' },
       { slot: 12, name: 'Key 6 pressed twice' },
       { slot: 13, name: 'Key 1 pressed three times' },
-      { slot: 61, name: 'out of range' },
+      { slot: 19, name: 'out of range' },
       { slot: 0, name: 'out of range' },
       { slot: 3, name: '' },
       null,

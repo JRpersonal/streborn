@@ -125,7 +125,7 @@ func TestHandlePresetSlotPutWire(t *testing.T) {
 		{"no store", 1, relax, func(t *testing.T) *Server { s := newSaveGateServer(t); s.presets = nil; return s },
 			http.StatusServiceUnavailable, "presets store not initialized\n"},
 		{"slot out of range", 19, relax, newSaveGateServer,
-			http.StatusBadRequest, "invalid slot, must be 1-60\n"},
+			http.StatusBadRequest, "invalid slot, must be 1-18\n"},
 		{"bad json", 1, `{"name":`, newSaveGateServer,
 			http.StatusBadRequest, "invalid json: unexpected EOF\n"},
 		{"empty folder", 1, `{"name":"Folder","type":"queue"}`, newSaveGateServer,

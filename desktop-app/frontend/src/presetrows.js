@@ -7,11 +7,11 @@
 // Pure (no DOM, no api.js), so the mapping and the gate are unit-tested.
 
 export const ROW_SIZE = 6;
-export const MAX_ROWS = 10;
+export const MAX_ROWS = 3;
 export const MAX_SLOT = ROW_SIZE * MAX_ROWS;
 
-// boxPresetRows is the configured number of rows the speaker offers. Old
-// agents without this field still infer the second row from existing presets.
+// boxPresetRows is the number of rows the speaker offers. Old agents without
+// this field still infer additional rows from existing presets.
 // presets is the store the app just read: a store that already holds a row-2
 // key proves the agent keeps them, even before discovery has re-read the
 // version (right after an update to a supporting agent).
@@ -63,7 +63,7 @@ export function keyNum(slot, t) {
   const row = slotRow(n);
   if (row === 2) return t('preset.row2.num', { n: slotKey(n) });
   if (row === 3) return t('preset.row3.num', { n: slotKey(n) });
-  return t('preset.row.num', { n: slotKey(n), row });
+  return t('preset.row3.num', { n: slotKey(n) });
 }
 
 // keyLabel is the label of a key on its own: "Key 1" or "Key 1 · 2×".
@@ -73,7 +73,7 @@ export function keyLabel(slot, t) {
   const row = slotRow(n);
   if (row === 2) return t('preset.row2.key', { n: slotKey(n) });
   if (row === 3) return t('preset.row3.key', { n: slotKey(n) });
-  return t('preset.row.key', { n: slotKey(n), row });
+  return t('preset.row3.key', { n: slotKey(n) });
 }
 
 // nowKeyTag is the key the now-playing line names: "Key 2" or "Key 1 · 2×"
@@ -107,7 +107,7 @@ export function presetsWithin(presets, rows) {
 // 'both' when the target keeps all configured rows, 'row1Only' as a compatible
 // marker when some later-press keys stayed behind, '' otherwise.
 export function copyRowsNote(sourcePresets, targetBox) {
-  const maxSource = (sourcePresets || []).reduce((max, p) => p && p.name ? Math.max(max, p.slot) : max, 0);
+  const maxSource = (sourcePresets || []).reduce((max, p) => p && p.name && p.slot >= 1 && p.slot <= MAX_SLOT ? Math.max(max, p.slot) : max, 0);
   if (maxSource <= ROW_SIZE) return '';
   const targetRows = boxPresetRows(targetBox);
   if (maxSource <= targetRows * ROW_SIZE) return 'both';

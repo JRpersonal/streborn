@@ -52,9 +52,9 @@ export function presetCopyConflict(message) {
 }
 
 // countValidPresetSlots mirrors the Go-side copy filter (a named slot the
-// target can hold: slots 1..60 on an agent with all ten rows, fewer on older
+// target can hold: slots 1..18 on an agent with all three rows, fewer on older
 // agents) so "total - failed" equals what the backend attempted.
-// maxSlot is the target's highest slot; it defaults to the current ten rows.
+// maxSlot is the target's highest slot; it defaults to the current three rows.
 export function countValidPresetSlots(presets, maxSlot = MAX_SLOT) {
   return (presets || []).filter(
     (p) => p && p.slot >= 1 && p.slot <= maxSlot && p.name,

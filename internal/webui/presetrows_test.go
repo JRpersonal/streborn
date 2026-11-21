@@ -129,7 +129,7 @@ func TestSecondRowNeverReachesTheSpeaker(t *testing.T) {
 	}
 }
 
-func TestAgentVersionAdvertisesTwoPresetRows(t *testing.T) {
+func TestAgentVersionAdvertisesThreePresetRows(t *testing.T) {
 	s := quietServer("127.0.0.1")
 	w := httptest.NewRecorder()
 	s.handleAgentVersion(w, httptest.NewRequest(http.MethodGet, "/api/agent/version", nil))
@@ -137,8 +137,11 @@ func TestAgentVersionAdvertisesTwoPresetRows(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out["presetRows"] != "2" {
-		t.Fatalf(`presetRows = %q, want "2"`, out["presetRows"])
+	if out["presetRows"] != "3" {
+		t.Fatalf(`presetRows = %q, want "3"`, out["presetRows"])
+	}
+	if _, ok := out["presetRowsMax"]; ok {
+		t.Fatal("fixed row count should not advertise a configurable maximum")
 	}
 }
 

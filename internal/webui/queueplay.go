@@ -2280,7 +2280,7 @@ func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 	s.logger.Info("skip: box re-attached to the Spotify stream", "why", why, "slot", slot)
 }
 
-// currentSpotifySlot returns the preset slot (1-60) the box is currently playing a
+// currentSpotifySlot returns the preset slot (1-18) the box is currently playing a
 // Spotify preset from, or 0 if it is not on a numbered Spotify preset stream (the
 // slot-less /spotify/stream.ogg, i.e. app-driven playback, or a non-Spotify
 // source). Read from lastPlay, the URL STR last pointed the box at.

@@ -19,7 +19,7 @@ import (
 // ---- Presets CRUD ----
 
 // invalidSlotMsg is the 400 answer for a preset slot outside 1..MaxSlot.
-const invalidSlotMsg = "invalid slot, must be 1-60"
+const invalidSlotMsg = "invalid slot, must be 1-18"
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	if s.presets == nil {

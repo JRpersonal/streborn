@@ -28,7 +28,6 @@ import (
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/internet"
 	"github.com/JRpersonal/streborn/internal/oled"
-	"github.com/JRpersonal/streborn/internal/presets"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -90,10 +89,9 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
 	}
-	// The per-speaker setting controls which press counts are active. Older
-	// agents without configurable rows still report their existing capability.
+	// This agent supports the fixed three-row preset layout. Older agents report
+	// the number of rows they support for desktop compatibility.
 	out["presetRows"] = strconv.Itoa(s.PresetRows())
-	out["presetRowsMax"] = strconv.Itoa(presets.Rows)
 	// This agent saves the playing Spotify song to Liked Songs and removes it
 	// for an app (POST /api/spotify/liked, spotifyliked_http.go). A companion
 	// app shows its thumbs only when this is present.
@@ -1113,10 +1111,10 @@ const strNANDDir = "/mnt/nv/streborn"
 // real statfs, other hosts report "unknown" so the package stays testable on
 // dev machines.
 
-// selfProxyPathRe matches the agent's own per-slot proxy path (/stream/1..60,
+// selfProxyPathRe matches the agent's own per-slot proxy path (/stream/1..18,
 // all preset rows), which is the box-visible preset location and never a
 // valid station origin.
-var selfProxyPathRe = regexp.MustCompile(`^/stream/([1-9]|[1-5][0-9]|60)$`)
+var selfProxyPathRe = regexp.MustCompile(`^/stream/([1-9]|1[0-8])$`)
 
 // selfProxySlot reports whether raw points at this agent's own /stream/<slot>
 // proxy and which slot it references. Heuristic: the per-slot proxy path plus

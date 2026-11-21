@@ -3,8 +3,8 @@ package presets
 import "testing"
 
 func TestSlotLayout(t *testing.T) {
-	if BoxSlots != 6 || Rows != 10 || MaxSlot != 60 {
-		t.Fatalf("BoxSlots=%d Rows=%d MaxSlot=%d, want 6, 10 and 60", BoxSlots, Rows, MaxSlot)
+	if BoxSlots != 6 || Rows != 3 || MaxSlot != 18 {
+		t.Fatalf("BoxSlots=%d Rows=%d MaxSlot=%d, want 6, 3 and 18", BoxSlots, Rows, MaxSlot)
 	}
 	for slot := 1; slot <= MaxSlot; slot++ {
 		row, key := RowOf(slot), (slot-1)%BoxSlots+1

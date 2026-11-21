@@ -64,12 +64,11 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
     } else {
       const speaker = target ? getBoxLabel(target) : '';
       const tab = (r) => {
-        const label = r === 1 ? t('preset.row2.tabOnce') : r === 2 ? t('preset.row2.tabTwice') : r === 3 ? t('preset.row3.tabThrice') : t('preset.row.tab', { row: r });
+        const label = r === 1 ? t('preset.row2.tabOnce') : r === 2 ? t('preset.row2.tabTwice') : t('preset.row3.tabThrice');
         const full = r === 1
           ? t('preset.row2.tabOnceName', { speaker })
           : r === 2 ? t('preset.row2.tabTwiceName', { speaker })
-            : r === 3 ? t('preset.row3.tabThriceName', { speaker })
-              : t('preset.row.tabName', { row: r, speaker });
+            : t('preset.row3.tabThriceName', { speaker });
         return `<button type="button" role="tab" class="preset-row-tab" id="pickRowTab${r}" data-row="${r}"`
         + ` aria-selected="${r === row ? 'true' : 'false'}" aria-controls="pickGrid" tabindex="${r === row ? '0' : '-1'}">`
         + `<span class="prt-label">${escapeHtml(label)}</span>`
@@ -102,7 +101,7 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
     b.className = 'pick-slot' + (p ? ' has' : '') + (row > 1 ? ' row2' : '');
     b.dataset.slot = String(i);
     const num = row > 1
-      ? '<span class="row2-badge" aria-hidden="true">' + escapeHtml(row === 2 ? t('preset.row2.badge') : row === 3 ? t('preset.row3.badge') : t('preset.row.badge', { row })) + '</span>'
+      ? '<span class="row2-badge" aria-hidden="true">' + escapeHtml(row === 2 ? t('preset.row2.badge') : t('preset.row3.badge')) + '</span>'
         + '<span class="row2-key" aria-hidden="true">' + escapeHtml(t('preset.key', { n: slotKey(i) })) + '</span>'
         + '<span class="visually-hidden">' + escapeHtml(keyLabel(i, t)) + '</span>'
       : escapeHtml(keyLabel(i, t));

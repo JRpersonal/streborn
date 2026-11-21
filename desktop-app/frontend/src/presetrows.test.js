@@ -1,7 +1,7 @@
 // The second row of six keys (#1110): a hardware key pressed twice quickly
 // plays slot 6+n. The app shows "Key 1 · 2×", never "7", and only on a speaker
-// whose agent reports presetRows "2"; every other speaker keeps the one row it
-// always had.
+// whose agent reports its supported rows; older speakers keep their reported
+// one or two rows.
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -89,9 +89,13 @@ describe('labels', () => {
   it('is translated in every bundle, with the same placeholders and no dashes', () => {
     const en = bundle('en');
     const keys = Object.keys(en).filter((k) => k.startsWith('preset.row2.')
+      || k.startsWith('preset.row3.')
+      || /^settingsView\.copyPresets(HelpExtra|RowsNotKept(List)?)$/.test(k)
       || /^settingsView\.copyPresetsHelpAll$/.test(k)
-      || k === 'presets.transferReplacesBoth');
-    expect(keys.length).toBe(15);
+      || k === 'presets.transferReplacesBoth'
+      || k === 'presets.transferReplacesExtra'
+      || k === 'ui2.speakers.keyEditor.rowThrice');
+    expect(keys.length).toBe(26);
     const ph = (s) => (String(s).match(/\{\{\s*\w+\s*\}\}/g) || []).sort().join('|');
     for (const l of langs) {
       const b = bundle(l);
@@ -99,7 +103,7 @@ describe('labels', () => {
         expect(b[k], `${l} ${k}`).toBeTruthy();
         expect(ph(b[k]), `${l} ${k}`).toBe(ph(en[k]));
         expect(b[k], `${l} ${k}`).not.toMatch(/[–—]| - /);
-        if (l !== 'en' && !['preset.row2.num', 'preset.row2.badge'].includes(k)) {
+        if (l !== 'en' && !['preset.row2.num', 'preset.row2.badge', 'preset.row3.num', 'preset.row3.badge'].includes(k)) {
           expect(b[k], `${l} ${k} is still English`).not.toBe(en[k]);
         }
       }
@@ -199,13 +203,12 @@ describe('the move offer across rows', () => {
 });
 
 describe('locations of row-2 keys', () => {
-  it('reads slots 7 to 12 from the proxy forms', () => {
+  it('recognizes slots within the three-row preset limit', () => {
     expect(activeSlotFromLocation('http://127.0.0.1:8888/stream/9')).toBe(9);
     expect(activeSlotFromLocation('http://127.0.0.1:8888/spotify/stream-12.ogg')).toBe(12);
     expect(isStrOriginLocation('http://127.0.0.1:8888/stream/12')).toBe(true);
     expect(isStrOriginLocation('http://127.0.0.1:8888/spotify/stream-10.ogg')).toBe(true);
-    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/13')).toBe(true);
-    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/60')).toBe(true);
-    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/61')).toBe(false);
+    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/18')).toBe(true);
+    expect(isStrOriginLocation('http://127.0.0.1:8888/stream/19')).toBe(false);
   });
 });

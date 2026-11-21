@@ -68,7 +68,7 @@ const (
 
 // KeyCopyStep is what a copy would do with one chosen key on one target.
 type KeyCopyStep struct {
-	// Slot is the key on the source and on the target, 1..60.
+	// Slot is the key on the source and on the target, 1..18.
 	Slot int `json:"slot"`
 	// Name is the source key's station.
 	Name string `json:"name"`
@@ -368,7 +368,7 @@ func (p keyCopyPlan) result() KeyCopyResult {
 	return res
 }
 
-// CopyPresetKeysAcrossBoxes copies only the given keys (slots 1..60) of the
+// CopyPresetKeysAcrossBoxes copies only the given keys (slots 1..18) of the
 // source speaker onto the same keys of the target, and leaves every other key
 // of the target alone.
 //

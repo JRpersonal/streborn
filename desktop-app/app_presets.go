@@ -376,7 +376,7 @@ func (a *App) LogSpotifySaveGate(host string, slot int, canRecall, premiumRequir
 
 // presetRowSize is how many keys one row holds: the six hardware keys.
 const presetRowSize = 6
-const presetMaxRows = 10
+const presetMaxRows = 3
 
 // presetRowsFromVersion reads the configured number of rows from an agent's
 // /api/agent/version answer. Older agents report 2 for the double-press row or
@@ -410,11 +410,6 @@ func (a *App) boxPresetMaxSupportedSlot(host string, port int) int {
 		return presetRowSize
 	}
 	rows := presetRowsFromVersion(ver)
-	if ver != nil {
-		if max, parseErr := strconv.Atoi(ver["presetRowsMax"]); parseErr == nil && max >= rows && max <= presetMaxRows {
-			rows = max
-		}
-	}
 	return presetRowSize * rows
 }
 

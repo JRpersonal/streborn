@@ -91,7 +91,6 @@ export {
   ImportBackup,
   ResolveStationLogo,
   BoxSettings,
-  SetPresetRows,
   SetBoxName,
   SetBoxVolume,
   SetBoxBass,

@@ -1,18 +1,15 @@
 package presets
 
 // Preset slot layout (#1110, #1657). The speaker has six hardware preset keys
-// and its firmware stores exactly six presets. STR keeps up to ten rows of six:
-// row N is reached by pressing a hardware key N times. Rows 2 and later live
+// and its firmware stores exactly six presets. STR keeps up to three rows of six:
+// row N is reached by pressing a hardware key N times. Rows 2 and 3 live
 // in STR's store and never reach the firmware.
 const (
 	// BoxSlots is the number of hardware preset keys and of presets the
 	// speaker firmware stores (row 1).
 	BoxSlots = 6
-	// Rows is the maximum number of rows of presets STR keeps.
-	Rows = 10
-	// DefaultRows preserves the existing two-row setup; users can opt in to
-	// rows 3-10.
-	DefaultRows = 2
+	// Rows is the number of rows of presets STR keeps.
+	Rows = 3
 	// MaxSlot is the highest preset slot STR accepts (rows * BoxSlots).
 	MaxSlot = Rows * BoxSlots
 )

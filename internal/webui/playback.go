@@ -379,7 +379,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 
 // PlaySlotForKey recalls slot exactly the way the app's POST /api/play/<slot>
 // does, for a hardware key that asks for a preset the speaker itself does not
-// hold: the extra rows (slots 7..60, #1110, #1657), reached by repeated presses.
+// hold: the extra rows (slots 7..18, #1110, #1657), reached by repeated presses.
 // It returns the preset's name on success, or the refusal as an error.
 func (s *Server) PlaySlotForKey(ctx context.Context, slot int) (string, error) {
 	res, ref := s.playSlot(ctx, slot)

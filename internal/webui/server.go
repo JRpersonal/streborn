@@ -969,9 +969,6 @@ type Server struct {
 	// playModePath persists the sticky queue play mode (shuffle/repeat), see
 	// playmode.go. Empty falls back to defaultPlayModePath.
 	playModePath string
-	// presetRowsPath persists how many preset rows hardware presses can reach.
-	// Empty falls back to defaultPresetRowsPath.
-	presetRowsPath string
 
 	// displayTrackPath persists the per-box "show the live radio track on the
 	// speaker's display" setting. Absent means on where STR draws on the panel
@@ -1812,7 +1809,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Deliberately OUTSIDE the "/api/presets/" prefix. An agent older than this
 	// endpoint registers only the prefix, so a move request sent there reaches
 	// the per-slot handler, which parses "move" as a slot number and answers
-	// 400 "invalid slot, must be 1-6" (1-60 since #1110 and #1657). The new endpoint answers exactly that
+	// 400 "invalid slot, must be 1-6" (1-18 since #1110 and #1657). The new endpoint answers exactly that
 	// sentence for a genuinely out-of-range slot, so the app could not tell an
 	// old agent from a real refusal, and guessing wrong runs a destructive
 	// two-step fallback. Off the prefix, an old agent has no handler at all and
@@ -1850,7 +1847,6 @@ func (s *Server) Run(ctx context.Context) error {
 	// directly; see the app-first direction). The box no longer serves
 	// /api/radio/* and no longer compiles in the radiobrowser package.
 	mux.HandleFunc("/api/agent/version", s.handleAgentVersion)
-	mux.HandleFunc("/api/presets/rows", s.handlePresetRows)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
@@ -1974,7 +1970,7 @@ func (s *Server) Run(ctx context.Context) error {
 		// store a UNIQUE location per Spotify preset. Without this, two Spotify
 		// presets share the identical location and the box drops one of them
 		// (observed: slot 1 vanished when 1 and 6 both used /spotify/stream.ogg).
-		// Extra-row slots (7..60, #1110, #1657) never reach the box's list, but
+		// Extra-row slots (7..18, #1110, #1657) never reach the box's list, but
 		// an app recall or repeated press plays them through the same per-slot URL.
 		for slot := 1; slot <= presets.MaxSlot; slot++ {
 			mux.HandleFunc(fmt.Sprintf("/spotify/stream-%d.ogg", slot), s.spotifyStream)

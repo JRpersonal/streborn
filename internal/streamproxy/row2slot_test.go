@@ -83,9 +83,8 @@ func TestSelfProxyRecognisesTheSecondRow(t *testing.T) {
 	}{
 		{"http://127.0.0.1:8888/stream/7", 7, true},
 		{"http://127.0.0.1:8888/stream/12", 12, true},
-		{"http://127.0.0.1:8888/stream/19", 19, true},
-		{"http://127.0.0.1:8888/stream/60", 60, true},
-		{"http://127.0.0.1:8888/stream/61", 0, false},
+		{"http://127.0.0.1:8888/stream/18", 18, true},
+		{"http://127.0.0.1:8888/stream/19", 0, false},
 	} {
 		slot, ok := selfProxySlotRef(tc.url)
 		if ok != tc.ok || slot != tc.slot {
