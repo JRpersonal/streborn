@@ -834,6 +834,7 @@ func scrubIdentities(s string) string {
 	// After scrubAccounts, so the firmware's own SoundTouch-<name> host and any
 	// user@host.local address are already tokens and are not hashed twice.
 	s = scrubMediaServerAttrs(s)
+	s = scrubInterfaceNames(s)
 	s = scrubMediaServerNames(s)
 	s = scrubLocalHosts(s)
 	s = scrubURLCredentials(s)

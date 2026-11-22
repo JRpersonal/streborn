@@ -889,6 +889,7 @@ export namespace main {
 	    items: LibraryItem[];
 	    searched: number;
 	    unanswered?: string[];
+	    incomplete?: string[];
 	    partial: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -900,6 +901,7 @@ export namespace main {
 	        this.items = this.convertValues(source["items"], LibraryItem);
 	        this.searched = source["searched"];
 	        this.unanswered = source["unanswered"];
+	        this.incomplete = source["incomplete"];
 	        this.partial = source["partial"];
 	    }
 	

@@ -20,6 +20,10 @@ type FakeCDS struct {
 	// SearchHits is what the Search action answers with. Zero items with no
 	// fault is the FRITZ!Box shape: 200, nothing found, the track still there.
 	SearchHits []Track
+	// SearchTotal, when not zero, is the TotalMatches every Search answer
+	// claims, whatever it holds: a server whose count is not a count of hits
+	// (#1705). Search pages with StartingIndex and MaxPerPage like Browse.
+	SearchTotal int
 	// SearchFaults makes Search answer UPnPError 501 "Action Failed", the
 	// Synology and Windows Media Player shape (#1705).
 	SearchFaults bool
@@ -57,6 +61,9 @@ type Track struct {
 	// Class and Mime override object.item.audioItem.musicTrack and
 	// audio/mpeg, e.g. for a video.
 	Class, Mime string
+	// Duration is the res duration attribute ("0:04:56.000"), left out when
+	// empty.
+	Duration string
 }
 
 // Counts reports how many Search and Browse calls the fake has answered.
@@ -81,7 +88,20 @@ func (f *FakeCDS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, faultBody)
 			return
 		}
-		writeSOAP(w, "Search", didl(nil, f.SearchHits), len(f.SearchHits), len(f.SearchHits))
+		start, _ := strconv.Atoi(soapValue(string(body), "StartingIndex"))
+		count, _ := strconv.Atoi(soapValue(string(body), "RequestedCount"))
+		if f.MaxPerPage > 0 && (count <= 0 || count > f.MaxPerPage) {
+			count = f.MaxPerPage
+		}
+		if count <= 0 {
+			count = len(f.SearchHits)
+		}
+		hits := pageOf(f.SearchHits, start, count)
+		total := len(f.SearchHits)
+		if f.SearchTotal != 0 {
+			total = f.SearchTotal
+		}
+		writeSOAP(w, "Search", didl(nil, hits), total, len(hits))
 		return
 	}
 
@@ -153,8 +173,12 @@ func didl(folders []Folder, tracks []Track) string {
 		if mime == "" {
 			mime = "audio/mpeg"
 		}
-		fmt.Fprintf(&b, `<item id="%s" parentID="0"><dc:title>%s</dc:title><upnp:artist>%s</upnp:artist><upnp:album>%s</upnp:album><upnp:class>%s</upnp:class><res protocolInfo="http-get:*:%s:*">%s</res></item>`,
-			t.ID, t.Title, t.Artist, t.Album, class, mime, t.URL)
+		dur := ""
+		if t.Duration != "" {
+			dur = fmt.Sprintf(` duration="%s"`, t.Duration)
+		}
+		fmt.Fprintf(&b, `<item id="%s" parentID="0"><dc:title>%s</dc:title><upnp:artist>%s</upnp:artist><upnp:album>%s</upnp:album><upnp:class>%s</upnp:class><res protocolInfo="http-get:*:%s:*"%s>%s</res></item>`,
+			t.ID, t.Title, t.Artist, t.Album, class, mime, dur, t.URL)
 	}
 	b.WriteString(`</DIDL-Lite>`)
 	return b.String()

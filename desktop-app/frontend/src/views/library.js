@@ -105,7 +105,7 @@ const libState = {
   sort: SORT_SERVER,
   // The whole-library search across every media server (#1325). active means
   // its results stand in for the folder list until the user goes back.
-  search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], partial: false, token: 0 },
+  search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], incomplete: [], partial: false, token: 0 },
   // What only the UI 2.0 preview draws (#1286, shell2/library.js): the
   // feedback line of each row and of the folder actions, keyed by statusKey;
   // the error of the level that failed, shown in its place instead of the
@@ -1669,7 +1669,7 @@ export async function libraryWholeSearch(query, field) {
   s.field = field || 'any';
   if (!q) return;
   const token = ++s.token;
-  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false, failed: '' });
+  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], incomplete: [], partial: false, failed: '' });
   renderLibrary();
   let res = null;
   let failed = false;
@@ -1690,6 +1690,7 @@ export async function libraryWholeSearch(query, field) {
   } else {
     s.items = res.items || [];
     s.unanswered = (res.unanswered || []).filter(Boolean);
+    s.incomplete = (res.incomplete || []).filter(Boolean);
     s.partial = !!res.partial;
   }
   renderLibrary();
@@ -1697,8 +1698,12 @@ export async function libraryWholeSearch(query, field) {
 
 // libraryWholeSearchNote picks the one note under the results, in the phone
 // page's order: a server that did not answer, then a partial list, then no hits.
+// A partial list is one of two things (#1705): a server whose folders could not
+// all be looked through in time (named), or one with more hits than it hands
+// over at once, the only case a more exact search helps.
 function libraryWholeSearchNote(s) {
   if (s.unanswered.length) return t('library.wholeSearchOffline', { name: s.unanswered.join(', ') });
+  if ((s.incomplete || []).length) return t('library.wholeSearchIncomplete', { name: s.incomplete.join(', ') });
   if (s.partial) return t('library.wholeSearchPartial');
   if (!s.items.length) return t('library.wholeSearchNone');
   return '';

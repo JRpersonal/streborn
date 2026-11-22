@@ -263,6 +263,7 @@
   "library.wholeSearchNone": "Medya sunucularında bir şey bulunamadı.",
   "library.wholeSearchOffline": "{{name}} yanıt vermedi, orada hiçbir şey aranmadı. Bu, kitaplığın boş olduğu anlamına gelmez.",
   "library.wholeSearchPartial": "Bu liste eksik olabilir: bir medya sunucusu bir seferde verdiğinden fazla sonuç buldu. Daha kesin arayın.",
+  "library.wholeSearchIncomplete": "Bu liste eksik olabilir: {{name}} kendi başına arama yapamıyor ve STR tüm klasörlerine zamanında bakamadı.",
   "library.wholeSearchClose": "Klasöre dön",
   "library.loadingMore": "Daha fazla parça yükleniyor...",
   "library.capped": "İlk {{n}} parça gösteriliyor. Belirli birini bulmak için aramayı kullanın.",

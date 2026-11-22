@@ -34,6 +34,9 @@ describe('the whole-library search', () => {
   it('says which of the three it is, in the phone page order', () => {
     expect(note({ unanswered: ['NAS'], partial: true, items: [] })).toBe('library.wholeSearchOffline:NAS');
     expect(note({ unanswered: [], partial: true, items: [{}] })).toBe('library.wholeSearchPartial');
+    // #1705: a walk cut short names its server; only too many hits asks for a more exact search.
+    expect(note({ unanswered: [], incomplete: ['NAS'], partial: true, items: [{}] })).toBe('library.wholeSearchIncomplete:NAS');
+    expect(note({ unanswered: ['PC'], incomplete: ['NAS'], partial: true, items: [] })).toBe('library.wholeSearchOffline:PC');
     expect(note({ unanswered: [], partial: false, items: [] })).toBe('library.wholeSearchNone');
     expect(note({ unanswered: [], partial: false, items: [{}] })).toBe('');
   });
@@ -45,11 +48,12 @@ describe('the whole-library search', () => {
   it('has every string in every language', () => {
     const keys = ['wholeSearchPlaceholder', 'wholeSearchBtn', 'wholeSearching', 'searchIn', 'fieldAll',
       'fieldAlbum', 'fieldArtist', 'fieldTrack', 'wholeSearchSec', 'wholeSearchNone',
-      'wholeSearchOffline', 'wholeSearchPartial', 'wholeSearchClose'].map((k) => `library.${k}`);
+      'wholeSearchOffline', 'wholeSearchPartial', 'wholeSearchIncomplete', 'wholeSearchClose'].map((k) => `library.${k}`);
     for (const f of readdirSync(bundleDir).filter((n) => n.endsWith('.json'))) {
       const b = JSON.parse(readFileSync(join(bundleDir, f), 'utf8'));
       for (const k of keys) expect(b[k], `${f} ${k}`).toBeTruthy();
       expect(b['library.wholeSearchOffline'], f).toContain('{{name}}');
+      expect(b['library.wholeSearchIncomplete'], f).toContain('{{name}}');
     }
   });
 });

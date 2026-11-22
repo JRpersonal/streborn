@@ -34,7 +34,7 @@ func TestSearchServersMergesEveryServerAndNamesTheMissingOnes(t *testing.T) {
 		switch srv.FriendlyName {
 		case "Zeta NAS":
 			// More matches than handed over: the list is not the whole answer.
-			return serverSearch{Path: searchPathSearch, Partial: true, Items: []dlna.Item{
+			return serverSearch{Path: searchPathSearch, Truncated: true, Items: []dlna.Item{
 				{ID: "z1", Title: "Tom Sawyer", Class: "object.item.audioItem.musicTrack", StreamURL: "http://192.0.2.2/z1.flac"},
 			}}
 		case "Alpha NAS":
@@ -230,8 +230,8 @@ func TestLibrarySearchOneDeadlineAfterRootIsPartial(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("a server whose root answered was reported unanswered: %v", res.Err)
 	}
-	if !res.Partial {
-		t.Errorf("a walk cut short by the deadline must be partial: %+v", res)
+	if !res.Incomplete || res.Truncated {
+		t.Errorf("a walk cut short by the deadline is incomplete, not a server with too many hits: %+v", res)
 	}
 }
 
