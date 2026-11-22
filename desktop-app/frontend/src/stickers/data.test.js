@@ -200,21 +200,21 @@ describe('housing colour', () => {
 });
 
 describe('remote sticker choice', () => {
-  it('is off until ticked, for every model, and kept per speaker', () => {
+  it('is on until unticked, for every model, and kept per speaker', () => {
     const storage = fakeStorage();
-    expect(remoteOf('a', storage)).toBe(false);
-    setRemote('a', true, storage);
     expect(remoteOf('a', storage)).toBe(true);
-    expect(remoteOf('b', storage)).toBe(false);
     setRemote('a', false, storage);
     expect(remoteOf('a', storage)).toBe(false);
-    expect(remoteOf('a', broken)).toBe(false);
+    expect(remoteOf('b', storage)).toBe(true);
+    setRemote('a', true, storage);
+    expect(remoteOf('a', storage)).toBe(true);
+    expect(remoteOf('a', broken)).toBe(true);
     expect(() => setRemote('a', true, broken)).not.toThrow();
   });
 
   it('reaches the sheet with the speaker, whatever its model', async () => {
     const storage = fakeStorage();
-    setRemote(speakerId(OFFICE), true, storage);
+    setRemote(speakerId(KITCHEN), false, storage);
     const a = {
       GetPresets: vi.fn(async () => PRESETS),
       PhoneAddressFor: vi.fn(async () => null),

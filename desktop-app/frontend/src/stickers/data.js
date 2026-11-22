@@ -119,15 +119,16 @@ export function setHousing(id, housing, storage) {
 
 // Whether a speaker's sheet also carries the sticker for the back of its
 // remote. Any model can have one, so it is offered for every speaker; it
-// stays off until the user ticks it, and the choice is kept per speaker.
+// is on until the user unticks it (Jens, 2026-11-22), and the choice is kept
+// per speaker: only an explicit false is stored.
 export function remoteOf(id, storage) {
-  return readMap(REMOTE_KEY, storage)[id] === true;
+  return readMap(REMOTE_KEY, storage)[id] !== false;
 }
 
 export function setRemote(id, on, storage) {
   const map = readMap(REMOTE_KEY, storage);
-  if (on) map[id] = true;
-  else delete map[id];
+  if (on) delete map[id];
+  else map[id] = false;
   writeMap(REMOTE_KEY, map, storage);
 }
 
