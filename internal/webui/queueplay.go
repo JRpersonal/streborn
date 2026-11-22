@@ -26,10 +26,12 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
-			Mime:     it.Mime,
+			Art:      usbLoopbackURL(it.Art),
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,
@@ -134,6 +136,14 @@ func (s *Server) RecallSlotPress(ctx context.Context, slot int, press SlotPress)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
 		return false
+	}
+	// A folder of nothing but files on this speaker's USB stick that it
+	// cannot play (sample rate above 48 kHz, usbhires.go) does not wake it.
+	if marked, n := s.usbMarkHiRes(items); n > 0 && playableCount(marked) == 0 {
+		s.logger.Warn("preset slot recall (hardware): every track of the key's folder has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
+			"slot", slot, "name", p.Name, "tracks", len(items))
+		s.ShowKeyMessage(DisplayMsgUSBHiRes)
+		return true
 	}
 	// Bind this slot as the in-flight queue recall BEFORE the queue starts, so a
 	// box-native /stream/<slot> fetch that races ahead of the first track load can
@@ -590,6 +600,25 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	}
 	if len(items) == 0 {
 		return errors.New("empty queue")
+	}
+	// Files on this speaker's USB stick that the speaker cannot play are
+	// stepped over, not handed to it (usbhires.go). A folder of nothing else
+	// is refused before the speaker is woken.
+	hiRes := 0
+	if spec.resume != nil {
+		st := *spec.resume
+		st.items, hiRes = s.usbMarkHiRes(st.items)
+		spec.resume = &st
+		items = st.items
+	} else {
+		items, hiRes = s.usbMarkHiRes(items)
+	}
+	if hiRes > 0 {
+		s.logger.Info("usb music: the folder has tracks with a sample rate above 48 kHz, which this speaker cannot play; the queue steps over them",
+			"skipped", hiRes, "tracks", len(items))
+	}
+	if hiRes > 0 && playableCount(items) == 0 {
+		return errUSBFolderAllHiRes
 	}
 	if spec.resume != nil {
 		s.queue.restore(*spec.resume)
@@ -1733,10 +1762,12 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
-			Mime:     it.Mime,
+			Art:      usbLoopbackURL(it.Art),
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,
@@ -1791,6 +1822,10 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		if err := s.startQueue(playCtx, items, req.Start, shuffle, rep, card); err != nil {
 			if isGroupedRejection(err) {
 				s.writeGroupedPlayError(w, err)
+				return
+			}
+			if ref := usbFolderRefusal(err); ref != nil {
+				writePlayRefusal(w, ref)
 				return
 			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -2461,6 +2496,7 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 	} else {
 		snap.File = s.loneFileInfo()
 		snap.LastEnd = s.queueLastEndShown()
+		snap.USBRefused = s.usbDecodeRefusalShown()
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

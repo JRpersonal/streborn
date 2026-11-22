@@ -99,6 +99,17 @@ Each boundary is covered in detail in
   vector against the speaker's own privileged services. Private LAN
   ranges stay reachable so a user's local Icecast/DLNA stream still
   plays.
+- A music stick in the speaker (`/usb/`, docs/streaming/usb-stick.md) is
+  served like any DLNA server: anyone on the LAN (`isLocalLAN`) can list and
+  download its music, with no authentication. Nothing else on it can be
+  reached: every path goes through `os.Root` (no `..`, no absolute path, no
+  symlink out), only audio files and cover images are served by name, the
+  agent's own mount is `ro,nosuid,nodev,noexec`, the firmware's read-write
+  mount of a music stick is remounted read-only (never an install stick's),
+  nothing is ever written to the stick, and a stick carrying any STR or Bose marker (an install stick
+  with `wlan.pass`, a firmware image) is never served at all. Only the
+  speaker's own stick files may be probed over loopback (`isUSBLoopbackFile`);
+  every other loopback URL stays refused by the SSRF guard.
 - Every URL the agent hands to the speaker's UPnP renderer or fetches
   through the stream proxy (including HLS playlist segments) is
   restricted to `http`/`https` schemes (`safeHTTPURL`), so `file://`

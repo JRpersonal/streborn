@@ -358,6 +358,10 @@ export function LibraryRefusedServers() {
   return window['go']['main']['App']['LibraryRefusedServers']();
 }
 
+export function LibraryUSBNotices() {
+  return window['go']['main']['App']['LibraryUSBNotices']();
+}
+
 export function LinkMusicService(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['LinkMusicService'](arg1, arg2, arg3, arg4, arg5);
 }

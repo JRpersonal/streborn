@@ -992,6 +992,7 @@ html.ui2 .tabbar button .ti { display:none; }
 <div class="msg" id="libMsg" hidden></div>
 <div class="label" id="lblBrowseHead" style="margin-top:14px" hidden></div>
 <div class="row" id="browseSrv"></div>
+<div class="msg" id="browseUsbMsg" hidden></div>
 <div class="row" id="browseNav" hidden style="margin:8px 0">
 <button class="btn" id="btnBrowseBack" type="button" style="flex:none">Back</button>
 <div class="sum" id="browsePath" style="margin:6px 0 0"></div>
@@ -1281,6 +1282,8 @@ function pickDict(){
   for (var k4 in base4) out[k4] = (sel4[k4] != null ? sel4[k4] : base4[k4]);
   var base5 = I18N5.en, sel5 = I18N5[code] || base5;
   for (var k5 in base5) out[k5] = (sel5[k5] != null ? sel5[k5] : base5[k5]);
+  var base6 = I18N6.en, sel6 = I18N6[code] || base6;
+  for (var k6 in base6) out[k6] = (sel6[k6] != null ? sel6[k6] : base6[k6]);
   var base7 = I18N7.en, sel7 = I18N7[code] || base7;
   for (var k7 in base7) out[k7] = (sel7[k7] != null ? sel7[k7] : base7[k7]);
   return out;
@@ -1336,6 +1339,22 @@ var I18N5 = {
   lt:{xfBtn:"Perkelti",xfHead:"Kopijuoti klavišus į kitą garsiakalbį",xfIntro:"Nukopijuoja šio garsiakalbio klavišus į kitą garsiakalbį jūsų tinkle, kad nereikėtų kiekvieno nustatyti rankiniu būdu.",xfTo:"Kopijuoti į",xfAll:"Visi kiti garsiakalbiai ({n})",xfReplRow:"Jūsų pasirinktame garsiakalbyje čia nustatyti klavišai nuo 1 iki 6 pakeis tuos pačius klavišus ten. Kiti jo klavišai liks tokie, kokie yra.",xfReplBoth:"Jūsų pasirinktame garsiakalbyje kiekvienas čia nustatytas vieną ar du kartus spaudžiamas klavišas pakeis tą patį klavišą ten. Kiti jo klavišai liks tokie, kokie yra.",xfSpotify:"Kartu perkeliamas ir šio garsiakalbio Spotify prisijungimas, kad Spotify klavišai grotų ir ten.",xfBusy:"Klavišai kopijuojami. Tai užtrunka kelias sekundes kiekvienam garsiakalbiui.",xfDone:"{name} perėmė klavišus ({n}).",xfAllDone:"Visi garsiakalbiai ({n}) perėmė klavišus.",xfPartial:"Klavišus perėmė {done} iš {total} garsiakalbių.",xfRow1:"{name} turi tik vieną klavišų eilę, todėl du kartus spaudžiami klavišai ten nebuvo nukopijuoti.",xfConflict:"{station} jau yra garsiakalbio {name} klaviše {key}. Ištrinkite tą klavišą ten ir perkelkite dar kartą.",xfUnreach:"{name} neatsakė. Patikrinkite, ar jis įjungtas, ir perkelkite dar kartą.",xfFail:"{name} neperėmė klavišų.",xfRunning:"Šiame garsiakalbyje jau vyksta perkėlimas. Bandykite dar kartą po akimirkos.",xfNoTargets:"Nerasta kito garsiakalbio, į kurį perkelti.",xfClose:"Uždaryti"},
   lv:{xfBtn:"Pārnest",xfHead:"Kopēt taustiņus uz citu skaļruni",xfIntro:"Nokopē šī skaļruņa taustiņus uz citu skaļruni jūsu tīklā, lai jums nebūtu katrs jāiestata ar roku.",xfTo:"Kopēt uz",xfAll:"Visi pārējie skaļruņi ({n})",xfReplRow:"Jūsu izvēlētajā skaļrunī šeit iestatītie taustiņi no 1 līdz 6 aizstās tos pašus taustiņus tur. Pārējie tā taustiņi paliks, kā ir.",xfReplBoth:"Jūsu izvēlētajā skaļrunī katrs šeit iestatītais vienreiz vai divreiz nospiežamais taustiņš aizstās to pašu taustiņu tur. Pārējie tā taustiņi paliks, kā ir.",xfSpotify:"Līdzi tiek pārnesta arī šī skaļruņa Spotify pieteikšanās, lai Spotify taustiņi atskaņotu arī tur.",xfBusy:"Taustiņi tiek kopēti. Tas aizņem dažas sekundes katram skaļrunim.",xfDone:"{name} pārņēma taustiņus ({n}).",xfAllDone:"Visi skaļruņi ({n}) pārņēma taustiņus.",xfPartial:"Taustiņus pārņēma {done} no {total} skaļruņiem.",xfRow1:"{name} ir tikai viena taustiņu rinda, tāpēc divreiz nospiežamie taustiņi tur netika nokopēti.",xfConflict:"{station} jau ir skaļruņa {name} taustiņā {key}. Izdzēsiet to taustiņu tur un pārnesiet vēlreiz.",xfUnreach:"{name} neatbildēja. Pārbaudiet, vai tas ir ieslēgts, un pārnesiet vēlreiz.",xfFail:"{name} nepārņēma taustiņus.",xfRunning:"Šajā skaļrunī jau notiek pārnešana. Mēģiniet vēlreiz pēc brīža.",xfNoTargets:"Nav atrasts cits skaļrunis, uz kuru pārnest.",xfClose:"Aizvērt"},
   uk:{xfBtn:"Перенести",xfHead:"Копіювати кнопки на іншу колонку",xfIntro:"Копіює кнопки цієї колонки на іншу колонку у вашій мережі, щоб не налаштовувати кожну вручну.",xfTo:"Копіювати на",xfAll:"Усі інші колонки ({n})",xfReplRow:"На вибраній колонці налаштовані тут кнопки з 1 по 6 замінять ті самі кнопки там. Інші її кнопки залишаться як є.",xfReplBoth:"На вибраній колонці кожна налаштована тут кнопка, на одне чи на подвійне натискання, замінить ту саму кнопку там. Інші її кнопки залишаться як є.",xfSpotify:"Вхід у Spotify цієї колонки переноситься разом із кнопками, тож кнопки Spotify гратимуть і там.",xfBusy:"Кнопки копіюються. Це займає кілька секунд на кожну колонку.",xfDone:"{name}: кнопки отримано ({n}).",xfAllDone:"Усі колонки ({n}) отримали кнопки.",xfPartial:"{done} з {total} колонок отримали кнопки.",xfRow1:"{name} має лише один ряд кнопок, тому кнопки на подвійне натискання туди не скопійовано.",xfConflict:"{station} вже стоїть на кнопці {key} колонки {name}. Видаліть цю кнопку там і перенесіть ще раз.",xfUnreach:"{name} не відповідає. Перевірте, чи вона увімкнена, і перенесіть ще раз.",xfFail:"{name}: кнопки не отримано.",xfRunning:"На цій колонці вже триває перенесення. Спробуйте ще раз за мить.",xfNoTargets:"Не знайдено іншої колонки для перенесення.",xfClose:"Закрити"},
+};
+// A sixth dictionary for a music stick in the speaker (#1136), one locale per
+// line like I18N3. pickDict merges it with the same per-key English fall-through.
+var I18N6 = {
+  en:{usbName:"USB stick",usbUnsupportedModel:"This speaker cannot play music from a USB stick.",usbInstallStick:"The USB stick in this speaker is an ST Reborn install stick. Use a separate stick for music.",usbNotFAT32:"The USB stick in this speaker is not formatted as FAT32. Format it as FAT32, then copy the music onto it again.",usbBigClusters:"The USB stick in this speaker uses clusters larger than 32 KB, which the speaker cannot read. Format it again as FAT32 with clusters of 32 KB or less.",usbUnreadable:"The USB stick in this speaker could not be read. Unplug it, check it on a computer and plug it in again.",usbHiRes:"This speaker cannot play this file: it has a sample rate above 48 kHz.",usbHiResSkipped:"Songs in this folder with a sample rate above 48 kHz are skipped, because this speaker cannot play them ({n} skipped).",usbCantDecode:"The speaker could not decode this file from the USB stick. It plays MP3, AAC, Ogg, WMA, and FLAC or WAV up to 48 kHz."},
+  de:{usbName:"USB-Stick",usbUnsupportedModel:"Dieser Lautsprecher kann keine Musik von einem USB-Stick spielen.",usbInstallStick:"Der USB-Stick in diesem Lautsprecher ist ein ST-Reborn-Installationsstick. Nimm für Musik einen eigenen Stick.",usbNotFAT32:"Der USB-Stick in diesem Lautsprecher ist nicht mit FAT32 formatiert. Formatiere ihn mit FAT32 und kopiere die Musik danach wieder darauf.",usbBigClusters:"Der USB-Stick in diesem Lautsprecher nutzt Cluster über 32 KB, die der Lautsprecher nicht lesen kann. Formatiere ihn neu mit FAT32 und Clustern von höchstens 32 KB.",usbUnreadable:"Der USB-Stick in diesem Lautsprecher lässt sich nicht lesen. Zieh ihn ab, prüf ihn am Computer und steck ihn wieder ein.",usbHiRes:"Dieser Lautsprecher kann diese Datei nicht abspielen: Die Abtastrate liegt über 48 kHz.",usbHiResSkipped:"Titel in diesem Ordner mit einer Abtastrate über 48 kHz werden übersprungen, weil dieser Lautsprecher sie nicht abspielen kann ({n} übersprungen).",usbCantDecode:"Der Lautsprecher konnte diese Datei vom USB-Stick nicht dekodieren. Er spielt MP3, AAC, Ogg, WMA sowie FLAC oder WAV bis 48 kHz."},
+  nl:{usbName:"USB-stick",usbUnsupportedModel:"Deze speaker kan geen muziek van een USB-stick afspelen.",usbInstallStick:"De USB-stick in deze speaker is een ST Reborn-installatiestick. Gebruik een aparte stick voor muziek.",usbNotFAT32:"De USB-stick in deze speaker is niet als FAT32 geformatteerd. Formatteer hem als FAT32 en kopieer de muziek er daarna opnieuw op.",usbBigClusters:"De USB-stick in deze speaker gebruikt clusters groter dan 32 KB, die de speaker niet kan lezen. Formatteer hem opnieuw als FAT32 met clusters van maximaal 32 KB.",usbUnreadable:"De USB-stick in deze speaker kon niet worden gelezen. Trek hem eruit, controleer hem op een computer en steek hem er weer in.",usbHiRes:"Deze speaker kan dit bestand niet afspelen: de samplefrequentie is hoger dan 48 kHz.",usbHiResSkipped:"Nummers in deze map met een samplefrequentie boven 48 kHz worden overgeslagen, omdat deze speaker ze niet kan afspelen ({n} overgeslagen).",usbCantDecode:"De speaker kon dit bestand van de USB-stick niet decoderen. Hij speelt MP3, AAC, Ogg, WMA en FLAC of WAV tot 48 kHz."},
+  fr:{usbName:"Clé USB",usbUnsupportedModel:"Cette enceinte ne peut pas lire de musique depuis une clé USB.",usbInstallStick:"La clé USB de cette enceinte est une clé d'installation ST Reborn. Utilisez une autre clé pour la musique.",usbNotFAT32:"La clé USB de cette enceinte n'est pas formatée en FAT32. Formatez-la en FAT32, puis copiez à nouveau la musique dessus.",usbBigClusters:"La clé USB de cette enceinte utilise des clusters de plus de 32 Ko, que l'enceinte ne peut pas lire. Reformatez-la en FAT32 avec des clusters de 32 Ko au plus.",usbUnreadable:"La clé USB de cette enceinte n'a pas pu être lue. Retirez-la, vérifiez-la sur un ordinateur, puis rebranchez-la.",usbHiRes:"Cette enceinte ne peut pas lire ce fichier : sa fréquence d'échantillonnage dépasse 48 kHz.",usbHiResSkipped:"Les morceaux de ce dossier dont la fréquence d'échantillonnage dépasse 48 kHz sont ignorés, car cette enceinte ne peut pas les lire ({n} ignorés).",usbCantDecode:"L'enceinte n'a pas pu décoder ce fichier depuis la clé USB. Elle lit le MP3, l'AAC, l'Ogg, le WMA ainsi que le FLAC ou le WAV jusqu'à 48 kHz."},
+  es:{usbName:"Memoria USB",usbUnsupportedModel:"Este altavoz no puede reproducir música desde una memoria USB.",usbInstallStick:"La memoria USB de este altavoz es una memoria de instalación de ST Reborn. Usa otra memoria para la música.",usbNotFAT32:"La memoria USB de este altavoz no está formateada en FAT32. Formatéala en FAT32 y vuelve a copiar la música en ella.",usbBigClusters:"La memoria USB de este altavoz usa clústeres de más de 32 KB, que el altavoz no puede leer. Vuelve a formatearla en FAT32 con clústeres de 32 KB como máximo.",usbUnreadable:"No se pudo leer la memoria USB de este altavoz. Desconéctala, compruébala en un ordenador y vuelve a conectarla.",usbHiRes:"Este altavoz no puede reproducir este archivo: su frecuencia de muestreo supera los 48 kHz.",usbHiResSkipped:"Las canciones de esta carpeta con una frecuencia de muestreo superior a 48 kHz se omiten, porque este altavoz no puede reproducirlas ({n} omitidas).",usbCantDecode:"El altavoz no pudo decodificar este archivo desde la memoria USB. Reproduce MP3, AAC, Ogg, WMA y FLAC o WAV hasta 48 kHz."},
+  pl:{usbName:"Pendrive USB",usbUnsupportedModel:"Ten głośnik nie może odtwarzać muzyki z pendrive’a USB.",usbInstallStick:"Pendrive USB w tym głośniku to pendrive instalacyjny ST Reborn. Do muzyki użyj osobnego pendrive’a.",usbNotFAT32:"Pendrive USB w tym głośniku nie jest sformatowany w FAT32. Sformatuj go w FAT32, a potem ponownie skopiuj na niego muzykę.",usbBigClusters:"Pendrive USB w tym głośniku używa klastrów większych niż 32 KB, których głośnik nie potrafi odczytać. Sformatuj go ponownie w FAT32 z klastrami najwyżej 32 KB.",usbUnreadable:"Nie udało się odczytać pendrive’a USB w tym głośniku. Wyjmij go, sprawdź na komputerze i podłącz ponownie.",usbHiRes:"Ten głośnik nie może odtworzyć tego pliku: jego częstotliwość próbkowania przekracza 48 kHz.",usbHiResSkipped:"Utwory w tym folderze z częstotliwością próbkowania powyżej 48 kHz są pomijane, bo ten głośnik nie może ich odtworzyć (pominięte: {n}).",usbCantDecode:"Głośnik nie mógł zdekodować tego pliku z pendrive’a USB. Odtwarza MP3, AAC, Ogg, WMA oraz FLAC lub WAV do 48 kHz."},
+  tr:{usbName:"USB bellek",usbUnsupportedModel:"Bu hoparlör USB bellekten müzik çalamaz.",usbInstallStick:"Bu hoparlördeki USB bellek bir ST Reborn kurulum belleği. Müzik için ayrı bir bellek kullanın.",usbNotFAT32:"Bu hoparlördeki USB bellek FAT32 olarak biçimlendirilmemiş. FAT32 olarak biçimlendirin, ardından müziği yeniden kopyalayın.",usbBigClusters:"Bu hoparlördeki USB bellek, hoparlörün okuyamadığı 32 KB üzerindeki kümeler kullanıyor. En fazla 32 KB kümelerle FAT32 olarak yeniden biçimlendirin.",usbUnreadable:"Bu hoparlördeki USB bellek okunamadı. Çıkarın, bir bilgisayarda kontrol edin ve yeniden takın.",usbHiRes:"Bu hoparlör bu dosyayı çalamaz: örnekleme hızı 48 kHz'in üzerinde.",usbHiResSkipped:"Bu klasördeki örnekleme hızı 48 kHz'in üzerinde olan şarkılar atlanıyor, çünkü bu hoparlör onları çalamıyor ({n} atlandı).",usbCantDecode:"Hoparlör USB bellekteki bu dosyanın kodunu çözemedi. MP3, AAC, Ogg, WMA ve 48 kHz'e kadar FLAC veya WAV çalar."},
+  ar:{usbName:"ذاكرة USB",usbUnsupportedModel:"لا يمكن لهذه السمّاعة تشغيل الموسيقى من ذاكرة USB.",usbInstallStick:"ذاكرة USB الموجودة في هذه السمّاعة هي ذاكرة تثبيت ST Reborn. استخدم ذاكرة أخرى للموسيقى.",usbNotFAT32:"ذاكرة USB الموجودة في هذه السمّاعة ليست مهيأة بنظام FAT32. هيّئها بنظام FAT32، ثم انسخ الموسيقى إليها من جديد.",usbBigClusters:"ذاكرة USB الموجودة في هذه السمّاعة تستخدم وحدات تخزين أكبر من 32 كيلوبايت لا تستطيع السمّاعة قراءتها. هيّئها من جديد بنظام FAT32 بوحدات لا تزيد على 32 كيلوبايت.",usbUnreadable:"تعذّرت قراءة ذاكرة USB الموجودة في هذه السمّاعة. انزعها وافحصها على كمبيوتر ثم أعد توصيلها.",usbHiRes:"لا يمكن لهذه السمّاعة تشغيل هذا الملف: معدّل العيّنات فيه أعلى من 48 كيلوهرتز.",usbHiResSkipped:"يتم تخطّي الأغاني في هذا المجلد التي يزيد معدّل العيّنات فيها على 48 كيلوهرتز، لأن هذه السمّاعة لا تستطيع تشغيلها (تم تخطّي {n}).",usbCantDecode:"تعذّر على السمّاعة فك ترميز هذا الملف من ذاكرة USB. تشغّل MP3 وAAC وOgg وWMA وFLAC أو WAV حتى 48 كيلوهرتز."},
+  ja:{usbName:"USBメモリー",usbUnsupportedModel:"このスピーカーはUSBメモリーの音楽を再生できません。",usbInstallStick:"このスピーカーのUSBメモリーはST Rebornのインストール用メモリーです。音楽には別のメモリーを使ってください。",usbNotFAT32:"このスピーカーのUSBメモリーはFAT32でフォーマットされていません。FAT32でフォーマットしてから、音楽をもう一度コピーしてください。",usbBigClusters:"このスピーカーのUSBメモリーは32 KBを超えるクラスターを使っており、スピーカーが読み取れません。クラスター32 KB以下のFAT32でフォーマットし直してください。",usbUnreadable:"このスピーカーのUSBメモリーを読み取れませんでした。取り外してパソコンで確認し、もう一度差し込んでください。",usbHiRes:"このスピーカーはこのファイルを再生できません。サンプリングレートが48 kHzを超えています。",usbHiResSkipped:"このフォルダー内でサンプリングレートが48 kHzを超える曲は、このスピーカーで再生できないためスキップされます（{n}曲をスキップ）。",usbCantDecode:"スピーカーはUSBメモリーのこのファイルをデコードできませんでした。再生できるのはMP3、AAC、Ogg、WMA、および48 kHzまでのFLACまたはWAVです。"},
+  lt:{usbName:"USB atmintukas",usbUnsupportedModel:"Šis garsiakalbis negali groti muzikos iš USB atmintuko.",usbInstallStick:"Šiame garsiakalbyje esantis USB atmintukas yra ST Reborn diegimo atmintukas. Muzikai naudokite atskirą atmintuką.",usbNotFAT32:"Šiame garsiakalbyje esantis USB atmintukas nesuformatuotas FAT32 formatu. Suformatuokite jį FAT32 formatu ir vėl nukopijuokite muziką.",usbBigClusters:"Šiame garsiakalbyje esantis USB atmintukas naudoja didesnius nei 32 KB klasterius, kurių garsiakalbis negali nuskaityti. Iš naujo suformatuokite jį FAT32 formatu su ne didesniais kaip 32 KB klasteriais.",usbUnreadable:"Nepavyko nuskaityti šiame garsiakalbyje esančio USB atmintuko. Ištraukite jį, patikrinkite kompiuteryje ir vėl įkiškite.",usbHiRes:"Šis garsiakalbis negali groti šio failo: jo diskretizavimo dažnis viršija 48 kHz.",usbHiResSkipped:"Šio aplanko dainos, kurių diskretizavimo dažnis viršija 48 kHz, praleidžiamos, nes šis garsiakalbis negali jų groti (praleista: {n}).",usbCantDecode:"Garsiakalbis negalėjo iškoduoti šio failo iš USB atmintuko. Jis groja MP3, AAC, Ogg, WMA ir FLAC arba WAV iki 48 kHz."},
+  lv:{usbName:"USB zibatmiņa",usbUnsupportedModel:"Šis skaļrunis nevar atskaņot mūziku no USB zibatmiņas.",usbInstallStick:"USB zibatmiņa šajā skaļrunī ir ST Reborn instalācijas zibatmiņa. Mūzikai izmanto atsevišķu zibatmiņu.",usbNotFAT32:"USB zibatmiņa šajā skaļrunī nav formatēta kā FAT32. Formatē to kā FAT32 un pēc tam vēlreiz iekopē mūziku.",usbBigClusters:"USB zibatmiņa šajā skaļrunī izmanto klasterus, kas lielāki par 32 KB, un skaļrunis tos nevar nolasīt. Formatē to vēlreiz kā FAT32 ar klasteriem līdz 32 KB.",usbUnreadable:"USB zibatmiņu šajā skaļrunī neizdevās nolasīt. Izņem to, pārbaudi datorā un ievieto atpakaļ.",usbHiRes:"Šis skaļrunis nevar atskaņot šo failu: tā iztveršanas frekvence pārsniedz 48 kHz.",usbHiResSkipped:"Šīs mapes dziesmas ar iztveršanas frekvenci virs 48 kHz tiek izlaistas, jo šis skaļrunis tās nevar atskaņot (izlaistas: {n}).",usbCantDecode:"Skaļrunis nevarēja dekodēt šo failu no USB zibatmiņas. Tas atskaņo MP3, AAC, Ogg, WMA un FLAC vai WAV līdz 48 kHz."},
+  uk:{usbName:"USB-накопичувач",usbUnsupportedModel:"Ця колонка не може відтворювати музику з USB-накопичувача.",usbInstallStick:"USB-накопичувач у цій колонці є інсталяційним накопичувачем ST Reborn. Для музики використовуйте окремий накопичувач.",usbNotFAT32:"USB-накопичувач у цій колонці не відформатовано у FAT32. Відформатуйте його у FAT32, а потім знову скопіюйте на нього музику.",usbBigClusters:"USB-накопичувач у цій колонці використовує кластери понад 32 КБ, які колонка не може прочитати. Відформатуйте його знову у FAT32 з кластерами не більше 32 КБ.",usbUnreadable:"Не вдалося прочитати USB-накопичувач у цій колонці. Від’єднайте його, перевірте на комп’ютері й під’єднайте знову.",usbHiRes:"Ця колонка не може відтворити цей файл: його частота дискретизації перевищує 48 кГц.",usbHiResSkipped:"Композиції в цій папці з частотою дискретизації понад 48 кГц пропускаються, бо ця колонка не може їх відтворити (пропущено: {n}).",usbCantDecode:"Колонка не змогла декодувати цей файл з USB-накопичувача. Вона відтворює MP3, AAC, Ogg, WMA, а також FLAC або WAV до 48 кГц."},
 };
 // A seventh dictionary for Deezer (docs/streaming/deezer.md, A2); I18N6 is
 // the USB stick music one. English and German only for now; pickDict falls
@@ -3836,6 +3855,9 @@ function playRefusal(detail) {
   var code = String((detail && detail.code) || '').toLowerCase();
   if (code.indexOf('spotify-not-logged-in') >= 0) return T.spNeedPick;
   if (code.indexOf('spotify-premium-required') >= 0) return T.spNeedPremium;
+  // A file on this speaker's USB stick above 48 kHz, a single song or a
+  // folder of nothing else (#1136).
+  if (code.indexOf('library-file-hires') >= 0) return T.usbHiRes;
   // A library key whose music server is off: name the server (#1339).
   if (code.indexOf('library-server-offline') >= 0) return libServerOffNotice(detail);
   // One whose server answers but no longer has the music (#919).
@@ -4039,11 +4061,15 @@ async function currentSong() {
 // answering (lastEnd, #1890), kept in queueEnd until anything plays again.
 var loneFile = null;
 var queueEnd = null;
+// usbRefused: a file on this speaker's USB stick the speaker could not decode
+// (usbRefused, #1136), while it is still the play on record.
+var usbRefused = null;
 async function currentQueue() {
   var q = await api('/api/queue');
   var ok = !!q && typeof q === 'object';
   loneFile = (ok && !q.active && q.file && typeof q.file === 'object') ? q.file : null;
   queueEnd = (ok && !q.active && q.lastEnd && q.lastEnd.reason === 'server_gone') ? q.lastEnd : null;
+  usbRefused = (ok && !q.active && q.usbRefused && typeof q.usbRefused === 'object') ? q.usbRefused : null;
   return (ok && q.active) ? q : null;
 }
 
@@ -4349,7 +4375,7 @@ async function refreshStatus() {
   // A speaker whose folder ended on a dead music server reports UPNP or no
   // source at all, so the queue is read for that one as well (#1890).
   const queueRead = (upnpPlay || upSrc === 'INVALID_SOURCE') ? await currentQueue() : null;
-  if (!upnpPlay && upSrc !== 'INVALID_SOURCE') queueEnd = null;
+  if (!upnpPlay && upSrc !== 'INVALID_SOURCE') { queueEnd = null; usbRefused = null; }
   const queue = upnpPlay ? queueRead : null;
   // The running queue's shuffle and repeat, set here or anywhere else (#1233).
   playModeLive = !!queue;
@@ -4375,7 +4401,9 @@ async function refreshStatus() {
   // A folder that ended because its music server stopped answering says so
   // where "Stopped" would stand, until anything plays again (#1890).
   const goneLine = (queueEnd && !playing && state !== 'PAUSE_STATE') ? T.serverGone : '';
-  const stLine = song || goneLine || human[state] || T.stopped;
+  // A file from the speaker's USB stick it could not decode says so (#1136).
+  const usbLine = (usbRefused && !playing && state !== 'PAUSE_STATE') ? T.usbCantDecode : '';
+  const stLine = song || goneLine || usbLine || human[state] || T.stopped;
   setNow(bigName, stLine === bigName ? '' : stLine);
   // Keep the Recently-played list current when the song or station changes from
   // ANY source (a hardware button, the desktop app, or an ICY song change), not
@@ -8889,19 +8917,40 @@ async function loadBrowseServers() {
   var box = document.getElementById('browseSrv');
   if (!head || !box) return;
   var list = await api('/api/library/servers');
+  var usbMsg = document.getElementById('browseUsbMsg');
+  if (usbMsg) { usbMsg.textContent = ''; usbMsg.hidden = true; }
   if (!Array.isArray(list) || !list.length) { head.hidden = true; return; }
   head.textContent = T.brHead; head.hidden = false;
   box.innerHTML = '';
   list.forEach(function(s){
+    /* A music stick in this speaker (#1136) is one more server; a stick it
+       cannot offer says why, in one line, instead of a button. */
+    var usb = s.kind === 'usb';
+    if (usb && s.refusal) {
+      if (usbMsg) { usbMsg.textContent = usbRefusalText(s.refusal); usbMsg.hidden = false; }
+      return;
+    }
+    if (!s.udn) return;
+    var name = usb ? T.usbName : (s.name || s.udn);
     var b = document.createElement('button');
     b.className = 'btn'; b.type = 'button';
-    b.textContent = s.name || s.udn;
+    b.textContent = name;
     b.addEventListener('click', function(){
-      brStack = [{ udn: s.udn, id: '0', title: s.name || '' }];
+      brStack = [{ udn: s.udn, id: '0', title: name }];
       browseOpen(0);
     });
     box.appendChild(b);
   });
+}
+/* usbRefusalText is the line for the agent's reason a stick is not offered. */
+function usbRefusalText(code) {
+  switch (code) {
+    case 'unsupported-model': return T.usbUnsupportedModel;
+    case 'install-stick': return T.usbInstallStick;
+    case 'not-fat32': return T.usbNotFAT32;
+    case 'big-clusters': return T.usbBigClusters;
+  }
+  return T.usbUnreadable;
 }
 function browseMsgSet(text) {
   var el = document.getElementById('browseMsg');
@@ -9088,7 +9137,15 @@ async function playBrowseFolder(tracks, btn) {
                name: (top && top.title) || (items[0].title || ''),
                art: items[0].art || '' };
   var res = await postPlay('/api/queue', { items: items, start: 0, card: card });
-  if (res.ok) { forgetStationPlay(); showTab('Play'); setNow(T.starting + ' ' + (items[0].title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000); }
+  if (res.ok) {
+    forgetStationPlay();
+    /* Songs on the speaker's USB stick above 48 kHz are skipped (#1136): said
+       here, on this tab, the way a cut folder says so. */
+    var skipped = (res.data && res.data.skippedHiRes) || 0;
+    if (skipped) browseMsgSet(fmt(T.usbHiResSkipped, { n: skipped }));
+    else showTab('Play');
+    setNow(T.starting + ' ' + (items[0].title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000);
+  }
   else if (!res.handled) { browseMsgSet(libPlayRefusal(res) || T.cantStart); }
 }
 
@@ -9116,6 +9173,7 @@ async function playBrowseTree(btn) {
     var notes = [];
     if (d.cut) notes.push(fmt(T.brTreeCut, { n: d.tracks || 0 }));
     if (d.cutDepth) notes.push(fmt(T.brTreeDepthCut, { depth: d.maxDepth || 3 }));
+    if (d.skippedHiRes) notes.push(fmt(T.usbHiResSkipped, { n: d.skippedHiRes }));
     forgetStationPlay();
     setNow(T.starting + ' ' + (top.title || ''), T.pleaseWait);
     setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); setTimeout(loadRecent, 4000);

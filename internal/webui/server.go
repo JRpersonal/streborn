@@ -1184,6 +1184,8 @@ type Server struct {
 	// baseCtx is the server-lifetime context (set in Run), the parent for the
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context
+	// usb is the music stick this speaker serves, or none (usbmusic.go).
+	usb usbMusicState
 }
 
 // boxPresetTombstoneTTL is how long a just-deleted slot is filtered out of the
@@ -1928,6 +1930,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/library/locate", s.handleLibraryLocate)
 	mux.HandleFunc("/api/queue/replay-card", s.handleQueueReplayCard)
 	mux.HandleFunc("/api/library/play-folder", s.handleLibraryPlayFolder)
+	// A music stick in the speaker, served as a ContentDirectory (usbmusic.go).
+	mux.HandleFunc("/usb/", s.handleUSB)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)

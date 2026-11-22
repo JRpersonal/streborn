@@ -56,9 +56,6 @@ const status = new Map();
 const open = new Set();
 // The Discover mode to return to from Favorites (top list, search, Pandora).
 let discoverMode = 'top';
-// The top list is fetched once on its own when the preview first shows Radio:
-// Discover with nothing in it would be an empty page.
-let discoverLoaded = false;
 
 const on = () => !!state.ui2Shell;
 const speakerName = (box = state.currentBox) => (box ? getBoxLabel(box) : '');
@@ -309,14 +306,10 @@ export function syncUi2Keys() {
   upgradeSentRows();
   // Another speaker was chosen: the rows' actions name the new one.
   if (rows.length && speaker !== rowsSpeaker && state.searchLastMode !== 'pandora') renderSearchResults();
-  // Discover starts with the top list, once, the first time Radio shows with
-  // a speaker to play on.
-  const res = $('searchResults');
-  if (!discoverLoaded && box && state.view === 'box' && !(state.searchResults || []).length
-    && state.searchLastMode === 'top' && res && !res.children.length) {
-    discoverLoaded = true;
-    doRefilter();
-  }
+  // Discover starts with an empty list, as the current layout does: no list
+  // is fetched on its own here. A top list that filled Radio at every start
+  // read as the last search coming back after the app was closed
+  // (discussion #1587); the search field and Top list are right above it.
 }
 
 // wireKeyEdit gives a key tile the keyboard's way to its choices

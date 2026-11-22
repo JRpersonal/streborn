@@ -234,3 +234,60 @@ func TestLibrarySearchOneDeadlineAfterRootIsPartial(t *testing.T) {
 		t.Errorf("a walk cut short by the deadline must be partial: %+v", res)
 	}
 }
+
+// #1705, 2026-11-21: Windows Media Player's share never answered the Search
+// action, the walk's first folder read then queued behind the abandoned query
+// and timed out, and the PC was reported as not answering although browsing
+// it worked. A server whose Search ran out of time without an answer is
+// walked straight away on the next search, and finds the track.
+func TestLibrarySearchWalksAServerWhoseSearchHungBefore(t *testing.T) {
+	old := librarySearchActionBudget
+	librarySearchActionBudget = 200 * time.Millisecond
+	t.Cleanup(func() { librarySearchActionBudget = old })
+
+	f := &dlnatest.FakeCDS{Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "I Can't Stand The Rain", Artist: "Tina Turner", Album: "Private Dancer", URL: "http://192.0.2.10/1.mp3"}}},
+	}}
+	searches := 0
+	var mu sync.Mutex
+	release := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("SOAPACTION"), "#Search") {
+			mu.Lock()
+			searches++
+			mu.Unlock()
+			// Never answers, like the WMP share; released at cleanup so the
+			// test server can close.
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		f.ServeHTTP(w, r)
+	}))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) }) // runs before ts.Close
+	srv := dlna.Server{UDN: "uuid:wmp-hangs-" + t.Name(), FriendlyName: "PCMusic", CDSControlURL: ts.URL}
+	t.Cleanup(func() { searchHungServers.Delete(srv.UDN) })
+
+	first := librarySearchOne(context.Background(), srv, "rain", dlna.SearchAny)
+	if !errors.Is(first.SearchErr, context.DeadlineExceeded) {
+		t.Fatalf("first search: SearchErr = %v, want the action's deadline", first.SearchErr)
+	}
+	if !searchHungBefore(srv) {
+		t.Fatal("a Search that ran out of time was not remembered")
+	}
+	second := librarySearchOne(context.Background(), srv, "rain", dlna.SearchAny)
+	if second.SearchErr != errSearchHungBefore || second.Path != searchPathWalk {
+		t.Fatalf("second search did not go straight to the walk: path=%s err=%v", second.Path, second.SearchErr)
+	}
+	if len(second.Items) != 1 {
+		t.Fatalf("the walk found %d items, want the one track", len(second.Items))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if searches != 1 {
+		t.Errorf("the Search action was asked %d times, want once (no title-only retry behind a hung query, none on the second search)", searches)
+	}
+}

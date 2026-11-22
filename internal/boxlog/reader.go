@@ -110,6 +110,8 @@ type Reader struct {
 	// minuteHandler hears the firmware's once-a-minute Wi-Fi quality line
 	// (minute.go).
 	minuteHandler func(at time.Time)
+	// usbDiskHandler hears the kernel's USB disk lines (usbdisk.go).
+	usbDiskHandler USBDiskHandler
 }
 
 // New returns a reader that will call handler for every key event.
@@ -275,6 +277,7 @@ func (r *Reader) handleLine(line string, now time.Time) {
 		r.firePower(fev)
 		r.firePlayFailure(fev)
 		r.fireMinute(fev)
+		r.fireUSBDisk(fev)
 	}
 	if r.handleGestureLines(line, now) {
 		return

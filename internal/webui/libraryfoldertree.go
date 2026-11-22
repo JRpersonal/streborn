@@ -253,10 +253,14 @@ func (s *Server) handleLibraryPlayFolder(w http.ResponseWriter, r *http.Request)
 			s.writeGroupedPlayError(w, err)
 			return
 		}
+		if ref := usbFolderRefusal(err); ref != nil {
+			writePlayRefusal(w, ref)
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"status":     "ok",
 		"tracks":     len(items),
 		"folders":    tree.folders,
@@ -264,5 +268,10 @@ func (s *Server) handleLibraryPlayFolder(w http.ResponseWriter, r *http.Request)
 		"cut":        tree.cut,
 		"cutDepth":   tree.cutDepth,
 		"maxDepth":   libraryTreeMaxDepth,
-	})
+	}
+	// Tracks on this speaker's USB stick the speaker cannot play (usbhires.go).
+	if n := s.queue.skippedCount(); n > 0 {
+		out["skippedHiRes"] = n
+	}
+	writeJSON(w, http.StatusOK, out)
 }

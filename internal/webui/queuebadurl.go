@@ -214,6 +214,9 @@ func (s *Server) NoteStreamUpstreamFailure(url string, code int) {
 // AUDIO_ERROR_BAD_URL matters here: the box could not fetch what it was
 // handed. It counts for the queue track pushed last, once per burst.
 func (s *Server) NoteBoxError(value, name, detail string) {
+	// A file on this speaker's USB stick the speaker could not decode is
+	// shown to the user (usbhires.go).
+	s.usbNoteDecoderError(name)
 	if strings.TrimSpace(value) != "3101" || s.queue == nil || !s.queue.isActive() {
 		return
 	}

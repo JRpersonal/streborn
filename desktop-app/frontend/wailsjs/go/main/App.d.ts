@@ -184,6 +184,8 @@ export function LibraryFolder(arg1:string,arg2:string):Promise<main.LibraryConta
 
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
+export function LibraryUSBNotices():Promise<Array<main.LibraryUSBNotice>>;
+
 export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function ListBoxMediaServers(arg1:string,arg2:number):Promise<Array<main.BoxMediaServer>>;
