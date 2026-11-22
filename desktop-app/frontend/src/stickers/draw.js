@@ -168,6 +168,39 @@ function drawBrand(ctx, b) {
   ctx.restore();
 }
 
+// The remote symbol in the header of the remote sticker, on a 24 x 48 unit
+// grid: the outline of a remote, its power key, the six keys in two rows of
+// three and the ring of the arrow keys. Drawn, so it needs no image and takes
+// the sticker's ink.
+function drawRemote(ctx, r) {
+  ctx.save();
+  ctx.translate(r.x, r.y);
+  ctx.scale(r.w / 24, r.h / 48);
+  ctx.strokeStyle = r.color;
+  ctx.fillStyle = r.color;
+  ctx.lineWidth = 2;
+  roundRect(ctx, 2, 1, 20, 46, 6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(12, 8, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  for (const cy of [16, 22]) {
+    for (const cx of [7.5, 12, 16.5]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(12, 34, 5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(12, 34, 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // Scissors as paths, handles left and blades pointing right at rot 0. Drawn,
 // not typed: the glyph is missing from many fonts and looks different in each
 // that has it.
@@ -259,6 +292,7 @@ function drawPiece(ctx, k, p, images) {
   for (const tx of p.texts) drawText(ctx, k, tx);
   if (p.qr) drawQr(ctx, p.qr, images);
   if (p.brand) drawBrand(ctx, p.brand);
+  if (p.remote) drawRemote(ctx, p.remote);
 
   // The cut line, dashed, in a colour that shows on this background.
   outlinePath(ctx, p.outline);
