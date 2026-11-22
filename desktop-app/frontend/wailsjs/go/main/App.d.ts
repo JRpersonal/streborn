@@ -74,6 +74,8 @@ export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:
 
 export function CurrentWiFi():Promise<string>;
 
+export function DeezerStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
@@ -219,6 +221,8 @@ export function PhoneAddressFor(arg1:string,arg2:number):Promise<main.PhoneAddre
 export function PhoneQR(arg1:string):Promise<string>;
 
 export function PickFirmwareFile():Promise<string>;
+
+export function PlayDeezerLink(arg1:string,arg2:number,arg3:string,arg4:string):Promise<Record<string, any>>;
 
 export function PlayPandoraStation(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 

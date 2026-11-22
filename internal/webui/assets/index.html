@@ -522,6 +522,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 
 /* Radio search results. */
 .srch { display:flex; gap:8px; margin-bottom:10px; }
+#dzCard .dzin { display:block; width:100%; box-sizing:border-box; min-height:44px; margin:0 0 8px; padding:10px 12px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:15px; }
 .srch input[type=search] { flex:1; min-width:0; min-height:44px; padding:10px 12px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:15px; }
 /* A row is the name plus ONE flex item, .sbtns, that holds all its buttons.
    The row wraps: once the name would get narrower than its 5em basis, the
@@ -1097,6 +1098,26 @@ html.ui2 .tabbar button .ti { display:none; }
 <div class="msg" id="dispMsg"></div>
 </div>
 
+<!-- Deezer (docs/streaming/deezer.md, A2): sign this speaker in to Deezer, the
+     same card the desktop app has in its Spotify view. The speaker's own
+     Deezer client logs in; the password goes to the speaker and nowhere else.
+     Hidden until the speaker answers /api/deezer/account. -->
+<div class="card" id="dzCard" hidden>
+<div class="label">Deezer</div>
+<div class="sum" id="lblDzSum"></div>
+<div class="sum" id="lblDzUntested"></div>
+<div class="msg" id="dzState" role="status" aria-live="polite"></div>
+<div id="dzForm" hidden>
+<input type="email" id="dzUser" class="dzin" autocomplete="off" autocapitalize="off" spellcheck="false">
+<input type="password" id="dzPass" class="dzin" autocomplete="off">
+<button class="btn" id="btnDzConnect" type="button" style="width:100%"><span id="lblDzConnect">Connect</span></button>
+</div>
+<button class="btn" id="btnDzDisconnect" type="button" style="width:100%;margin-top:8px" hidden><span id="lblDzDisconnect">Disconnect</span></button>
+<button class="btn" id="btnDzRefresh" type="button" style="width:100%;margin-top:8px"><span id="lblDzRefresh">Check again</span></button>
+<div class="msg" id="dzMsg"></div>
+<div class="sum" id="lblDzLinkHint" style="margin-top:8px"></div>
+</div>
+
 <h2 class="u2-sec ui2-only" id="u2lUpdates">Updates</h2>
 <div class="card" id="suCard">
 <div class="label" id="lblSu">Software update</div>
@@ -1266,6 +1287,8 @@ function pickDict(){
   for (var k5 in base5) out[k5] = (sel5[k5] != null ? sel5[k5] : base5[k5]);
   var base6 = I18N6.en, sel6 = I18N6[code] || base6;
   for (var k6 in base6) out[k6] = (sel6[k6] != null ? sel6[k6] : base6[k6]);
+  var base7 = I18N7.en, sel7 = I18N7[code] || base7;
+  for (var k7 in base7) out[k7] = (sel7[k7] != null ? sel7[k7] : base7[k7]);
   return out;
 }
 // A third dictionary with short lines: one locale per line and only a few
@@ -1335,6 +1358,24 @@ var I18N6 = {
   lt:{usbName:"USB atmintukas",usbUnsupportedModel:"Šis garsiakalbis negali groti muzikos iš USB atmintuko.",usbInstallStick:"Šiame garsiakalbyje esantis USB atmintukas yra ST Reborn diegimo atmintukas. Muzikai naudokite atskirą atmintuką.",usbNotFAT32:"Šiame garsiakalbyje esantis USB atmintukas nesuformatuotas FAT32 formatu. Suformatuokite jį FAT32 formatu ir vėl nukopijuokite muziką.",usbBigClusters:"Šiame garsiakalbyje esantis USB atmintukas naudoja didesnius nei 32 KB klasterius, kurių garsiakalbis negali nuskaityti. Iš naujo suformatuokite jį FAT32 formatu su ne didesniais kaip 32 KB klasteriais.",usbUnreadable:"Nepavyko nuskaityti šiame garsiakalbyje esančio USB atmintuko. Ištraukite jį, patikrinkite kompiuteryje ir vėl įkiškite.",usbHiRes:"Šis garsiakalbis negali groti šio failo: jo diskretizavimo dažnis viršija 48 kHz.",usbHiResSkipped:"Šio aplanko dainos, kurių diskretizavimo dažnis viršija 48 kHz, praleidžiamos, nes šis garsiakalbis negali jų groti (praleista: {n}).",usbCantDecode:"Garsiakalbis negalėjo iškoduoti šio failo iš USB atmintuko. Jis groja MP3, AAC, Ogg, WMA ir FLAC arba WAV iki 48 kHz."},
   lv:{usbName:"USB zibatmiņa",usbUnsupportedModel:"Šis skaļrunis nevar atskaņot mūziku no USB zibatmiņas.",usbInstallStick:"USB zibatmiņa šajā skaļrunī ir ST Reborn instalācijas zibatmiņa. Mūzikai izmanto atsevišķu zibatmiņu.",usbNotFAT32:"USB zibatmiņa šajā skaļrunī nav formatēta kā FAT32. Formatē to kā FAT32 un pēc tam vēlreiz iekopē mūziku.",usbBigClusters:"USB zibatmiņa šajā skaļrunī izmanto klasterus, kas lielāki par 32 KB, un skaļrunis tos nevar nolasīt. Formatē to vēlreiz kā FAT32 ar klasteriem līdz 32 KB.",usbUnreadable:"USB zibatmiņu šajā skaļrunī neizdevās nolasīt. Izņem to, pārbaudi datorā un ievieto atpakaļ.",usbHiRes:"Šis skaļrunis nevar atskaņot šo failu: tā iztveršanas frekvence pārsniedz 48 kHz.",usbHiResSkipped:"Šīs mapes dziesmas ar iztveršanas frekvenci virs 48 kHz tiek izlaistas, jo šis skaļrunis tās nevar atskaņot (izlaistas: {n}).",usbCantDecode:"Skaļrunis nevarēja dekodēt šo failu no USB zibatmiņas. Tas atskaņo MP3, AAC, Ogg, WMA un FLAC vai WAV līdz 48 kHz."},
   uk:{usbName:"USB-накопичувач",usbUnsupportedModel:"Ця колонка не може відтворювати музику з USB-накопичувача.",usbInstallStick:"USB-накопичувач у цій колонці є інсталяційним накопичувачем ST Reborn. Для музики використовуйте окремий накопичувач.",usbNotFAT32:"USB-накопичувач у цій колонці не відформатовано у FAT32. Відформатуйте його у FAT32, а потім знову скопіюйте на нього музику.",usbBigClusters:"USB-накопичувач у цій колонці використовує кластери понад 32 КБ, які колонка не може прочитати. Відформатуйте його знову у FAT32 з кластерами не більше 32 КБ.",usbUnreadable:"Не вдалося прочитати USB-накопичувач у цій колонці. Від’єднайте його, перевірте на комп’ютері й під’єднайте знову.",usbHiRes:"Ця колонка не може відтворити цей файл: його частота дискретизації перевищує 48 кГц.",usbHiResSkipped:"Композиції в цій папці з частотою дискретизації понад 48 кГц пропускаються, бо ця колонка не може їх відтворити (пропущено: {n}).",usbCantDecode:"Колонка не змогла декодувати цей файл з USB-накопичувача. Вона відтворює MP3, AAC, Ogg, WMA, а також FLAC або WAV до 48 кГц."},
+};
+// A seventh dictionary for Deezer (docs/streaming/deezer.md, A2); I18N6 is
+// the USB stick music one, one locale per line like I18N3. pickDict merges it
+// with the same per-key English fall-through; every locale carries every key.
+// {n}, {a}, {d} and {t} are substituted at use time.
+var I18N7 = {
+  en:{dzSum:"Sign this speaker in to Deezer. The speaker's own Deezer client logs in and plays. Your password goes straight to the speaker, ST Reborn does not keep it.",dzUntested:"New and not yet confirmed on a speaker: the speaker may no longer be able to finish a Deezer login without the Bose cloud. If it does not work, save a diagnostic file and send it in.",dzEmail:"E-mail",dzPass:"Password",dzConnect:"Connect",dzDisconnect:"Disconnect",dzRefresh:"Check again",dzNeedBoth:"Enter the e-mail and the password of your Deezer account.",dzSending:"Sending the account to the speaker…",dzSent:"Sent. The speaker logs in now, this can take a minute.",dzConnectFail:"The speaker did not accept the account: {d}",dzBusy:"A login is already on its way to the speaker. Wait a moment.",dzDiscConfirm:"Disconnect Deezer? The speaker forgets the account, and keys with Deezer playlists stop playing until you connect it again.",dzDisconnected:"Disconnected.",dzDiscFail:"The speaker did not remove the account: {d}",dzStConnected:"Connected as {a}. Ready to play.",dzStConnectedNoName:"Connected. Ready to play.",dzStConnecting:"The speaker is logging in with Deezer. This can take a minute.",dzStRefused:"The speaker refused the login ({d}).",dzStNoAnswer:"The speaker did not answer the login.",dzStNotReady:"The speaker took the login but did not finish it ({d}). Without the Bose cloud this may not work at all. A diagnostic file shows what happened.",dzStUnavailable:"The speaker holds a Deezer account but is not logged in. Connect it again.",dzStNotConnected:"Not connected.",dzStUnknown:"The speaker did not answer.",dzLinkHint:"To play a Deezer playlist, album or track, paste its link into the station search. Hold a key while it plays to keep it there.",dzAlbum:"Album",dzTrack:"Track",dzPlaylist:"Playlist",dzShare:"Share link",dzLinkNote:"Plays on the speaker's own Deezer client. Hold a key while it plays to keep it there.",dzStarting:"Starting…",dzStarted:"{t} plays now.",dzPlayFail:"It did not start: {d}",dzNotLinked:"This speaker has no Deezer account. Connect one in the Deezer card under More.",dzUnavailable:"The speaker's Deezer login does not work right now. Check the Deezer card under More.",dzUnresolved:"This is not a Deezer playlist, album or track link. Open it in a browser and copy the address from the address bar."},
+  de:{dzSum:"Melde diesen Lautsprecher bei Deezer an. Der eigene Deezer-Client des Lautsprechers meldet sich an und spielt. Dein Passwort geht direkt an den Lautsprecher, ST Reborn behält es nicht.",dzUntested:"Neu und noch auf keinem Lautsprecher bestätigt: Es kann sein, dass der Lautsprecher eine Deezer-Anmeldung ohne die Bose-Cloud nicht mehr abschließen kann. Wenn es nicht klappt, speichere eine Diagnosedatei und schick sie ein.",dzEmail:"E-Mail",dzPass:"Passwort",dzConnect:"Verbinden",dzDisconnect:"Trennen",dzRefresh:"Neu prüfen",dzNeedBoth:"Gib die E-Mail-Adresse und das Passwort deines Deezer-Kontos ein.",dzSending:"Konto wird an den Lautsprecher geschickt…",dzSent:"Gesendet. Der Lautsprecher meldet sich jetzt an, das kann eine Minute dauern.",dzConnectFail:"Der Lautsprecher hat das Konto nicht angenommen: {d}",dzBusy:"Eine Anmeldung ist schon auf dem Weg zum Lautsprecher. Warte einen Moment.",dzDiscConfirm:"Deezer trennen? Der Lautsprecher vergisst das Konto, und Tasten mit Deezer-Playlists spielen erst wieder, wenn du es neu verbindest.",dzDisconnected:"Getrennt.",dzDiscFail:"Der Lautsprecher hat das Konto nicht entfernt: {d}",dzStConnected:"Verbunden als {a}. Bereit zum Abspielen.",dzStConnectedNoName:"Verbunden. Bereit zum Abspielen.",dzStConnecting:"Der Lautsprecher meldet sich bei Deezer an. Das kann eine Minute dauern.",dzStRefused:"Der Lautsprecher hat die Anmeldung abgelehnt ({d}).",dzStNoAnswer:"Der Lautsprecher hat auf die Anmeldung nicht geantwortet.",dzStNotReady:"Der Lautsprecher hat die Anmeldung angenommen, aber nicht abgeschlossen ({d}). Ohne die Bose-Cloud geht das vielleicht gar nicht. Eine Diagnosedatei zeigt, was passiert ist.",dzStUnavailable:"Der Lautsprecher hat ein Deezer-Konto, ist aber nicht angemeldet. Verbinde es neu.",dzStNotConnected:"Nicht verbunden.",dzStUnknown:"Der Lautsprecher hat nicht geantwortet.",dzLinkHint:"Um eine Deezer-Playlist, ein Album oder einen Titel abzuspielen, füge den Link in die Sendersuche ein. Halte eine Taste gedrückt, während es spielt, um es darauf zu speichern.",dzAlbum:"Album",dzTrack:"Titel",dzPlaylist:"Playlist",dzShare:"Teilen-Link",dzLinkNote:"Spielt über den eigenen Deezer-Client des Lautsprechers. Halte eine Taste gedrückt, während es spielt, um es darauf zu speichern.",dzStarting:"Wird gestartet…",dzStarted:"{t} spielt jetzt.",dzPlayFail:"Es ist nicht gestartet: {d}",dzNotLinked:"Dieser Lautsprecher hat kein Deezer-Konto. Verbinde eins in der Deezer-Karte unter Mehr.",dzUnavailable:"Die Deezer-Anmeldung des Lautsprechers funktioniert gerade nicht. Schau in die Deezer-Karte unter Mehr.",dzUnresolved:"Das ist kein Link zu einer Deezer-Playlist, einem Album oder einem Titel. Öffne ihn im Browser und kopiere die Adresse aus der Adresszeile."},
+  nl:{dzSum:"Meld deze speaker aan bij Deezer. De eigen Deezer-client van de speaker logt in en speelt af. Je wachtwoord gaat rechtstreeks naar de speaker, ST Reborn bewaart het niet.",dzUntested:"Nieuw en nog op geen enkele speaker bevestigd: het kan zijn dat de speaker een Deezer-aanmelding zonder de Bose-cloud niet meer kan afronden. Werkt het niet, sla dan een diagnosebestand op en stuur het in.",dzEmail:"E-mail",dzPass:"Wachtwoord",dzConnect:"Verbinden",dzDisconnect:"Loskoppelen",dzRefresh:"Opnieuw controleren",dzNeedBoth:"Vul het e-mailadres en het wachtwoord van je Deezer-account in.",dzSending:"Account wordt naar de speaker gestuurd…",dzSent:"Verstuurd. De speaker logt nu in, dit kan een minuut duren.",dzConnectFail:"De speaker heeft het account niet geaccepteerd: {d}",dzBusy:"Er is al een aanmelding onderweg naar de speaker. Wacht even.",dzDiscConfirm:"Deezer loskoppelen? De speaker vergeet het account, en toetsen met Deezer-afspeellijsten spelen pas weer als je het opnieuw verbindt.",dzDisconnected:"Losgekoppeld.",dzDiscFail:"De speaker heeft het account niet verwijderd: {d}",dzStConnected:"Verbonden als {a}. Klaar om af te spelen.",dzStConnectedNoName:"Verbonden. Klaar om af te spelen.",dzStConnecting:"De speaker logt in bij Deezer. Dit kan een minuut duren.",dzStRefused:"De speaker heeft de aanmelding geweigerd ({d}).",dzStNoAnswer:"De speaker heeft niet op de aanmelding gereageerd.",dzStNotReady:"De speaker heeft de aanmelding aangenomen, maar niet afgerond ({d}). Zonder de Bose-cloud werkt dit misschien helemaal niet. Een diagnosebestand laat zien wat er is gebeurd.",dzStUnavailable:"De speaker heeft een Deezer-account, maar is niet ingelogd. Verbind het opnieuw.",dzStNotConnected:"Niet verbonden.",dzStUnknown:"De speaker heeft niet geantwoord.",dzLinkHint:"Om een Deezer-afspeellijst, -album of -nummer af te spelen, plak je de link in de zoekfunctie voor zenders. Houd een toets ingedrukt terwijl het speelt om het daarop op te slaan.",dzAlbum:"Album",dzTrack:"Nummer",dzPlaylist:"Afspeellijst",dzShare:"Deellink",dzLinkNote:"Speelt via de eigen Deezer-client van de speaker. Houd een toets ingedrukt terwijl het speelt om het daarop op te slaan.",dzStarting:"Wordt gestart…",dzStarted:"{t} speelt nu.",dzPlayFail:"Het is niet gestart: {d}",dzNotLinked:"Deze speaker heeft geen Deezer-account. Verbind er een in de Deezer-kaart onder Meer.",dzUnavailable:"De Deezer-aanmelding van de speaker werkt op dit moment niet. Kijk in de Deezer-kaart onder Meer.",dzUnresolved:"Dit is geen link naar een Deezer-afspeellijst, -album of -nummer. Open hem in een browser en kopieer het adres uit de adresbalk."},
+  fr:{dzSum:"Connectez cette enceinte à Deezer. Le client Deezer intégré à l'enceinte se connecte et joue. Votre mot de passe va directement à l'enceinte, ST Reborn ne le conserve pas.",dzUntested:"Nouveau et pas encore confirmé sur une enceinte : il se peut que l'enceinte ne puisse plus terminer une connexion Deezer sans le cloud Bose. Si cela ne fonctionne pas, enregistrez un fichier de diagnostic et envoyez-le.",dzEmail:"E-mail",dzPass:"Mot de passe",dzConnect:"Connecter",dzDisconnect:"Déconnecter",dzRefresh:"Vérifier à nouveau",dzNeedBoth:"Saisissez l'e-mail et le mot de passe de votre compte Deezer.",dzSending:"Envoi du compte à l'enceinte…",dzSent:"Envoyé. L'enceinte se connecte, cela peut prendre une minute.",dzConnectFail:"L'enceinte n'a pas accepté le compte : {d}",dzBusy:"Une connexion est déjà en route vers l'enceinte. Patientez un instant.",dzDiscConfirm:"Déconnecter Deezer ? L'enceinte oublie le compte, et les touches avec des playlists Deezer ne jouent plus tant que vous ne le reconnectez pas.",dzDisconnected:"Déconnecté.",dzDiscFail:"L'enceinte n'a pas supprimé le compte : {d}",dzStConnected:"Connecté en tant que {a}. Prêt à jouer.",dzStConnectedNoName:"Connecté. Prêt à jouer.",dzStConnecting:"L'enceinte se connecte à Deezer. Cela peut prendre une minute.",dzStRefused:"L'enceinte a refusé la connexion ({d}).",dzStNoAnswer:"L'enceinte n'a pas répondu à la connexion.",dzStNotReady:"L'enceinte a accepté la connexion mais ne l'a pas terminée ({d}). Sans le cloud Bose, cela ne fonctionne peut-être pas du tout. Un fichier de diagnostic montre ce qui s'est passé.",dzStUnavailable:"L'enceinte a un compte Deezer mais n'est pas connectée. Reconnectez-le.",dzStNotConnected:"Non connecté.",dzStUnknown:"L'enceinte n'a pas répondu.",dzLinkHint:"Pour lire une playlist, un album ou un titre Deezer, collez son lien dans la recherche de stations. Maintenez une touche pendant la lecture pour l'y enregistrer.",dzAlbum:"Album",dzTrack:"Titre",dzPlaylist:"Playlist",dzShare:"Lien de partage",dzLinkNote:"Joue sur le client Deezer intégré à l'enceinte. Maintenez une touche pendant la lecture pour l'y enregistrer.",dzStarting:"Démarrage…",dzStarted:"{t} joue maintenant.",dzPlayFail:"La lecture n'a pas démarré : {d}",dzNotLinked:"Cette enceinte n'a pas de compte Deezer. Connectez-en un dans la carte Deezer sous Plus.",dzUnavailable:"La connexion Deezer de l'enceinte ne fonctionne pas pour le moment. Vérifiez la carte Deezer sous Plus.",dzUnresolved:"Ce n'est pas un lien vers une playlist, un album ou un titre Deezer. Ouvrez-le dans un navigateur et copiez l'adresse depuis la barre d'adresse."},
+  es:{dzSum:"Conecta este altavoz a Deezer. El cliente de Deezer del propio altavoz inicia sesión y reproduce. Tu contraseña va directamente al altavoz, ST Reborn no la guarda.",dzUntested:"Nuevo y aún no confirmado en ningún altavoz: puede que el altavoz ya no consiga completar un inicio de sesión en Deezer sin la nube de Bose. Si no funciona, guarda un archivo de diagnóstico y envíalo.",dzEmail:"Correo electrónico",dzPass:"Contraseña",dzConnect:"Conectar",dzDisconnect:"Desconectar",dzRefresh:"Comprobar de nuevo",dzNeedBoth:"Introduce el correo electrónico y la contraseña de tu cuenta de Deezer.",dzSending:"Enviando la cuenta al altavoz…",dzSent:"Enviado. El altavoz está iniciando sesión, puede tardar un minuto.",dzConnectFail:"El altavoz no aceptó la cuenta: {d}",dzBusy:"Ya hay un inicio de sesión en camino al altavoz. Espera un momento.",dzDiscConfirm:"¿Desconectar Deezer? El altavoz olvida la cuenta, y las teclas con listas de Deezer dejan de sonar hasta que la vuelvas a conectar.",dzDisconnected:"Desconectado.",dzDiscFail:"El altavoz no eliminó la cuenta: {d}",dzStConnected:"Conectado como {a}. Listo para reproducir.",dzStConnectedNoName:"Conectado. Listo para reproducir.",dzStConnecting:"El altavoz está iniciando sesión en Deezer. Esto puede tardar un minuto.",dzStRefused:"El altavoz rechazó el inicio de sesión ({d}).",dzStNoAnswer:"El altavoz no respondió al inicio de sesión.",dzStNotReady:"El altavoz aceptó el inicio de sesión pero no lo completó ({d}). Sin la nube de Bose puede que esto no funcione en absoluto. Un archivo de diagnóstico muestra lo que pasó.",dzStUnavailable:"El altavoz tiene una cuenta de Deezer, pero no tiene la sesión iniciada. Vuelve a conectarla.",dzStNotConnected:"No conectado.",dzStUnknown:"El altavoz no respondió.",dzLinkHint:"Para reproducir una lista, un álbum o una canción de Deezer, pega su enlace en la búsqueda de emisoras. Mantén pulsada una tecla mientras suena para guardarlo en ella.",dzAlbum:"Álbum",dzTrack:"Canción",dzPlaylist:"Lista de reproducción",dzShare:"Enlace para compartir",dzLinkNote:"Suena en el cliente de Deezer del propio altavoz. Mantén pulsada una tecla mientras suena para guardarlo en ella.",dzStarting:"Iniciando…",dzStarted:"{t} suena ahora.",dzPlayFail:"No se inició: {d}",dzNotLinked:"Este altavoz no tiene cuenta de Deezer. Conecta una en la tarjeta Deezer de Más.",dzUnavailable:"El inicio de sesión de Deezer del altavoz no funciona ahora mismo. Revisa la tarjeta Deezer de Más.",dzUnresolved:"Esto no es un enlace a una lista, un álbum o una canción de Deezer. Ábrelo en un navegador y copia la dirección de la barra de direcciones."},
+  pl:{dzSum:"Zaloguj ten głośnik do Deezera. Wbudowany klient Deezera w głośniku sam się loguje i odtwarza. Twoje hasło trafia bezpośrednio do głośnika, ST Reborn go nie przechowuje.",dzUntested:"Nowość, jeszcze niepotwierdzona na żadnym głośniku: bez chmury Bose głośnik może już nie być w stanie dokończyć logowania do Deezera. Jeśli to nie działa, zapisz plik diagnostyczny i wyślij go.",dzEmail:"E-mail",dzPass:"Hasło",dzConnect:"Połącz",dzDisconnect:"Rozłącz",dzRefresh:"Sprawdź ponownie",dzNeedBoth:"Wpisz adres e-mail i hasło do swojego konta Deezer.",dzSending:"Wysyłanie konta do głośnika…",dzSent:"Wysłano. Głośnik się teraz loguje, może to potrwać minutę.",dzConnectFail:"Głośnik nie przyjął konta: {d}",dzBusy:"Logowanie jest już w drodze do głośnika. Poczekaj chwilę.",dzDiscConfirm:"Rozłączyć Deezer? Głośnik zapomni konto, a przyciski z playlistami Deezer przestaną grać, dopóki nie połączysz go ponownie.",dzDisconnected:"Rozłączono.",dzDiscFail:"Głośnik nie usunął konta: {d}",dzStConnected:"Połączono jako {a}. Gotowe do odtwarzania.",dzStConnectedNoName:"Połączono. Gotowe do odtwarzania.",dzStConnecting:"Głośnik loguje się do Deezera. Może to potrwać minutę.",dzStRefused:"Głośnik odrzucił logowanie ({d}).",dzStNoAnswer:"Głośnik nie odpowiedział na logowanie.",dzStNotReady:"Głośnik przyjął logowanie, ale go nie dokończył ({d}). Bez chmury Bose może to w ogóle nie działać. Plik diagnostyczny pokazuje, co się stało.",dzStUnavailable:"Głośnik ma konto Deezer, ale nie jest zalogowany. Połącz je ponownie.",dzStNotConnected:"Nie połączono.",dzStUnknown:"Głośnik nie odpowiedział.",dzLinkHint:"Aby odtworzyć playlistę, album lub utwór z Deezera, wklej jego link w wyszukiwarkę stacji. Przytrzymaj przycisk podczas odtwarzania, aby go na nim zapisać.",dzAlbum:"Album",dzTrack:"Utwór",dzPlaylist:"Playlista",dzShare:"Link do udostępnienia",dzLinkNote:"Gra przez wbudowanego klienta Deezera w głośniku. Przytrzymaj przycisk podczas odtwarzania, aby go na nim zapisać.",dzStarting:"Uruchamianie…",dzStarted:"{t} teraz gra.",dzPlayFail:"Nie udało się uruchomić: {d}",dzNotLinked:"Ten głośnik nie ma konta Deezer. Połącz konto na karcie Deezer w zakładce Więcej.",dzUnavailable:"Logowanie Deezera na głośniku teraz nie działa. Sprawdź kartę Deezer w zakładce Więcej.",dzUnresolved:"To nie jest link do playlisty, albumu ani utworu z Deezera. Otwórz go w przeglądarce i skopiuj adres z paska adresu."},
+  tr:{dzSum:"Bu hoparlörü Deezer'a bağlayın. Hoparlörün kendi Deezer istemcisi giriş yapar ve çalar. Şifreniz doğrudan hoparlöre gider, ST Reborn şifrenizi saklamaz.",dzUntested:"Yeni ve henüz hiçbir hoparlörde doğrulanmadı: hoparlör Bose bulutu olmadan bir Deezer girişini artık tamamlayamayabilir. Çalışmazsa bir tanılama dosyası kaydedin ve gönderin.",dzEmail:"E-posta",dzPass:"Şifre",dzConnect:"Bağlan",dzDisconnect:"Bağlantıyı kes",dzRefresh:"Yeniden kontrol et",dzNeedBoth:"Deezer hesabınızın e-posta adresini ve şifresini girin.",dzSending:"Hesap hoparlöre gönderiliyor…",dzSent:"Gönderildi. Hoparlör şimdi giriş yapıyor, bu bir dakika sürebilir.",dzConnectFail:"Hoparlör hesabı kabul etmedi: {d}",dzBusy:"Hoparlöre zaten bir giriş isteği gidiyor. Biraz bekleyin.",dzDiscConfirm:"Deezer bağlantısı kesilsin mi? Hoparlör hesabı unutur ve Deezer çalma listelerini tutan tuşlar, hesabı yeniden bağlayana kadar çalmaz.",dzDisconnected:"Bağlantı kesildi.",dzDiscFail:"Hoparlör hesabı kaldırmadı: {d}",dzStConnected:"{a} olarak bağlı. Çalmaya hazır.",dzStConnectedNoName:"Bağlı. Çalmaya hazır.",dzStConnecting:"Hoparlör Deezer'a giriş yapıyor. Bu bir dakika sürebilir.",dzStRefused:"Hoparlör girişi reddetti ({d}).",dzStNoAnswer:"Hoparlör girişe yanıt vermedi.",dzStNotReady:"Hoparlör girişi aldı ama tamamlamadı ({d}). Bose bulutu olmadan bu hiç çalışmayabilir. Bir tanılama dosyası ne olduğunu gösterir.",dzStUnavailable:"Hoparlörde bir Deezer hesabı var ama giriş yapılmamış. Hesabı yeniden bağlayın.",dzStNotConnected:"Bağlı değil.",dzStUnknown:"Hoparlör yanıt vermedi.",dzLinkHint:"Bir Deezer çalma listesini, albümünü veya parçasını çalmak için bağlantısını istasyon aramasına yapıştırın. Çalarken bir tuşu basılı tutarak onu o tuşa kaydedin.",dzAlbum:"Albüm",dzTrack:"Parça",dzPlaylist:"Çalma listesi",dzShare:"Paylaşım bağlantısı",dzLinkNote:"Hoparlörün kendi Deezer istemcisinde çalar. Çalarken bir tuşu basılı tutarak onu o tuşa kaydedin.",dzStarting:"Başlatılıyor…",dzStarted:"{t} şimdi çalıyor.",dzPlayFail:"Başlamadı: {d}",dzNotLinked:"Bu hoparlörün Deezer hesabı yok. Daha fazla altındaki Deezer kartından bir hesap bağlayın.",dzUnavailable:"Hoparlörün Deezer girişi şu anda çalışmıyor. Daha fazla altındaki Deezer kartına bakın.",dzUnresolved:"Bu bir Deezer çalma listesi, albüm veya parça bağlantısı değil. Bağlantıyı bir tarayıcıda açın ve adres çubuğundaki adresi kopyalayın."},
+  ar:{dzSum:"سجّل دخول هذه السمّاعة إلى Deezer. يسجّل عميل Deezer المدمج في السمّاعة الدخول ويشغّل الموسيقى. تذهب كلمة المرور مباشرة إلى السمّاعة، ولا يحتفظ ST Reborn بها.",dzUntested:"ميزة جديدة لم تُؤكَّد بعد على أي سمّاعة: قد لا تتمكن السمّاعة بعد الآن من إكمال تسجيل الدخول إلى Deezer من دون سحابة Bose. إذا لم ينجح ذلك، فاحفظ ملف تشخيص وأرسله.",dzEmail:"البريد الإلكتروني",dzPass:"كلمة المرور",dzConnect:"اتصال",dzDisconnect:"قطع الاتصال",dzRefresh:"تحقّق مجددًا",dzNeedBoth:"أدخل البريد الإلكتروني وكلمة مرور حساب Deezer الخاص بك.",dzSending:"جارٍ إرسال الحساب إلى السمّاعة…",dzSent:"تم الإرسال. تسجّل السمّاعة الدخول الآن، قد يستغرق ذلك دقيقة.",dzConnectFail:"لم تقبل السمّاعة الحساب: {d}",dzBusy:"هناك تسجيل دخول في طريقه إلى السمّاعة بالفعل. انتظر لحظة.",dzDiscConfirm:"قطع الاتصال بـ Deezer؟ ستنسى السمّاعة الحساب، والأزرار التي تحمل قوائم تشغيل Deezer تتوقف عن التشغيل حتى تعيد ربطه.",dzDisconnected:"تم قطع الاتصال.",dzDiscFail:"لم تحذف السمّاعة الحساب: {d}",dzStConnected:"متصل باسم {a}. جاهز للتشغيل.",dzStConnectedNoName:"متصل. جاهز للتشغيل.",dzStConnecting:"تسجّل السمّاعة الدخول إلى Deezer. قد يستغرق ذلك دقيقة.",dzStRefused:"رفضت السمّاعة تسجيل الدخول ({d}).",dzStNoAnswer:"لم تردّ السمّاعة على تسجيل الدخول.",dzStNotReady:"استلمت السمّاعة تسجيل الدخول لكنها لم تُكمله ({d}). من دون سحابة Bose قد لا يعمل هذا إطلاقًا. يبيّن ملف التشخيص ما حدث.",dzStUnavailable:"تحمل السمّاعة حساب Deezer لكنها غير مسجَّلة الدخول. أعد ربطه.",dzStNotConnected:"غير متصل.",dzStUnknown:"لم تردّ السمّاعة.",dzLinkHint:"لتشغيل قائمة تشغيل أو ألبوم أو مقطوعة من Deezer، الصق الرابط في بحث المحطات. اضغط مطوّلًا على زر أثناء التشغيل لحفظه عليه.",dzAlbum:"ألبوم",dzTrack:"مقطوعة",dzPlaylist:"قائمة تشغيل",dzShare:"رابط مشاركة",dzLinkNote:"يُشغَّل عبر عميل Deezer المدمج في السمّاعة. اضغط مطوّلًا على زر أثناء التشغيل لحفظه عليه.",dzStarting:"جارٍ البدء…",dzStarted:"يُشغَّل {t} الآن.",dzPlayFail:"لم يبدأ التشغيل: {d}",dzNotLinked:"لا يوجد حساب Deezer على هذه السمّاعة. اربط حسابًا في بطاقة Deezer ضمن المزيد.",dzUnavailable:"تسجيل دخول Deezer على السمّاعة لا يعمل حاليًا. تحقّق من بطاقة Deezer ضمن المزيد.",dzUnresolved:"هذا ليس رابطًا لقائمة تشغيل أو ألبوم أو مقطوعة من Deezer. افتحه في متصفح وانسخ العنوان من شريط العنوان."},
+  ja:{dzSum:"このスピーカーをDeezerにログインさせます。スピーカー内蔵のDeezerクライアントがログインして再生します。パスワードはスピーカーに直接送られ、ST Rebornは保存しません。",dzUntested:"新機能で、まだどのスピーカーでも動作が確認されていません。Boseクラウドなしでは、スピーカーがDeezerへのログインを完了できない可能性があります。うまくいかない場合は、診断ファイルを保存して送ってください。",dzEmail:"メールアドレス",dzPass:"パスワード",dzConnect:"接続",dzDisconnect:"接続解除",dzRefresh:"再確認",dzNeedBoth:"Deezerアカウントのメールアドレスとパスワードを入力してください。",dzSending:"アカウントをスピーカーに送信中…",dzSent:"送信しました。スピーカーがログインしています。1分ほどかかることがあります。",dzConnectFail:"スピーカーがアカウントを受け付けませんでした: {d}",dzBusy:"すでにログインをスピーカーに送信中です。少しお待ちください。",dzDiscConfirm:"Deezerの接続を解除しますか？スピーカーはアカウントを忘れ、Deezerのプレイリストを登録したキーは再接続するまで再生されません。",dzDisconnected:"接続を解除しました。",dzDiscFail:"スピーカーがアカウントを削除しませんでした: {d}",dzStConnected:"{a} として接続済み。再生できます。",dzStConnectedNoName:"接続済み。再生できます。",dzStConnecting:"スピーカーがDeezerにログインしています。1分ほどかかることがあります。",dzStRefused:"スピーカーがログインを拒否しました（{d}）。",dzStNoAnswer:"スピーカーがログインに応答しませんでした。",dzStNotReady:"スピーカーはログインを受け付けましたが、完了しませんでした（{d}）。Boseクラウドなしでは、まったく動作しない可能性があります。診断ファイルで何が起きたかがわかります。",dzStUnavailable:"スピーカーにはDeezerアカウントがありますが、ログインしていません。もう一度接続してください。",dzStNotConnected:"未接続。",dzStUnknown:"スピーカーが応答しませんでした。",dzLinkHint:"Deezerのプレイリスト、アルバム、曲を再生するには、そのリンクを放送局の検索欄に貼り付けてください。再生中にキーを長押しすると、そのキーに保存されます。",dzAlbum:"アルバム",dzTrack:"曲",dzPlaylist:"プレイリスト",dzShare:"共有リンク",dzLinkNote:"スピーカー内蔵のDeezerクライアントで再生します。再生中にキーを長押しすると、そのキーに保存されます。",dzStarting:"開始しています…",dzStarted:"{t} を再生中です。",dzPlayFail:"開始できませんでした: {d}",dzNotLinked:"このスピーカーにはDeezerアカウントがありません。「その他」のDeezerカードで接続してください。",dzUnavailable:"スピーカーのDeezerログインは現在機能していません。「その他」のDeezerカードを確認してください。",dzUnresolved:"これはDeezerのプレイリスト、アルバム、曲のリンクではありません。ブラウザーで開き、アドレスバーからアドレスをコピーしてください。"},
+  lt:{dzSum:"Prijunkite šį garsiakalbį prie Deezer. Paties garsiakalbio Deezer klientas prisijungia ir groja. Slaptažodis keliauja tiesiai į garsiakalbį, ST Reborn jo nesaugo.",dzUntested:"Nauja ir dar nepatvirtinta jokiame garsiakalbyje: be Bose debesies garsiakalbis gali nebegalėti užbaigti Deezer prisijungimo. Jei neveikia, išsaugokite diagnostikos failą ir atsiųskite jį.",dzEmail:"El. paštas",dzPass:"Slaptažodis",dzConnect:"Prijungti",dzDisconnect:"Atjungti",dzRefresh:"Tikrinti dar kartą",dzNeedBoth:"Įveskite savo Deezer paskyros el. pašto adresą ir slaptažodį.",dzSending:"Paskyra siunčiama į garsiakalbį…",dzSent:"Išsiųsta. Garsiakalbis dabar jungiasi, tai gali užtrukti minutę.",dzConnectFail:"Garsiakalbis nepriėmė paskyros: {d}",dzBusy:"Prisijungimas jau keliauja į garsiakalbį. Palaukite akimirką.",dzDiscConfirm:"Atjungti Deezer? Garsiakalbis pamirš paskyrą, o mygtukai su Deezer grojaraščiais negros, kol vėl ją prijungsite.",dzDisconnected:"Atjungta.",dzDiscFail:"Garsiakalbis nepašalino paskyros: {d}",dzStConnected:"Prisijungta kaip {a}. Paruošta groti.",dzStConnectedNoName:"Prisijungta. Paruošta groti.",dzStConnecting:"Garsiakalbis jungiasi prie Deezer. Tai gali užtrukti minutę.",dzStRefused:"Garsiakalbis atmetė prisijungimą ({d}).",dzStNoAnswer:"Garsiakalbis neatsakė į prisijungimą.",dzStNotReady:"Garsiakalbis priėmė prisijungimą, bet jo neužbaigė ({d}). Be Bose debesies tai gali visai neveikti. Diagnostikos faile matyti, kas nutiko.",dzStUnavailable:"Garsiakalbyje yra Deezer paskyra, bet jis neprisijungęs. Prijunkite ją iš naujo.",dzStNotConnected:"Neprijungta.",dzStUnknown:"Garsiakalbis neatsakė.",dzLinkHint:"Norėdami groti Deezer grojaraštį, albumą ar kūrinį, įklijuokite jo nuorodą į stočių paiešką. Kol groja, palaikykite mygtuką, kad jį ten išsaugotumėte.",dzAlbum:"Albumas",dzTrack:"Kūrinys",dzPlaylist:"Grojaraštis",dzShare:"Bendrinimo nuoroda",dzLinkNote:"Groja per paties garsiakalbio Deezer klientą. Kol groja, palaikykite mygtuką, kad jį ten išsaugotumėte.",dzStarting:"Paleidžiama…",dzStarted:"{t} dabar groja.",dzPlayFail:"Nepavyko paleisti: {d}",dzNotLinked:"Šis garsiakalbis neturi Deezer paskyros. Prijunkite paskyrą Deezer kortelėje skiltyje Daugiau.",dzUnavailable:"Garsiakalbio Deezer prisijungimas šiuo metu neveikia. Patikrinkite Deezer kortelę skiltyje Daugiau.",dzUnresolved:"Tai ne Deezer grojaraščio, albumo ar kūrinio nuoroda. Atidarykite ją naršyklėje ir nukopijuokite adresą iš adreso juostos."},
+  lv:{dzSum:"Piesaki šo skaļruni Deezer. Skaļruņa paša Deezer klients piesakās un atskaņo. Parole tiek nosūtīta tieši uz skaļruni, ST Reborn to neglabā.",dzUntested:"Jauns un vēl nevienā skaļrunī nav apstiprināts: bez Bose mākoņa skaļrunis, iespējams, vairs nevar pabeigt Deezer pieteikšanos. Ja nedarbojas, saglabā diagnostikas failu un nosūti to.",dzEmail:"E-pasts",dzPass:"Parole",dzConnect:"Savienot",dzDisconnect:"Atvienot",dzRefresh:"Pārbaudīt vēlreiz",dzNeedBoth:"Ievadi sava Deezer konta e-pasta adresi un paroli.",dzSending:"Konts tiek sūtīts uz skaļruni…",dzSent:"Nosūtīts. Skaļrunis tagad piesakās, tas var aizņemt minūti.",dzConnectFail:"Skaļrunis nepieņēma kontu: {d}",dzBusy:"Pieteikšanās jau ir ceļā uz skaļruni. Pagaidi mirkli.",dzDiscConfirm:"Atvienot Deezer? Skaļrunis aizmirsīs kontu, un pogas ar Deezer atskaņošanas sarakstiem neskanēs, līdz to atkal savienosi.",dzDisconnected:"Atvienots.",dzDiscFail:"Skaļrunis nenoņēma kontu: {d}",dzStConnected:"Savienots kā {a}. Gatavs atskaņošanai.",dzStConnectedNoName:"Savienots. Gatavs atskaņošanai.",dzStConnecting:"Skaļrunis piesakās Deezer. Tas var aizņemt minūti.",dzStRefused:"Skaļrunis noraidīja pieteikšanos ({d}).",dzStNoAnswer:"Skaļrunis neatbildēja uz pieteikšanos.",dzStNotReady:"Skaļrunis pieņēma pieteikšanos, bet to nepabeidza ({d}). Bez Bose mākoņa tas, iespējams, nedarbosies vispār. Diagnostikas fails parāda, kas notika.",dzStUnavailable:"Skaļrunī ir Deezer konts, bet tas nav pieteicies. Savieno to vēlreiz.",dzStNotConnected:"Nav savienots.",dzStUnknown:"Skaļrunis neatbildēja.",dzLinkHint:"Lai atskaņotu Deezer atskaņošanas sarakstu, albumu vai dziesmu, ielīmē tā saiti staciju meklēšanā. Kamēr tas skan, turi pogu, lai to tur saglabātu.",dzAlbum:"Albums",dzTrack:"Dziesma",dzPlaylist:"Atskaņošanas saraksts",dzShare:"Kopīgošanas saite",dzLinkNote:"Skan skaļruņa paša Deezer klientā. Kamēr tas skan, turi pogu, lai to tur saglabātu.",dzStarting:"Palaiž…",dzStarted:"{t} tagad skan.",dzPlayFail:"Neizdevās palaist: {d}",dzNotLinked:"Šim skaļrunim nav Deezer konta. Savieno kontu Deezer kartītē sadaļā Vairāk.",dzUnavailable:"Skaļruņa Deezer pieteikšanās pašlaik nedarbojas. Pārbaudi Deezer kartīti sadaļā Vairāk.",dzUnresolved:"Šī nav Deezer atskaņošanas saraksta, albuma vai dziesmas saite. Atver to pārlūkā un nokopē adresi no adreses joslas."},
+  uk:{dzSum:"Підключіть цю колонку до Deezer. Вбудований клієнт Deezer колонки сам входить і відтворює. Пароль надсилається напряму на колонку, ST Reborn його не зберігає.",dzUntested:"Нове й ще не підтверджене на жодній колонці: без хмари Bose колонка, можливо, вже не зможе завершити вхід у Deezer. Якщо не працює, збережіть діагностичний файл і надішліть його.",dzEmail:"Ел. пошта",dzPass:"Пароль",dzConnect:"Підключити",dzDisconnect:"Відключити",dzRefresh:"Перевірити ще раз",dzNeedBoth:"Введіть адресу ел. пошти та пароль свого облікового запису Deezer.",dzSending:"Обліковий запис надсилається на колонку…",dzSent:"Надіслано. Колонка зараз входить, це може тривати хвилину.",dzConnectFail:"Колонка не прийняла обліковий запис: {d}",dzBusy:"Вхід уже надсилається на колонку. Зачекайте трохи.",dzDiscConfirm:"Відключити Deezer? Колонка забуде обліковий запис, і кнопки з плейлистами Deezer не гратимуть, доки ви не підключите його знову.",dzDisconnected:"Відключено.",dzDiscFail:"Колонка не видалила обліковий запис: {d}",dzStConnected:"Підключено як {a}. Готово до відтворення.",dzStConnectedNoName:"Підключено. Готово до відтворення.",dzStConnecting:"Колонка входить у Deezer. Це може тривати хвилину.",dzStRefused:"Колонка відхилила вхід ({d}).",dzStNoAnswer:"Колонка не відповіла на вхід.",dzStNotReady:"Колонка прийняла вхід, але не завершила його ({d}). Без хмари Bose це може взагалі не працювати. Діагностичний файл покаже, що сталося.",dzStUnavailable:"На колонці є обліковий запис Deezer, але вхід не виконано. Підключіть його знову.",dzStNotConnected:"Не підключено.",dzStUnknown:"Колонка не відповіла.",dzLinkHint:"Щоб відтворити плейлист, альбом або трек Deezer, вставте його посилання в пошук станцій. Утримуйте кнопку під час відтворення, щоб зберегти його на ній.",dzAlbum:"Альбом",dzTrack:"Трек",dzPlaylist:"Плейлист",dzShare:"Посилання для поширення",dzLinkNote:"Грає через вбудований клієнт Deezer колонки. Утримуйте кнопку під час відтворення, щоб зберегти його на ній.",dzStarting:"Запуск…",dzStarted:"{t} зараз грає.",dzPlayFail:"Не запустилося: {d}",dzNotLinked:"Ця колонка не має облікового запису Deezer. Підключіть обліковий запис у картці Deezer у розділі Більше.",dzUnavailable:"Вхід у Deezer на колонці зараз не працює. Перегляньте картку Deezer у розділі Більше.",dzUnresolved:"Це не посилання на плейлист, альбом або трек Deezer. Відкрийте його в браузері й скопіюйте адресу з адресного рядка."}
 };
 var T = pickDict();
 // The UI 2.0 preview switch, read once (the head script set html.ui2 from it).
@@ -3689,9 +3730,10 @@ async function saveHeldSlot(slot) {
     var lm = t.match(/location="([^"]*)"/);
     if (lm) loc = decodeEntities(lm[1]);
   } catch (e) {}
-  // Pandora or iHeartRadio playing: the speaker's own client plays it, and the
-  // speaker reads the exact item from its own now-playing when type is native.
-  if (src === 'PANDORA' || src === 'IHEART' || src === 'IHEARTRADIO') {
+  // Pandora, iHeartRadio or Deezer playing: the speaker's own client plays it,
+  // and the speaker reads the exact item from its own now-playing when type is
+  // native.
+  if (src === 'PANDORA' || src === 'IHEART' || src === 'IHEARTRADIO' || src === 'DEEZER') {
     await saveHeldBody(slot, { slot: slot, name: name, type: 'native' });
     return;
   }
@@ -5202,6 +5244,7 @@ function showTab(name) {
   // group as it is now, not as it was when the page opened (#1339).
   if (name === 'More') loadDisplayCard();
   if (name === 'More') loadStartVol();
+  if (name === 'More') loadDeezerCard();
   if (name === 'More') loadZone();
   // Favourites change from the desktop app too (#1389).
   if (name === 'Browse') loadFavorites(true).catch(function(){});
@@ -5713,6 +5756,9 @@ async function searchStations() {
   var q = (document.getElementById('q').value || '').trim();
   if (!q) return;
   var token = ++searchToken;
+  // A Deezer link is not a station name: one card that plays it (Deezer).
+  var dz = deezerLinkOf(q);
+  if (dz) { renderDeezerLink(q, dz); return; }
   document.getElementById('results').innerHTML = '';
   searchMsg(T.searching, false);
   searchLibrary(q); // media servers, in parallel with the radio directory
@@ -7304,6 +7350,138 @@ async function saveStartVol(v) {
   sl.addEventListener('change', function(){ saveStartVol(sl.value); });
   loadStartVol();
 })();
+
+/* ===========================================================================
+   Deezer (docs/streaming/deezer.md, A2): the same per-speaker card as the
+   desktop app's, against the same endpoint. The password goes from the form
+   to this speaker's agent and on to the speaker's own Deezer client; the page
+   keeps it nowhere and clears the field after each try. The agent decides the
+   state (internal/webui/deezer.go); the page only names it.
+   =========================================================================== */
+var dzTimers = [];
+function dzFill(s, m) { return String(s || '').replace(/\{(\w)\}/g, function(all, k){ return m[k] != null ? String(m[k]) : all; }); }
+function dzAgentMsg(r) {
+  var d = r && r.data;
+  if (d && typeof d === 'object' && d.error) return String(d.error);
+  if (typeof d === 'string' && d.trim()) return d.trim();
+  return r && r.status ? 'HTTP ' + r.status : T.dzStUnknown;
+}
+function dzStateText(v) {
+  var m = { a: v.account || '', d: v.detail || '' };
+  switch (v.state) {
+    case 'connected': return dzFill(v.account ? T.dzStConnected : T.dzStConnectedNoName, m);
+    case 'connecting': return T.dzStConnecting;
+    case 'failed':
+      if (v.reason === 'refused') return dzFill(T.dzStRefused, m);
+      if (v.reason === 'no-answer') return T.dzStNoAnswer;
+      return dzFill(T.dzStNotReady, m);
+    case 'unavailable': return T.dzStUnavailable;
+    case 'not-connected': return T.dzStNotConnected;
+  }
+  return T.dzStUnknown;
+}
+function dzSay(text, bad) {
+  var m = document.getElementById('dzMsg');
+  if (m) { m.className = 'msg' + (bad ? ' bad' : ''); m.textContent = text || ''; }
+}
+function dzPaint(v) {
+  var st = document.getElementById('dzState');
+  if (st) st.textContent = dzStateText(v);
+  var login = v.state !== 'connected' && v.state !== 'connecting' && v.state !== 'unknown';
+  var canDisc = v.state === 'connected' || v.state === 'connecting' || v.state === 'failed' || v.state === 'unavailable';
+  var f = document.getElementById('dzForm'); if (f) f.hidden = !login;
+  var d = document.getElementById('btnDzDisconnect'); if (d) d.hidden = !canDisc;
+}
+async function loadDeezerCard() {
+  var card = document.getElementById('dzCard');
+  if (!card) return;
+  var r = await apiDetail('/api/deezer/account', 'GET', null, 12000);
+  if (!r.ok || !r.data || typeof r.data !== 'object' || !r.data.state) { card.hidden = true; return; }
+  card.hidden = false;
+  dzPaint(r.data);
+}
+function dzRefreshSoon() {
+  dzTimers.forEach(clearTimeout);
+  dzTimers = [6000, 30000, 95000].map(function(ms){ return setTimeout(loadDeezerCard, ms); });
+}
+(function wireDeezerCard(){
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('lblDzSum', T.dzSum); set('lblDzUntested', T.dzUntested); set('lblDzLinkHint', T.dzLinkHint);
+  set('lblDzConnect', T.dzConnect); set('lblDzDisconnect', T.dzDisconnect); set('lblDzRefresh', T.dzRefresh);
+  var u = document.getElementById('dzUser'), p = document.getElementById('dzPass');
+  if (u) { u.placeholder = T.dzEmail; u.setAttribute('aria-label', T.dzEmail); }
+  if (p) { p.placeholder = T.dzPass; p.setAttribute('aria-label', T.dzPass); }
+  var c = document.getElementById('btnDzConnect');
+  if (c) c.addEventListener('click', async function(){
+    var user = u ? u.value.trim() : '', pass = p ? p.value : '';
+    if (!user || !pass) { dzSay(T.dzNeedBoth, true); return; }
+    c.disabled = true;
+    dzSay(T.dzSending, false);
+    var r = await apiDetail('/api/deezer/account', 'POST', { user: user, password: pass }, 30000);
+    pass = '';
+    if (p) p.value = '';
+    c.disabled = false;
+    if (r.ok) { dzSay(T.dzSent, false); dzRefreshSoon(); }
+    else if (r.data && r.data.code === 'login-busy') dzSay(T.dzBusy, true);
+    else dzSay(dzFill(T.dzConnectFail, { d: dzAgentMsg(r) }), true);
+    loadDeezerCard();
+  });
+  var d = document.getElementById('btnDzDisconnect');
+  if (d) d.addEventListener('click', async function(){
+    if (!window.confirm(T.dzDiscConfirm)) return;
+    d.disabled = true;
+    var r = await apiDetail('/api/deezer/account', 'DELETE', null, 30000);
+    d.disabled = false;
+    if (r.ok) dzSay(T.dzDisconnected, false);
+    else dzSay(dzFill(T.dzDiscFail, { d: dzAgentMsg(r) }), true);
+    loadDeezerCard();
+  });
+  var rf = document.getElementById('btnDzRefresh');
+  if (rf) rf.addEventListener('click', function(){ dzSay('', false); loadDeezerCard(); });
+  loadDeezerCard();
+})();
+
+/* A Deezer link pasted into the station search plays on the speaker's own
+   Deezer client (POST /api/deezer/play), not as a stream. The agent checks
+   the link again and follows a share link itself. */
+var DZ_LINK_RE = /^https?:\/\/(?:www\.)?deezer\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(track|album|playlist)\/(\d{1,20})\/?(?:[?#].*)?$/i;
+var DZ_SHORT_RE = /^https:\/\/(?:link\.deezer\.com|deezer\.page\.link|dzr\.page\.link|deezer\.app\.link|deezer\.onelink\.me)\/\S+$/i;
+function deezerLinkOf(q) {
+  var m = DZ_LINK_RE.exec(String(q || '').trim());
+  if (m) return { kind: m[1].toLowerCase(), id: m[2] };
+  if (DZ_SHORT_RE.test(String(q || '').trim())) return { kind: '', id: '' };
+  return null;
+}
+function renderDeezerLink(q, link) {
+  var box = document.getElementById('results');
+  box.innerHTML = '';
+  searchMsg('', false);
+  var kind = link.kind === 'album' ? T.dzAlbum : link.kind === 'track' ? T.dzTrack : link.kind === 'playlist' ? T.dzPlaylist : T.dzShare;
+  var row = document.createElement('div'); row.className = 'station';
+  var nm = document.createElement('div'); nm.className = 'sname';
+  nm.textContent = 'Deezer · ' + kind + (link.id ? ' ' + link.id : '');
+  var sub = document.createElement('small'); sub.textContent = T.dzLinkNote;
+  nm.appendChild(sub);
+  row.appendChild(nm);
+  var btns = stationBtns(row);
+  var b = document.createElement('button');
+  b.className = 'btn'; b.type = 'button'; b.textContent = T.play;
+  b.setAttribute('aria-label', T.play + ': Deezer ' + kind);
+  b.addEventListener('click', async function(){
+    b.disabled = true;
+    searchMsg(T.dzStarting, false);
+    var r = await apiDetail('/api/deezer/play', 'POST', { url: q }, 30000);
+    b.disabled = false;
+    if (r.ok) { searchMsg(dzFill(T.dzStarted, { t: (r.data && r.data.name) || 'Deezer' }), false); return; }
+    var code = r.data && r.data.code;
+    if (code === 'deezer-not-linked') searchMsg(T.dzNotLinked, true);
+    else if (code === 'native-service-unavailable') searchMsg(T.dzUnavailable, true);
+    else if (code === 'deezer-link-unresolved') searchMsg(T.dzUnresolved, true);
+    else searchMsg(dzFill(T.dzPlayFail, { d: dzAgentMsg(r) }), true);
+  });
+  btns.appendChild(b);
+  box.appendChild(row);
+}
 
 /* ===========================================================================
    Software update from the phone (#1091): the speaker fetches the latest

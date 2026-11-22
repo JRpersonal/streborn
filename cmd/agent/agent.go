@@ -602,7 +602,8 @@ func (a *agent) buildMarge() error {
 		return margeSrv.RecentRequestLines(60)
 	})
 	// Whether a Deezer login is kept for the account document, its type and
-	// origin: never the login, never the account.
+	// origin, and the last new login STR handed to the firmware with what the
+	// firmware did next (lastAttempt): never the login, never the account.
 	webui.RegisterDebugSection("deezer_login", func() any {
 		return margeSrv.DeezerLoginSnapshot()
 	})
@@ -1074,6 +1075,8 @@ func (a *agent) buildWebui() error {
 		// The stereo-pair record and the developer relay (marge_adapter.go).
 		webui.WithMarge(margeSrv),
 		webui.WithNativeServices(margeSrv),
+		// Deezer: the kept login and a new one (/api/deezer/account).
+		webui.WithDeezer(margeSrv),
 		webui.WithRegionResolver(regionRes),
 		webui.WithRecent(recentStore))
 
@@ -1718,6 +1721,11 @@ func (a *agent) buildBoxLink() error {
 	// flapping was gone long before a bundle was exported. This one is
 	// snapshotted the moment the firmware's setup state machine first speaks.
 	webui.RegisterDebugSection("box_setup_tail", func() any { return keyTrace.SetupTailSnapshot() })
+	// Every firmware line about Deezer or a music-service account call, kept
+	// apart from the rolling tail so the Deezer login test (A2,
+	// docs/streaming/deezer.md) is still in a bundle taken minutes later.
+	// Redacted like the tail: accounts masked, tokens and passwords dropped.
+	webui.RegisterDebugSection("box_syslog_deezer", func() any { return keyTrace.DeezerTailSnapshot() })
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user

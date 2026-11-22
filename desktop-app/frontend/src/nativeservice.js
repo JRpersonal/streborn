@@ -10,6 +10,9 @@ const NATIVE_SERVICE_LABELS = {
   PANDORA: 'Pandora',
   IHEART: 'iHeartRadio',
   IHEARTRADIO: 'iHeartRadio',
+  // The speaker's own Deezer client plays a playlist, album or track by its id
+  // (docs/streaming/deezer.md).
+  DEEZER: 'Deezer',
 };
 
 // nativeServiceLabel returns the service name for a source enum, '' when STR

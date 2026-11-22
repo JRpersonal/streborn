@@ -409,6 +409,15 @@ export function LinkMusicService(host, port, service, user, password) {
 export function UnlinkMusicService(host, port, service) {
   return callOptionalBinding('UnlinkMusicService', [host, port, service]);
 }
+// Deezer on the speaker's own client (deezer.js). Sign-in and sign-out go
+// through LinkMusicService / UnlinkMusicService with service 'deezer'.
+// Optional bindings, per the note above: brand new.
+export function DeezerStatus(host, port) {
+  return callOptionalBinding('DeezerStatus', [host, port]);
+}
+export function PlayDeezerLink(host, port, link, name) {
+  return callOptionalBinding('PlayDeezerLink', [host, port, link, name || '']);
+}
 export function PandoraStations(host, port) {
   return callOptionalBinding('PandoraStations', [host, port]);
 }

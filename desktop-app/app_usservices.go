@@ -27,6 +27,8 @@ const musicServiceCallTimeout = 30 * time.Second
 var musicServicePath = map[string]string{
 	"pandora": "/api/pandora/account",
 	"iheart":  "/api/iheart/account",
+	// The speaker's own Deezer client (app_deezer.go).
+	"deezer": "/api/deezer/account",
 }
 
 // PandoraStation is one station of the Pandora account linked to a speaker.

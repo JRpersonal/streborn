@@ -14,6 +14,7 @@ import { onStatesChange } from '../shell2/state.js';
 import { state } from '../state.js';
 import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
 import { qualityOptions, qualityStatusText } from '../spotifyquality.js';
+import { deezerCardMarkup, renderDeezerCard } from './deezercard.js';
 
 let deps = { switchView: () => {}, strBoxes: () => [] };
 export function initSpotifyView(d) {
@@ -30,6 +31,7 @@ export function renderSpotifyAlpha() {
     refreshQualityList();
     if (shell2Mounted()) renderSpotifyUi2(deps);
     syncButtonUi2();
+    renderDeezerCard().catch(() => {});
     return;
   }
   root.dataset.rendered = '1';
@@ -69,6 +71,8 @@ ${shell2Mounted() ? spotifyUi2Markup() : ''}
           <li>${escapeHtml(t('spotify.presetsStep3'))}</li>
         </ol>
       </section>
+
+      ${deezerCardMarkup()}
 
       <section class="sp-card sp-tools">
         <div class="sp-tool">
@@ -155,6 +159,7 @@ ${shell2Mounted() ? spotifyUi2Markup() : ''}
   refreshQualityList();
   if (shell2Mounted()) renderSpotifyUi2(deps);
   syncButtonUi2();
+  renderDeezerCard().catch(() => {});
 }
 
 // syncStatusLine is the preview's line under the copy-login button (role=

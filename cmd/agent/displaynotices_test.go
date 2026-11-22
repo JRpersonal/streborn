@@ -167,7 +167,7 @@ func TestHeldStoreNotices(t *testing.T) {
 	l.only(t, oled.NoticeAlreadyOnKey, 5)
 
 	l.ns = nil
-	noticeHeldStore(marge.HeldItem{Slot: 3, Source: "DEEZER"}, "", fmt.Errorf("%w: source DEEZER", errNotKeepable))
+	noticeHeldStore(marge.HeldItem{Slot: 3, Source: "AMAZON"}, "", fmt.Errorf("%w: source AMAZON", errNotKeepable))
 	l.only(t, oled.NoticeNotSaved, 3)
 
 	// A UPnP push is holdsave.go's to answer.

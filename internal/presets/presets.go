@@ -156,7 +156,7 @@ const TypeNative = "native"
 // stored verbatim (unescaped) so it can be written back onto the key and
 // selected exactly as the firmware described it.
 type NativeItem struct {
-	// Source is the ContentItem source enum ("PANDORA", "IHEART").
+	// Source is the ContentItem source enum ("PANDORA", "IHEART", "DEEZER").
 	Source string `json:"source"`
 	// SourceAccount is the account the item belongs to on the speaker.
 	SourceAccount string `json:"sourceAccount,omitempty"`
@@ -173,10 +173,14 @@ type NativeItem struct {
 // nativeServices are the sources STR keeps as native presets, with the label
 // the apps show. Only services whose client lives in the speaker firmware and
 // whose account bookkeeping STR's cloud stand-in serves belong here
-// (docs/streaming/us-services.md).
+// (docs/streaming/us-services.md). DEEZER is one too: the speaker's own Deezer
+// client plays a playlist, album or track by its Deezer id, with the login
+// the speaker holds (docs/streaming/deezer.md), so a Deezer key is kept and
+// written back as the speaker's own item exactly like a Pandora one.
 var nativeServices = map[string]string{
 	"PANDORA": "Pandora",
 	"IHEART":  "iHeartRadio",
+	"DEEZER":  "Deezer",
 }
 
 // NativeServiceLabel returns the display label of a native-service source and

@@ -184,6 +184,7 @@ func (s *Server) respondDeezerAddSource(w http.ResponseWriter, r *http.Request, 
 			kept = true
 		}
 	}
+	s.noteDeezerRegistration(cred != "")
 	s.logger.Info("deezer: source registration from the box",
 		slog.String("path", r.URL.Path), slog.String("username", maskAccount(username)),
 		slog.String("credentialType", credType), slog.Bool("hasCredential", cred != ""),
@@ -213,6 +214,10 @@ type DeezerLoginStatus struct {
 	SecretType string    `json:"secretType,omitempty"`
 	From       string    `json:"from,omitempty"`
 	KeptAt     time.Time `json:"keptAt,omitempty"`
+	// LastAttempt is the last new login or removal STR handed to the
+	// firmware since the agent started, and what followed
+	// (deezernewlogin.go); nil when there was none.
+	LastAttempt *DeezerAttempt `json:"lastAttempt,omitempty"`
 }
 
 // DeezerLoginSnapshot reports whether a Deezer login is kept, for the debug
@@ -222,5 +227,6 @@ func (s *Server) DeezerLoginSnapshot() DeezerLoginStatus {
 	if k, ok := s.keptDeezer(); ok {
 		st.Kept, st.SecretType, st.From, st.KeptAt = true, k.SecretType, k.From, k.KeptAt
 	}
+	st.LastAttempt = s.LastDeezerAttempt()
 	return st
 }

@@ -70,7 +70,7 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`12`. |
 | `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-12, also between the rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
 | `POST` | `/api/box/preset-copy` | `{"targets":["<ip>"]}` or `{"all":true}` | Copy this speaker's keys to other STR speakers, the way the desktop app's Transfer does: this agent writes the set onto each target (`PUT /api/presets`, key by key on an older target), syncs its hardware keys and, when a Spotify key goes along, hands on this speaker's Spotify login. Both rows go to a target that keeps two. Targets must be in this speaker's peer list (`/api/peers`; `all` means every peer that answered the last sweep). Answers `200` with `{"keys","rows","done","total","results":[{"name","ip","ok","copied","row1Only","notCopied","spotify","code","conflict","error"}]}` once every target is done; `code` is `already-on-slot` (with `conflict` `{name,slot}`, nothing written there), `unreachable`, `refused` or `unknown-speaker`. `409` with `code` `busy`, `no-presets` or `no-targets`. LAN only. |
-| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-12): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio/Deezer go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
 | `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`12`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
 | `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so the second row is not reachable here; use `/api/play/<slot>`. |
@@ -158,6 +158,28 @@ first. A request after the account is gone answers `200` without touching the
 speaker. The `error` text is a short English sentence for people; branch on
 `code`. It never carries the speaker's raw reply, which stays in the agent
 log.
+
+## Deezer
+
+The speaker's own Deezer client, signed in from STR
+([`streaming/deezer.md`](streaming/deezer.md), A2). **Built, not yet
+confirmed on a speaker**: nobody knows whether the firmware can finish a
+Deezer login without the Bose cloud, so every attempt is recorded in the
+diagnostic file (`deezer_login.lastAttempt`, `box_syslog_deezer`). No switch
+is needed: Deezer is offered on every speaker. LAN only, like the Pandora
+calls; `POST` needs a JSON body.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/deezer/account` | - | Where Deezer stands: `{"state","reason","detail","account","source":{"status","hasAccount"},"login":{...}}`. `state` is `connected`, `connecting` (a login was handed over less than 90 s ago and the speaker took it), `failed` (`reason` `refused`, `no-answer` or `not-ready`), `unavailable` (the speaker holds an account it is not logged in with), `not-connected` or `unknown` (the source list could not be read). `account` is masked; `login` is the `deezer_login` debug section (never the login itself). Reads the speaker's `/sources` once. |
+| `POST`   | `/api/deezer/account` | `{"user":"...","password":"..."}` | Hands the account to the speaker's `setMusicServiceAccount`, source `DEEZER`, display name `Deezer Premium`. Answers `200` `{"ok":true,"status":{...}}` when the speaker took it (it logs in after that; read `GET` again), `502` `{"code":"account-refused","status":{...}}` when it refused, `409` `{"code":"login-busy"}` while another login is being handed over. The password goes to the speaker only; STR never stores, logs or echoes it. |
+| `DELETE` | `/api/deezer/account` | - | Removes the account from the speaker (`removeMusicServiceAccount`) and forgets STR's kept copy of the login. The same answers and the same one-at-a-time rule as the Pandora removal above; `200` adds `"status"`. |
+| `POST`   | `/api/deezer/play` | `{"url":"https://www.deezer.com/en/album/123","name":"..."}` | Plays a Deezer playlist, album or track link on the speaker's own Deezer client. A canonical `deezer.com` link is read as it is; a share link (`link.deezer.com`, `deezer.page.link`) is followed through Deezer's own hosts only. `name` is optional (else Deezer's public API names it). Answers `{"ok":true,"kind","id","name"}`; `409` `deezer-not-linked` or `native-service-unavailable`, `422` `deezer-link-unresolved`, `502` `select-failed` or `sources-unreadable`. |
+
+To keep a Deezer item on a key, start it and save the key with
+`PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`, or hold the
+key on the speaker: Deezer is a native service like Pandora, so the agent
+takes the item from what the speaker plays.
 
 ## Favourites
 
