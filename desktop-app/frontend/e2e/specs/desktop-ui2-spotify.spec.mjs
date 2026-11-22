@@ -281,6 +281,75 @@ test.describe('UI 2.0 Spotify', () => {
     await expect(result).not.toContainText(en('preset.alreadyOnKeyNamed', { name: 'Discover Weekly', n: 2 }));
   });
 
+  test('13. a key pressed twice takes the playlist too, behind the Once | Twice switch', async ({ app, mock }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await playSpotify(page, LR.host);
+    await tick(page);
+    await openSpotify(page);
+    await tick(page, 2_000);
+    const card = keysCard(page);
+    // Living Room keeps the second row (#1110): the switch is there, on Once.
+    const once = card.locator('#sp2RowTab1');
+    const twice = card.locator('#sp2RowTab2');
+    await expect(once).toHaveAttribute('aria-selected', 'true');
+    await expect(twice).toHaveText(new RegExp(en('preset.row2.tabTwice')));
+    await twice.click();
+    await expect(twice).toHaveAttribute('aria-selected', 'true');
+    await expect(twice).toBeFocused();
+    await expect(card.locator('.sp2-key')).toHaveCount(6);
+    await expect(card.locator('#sp2KeysGrid')).toHaveAttribute('aria-labelledby', 'sp2RowTab2');
+    // Key 2 pressed twice is slot 8: it wears the 2x badge, never a "8".
+    const k8 = key(page, 8);
+    await expect(k8.locator('.row2-badge')).toHaveText(en('preset.row2.badge'));
+    await expect(k8.locator('.sp2-key-n')).not.toContainText('8');
+    await k8.click();
+    const n = en('preset.row2.num', { n: 2 });
+    await expect(card.locator('#sp2Save')).toHaveText(en('ui2.spotify.saveBtn', { n, name: LR.friendlyName }));
+    await mock.resetCalls();
+    await card.locator('#sp2Save').click();
+    await mock.expectCalled('SaveSpotifyPreset', { pred: (c) => c.args[0] === LR.host && c.args[2] === 8 && c.args[4] === PLAYLIST, times: 1 });
+    await tick(page, 2_000);
+    await expect(card.locator('#sp2Result')).toContainText(en('ui2.spotify.saved', { n, name: LR.friendlyName, title: 'Discover Weekly' }));
+    await expect(k8).toContainText(en('ui2.spotify.keyHere'));
+    // The arrow keys move between the two rows like every other Once | Twice switch.
+    await twice.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(once).toHaveAttribute('aria-selected', 'true');
+    await expect(key(page, 2)).toBeVisible();
+  });
+
+  test('14. the playlist already on a key pressed twice opens the Twice row', async ({ app }) => {
+    const { page } = app;
+    await settle(page, 9_000);
+    await page.evaluate(([h, uri]) => {
+      window.__strMock.state.presets[h] = [{ slot: 11, name: 'Discover Weekly', type: 'spotify', uri, stream_url: '' }];
+    }, [LR.host, PLAYLIST]);
+    await playSpotify(page, LR.host);
+    await tick(page);
+    await openSpotify(page);
+    await tick(page, 2_000);
+    await expect(keysCard(page).locator('#sp2RowTab2')).toHaveAttribute('aria-selected', 'true');
+    await key(page, 11).click();
+    await expect(keysCard(page).locator('#sp2Hint')).toHaveText(en('ui2.spotify.alreadyOnKey', { n: en('preset.row2.num', { n: 5 }), name: LR.friendlyName }));
+  });
+
+  test.describe('a speaker with one row of keys', () => {
+    test.use({ scenario: { boxPatches: { livingRoom: { presetRows: '' } } } });
+
+    test('15. shows its six keys without the switch', async ({ app }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await playSpotify(page, LR.host);
+      await tick(page);
+      await openSpotify(page);
+      await tick(page, 2_000);
+      await expect(keysCard(page).locator('.sp2-key')).toHaveCount(6);
+      await expect(keysCard(page).locator('#sp2Rows')).toHaveCount(0);
+      await expect(keysCard(page).locator('#sp2KeysGrid')).toHaveAttribute('aria-labelledby', 'sp2KeysLabel');
+    });
+  });
+
   test('8. the keys work from the keyboard', async ({ app }) => {
     const { page } = app;
     await settle(page, 9_000);
@@ -307,5 +376,7 @@ test.describe('classic layout', () => {
     await expect(page.locator('#view-spotify .spotify-page')).toBeVisible();
     await expect(page.locator('#sp2Root')).toHaveCount(0);
     await expect(page.locator('#spotifySyncBtn')).toBeVisible();
+    // The keys pressed twice take a playlist too, named by the Twice tab (#1587).
+    await expect(page.locator('#spotifyPresetsTwice')).toHaveText(en('spotify.presetsTwice', { twice: en('preset.row2.tabTwice') }));
   });
 });

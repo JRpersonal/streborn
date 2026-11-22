@@ -129,6 +129,40 @@ func TestSecondRowNeverReachesTheSpeaker(t *testing.T) {
 	}
 }
 
+// The desktop app's Spotify view saves what plays onto any of the twelve keys
+// (#1587): a live Spotify save on a row-2 slot is stored with the playing
+// account like one on row 1, and never dials the speaker (the host here would
+// time out). Slots outside 1..12 are refused before anything is stored.
+func TestSpotifyLiveSaveTakesSecondRowSlots(t *testing.T) {
+	s := newAccountStampServer(t, accountTestURI, "user-id-here")
+	s.boxHost = "192.0.2.1"
+	start := time.Now()
+	for _, slot := range []int{7, 10, 12} {
+		putPresetQuery(t, s, slot, "?save=live",
+			`{"name":"Row two","type":"spotify","uri":"`+accountTestURI+`","account":""}`)
+		p, ok := s.presets.Get(slot)
+		if !ok || p.Type != "spotify" || p.URI != accountTestURI || p.Account != "user-id-here" {
+			t.Fatalf("slot %d after the save = %+v %v", slot, p, ok)
+		}
+		// One key at a time: the duplicate guard would refuse the next slot.
+		if err := s.presets.RemoveSlot(slot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if time.Since(start) > time.Second {
+		t.Error("a row-2 Spotify save tried to reach the speaker")
+	}
+	for _, slot := range []int{0, 13} {
+		r := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/presets/%d?save=live", slot),
+			strings.NewReader(`{"name":"Nope","type":"spotify","uri":"`+accountTestURI+`"}`))
+		w := httptest.NewRecorder()
+		s.handlePresetSlot(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("PUT slot %d = %d, want 400", slot, w.Code)
+		}
+	}
+}
+
 func TestAgentVersionAdvertisesTwoPresetRows(t *testing.T) {
 	s := quietServer("127.0.0.1")
 	w := httptest.NewRecorder()

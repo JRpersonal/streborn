@@ -7,6 +7,7 @@
 // now-playing and the agent's /spotify/info), nothing new is asked.
 
 import { spotifySaveContextURI } from '../utils.js';
+import { ROW_SIZE, slotRow } from '../presetrows.js';
 import { spotifyAccountName } from '../spotifyaccountlabel.js';
 import { refusalFromReply } from '../spotifyrefused.js';
 
@@ -43,17 +44,21 @@ export function spotifyPlaying(s) {
   return { playing: true, name: String(st.nowName || '').trim(), uri, kind: spotifyContextKind(uri) };
 }
 
-// keySlots is the six keys of the selected speaker as the view draws them, in
-// order, an empty key included. here is true on the key that already holds the
-// playing context, which the speaker would refuse to store a second time.
-export function keySlots(presets, uri) {
+// keySlots is the keys of the selected speaker as the view draws them, in
+// order, an empty key included: six, or twelve on a speaker that keeps the
+// second row (rows 2, #1110: slots 7 to 12 are keys 1 to 6 pressed twice).
+// here is true on the key that already holds the playing context, which the
+// speaker would refuse to store a second time.
+export function keySlots(presets, uri, rows = 1) {
   const list = Array.isArray(presets) ? presets : [];
   const out = [];
-  for (let slot = 1; slot <= 6; slot++) {
+  const max = (rows >= 2 ? 2 : 1) * ROW_SIZE;
+  for (let slot = 1; slot <= max; slot++) {
     const p = list.find((x) => x && x.slot === slot) || null;
     const name = p ? String(p.name || '').trim() : '';
     out.push({
       slot,
+      row: slotRow(slot),
       name,
       empty: !p || !name,
       spotify: !!p && p.type === 'spotify',

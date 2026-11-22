@@ -1359,6 +1359,12 @@ html.ui2 #view-spotify .sp2-key-n {
   border-radius: 6px;
   font-weight: var(--u-fw-bold);
 }
+/* A key pressed twice (#1587): the "2×" badge before its number, so the
+   square widens instead of squeezing the two. */
+html.ui2 #view-spotify .sp2-key-n.is-row2 { width: auto; min-width: 32px; padding: 0 var(--u-space-2) 0 var(--u-space-1); gap: var(--u-space-1); }
+html.ui2 #view-spotify .sp2-key-n.is-row2 .row2-badge { margin: 0; padding: 0 var(--u-space-1); }
+/* The Once | Twice switch sits between the label and the keys. */
+html.ui2 #view-spotify .sp2-rows { margin-top: var(--u-space-1); }
 html.ui2 #view-spotify .sp2-key-text { display: flex; flex-direction: column; min-width: 0; }
 html.ui2 #view-spotify .sp2-key-name {
   font-weight: var(--u-fw-semibold);
