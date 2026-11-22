@@ -497,7 +497,7 @@ export const SETUP_CHECK = {
   current: fwInfo('27.0.6'),
   routeA: fwInfo('15.0.4', { moduleType: 'sm2' }),
   ladder: fwInfo('7.0.37', { moduleType: '' }),
-  guide: fwInfo('10.0.11', { model: 'SoundTouch 10', moduleType: 'sm2', variant: 'rhino' }),
+  guide: fwInfo('10.0.11', { model: 'SoundTouch 300', moduleType: 'sm2', variant: '' }),
   unknown: fwInfo(''),
   unreachable: { reachable: false, latest: '27.0.6' },
   guideOne: {
