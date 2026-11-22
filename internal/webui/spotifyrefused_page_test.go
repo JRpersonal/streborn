@@ -123,3 +123,81 @@ func TestPhoneSpotifyRefusedFreeCureSavesThePresetsAgain(t *testing.T) {
 		}
 	}
 }
+
+// Only Spotify can lift its refusal of a Premium account, so when the page is
+// certain that is what happened it offers Spotify's contact page and a ready
+// message for Spotify support. Certain means the speaker's persistent
+// per-account record (accountRefused, not an older agent's audioKeyRefused)
+// and a plan reported as exactly Premium; the desktop app's
+// refusalSupportFor (spotifyrefused.js) holds the same rule.
+var spSupportKeys = []string{
+	"spRefusedSupport:", "spRefusedSupportOpen:", "spRefusedSupportCopy:",
+	"spRefusedSupportCopied:", "spRefusedSupportMessage:",
+}
+
+func TestPhoneSpotifySupportIsTranslatedEverywhere(t *testing.T) {
+	page := readIndexHTML(t)
+	start := strings.Index(page, "var I18N2 = {")
+	if start < 0 {
+		t.Fatal("I18N2 dictionary not found")
+	}
+	end := strings.Index(page[start:], "\n};")
+	lang := regexp.MustCompile(`^  ([a-z]{2}):\{`)
+	value := regexp.MustCompile(`(spRefusedSupport(?:Open|Copy|Copied|Message)?):"((?:[^"\\]|\\.)*)"`)
+	dash := regexp.MustCompile(`[–—]| - `)
+	seen := 0
+	for _, line := range strings.Split(page[start:start+end], "\n") {
+		m := lang.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		seen++
+		got := map[string]string{}
+		for _, v := range value.FindAllStringSubmatch(line, -1) {
+			got[v[1]+":"] = v[2]
+		}
+		for _, k := range spSupportKeys {
+			v, ok := got[k]
+			if !ok || strings.TrimSpace(v) == "" {
+				t.Errorf("language %q has no %s", m[1], strings.TrimSuffix(k, ":"))
+				continue
+			}
+			if dash.MatchString(v) {
+				t.Errorf("language %q: %s has a dash: %q", m[1], strings.TrimSuffix(k, ":"), v)
+			}
+		}
+		msg := got["spRefusedSupportMessage:"]
+		for _, fact := range []string{"Premium", "Bose", "SoundTouch", "go-librespot", "2026", `\n\n`} {
+			if !strings.Contains(msg, fact) {
+				t.Errorf("language %q: the message for Spotify lacks %q", m[1], fact)
+			}
+		}
+	}
+	if seen < 12 {
+		t.Errorf("only %d languages in I18N2", seen)
+	}
+}
+
+func TestPhoneSpotifySupportOnlyWhenCertain(t *testing.T) {
+	page := readIndexHTML(t)
+	for _, want := range []string{
+		"var SP_SUPPORT_URL = 'https://support.spotify.com/article/contact-us/';",
+		"premium: String(info.product || '').toLowerCase() === 'premium',",
+		"sticky: !!info.accountRefused",
+		"return !!(ref && ref.sticky && ref.premium && !ref.free);",
+		// The render signature carries it, so the notice is rebuilt when it
+		// comes or goes, and left alone (toggle open) otherwise.
+		"var support = spSupportFor(ref);",
+		"[lead].concat(help, [support ? 'support' : '']).join('|')",
+		"if (support) more.appendChild(spSupportBlock());",
+		// A new tab for Spotify's page, and the plain-http-safe copy.
+		"open.target = '_blank';",
+		"open.rel = 'noopener';",
+		"await shareCopy(T.spRefusedSupportMessage)",
+		"copy.textContent = T.spRefusedSupportCopied;",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+}

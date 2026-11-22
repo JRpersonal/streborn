@@ -31,6 +31,8 @@ test.describe('phone: Spotify refused notice', () => {
     await notice(page).locator('summary').click();
     await expect(notice(page).locator('details p').nth(0)).toHaveText(WHY);
     await expect(notice(page).locator('details p').nth(1)).toHaveText(TRY);
+    // The plan is unknown: not certainly Spotify's block, no support part.
+    await expect(notice(page).locator('.sp-refused-support')).toHaveCount(0);
     if (process.env.SHOOT_DIR) {
       await page.locator('#statusCard').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-phone.png`, animations: 'disabled' });
     }
@@ -87,6 +89,54 @@ test.describe('phone: a free account', () => {
     await notice(page).locator('summary').click();
     await expect(notice(page).locator('details p').nth(0)).toHaveText('Spotify on (STR) only plays with Spotify Premium.');
     await expect(notice(page)).not.toContainText('without (STR)');
+    await expect(notice(page).locator('.sp-refused-support')).toHaveCount(0);
+  });
+});
+
+const SUPPORT_LINE = 'Only Spotify can lift this. Tell Spotify support, and the more people report it, the likelier they act.';
+
+test.describe('phone: a refused Premium account', () => {
+  test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: { ...INFO, product: 'premium' } } } });
+
+  test('offers Spotify support and a message for it', async ({ phone }) => {
+    const { page } = phone;
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await expect(lead(page)).toHaveText(NAMED);
+    await notice(page).locator('summary').click();
+    // The why and the test stay first.
+    await expect(notice(page).locator('details p').nth(0)).toHaveText(WHY);
+    await expect(notice(page).locator('.sp-refused-support p')).toHaveText(SUPPORT_LINE);
+    const link = notice(page).locator('#spRefusedSupportOpen');
+    await expect(link).toHaveText('Contact Spotify support');
+    await expect(link).toHaveAttribute('href', 'https://support.spotify.com/article/contact-us/');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener');
+    const copy = notice(page).locator('#spRefusedSupportCopy');
+    await expect(copy).toHaveText('Copy a message for Spotify');
+    await copy.click();
+    await expect(copy).toHaveText('Copied');
+    await expect(copy).toHaveText('Copy a message for Spotify', { timeout: 5_000 });
+    // The status poll leaves the opened help, and its buttons, in place.
+    const polls = () => phone.handler.calls.filter((c) => new URL(c.url).pathname === '/api/status').length;
+    const before = polls();
+    await expect.poll(polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 1);
+    await expect(copy).toBeVisible();
+    if (process.env.SHOOT_DIR) {
+      await page.locator('#statusCard').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-support-phone.png`, animations: 'disabled' });
+    }
+  });
+});
+
+test.describe('phone: Premium, but only an older agent\'s short-lived flag', () => {
+  const OLD = { ...INFO, product: 'premium', audioKeyRefused: true, accountRefusedName: '' };
+  delete OLD.accountRefused;
+  test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: OLD } } });
+
+  test('is not certain enough for the support part', async ({ phone }) => {
+    const { page } = phone;
+    await expect(notice(page)).toBeVisible();
+    await notice(page).locator('summary').click();
+    await expect(notice(page).locator('.sp-refused-support')).toHaveCount(0);
   });
 });
 
