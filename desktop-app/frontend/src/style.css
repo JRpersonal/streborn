@@ -1279,7 +1279,7 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   100% { box-shadow:0 0 0 0 rgba(47,128,255,0); }
 }
 
-/* ---------- Beta pill (used on the Library tab and elsewhere) ---------- */
+/* ---------- Beta pill (the Deezer section heading, and elsewhere) ---------- */
 .beta-pill {
   display: inline-block;
   margin-left: 6px;
@@ -1292,7 +1292,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   text-transform: uppercase;
   letter-spacing: 0.4px;
   vertical-align: middle;
+  white-space: nowrap;
 }
+/* A pill with a tooltip says so with the help cursor, like .str-badge. */
+.beta-pill[title] { cursor: help; }
 /* STR-only badge: marks a feature the Bose app never had, added by ST Reborn
    (Jens 2026-08-30). Positive brand accent, not the amber/red of the status
    pills, and a title that spells out what it means. */
