@@ -176,6 +176,14 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writePlayRefusal(w, ref)
 		return
 	}
+	// A song on a USB stick has no length in the stick's listing, so the
+	// client sent none: it is read from the file, and the speaker then reports
+	// a total and the app draws its progress bar (usbtracklength.go).
+	if req.DurationSec <= 0 && req.Mime != "" {
+		if d := s.stickFileLength(r.Context(), req.URL, req.Mime); d > 0 {
+			req.DurationSec = int(d / time.Second)
+		}
+	}
 	// A client that names no MIME for a file this agent knows as a
 	// music-library file (a third-party remote replaying a Recently-played
 	// card) still gets a library play, not a radio one (#1871).

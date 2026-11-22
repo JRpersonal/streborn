@@ -646,6 +646,9 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	if !ok {
 		return errors.New("empty queue")
 	}
+	// A song on a USB stick has no length in its listing: read from the file
+	// (usbtracklength.go), so the speaker reports a total.
+	it = s.withStickLength(ctx, it)
 	loaded := s.queue.save()
 	// A sleeping speaker is kept silent through its own resume until the
 	// first track has taken over (#1557, newplaywake.go). A preset recall that
@@ -925,6 +928,7 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 		return
 	}
 	s.ClearUserStop()
+	it = s.withStickLength(s.queueCtx(), it)
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
@@ -957,6 +961,7 @@ func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
 	ctx := s.queueCtx()
 	s.ensureBoxReady(ctx)
 	s.ClearUserStop()
+	it = s.withStickLength(ctx, it)
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.logger.Warn("queue watcher: the second start failed too", "title", it.Title, "err", err)
 		return false
@@ -1026,6 +1031,7 @@ func (s *Server) queueSkipLocked(forward bool) (queueItem, bool, error) {
 		return queueItem{}, false, nil
 	}
 	s.ClearUserStop()
+	it = s.withStickLength(s.queueCtx(), it)
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
