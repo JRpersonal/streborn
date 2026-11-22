@@ -338,6 +338,140 @@ func pairInsideSetupBracket(post boxPoster, log *strings.Builder) bool {
 	return accepted
 }
 
+// runningMargeURL reads the cloud address the speaker is RUNNING with from
+// /info (margeURL is loaded at the last start; the :17000 writes only show here
+// after a restart on some chassis). For the unlock log only.
+func (a *App) runningMargeURL(host string) string {
+	body, err := a.boseGet(host, "/info")
+	if err != nil {
+		return "not readable: " + err.Error()
+	}
+	const open, close = "<margeURL>", "</margeURL>"
+	i := strings.Index(body, open)
+	j := strings.Index(body, close)
+	if i < 0 || j < i {
+		return "no margeURL element in /info"
+	}
+	return body[i+len(open) : j]
+}
+
+// accountRetryPlan says what to do after one account attempt that followed the
+// restart onto the responder. Pure, so the decision is unit-tested without a
+// speaker:
+//
+//   - the speaker took the account (stored a UUID, or did not refuse): continue
+//     to the injection;
+//   - it refused but attempts remain: ask again (the firmware refuses while it
+//     is still settling after the restart);
+//   - it refused and no attempts remain: stop.
+func accountRetryPlan(refused, uuidStored bool, attempt, maxAttempts int) string {
+	switch {
+	case uuidStored || !refused:
+		return "continue"
+	case attempt < maxAttempts:
+		return "retry"
+	default:
+		return "stop"
+	}
+}
+
+// retryAccountAfterRestartOntoResponder is the last rung for a speaker that
+// refused the dummy account at once and never called this PC (a never-set-up
+// Wave: SET_MARGE_ACCOUNT_ERROR 1038 with the language set and inside the setup
+// state machine, 2026-11-18 and again on v1.8.1, 2026-11-19). What the proven
+// ginger/taigan runs had and this path did not: the speaker was RUNNING on a
+// reachable cloud address when it was asked, while here the plain unlock had
+// just restarted it onto the dead .invalid placeholder. So restart it once with
+// the responder address already written, set the language again (a never-set-up
+// speaker loses it on every restart), and ask for the account again, bare and
+// then inside the setup state machine, a few times while the firmware settles.
+//
+// Whether this lifts the refusal is NOT proven; no such speaker was on the
+// bench. Every answer, the running cloud address and the responder call count go
+// to the unlock log so the next diagnostic says which part held. t is the open
+// :17000 connection, used for the restart; the caller closes it and dials again.
+// Returns whether the speaker took the account.
+func (a *App) retryAccountAfterRestartOntoResponder(host, model string, t *tapConn, marge *bootstrapMarge, log *strings.Builder) bool {
+	fmt.Fprintf(log, "restarting the speaker onto the local responder before asking for the account again\n")
+	a.logger.Info("telnet-bootstrap: restarting the speaker onto the local responder before asking for the account again", "host", host)
+	_, _ = t.send("sys reboot")
+	boxSSHClients.invalidateHost(host)
+	// Down first (the restart takes a few seconds to drop :8090), then up.
+	for i := 0; i < 20 && tcpReachable(host, 8090, 2*time.Second); i++ {
+		a.emitInstallHeartbeat()
+		time.Sleep(2 * time.Second)
+	}
+	back := false
+	deadline := time.Now().Add(agentWaitBudget(model))
+	for time.Now().Before(deadline) {
+		if _, err := a.boseGet(host, "/info"); err == nil {
+			back = true
+			break
+		}
+		a.emitInstallHeartbeat()
+		time.Sleep(4 * time.Second)
+	}
+	if !back {
+		fmt.Fprintf(log, "the speaker did not answer on :8090 again after the restart\n")
+		a.logger.Warn("telnet-bootstrap: the speaker did not answer on :8090 again after the restart onto the responder", "host", host)
+		return false
+	}
+	fmt.Fprintf(log, "back after the restart: running margeURL %s, responder calls so far %d\n", a.runningMargeURL(host), marge.hits.Load())
+
+	get := func(path string) string {
+		body, gerr := a.boseGet(host, path)
+		if gerr != nil {
+			body = "not readable: " + gerr.Error()
+		}
+		body = strings.Join(strings.Fields(body), " ")
+		fmt.Fprintf(log, "GET %s: %s\n", path, body)
+		return body
+	}
+	post := boxPosterFor(host)
+	lang := sticksetup.SysLanguageForLocale(a.appLocale())
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		repeatLanguageIfSetupSaysUnset(get("/setup"), lang, post, get, log)
+		line, refused := a.setMargeAccountDummy(host)
+		fmt.Fprintf(log, "after restart, attempt %d: %s\n", attempt, line)
+		if refused {
+			refused = !pairInsideSetupBracket(post, log)
+		}
+		stored := false
+		for w := 0; w < 10; w++ {
+			if a.boxHasStoredMargeUUID(host) {
+				stored = true
+				break
+			}
+			a.emitInstallHeartbeat()
+			time.Sleep(2 * time.Second)
+		}
+		hits := marge.hits.Load()
+		plan := accountRetryPlan(refused, stored, attempt, maxAttempts)
+		fmt.Fprintf(log, "after restart, attempt %d: refused=%v uuidStored=%v margeHits=%d -> %s\n", attempt, refused, stored, hits, plan)
+		a.logger.Info("telnet-bootstrap: account request after the restart onto the responder", "host", host, "attempt", attempt, "refused", refused, "uuidStored", stored, "margeHits", hits, "plan", plan)
+		switch plan {
+		case "continue":
+			return true
+		case "stop":
+			return false
+		}
+	}
+	return false
+}
+
+// boxHasStoredMargeUUID positively reads a non-empty margeAccountUUID from
+// /info. Unlike boxHasResidualMargeUUID it is false on a read error, so a
+// speaker that does not answer is never taken for one that stored the account.
+func (a *App) boxHasStoredMargeUUID(host string) bool {
+	body, err := a.boseGet(host, "/info")
+	if err != nil {
+		return false
+	}
+	v, found := margeUUIDFromInfo(body)
+	return found && v != ""
+}
+
 // enableSSHViaTelnetBootstrap is the factory-reset unlock: it gives the box a
 // dummy account, points its marge at a throwaway responder on this PC, injects
 // the sshd payload via envswitch, reboots, and waits for :22. Returns whether
@@ -437,14 +571,27 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	fmt.Fprintf(&log, "dummy account persisted against local responder: %v (margeHits=%d)\n", uuidStuck, marge.hits.Load())
 	a.logger.Info("telnet-bootstrap: dummy account association result", "host", host, "uuidPersisted", uuidStuck, "margeHits", marge.hits.Load())
 	if accountRefused && !uuidStuck && marge.hits.Load() == 0 {
-		// Refused twice, nothing stored, never called this PC: a speaker without
-		// an account does not run the boot check the injection rides on, so the
-		// reboot and the four-minute wait cannot open SSH. Stop here; the caller
-		// restores the stock URLs. Not a firewall case, the speaker never tried.
+		// Refused at once, nothing stored, never called this PC. The speaker was
+		// last started on the dead .invalid placeholder the plain unlock wrote, so
+		// the responder address the commands above set is not the one it is running
+		// on yet. Restart it once onto the responder, then ask again.
+		fmt.Fprintf(&log, "running margeURL at the refusal: %s\n", a.runningMargeURL(host))
+		accepted := a.retryAccountAfterRestartOntoResponder(host, model, t, marge, &log)
 		t.close()
-		fmt.Fprintf(&log, "the speaker refused the dummy account with and without the setup state machine; unlock stopped before the reboot\n")
-		a.logger.Warn("telnet-bootstrap: the speaker refused the dummy account twice and stored none; stopping before the reboot (not a firewall case)", "host", host)
-		return false, log.String(), false
+		if !accepted {
+			// A speaker without an account does not run the boot check the injection
+			// rides on, so the injection reboot and the four-minute wait cannot open
+			// SSH. Stop here; the caller restores the stock URLs.
+			fmt.Fprintf(&log, "the speaker refused the dummy account before and after a restart onto the local responder; unlock stopped (margeHits=%d)\n", marge.hits.Load())
+			a.logger.Warn("telnet-bootstrap: the speaker refused the dummy account before and after a restart onto the local responder and stored none; stopping", "host", host, "margeHits", marge.hits.Load())
+			return false, log.String(), false
+		}
+		// The account took after the restart. Re-open :17000 for the injection.
+		var derr error
+		t, derr = dialTAP(host, 5*time.Second)
+		if derr != nil {
+			return false, log.String() + "port 17000 not reachable after the restart: " + derr.Error() + "\n", false
+		}
 	}
 
 	// Now swap marge to the INJECTION (same reachable base, so the boot curl
