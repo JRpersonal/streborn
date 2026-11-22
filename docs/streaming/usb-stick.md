@@ -140,9 +140,32 @@ it cannot play from a stick, instead of failing.
   directory (at most 10,000 entries), never stats or opens the files in it:
   titles are file names without the extension, the album is the folder's
   name, the cover is `cover`/`folder`/`front`/`albumart` `.jpg/.jpeg/.png`
-  in the folder. No tags are read, so there are no durations either (see
-  Deferred). Order is natural (`2 x` before `10 x`), folders first. Dot
+  in the folder. No tags are read, so the listing carries no durations
+  (Lengths, below). Order is natural (`2 x` before `10 x`), folders first. Dot
   files, `._*` and the Windows system folders are hidden.
+- **Lengths** (`internal/webui/usbtracklength.go`). Without a `duration` in
+  the DIDL the speaker reports a total of zero, so a stick song had no
+  progress bar in the app or on the phone page (discussion #1136, ST20,
+  2026-11-22) and a folder ended each track on the frozen-position net. So
+  when a stick file is handed to the speaker without a length (`/api/play`,
+  every folder track as it is pushed, a song key), the agent reads it from
+  the file's header: a HEAD and a few small range reads over loopback, cached
+  per URL and size. Only an exact length is used: FLAC STREAMINFO, the MP4
+  movie header, an MP3 Xing/Info or VBRI frame count, the WAV data chunk, the
+  last Ogg Vorbis granule. A CBR MP3 without a Xing/Info frame, raw AAC and
+  WMA still play without a length. A song from another speaker's stick is
+  read the same way from that speaker, by the LAN URL it is played from.
+  Browsing reads nothing, as before.
+- **The name** is "USB stick", the stick's FAT volume label when it has one,
+  and the speaker's name: "USB stick MUSIK (Kitchen)". The label is read once
+  when a stick starts being served (`internal/usbmedia/label.go`): the
+  volume-label entry of the root directory, which is where Windows keeps the
+  label it shows, else the boot sector's label field ("NO NAME" counts as
+  none); at most the boot sector and one cluster of the root directory, from
+  the device, read-only. `/api/library/servers` carries `speaker` and `label`
+  on the stick's entry, so the apps build the name in the user's language and
+  never fall back to the desktop app's `str-<ip>` placeholder for a speaker
+  it has not named yet.
 - **Files** only by extension: `.mp3 .flac .m4a .aac .ogg .oga .wav .wma`,
   served with `http.ServeContent` (Range, for seeking and FLAC headers),
   the MIME from the extension, and the DLNA `contentFeatures` /
@@ -193,13 +216,20 @@ it cannot play from a stick, instead of failing.
 
 ### What the user sees
 
-- Desktop Library: "USB stick (Kitchen)" in the server list, browsed like any
-  server. No "put on the speakers" button for it (the other speakers cannot
-  take it as a native source in v1). A refused stick is one line above the
+- Desktop Library: "USB stick (Kitchen)" in the server list ("USB stick
+  MUSIK (Kitchen)" for a stick labelled MUSIK), browsed like any server. No
+  "put on the speakers" button for it (the other speakers cannot take it as a
+  native source in v1). A song from it can still be played on any speaker:
+  the Library plays it there by its URL, from the speaker that holds the
+  stick, while that speaker is on. The stick is not in a speaker's own list
+  of media servers (Speaker settings), because the agent does not announce
+  it over SSDP (stage 2). A refused stick is one line above the
   list, for example "The USB stick in Kitchen is not formatted as FAT32.
   Format it as FAT32, then copy the music onto it again."
-- Phone remote: a "USB stick" button next to the media servers, or the
-  refusal line under them.
+- Phone remote: a "USB stick (Kitchen)" button (with the label, as in the
+  app) next to the media servers, or the refusal line under them.
+- A stick song shows its length and a progress bar, like a NAS song (Lengths,
+  above).
 - No hint about pulling the stick out: the agent switches the firmware's
   mount of a music stick to read-only (How it works), so the stick can be
   pulled at any time. (A first version told the user to switch the speaker
@@ -219,7 +249,8 @@ it cannot play from a stick, instead of failing.
 
 `/api/debug/state` carries `usb_music`: `present`, `variant`, `device`,
 `filesystem`, `fat_type`, `cluster_bytes`, `mount_dir`, `mounted_by`
-(`firmware` or `agent`), `mount_options`, `name_charset` (`utf8`,
+(`firmware` or `agent`), `mount_options`, `volume_label` (while served),
+`name_charset` (`utf8`,
 `iso8859-1`, `iso8859-15` or `unknown`, while served), `classification` (`music` or
 `install`), `served`, `refusal`, `waiting_for_library` (a FAT stick nothing
 mounted yet), the lazily known `root_listed` / `root_folders` / `root_files`,
@@ -240,13 +271,13 @@ bytes). Nothing touches NAND at run time.
 
 ### Deferred
 
-- **Durations and tags.** No ID3/FLAC/MP4 tag is read, so a track has no
-  length in the DIDL. A single song still gets one from the existing length
-  read on a key press, and the queue pre-arms the next MP3's length from its
-  header (both allowed to read the stick over loopback); FLAC/M4A/OGG in a
-  folder fall back to the frozen-position end detection, which can leave a
-  gap of up to about 15 s between tracks. Reading the first 64 KB of the
-  visible page's files is the next step if that gap is a complaint.
+- **Tags, and lengths in the listing.** No ID3/FLAC/MP4 tag is read, so a
+  track has no artist and no length in the DIDL. The length is read from the
+  file when it is played instead (Lengths, under How it works), which gives
+  the progress bar and the on-time folder advance; a CBR MP3 without a
+  Xing/Info frame, raw AAC and WMA still play without one. Reading the first
+  64 KB of the visible page's files is the next step if lengths or artists in
+  the listing itself are asked for.
 - **Phone remote search** does not include the stick yet (browsing does).
 - **SSDP and the native `STORED_MUSIC` source** (stage 2, Q4): the stick is
   not visible to the Bose app or to other speakers' own menus.
@@ -752,6 +783,11 @@ stick formatted NTFS.
   what the desktop app and the phone page browse with.
 - `internal/usbmedia/samplerate.go`: the sample rate from a FLAC or WAV
   header.
+- `internal/usbmedia/label.go`: the FAT volume label (root directory entry,
+  else boot sector).
+- `internal/webui/usbtracklength.go`: the length of a stick song read from
+  its file when it is played (`stickFileLength`, `withStickLength`; WAV and
+  Ogg Vorbis on top of `readFileLengthKind`).
 - `internal/boxlog/usbdisk.go`: the kernel's USB disk lines (`usb_disk`) and
   the hook the agent looks at the stick from.
 - `internal/webui/usbmusic.go`: the stick state (detect, mount read-only
