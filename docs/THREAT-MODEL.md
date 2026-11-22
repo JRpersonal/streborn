@@ -54,13 +54,13 @@ as a DNS server for any other device, and does not phone home.
   recall. Anyone with root SSH access (open while the install stick
   is inserted, or when the persistent opt-in marker is set) can read
   those credentials, which is part of why SSH is kept opt-in.
-- **Music-service logins handed to the firmware (Pandora, iHeartRadio,
-  Deezer).** The e-mail and password typed into the app or the phone page
-  travel app (or phone) to agent over the LAN and agent to the speaker's
-  own `:8090/setMusicServiceAccount` over loopback, the path Pandora has
-  always used. STR never stores, logs or echoes the password; the Deezer
-  endpoint also keeps the firmware's raw answer out of the log, since nobody
-  knows yet what its Deezer client echoes. What the firmware stores is its
+- **Music-service logins handed to the firmware (Pandora, iHeartRadio;
+  Deezer only as a kept login).** The e-mail and password typed into the app
+  or the phone page travel app (or phone) to agent over the LAN and agent to
+  the speaker's own `:8090/setMusicServiceAccount` over loopback, the path
+  Pandora has always used. STR never stores, logs or echoes the password.
+  Deezer takes no new login (it cannot work without Bose): the agent refuses
+  it with `410` without reading the body. What the firmware stores is its
   own business (its `Sources.xml`). The token the firmware then registers
   with STR's cloud stand-in is kept in `/mnt/nv/streborn/` (mode 0600) and
   handed back only to a loopback caller, the speaker itself; a LAN client
