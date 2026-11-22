@@ -353,6 +353,10 @@ type Manager struct {
 	// auto-attach yanked the box back to Spotify a second after a radio recall
 	// (reported: hardware preset Spotify->radio played radio ~1s then jumped back).
 	suppressActivateUntil time.Time
+	// switchAwayPausedAt is when SwitchedAway last paused an engine that was
+	// playing to the box. The second half of a double press reads it
+	// (pausedBySwitchAwaySince): that pause came from its own first half.
+	switchAwayPausedAt time.Time
 	// recallUntil marks a recall in progress: until this time, ServeOgg must NOT
 	// resume go-librespot on a box attach. Otherwise the box's own preset
 	// self-activation resumes the OLD track at its paused (mid) position before

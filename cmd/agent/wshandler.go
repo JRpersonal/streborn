@@ -621,7 +621,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		// Bumped here on the read loop, so the first press's recall stands
 		// down from this instant on. The webhook stays with the first press.
 		seq := h.pressSeq.Add(1)
-		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
+		go h.playRow2(row2PressContext(ctx, first), seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
 		return
 	case planConfirm:
 		// Inside a group one press can arrive as two frames. The first press's
@@ -904,10 +904,29 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	if isNativeRadioLocation(location) {
 		h.logger.Info("hardware preset: native radio preset, the box activates it itself",
 			"slot", slot, "location", location)
+		// A newer press owns the speaker already: the second half of a double
+		// press that plays the key's second row (#1110). Its playRow2 cancels
+		// the first-press rescue, but this goroutine can get here a moment
+		// after that cancel, and noting the activation then re-armed the rescue
+		// for row 1: when the cut-off station reported no first frame, the
+		// rescue was one "is it playing" check away from pressing key 1 again
+		// over row 2 (live Portable 2026-11-22). Nor may this press's
+		// Recently-played card or last-play record land after the newer one.
+		// The cancel count is read first: the newer press bumps the sequence
+		// before its playRow2 cancels, so a cancel this check misses is still
+		// caught by the epoch.
+		epoch := h.firstPress.currentEpoch()
+		if h.pressSeq.Load() != seq {
+			h.logger.Info("hardware preset: native radio preset superseded by a newer press, no rescue and no last-play record", "slot", slot)
+			return
+		}
 		// Standing back is right, and it is not the same as looking away: if
 		// the firmware then tells its own log that it got no first frame, this
 		// press is the one that failed (see firstpressrescue.go).
-		h.firstPress.noteNativeActivation(slot, time.Now())
+		if !h.firstPress.noteNativeActivationIn(epoch, slot, time.Now()) {
+			h.logger.Info("hardware preset: native radio preset superseded by a newer press, no rescue and no last-play record", "slot", slot)
+			return
+		}
 		if p, ok := h.store.Get(slot); ok {
 			if h.noteRecentPreset != nil {
 				h.noteRecentPreset(p)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
@@ -169,6 +170,41 @@ func TestDoublePressPlaysRowTwoAndSupersedesRowOne(t *testing.T) {
 	}
 }
 
+// The row-2 recall of a double press carries when its first half arrived, so
+// the Spotify engine can tell the pause row 1's switch-away put on it from a
+// pause of the listener's (Jens' ST30, 2026-11-22: double press for the
+// playlist that played, the song just went on). Standalone and grouped alike.
+func TestDoublePressRowTwoRecallCarriesTheFirstPress(t *testing.T) {
+	for _, grouped := range []bool{false, true} {
+		rig := newDoublePressRig(t, twoRowStore(t, true))
+		if grouped {
+			rig.h.group.zone.Store(groupMember)
+			rig.h.tracePressesFn = func(int, time.Time) int { return 2 }
+		}
+		since := make(chan time.Time, 1)
+		rig.h.playSlotFn = func(ctx context.Context, slot int) (string, error) {
+			t0, ok := recallintent.PressSince(ctx)
+			if !ok {
+				t.Errorf("grouped=%v: the row-2 recall of slot %d carries no first press", grouped, slot)
+			}
+			since <- t0
+			return "", nil
+		}
+		before := time.Now()
+		ctx := context.Background()
+		rig.h.OnPresetSelected(ctx, 1, key1Location, "One")
+		rig.h.OnPresetSelected(ctx, 1, key1Location, "One")
+		select {
+		case t0 := <-since:
+			if t0.Before(before) || t0.After(time.Now()) {
+				t.Errorf("grouped=%v: first press at %v, want the first frame's arrival", grouped, t0)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("grouped=%v: row 2 never played", grouped)
+		}
+	}
+}
+
 func TestDoublePressWithEmptyRowTwoStaysOnRowOne(t *testing.T) {
 	rig := newDoublePressRig(t, twoRowStore(t, false))
 	ctx := context.Background()
@@ -276,6 +312,35 @@ func TestDoublePressCancelsTheFirstPressRescue(t *testing.T) {
 	}
 	if slot := f.claim(now.Add(time.Second)); slot != 0 {
 		t.Fatalf("a cancelled activation was still claimed for a rescue on slot %d", slot)
+	}
+}
+
+// Live Portable 2026-11-22: the first press's recall noted its native
+// activation a moment AFTER the double press had cancelled the rescue, and
+// the rescue was armed for row 1 again. A superseded first press notes
+// nothing: neither when the newer press is already visible, nor when its
+// cancel lands between the epoch read and the note.
+func TestSupersededFirstPressArmsNoRescue(t *testing.T) {
+	const nativeLoc = "/station?data=eyJ9"
+	rig := newDoublePressRig(t, twoRowStore(t, true))
+	seq := rig.h.pressSeq.Add(1)
+	rig.h.pressSeq.Add(1) // the second half of the double press
+	rig.h.recallPreset(context.Background(), seq, time.Now(), 1, nativeLoc, "One")
+	if slot := rig.h.firstPress.claim(time.Now()); slot != 0 {
+		t.Fatalf("a superseded first press armed a rescue for slot %d", slot)
+	}
+
+	var f firstPressRescue
+	epoch := f.currentEpoch()
+	f.cancel()
+	if f.noteNativeActivationIn(epoch, 1, time.Now()) {
+		t.Fatal("an activation noted after a cancel must be dropped")
+	}
+	if slot := f.claim(time.Now()); slot != 0 {
+		t.Fatalf("the dropped activation was claimed for slot %d", slot)
+	}
+	if !f.noteNativeActivationIn(f.currentEpoch(), 2, time.Now()) || f.claim(time.Now()) != 2 {
+		t.Fatal("an activation without a cancel must still arm its one rescue")
 	}
 }
 
