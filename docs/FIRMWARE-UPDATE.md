@@ -129,7 +129,7 @@ checked for some models so far:
 | Your speaker | On firmware 14 or older, today |
 |---|---|
 | SoundTouch 20 or 30 without a Bluetooth button (first generation), SoundTouch Portable | **Numbered steps in the app.** The app prepares every USB stick for you. Each step up to 16.00.09 worked on one SoundTouch 20. The last step from there is not tested yet. |
-| SoundTouch 10 | **No tested path yet.** Below 15, the app lists a probable route (15.00.20, then 27.0.6), but cannot prepare the stick for it. |
+| SoundTouch 10 | **Numbered steps in the app.** The app prepares every USB stick for you: below 14.0.33 it starts with 14.00.33, then 15.00.20, then Bose's 27.0.6. No step has run on a real SoundTouch 10 yet, so the app marks each one as not tested. |
 | SoundTouch 20 or 30 with a Bluetooth button, SA-5, SoundTouch 300, Wireless Link adapter | **No tested path yet.** The app lists a probable route, but cannot prepare the stick. |
 | Wave SoundTouch (first generation), CineMate adapter (first generation) | **No tested path yet.** The app lists a probable route, but cannot prepare the stick. |
 | Wave SoundTouch IV | From 14.0.33: probable route listed, not tested. Below 14.0.33: no known source for the first step. |
@@ -139,14 +139,14 @@ checked for some models so far:
 ### When there is no tested path yet
 
 For some speakers I do not have a checked list of in-between updates
-yet. A SoundTouch 10 below firmware 15 is one of them. The app then
+yet. The app then
 lists the probable route, says it is not checked, and cannot prepare
 the USB stick. Or it says "No known update path for this speaker yet".
 
 What you can do:
 
-- **Wait.** I am working on checked steps for more models, the
-  SoundTouch 10 first. If the app later shows numbered steps with a
+- **Wait.** I am working on checked steps for more models. If the
+  app later shows numbered steps with a
   **Prepare stick** button for your speaker, follow them. Keep ST
   Reborn up to date: it updates itself in place.
 - **Tell me about your speaker.** Write to me
@@ -488,7 +488,8 @@ The rest of this section is the reference behind it.
 
 ### Let the app do the stepping
 
-For the first generation SoundTouch 20, 30 and Portable, ST Reborn walks
+For the first generation SoundTouch 20, 30 and Portable, and for the
+SoundTouch 10, ST Reborn walks
 you through the ladder. When such a speaker reports a firmware older
 than 15, the firmware notice turns into a numbered list of updates. The
 app prepares each USB stick, shows the button steps for your speaker,
