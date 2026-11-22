@@ -443,9 +443,14 @@ var bssidRe = regexp.MustCompile(`\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b`)
 // The same rule drops an account token or a music-service password the
 // firmware might print while it links a service (the Deezer login test,
 // docs/streaming/deezer.md): access_token=, refresh_token=, token=, secret=,
-// arl= and pass=. Nobody has seen the firmware log one, but nobody has
-// watched a Deezer login on it either, and the tail reaches every bundle.
-var secretRe = regexp.MustCompile(`(?i)\b(passphrase|password|passwd|pass|wpapsk|psk|access_token|refresh_token|token|secret|arl)(\s*[:=]\s*)\S.*$`)
+// arl=, pass= and pw:. The last one is not hypothetical: BoseApp logs a
+// music-service login as
+//
+//	STSServiceProxy::SendCreateAccountRequest(usr:<mail>, pw:<password>*DEEZER), resp:...
+//
+// with the password in clear, and on v1.9.0 that line reached a public
+// bundle (#2040, 2026-11-22) because pw: was missing from this list.
+var secretRe = regexp.MustCompile(`(?i)\b(passphrase|password|passwd|pwd|pass|pw|wpapsk|psk|access_token|refresh_token|token|secret|arl)(\s*[:=]\s*)\S.*$`)
 
 // emailRe matches an e-mail address, the shape a music-service account name
 // has (the Deezer and Pandora logins). The line keeps two characters and the
@@ -460,7 +465,7 @@ var emailRe = regexp.MustCompile(`([A-Za-z0-9._%+-]{1,64})@([A-Za-z0-9-]+(?:\.[A
 // recognise a bare network name in free text, so that happens here, on the
 // speaker.
 func Redact(s string) string {
-	if containsFoldASCII(s, "pass") || containsFoldASCII(s, "psk") || containsFoldASCII(s, "token") ||
+	if containsFoldASCII(s, "pass") || containsFoldASCII(s, "psk") || containsFoldASCII(s, "token") || containsFoldASCII(s, "pw") ||
 		containsFoldASCII(s, "secret") || containsFoldASCII(s, "arl=") || containsFoldASCII(s, "arl:") {
 		s = secretRe.ReplaceAllString(s, "${1}${2}<secret-redacted>")
 	}

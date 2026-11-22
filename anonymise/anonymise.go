@@ -411,6 +411,20 @@ var firmwareReturnedAccountRegex = regexp.MustCompile(`(?i)(\b[A-Za-z_]*(?:user_
 // "no account linked" is exactly what a reader wants to learn from the line.
 var firmwareEmptyReturns = map[string]bool{"": true, "(null)": true, "null": true, "nil": true, "none": true, "(none)": true}
 
+// firmwareLoginPasswordRegex catches the password in the line BoseApp writes
+// when it links a music service,
+//
+//	STSServiceProxy::SendCreateAccountRequest(usr:<mail>, pw:<password>*DEEZER), resp:...
+//
+// Speakers on v1.9.0 hand that line to the bundle unmasked (#2040), so the app
+// masks it too and a bundle exported with a newer app is clean even when the
+// speaker is not. Everything after the separator goes, up to the end of the
+// line or of the JSON string holding it (a quote or a backslash): a password
+// may contain a comma or a bracket, so there is no safer place to stop, and
+// running on past a quote would eat the rest of a document
+// (project_scrub_encoded_json_trap).
+var firmwareLoginPasswordRegex = regexp.MustCompile(`(?i)(\bpwd?\s*[:=]\s*)[^\s"\\][^"\\\n]*`)
+
 func scrubFirmwareReturnedAccounts(s string) string {
 	return firmwareReturnedAccountRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := firmwareReturnedAccountRegex.FindStringSubmatch(m)
@@ -695,6 +709,7 @@ func scrubAccounts(s string) string {
 	})
 	s = maskAttrValues(s, userNameLogKeyRegex, maskAccountValue)
 	s = scrubFirmwareReturnedAccounts(s)
+	s = firmwareLoginPasswordRegex.ReplaceAllString(s, "${1}<secret-redacted>")
 	s = boseHostnameRegex.ReplaceAllStringFunc(s, func(m string) string {
 		sub := boseHostnameRegex.FindStringSubmatch(m)
 		return sub[1] + "NAME#" + hashShort(sub[2])
