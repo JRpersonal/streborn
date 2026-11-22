@@ -26,7 +26,6 @@ const (
 	FamilyCinemateScm = "cinemate-scm" // CineMate adapter, first generation
 	FamilyBTSm2       = "bt-sm2"       // SoundTouch 20/30 with Bluetooth, SA-5, 300, Wireless Link
 	FamilyWaveSm2     = "wave-sm2"     // Wave IV
-	FamilyST10Sm2     = "st10-sm2"     // SoundTouch 10
 )
 
 // innerFP is the size and CRC-32 of an Update.stu.
@@ -84,10 +83,8 @@ var routes = []route{
 		NoSourceBelow: "14.0.33",
 		Avoid:         []string{"14.00.33"},
 	},
-	{
-		Family: FamilyST10Sm2, Models: []string{"soundtouch 10"}, ModuleType: "sm2",
-		Versions: []string{"15.00.20"},
-	},
+	// The SoundTouch 10 has a checked ladder (st10Ladder, ladder_data.go), so
+	// Plan never routes it here.
 }
 
 // sm2Only are the models Bose only ever built on the newer hardware, so a

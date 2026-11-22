@@ -459,7 +459,8 @@ func TestFirmwareLadderNote(t *testing.T) {
 	if n := firmwareLadderNote("Wave SoundTouch", "", "", "2.1.51"); !strings.Contains(n, "5 updates this speaker probably needs") || !strings.Contains(n, "not checked") {
 		t.Errorf("2.x Wave: %q", n)
 	}
-	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "2 updates this speaker probably needs") {
+	// The SoundTouch 10 has a checked ladder: 14.00.33, 15.00.20, 27.0.6.
+	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "walks you through the 3 updates") {
 		t.Errorf("10.x ST10: %q", n)
 	}
 	if n := firmwareLadderNote("Lifestyle", "sm2", "", "10.0.11"); !strings.Contains(n, "no known step-by-step path") {

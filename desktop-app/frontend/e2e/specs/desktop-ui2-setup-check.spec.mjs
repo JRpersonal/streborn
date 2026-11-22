@@ -229,7 +229,7 @@ test.describe('UI 2.0 setup check: firmware', () => {
   test.describe('on 10.x, another model', () => {
     test.use({
       scenario: fwScenario(SETUP_CHECK.guide, {
-        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 10', current: '10.0.11' } },
+        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 300', current: '10.0.11' } },
         GetFirmwareLadder: { value: SETUP_CHECK.routePlan },
       }),
     });
@@ -251,7 +251,7 @@ test.describe('UI 2.0 setup check: firmware', () => {
   test.describe('on 10.x, a model with no known path', () => {
     test.use({
       scenario: fwScenario(SETUP_CHECK.guide, {
-        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 10', current: '10.0.11' } },
+        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 300', current: '10.0.11' } },
         GetFirmwareLadder: { value: SETUP_CHECK.noPathPlan },
       }),
     });

@@ -13,10 +13,11 @@ package bosefw
 // That generation is reached with 16.00.09: 15.00.20 itself stalled on the
 // one speaker that tried it, by stick and on its update page.
 //
-// The checked ladder knows one family (FamilySTScm). Every other family the
-// firmware guide covers gets its documented, unchecked route as a list
-// (StatusRoute, ladder_routes.go); a model with no known path gets
-// StatusUnsupported. Neither is ever offered Bose's last file in one jump from
+// The checked ladder knows two families: the first generation SoundTouch 20,
+// 30 and Portable (FamilySTScm) and the SoundTouch 10 (FamilyST10Sm2). Every
+// other family the firmware guide covers gets its documented, unchecked route
+// as a list (StatusRoute, ladder_routes.go); a model with no known path gets
+// StatusUnsupported. None is ever offered Bose's last file in one jump from
 // below 15.
 
 import (
@@ -190,18 +191,32 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		p.Status = StatusUpToDate
 		return p
 	}
+	st10 := isST10(p.Model, p.ModuleType)
 	if cur[0] >= 15 {
 		// From 15 on, Bose's last file goes on directly, for every model: the
-		// normal guide with its one-click update handles it.
+		// normal guide with its one-click update handles it. A checked
+		// family also gets the final step itself, for the stick route.
 		p.Status = StatusFinal
-		if stScmModels[strings.ToLower(p.Model)] && p.ModuleType != "sm2" {
+		var final Step
+		switch {
+		case st10:
+			p.Family, p.ModuleType = FamilyST10Sm2, "sm2"
+			final = st10Ladder[len(st10Ladder)-1]
+		case stScmModels[strings.ToLower(p.Model)] && p.ModuleType != "sm2":
 			p.Family = FamilySTScm
-			p.Steps = []Step{stScmLadder[len(stScmLadder)-1]}
-			if fb := FallbackFor(p.Steps[0].ID, p.Current); fb != nil {
-				p.Fallbacks[p.Steps[0].ID] = fb
-			}
+			final = stScmLadder[len(stScmLadder)-1]
+		default:
+			return p
+		}
+		p.Steps = []Step{final}
+		if fb := FallbackFor(final.ID, p.Current); fb != nil {
+			p.Fallbacks[final.ID] = fb
 		}
 		return p
+	}
+	if st10 {
+		p.Family, p.ModuleType = FamilyST10Sm2, "sm2"
+		return walkLadder(p, st10Ladder, nil)
 	}
 	if !stScmModels[strings.ToLower(p.Model)] {
 		return planRoute(p, cur)
@@ -228,13 +243,25 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 	}
 	p.Family = FamilySTScm
 	p.OldStart = cur[0] < 5
-	for _, s := range stScmLadder {
-		if CompareVersions(s.Version, p.Current) <= 0 {
-			continue
-		}
+	return walkLadder(p, stScmLadder, func(s Step) bool {
 		// A 6.x speaker already has the new container format: it goes
 		// straight to 07.00.37, as the archive research and the field did.
-		if cur[0] == 6 && s.Version == "06.02.01" {
+		return cur[0] == 6 && s.Version == "06.02.01"
+	})
+}
+
+// isST10 reports whether the speaker is a SoundTouch 10. Bose built it only on
+// the newer (sm2) hardware, so a missing moduleType still names it; a speaker
+// that says "scm" is not one the ladder knows.
+func isST10(model, moduleType string) bool {
+	return modelKey(model) == "soundtouch 10" && moduleType != "scm"
+}
+
+// walkLadder fills p with the steps of ladder above p.Current, oldest first,
+// leaving out those skip names, and their fallbacks.
+func walkLadder(p LadderPlan, ladder []Step, skip func(Step) bool) LadderPlan {
+	for _, s := range ladder {
+		if CompareVersions(s.Version, p.Current) <= 0 || (skip != nil && skip(s)) {
 			continue
 		}
 		p.Steps = append(p.Steps, s)
@@ -279,22 +306,31 @@ func Reached(step Step, reported string) bool {
 }
 
 // FallbackFor returns the smaller steps to try when `stepID` left a speaker
-// on `current`, ending with the step that stalled. Nil when there are none.
+// on `current`, ending with the step that stalled or with the step that takes
+// its place. Nil when there are none.
 func FallbackFor(stepID, current string) []Step {
 	cur, ok := VersionTuple(current)
 	if !ok {
 		return nil
 	}
-	pick := func(versions ...string) []Step {
+	pickIn := func(family string, versions ...string) []Step {
 		var out []Step
 		for _, v := range versions {
-			if s, ok := StepByID(FamilySTScm + "-" + v); ok && CompareVersions(s.Version, current) > 0 {
+			if s, ok := StepByID(family + "-" + v); ok && CompareVersions(s.Version, current) > 0 {
 				out = append(out, s)
 			}
 		}
 		return out
 	}
+	pick := func(versions ...string) []Step { return pickIn(FamilySTScm, versions...) }
 	switch stepID {
+	case FamilyST10Sm2 + "-15.00.20":
+		// Not a smaller step in between but the swap that worked on the scm
+		// ladder: 16.00.09 in place of a 15.00.20 that stalled. It ends the
+		// list, and the plan goes on with 27.0.6 after it.
+		if cur[0] < 15 {
+			return pickIn(FamilyST10Sm2, "16.00.09")
+		}
 	case FamilySTScm + "-06.02.01":
 		if cur[0] < 5 {
 			return pick("05.00.23", "06.02.01")
@@ -313,14 +349,15 @@ func FallbackFor(stepID, current string) []Step {
 	return nil
 }
 
+// mainLadders are the checked ladders, by family.
+var mainLadders = map[string][]Step{
+	FamilySTScm:   stScmLadder,
+	FamilyST10Sm2: st10Ladder,
+}
+
 // StepByID finds a step of any ladder, main or fallback.
 func StepByID(id string) (Step, bool) {
-	for _, s := range stScmLadder {
-		if s.ID == id {
-			return s, true
-		}
-	}
-	for _, s := range stScmFallback {
+	for _, s := range AllSteps() {
 		if s.ID == id {
 			return s, true
 		}
@@ -331,6 +368,9 @@ func StepByID(id string) (Step, bool) {
 // AllSteps returns every step of every ladder, main first. For tests and the
 // maintainer.
 func AllSteps() []Step {
-	out := append([]Step(nil), stScmLadder...)
-	return append(out, stScmFallback...)
+	var out []Step
+	for _, l := range [][]Step{stScmLadder, st10Ladder, stScmFallback, st10Fallback} {
+		out = append(out, l...)
+	}
+	return out
 }
