@@ -5,9 +5,9 @@
 // The firmware facts are not decided here. They come from the modules the
 // classic layout uses for the same speaker:
 //   firmware.js   LATEST_BOSE_FIRMWARE, the last version Bose shipped (27.0.6)
-//   fwladder.js   versionReached, ladderApplies (the first generation
-//                 SoundTouch 20/30/Portable and the SoundTouch 10 below 15
-//                 get the stick ladder),
+//   fwladder.js   versionReached, ladderApplies (below 15 the first
+//                 generation SoundTouch 20/30/Portable and the Bluetooth
+//                 chassis get the stick ladder),
 //                 LADDER_BELOW_MAJOR (from 15 on, Bose's last file goes on in
 //                 one step), FIRMWARE_DOCS_URL
 // and the install gate mirrors unlockMinFirmwareMajor in install_str.go: below
@@ -29,7 +29,9 @@ export const STICK_ROUTE_URL = `${FIRMWARE_DOCS_URL}#5-route-c-usb-stick`;
 //   current      27.0.6 or newer: nothing to do
 //   routeA       15.x up to 27.0.5: the one-click update over the network
 //   ladder       below 15 on a first generation SoundTouch 20/30/Portable
-//                or a SoundTouch 10 (the checked stick ladders)
+//                or the Bluetooth chassis: SoundTouch 10, 20/30 with
+//                Bluetooth, SA-5, 300, Wireless Link, Wave IV from 14.0.33
+//                (the checked stick ladders)
 //   guide        below 15 on any other model: the documented route as a
 //                list, or "no known path yet" (fwladder.js), never the one
 //                jump to Bose's last file

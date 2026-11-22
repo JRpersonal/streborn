@@ -130,9 +130,10 @@ checked for some models so far:
 |---|---|
 | SoundTouch 20 or 30 without a Bluetooth button (first generation), SoundTouch Portable | **Numbered steps in the app.** The app prepares every USB stick for you. Each step up to 16.00.09 worked on one SoundTouch 20. The last step from there is not tested yet. |
 | SoundTouch 10 | **Numbered steps in the app.** The app prepares every USB stick for you: below 14.0.33 it starts with 14.00.33, then 15.00.20, then Bose's 27.0.6. No step has run on a real SoundTouch 10 yet, so the app marks each one as not tested. |
-| SoundTouch 20 or 30 with a Bluetooth button, SA-5, SoundTouch 300, Wireless Link adapter | **No tested path yet.** The app lists a probable route, but cannot prepare the stick. |
+| SoundTouch 20 or 30 with a Bluetooth button | **Numbered steps in the app.** The app prepares every USB stick for you: below 14.0.33 it starts with 14.00.33, then 15.00.20, then Bose's 27.0.6. No step has run on one of these speakers yet, so the app marks each one as not tested. |
+| SA-5, SoundTouch 300, Wireless Link adapter | **Numbered steps in the app**, the same three steps with each model's own files. Not tested on a real speaker yet. These models do not read a USB stick when they start, so the stick step is not confirmed on them: the app says so and names the speaker's own update page ([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) as the other way to put the same file on. |
+| Wave SoundTouch IV | From 14.0.33: **numbered steps in the app** (15.00.20, then Bose's 27.0.6), not tested, with the same note about the stick. Below 14.0.33: no known source for the first step. |
 | Wave SoundTouch (first generation), CineMate adapter (first generation) | **No tested path yet.** The app lists a probable route, but cannot prepare the stick. |
-| Wave SoundTouch IV | From 14.0.33: probable route listed, not tested. Below 14.0.33: no known source for the first step. |
 | SA-4, Stereo JC (first generation) | On 14.x: probable route listed, not tested. Below 14: no known source for the first step. |
 | Any other model | No known path yet. |
 
@@ -461,9 +462,9 @@ variant of step 4 is untested. On other models they are not confirmed.
 *A first generation SoundTouch 20 right after 14.00.33 went in by stick.
 Photo: a reader, shared with permission.*
 
-Models without a display (SoundTouch 10, SA-5, Wireless Link) show the
-update with their lights only. I do not have a confirmed description of
-the light pattern per model yet. Photos are welcome.
+Models without a display (SoundTouch 10, SA-5, SoundTouch 300, Wireless
+Link) show the update with their lights only. I do not have a confirmed
+description of the light pattern per model yet. Photos are welcome.
 
 <details>
 <summary>More detail: where these observations come from</summary>
@@ -489,13 +490,20 @@ The rest of this section is the reference behind it.
 ### Let the app do the stepping
 
 For the first generation SoundTouch 20, 30 and Portable, and for the
-SoundTouch 10, ST Reborn walks
-you through the ladder. When such a speaker reports a firmware older
-than 15, the firmware notice turns into a numbered list of updates. The
-app prepares each USB stick, shows the button steps for your speaker,
-and after **Done, check again** moves on to the next step. The last step
-is Bose's own 27.0.6, over the network or by stick. The app remembers
-the step per speaker, so it picks up again after a restart.
+Bluetooth chassis (SoundTouch 10, SoundTouch 20 and 30 with a Bluetooth
+button, SA-5, SoundTouch 300, Wireless Link adapter, and the Wave
+SoundTouch IV from 14.0.33), ST Reborn walks you through the ladder.
+When such a speaker reports a firmware older than 15, the firmware
+notice turns into a numbered list of updates. The app prepares each USB
+stick, shows the button steps for your speaker, and after **Done, check
+again** moves on to the next step. The last step is Bose's own 27.0.6,
+over the network or by stick. The app remembers the step per speaker,
+so it picks up again after a restart. On the SA-5, SoundTouch 300,
+Wireless Link adapter and Wave IV the stick step is not confirmed,
+because these models do not read a USB stick when they start; the app
+then names the speaker's own update page
+([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) for
+the same `Update.stu`.
 
 For other models the app lists the probable route, says it is not
 checked, and links this page. It cannot prepare the stick for those
@@ -662,6 +670,102 @@ stick on a speaker where 27.0.6 had failed shortly before.
 
 </details>
 
+### Bluetooth chassis (newer hardware)
+
+The SoundTouch 10, the SoundTouch 20 and 30 with a Bluetooth button,
+the SA-5, the SoundTouch 300, the Wireless Link adapter and the Wave
+SoundTouch IV. ST Reborn does these steps for you too, but **none of
+them has run on a real speaker yet**, so the app marks every step as
+not tested. Please tell me how it went
+([section 10](#10-if-you-are-stuck-send-us-this)).
+
+**Which steps a Bluetooth chassis speaker needs:**
+
+| Your speaker | Below 14.0.33 | 14.0.33 up to 14.x | If 15.00.20 leaves it on 14.x |
+|---|---|---|---|
+| SoundTouch 10 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SoundTouch 20 or 30 with a Bluetooth button, Wireless Link adapter | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SA-5 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SoundTouch 300 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | None: the archive holds no such file for it |
+| Wave SoundTouch IV | No source known: the archive's file for it is the SA-5's | 15.00.20, 27.0.6 | 16.00.09 in its place |
+
+On 15 or newer, every one of them needs only Bose's 27.0.6
+([Route A](#3-route-a-one-click-in-st-reborn)).
+
+**The USB stick on the SA-5, SoundTouch 300, Wireless Link adapter and
+Wave IV.** These models do not read a USB stick when they start
+([`MODELS.md`](MODELS.md)), and no button combination for a stick
+update is known for them. So the stick step is not confirmed there. The
+same `Update.stu` can go on through the speaker's own update page
+([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) if
+the speaker's firmware has that page: copy it from the stick the app
+prepared to your computer and upload it there.
+
+<details>
+<summary>More detail: the files, their checksums, and why these</summary>
+
+Archive folders, under
+<https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2015-2020_Bluetooth/>:
+`Bluetooth_ST10`, `Bluetooth_ST20-30_or_Wireless_Link_Adapter`,
+`Bluetooth_SA5`, `Bluetooth_ST300`, `Bluetooth_Wave_SoundTouch_IV`.
+
+Why these files:
+
+- **14.00.33 is Bose's own file for each model**, byte for byte. Bose's
+  archived 14.0.33 catalogue (`Firmware/xml/index 14.0.33.xml` in the
+  same archive item) gives the SoundTouch 10, the SoundTouch 20 and 30
+  with Bluetooth and the Wireless Link adapter one shared file, and the
+  SA-5 and the SoundTouch 300 their own. The archive's zips hold exactly
+  those.
+- **The Wave IV has no checked 14.00.33.** Bose's file for it is 86 543 011
+  bytes / `a2419a57`, and the archive's Wave IV 14.00.33 zip holds the
+  SA-5's file instead. Never use it.
+- **No Bose catalogue of 15.0.20 or 16.0.9 survives.** Those files are
+  checked only by the archive's own values and their place in the
+  model's folder: each names the model's line inside the zip, and the
+  27.0.6 in the same folder is Bose's current file for that model.
+- **16.00.09** is the step the app offers in place of a 15.00.20 that
+  leaves the speaker on 14.x, the swap that worked on the first
+  generation ladder.
+
+| Speaker | Step | File to download | Zip bytes | Zip sha1 | Inside: bytes / CRC32 | Status |
+|---|---|---|---|---|---|---|
+| SoundTouch 10 | 14.00.33 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | 60 560 964 | `0d70632bfd53b04253d9ca473dacad03bcbd71fe` | 79 892 339 / `b5300c87` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 10 | 15.00.20 | `Bluetooth_ST10_Update_ti_15.00.20.37272.2363762.rhino.sm2.zip` | 71 036 950 | `0fb7424457eccd8fcc5c0dc91f7993ff378ab850` | 91 956 244 / `3f6c9be3` | Unverified |
+| SoundTouch 10 | 16.00.09 | `Bluetooth_ST10_Update_ti_16.00.09.37890.2412967.rhino.sm2.zip` | 65 986 629 | `2bff77ff551e82822ae18d227ce2c8d385bad7de` | 85 550 216 / `8a52bda7` | Unverified fallback |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 14.00.33 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | 60 560 964 | `0d70632bfd53b04253d9ca473dacad03bcbd71fe` | 79 892 339 / `b5300c87` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 15.00.20 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_15.00.20.37272.2363762.sm2.zip` | 73 891 694 | `e94fee290f4597cbccee90314eec9e4f290d7a95` | 95 495 188 / `56107f80` | Unverified |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 16.00.09 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_16.00.09.37890.2412967.sm2.zip` | 68 604 564 | `475063ca3c0a48b3d4c60b3b5045ae9e9f9b8e90` | 89 089 160 / `afab1b5c` | Unverified fallback |
+| SA-5 | 14.00.33 | `Bluetooth_SA5_14.00.33.zip` | 61 360 424 | `25c603ac10b3898db2b5ad6e8edffe4a4a3ac6b3` | 81 409 611 / `85f253e2` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SA-5 | 15.00.20 | `Bluetooth_SA5_Update_ti_15.00.20.37272.2363762.burns.sm2.zip` | 74 690 356 | `534fa06d0942fddfbbe6621916d8c27d5089620c` | 97 013 524 / `02bef2f1` | Unverified |
+| SA-5 | 16.00.09 | `Bluetooth_SA5_Update_ti_16.00.09.37890.2412967.burns.sm2.zip` | 69 382 982 | `3d97cfc98ec7b88b19123188ff83f8fe8b5b81f5` | 90 575 272 / `e0f64638` | Unverified fallback |
+| SoundTouch 300 | 14.00.33 | `Bluetooth_ST300_14.00.33.zip` | 61 648 136 | `e156049e4bcb25683e5540b429f63a3188d3b050` | 82 612 595 / `7647c0be` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 300 | 15.00.20 | `Bluetooth_ST300_Update_ti_15.00.20.37272.2363762.ginger.sm2.zip` | 74 972 804 | `aa4f7896cfb235ef6e001fb9a89b2707b1d5a011` | 98 214 156 / `b478ccf6` | Unverified |
+| Wave SoundTouch IV | 15.00.20 | `Bluetooth_WST4_Update_ti_15.00.20.37272.2363762.nelson.sm2.zip` | 74 168 336 | `ee8e51fd2c6aad9246f8f74c393a96d3168c83c1` | 96 583 876 / `32a5024d` | Unverified |
+| Wave SoundTouch IV | 16.00.09 | `Bluetooth_WST4_Update_ti_16.00.09.37890.2412967.nelson.sm2.zip` | 69 015 749 | `e776d0b1a8e9c2b0ee332be50cb196f13fa38995` | 90 305 140 / `6e7d017c` | Unverified fallback |
+
+The last step, 27.0.6, comes from Bose for every one of them: the `sm2`
+rows of [section 9](#9-boses-files-for-2706-per-model).
+
+Full sha1 of the inner `Update.stu`, if your tool shows it:
+
+| File | Inner `Update.stu` sha1 |
+|---|---|
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | `ed8365e8daa97ee9c3a995c598d61fd76ccbfdd4` |
+| `Bluetooth_ST10_Update_ti_15.00.20.37272.2363762.rhino.sm2.zip` | `505cc0066d41251e4c1efbdfa0cb24afaddc3464` |
+| `Bluetooth_ST10_Update_ti_16.00.09.37890.2412967.rhino.sm2.zip` | `5d881e824e541bacab55d2ed33d661d082359f52` |
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_15.00.20.37272.2363762.sm2.zip` | `0d2fc1debee883009d8b6eb15e6729e1a6e21a48` |
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_16.00.09.37890.2412967.sm2.zip` | `d4d3d1abda779cf974e5d2e1996cc9b4e3c76e3d` |
+| `Bluetooth_SA5_14.00.33.zip` | `ac23c15af16b85490db8c010d63d40e3bf2f1ea0` |
+| `Bluetooth_SA5_Update_ti_15.00.20.37272.2363762.burns.sm2.zip` | `33dcf13bc463e214544142663354fd54bcef81fe` |
+| `Bluetooth_SA5_Update_ti_16.00.09.37890.2412967.burns.sm2.zip` | `afd89183c1bf60d5b83457c94b598bf092ec8c3c` |
+| `Bluetooth_ST300_14.00.33.zip` | `f2c0396257c6ae0ae69552a51f27c778b718df1c` |
+| `Bluetooth_ST300_Update_ti_15.00.20.37272.2363762.ginger.sm2.zip` | `6bd6dd11e7ee099f4f02f3238aef597d1e0cb9ed` |
+| `Bluetooth_WST4_Update_ti_15.00.20.37272.2363762.nelson.sm2.zip` | `09efc54d585bc71de32926614957c496e41367a2` |
+| `Bluetooth_WST4_Update_ti_16.00.09.37890.2412967.nelson.sm2.zip` | `78e272cb2b5b33cb3882f28f0ac9e93217ad4e65` |
+
+</details>
+
 ### Other models: no checked ladder yet
 
 For these I know the route in outline, but I have not yet pulled the
@@ -679,7 +783,6 @@ says what you can do in the meantime.
 | Wave SoundTouch, first generation (folder `Airplay-1_Wave_SoundTouch`) | 06.02.01, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/n/Update.stu`) | 15.00.20 inside: 107 842 648 / `686cad33`. Bose 27.0.6: 112 367 416 / `49d88de4` | 16.00.09 and 18 to 24 from that folder: they are the SoundTouch 20/30 file |
 | SA-4, Stereo JC, first generation (folder `Airplay-1_SA4_or_STJC`) | Below 14: no source known. From 14.x: 14.0.33, 15.0.20, then 27.0.6 from Bose (`stu/l/Update.stu`) | 15.0.20 inside: 106 491 816 / `f6ef441d` | 14.0.15, 16.0.09, 17.0.08, 18, 19, 22, 23, 24 from that folder: they are the SoundTouch 20/30 file |
 | CineMate adapter, first generation | 06.00.91, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/t/Update.stu`) | | |
-| Bluetooth chassis: SoundTouch 10, SoundTouch 20/30 with Bluetooth, SA-5, 300, Wave IV, Wireless Link | Below 14: 14.00.33, 15.00.20, then 27.0.6 from Bose (the `sm2` path in section 9). SoundTouch 10 below 15: 15.00.20, then 27.0.6. Wave IV below 14.0.33: no source known, because the archive's 14.00.33 for it is the SA-5's file. | | Wave IV 14.00.33 from the archive: it is the SA-5's file |
 
 All of this table is unverified.
 
