@@ -59,8 +59,13 @@ describe('checkCase', () => {
 
   it('below 15 on the newer hardware or another model keeps the single-step guide', () => {
     expect(checkCase(fw('7.0.37', { moduleType: 'sm2' }), BOX)).toBe('guide');
-    expect(checkCase(fw('10.0.11', { model: 'SoundTouch 10', moduleType: 'sm2' }), BOX)).toBe('guide');
+    expect(checkCase(fw('10.0.11', { model: 'SoundTouch 20', moduleType: 'sm2' }), BOX)).toBe('guide');
     expect(checkCase(fw('2.1.51', { model: 'Wave SoundTouch', moduleType: '' }), BOX)).toBe('guide');
+  });
+
+  it('below 15 a SoundTouch 10 gets its own stick ladder', () => {
+    expect(checkCase(fw('9.0.41', { model: 'SoundTouch 10', moduleType: 'sm2' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('9.0.41', { model: 'SoundTouch 10', moduleType: '' }), BOX)).toBe('ladder');
   });
 
   it('falls back to the chosen box for the model', () => {

@@ -202,8 +202,14 @@ func checkBluetoothRow(t *testing.T, routeCell, never string) {
 	if got, want := withFinal(routeByFamily(t, FamilyBTSm2).Versions), strings.Join(docVersionRE.FindAllString(bt, -1), " "); got != want {
 		t.Errorf("bt-sm2: route %q, the doc says %q", got, want)
 	}
-	if got, want := withFinal(routeByFamily(t, FamilyST10Sm2).Versions), strings.Join(docVersionRE.FindAllString(st10, -1), " "); got != want {
-		t.Errorf("st10-sm2: route %q, the doc says %q", got, want)
+	// The SoundTouch 10 has a checked ladder now. Below 14.0.33 it walks the
+	// chassis route the row names first (14.00.33 is the shared sm2 file Bose
+	// gave the ST10 too), from 14.0.33 on the row's own SoundTouch 10 route.
+	if got, want := versions(Plan("SoundTouch 10", "sm2", "", "9.0.41", nil).Steps), strings.Join(docVersionRE.FindAllString(bt, -1), " "); got != want {
+		t.Errorf("st10-sm2 from 9.0.41: ladder %q, the doc's chassis route %q", got, want)
+	}
+	if got, want := versions(Plan("SoundTouch 10", "sm2", "", "14.0.33", nil).Steps), strings.Join(docVersionRE.FindAllString(st10, -1), " "); got != want {
+		t.Errorf("st10-sm2 from 14.0.33: ladder %q, the doc says %q", got, want)
 	}
 	w := routeByFamily(t, FamilyWaveSm2)
 	if withFinal(w.Versions) != withFinal(routeByFamily(t, FamilyBTSm2).Versions) {
@@ -317,7 +323,7 @@ func TestPlanRoutes(t *testing.T) {
 		{"SA-5 without moduleType is sm2", "SoundTouch SA-5", "", "12.0.1", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
 		{"SoundTouch 300", "SoundTouch 300", "sm2", "14.0.15", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
 		{"Wireless Link adapter", "SoundTouch Wireless Link Adapter", "", "13.0.5", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
-		{"SoundTouch 10 without moduleType", "SoundTouch 10", "", "10.0.11", nil, StatusRoute, "", FamilyST10Sm2, "15.00.20 27.0.6"},
+		{"SoundTouch 10 without moduleType: the checked ladder", "SoundTouch 10", "", "10.0.11", nil, StatusLadder, "", FamilyST10Sm2, "14.00.33 15.00.20 27.0.6"},
 		{"Lifestyle: no known path", "Lifestyle", "sm2", "10.0.11", nil, StatusUnsupported, "model", "", ""},
 		{"no model at all", "", "", "7.0.37", nil, StatusUnsupported, "model", "", ""},
 		{"from 15 every model gets the normal guide", "Wave SoundTouch", "scm", "15.0.20", nil, StatusFinal, "", "", ""},
