@@ -552,6 +552,9 @@ body {
 .sticker-speaker-name .muted { padding: 0; }
 .sticker-housing { display: inline-flex; gap: 14px; font-size: 13px; }
 .sticker-housing label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.sticker-options { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 22px; }
+.sticker-remote { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+.sticker-remote svg { flex: 0 0 auto; }
 .sticker-skipped { margin: 0; font-size: 13px; color: var(--c-muted); }
 .sticker-status { min-height: 1.2em; margin: 8px 0; font-size: 13px; color: var(--c-muted); overflow-wrap: anywhere; }
 .sticker-status:empty { margin: 0; min-height: 0; }

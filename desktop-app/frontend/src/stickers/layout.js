@@ -11,7 +11,8 @@
 //
 // Input:  [{ name, model, housing: 'white'|'dark',
 //            keys: [{ n, name, kind: 'station'|'playlist', logo,
-//                     twice: { name, kind } | null }], qr }]
+//                     twice: { name, kind } | null }], qr, remote }]
+//         (remote: true adds the 40 x 75 mm sticker for the back of the remote)
 // Output: { pages: [{ header, pieces, scissors, control }] }
 
 const u = (px) => px / 6;
@@ -245,7 +246,7 @@ function newPiece(speaker, part, wPx, hPx, pal, top, bot) {
   return {
     speaker, part, x: 0, y: 0, w: u(wPx), h: u(hPx), rot: 0, pal,
     outline: outline(wPx, hPx, top, bot), curved: !!(top || bot),
-    rules: [], tiles: [], texts: [], icons: [], qr: null, brand: null,
+    rules: [], tiles: [], texts: [], icons: [], qr: null, brand: null, remote: null,
   };
 }
 
@@ -364,13 +365,241 @@ function portableGrid(sp, idx, pal, measure) {
   return p;
 }
 
+// ---------- the remote sticker ----------
+
+// The sticker for the back of the remote: a plain 40 x 75 mm rectangle that
+// fits the remote of every model, so every speaker gets the same one. A
+// header with a small remote symbol, the word for remote and the speaker's
+// name says what it is for; below it the six keys, each with what it plays
+// pressed once and pressed twice. It holds no logos: on a remote held in the
+// hand, every millimetre goes to the names.
+export const REMOTE = { w: 40, h: 75 };
+const R_PAD = 2;
+// The header band, and where the keys start under its rule.
+const R_HEAD = 10;
+const R_RULE_Y = R_PAD + R_HEAD + 0.5;
+const R_BODY_Y = R_PAD + R_HEAD + 1;
+// The free height above and below a key's text, and the space after its
+// number.
+const R_VPAD = 0.6;
+const R_GAP_X = 1.2;
+const R_LH = 1.08;
+// Between a name and the pressed-twice line under it, in name sizes.
+const R_GAP_Y = 0.12;
+// The pressed-twice line is set this much smaller than the name above it,
+// and the number of a key this much larger.
+const R_TWICE = 0.88;
+const R_NUM = 1.45;
+// The name sizes tried, largest first, in mm: 6 is as large as a name gets,
+// 2.2 the smallest that still reads well on a remote in the hand.
+export const REMOTE_SIZE_MAX = 6;
+export const REMOTE_SIZE_MIN = 2.2;
+const R_STEP = 0.1;
+// One name may be drawn this much smaller than the others before the size
+// of all of them goes down.
+const R_SCALES = [1, 0.9, 0.8];
+const R_MAX_LINES = 3;
+const R_COL_GAP = 2;
+// The two ways the keys can stand: one column of six, or two columns of
+// three. One column reads like a list from 1 to 6 and is the default; two
+// columns are used only where they allow names this much larger.
+export const REMOTE_GRIDS = [{ cols: 1, rows: 6 }, { cols: 2, rows: 3 }];
+export const REMOTE_TWO_COLUMNS_GAIN = 1.1;
+const MARKER = '2×';
+
+// Scripts written without spaces may break between any two characters;
+// everything else breaks only between words.
+const ANY_BREAK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/u;
+
+// wholeLines sets text on at most maxLines lines of maxW, or answers null
+// when that takes more lines or would break inside a word.
+function wholeLines(text, maxW, font, measure, maxLines) {
+  const r = wrapText(text, maxW, font, measure, maxLines);
+  if (r.truncated) return null;
+  if (!ANY_BREAK.test(text) && tokens(text).some((k) => measure(k.t, font) > maxW)) return null;
+  return r.lines;
+}
+
+// fitRemoteName sets a name at the largest allowed scale at which it fits its
+// height whole, one line preferred to two: { lines, size, ok }. A name that
+// fits nowhere is cut at the smallest scale and comes back with ok false.
+function fitRemoteName(text, maxW, size, availH, measure) {
+  const linesAt = (sc) => Math.min(R_MAX_LINES, Math.floor(availH / (size * sc * R_LH) + 1e-9));
+  const tries = [[1, 1], [1, 0.9], ...R_SCALES.map((sc) => [R_MAX_LINES, sc])];
+  for (const [most, sc] of tries) {
+    const n = Math.min(most, linesAt(sc));
+    if (n < 1) continue;
+    const font = { size: size * sc, weight: 700 };
+    for (const w of [maxW, loose(maxW)]) {
+      const lines = wholeLines(text, w, font, measure, n);
+      if (lines) return { lines, size: font.size, ok: true };
+    }
+  }
+  const sc = R_SCALES[R_SCALES.length - 1];
+  const r = wrapText(text, loose(maxW), { size: size * sc, weight: 700 }, measure, Math.max(1, linesAt(sc)));
+  return { lines: r.lines, size: size * sc, ok: false };
+}
+
+// remoteCells are the boxes of the six keys in one grid, in key order.
+function remoteCells(grid) {
+  const w = REMOTE.w - 2 * R_PAD;
+  const h = REMOTE.h - R_PAD - R_BODY_Y;
+  const colW = (w - (grid.cols - 1) * R_COL_GAP) / grid.cols;
+  const rowH = h / grid.rows;
+  const cells = [];
+  for (let i = 0; i < grid.cols * grid.rows; i++) {
+    const col = i % grid.cols, row = Math.floor(i / grid.cols);
+    cells.push({ x: R_PAD + col * (colW + R_COL_GAP), y: R_BODY_Y + row * rowH, w: colW, h: rowH });
+  }
+  return cells;
+}
+
+// planRemoteKey sets one key at name size s in its box. ok is false when a
+// name had to be cut or the key's lines are taller than the box.
+function planRemoteKey(key, box, s, numW, measure) {
+  const textW = Math.max(0, box.w - numW - R_GAP_X);
+  const availH = box.h - 2 * R_VPAD;
+  const s2 = s * R_TWICE;
+  let ok = true;
+  let twice = null;
+  if (key.twice && key.twice.name) {
+    const markerW = measure(MARKER, { size: s2, weight: 700 });
+    const at = markerW + s2 * 0.35;
+    const w2 = Math.max(0, textW - at);
+    const name = String(key.twice.name);
+    const sc = R_SCALES.find((k) => measure(name, { size: s2 * k, weight: 600 }) <= loose(w2));
+    const size = s2 * (sc || R_SCALES[R_SCALES.length - 1]);
+    if (!sc) ok = false;
+    twice = { markerW, at, w2, size, text: sc ? name : ellipsise(name, loose(w2), { size, weight: 600 }, measure) };
+  }
+  const twiceH = twice ? s2 * R_LH : 0;
+  const gap = twice && key.name ? s * R_GAP_Y : 0;
+  let once = null;
+  if (key.name) {
+    // Size s is what the names are set in: one line of it must fit the
+    // height. The smaller scales are for a name that is too wide.
+    if (s * R_LH + gap + twiceH > availH + 1e-9) ok = false;
+    once = fitRemoteName(key.name, textW, s, availH - twiceH - gap, measure);
+    if (!once.ok) ok = false;
+    // A name drawn smaller to fit keeps the line under it no larger.
+    if (twice && twice.size > once.size) twice.size = once.size;
+  }
+  const onceH = once ? once.lines.length * once.size * R_LH : 0;
+  if (onceH + gap + twiceH > availH + 1e-9) ok = false;
+  return { ok, once, twice, textW, onceH, gap, twiceH, s2 };
+}
+
+// planRemote finds, for one grid, the largest name size at which every key
+// fits whole: { size, numSize, numW, cells, keys, ok }. ok is false when even
+// the smallest size needs a name cut. from is the first size tried (for the
+// tests: that the size found is the largest that fits).
+export function planRemote(keys, grid, measure, from = REMOTE_SIZE_MAX) {
+  const cells = remoteCells(grid);
+  const steps = Math.max(0, Math.round((from - REMOTE_SIZE_MIN) / R_STEP));
+  let plan = null;
+  for (let i = 0; i <= steps; i++) {
+    const s = Math.round((from - i * R_STEP) * 100) / 100;
+    // One number size and one text column for all keys, so the names line up.
+    const numSize = Math.min(s * R_NUM, cells[0].h - 2 * R_VPAD);
+    const numW = Math.max(...[1, 2, 3, 4, 5, 6].map((n) => measure(String(n), { size: numSize, weight: 700 })));
+    const planned = keys.map((k, j) => planRemoteKey(k, cells[j], s, numW, measure));
+    plan = { size: s, numSize, numW, cells, keys: planned, ok: planned.every((p) => p.ok) };
+    if (plan.ok) break;
+  }
+  return plan;
+}
+
+// chooseRemoteGrid measures both grids for the six keys and keeps one column
+// unless two columns allow clearly larger names, or are the only way to fit
+// them whole. Answers { grid, plan }.
+export function chooseRemoteGrid(keys, measure) {
+  const [one, two] = REMOTE_GRIDS.map((grid) => ({ grid, plan: planRemote(keys, grid, measure) }));
+  const twoWins = two.plan.ok && (!one.plan.ok || two.plan.size >= one.plan.size * REMOTE_TWO_COLUMNS_GAIN);
+  return twoWins ? two : one;
+}
+
+// fitHeaderName sets the speaker's name in the header: one line, smaller
+// before two lines, cut only when two small lines do not hold it either.
+function fitHeaderName(name, maxW, measure) {
+  for (const size of [5.2, 4.8, 4.4, 4, 3.6, 3.2]) {
+    if (measure(name, { size, weight: 700 }) <= loose(maxW)) return { lines: [name], size };
+  }
+  for (const w of [maxW, loose(maxW)]) {
+    const two = wholeLines(name, w, { size: 2.7, weight: 700 }, measure, 2);
+    if (two) return { lines: two, size: 2.7 };
+  }
+  return { lines: [ellipsise(name, loose(maxW), { size: 3.2, weight: 700 }, measure)], size: 3.2 };
+}
+
+// remoteSticker builds the remote sticker of one speaker. label is the word
+// for remote in the user's language. Its colour follows the housing choice,
+// in the shades every model without its own shade gets.
+function remoteSticker(sp, idx, label, measure) {
+  const pal = stickerPalette('plain', sp.housing);
+  const p = newPiece(idx, 'remote', REMOTE.w * 6, REMOTE.h * 6, pal);
+  // The header: the symbol, and the word for remote above the speaker's name.
+  const iconH = R_HEAD - 0.8;
+  p.remote = { x: R_PAD, y: R_PAD + 0.4, w: iconH / 2, h: iconH, color: pal.ink };
+  const hx = R_PAD + iconH / 2 + 1.6;
+  const hw = REMOTE.w - R_PAD - hx;
+  const word = String(label || '').trim();
+  if (word) {
+    const sc = [1, 0.9, 0.8, 0.7].find((k) => measure(word, { size: 2.6 * k, weight: 700 }) <= loose(hw)) || 0.7;
+    const size = 2.6 * sc;
+    p.texts.push({ text: ellipsise(word, loose(hw), { size, weight: 700 }, measure), x: hx, y: R_PAD + 0.4 + 1.3, size, weight: 700, color: pal.mute, align: 'left', maxW: hw });
+  }
+  const head = fitHeaderName(String(sp.name || ''), hw, measure);
+  const nameTop = R_PAD + 0.4 + 3.2;
+  const nameH = R_HEAD - 0.4 - 3.2;
+  const lh = head.size * R_LH;
+  head.lines.forEach((text, i) => {
+    p.texts.push({ text, x: hx, y: nameTop + (nameH - head.lines.length * lh) / 2 + (i + 0.5) * lh, size: head.size, weight: 700, color: pal.ink, align: 'left', maxW: hw });
+  });
+  p.rules.push({ x1: 0, y1: R_RULE_Y, x2: p.w, y2: R_RULE_Y });
+
+  // The keys, in the grid that lets their names be largest.
+  const keys = [1, 2, 3, 4, 5, 6].map((n) => keyAt(sp, n));
+  const { grid, plan } = chooseRemoteGrid(keys, measure);
+  p.grid = { cols: grid.cols, rows: grid.rows, size: plan.size, fits: plan.ok };
+  plan.cells.forEach((box, j) => {
+    const pl = plan.keys[j];
+    const cy = box.y + box.h / 2;
+    p.texts.push({ text: String(keys[j].n), x: box.x, y: cy, size: plan.numSize, weight: 700, color: pal.ink, align: 'left', maxW: plan.numW });
+    const tx = box.x + plan.numW + R_GAP_X;
+    let y = cy - (pl.onceH + pl.gap + pl.twiceH) / 2;
+    if (pl.once) {
+      const l = pl.once.size * R_LH;
+      pl.once.lines.forEach((text, i) => {
+        p.texts.push({ text, x: tx, y: y + (i + 0.5) * l, size: pl.once.size, weight: 700, color: pal.ink, align: 'left', maxW: pl.textW });
+      });
+      y += pl.onceH + pl.gap;
+    }
+    if (pl.twice) {
+      const ty = y + pl.twiceH / 2;
+      p.texts.push({ text: MARKER, x: tx, y: ty, size: pl.s2, weight: 700, color: pal.mute, align: 'left', maxW: pl.twice.markerW });
+      p.texts.push({ text: pl.twice.text, x: tx + pl.twice.at, y: ty, size: pl.twice.size, weight: 600, color: pal.ink, align: 'left', maxW: pl.twice.w2 });
+    }
+  });
+  // Rules between the rows, and between the columns.
+  const rowH = plan.cells[0].h;
+  for (let r = 1; r < grid.rows; r++) {
+    const y = R_BODY_Y + r * rowH;
+    p.rules.push({ x1: 0, y1: y, x2: p.w, y2: y });
+  }
+  for (let c = 1; c < grid.cols; c++) {
+    const x = plan.cells[c].x - R_COL_GAP / 2;
+    p.rules.push({ x1: x, y1: R_RULE_Y, x2: x, y2: p.h });
+  }
+  return p;
+}
+
 // ---------- groups: the pieces of one speaker (or two wide stickers) ----------
 
 const at = (piece, xPx, yPx, rot = 0) => Object.assign(piece, { x: u(xPx), y: u(yPx), rot });
 
 // A group is cut out as one block first. Pieces that share a cut line lie
 // edge to edge, and a scissors symbol marks each of those cuts.
-function buildGroups(speakers, measure) {
+function buildGroups(speakers, measure, remoteLabel) {
   const groups = [];
   let openWide = null;
   speakers.forEach((sp, idx) => {
@@ -400,6 +629,12 @@ function buildGroups(speakers, measure) {
       }
     }
   });
+  // The remote stickers come after all of them, side by side in rows, each
+  // with its own cut line: they belong to different remotes.
+  const remotes = speakers.map((sp, idx) => (sp.remote ? remoteSticker(sp, idx, remoteLabel, measure) : null)).filter(Boolean);
+  for (let i = 0; i < remotes.length; i += REMOTES_PER_ROW) {
+    groups.push({ pieces: remotes.slice(i, i + REMOTES_PER_ROW).map((p, j) => Object.assign(p, { x: j * (REMOTE.w + REMOTE_GAP), y: 0, rot: 0 })), scissors: [] });
+  }
   return groups;
 }
 
@@ -430,13 +665,20 @@ const CONTROL_H = 8;
 // the widest one and lines all groups up on one edge.
 const GROUP_X = AREA.x + SCISSORS_HALF + 5;
 const INK = '#111111';
+// The space between two remote stickers in a row (their bleeds and a cut's
+// width), and how many of them a row holds.
+const REMOTE_GAP = 2 * BLEED + 3;
+const REMOTES_PER_ROW = Math.floor((AREA.x + AREA.w - BLEED - GROUP_X + REMOTE_GAP) / (REMOTE.w + REMOTE_GAP));
 
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
-// two translated lines of the sheet (the stickers themselves hold no words):
-// { instruction, control }. A speaker's pieces never go on two pages.
+// translated words: the two lines of the sheet and the header of the remote
+// sticker (the speakers' stickers hold no words): { instruction, control,
+// remote }. A speaker that has remote: true also gets the remote sticker. The
+// pieces of one speaker's own sticker never go on two pages; the remote
+// stickers follow them in rows of their own and carry the speaker's name.
 export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE } = {}) {
   squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
-  const groups = buildGroups(speakers || [], measure);
+  const groups = buildGroups(speakers || [], measure, texts.remote);
   const head = wrapText(texts.instruction || '', AREA.w, HEAD_FONT, measure, 4).lines;
   const header = head.map((text, i) => ({
     text, x: AREA.x, y: AREA.y + (i + 0.5) * HEAD_LINE, size: HEAD_FONT.size, weight: HEAD_FONT.weight, color: INK, align: 'left', maxW: AREA.w,

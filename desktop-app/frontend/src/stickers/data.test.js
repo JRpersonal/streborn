@@ -14,7 +14,9 @@ import {
   presetKind,
   printedFingerprints,
   rememberPrinted,
+  remoteOf,
   setHousing,
+  setRemote,
   speakerId,
   stickerKeys,
   stickersStale,
@@ -194,6 +196,34 @@ describe('housing colour', () => {
     expect(housingOf('p', storage, 'SoundTouch Portable')).toBe('white');
     setHousing('a', 'white', storage);
     expect(housingOf('a', storage, 'SoundTouch 20')).toBe('white');
+  });
+});
+
+describe('remote sticker choice', () => {
+  it('is off until ticked, for every model, and kept per speaker', () => {
+    const storage = fakeStorage();
+    expect(remoteOf('a', storage)).toBe(false);
+    setRemote('a', true, storage);
+    expect(remoteOf('a', storage)).toBe(true);
+    expect(remoteOf('b', storage)).toBe(false);
+    setRemote('a', false, storage);
+    expect(remoteOf('a', storage)).toBe(false);
+    expect(remoteOf('a', broken)).toBe(false);
+    expect(() => setRemote('a', true, broken)).not.toThrow();
+  });
+
+  it('reaches the sheet with the speaker, whatever its model', async () => {
+    const storage = fakeStorage();
+    setRemote(speakerId(OFFICE), true, storage);
+    const a = {
+      GetPresets: vi.fn(async () => PRESETS),
+      PhoneAddressFor: vi.fn(async () => null),
+      PhoneQR: vi.fn(async () => 'data:image/png;base64,QRQR'),
+      ResolveStationLogo: vi.fn(async () => ''),
+      StickerImage: vi.fn(async () => ''),
+    };
+    const { speakers } = await collectSpeakers([KITCHEN, OFFICE], a, storage);
+    expect(speakers.map((sp) => [sp.name, sp.remote])).toEqual([['Kitchen', false], ['Office', true]]);
   });
 });
 
