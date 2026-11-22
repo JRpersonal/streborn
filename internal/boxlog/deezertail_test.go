@@ -71,8 +71,11 @@ func TestRedactMasksAccountsAndTokens(t *testing.T) {
 		"Authorization token: eyJhbGciOi":   "Authorization token: <secret-redacted>",
 		"refresh_token=xyz rest":            "refresh_token=<secret-redacted>",
 		"arl=0123456789abcdef":              "arl=<secret-redacted>",
-		"secretType=token kept":             "secretType=token kept",
-		"no account here":                   "no account here",
+		// BoseApp's own music-service login line (#2040).
+		`STSServiceProxy::SendCreateAccountRequest(usr:jane.doe@example.com, pw:hunter2*DEEZER), resp:<proto{ user: "x"`: "STSServiceProxy::SendCreateAccountRequest(usr:ja***@example.com, pw:<secret-redacted>",
+		"pwd=hunter2":           "pwd=<secret-redacted>",
+		"secretType=token kept": "secretType=token kept",
+		"no account here":       "no account here",
 	} {
 		if got := Redact(in); got != want {
 			t.Errorf("Redact(%q) = %q, want %q", in, got, want)

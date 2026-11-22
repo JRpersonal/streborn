@@ -88,3 +88,31 @@ func TestTheSyslogTailSectionMasksTheFirmwareAccount(t *testing.T) {
 		t.Errorf("an unrelated line changed: %s", tail[0])
 	}
 }
+
+// BoseApp logs a music-service login with the password in clear. A v1.9.0
+// speaker hands that line to the bundle unmasked (#2040), so the app pass
+// must catch it on its own.
+func TestAFirmwareLoginPasswordIsMasked(t *testing.T) {
+	const pw = "hunter2secret"
+	line := `Nov 22 10:58:13 BoseApp STS:INFO STSServiceProxy::SendCreateAccountRequest(usr:jane.doe@example.com, pw:` + pw + `*DEEZER), resp:<proto{ user: "x"`
+	got := ScrubPII(line)
+	if strings.Contains(got, pw) || strings.Contains(got, "hunter2") {
+		t.Fatalf("the password survived\n  in:  %s\n  out: %s", line, got)
+	}
+	if !strings.Contains(got, "pw:<secret-redacted>") {
+		t.Fatalf("nothing was masked\n  out: %s", got)
+	}
+}
+
+// The same line inside an encoded JSON document (a bundle's syslog tail is a
+// JSON array of strings) loses the password and nothing past its string.
+func TestAFirmwareLoginPasswordInJSONKeepsTheDocument(t *testing.T) {
+	const doc = `{"lines":["STSServiceProxy::SendCreateAccountRequest(usr:a, pw:hunter2secret*DEEZER), resp:x","next line"],"seen":2}`
+	got := firmwareLoginPasswordRegex.ReplaceAllString(doc, "${1}<secret-redacted>")
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("the password survived: %s", got)
+	}
+	if !strings.HasSuffix(got, `","next line"],"seen":2}`) {
+		t.Fatalf("the document was cut: %s", got)
+	}
+}
