@@ -19,10 +19,11 @@ never got that far can still be brought to it, including the in-between
 steps very old speakers need.
 
 Bose's end-of-life page says "firmware updates are no longer available
-now that the cloud is offline". That is about the update button in the
-Bose app, which asked a server that is gone. It is not true of the files
-themselves: Bose's own download host still serves them. Only the web
-pages that used to link them were taken down. Verified on 2026-09-08.
+now that the cloud is offline". In practice that is not the case: the
+Bose SoundTouch app still offers the update once a speaker is set up in
+it (seen on 2026-11-22), and Bose's own download host still serves the
+files (verified on 2026-09-08). Only the web pages that used to link them
+were taken down.
 
 </details>
 
@@ -92,11 +93,11 @@ Unverified on very old firmware.
 Try these in order. Stop as soon as the speaker shows 27.0.6.
 
 1. **Bose's own SoundTouch app.** Set the speaker up in the Bose
-   SoundTouch app and connect it to your Wi-Fi. If the app then offers a
-   firmware update, take it and let the speaker restart by itself.
-   Bose's end-of-life page says firmware updates are no longer offered,
-   so do not count on this. If the app shows no update, or cannot add
-   the speaker, go on with step 2.
+   SoundTouch app and connect it to your Wi-Fi. Once the speaker is set
+   up there, the app shows a firmware update. Take it and let the
+   speaker restart by itself. This is the easiest way, and it still
+   works. If the app shows no update, or cannot add the speaker, go on
+   with step 2.
 2. **ST Reborn.** Install ST Reborn on a computer
    ([st-reborn.de](https://st-reborn.de)), open it and let it find the
    speaker. When the speaker's firmware is too old, the app shows a
