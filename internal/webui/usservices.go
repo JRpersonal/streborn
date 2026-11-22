@@ -70,6 +70,7 @@ type nativeBoxAPI interface {
 	GetSources(ctx context.Context) ([]boxapi.Source, error)
 	ListServiceStations(ctx context.Context, source, account string) ([]boxapi.ServiceStation, error)
 	SelectContentItem(ctx context.Context, item string) error
+	NotifySourcesUpdated(ctx context.Context) error
 }
 
 func (s *Server) nativeBox() nativeBoxAPI {

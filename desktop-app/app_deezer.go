@@ -2,11 +2,9 @@ package main
 
 // Deezer on the speaker's own Deezer client (docs/streaming/deezer.md).
 //
-// Signing in and out goes through LinkMusicService / UnlinkMusicService with
-// service "deezer" (app_usservices.go), the same thin wrappers Pandora uses:
-// the password is passed straight through to the agent, which hands it to
-// the speaker, and is never logged or kept here. These two read the state
-// and start a Deezer link.
+// A new Deezer sign-in is not possible without Bose; signing out goes through
+// UnlinkMusicService with service "deezer" (app_usservices.go). These read
+// the state, run the card's Check again and start a Deezer link.
 
 import (
 	"encoding/json"
@@ -29,6 +27,24 @@ func (a *App) DeezerStatus(host string, port int) (map[string]any, error) {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&out); err != nil {
 		return nil, err
 	}
+	return out, nil
+}
+
+// DeezerRecheck is the Deezer card's Check again: the agent's POST
+// /api/deezer/recheck hands a kept Deezer login back to a speaker that lists
+// Deezer without a working account, then answers like DeezerStatus.
+func (a *App) DeezerRecheck(host string, port int) (map[string]any, error) {
+	resp, err := a.usServicesDo(host, port, http.MethodPost, "/api/deezer/recheck", "{}")
+	if err != nil {
+		a.logger.Info("deezer: recheck failed", "host", host, "err", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	out := map[string]any{}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&out); err != nil {
+		return nil, err
+	}
+	a.logger.Info("deezer: recheck", "host", host, "state", out["state"], "recreate", out["recreate"])
 	return out, nil
 }
 

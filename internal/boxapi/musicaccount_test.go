@@ -42,3 +42,26 @@ func TestSetAndRemoveMusicServiceAccount(t *testing.T) {
 		t.Errorf("remove body %q", bodies["/removeMusicServiceAccount"])
 	}
 }
+
+// The source-list notification names the speaker's own device id from /info.
+func TestNotifySourcesUpdated(t *testing.T) {
+	bodies := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies[r.Method+" "+r.URL.Path] = string(b)
+		if r.URL.Path == "/info" {
+			_, _ = w.Write([]byte(`<info deviceID="AABBCCDDEEFF"><name>Test</name></info>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<status>/notification</status>`))
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	c := &Client{Host: "192.0.2.1", HTTP: &http.Client{Timeout: 2 * time.Second, Transport: &rewriteTransport{to: u}}}
+	if err := c.NotifySourcesUpdated(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if want := `<updates deviceID="AABBCCDDEEFF"><sourcesUpdated/></updates>`; bodies["POST /notification"] != want {
+		t.Fatalf("notification body %q", bodies["POST /notification"])
+	}
+}

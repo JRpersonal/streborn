@@ -466,6 +466,15 @@ func (a *agent) buildStores() error {
 // 0600, never leaves the speaker; see internal/marge/deezerlogin.go).
 const keptDeezerLoginPath = "/mnt/nv/streborn/deezer-login.json"
 
+// deezerRecreateStartWait is how long after the first box read the start-up
+// recreate looks at the speaker's Deezer source: long enough for a firmware
+// that holds a working token to have logged in with Deezer by itself.
+// deezerRecreateOutcomeWait is when it reads the outcome once more.
+const (
+	deezerRecreateStartWait   = 90 * time.Second
+	deezerRecreateOutcomeWait = 30 * time.Second
+)
+
 // buildMarge creates the marge stand-in (streaming.bose.com) with its stores
 // and forensic sections, starts the deviceID correction and the pair
 // adoption, and records why this agent started.
@@ -1726,6 +1735,9 @@ func (a *agent) buildBoxLink() error {
 	// docs/streaming/deezer.md) is still in a bundle taken minutes later.
 	// Redacted like the tail: accounts masked, tokens and passwords dropped.
 	webui.RegisterDebugSection("box_syslog_deezer", func() any { return keyTrace.DeezerTailSnapshot() })
+	// The firmware's last Deezer relogin retry code (3351 no token, 3330 token
+	// rejected by Deezer) for the deezer_login section and the Deezer card.
+	margeSrv.SetDeezerRetrySource(keyTrace.DeezerLastRetry)
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
@@ -1950,6 +1962,24 @@ func (a *agent) startBackground() error {
 		}
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
 	}()
+
+	// Deezer: hand a kept login back to a speaker that lists Deezer without a
+	// working account (internal/webui/deezer.go). Once per start, after the
+	// first box read and a wait long enough for the firmware to have logged
+	// in by itself; without a kept login it returns at once, no call made.
+	if ws := a.webuiSrv; ws != nil {
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			select {
+			case <-seedFirstRead:
+			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
+				return
+			}
+			ws.DeezerRecreateAtStart(ctx, deezerRecreateStartWait, deezerRecreateOutcomeWait)
+		}()
+	}
 
 	// Resource heartbeat: a one-line MemAvailable + loadavg snapshot
 	// every 5 minutes. The box has ~120 MB RAM and no swap, so a slow

@@ -138,6 +138,10 @@ export function CurrentWiFi() {
   return window['go']['main']['App']['CurrentWiFi']();
 }
 
+export function DeezerRecheck(arg1, arg2) {
+  return window['go']['main']['App']['DeezerRecheck'](arg1, arg2);
+}
+
 export function DeezerStatus(arg1, arg2) {
   return window['go']['main']['App']['DeezerStatus'](arg1, arg2);
 }

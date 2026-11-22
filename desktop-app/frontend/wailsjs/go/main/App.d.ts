@@ -74,6 +74,8 @@ export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:
 
 export function CurrentWiFi():Promise<string>;
 
+export function DeezerRecheck(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function DeezerStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
