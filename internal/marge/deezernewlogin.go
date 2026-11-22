@@ -1,26 +1,24 @@
-// Deezer: a new login on the speaker (docs/streaming/deezer.md, A2).
+// Deezer: the account steps STR hands to the speaker's own Deezer client
+// (docs/streaming/deezer.md).
 //
-// The agent hands an e-mail and password to the speaker's own
-// setMusicServiceAccount with source DEEZER (internal/webui/deezer.go). What
-// the firmware's Deezer client does next is the open question: log in with
-// Deezer by itself and register the source with its cloud, the way Pandora
-// does (then STR's side is the registration handling in deezerlogin.go, which
-// keeps the credential the firmware sends), or wait on a Bose host that is
-// gone (then a new login cannot work without Bose).
+// A new Deezer login cannot work without Bose (A2 is closed, see the doc), so
+// the only steps left are a recreate of the kept login (the firmware drops its
+// UNAVAILABLE account and re-creates it from /full, which now carries the
+// token, internal/webui/deezer.go) and a removal.
 //
-// So the stand-in records the attempt: when it started, what the firmware
+// The stand-in records each step: when it started and why, what the firmware
 // answered, every request the firmware makes to the stand-in in the minute
 // after (method, host, path, size; never a body), whether a Deezer source was
 // registered, and the DEEZER status the speaker lists afterwards. The record
-// is the deezer_login debug section's lastAttempt, so one bundle taken after
-// the test answers the question. No timer: the window is a time comparison
-// made when a request arrives.
+// is the deezer_login debug section's lastAttempt, so one bundle answers what
+// happened. No timer: the window is a time comparison made when a request
+// arrives.
 //
-// A new login and a kept one are one thing on STR's side: the registration
-// writes the same kept-login file A1 fills from Sources.xml, and /full serves
-// it back the same way. Deezer is therefore not a row of nativeServices
-// (usservices.go): that list's own store, US gate and /full entry would name
-// the same account twice.
+// A registered login and a kept one are one thing on STR's side: the
+// registration writes the same kept-login file A1 fills from Sources.xml, and
+// /full serves it back the same way. Deezer is therefore not a row of
+// nativeServices (usservices.go): that list's own store, US gate and /full
+// entry would name the same account twice.
 
 package marge
 
@@ -55,12 +53,21 @@ type DeezerStandInHit struct {
 	Deezer bool `json:"deezer,omitempty"`
 }
 
-// DeezerAttempt is the last new login (or removal) STR handed to the
-// firmware and what followed. Never the password, the token or the account.
+// DeezerAttempt is the last account step STR handed to the firmware and what
+// followed. Never the password, the token or the account.
 type DeezerAttempt struct {
-	// Kind is "login" or "remove".
+	// Kind is "recreate" (drop the speaker's unusable account so it re-creates
+	// it from /full with the kept token) or "remove". An older agent also
+	// wrote "login" (a new login, no longer offered).
 	Kind string    `json:"kind"`
 	At   time.Time `json:"at"`
+	// Trigger is why a recreate ran: "start" (once after the agent started)
+	// or "check-again" (the card's button).
+	Trigger string `json:"trigger,omitempty"`
+	// NotifyStatus is the HTTP status of the recreate's sourcesUpdated
+	// notification (0: not sent or no answer), NotifyError its error.
+	NotifyStatus int    `json:"notifyStatus,omitempty"`
+	NotifyError  string `json:"notifyError,omitempty"`
 	// FirmwareStatus is the HTTP status the speaker answered the account call
 	// with, 0 when it did not answer.
 	FirmwareStatus int `json:"firmwareStatus"`
@@ -87,7 +94,67 @@ type DeezerAttempt struct {
 	StandInDropped  int                `json:"standInDropped,omitempty"`
 }
 
-// BeginDeezerAttempt starts a new attempt record ("login" or "remove") and
+// NoteDeezerRecreate records why a recreate ran and how the speaker answered
+// its sourcesUpdated notification (status 0 and errText "" when it was not
+// sent). errText must be free of the account.
+func (s *Server) NoteDeezerRecreate(trigger string, notifyStatus int, errText string) {
+	s.deezerMu.Lock()
+	defer s.deezerMu.Unlock()
+	if s.deezerAttempt == nil {
+		return
+	}
+	s.deezerAttempt.Trigger = trigger
+	s.deezerAttempt.NotifyStatus = notifyStatus
+	s.deezerAttempt.NotifyError = errText
+}
+
+// SetDeezerRetrySource wires the reader of the firmware's last Deezer relogin
+// retry code (internal/boxlog DeezerLastRetry). Nil leaves it unreported.
+func (s *Server) SetDeezerRetrySource(fn func() (code string, at time.Time, ok bool)) {
+	s.deezerMu.Lock()
+	s.deezerRetry = fn
+	s.deezerMu.Unlock()
+}
+
+// DeezerRetry is the firmware's last Deezer relogin retry, read from its
+// syslog: why its Deezer client cannot log in.
+type DeezerRetry struct {
+	Code    string    `json:"code"`
+	Meaning string    `json:"meaning"`
+	At      time.Time `json:"at"`
+}
+
+// DeezerRetryMeaning names a relogin retry code. Seen on a Portable (27.0.6):
+// 3351 while the firmware holds no Deezer token, 3330 once a token reached
+// Deezer and Deezer refused it (expired, revoked or not a real one).
+func DeezerRetryMeaning(code string) string {
+	switch code {
+	case "3351":
+		return "no token: the speaker holds no Deezer login it could use"
+	case "3330":
+		return "token rejected: Deezer refused the speaker's login (expired or revoked)"
+	default:
+		return "unknown code"
+	}
+}
+
+// lastDeezerRetry reads the retry source, nil without one or before the
+// firmware logged a retry.
+func (s *Server) lastDeezerRetry() *DeezerRetry {
+	s.deezerMu.Lock()
+	fn := s.deezerRetry
+	s.deezerMu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	code, at, ok := fn()
+	if !ok || code == "" {
+		return nil
+	}
+	return &DeezerRetry{Code: code, Meaning: DeezerRetryMeaning(code), At: at}
+}
+
+// BeginDeezerAttempt starts a new attempt record ("recreate" or "remove") and
 // its request window. It replaces the previous record.
 func (s *Server) BeginDeezerAttempt(kind string) {
 	s.deezerMu.Lock()

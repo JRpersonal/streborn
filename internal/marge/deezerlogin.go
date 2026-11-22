@@ -214,10 +214,13 @@ type DeezerLoginStatus struct {
 	SecretType string    `json:"secretType,omitempty"`
 	From       string    `json:"from,omitempty"`
 	KeptAt     time.Time `json:"keptAt,omitempty"`
-	// LastAttempt is the last new login or removal STR handed to the
+	// LastAttempt is the last recreate or removal STR handed to the
 	// firmware since the agent started, and what followed
 	// (deezernewlogin.go); nil when there was none.
 	LastAttempt *DeezerAttempt `json:"lastAttempt,omitempty"`
+	// LastRetry is the firmware's last Deezer relogin retry code from its
+	// syslog (3351 no token, 3330 token rejected by Deezer); nil before one.
+	LastRetry *DeezerRetry `json:"lastRetry,omitempty"`
 }
 
 // DeezerLoginSnapshot reports whether a Deezer login is kept, for the debug
@@ -228,5 +231,6 @@ func (s *Server) DeezerLoginSnapshot() DeezerLoginStatus {
 		st.Kept, st.SecretType, st.From, st.KeptAt = true, k.SecretType, k.From, k.KeptAt
 	}
 	st.LastAttempt = s.LastDeezerAttempt()
+	st.LastRetry = s.lastDeezerRetry()
 	return st
 }

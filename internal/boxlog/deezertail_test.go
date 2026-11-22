@@ -82,3 +82,27 @@ func TestRedactMasksAccountsAndTokens(t *testing.T) {
 		}
 	}
 }
+
+// The firmware's Deezer relogin retry names why it cannot log in: 3351 (no
+// token) and 3330 (Deezer refused the token). The last code is kept for the
+// deezer_login debug section and the Deezer card.
+func TestDeezerRetryCodeIsRead(t *testing.T) {
+	f := newForensics()
+	now := time.Date(2026, 11, 22, 1, 46, 51, 0, time.UTC)
+	if _, _, ok := f.deezerLastRetry(); ok {
+		t.Fatal("a retry code before any line")
+	}
+	f.observe(`Nov 22 01:46:51 taigan local0.info STSCertified[1959]: [(002011):CDeezerStateLoggedOut:INFO]UserInfoRecreateFailureCB '3351', retry relogin timer`, now)
+	if code, at, ok := f.deezerLastRetry(); !ok || code != "3351" || !at.Equal(now) {
+		t.Fatalf("after 3351: %q %v %v", code, at, ok)
+	}
+	later := now.Add(15 * time.Second)
+	f.observe(`Nov 22 01:47:06 taigan local0.info STSCertified[1959]: [(002011):CDeezerStateLoggedOut:INFO]UserInfoRecreateFailureCB '3330', retry relogin timer`, later)
+	code, _, _ := f.deezerLastRetry()
+	if code != "3330" {
+		t.Fatalf("after 3330: %q", code)
+	}
+	if snap := f.deezerSnapshot(); snap["lastRetryCode"] != "3330" {
+		t.Fatalf("snapshot = %v", snap)
+	}
+}

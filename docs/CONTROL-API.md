@@ -161,19 +161,18 @@ log.
 
 ## Deezer
 
-The speaker's own Deezer client, signed in from STR
-([`streaming/deezer.md`](streaming/deezer.md), A2). **Built, not yet
-confirmed on a speaker**: nobody knows whether the firmware can finish a
-Deezer login without the Bose cloud, so every attempt is recorded in the
-diagnostic file (`deezer_login.lastAttempt`, `box_syslog_deezer`). No switch
-is needed: Deezer is offered on every speaker. LAN only, like the Pandora
-calls; `POST` needs a JSON body.
+The speaker's own Deezer client ([`streaming/deezer.md`](streaming/deezer.md)).
+A new Deezer login is not possible without the Bose cloud (A2 is closed), so
+STR only keeps the login a speaker already had and hands it back when the
+firmware lost it. No switch is needed: Deezer is offered on every speaker.
+LAN only, like the Pandora calls; `POST` needs a JSON content type.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/deezer/account` | - | Where Deezer stands: `{"state","reason","detail","account","source":{"status","hasAccount"},"login":{...}}`. `state` is `connected`, `connecting` (a login was handed over less than 90 s ago and the speaker took it), `failed` (`reason` `refused`, `no-answer` or `not-ready`), `unavailable` (the speaker holds an account it is not logged in with), `not-connected` or `unknown` (the source list could not be read). `account` is masked; `login` is the `deezer_login` debug section (never the login itself). Reads the speaker's `/sources` once. |
-| `POST`   | `/api/deezer/account` | `{"user":"...","password":"..."}` | Hands the account to the speaker's `setMusicServiceAccount`, source `DEEZER`, display name `Deezer Premium`. Answers `200` `{"ok":true,"status":{...}}` when the speaker took it (it logs in after that; read `GET` again), `502` `{"code":"account-refused","status":{...}}` when it refused, `409` `{"code":"login-busy"}` while another login is being handed over. The password goes to the speaker only; STR never stores, logs or echoes it. |
-| `DELETE` | `/api/deezer/account` | - | Removes the account from the speaker (`removeMusicServiceAccount`) and forgets STR's kept copy of the login. The same answers and the same one-at-a-time rule as the Pandora removal above; `200` adds `"status"`. |
+| `GET`    | `/api/deezer/account` | - | Where Deezer stands: `{"state","detail","account","stuck","rejected","source":{"status","hasAccount"},"login":{...}}`. `state` is `connected`, `connecting` (STR handed the kept login back less than 90 s ago and the speaker is not `READY` yet), `unavailable` (the speaker holds an account it is not logged in with), `not-connected` or `unknown` (the source list could not be read); an older agent also answered `failed`. `stuck`: the speaker's last Deezer account call answered `1024` or not at all, its Deezer client hangs until a power cycle. `rejected`: the firmware's last relogin retry says Deezer refused the token (code `3330`). `account` is masked; `login` is the `deezer_login` debug section (never the login itself), with `lastAttempt` and `lastRetry` (`{"code","meaning","at"}`). Reads the speaker's `/sources` once. |
+| `POST`   | `/api/deezer/account` | ignored | `410 Gone`, `{"code":"new-login-unsupported","error":"..."}`. The e-mail and password sign-in of earlier versions; refused so an older app cannot hang the speaker's Deezer client again. The body is never read or handed on. |
+| `POST`   | `/api/deezer/recheck` | `{}` | The card's Check again. When STR keeps a Deezer login and the speaker lists `DEEZER` without a working account, removes the speaker's account (`removeMusicServiceAccount`) and sends it `<updates deviceID=".."><sourcesUpdated/></updates>` on `:8090/notification`; the firmware re-reads `/full` and creates the account again with the kept token. Answers like `GET`, plus `"recreate":{"ran","skipped","error"}` (`skipped`: `no-kept-login`, `not-listed`, `ready`, `unreadable`, `busy`, `ran-recently`; at most one run a minute). The agent runs the same step once after it starts. |
+| `DELETE` | `/api/deezer/account` | - | Removes the account from the speaker (`removeMusicServiceAccount`) and forgets STR's kept copy of the login. The same answers and the same one-at-a-time rule as the Pandora removal above; `200` adds `"status"`. A removed Deezer account cannot be linked again without Bose. |
 | `POST`   | `/api/deezer/play` | `{"url":"https://www.deezer.com/en/album/123","name":"..."}` | Plays a Deezer playlist, album or track link on the speaker's own Deezer client. A canonical `deezer.com` link is read as it is; a share link (`link.deezer.com`, `deezer.page.link`) is followed through Deezer's own hosts only. `name` is optional (else Deezer's public API names it). Answers `{"ok":true,"kind","id","name"}`; `409` `deezer-not-linked` or `native-service-unavailable`, `422` `deezer-link-unresolved`, `502` `select-failed` or `sources-unreadable`. |
 
 To keep a Deezer item on a key, start it and save the key with

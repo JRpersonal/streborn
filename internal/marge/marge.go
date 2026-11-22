@@ -86,11 +86,14 @@ type Server struct {
 	// (deezerlogin.go). Empty = feature off; a missing file = nothing kept.
 	deezerLoginPath string
 
-	// deezerAttempt is the last new Deezer login (or removal) STR handed to
-	// the firmware, with what the firmware did next (deezernewlogin.go).
-	// In memory only: the question is what happened since the agent started.
+	// deezerAttempt is the last Deezer account step (a recreate of the kept
+	// login, or a removal) STR handed to the firmware, with what the
+	// firmware did next (deezernewlogin.go). In memory only: the question is
+	// what happened since the agent started. deezerRetry reads the
+	// firmware's last Deezer relogin retry code from its syslog.
 	deezerMu      sync.Mutex
 	deezerAttempt *DeezerAttempt
+	deezerRetry   func() (code string, at time.Time, ok bool)
 
 	// requestLog stores the last N requests for debug purposes
 	// (accessible via /__spy/log on the same listener).

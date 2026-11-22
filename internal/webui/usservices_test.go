@@ -59,6 +59,11 @@ type fakeNativeBox struct {
 	// removeStarted, when set, is closed as the removal call arrives, and
 	// removeGate then holds it until the test closes the gate.
 	removeStarted, removeGate chan struct{}
+	// notifyCalls counts the sourcesUpdated notifications; sourcesAfterNotify,
+	// when set, is what /sources lists after one.
+	notifyCalls        int
+	notifyErr          error
+	sourcesAfterNotify []boxapi.Source
 }
 
 func (b *fakeNativeBox) ListServiceStations(_ context.Context, source, account string) ([]boxapi.ServiceStation, error) {
@@ -90,6 +95,14 @@ func (b *fakeNativeBox) RemoveMusicServiceAccount(_ context.Context, source, _, 
 		b.sources = b.sourcesAfterRemove
 	}
 	return nil
+}
+
+func (b *fakeNativeBox) NotifySourcesUpdated(context.Context) error {
+	b.notifyCalls++
+	if b.notifyErr == nil && b.sourcesAfterNotify != nil {
+		b.sources = b.sourcesAfterNotify
+	}
+	return b.notifyErr
 }
 
 func (b *fakeNativeBox) GetSources(context.Context) ([]boxapi.Source, error) {

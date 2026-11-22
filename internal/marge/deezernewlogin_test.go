@@ -156,3 +156,38 @@ func TestDeezerIsAvailableByDefault(t *testing.T) {
 	}
 	t.Fatal("DEEZER is missing from the availability list")
 }
+
+// A recreate records its trigger and the notification's answer, and the
+// firmware's relogin retry code reaches the debug section with its meaning.
+func TestDeezerRecreateAndRetryAreReported(t *testing.T) {
+	f := newDeezerFixture(t, "")
+	s := f.server(true)
+	if s.DeezerLoginSnapshot().LastRetry != nil {
+		t.Fatal("a retry is reported without a source")
+	}
+	seen := time.Date(2026, 11, 22, 1, 46, 51, 0, time.UTC)
+	code := ""
+	s.SetDeezerRetrySource(func() (string, time.Time, bool) { return code, seen, code != "" })
+	if s.DeezerLoginSnapshot().LastRetry != nil {
+		t.Fatal("a retry is reported before the firmware logged one")
+	}
+	code = "3330"
+	r := s.DeezerLoginSnapshot().LastRetry
+	if r == nil || r.Code != "3330" || !strings.Contains(r.Meaning, "rejected") || !r.At.Equal(seen) {
+		t.Fatalf("retry = %+v", r)
+	}
+	s.NoteDeezerRecreate("start", 0, "")
+	if s.LastDeezerAttempt() != nil {
+		t.Fatal("a recreate note without an attempt made one up")
+	}
+	s.BeginDeezerAttempt("recreate")
+	s.NoteDeezerFirmwareAnswer(http.StatusOK, "", "")
+	s.NoteDeezerRecreate("check-again", http.StatusOK, "")
+	a := s.LastDeezerAttempt()
+	if a.Kind != "recreate" || a.Trigger != "check-again" || a.NotifyStatus != http.StatusOK {
+		t.Fatalf("attempt = %+v", a)
+	}
+	if DeezerRetryMeaning("3351") == DeezerRetryMeaning("9") {
+		t.Fatal("3351 has no meaning of its own")
+	}
+}

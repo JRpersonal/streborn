@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  deezerView, deezerStatusLine, deezerPill, deezerNeedsLogin, deezerCanDisconnect,
-  deezerRefreshDelays, deezerConnectError, deezerDisconnectError,
+  deezerView, deezerStatusLine, deezerPill, deezerCanDisconnect,
+  deezerRefreshDelays, deezerDisconnectError,
   parseDeezerLink, isDeezerLink, deezerLinkKindKey, deezerPlayError,
 } from './deezer.js';
 import en from './i18n/bundles/en.json';
@@ -12,7 +12,10 @@ describe('Deezer card state', () => {
     expect(deezerView(null).state).toBe('unknown');
     expect(deezerView({ state: 'bogus' }).state).toBe('unknown');
     const v = deezerView({ state: 'connected', account: ' us***@example.com ' });
-    expect(v).toEqual({ state: 'connected', reason: '', detail: '', account: 'us***@example.com' });
+    expect(v).toEqual({
+      state: 'connected', reason: '', detail: '', account: 'us***@example.com',
+      stuck: false, rejected: false, recreated: false,
+    });
   });
 
   it('picks a status line per state and reason', () => {
@@ -29,14 +32,20 @@ describe('Deezer card state', () => {
     expect(deezerStatusLine(null)[0]).toBe('deezer.state.unknown');
   });
 
-  it('offers the login form and Disconnect where they make sense', () => {
+  it('reads the stuck, rejected and recreate signals', () => {
+    expect(deezerView({ state: 'unavailable', stuck: true }).stuck).toBe(true);
+    // An older agent: its last login answered 1024 or not at all.
+    expect(deezerView({ state: 'failed', reason: 'refused', detail: '1024 SOURCE_ALREADY_EXISTS' }).stuck).toBe(true);
+    expect(deezerView({ state: 'failed', reason: 'no-answer' }).stuck).toBe(true);
+    expect(deezerView({ state: 'failed', reason: 'refused', detail: '1005 X' }).stuck).toBe(false);
+    expect(deezerView({ state: 'unavailable', rejected: true }).rejected).toBe(true);
+    expect(deezerView({ state: 'connected', rejected: true }).rejected).toBe(false);
+    expect(deezerView({ state: 'connecting', recreate: { ran: true } }).recreated).toBe(true);
+    expect(deezerView({ state: 'unavailable', recreate: { ran: false, skipped: 'ran-recently' } }).recreated).toBe(false);
+  });
+
+  it('offers Disconnect where the speaker holds an account', () => {
     const at = (state) => deezerView({ state });
-    expect(deezerNeedsLogin(at('not-connected'))).toBe(true);
-    expect(deezerNeedsLogin(at('failed'))).toBe(true);
-    expect(deezerNeedsLogin(at('unavailable'))).toBe(true);
-    expect(deezerNeedsLogin(at('connected'))).toBe(false);
-    expect(deezerNeedsLogin(at('connecting'))).toBe(false);
-    expect(deezerNeedsLogin(at('unknown'))).toBe(false);
     expect(deezerCanDisconnect(at('connected'))).toBe(true);
     expect(deezerCanDisconnect(at('failed'))).toBe(true);
     expect(deezerCanDisconnect(at('unavailable'))).toBe(true);
@@ -51,9 +60,6 @@ describe('Deezer card state', () => {
   });
 
   it('turns agent refusals into sentences', () => {
-    expect(deezerConnectError(new Error('status 409: {"error":"x","code":"login-busy"}'))[0]).toBe('deezer.loginBusy');
-    expect(deezerConnectError(new Error('status 502: {"error":"the speaker refused","code":"account-refused"}')))
-      .toEqual(['usServices.connectFailed', { err: 'the speaker refused' }]);
     expect(deezerDisconnectError(new Error('{"code":"still-linked"}'))[0]).toBe('usServices.disconnectStillLinked');
   });
 });
@@ -90,7 +96,8 @@ describe('Deezer strings', () => {
     const used = [
       'deezer.state.connected', 'deezer.state.connectedNoName', 'deezer.state.connecting', 'deezer.state.refused',
       'deezer.state.noAnswer', 'deezer.state.notReady', 'deezer.state.unavailable', 'deezer.state.unavailableNoName',
-      'deezer.state.notConnected', 'deezer.state.unknown', 'deezer.loginBusy', 'deezer.linkNotLinked',
+      'deezer.state.notConnected', 'deezer.state.unknown', 'deezer.intro', 'deezer.diagHint', 'deezer.stuck',
+      'deezer.rejected', 'deezer.linkNotLinked',
       'deezer.linkUnavailable', 'deezer.linkUnresolved', 'deezer.linkFailed', 'deezer.kind.album', 'deezer.kind.link',
       'deezer.pill.connected', 'deezer.pill.failed', 'deezer.pill.unknown',
     ];

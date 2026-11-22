@@ -65,20 +65,24 @@ func deezerViewOf(t *testing.T, w *httptest.ResponseRecorder, key string) Deezer
 	return v
 }
 
-func TestDeezerAccountLANOnlyAndJSON(t *testing.T) {
-	s, _, box, _ := deezerTestServer(t)
+// A new login is refused with 410 and its code, the body is never handed to
+// the speaker, and the other methods keep their rules.
+func TestDeezerAccountNewLoginIsGone(t *testing.T) {
+	s, _, box, logs := deezerTestServer(t)
 	w := httptest.NewRecorder()
 	s.handleDeezerAccount(w, nativeReq(http.MethodPost, "/api/deezer/account", `{"user":"a","password":"b"}`, "203.0.113.7:5000", "application/json"))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("non-LAN caller got %d", w.Code)
 	}
-	w = httptest.NewRecorder()
-	s.handleDeezerAccount(w, nativeReq(http.MethodPost, "/api/deezer/account", `{"user":"a","password":"b"}`, "192.168.1.5:5000", "application/x-www-form-urlencoded"))
-	if w.Code != http.StatusUnsupportedMediaType || box.setUser != "" {
-		t.Fatalf("form post: %d, sent %q", w.Code, box.setUser)
+	w = deezerCall(s, http.MethodPost, `{"user":"`+deezerTestUser+`","password":"`+deezerTestPass+`"}`)
+	if w.Code != http.StatusGone || !strings.Contains(w.Body.String(), `"code":"new-login-unsupported"`) {
+		t.Fatalf("new login: %d %s", w.Code, w.Body.String())
 	}
-	if w := deezerCall(s, http.MethodPost, `{"user":"","password":"x"}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("empty user: %d", w.Code)
+	if box.setUser != "" || box.setPass != "" {
+		t.Fatalf("the login reached the speaker: %q", box.setUser)
+	}
+	if strings.Contains(logs.String(), deezerTestPass) || strings.Contains(logs.String(), deezerTestUser) {
+		t.Fatal("the refused login was logged")
 	}
 	if w := deezerCall(s, http.MethodPut, ""); w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("PUT: %d", w.Code)
@@ -91,109 +95,175 @@ func TestDeezerAccountLANOnlyAndJSON(t *testing.T) {
 	}
 }
 
-// Connect hands the login to the speaker in AfterTouch's shape, records the
-// attempt and reports the state; nothing carries the password.
-func TestDeezerConnectRecordsTheAttempt(t *testing.T) {
-	s, m, box, logs := deezerTestServer(t)
-	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "UNAVAILABLE"}}
-	w := deezerCall(s, http.MethodPost, `{"user":" `+deezerTestUser+` ","password":"`+deezerTestPass+`"}`)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", w.Code, w.Body.String())
-	}
-	if box.setSource != "DEEZER" || box.setDisplay != deezerDisplayName || box.setUser != deezerTestUser || box.setPass != deezerTestPass {
-		t.Fatalf("sent %q %q %q", box.setSource, box.setDisplay, box.setUser)
-	}
-	v := deezerViewOf(t, w, "status")
-	if v.State != "connecting" || v.Source.Status != "UNAVAILABLE" || v.Account != "us***@example.com" {
-		t.Fatalf("view = %+v", v)
-	}
-	a := m.LastDeezerAttempt()
-	if a == nil || a.Kind != "login" || a.FirmwareStatus != http.StatusOK || a.SourceStatus != "UNAVAILABLE" {
-		t.Fatalf("attempt = %+v", a)
-	}
-	// The speaker finishes the login: the next read says connected.
-	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "READY"}}
-	if v := deezerViewOf(t, deezerCall(s, http.MethodGet, ""), ""); v.State != "connected" {
-		t.Fatalf("after READY: %+v", v)
-	}
-	if m.LastDeezerAttempt().SourceStatus != "READY" {
-		t.Fatal("the status read is not recorded with the attempt")
-	}
-	js, _ := json.Marshal(m.DeezerLoginSnapshot())
-	for _, out := range []string{w.Body.String(), logs.String(), string(js)} {
-		if strings.Contains(out, deezerTestPass) || strings.Contains(out, deezerTestUser) {
-			t.Fatalf("the login leaked: %s", out)
-		}
-	}
-}
-
-// A refusal answers with a code, records the firmware's status and code,
-// and keeps the account and the password out of the record and the log.
-func TestDeezerConnectRefusedIsRecordedWithoutTheLogin(t *testing.T) {
-	s, m, box, logs := deezerTestServer(t)
-	box.setErr = &boxapi.BoxError{Path: "/setMusicServiceAccount", Status: 500, Value: "1005", Name: "MUSIC_SERVICE_LOGIN_FAILED",
-		Detail: "login for " + deezerTestUser + " with " + deezerTestPass + " failed",
-		Body:   `<errors deviceID="AABBCCDDEEFF"><error>login for ` + deezerTestUser + ` with ` + deezerTestPass + `</error></errors>`}
-	w := deezerCall(s, http.MethodPost, `{"user":"`+deezerTestUser+`","password":"`+deezerTestPass+`"}`)
-	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), `"code":"account-refused"`) {
-		t.Fatalf("status %d: %s", w.Code, w.Body.String())
-	}
-	v := deezerViewOf(t, w, "status")
-	if v.State != "failed" || v.Reason != "refused" || v.Detail != "1005 MUSIC_SERVICE_LOGIN_FAILED" {
-		t.Fatalf("view = %+v", v)
-	}
-	a := m.LastDeezerAttempt()
-	if a.FirmwareStatus != 500 || a.FirmwareError != "1005 MUSIC_SERVICE_LOGIN_FAILED" || a.FirmwareDetail != "login for *** with *** failed" {
-		t.Fatalf("attempt = %+v", a)
-	}
-	js, _ := json.Marshal(m.DeezerLoginSnapshot())
-	for _, out := range []string{w.Body.String(), logs.String(), string(js)} {
-		if strings.Contains(out, deezerTestPass) || strings.Contains(out, deezerTestUser) || strings.Contains(out, "AABBCCDDEEFF") {
-			t.Fatalf("leaked: %s", out)
-		}
-	}
-}
-
-func TestDeezerConnectIsOneAtATime(t *testing.T) {
-	s, _, box, _ := deezerTestServer(t)
-	s.deezerLoginMu.Lock()
-	w := deezerCall(s, http.MethodPost, `{"user":"a@example.com","password":"pw1"}`)
-	s.deezerLoginMu.Unlock()
-	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "login-busy") || box.setUser != "" {
-		t.Fatalf("second login: %d %s, sent %q", w.Code, w.Body.String(), box.setUser)
-	}
-}
-
 func TestDeezerStates(t *testing.T) {
 	now := time.Now()
-	recent := &marge.DeezerAttempt{Kind: "login", At: now.Add(-10 * time.Second), FirmwareStatus: 200}
-	old := &marge.DeezerAttempt{Kind: "login", At: now.Add(-5 * time.Minute), FirmwareStatus: 200}
-	noAnswer := &marge.DeezerAttempt{Kind: "login", At: now, FirmwareStatus: 0}
+	recent := &marge.DeezerAttempt{Kind: "recreate", At: now.Add(-10 * time.Second), FirmwareStatus: 200}
+	old := &marge.DeezerAttempt{Kind: "recreate", At: now.Add(-5 * time.Minute), FirmwareStatus: 200}
+	refused := &marge.DeezerAttempt{Kind: "recreate", At: now, FirmwareStatus: 500, FirmwareError: "1005 X"}
 	removal := &marge.DeezerAttempt{Kind: "remove", At: now, FirmwareStatus: 200}
 	ready := deezerSourceLine{Status: "READY", HasAccount: true}
 	unavail := deezerSourceLine{Status: "UNAVAILABLE", HasAccount: true}
 	absent := deezerSourceLine{Status: "absent"}
 	for _, c := range []struct {
-		src        deezerSourceLine
-		readErr    error
-		a          *marge.DeezerAttempt
-		state, rsn string
+		src     deezerSourceLine
+		readErr error
+		a       *marge.DeezerAttempt
+		state   string
 	}{
-		{ready, nil, nil, "connected", ""},
-		{ready, nil, noAnswer, "connected", ""},
-		{absent, nil, nil, "not-connected", ""},
-		{unavail, nil, nil, "unavailable", ""},
-		{unavail, nil, recent, "connecting", ""},
-		{unavail, nil, old, "failed", "not-ready"},
-		{absent, nil, old, "failed", "not-ready"},
-		{absent, nil, noAnswer, "failed", "no-answer"},
-		{absent, nil, removal, "not-connected", ""},
-		{absent, io.ErrUnexpectedEOF, nil, "unknown", ""},
+		{ready, nil, nil, "connected"},
+		{ready, nil, recent, "connected"},
+		{absent, nil, nil, "not-connected"},
+		{unavail, nil, nil, "unavailable"},
+		{unavail, nil, recent, "connecting"},
+		{absent, nil, recent, "connecting"},
+		{unavail, nil, old, "unavailable"},
+		{unavail, nil, refused, "unavailable"},
+		{absent, nil, removal, "not-connected"},
+		{absent, io.ErrUnexpectedEOF, nil, "unknown"},
 	} {
-		st, rsn, _ := deezerState(c.src, c.readErr, c.a, now)
-		if st != c.state || rsn != c.rsn {
-			t.Errorf("%+v %+v: got %s/%s, want %s/%s", c.src, c.a, st, rsn, c.state, c.rsn)
+		st, _, _ := deezerState(c.src, c.readErr, c.a, now)
+		if st != c.state {
+			t.Errorf("%+v %+v: got %s, want %s", c.src, c.a, st, c.state)
 		}
+	}
+	for _, c := range []struct {
+		a       *marge.DeezerAttempt
+		running bool
+		stuck   bool
+	}{
+		{nil, false, false},
+		{&marge.DeezerAttempt{Kind: "recreate", FirmwareStatus: 0}, false, true},
+		{&marge.DeezerAttempt{Kind: "recreate", FirmwareStatus: 0}, true, false},
+		{&marge.DeezerAttempt{Kind: "login", FirmwareStatus: 500, FirmwareError: "1024 SOURCE_ALREADY_EXISTS"}, false, true},
+		{&marge.DeezerAttempt{Kind: "remove", FirmwareStatus: 0}, false, false},
+		{&marge.DeezerAttempt{Kind: "recreate", FirmwareStatus: 200}, false, false},
+	} {
+		if got := deezerStuck(c.a, c.running); got != c.stuck {
+			t.Errorf("stuck(%+v, %v) = %v, want %v", c.a, c.running, got, c.stuck)
+		}
+	}
+}
+
+func deezerRecheck(s *Server, ct string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	s.handleDeezerRecheck(w, nativeReq(http.MethodPost, "/api/deezer/recheck", "{}", "192.168.1.5:5000", ct))
+	return w
+}
+
+// keepDeezerLogin makes the stand-in keep a Deezer login, the way the
+// firmware's own registration does.
+func keepDeezerLogin(t *testing.T, m *marge.Server) {
+	t.Helper()
+	body := `<source><credential type="token">fake-token-for-tests</credential><name>Deezer</name>` +
+		`<username>` + deezerTestUser + `</username><sourceproviderid>14</sourceproviderid><sourcename>DEEZER</sourcename></source>`
+	req := httptest.NewRequest(http.MethodPost, "/streaming/account/stick@local/source", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:4000"
+	m.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	if m.KeptDeezerAccount() == "" {
+		t.Fatal("the stand-in kept no login")
+	}
+}
+
+// Check again on a speaker that lists Deezer UNAVAILABLE while STR keeps a
+// login: the speaker's account is removed, the notification is sent, the
+// state reads connecting, and a second press inside the gap does nothing.
+func TestDeezerRecheckRecreatesTheKeptLogin(t *testing.T) {
+	s, m, box, logs := deezerTestServer(t)
+	keepDeezerLogin(t, m)
+	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "UNAVAILABLE"}}
+	box.keepAfterRemove = true
+	if w := deezerRecheck(s, "text/plain"); w.Code != http.StatusUnsupportedMediaType || box.removeCalls != 0 {
+		t.Fatalf("form post: %d, %d removals", w.Code, box.removeCalls)
+	}
+	w := deezerRecheck(s, "application/json")
+	if w.Code != http.StatusOK {
+		t.Fatalf("recheck: %d %s", w.Code, w.Body.String())
+	}
+	v := deezerViewOf(t, w, "")
+	if v.Recreate == nil || !v.Recreate.Ran || v.Recreate.Error != "" {
+		t.Fatalf("recreate = %+v", v.Recreate)
+	}
+	if box.removeCalls != 1 || box.removedSource != "DEEZER" || box.removedUser != deezerTestUser || box.notifyCalls != 1 {
+		t.Fatalf("removals %d (%q %q), notifications %d", box.removeCalls, box.removedSource, box.removedUser, box.notifyCalls)
+	}
+	if v.State != "connecting" || v.Stuck {
+		t.Fatalf("view = %+v", v)
+	}
+	a := m.LastDeezerAttempt()
+	if a == nil || a.Kind != "recreate" || a.Trigger != "check-again" || a.FirmwareStatus != http.StatusOK || a.NotifyStatus != http.StatusOK {
+		t.Fatalf("attempt = %+v", a)
+	}
+	if m.KeptDeezerAccount() == "" {
+		t.Fatal("the recreate forgot the kept login")
+	}
+	w = deezerRecheck(s, "application/json")
+	if v := deezerViewOf(t, w, ""); v.Recreate == nil || v.Recreate.Ran || v.Recreate.Skipped != "ran-recently" || box.removeCalls != 1 {
+		t.Fatalf("second press: %+v, %d removals", v.Recreate, box.removeCalls)
+	}
+	for _, out := range []string{w.Body.String(), logs.String()} {
+		if strings.Contains(out, deezerTestUser) || strings.Contains(out, "fake-token-for-tests") {
+			t.Fatalf("the login leaked: %s", out)
+		}
+	}
+}
+
+// The recreate makes no call at all without a kept login, and none to a
+// speaker whose Deezer works or that lists no Deezer account.
+func TestDeezerRecreateOnlyWhenItApplies(t *testing.T) {
+	s, m, box, _ := deezerTestServer(t)
+	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "UNAVAILABLE"}}
+	if res := s.RecreateDeezerFromKeptLogin(t.Context(), "start"); res.Ran || res.Skipped != "no-kept-login" {
+		t.Fatalf("without a kept login: %+v", res)
+	}
+	keepDeezerLogin(t, m)
+	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "READY"}}
+	if res := s.RecreateDeezerFromKeptLogin(t.Context(), "start"); res.Ran || res.Skipped != "ready" {
+		t.Fatalf("READY: %+v", res)
+	}
+	box.sources = nil
+	if res := s.RecreateDeezerFromKeptLogin(t.Context(), "start"); res.Ran || res.Skipped != "not-listed" {
+		t.Fatalf("absent: %+v", res)
+	}
+	if box.removeCalls != 0 || box.notifyCalls != 0 {
+		t.Fatalf("calls made: %d removals, %d notifications", box.removeCalls, box.notifyCalls)
+	}
+	// A refused removal sends no notification and is reported.
+	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "UNAVAILABLE"}}
+	box.removeErr = &boxapi.BoxError{Path: "/removeMusicServiceAccount", Status: 500, Value: "1024", Name: "SOURCE_ALREADY_EXISTS"}
+	res := s.RecreateDeezerFromKeptLogin(t.Context(), "start")
+	if !res.Ran || !strings.Contains(res.Error, "1024") || box.notifyCalls != 0 {
+		t.Fatalf("refused removal: %+v, %d notifications", res, box.notifyCalls)
+	}
+	if v := s.deezerView(t.Context()); !v.Stuck || v.State != "unavailable" {
+		t.Fatalf("after a 1024: %+v", v)
+	}
+}
+
+// The firmware's relogin retry 3330 (Deezer refused the token) marks a
+// speaker that is not connected as rejected.
+func TestDeezerRejectedByRetryCode(t *testing.T) {
+	s, m, box, _ := deezerTestServer(t)
+	code := "3330"
+	m.SetDeezerRetrySource(func() (string, time.Time, bool) { return code, time.Now(), true })
+	box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "UNAVAILABLE"}}
+	v := deezerViewOf(t, deezerCall(s, http.MethodGet, ""), "")
+	if !v.Rejected || v.Login.LastRetry == nil || v.Login.LastRetry.Code != "3330" {
+		t.Fatalf("3330: %+v", v)
+	}
+	code = "3351"
+	if v := deezerViewOf(t, deezerCall(s, http.MethodGet, ""), ""); v.Rejected {
+		t.Fatalf("3351 read as rejected: %+v", v)
+	}
+	// While a recreate runs the code is the one from before it.
+	code = "3330"
+	m.BeginDeezerAttempt("recreate")
+	m.NoteDeezerFirmwareAnswer(http.StatusOK, "", "")
+	if v := deezerViewOf(t, deezerCall(s, http.MethodGet, ""), ""); v.Rejected || v.State != "connecting" {
+		t.Fatalf("connecting: %+v", v)
+	}
+	box.sources[0].Status = "READY"
+	if v := deezerViewOf(t, deezerCall(s, http.MethodGet, ""), ""); v.Rejected || v.State != "connected" {
+		t.Fatalf("READY: %+v", v)
 	}
 }
 

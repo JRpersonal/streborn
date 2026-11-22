@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,7 +24,12 @@ func TestDeezerBindings(t *testing.T) {
 		switch key {
 		case "GET /api/deezer/account":
 			_, _ = w.Write([]byte(`{"state":"connected","account":"us***@example.com","source":{"status":"READY","hasAccount":true}}`))
-		case "POST /api/deezer/account", "DELETE /api/deezer/account":
+		case "POST /api/deezer/account":
+			w.WriteHeader(http.StatusGone)
+			_, _ = w.Write([]byte(`{"error":"a new Deezer sign-in is not possible without the Bose cloud","code":"new-login-unsupported"}`))
+		case "POST /api/deezer/recheck":
+			_, _ = w.Write([]byte(`{"state":"connecting","recreate":{"ran":true}}`))
+		case "DELETE /api/deezer/account":
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		case "POST /api/deezer/play":
 			_, _ = w.Write([]byte(`{"ok":true,"kind":"album","id":"376222197","name":"Paschtaschutta"}`))
@@ -43,13 +47,13 @@ func TestDeezerBindings(t *testing.T) {
 	if err != nil || st["state"] != "connected" {
 		t.Fatalf("status = %v, %v", st, err)
 	}
-	if err := a.LinkMusicService("127.0.0.1", port, "deezer", "user@example.com", "deezer-pw"); err != nil {
-		t.Fatal(err)
+	// An older frontend's sign-in gets the agent's refusal back, code and all.
+	if err := a.LinkMusicService("127.0.0.1", port, "deezer", "user@example.com", "deezer-pw"); err == nil || !strings.Contains(err.Error(), "new-login-unsupported") {
+		t.Fatalf("sign-in = %v", err)
 	}
-	var link map[string]string
-	_ = json.Unmarshal([]byte(bodies["POST /api/deezer/account"]), &link)
-	if link["user"] != "user@example.com" || link["password"] != "deezer-pw" {
-		t.Fatalf("link body %v", link)
+	re, err := a.DeezerRecheck("127.0.0.1", port)
+	if err != nil || re["state"] != "connecting" || bodies["POST /api/deezer/recheck"] != "{}" {
+		t.Fatalf("recheck = %v, %v, body %q", re, err, bodies["POST /api/deezer/recheck"])
 	}
 	if err := a.UnlinkMusicService("127.0.0.1", port, "deezer"); err != nil {
 		t.Fatal(err)

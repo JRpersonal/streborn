@@ -1,30 +1,35 @@
 package webui
 
-// Deezer: signing the speaker's own Deezer client in from STR
-// (docs/streaming/deezer.md, A2). Built before anyone has seen it work: the
-// firmware may not be able to finish a Deezer login without Bose at all. So
-// every step is recorded (internal/marge/deezernewlogin.go) and the answer
-// says plainly what the speaker did.
+// Deezer on the speaker's own Deezer client (docs/streaming/deezer.md).
+//
+// A NEW Deezer login cannot work without Bose: the firmware takes the
+// account call and then waits on Bose's cloud, and its Deezer client stays
+// stuck until a power cycle (A2 is closed, see the doc). What STR can do is
+// keep the login a speaker already had (A1, internal/marge/deezerlogin.go)
+// and bring it back when the firmware holds an account it cannot use.
 //
 // GET    /api/deezer/account  where Deezer stands on this speaker: the state
 //                             the apps show, the speaker's own DEEZER line
 //                             from /sources (masked), the kept login (type
-//                             and origin only) and the last attempt
-// POST   /api/deezer/account  {"user":"...","password":"..."} hands a Deezer
-//                             account to the firmware's own
-//                             setMusicServiceAccount, source DEEZER, the
-//                             shape AfterTouch sent; one at a time
-// DELETE /api/deezer/account  removes it from the firmware and forgets the
-//                             kept login; safe to repeat, one removal at a
-//                             time (shared with the Pandora removals)
+//                             and origin only), the last account step and
+//                             the firmware's last relogin retry code
+// POST   /api/deezer/account  410 Gone, code "new-login-unsupported": the
+//                             e-mail and password sign-in of earlier
+//                             versions, refused so an older app cannot hang
+//                             the speaker's Deezer client again; the body is
+//                             never read
+// DELETE /api/deezer/account  removes the account from the firmware and
+//                             forgets the kept login; safe to repeat, one
+//                             removal at a time (shared with Pandora)
+// POST   /api/deezer/recheck  the card's "Check again": runs the recreate
+//                             below when it applies, then answers like GET
 //
-// The same rules as the Pandora endpoints (usservices.go): LAN only, a JSON
-// body for POST, the password passed straight to the speaker and never
-// stored, logged or echoed by STR. Unlike Pandora no switch is needed:
-// Deezer is not geo-restricted, and the stand-in offers it on every speaker.
-// Unlike the Pandora login, a refusal is logged by its status and code only,
-// never as the firmware's raw answer: nobody knows yet what the Deezer client
-// echoes.
+// The recreate: when STR keeps a Deezer login and the speaker lists DEEZER
+// without a working account, the firmware ignores the token /full now serves
+// (it only updates the secret it has, the empty one). Removing its account
+// and sending it a sourcesUpdated notification makes it read /full again and
+// create the account anew, with the token. Proven on a Portable, 2026-11-22.
+// It runs once after the agent starts and on "Check again", never on a timer.
 
 import (
 	"context"
@@ -42,14 +47,22 @@ import (
 const deezerSource = "DEEZER"
 
 // deezerDisplayName is the display name passed with the account calls, the
-// one AfterTouch sent to a real speaker (gesellix/Bose-SoundTouch#574).
+// one AfterTouch sent to a real speaker (gesellix/Bose-SoundTouch#574). The
+// removal does not depend on it.
 const deezerDisplayName = "Deezer Premium"
 
-// deezerConnectingFor is how long after an accepted login the state reads
-// "connecting" rather than "failed" while the speaker does not list Deezer
-// READY yet. Longer than the stand-in's request window, so the window's
-// registration has landed before the apps call it a failure.
+// deezerConnectingFor is how long after a recreate the state reads
+// "connecting" while the speaker does not list Deezer READY yet: the
+// firmware re-reads /full and logs in with Deezer within seconds.
 const deezerConnectingFor = 90 * time.Second
+
+// deezerRecreateEvery is the shortest gap between two recreates. A second
+// "Check again" inside it only reads the state.
+const deezerRecreateEvery = 60 * time.Second
+
+// deezerRetryRejected is the firmware's relogin retry code for a token
+// Deezer refused (expired or revoked). It cannot be renewed without Bose.
+const deezerRetryRejected = "3330"
 
 // DeezerBackend is the stand-in's side (implemented by *marge.Server).
 type DeezerBackend interface {
@@ -57,6 +70,7 @@ type DeezerBackend interface {
 	BeginDeezerAttempt(kind string)
 	NoteDeezerFirmwareAnswer(status int, errCode, detail string)
 	NoteDeezerSourceStatus(status string, hasAccount bool)
+	NoteDeezerRecreate(trigger string, notifyStatus int, errText string)
 	KeptDeezerAccount() string
 	CarriedOverDeezerAccount() string
 	ClearKeptDeezer() error
@@ -97,34 +111,48 @@ func pickDeezerSource(srcs []boxapi.Source) deezerSourceLine {
 	return deezerSourceLine{Status: strings.ToUpper(strings.TrimSpace(pick.Status)), HasAccount: acct != "", account: acct}
 }
 
+// DeezerRecreateResult is what a recheck's recreate did.
+type DeezerRecreateResult struct {
+	Ran bool `json:"ran"`
+	// Skipped says why it did not run: "no-kept-login", "not-listed" (the
+	// speaker lists no DEEZER entry), "ready" (it already plays), "unreadable"
+	// (its source list could not be read), "busy", "ran-recently".
+	Skipped string `json:"skipped,omitempty"`
+	// Error names the step that failed, without the account.
+	Error string `json:"error,omitempty"`
+}
+
 // DeezerAccountView is GET /api/deezer/account's answer.
 type DeezerAccountView struct {
 	// State is what the apps show:
 	//   connected      the speaker lists DEEZER READY with an account
-	//   connecting     STR handed a login over less than a minute and a
-	//                  half ago, the speaker took it, and it is not READY yet
-	//   failed         the last login was refused, or taken but never
-	//                  became READY (Reason says which)
+	//   connecting     STR handed the kept login back less than a minute and
+	//                  a half ago, and the speaker is not READY yet
 	//   unavailable    the speaker holds a Deezer account it cannot use
-	//                  (not logged in), and STR handed none over since
 	//   not-connected  no Deezer account on the speaker
 	//   unknown        the speaker's source list could not be read
-	State string `json:"state"`
-	// Reason is the code of a failed state: "refused" (the speaker answered
-	// the login with an error), "no-answer" (it did not answer), "not-ready"
-	// (it took the login and never listed Deezer READY).
+	// An older agent also reported "failed" (a new login that did not work).
+	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
-	// Detail is the firmware's error code and name for "refused", a short
-	// client-safe text otherwise.
+	// Detail is a short client-safe text for the state.
 	Detail string `json:"detail,omitempty"`
 	// Account is the account the speaker lists or STR keeps, masked.
-	Account string                  `json:"account,omitempty"`
-	Source  deezerSourceLine        `json:"source"`
-	Login   marge.DeezerLoginStatus `json:"login"`
+	Account string `json:"account,omitempty"`
+	// Stuck is set when the speaker's last Deezer account call answered
+	// 1024 or not at all: its Deezer client hangs until a power cycle.
+	Stuck bool `json:"stuck,omitempty"`
+	// Rejected is set when the speaker is neither connected nor connecting
+	// and the firmware's last relogin retry says Deezer refused the token
+	// (3330).
+	Rejected bool `json:"rejected,omitempty"`
+	// Recreate is the recheck's own step, only in POST /api/deezer/recheck.
+	Recreate *DeezerRecreateResult   `json:"recreate,omitempty"`
+	Source   deezerSourceLine        `json:"source"`
+	Login    marge.DeezerLoginStatus `json:"login"`
 }
 
 // deezerState derives the state from the speaker's DEEZER line and the last
-// attempt. readErr is the /sources read's error.
+// account step. readErr is the /sources read's error.
 func deezerState(src deezerSourceLine, readErr error, a *marge.DeezerAttempt, now time.Time) (state, reason, detail string) {
 	if readErr != nil {
 		return "unknown", "", speakerErrorReason(readErr)
@@ -132,30 +160,27 @@ func deezerState(src deezerSourceLine, readErr error, a *marge.DeezerAttempt, no
 	if src.Status == "READY" && src.HasAccount {
 		return "connected", "", ""
 	}
-	if a != nil && a.Kind == "login" {
-		switch {
-		case a.FirmwareStatus == 0:
-			return "failed", "no-answer", "the speaker did not answer the login"
-		case a.FirmwareStatus >= 400:
-			d := a.FirmwareError
-			if d == "" {
-				d = "HTTP " + strconv.Itoa(a.FirmwareStatus)
-			}
-			return "failed", "refused", d
-		case now.Sub(a.At) < deezerConnectingFor:
-			return "connecting", "", ""
-		default:
-			d := "the speaker lists Deezer as " + src.Status
-			if src.Status == "absent" {
-				d = "the speaker lists no Deezer account"
-			}
-			return "failed", "not-ready", d
-		}
+	if a != nil && a.Kind == "recreate" && a.FirmwareStatus == http.StatusOK && now.Sub(a.At) < deezerConnectingFor {
+		return "connecting", "", ""
 	}
 	if src.HasAccount {
 		return "unavailable", "", "the speaker lists Deezer as " + src.Status
 	}
 	return "not-connected", "", ""
+}
+
+// deezerStuck reports whether the last account step left the speaker's
+// Deezer client hanging: an answer of 1024 (SOURCE_ALREADY_EXISTS, what the
+// firmware answers every Deezer account call after a hung one), or a
+// finished recreate the speaker did not answer at all.
+func deezerStuck(a *marge.DeezerAttempt, running bool) bool {
+	if a == nil {
+		return false
+	}
+	if strings.Contains(a.FirmwareError, "1024") {
+		return true
+	}
+	return !running && (a.Kind == "recreate" || a.Kind == "login") && a.FirmwareStatus == 0
 }
 
 // deezerView reads the speaker's /sources once and builds the answer. It also
@@ -173,6 +198,10 @@ func (s *Server) deezerView(ctx context.Context) DeezerAccountView {
 	login := s.deezer.DeezerLoginSnapshot()
 	v := DeezerAccountView{Source: src, Login: login}
 	v.State, v.Reason, v.Detail = deezerState(src, err, login.LastAttempt, time.Now())
+	v.Stuck = deezerStuck(login.LastAttempt, s.deezerRecreating.Load())
+	// Not while a recreate runs: the code then is the one from before it.
+	v.Rejected = v.State != "connected" && v.State != "connecting" &&
+		login.LastRetry != nil && login.LastRetry.Code == deezerRetryRejected
 	acct := src.account
 	if acct == "" {
 		acct = s.deezer.KeptDeezerAccount()
@@ -228,6 +257,13 @@ func scrubDeezerDetail(detail, user, pass string) string {
 	}, d)
 }
 
+// deezerNewLoginGone is POST /api/deezer/account's answer since the e-mail
+// and password sign-in came out.
+var deezerNewLoginGone = map[string]any{
+	"error": "a new Deezer sign-in is not possible without the Bose cloud; a Deezer login the speaker already had keeps working",
+	"code":  "new-login-unsupported",
+}
+
 func (s *Server) handleDeezerAccount(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
@@ -243,7 +279,11 @@ func (s *Server) handleDeezerAccount(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.deezerView(ctx))
 	case http.MethodPost:
-		s.deezerLogin(ctx, w, r)
+		// Never handed on: the firmware takes the call and its Deezer
+		// client then hangs until a power cycle. The body (an older app's
+		// e-mail and password) is not read.
+		s.logger.Info("deezer: refused a new login, it cannot work without Bose", "from", r.RemoteAddr)
+		writeJSON(w, http.StatusGone, deezerNewLoginGone)
 	case http.MethodDelete:
 		res := s.removeAccountShared(ctx, deezerSource, deezerDisplayName, s.deezerAccountStore())
 		if res.status == http.StatusOK {
@@ -256,55 +296,146 @@ func (s *Server) handleDeezerAccount(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// deezerLogin is POST /api/deezer/account.
-func (s *Server) deezerLogin(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		User     string `json:"user"`
-		Password string `json:"password"`
-	}
-	if !decodeNativeJSON(w, r, &req) {
+// handleDeezerRecheck is POST /api/deezer/recheck, the card's "Check again".
+// A JSON content type is required (the body is not read), so a cross-site
+// form cannot start it.
+func (s *Server) handleDeezerRecheck(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
 		return
 	}
-	req.User = strings.TrimSpace(req.User)
-	if req.User == "" || req.Password == "" {
-		http.Error(w, "user and password are required", http.StatusBadRequest)
+	if s.deezer == nil {
+		http.Error(w, "not available on this build", http.StatusNotImplemented)
 		return
 	}
-	// One hand-over at a time: a second Connect while the first runs would
-	// send the firmware a second login in the middle of the first.
-	if !s.deezerLoginMu.TryLock() {
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": "a Deezer login is already being handed to the speaker",
-			"code":  "login-busy",
-		})
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	defer s.deezerLoginMu.Unlock()
-	s.deezer.BeginDeezerAttempt("login")
-	s.logger.Info("deezer: handing a new login to the speaker's own client",
-		"user", maskForLog(req.User), "from", r.RemoteAddr)
-	err := s.nativeBox().SetMusicServiceAccount(ctx, deezerSource, deezerDisplayName, req.User, req.Password)
-	status, code, detail := deezerFirmwareAnswer(err, req.User, req.Password)
-	s.deezer.NoteDeezerFirmwareAnswer(status, code, detail)
-	// Status and code only: the firmware's raw answer could echo the login.
-	s.logger.Info("deezer: the speaker answered the new login",
-		"firmwareStatus", status, "firmwareError", code, "accepted", err == nil)
-	view := s.deezerView(ctx)
-	s.logger.Info("deezer: the speaker's Deezer source after the login",
-		"sourceStatus", view.Source.Status, "hasAccount", view.Source.HasAccount, "state", view.State)
+	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		http.Error(w, "music service settings need a JSON body", http.StatusUnsupportedMediaType)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	res := s.RecreateDeezerFromKeptLogin(ctx, "check-again")
+	v := s.deezerView(ctx)
+	v.Recreate = &res
+	writeJSON(w, http.StatusOK, v)
+}
+
+// RecreateDeezerFromKeptLogin hands the kept Deezer login back to a speaker
+// that lists DEEZER without a working account: it removes the speaker's
+// account (empty password) and sends it a sourcesUpdated notification, and
+// the firmware creates the account again from /full, which carries the kept
+// token. Without a kept login it makes no call at all. trigger is "start" or
+// "check-again", for the log and the record.
+func (s *Server) RecreateDeezerFromKeptLogin(ctx context.Context, trigger string) DeezerRecreateResult {
+	if s.deezer == nil {
+		return DeezerRecreateResult{Skipped: "no-kept-login"}
+	}
+	kept := s.deezer.KeptDeezerAccount()
+	if kept == "" {
+		return DeezerRecreateResult{Skipped: "no-kept-login"}
+	}
+	if !s.deezerRecreateMu.TryLock() {
+		return DeezerRecreateResult{Skipped: "busy"}
+	}
+	defer s.deezerRecreateMu.Unlock()
+	if !s.deezerRecreateAt.IsZero() && time.Since(s.deezerRecreateAt) < deezerRecreateEvery {
+		return DeezerRecreateResult{Skipped: "ran-recently"}
+	}
+	box := s.nativeBox()
+	srcs, err := box.GetSources(ctx)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error":  "the speaker refused the Deezer login (" + speakerErrorReason(err) + ")",
-			"code":   "account-refused",
-			"status": view,
-		})
+		s.logger.Warn("deezer: recreate: could not read the speaker's sources", "trigger", trigger, "err", err)
+		return DeezerRecreateResult{Skipped: "unreadable"}
+	}
+	src := pickDeezerSource(srcs)
+	switch {
+	case src.Status == "absent":
+		s.logger.Info("deezer: recreate: not needed, the speaker lists no Deezer account", "trigger", trigger)
+		return DeezerRecreateResult{Skipped: "not-listed"}
+	case src.Status == "READY" && src.HasAccount:
+		s.logger.Info("deezer: recreate: not needed, the speaker's Deezer login works", "trigger", trigger)
+		return DeezerRecreateResult{Skipped: "ready"}
+	}
+	account := src.account
+	if account == "" {
+		account = kept
+	}
+	s.deezerRecreateAt = time.Now()
+	s.deezerRecreating.Store(true)
+	defer s.deezerRecreating.Store(false)
+	s.deezer.BeginDeezerAttempt("recreate")
+	s.logger.Info("deezer: recreate: the speaker lists Deezer without a working login and STR keeps one, removing the speaker's account",
+		"trigger", trigger, "sourceStatus", src.Status, "account", maskForLog(account))
+	err = box.RemoveMusicServiceAccount(ctx, deezerSource, deezerDisplayName, account)
+	status, code, detail := deezerFirmwareAnswer(err, account, "")
+	s.deezer.NoteDeezerFirmwareAnswer(status, code, detail)
+	s.logger.Info("deezer: recreate: the speaker answered the removal",
+		"firmwareStatus", status, "firmwareError", code, "alreadyRemoved", isSourceAlreadyRemoved(err))
+	if err != nil && !isSourceAlreadyRemoved(err) {
+		s.deezer.NoteDeezerRecreate(trigger, 0, "")
+		what := code
+		if what == "" {
+			what = "HTTP " + strconv.Itoa(status)
+		}
+		return DeezerRecreateResult{Ran: true, Error: "the speaker refused the removal (" + what + ")"}
+	}
+	nerr := box.NotifySourcesUpdated(ctx)
+	nStatus, _, _ := deezerFirmwareAnswer(nerr, "", "")
+	nText := ""
+	if nerr != nil {
+		nText = speakerErrorReason(nerr)
+	}
+	s.deezer.NoteDeezerRecreate(trigger, nStatus, nText)
+	s.logger.Info("deezer: recreate: told the speaker its sources changed, it reads the account document again",
+		"notifyStatus", nStatus, "err", nText)
+	if nerr != nil {
+		return DeezerRecreateResult{Ran: true, Error: "the speaker did not take the sources notification (" + nText + ")"}
+	}
+	return DeezerRecreateResult{Ran: true}
+}
+
+// DeezerRecreateAtStart is the recreate's one run after the agent started.
+// The agent calls it once in its start-up sequence: without a kept login it
+// returns at once without a call to the speaker; otherwise it waits once for
+// the firmware to come up and log in by itself, runs the recreate when it
+// still applies, and reads the outcome once more after outcomeAfter, for the
+// log and the deezer_login debug section. No loop, no timer beyond these two
+// waits.
+func (s *Server) DeezerRecreateAtStart(ctx context.Context, wait, outcomeAfter time.Duration) {
+	if s.deezer == nil || s.deezer.KeptDeezerAccount() == "" {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":     true,
-		"note":   "the speaker logs in with Deezer next; check GET /api/deezer/account in a minute",
-		"status": view,
-	})
+	select {
+	case <-time.After(wait):
+	case <-ctx.Done():
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	res := s.RecreateDeezerFromKeptLogin(cctx, "start")
+	cancel()
+	if !res.Ran {
+		s.logger.Info("deezer: recreate at start skipped", "why", res.Skipped)
+		return
+	}
+	select {
+	case <-time.After(outcomeAfter):
+	case <-ctx.Done():
+		return
+	}
+	cctx, cancel = context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	v := s.deezerView(cctx)
+	retry := ""
+	if v.Login.LastRetry != nil {
+		retry = v.Login.LastRetry.Code
+	}
+	s.logger.Info("deezer: recreate: the speaker's Deezer source afterwards",
+		"sourceStatus", v.Source.Status, "hasAccount", v.Source.HasAccount, "state", v.State, "retryCode", retry)
 }
 
 // deezerAccountStore is Deezer's account on STR's side for a removal: the

@@ -1,4 +1,6 @@
-// Deezer on the speaker's own Deezer client (docs/streaming/deezer.md, A2).
+// Deezer on the speaker's own Deezer client (docs/streaming/deezer.md). A new
+// sign-in is not possible without Bose; a login the speaker already had keeps
+// working.
 // The agent's GET /api/deezer/account answer is turned into what the Deezer
 // card in the Spotify view shows, and a pasted Deezer link is recognised for
 // the station search. Pure functions only, so the rules are unit-tested
@@ -6,19 +8,29 @@
 
 import { agentErrorCode, agentErrorText } from './usservices.js';
 
-// The states the agent reports (internal/webui/deezer.go deezerState).
+// The states the agent reports (internal/webui/deezer.go deezerState). An
+// older agent also reports 'failed', for a new login that did not work.
 const STATES = new Set(['connected', 'connecting', 'failed', 'unavailable', 'not-connected', 'unknown']);
 
 // deezerView reads the agent's answer. An answer without a known state (an
-// older agent, no answer at all) reads as 'unknown'.
+// older agent, no answer at all) reads as 'unknown'. stuck: the speaker's
+// Deezer client hangs until a power cycle (the agent says so, or an older
+// agent's last login answered 1024 or not at all). rejected: Deezer refused
+// the kept login (the firmware's retry code 3330).
 export function deezerView(status) {
   const s = status && typeof status === 'object' ? status : {};
   const state = STATES.has(s.state) ? s.state : 'unknown';
+  const reason = String(s.reason || '');
+  const detail = String(s.detail || '');
+  const oldStuck = state === 'failed' && (reason === 'no-answer' || /\b1024\b/.test(detail));
   return {
     state,
-    reason: String(s.reason || ''),
-    detail: String(s.detail || ''),
+    reason,
+    detail,
     account: String(s.account || '').trim(),
+    stuck: s.stuck === true || oldStuck,
+    rejected: s.rejected === true && state !== 'connected',
+    recreated: !!(s.recreate && s.recreate.ran === true),
   };
 }
 
@@ -52,29 +64,17 @@ export function deezerPill(v) {
   }
 }
 
-// deezerNeedsLogin says whether the card shows the login form: everywhere
-// but a connected speaker and one that is logging in right now.
-export function deezerNeedsLogin(v) {
-  return !v || (v.state !== 'connected' && v.state !== 'connecting' && v.state !== 'unknown');
-}
-
 // deezerCanDisconnect says whether the card offers Disconnect: whenever the
-// speaker holds a Deezer account, or STR handed one over.
+// speaker holds a Deezer account, or STR handed one back.
 export function deezerCanDisconnect(v) {
   return !!v && (v.state === 'connected' || v.state === 'connecting' || v.state === 'failed' || v.state === 'unavailable');
 }
 
-// deezerRefreshDelays are the re-reads after a Connect: the speaker logs in
-// after the call returns, so the card asks again instead of guessing. The
-// last one lies past the agent's 90 s "connecting" span, so the card ends on
-// a verdict.
+// deezerRefreshDelays are the re-reads after a Check again that handed the
+// kept login back: the speaker re-creates its account after the call
+// returns, so the card asks again instead of guessing. The last one lies
+// past the agent's 90 s "connecting" span, so the card ends on a verdict.
 export const deezerRefreshDelays = [6000, 30000, 95000];
-
-// deezerConnectError picks the message for a failed Connect.
-export function deezerConnectError(err) {
-  if (agentErrorCode(err) === 'login-busy') return ['deezer.loginBusy', {}];
-  return ['usServices.connectFailed', { err: agentErrorText(err) }];
-}
 
 // deezerDisconnectError picks the message for a failed Disconnect.
 export function deezerDisconnectError(err) {

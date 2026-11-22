@@ -360,6 +360,13 @@ func (r *Reader) TailSnapshot() []string { return r.forensics.tailSnapshot() }
 // bundle taken minutes later.
 func (r *Reader) DeezerTailSnapshot() map[string]any { return r.forensics.deezerSnapshot() }
 
+// DeezerLastRetry is the code of the firmware's last Deezer relogin retry
+// this run ("3351" no token, "3330" token refused by Deezer) and when it was
+// read; ok is false before the first one.
+func (r *Reader) DeezerLastRetry() (code string, at time.Time, ok bool) {
+	return r.forensics.deezerLastRetry()
+}
+
 // SetupTailSnapshot is the box_setup_tail debug section: the ring as it stood
 // when the firmware's setup state machine first spoke, plus the lines that
 // followed. Empty on a box that never entered setup, which is the answer for

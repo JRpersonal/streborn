@@ -624,10 +624,14 @@ type forensics struct {
 	tail   *ring[string]
 	// deezer is the Deezer tail (deezerRingLen), allocated on the first
 	// Deezer line, so a speaker that never logs one carries none of it.
-	deezer      *ring[string]
-	deezerSeen  uint64
-	lastLogged  map[Class]time.Time
-	lastPlayErr Event
+	deezer     *ring[string]
+	deezerSeen uint64
+	// deezerRetry is the code of the firmware's last Deezer relogin retry
+	// (UserInfoRecreateFailureCB '3351'), deezerRetryAt when it was read.
+	deezerRetry   string
+	deezerRetryAt time.Time
+	lastLogged    map[Class]time.Time
+	lastPlayErr   Event
 	// lastPresetRefusal is when the firmware last logged that it refused a
 	// preset write (UpdatePresetFailureCB). The CLI answers such a write as if
 	// it had succeeded, so this line is the only evidence; see
@@ -728,6 +732,9 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 		}
 		f.deezer.push(tailLine)
 		f.deezerSeen++
+		if m := deezerRetryPattern.FindStringSubmatch(l.Message); m != nil {
+			f.deezerRetry, f.deezerRetryAt = m[1], now
+		}
 	}
 	if isOffset && !backlog {
 		f.audioOffset, f.audioOffsetAt = offset, now
@@ -1001,7 +1008,25 @@ func (f *forensics) deezerSnapshot() map[string]any {
 	if f.deezer != nil {
 		lines = f.deezer.items()
 	}
-	return map[string]any{"seen": f.deezerSeen, "lines": lines}
+	out := map[string]any{"seen": f.deezerSeen, "lines": lines}
+	if f.deezerRetry != "" {
+		out["lastRetryCode"] = f.deezerRetry
+		out["lastRetryAt"] = f.deezerRetryAt
+	}
+	return out
+}
+
+// deezerRetryPattern reads the code of the firmware's Deezer relogin retry:
+// "UserInfoRecreateFailureCB '3351', retry relogin timer". The firmware logs
+// it every few seconds while its Deezer client cannot log in (3351: it has
+// no token; 3330: Deezer refused the token, docs/streaming/deezer.md).
+var deezerRetryPattern = regexp.MustCompile(`UserInfoRecreateFailureCB\s+'(\d{1,6})'`)
+
+// deezerLastRetry is the last relogin retry code and when it was read.
+func (f *forensics) deezerLastRetry() (code string, at time.Time, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deezerRetry, f.deezerRetryAt, f.deezerRetry != ""
 }
 
 // tailSnapshot is the box_syslog_tail debug section.
