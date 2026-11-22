@@ -96,11 +96,11 @@ describe('the words, in every language', () => {
 
   it('says it in English the way the evidence supports', () => {
     const en = bundle('en');
-    // Spotify's rule, hedged about who it hits, never a firm cutoff.
-    expect(en['spotify.refusedWhy']).toContain('usually newer accounts');
-    expect(en['spotify.refusedWhy']).toContain('even with Premium');
-    expect(en['spotify.refusedWhy']).not.toMatch(/20\d\d/);
-    expect(en['spotify.refusedTry']).toContain('another, older Spotify account');
+    // Spotify's rule, with no claim about which accounts it hits: account
+    // age is not a reliable sign (old accounts were refused too).
+    expect(en['spotify.refusedWhy']).toBe("Spotify refuses some accounts on players like (STR), even with Premium. This is Spotify's rule, not a fault of your speaker.");
+    expect(en['spotify.refusedWhy']).not.toMatch(/20\d\d|newer|older/);
+    expect(en['spotify.refusedTry']).toBe('To check, play once from another Spotify account on the entry ending in (STR). If that one plays, Spotify refuses only this account.');
     expect(en['spotify.refusedFreeTry']).toContain('then save your Spotify presets again.');
     // A free account is never promised the speaker's own entry.
     for (const k of ['spotify.accountRefusedFree', 'spotify.accountRefusedFreeNamed', 'spotify.refusedFreeWhy', 'spotify.refusedFreeTry']) {

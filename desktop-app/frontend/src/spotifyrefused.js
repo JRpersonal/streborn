@@ -20,12 +20,13 @@
 //            account is the way on. Nothing is claimed about the speaker's
 //            own Spotify entry here, it is not known to play free accounts.
 //   premium  everything else, including "plan unknown". Spotify refuses some
-//            accounts on unlicensed players, usually newer ones, even on
-//            Premium (docs/streaming/spotify.md, "Known limitation"). The
-//            speaker's own entry is a licensed client and keeps playing it.
-//            The decisive test is another, older account on the (STR) entry:
-//            if that one plays, the speaker is fine and it is the account.
-//            The cutoff is not known, so the words say "usually".
+//            accounts on unlicensed players, even on Premium
+//            (docs/streaming/spotify.md, "Known limitation"). The speaker's
+//            own entry is a licensed client and keeps playing it. The
+//            decisive test is another account on the (STR) entry: if that
+//            one plays, the speaker is fine and it is the account. Account
+//            age is not a reliable sign (old accounts were refused too), so
+//            the words say nothing about which accounts it hits.
 //
 // Only Spotify can lift the refusal of a Premium account. When STR is certain
 // that is what happened (the speaker's own per-account record says refused,

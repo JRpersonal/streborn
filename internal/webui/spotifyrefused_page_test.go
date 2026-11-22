@@ -59,10 +59,11 @@ func TestPhoneSpotifyRefusedSaysWhyAndTheTest(t *testing.T) {
 	}
 	line := en[0]
 	for _, want := range []string{
-		// The Premium case: Spotify's rule, hedged about who it hits, and the
-		// decisive test on the (STR) entry with another, older account.
-		`spRefusedWhy:"Spotify refuses some accounts on players like (STR), even with Premium, usually newer accounts.`,
-		`spRefusedTry:"To check, play once from another, older Spotify account on the entry ending in (STR).`,
+		// The Premium case: Spotify's rule, with no claim about which
+		// accounts it hits (account age is not a reliable sign), and the
+		// decisive test on the (STR) entry with another account.
+		`spRefusedWhy:"Spotify refuses some accounts on players like (STR), even with Premium. This is Spotify's rule, not a fault of your speaker."`,
+		`spRefusedTry:"To check, play once from another Spotify account on the entry ending in (STR).`,
 		// The free case: Premium is the cure, and nothing about the speaker's
 		// own entry, which is not known to play free accounts.
 		`spRefusedFree:"Spotify won't stream this account on (STR) because it is a free account."`,

@@ -17,8 +17,8 @@ const NAMED = "Spotify won't stream the account Anna on (STR). The speaker's own
 
 const notice = (page) => page.locator('#statusCard #spRefused');
 const lead = (page) => page.locator('#statusCard #spRefused .sp-refused-lead');
-const WHY = "Spotify refuses some accounts on players like (STR), even with Premium, usually newer accounts. This is Spotify's rule, not a fault of your speaker.";
-const TRY = 'To check, play once from another, older Spotify account on the entry ending in (STR). If that one plays, Spotify refuses only this account.';
+const WHY = "Spotify refuses some accounts on players like (STR), even with Premium. This is Spotify's rule, not a fault of your speaker.";
+const TRY = 'To check, play once from another Spotify account on the entry ending in (STR). If that one plays, Spotify refuses only this account.';
 
 test.describe('phone: Spotify refused notice', () => {
   test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: INFO } } });
