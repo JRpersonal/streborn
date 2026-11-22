@@ -18,8 +18,11 @@ func fakeUSBAgent(t *testing.T, entry string) BoxInfo {
 	mux.HandleFunc("/api/library/servers", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		e := entry
-		if e == "served" {
+		switch e {
+		case "served":
 			e = fmt.Sprintf(`{"udn":"uuid:str-usb-aabbccddeeff","name":"USB stick (Kitchen)","kind":"usb","location":"http://%s/usb/device.xml"}`, r.Host)
+		case "served-label":
+			e = fmt.Sprintf(`{"udn":"uuid:str-usb-aabbccddeeff","name":"USB stick MUSIK (Küche)","kind":"usb","location":"http://%s/usb/device.xml","speaker":"Küche","label":"MUSIK"}`, r.Host)
 		}
 		list := `[{"udn":"uuid:nas","name":"NAS"}`
 		if e != "" {
@@ -50,6 +53,49 @@ func TestASpeakersMusicStickJoinsTheLibrary(t *testing.T) {
 	want := fmt.Sprintf("http://%s:%d/usb/control", box.Host, box.Port)
 	if st.Speaker != "Kitchen" || st.Server.UDN != "uuid:str-usb-aabbccddeeff" || st.Server.CDSControlURL != want {
 		t.Fatalf("stick: %+v", st)
+	}
+}
+
+// Discussion #1136 (ST20, 2026-11-22): the stick showed as "USB stick
+// (str-192.168.1.213)". A speaker found by probing its address is called
+// "str-<ip>" in BoxInfo.Name, and that placeholder won over the speaker's
+// real name. The name the app shows the speaker by wins now, then the name
+// the agent gives itself, and a placeholder never.
+func TestTheStickIsListedUnderTheSpeakersNameNotThePlaceholder(t *testing.T) {
+	box := fakeUSBAgent(t, "served")
+	box.Name, box.FriendlyName = "str-"+box.Host, "Wohnzimmer"
+	sticks, _ := fetchSpeakerUSB(context.Background(), http.DefaultClient, box)
+	if len(sticks) != 1 || sticks[0].Speaker != "Wohnzimmer" {
+		t.Fatalf("sticks %+v", sticks)
+	}
+
+	cases := []struct {
+		box   BoxInfo
+		agent string
+		want  string
+	}{
+		{BoxInfo{Name: "str-192.168.1.213", FriendlyName: "Küche", Host: "192.168.1.213"}, "Kitchen", "Küche"},
+		{BoxInfo{Name: "str-192.168.1.213", Host: "192.168.1.213"}, "Küche", "Küche"},
+		{BoxInfo{Name: "STR-3E6CE1", Host: "192.168.1.213"}, "", "192.168.1.213"},
+		{BoxInfo{Name: "str-192.168.1.213", Host: "192.168.1.213"}, "", "192.168.1.213"},
+		{BoxInfo{Name: "str-Kueche", Host: "192.168.1.213"}, "", "str-Kueche"},
+		{BoxInfo{Name: "Bad", Host: "192.168.1.213"}, "", "Bad"},
+	}
+	for _, c := range cases {
+		if got := usbSpeakerName(c.box, c.agent); got != c.want {
+			t.Errorf("%+v / agent %q: got %q, want %q", c.box, c.agent, got, c.want)
+		}
+	}
+}
+
+// A newer agent names the speaker and the stick's volume label itself; the
+// Library carries both.
+func TestTheStickCarriesItsVolumeLabel(t *testing.T) {
+	box := fakeUSBAgent(t, "served-label")
+	box.Name = "str-" + box.Host
+	sticks, _ := fetchSpeakerUSB(context.Background(), http.DefaultClient, box)
+	if len(sticks) != 1 || sticks[0].Speaker != "Küche" || sticks[0].Label != "MUSIK" {
+		t.Fatalf("sticks %+v", sticks)
 	}
 }
 

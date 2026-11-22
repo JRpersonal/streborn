@@ -316,6 +316,7 @@
   "library.notAnsweringWarnBody": "{{name}} 在上次掃描時沒有回應，所以應用程式只是從記憶中知道它。你仍然可以把它加到喇叭上。在伺服器開機並回到網路之前，每一部喇叭的瀏覽都會失敗。",
   "library.serverRefusesPC": "位於 {{address}} 的媒體伺服器拒絕這台電腦，所以無法在這裡列出。請在媒體伺服器的設定中允許這台電腦（在 NAS 上通常是允許的裝置或媒體接收器清單），然後重新整理。",
   "library.usbServerName": "USB 隨身碟（{{name}}）",
+  "library.usbServerNameLabel": "USB 隨身碟 {{label}}（{{name}}）",
   "library.usbUnsupportedModel": "{{name}} 無法播放 USB 隨身碟中的音樂。",
   "library.usbInstallStick": "{{name}} 中的 USB 隨身碟是 ST Reborn 安裝用隨身碟。請另用一支隨身碟存放音樂。",
   "library.usbNotFAT32": "{{name}} 中的 USB 隨身碟不是 FAT32 格式。請將它格式化為 FAT32，然後重新複製音樂進去。",

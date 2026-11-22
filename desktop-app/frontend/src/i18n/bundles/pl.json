@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} nie odpowiedział podczas ostatniego skanowania, więc aplikacja zna go tylko z pamięci. Możesz go i tak dodać do swoich głośników. Przeglądanie nie będzie się udawać na żadnym głośniku, dopóki serwer nie będzie włączony i nie wróci do sieci.",
   "library.serverRefusesPC": "Serwer multimediów pod adresem {{address}} odrzuca ten komputer, więc nie można go tu pokazać. Zezwól na ten komputer w ustawieniach serwera multimediów (na NAS zwykle jest to lista dozwolonych urządzeń lub odbiorników multimediów), a potem odśwież.",
   "library.usbServerName": "Pendrive USB ({{name}})",
+  "library.usbServerNameLabel": "Pendrive USB {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} nie może odtwarzać muzyki z pendrive’a USB.",
   "library.usbInstallStick": "Pendrive USB w {{name}} to pendrive instalacyjny ST Reborn. Do muzyki użyj osobnego pendrive’a.",
   "library.usbNotFAT32": "Pendrive USB w {{name}} nie jest sformatowany w FAT32. Sformatuj go w FAT32, a potem ponownie skopiuj na niego muzykę.",

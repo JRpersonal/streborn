@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} no respondió en el último análisis, así que la aplicación solo lo conoce por lo que recuerda. Puedes añadirlo a tus altavoces igualmente. La exploración fallará en todos los altavoces hasta que el servidor esté encendido y de nuevo en la red.",
   "library.serverRefusesPC": "El servidor multimedia en {{address}} rechaza este ordenador, por lo que no puede mostrarse aquí. Permite este PC en los ajustes del servidor multimedia (en un NAS suele ser una lista de dispositivos o receptores multimedia permitidos) y luego actualiza.",
   "library.usbServerName": "Memoria USB ({{name}})",
+  "library.usbServerNameLabel": "Memoria USB {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} no puede reproducir música desde una memoria USB.",
   "library.usbInstallStick": "La memoria USB de {{name}} es una memoria de instalación de ST Reborn. Usa otra memoria para la música.",
   "library.usbNotFAT32": "La memoria USB de {{name}} no está formateada en FAT32. Formatéala en FAT32 y vuelve a copiar la música en ella.",

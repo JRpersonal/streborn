@@ -225,6 +225,8 @@ type serverRow struct {
 	Kind     string `json:"kind"`
 	Location string `json:"location"`
 	Refusal  string `json:"refusal"`
+	Speaker  string `json:"speaker"`
+	Label    string `json:"label"`
 }
 
 func listServers(t *testing.T, s *Server) []serverRow {
@@ -682,6 +684,63 @@ func TestTheStickNameKeepsANonASCIISpeakerName(t *testing.T) {
 	}
 }
 
+// labelledFAT32 is the start of a FAT32 stick whose root directory carries
+// the volume label label, as Windows writes it (the boot sector says NO NAME).
+func labelledFAT32(label string) []byte {
+	b := fatSector("fat32", 1)
+	binary.LittleEndian.PutUint16(b[14:], 32) // reserved sectors
+	b[16] = 2                                 // FATs
+	binary.LittleEndian.PutUint32(b[36:], 4)  // sectors per FAT
+	binary.LittleEndian.PutUint32(b[44:], 2)  // root cluster
+	copy(b[71:], "NO NAME    ")
+	root := (32 + 2*4) * 512
+	img := make([]byte, root+512)
+	copy(img, b)
+	copy(img[root:], []byte(label + "           ")[:11])
+	img[root+11] = 0x08
+	return img
+}
+
+// The stick is named after the speaker it is in and, when it has one, its
+// volume label, in the server list, in its own fields for the apps, in the
+// debug state and in the device description (discussion #1136: an ST20 owner
+// saw "USB stick (str-<ip>)" and asked for the stick's name).
+func TestTheStickIsNamedAfterItsLabelAndItsSpeaker(t *testing.T) {
+	f := newFakeStick(t, "spotty")
+	media := t.TempDir()
+	f.put(media, "a.mp3")
+	f.plug(labelledFAT32("MUSIK"))
+	f.firmwareMount(media, "vfat")
+	s, _ := usbTestServer(t)
+
+	row, ok := usbRow(listServers(t, s))
+	if !ok || row.Name != "USB stick MUSIK (Kitchen)" || row.Speaker != "Kitchen" || row.Label != "MUSIK" {
+		t.Fatalf("usb row: %+v %v", row, ok)
+	}
+	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.VolumeLabel != "MUSIK" {
+		t.Fatalf("debug state: %+v", snap)
+	}
+	srv := startUSBAgent(t, s)
+	ds, err := dlna.DescribeServer(context.Background(), srv.URL+"/usb/device.xml")
+	if err != nil || ds.FriendlyName != "USB stick MUSIK (Kitchen)" {
+		t.Fatalf("described as %q, %v", ds.FriendlyName, err)
+	}
+
+	// A speaker whose name is not known yet names no speaker, rather than a
+	// placeholder; a stick without a label names no label.
+	s.boxNameFn = func() (string, string) { return "", "" }
+	if row, _ := usbRow(listServers(t, s)); row.Name != "USB stick MUSIK" || row.Speaker != "" {
+		t.Fatalf("no speaker name: %+v", row)
+	}
+	f.unplug()
+	listServers(t, s)
+	f.plug(fatSector("fat32", 64))
+	s.boxNameFn = func() (string, string) { return "Kitchen", "" }
+	if row, _ := usbRow(listServers(t, s)); row.Name != "USB stick (Kitchen)" || row.Label != "" {
+		t.Fatalf("a stick without a label: %+v", row)
+	}
+}
+
 func TestUSBUDNIsStablePerSpeaker(t *testing.T) {
 	s, _ := usbTestServer(t)
 	if s.usbUDN() != "uuid:str-usb-aabbccddeeff" || !s.isUSBUDN("uuid:STR-USB-AABBCCDDEEFF") || s.isUSBUDN("uuid:other") {
@@ -723,6 +782,10 @@ func TestPhoneRemoteShowsTheStick(t *testing.T) {
 		"var base6 = I18N6.en, sel6 = I18N6[code] || base6;",
 		"s.kind === 'usb'",
 		"usbRefusalText(s.refusal)",
+		// Named like the desktop app names it: label and speaker.
+		"var name = usb ? usbStickName(s) : (s.name || s.udn);",
+		"if (s.label) name += ' ' + s.label;",
+		"if (s.speaker) name += ' (' + s.speaker + ')';",
 		`id="browseUsbMsg"`,
 		// A stick file above 48 kHz, a folder that skipped some, a file the
 		// speaker could not decode.

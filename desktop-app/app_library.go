@@ -286,6 +286,8 @@ type LibraryServer struct {
 	// empty for every other server. The Library labels it in the user's
 	// language and offers no "put on the speakers" for it.
 	USBSpeaker string `json:"usbSpeaker,omitempty"`
+	// USBLabel is that stick's volume label, empty when it has none.
+	USBLabel string `json:"usbLabel,omitempty"`
 }
 
 // libraryEntry is one server on its way to the frontend list: the
@@ -472,12 +474,12 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 		}
 	}
 	// A stick is listed after the network's servers and never remembered.
-	usbAt := map[string]string{}
+	usbAt := map[string]usbStick{}
 	for _, st := range sticks {
 		if _, dup := usbAt[st.Server.UDN]; dup {
 			continue
 		}
-		usbAt[st.Server.UDN] = st.Speaker
+		usbAt[st.Server.UDN] = st
 		entries = append(entries, libraryEntry{Server: st.Server})
 	}
 	a.logger.Info("library: media server scan done",
@@ -504,7 +506,8 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 			Address:      e.Server.Address,
 			Manual:       e.Manual,
 			NotAnswering: e.NotAnswering,
-			USBSpeaker:   usbAt[e.Server.UDN],
+			USBSpeaker:   usbAt[e.Server.UDN].Speaker,
+			USBLabel:     usbAt[e.Server.UDN].Label,
 		})
 	}
 	return out, nil

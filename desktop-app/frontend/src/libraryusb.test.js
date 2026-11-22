@@ -53,8 +53,35 @@ describe('localizeUSBServers', () => {
     setLocale('en');
   });
 
+  it('adds the volume label when the stick has one', () => {
+    const [s] = localizeUSBServers([{ udn: 'u', friendlyName: 'USB stick MUSIK (Kitchen)', usbSpeaker: 'Kitchen', usbLabel: 'MUSIK' }]);
+    expect(s.friendlyName).toBe('USB stick MUSIK (Kitchen)');
+    setLocale('de');
+    const [d] = localizeUSBServers([{ udn: 'u', usbSpeaker: 'Küche', usbLabel: 'MUSIK' }]);
+    expect(d.friendlyName).toBe('USB-Stick MUSIK (Küche)');
+    setLocale('en');
+  });
+
   it('copes with nothing', () => {
     expect(localizeUSBServers(null)).toEqual([]);
+  });
+});
+
+describe('the USB stick name with its label', () => {
+  const bundles = ['de', 'fr', 'es', 'it', 'nl', 'pl', 'tr', 'uk', 'lt', 'lv', 'ar', 'ja', 'zh-Hant'];
+
+  it('is in every bundle, with both placeholders, next to the plain name', () => {
+    expect(en['library.usbServerNameLabel']).toBe('USB stick {{label}} ({{name}})');
+    for (const loc of bundles) {
+      const b = read(loc);
+      const v = b['library.usbServerNameLabel'];
+      expect(v, loc).toBeTruthy();
+      expect(v, `${loc} untranslated`).not.toBe(en['library.usbServerNameLabel']);
+      expect(v, `${loc} placeholders`).toContain('{{label}}');
+      expect(v, `${loc} placeholders`).toContain('{{name}}');
+      // The same words as the plain name, the label added.
+      expect(v.replace('{{label}}', '').replace(/\s+/g, ''), loc).toBe(b['library.usbServerName'].replace(/\s+/g, ''));
+    }
   });
 });
 

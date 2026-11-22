@@ -316,6 +316,7 @@
   "library.notAnsweringWarnBody": "{{name}} non ha risposto all'ultima scansione, quindi l'app lo conosce solo dalla memoria. Puoi comunque aggiungerlo ai tuoi altoparlanti. La navigazione fallirà su ogni altoparlante finché il server non viene acceso e non torna in rete.",
   "library.serverRefusesPC": "Il server multimediale a {{address}} rifiuta questo computer, quindi non può essere elencato qui. Consenti questo PC nelle impostazioni del server multimediale (su un NAS di solito è un elenco di dispositivi o ricevitori multimediali consentiti), poi aggiorna.",
   "library.usbServerName": "Chiavetta USB ({{name}})",
+  "library.usbServerNameLabel": "Chiavetta USB {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} non può riprodurre musica da una chiavetta USB.",
   "library.usbInstallStick": "La chiavetta USB in {{name}} è una chiavetta di installazione di ST Reborn. Usa una chiavetta separata per la musica.",
   "library.usbNotFAT32": "La chiavetta USB in {{name}} non è formattata in FAT32. Formattala in FAT32, poi copia di nuovo la musica.",

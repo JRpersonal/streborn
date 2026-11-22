@@ -8997,7 +8997,7 @@ async function loadBrowseServers() {
       return;
     }
     if (!s.udn) return;
-    var name = usb ? T.usbName : (s.name || s.udn);
+    var name = usb ? usbStickName(s) : (s.name || s.udn);
     var b = document.createElement('button');
     b.className = 'btn'; b.type = 'button';
     b.textContent = name;
@@ -9007,6 +9007,14 @@ async function loadBrowseServers() {
     });
     box.appendChild(b);
   });
+}
+/* usbStickName names the stick as the desktop app does: "USB stick", its
+   volume label when it has one, and the speaker it is in. */
+function usbStickName(s) {
+  var name = T.usbName;
+  if (s.label) name += ' ' + s.label;
+  if (s.speaker) name += ' (' + s.speaker + ')';
+  return name;
 }
 /* usbRefusalText is the line for the agent's reason a stick is not offered. */
 function usbRefusalText(code) {

@@ -931,6 +931,7 @@ export namespace main {
 	    manual: boolean;
 	    notAnswering: boolean;
 	    usbSpeaker?: string;
+	    usbLabel?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryServer(source);
@@ -947,6 +948,7 @@ export namespace main {
 	        this.manual = source["manual"];
 	        this.notAnswering = source["notAnswering"];
 	        this.usbSpeaker = source["usbSpeaker"];
+	        this.usbLabel = source["usbLabel"];
 	    }
 	}
 	export class LibraryUSBNotice {

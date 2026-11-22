@@ -505,12 +505,19 @@ export async function usbHiResSkippedNote(box, items) {
   }
 }
 
-// localizeUSBServers names a speaker's music stick in the user's language. The
-// agent calls it "USB stick (Kitchen)" in English, for generic UPnP clients;
-// every place the Library shows or files a server's name then reads this one.
+// localizeUSBServers names a speaker's music stick in the user's language, with
+// the stick's volume label when it has one ("USB stick MUSIC (Kitchen)"). The
+// agent names it in English, for generic UPnP clients; every place the Library
+// shows or files a server's name then reads this one.
 export function localizeUSBServers(list) {
   return (list || []).map(s => (s && s.usbSpeaker
-    ? { ...s, friendlyName: t('library.usbServerName', { name: s.usbSpeaker }), modelName: '' }
+    ? {
+      ...s,
+      friendlyName: s.usbLabel
+        ? t('library.usbServerNameLabel', { name: s.usbSpeaker, label: s.usbLabel })
+        : t('library.usbServerName', { name: s.usbSpeaker }),
+      modelName: '',
+    }
     : s));
 }
 

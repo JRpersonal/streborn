@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} n'a pas répondu lors de la dernière recherche, l'application le connaît donc seulement de mémoire. Vous pouvez quand même l'ajouter à vos enceintes. La navigation échouera sur chaque enceinte jusqu'à ce que le serveur soit allumé et de retour sur le réseau.",
   "library.serverRefusesPC": "Le serveur multimédia à l'adresse {{address}} refuse cet ordinateur, il ne peut donc pas être affiché ici. Autorisez ce PC dans les réglages du serveur multimédia (sur un NAS, généralement une liste d'appareils ou de récepteurs multimédias autorisés), puis actualisez.",
   "library.usbServerName": "Clé USB ({{name}})",
+  "library.usbServerNameLabel": "Clé USB {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} ne peut pas lire de musique depuis une clé USB.",
   "library.usbInstallStick": "La clé USB dans {{name}} est une clé d'installation ST Reborn. Utilise une autre clé pour la musique.",
   "library.usbNotFAT32": "La clé USB dans {{name}} n'est pas formatée en FAT32. Formate-la en FAT32, puis copie à nouveau la musique dessus.",
