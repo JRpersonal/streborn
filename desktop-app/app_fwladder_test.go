@@ -463,6 +463,16 @@ func TestFirmwareLadderNote(t *testing.T) {
 	if n := firmwareLadderNote("SoundTouch 10", "sm2", "", "10.0.11"); !strings.Contains(n, "walks you through the 3 updates") {
 		t.Errorf("10.x ST10: %q", n)
 	}
+	// So has the rest of the Bluetooth chassis; a Wave IV below 14.0.33 has
+	// no source for its first step.
+	for _, m := range []string{"SoundTouch SA-5", "SoundTouch 300", "SoundTouch Wireless Link adapter"} {
+		if n := firmwareLadderNote(m, "sm2", "", "12.0.1"); !strings.Contains(n, "walks you through the 3 updates") {
+			t.Errorf("12.x %s: %q", m, n)
+		}
+	}
+	if n := firmwareLadderNote("Wave SoundTouch", "sm2", "", "12.0.1"); !strings.Contains(n, "no known step-by-step path") {
+		t.Errorf("12.x Wave IV: %q", n)
+	}
 	if n := firmwareLadderNote("Lifestyle", "sm2", "", "10.0.11"); !strings.Contains(n, "no known step-by-step path") {
 		t.Errorf("Lifestyle: %q", n)
 	}
@@ -483,7 +493,7 @@ func TestFirmwareTooOldMessageStatesTheStepsOnce(t *testing.T) {
 		{"SoundTouch 20", "scm", "5.2.0"},    // the checked ladder
 		{"SoundTouch 20", "", "10.0.11"},     // the Bluetooth question
 		{"Wave SoundTouch", "", "2.1.51"},    // a documented route
-		{"SoundTouch 10", "sm2", "10.0.11"},  // a documented route
+		{"SoundTouch 10", "sm2", "10.0.11"},  // the checked ladder
 		{"Lifestyle", "sm2", "10.0.11"},      // no known path
 		{"SoundTouch SA-4", "scm", "13.0.0"}, // no source for the first step
 	} {
@@ -513,7 +523,7 @@ func TestGetFirmwareLadderManual(t *testing.T) {
 	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "no"); p.Status != bosefw.StatusLadder || p.VersionFrom != "manual" {
 		t.Fatalf("%+v", p)
 	}
-	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "yes"); p.Status != bosefw.StatusRoute || p.Family != bosefw.FamilyBTSm2 {
+	if p := a.GetFirmwareLadderManual("SoundTouch 20", "", "10.0.11", "yes"); p.Status != bosefw.StatusLadder || p.Family != bosefw.FamilyBTSm2 {
 		t.Fatalf("%+v", p)
 	}
 }

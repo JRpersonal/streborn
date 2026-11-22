@@ -14,6 +14,9 @@ import {
   formatBytes,
   hasNoDisplay,
   isMicroUsbOnly,
+  modelKey,
+  noStickStart,
+  notStartedResetKey,
   ladderApplies,
   ladderClickCount,
   ladderErrorText,
@@ -40,6 +43,7 @@ import {
   versionReached,
   ARCHIVE_COLLECTION_URL,
   FIRMWARE_OTHER_MODELS_URL,
+  FIRMWARE_ROUTE_B_URL,
   MANUAL_VERSIONS,
 } from './fwladder.js';
 import { firmwareGuideMount, plainGuideMount } from './fwguide.js';
@@ -84,7 +88,7 @@ describe('when the ladder replaces the single-step guide', () => {
     expect(ladderApplies({ ...ident, current: '' })).toBe(false);
   });
   it('hands sm2 and other models below 15 to the ladder too, never to the one-jump guide', () => {
-    expect(ladderApplies({ ...ident, moduleType: 'sm2', current: '14.0.15' })).toBe(false);
+    expect(ladderApplies({ ...ident, model: 'SoundTouch SA-4', moduleType: 'sm2', current: '14.0.15' })).toBe(false);
     expect(ladderApplies({ ...ident, model: 'Wave SoundTouch', current: '2.1.51' })).toBe(false);
     expect(noLadderYet({ ...ident, model: 'Wave SoundTouch', current: '2.1.51' })).toBe(true);
     expect(noLadderYet({ ...ident, model: 'SoundTouch 10', current: '27.0.3' })).toBe(false);
@@ -602,5 +606,109 @@ describe('the SoundTouch 10 ladder', () => {
   it('the manual picker offers the SoundTouch 10', () => {
     const html = ladderHtml(id10, { status: 'needs-version', model: 'SoundTouch 10', steps: [] }, {});
     expect(html).toContain('<option value="SoundTouch 10" selected>');
+  });
+});
+
+// The rest of the Bluetooth chassis (newer hardware) has checked ladders since
+// 2026-11-22: the SoundTouch 20/30 with Bluetooth and the Wireless Link adapter
+// (one shared image), the SA-5, the SoundTouch 300, and the Wave IV from
+// 14.0.33. None is tested on a speaker yet. The SA-5, 300, Wireless Link and
+// Wave never read a USB stick at boot (docs/MODELS.md), so the stick start is
+// not confirmed on them and the screens name the update page as well.
+describe('the rest of the Bluetooth chassis', () => {
+  const sm2 = (fam, v, src = 'archive') => ({
+    id: `${fam}-${v}`, version: v, source: src, innerSize: 95_000_000, liveVerified: false, networkOk: src === 'bose',
+    url: src === 'bose' ? 'https://downloads.bose.com/x.sm2.stu' : `https://archive.org/download/bose-soundtouch-software-and-firmware/x/${v}.zip`,
+  });
+  const planFor = (fam, model, fallbacks = {}) => ({
+    status: 'ladder', family: fam, model, moduleType: 'sm2', current: '12.0.1', deviceId: 'device-id-here', versionFrom: 'lan',
+    steps: [sm2(fam, '14.00.33'), sm2(fam, '15.00.20'), sm2(fam, '27.0.6', 'bose')], fallbacks,
+  });
+  const idOf = (model, moduleType = 'sm2', current = '12.0.1') => ({ model, moduleType, variant: '', current, host: '192.0.2.12' });
+
+  it('takes over below 15 for every model of it, and only where the speaker can be that model', () => {
+    expect(ladderApplies(idOf('SoundTouch 20'))).toBe(true);
+    expect(ladderApplies(idOf('SoundTouch 30', 'sm2', '9.0.41'))).toBe(true);
+    expect(ladderApplies(idOf('SoundTouch SA-5', ''))).toBe(true);
+    expect(ladderApplies(idOf('SoundTouch 300'))).toBe(true);
+    expect(ladderApplies(idOf('SoundTouch Wireless Link Adapter', ''))).toBe(true);
+    expect(ladderApplies(idOf('Wave SoundTouch music system IV', 'sm2', '14.0.33'))).toBe(true);
+    // Bose built none of these on the older hardware.
+    expect(ladderApplies(idOf('SoundTouch SA-5', 'scm'))).toBe(false);
+    expect(ladderApplies(idOf('SoundTouch Portable', 'sm2'))).toBe(false);
+    // The Wave IV has no checked source below 14.0.33; a Wave that does not
+    // say which hardware it is gets no ladder.
+    expect(ladderApplies(idOf('Wave SoundTouch', 'sm2', '14.0.15'))).toBe(false);
+    expect(ladderApplies(idOf('Wave SoundTouch', '', '14.0.33'))).toBe(false);
+    expect(ladderApplies(idOf('SoundTouch 300', 'sm2', '15.0.20'))).toBe(false);
+    expect(modelKey('SoundTouch Wireless Link adapter')).toBe('wireless link');
+    expect(modelKey('Wave SoundTouch music system IV')).toBe('wave soundtouch');
+  });
+
+  it('a SoundTouch 20 with Bluetooth gets the stick ladder with the known buttons and no extra note', () => {
+    const plan = planFor('bt-sm2', 'SoundTouch 20', { 'bt-sm2-15.00.20': [{ ...sm2('bt-sm2', '16.00.09'), fallback: true }] });
+    const a = ladderHtml(idOf('SoundTouch 20'), plan, {});
+    expect(a.match(/fw-ladder-untested/g)).toHaveLength(3);
+    expect(a).not.toContain('data-ladder-note="no-stick"');
+    const c = ladderHtml(idOf('SoundTouch 20'), plan, { started: true, screen: 'C', stepId: 'bt-sm2-14.00.33' });
+    expect(c).toContain(esc(en['fwLadder.c3FourVol']));
+    expect(c).toContain(esc(en['fwLadder.w4']));
+    expect(c).not.toContain(esc(en['fwLadder.w4Scm']));
+    expect(c).not.toContain('data-ladder-note="no-stick"');
+    expect(noStickStart('SoundTouch 20')).toBe(false);
+    expect(notStartedStartKey('SoundTouch 20')).toBe('fwLadder.nsKeys');
+  });
+
+  for (const model of ['SoundTouch SA-5', 'SoundTouch 300', 'SoundTouch Wireless Link adapter', 'Wave SoundTouch music system IV']) {
+    it(`${model}: names the update page next to the stick, and invents no buttons`, () => {
+      expect(noStickStart(model)).toBe(true);
+      const plan = planFor('x-sm2', model);
+      const a = ladderHtml(idOf(model), plan, {});
+      expect(a).toContain('data-ladder-note="no-stick"');
+      expect(a).toContain(esc(en['fwLadder.noStick']));
+      expect(a).toContain(`data-url="${FIRMWARE_ROUTE_B_URL}"`);
+      const c = ladderHtml(idOf(model), plan, { started: true, screen: 'C', stepId: 'x-sm2-14.00.33' });
+      expect(c).toContain('data-ladder-note="no-stick"');
+      expect(c).toContain(esc(en['fwLadder.c3Generic']));
+      expect(c).not.toContain(esc(en['fwLadder.c3FourVol']));
+      const ns = ladderHtml(idOf(model), plan, { started: true, screen: 'C', stepId: 'x-sm2-14.00.33', recheck: { state: 'same', version: '12.0.1', started: false } });
+      expect(ns).toContain(esc(en['fwLadder.nsKeysGeneric']));
+      expect(ns).toContain(esc(en['darkCheck.resetGeneric']));
+      expect(ns).not.toContain(esc(en['fwLadder.nsKeys']));
+      expect(ns).not.toContain(esc(en['fwLadder.nsReset']));
+      expect(notStartedResetKey(model)).toBe('darkCheck.resetGeneric');
+    });
+  }
+
+  it('asks about the lights on the SoundTouch 300, which has no display', () => {
+    expect(hasNoDisplay('SoundTouch 300')).toBe(true);
+    expect(hasNoDisplay('SoundTouch SA-5')).toBe(true);
+    expect(hasNoDisplay('Wave SoundTouch music system IV')).toBe(false);
+    const asked = ladderHtml(idOf('SoundTouch 300'), planFor('st300-sm2', 'SoundTouch 300'),
+      { started: true, screen: 'C', stepId: 'st300-sm2-15.00.20', recheck: { state: 'same', version: '14.0.33' } });
+    expect(asked).toContain(esc(en['fwLadder.startedQLights']));
+  });
+
+  it('the SoundTouch 300 has no smaller step after a stall: the archive holds no 16.00.09 for it', () => {
+    const plan = { ...planFor('st300-sm2', 'SoundTouch 300'), current: '14.0.33', steps: planFor('st300-sm2', 'SoundTouch 300').steps.slice(1) };
+    const ran = { started: true, screen: 'C', stepId: 'st300-sm2-15.00.20', recheck: { state: 'same', version: '14.0.33', started: true } };
+    const html = ladderHtml(idOf('SoundTouch 300', 'sm2', '14.0.33'), plan, ran);
+    expect(html).toContain('data-ladder="retry"');
+    expect(html).not.toContain('data-ladder="smaller"');
+  });
+
+  it('the new lines name no buttons and stay honest', () => {
+    expect(en['fwLadder.noStick']).toMatch(/not confirmed/);
+    expect(en['fwLadder.noStick']).toMatch(/Update\.stu/);
+    for (const k of ['fwLadder.noStick', 'fwLadder.nsKeysGeneric']) {
+      expect(en[k], k).not.toMatch(/Volume minus|hold [0-9]/i);
+    }
+  });
+
+  it('the manual picker offers the SA-5, the 300 and the Wireless Link adapter', () => {
+    const html = ladderHtml(idOf('SoundTouch 300'), { status: 'needs-version', model: 'SoundTouch 300', steps: [] }, {});
+    expect(html).toContain('<option value="SoundTouch 300" selected>');
+    expect(html).toContain('<option value="SoundTouch SA-5">');
+    expect(html).toContain('<option value="SoundTouch Wireless Link adapter">');
   });
 });

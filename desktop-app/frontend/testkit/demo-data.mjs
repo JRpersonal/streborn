@@ -497,7 +497,10 @@ export const SETUP_CHECK = {
   current: fwInfo('27.0.6'),
   routeA: fwInfo('15.0.4', { moduleType: 'sm2' }),
   ladder: fwInfo('7.0.37', { moduleType: '' }),
-  guide: fwInfo('10.0.11', { model: 'SoundTouch 300', moduleType: 'sm2', variant: '' }),
+  // Below 15 with no checked ladder: a first generation Wave (a documented
+  // route), and a Wave IV below 14.0.33 (no source for its first step).
+  guide: fwInfo('10.0.11', { model: 'Wave SoundTouch', moduleType: 'scm', variant: '' }),
+  guideNoPath: fwInfo('10.0.11', { model: 'Wave SoundTouch', moduleType: 'sm2', variant: '' }),
   unknown: fwInfo(''),
   unreachable: { reachable: false, latest: '27.0.6' },
   guideOne: {
@@ -517,20 +520,22 @@ export const SETUP_CHECK = {
       { id: 'st-scm-27.0.6', version: '27.0.6', family: 'st-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 105_879_988, liveVerified: false, networkOk: true, fallback: false },
     ],
   },
-  // GetFirmwareLadder for the SoundTouch 10 on 10.0.11 (guide above): the
-  // documented, unchecked route (bosefw/ladder_routes.go), listed only.
+  // GetFirmwareLadder for the first generation Wave on 10.0.11 (guide above):
+  // the documented, unchecked route (bosefw/ladder_routes.go), listed only.
   routePlan: {
-    status: 'route', family: 'st10-sm2', model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
-    versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: '', avoid: [],
+    status: 'route', family: 'wave-scm', model: 'Wave SoundTouch', moduleType: 'scm', current: '10.0.11', deviceId: 'device-id-here',
+    versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: 'Airplay-1_Wave_SoundTouch', avoid: ['16.00.09', '18.x'],
     steps: [
-      { id: 'st10-sm2-15.00.20', version: '15.00.20', family: 'st10-sm2', source: 'archive', url: '', fileName: '', innerSize: 0, liveVerified: false, networkOk: false, fallback: false },
-      { id: 'st10-sm2-27.0.6', version: '27.0.6', family: 'st10-sm2', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 95_906_856, liveVerified: false, networkOk: true, fallback: false },
+      { id: 'wave-scm-14.00.33', version: '14.00.33', family: 'wave-scm', source: 'archive', url: '', fileName: '', innerSize: 0, liveVerified: false, networkOk: false, fallback: false },
+      { id: 'wave-scm-15.00.20', version: '15.00.20', family: 'wave-scm', source: 'archive', url: '', fileName: '', innerSize: 107_842_648, liveVerified: false, networkOk: false, fallback: false },
+      { id: 'wave-scm-27.0.6', version: '27.0.6', family: 'wave-scm', source: 'bose', url: 'https://downloads.bose.com/ced/soundtouch/downloads_stockholm/Update.stu', fileName: 'Update.stu', innerSize: 112_367_416, liveVerified: false, networkOk: true, fallback: false },
     ],
   },
-  // GetFirmwareLadder for a speaker below 15 with no known route at all
-  // (bosefw status "unsupported"): no steps, only the guide.
+  // GetFirmwareLadder for a speaker below 15 with no known path (bosefw status
+  // "unsupported"): the Wave IV below 14.0.33 (guideNoPath above), whose
+  // archive 14.00.33 is the SA-5's file. No steps, only the guide.
   noPathPlan: {
-    status: 'unsupported', reason: 'model', family: '', model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
+    status: 'unsupported', reason: 'no-source', family: 'wave-sm2', model: 'Wave SoundTouch', moduleType: 'sm2', current: '10.0.11', deviceId: 'device-id-here',
     versionFrom: 'lan', oldStart: false, fallbacks: {}, folder: '', avoid: [], steps: [],
   },
 };

@@ -34,10 +34,10 @@ func TestPlanByStartingVersion(t *testing.T) {
 		{"Wave 2.1.51 without moduleType gets the documented Wave route", "Wave SoundTouch", "", "2.1.51", nil, StatusRoute, "06.02.01 07.00.37 14.00.33 15.00.20 27.0.6"},
 		{"ST20 10.x without moduleType asks about Bluetooth", "SoundTouch 20", "", "10.0.11", nil, StatusNeedsBluetooth, ""},
 		{"... no Bluetooth button means scm", "SoundTouch 20", "", "10.0.11", boolp(false), StatusLadder, "14.00.33 16.00.09 27.0.6"},
-		{"... a Bluetooth button means sm2: the Bluetooth chassis route", "SoundTouch 30", "", "10.0.11", boolp(true), StatusRoute, "14.00.33 15.00.20 27.0.6"},
+		{"... a Bluetooth button means sm2: the Bluetooth chassis ladder", "SoundTouch 30", "", "10.0.11", boolp(true), StatusLadder, "14.00.33 15.00.20 27.0.6"},
 		{"a Portable never asks: it is scm only", "SoundTouch Portable", "", "10.0.11", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
 		{"sm2 below 9 cannot exist, so no moduleType at 7 is scm", "SoundTouch 30", "", "7.2.21", nil, StatusLadder, "14.00.33 16.00.09 27.0.6"},
-		{"sm2 reported gets the Bluetooth chassis route", "SoundTouch 20", "sm2", "14.0.15", nil, StatusRoute, "14.00.33 15.00.20 27.0.6"},
+		{"sm2 reported gets the Bluetooth chassis ladder", "SoundTouch 20", "sm2", "14.0.15", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
 		{"SoundTouch 10 gets its own checked ladder", "SoundTouch 10", "sm2", "14.0.15", nil, StatusLadder, "14.00.33 15.00.20 27.0.6"},
 		{"no version asks for it", "SoundTouch 20", "", "", nil, StatusNeedsVersion, ""},
 		{"a 2.x ST20 gets the full ladder", "SoundTouch 20", "", "2.1.51", nil, StatusLadder, "06.02.01 07.00.37 14.00.33 16.00.09 27.0.6"},
@@ -163,8 +163,8 @@ func TestVersionTuple(t *testing.T) {
 // The table's invariants. A step added later has to pass them too.
 func TestLadderDataInvariants(t *testing.T) {
 	hex40 := regexp.MustCompile(`^[0-9a-f]{40}$`)
-	if len(mainLadders) != 2 {
-		t.Errorf("%d main ladders, the tests know 2", len(mainLadders))
+	if len(mainLadders) != 6 {
+		t.Errorf("%d main ladders, the tests know 6", len(mainLadders))
 	}
 	for fam, ladder := range mainLadders {
 		prev := ""
@@ -189,10 +189,11 @@ func TestLadderDataInvariants(t *testing.T) {
 			if s.Fallback {
 				t.Errorf("%s: a main step is not a fallback", s.ID)
 			}
-			// Below 15 Bose's last file never goes on in one jump: some
-			// archive step below 15 must come before it.
-			if last && (i == 0 || DirectJumpOK(ladder[0].Version)) {
-				t.Errorf("%s: the ladder must start with an in-between step below 15", fam)
+			// Below 15 Bose's last file never goes on in one jump: an archive
+			// step no newer than 15.x must come before it (the Wave IV ladder
+			// starts at 15.00.20 itself, for a speaker already on 14.0.33).
+			if last && (i == 0 || ladder[0].Source != SourceArchive || CompareVersions(ladder[0].Version, "16.0.0") >= 0) {
+				t.Errorf("%s: the ladder must start with an in-between step no newer than 15", fam)
 			}
 		}
 	}
@@ -243,7 +244,11 @@ func TestLadderDataInvariants(t *testing.T) {
 			t.Errorf("%s: source %q", s.ID, s.Source)
 		}
 	}
-	for _, s := range append(append([]Step(nil), stScmFallback...), st10Fallback...) {
+	var fallbacks []Step
+	for _, l := range [][]Step{stScmFallback, st10Fallback, btSm2Fallback, sa5Fallback, waveSm2Fallback} {
+		fallbacks = append(fallbacks, l...)
+	}
+	for _, s := range fallbacks {
 		if !s.Fallback || s.LiveVerified {
 			t.Errorf("%s: fallback steps are marked as such and untested", s.ID)
 		}
@@ -350,5 +355,154 @@ func TestPlanST10(t *testing.T) {
 	// first generation ladder.
 	if p := Plan("SoundTouch 10", "scm", "", "9.0.41", nil); p.Status != StatusUnsupported || p.Family != "" {
 		t.Errorf("ST10 scm: %s %s", p.Status, p.Family)
+	}
+}
+
+// The rest of the Bluetooth chassis, as derived on 2026-11-22
+// (ladder_data.go): per family the archive folder and line its steps come
+// from, and the 14.0.33 file Bose's own catalogue gives the model.
+func TestSm2LadderValues(t *testing.T) {
+	type want struct {
+		model, folder, line string // a model name, its archive folder, the file name's line
+		bose14033Size       int64  // 0: no checked 14.00.33 (Wave IV)
+		bose14033CRC        uint32
+		fallback            bool // a 16.00.09 exists in the folder
+	}
+	fams := map[string]want{
+		FamilyBTSm2:    {"SoundTouch 20", "/Bluetooth_ST20-30_or_Wireless_Link_Adapter/", ".sm2.zip", 79892339, 0xb5300c87, true},
+		FamilySA5Sm2:   {"SoundTouch SA-5", "/Bluetooth_SA5/", ".burns.sm2.zip", 81409611, 0x85f253e2, true},
+		FamilyST300Sm2: {"SoundTouch 300", "/Bluetooth_ST300/", ".ginger.sm2.zip", 82612595, 0x7647c0be, false},
+		FamilyWaveSm2:  {"Wave SoundTouch music system IV", "/Bluetooth_Wave_SoundTouch_IV/", ".nelson.sm2.zip", 0, 0, true},
+	}
+	for fam, w := range fams {
+		ladder := mainLadders[fam]
+		if len(ladder) == 0 {
+			t.Fatalf("%s: no ladder", fam)
+		}
+		for _, s := range AllSteps() {
+			if s.Family != fam {
+				continue
+			}
+			// Every image is one whose model is known, and it is this
+			// family's: the archive misfiles images across models.
+			img, known := knownImages[s.InnerCRC32]
+			if !known || !img.carriedBy(fam) {
+				t.Errorf("%s: inner CRC %08x is not a known image of this family (%+v)", s.ID, s.InnerCRC32, img)
+			}
+			if s.LiveVerified {
+				t.Errorf("%s: not tested on a speaker yet", s.ID)
+			}
+			if s.Source != SourceArchive {
+				continue
+			}
+			if !strings.Contains(s.URL, w.folder) {
+				t.Errorf("%s: not from %s: %s", s.ID, w.folder, s.URL)
+			}
+			// 14.00.33 zips are named by the archive's own scheme; the later
+			// ones carry the model's line in the name.
+			if s.Version != "14.00.33" && !strings.HasSuffix(s.FileName, w.line) {
+				t.Errorf("%s: %s is not the %s line", s.ID, s.FileName, w.line)
+			}
+		}
+		s, ok := StepByID(fam + "-14.00.33")
+		switch {
+		case w.bose14033Size == 0 && ok:
+			t.Errorf("%s: no checked 14.00.33 exists for it, the archive's is the SA-5's", fam)
+		case w.bose14033Size != 0 && (!ok || s.InnerSize != w.bose14033Size || s.InnerCRC32 != w.bose14033CRC):
+			t.Errorf("%s: 14.00.33 is not Bose's file for it: %+v", fam, s)
+		}
+		if _, ok := StepByID(fam + "-16.00.09"); ok != w.fallback {
+			t.Errorf("%s: a 16.00.09 fallback %v, want %v", fam, ok, w.fallback)
+		}
+		// The final step is Bose's current catalogue entry for the model.
+		fin := ladder[len(ladder)-1]
+		files := Match(Builtin, w.model, "sm2", "")
+		if len(files) != 1 || files[0].Name != fin.FileName || files[0].Length != fin.InnerSize || files[0].CRC != fin.InnerCRC32 {
+			t.Errorf("%s: the last step %+v is not Bose's file %+v", fam, fin, files)
+		}
+	}
+	// The Wireless Link adapter takes the SoundTouch 20/30 file, as Bose's
+	// catalogue gives it at 14.0.33 and 27.0.6.
+	files := Match(Builtin, "SoundTouch Wireless Link adapter", "sm2", "")
+	if fin := btSm2Ladder[len(btSm2Ladder)-1]; len(files) != 1 || files[0].CRC != fin.InnerCRC32 {
+		t.Errorf("Wireless Link: %+v", files)
+	}
+	// The SA-5's 14.00.33 must never reach a Wave IV.
+	for _, s := range AllSteps() {
+		if s.Family == FamilyWaveSm2 && s.InnerCRC32 == 0x85f253e2 {
+			t.Errorf("%s: the SA-5's file on the Wave IV ladder", s.ID)
+		}
+	}
+}
+
+func TestPlanSm2(t *testing.T) {
+	cases := []struct {
+		name, model, mt, version string
+		bt                       *bool
+		status, family, steps    string
+		fallback                 string // the fallback for 15.00.20, "" for none
+	}{
+		{"ST20 sm2 on 9.0.41", "SoundTouch 20", "sm2", "9.0.41.23338.1383271", nil, StatusLadder, FamilyBTSm2, "14.00.33 15.00.20 27.0.6", "16.00.09"},
+		{"ST30 with a Bluetooth button, no moduleType", "SoundTouch 30", "", "12.0.1", boolp(true), StatusLadder, FamilyBTSm2, "14.00.33 15.00.20 27.0.6", "16.00.09"},
+		{"ST20 sm2 on 14.0.33", "SoundTouch 20", "sm2", "14.0.33", nil, StatusLadder, FamilyBTSm2, "15.00.20 27.0.6", "16.00.09"},
+		{"Wireless Link without moduleType", "SoundTouch Wireless Link Adapter", "", "13.0.5", nil, StatusLadder, FamilyBTSm2, "14.00.33 15.00.20 27.0.6", "16.00.09"},
+		{"SA-5 without moduleType", "SoundTouch SA-5", "", "12.0.1", nil, StatusLadder, FamilySA5Sm2, "14.00.33 15.00.20 27.0.6", "16.00.09"},
+		{"SA-5 on 14.0.33", "SoundTouch SA-5", "sm2", "14.0.33", nil, StatusLadder, FamilySA5Sm2, "15.00.20 27.0.6", "16.00.09"},
+		{"SoundTouch 300 on 14.0.15 (#854 shape)", "SoundTouch 300", "sm2", "14.0.15", nil, StatusLadder, FamilyST300Sm2, "14.00.33 15.00.20 27.0.6", ""},
+		{"SoundTouch 300 on 14.0.33", "SoundTouch 300", "", "14.0.33", nil, StatusLadder, FamilyST300Sm2, "15.00.20 27.0.6", ""},
+		{"Wave IV on 14.0.33", "Wave SoundTouch music system IV", "sm2", "14.0.33", nil, StatusLadder, FamilyWaveSm2, "15.00.20 27.0.6", "16.00.09"},
+		{"Wave IV below 14.0.33: no source", "Wave SoundTouch", "sm2", "14.0.15", nil, StatusUnsupported, FamilyWaveSm2, "", ""},
+		{"SA-5 on 15.0.20: the final step", "SoundTouch SA-5", "sm2", "15.0.20", nil, StatusFinal, FamilySA5Sm2, "27.0.6", ""},
+		{"ST20 sm2 on 16.0.9: the final step", "SoundTouch 20", "sm2", "16.0.9", nil, StatusFinal, FamilyBTSm2, "27.0.6", ""},
+		{"Wave IV on 15.0.20: the final step", "Wave SoundTouch", "sm2", "15.0.20", nil, StatusFinal, FamilyWaveSm2, "27.0.6", ""},
+		{"SoundTouch 300 on 27.0.6 is done", "SoundTouch 300", "sm2", "27.0.6", nil, StatusUpToDate, "", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := Plan(c.model, c.mt, "", c.version, c.bt)
+			if p.Status != c.status || p.Family != c.family {
+				t.Fatalf("status %q family %q, want %q %q", p.Status, p.Family, c.status, c.family)
+			}
+			if got := versions(p.Steps); got != c.steps {
+				t.Fatalf("steps %q, want %q", got, c.steps)
+			}
+			if c.family != "" && p.ModuleType != "sm2" {
+				t.Errorf("moduleType %q", p.ModuleType)
+			}
+			if got := versions(p.Fallbacks[c.family+"-15.00.20"]); got != c.fallback {
+				t.Errorf("fallback for 15.00.20 %q, want %q", got, c.fallback)
+			}
+			for _, s := range p.Steps {
+				if s.Family != c.family || s.LiveVerified {
+					t.Errorf("%s: a %s step, not tested on a speaker yet", s.ID, c.family)
+				}
+				// The app prepares the stick from the step ID alone.
+				if got, ok := StepByID(s.ID); !ok || got != s {
+					t.Errorf("%s: no stick could be prepared for it", s.ID)
+				}
+			}
+			if c.status == StatusUnsupported && p.Reason != "no-source" {
+				t.Errorf("reason %q", p.Reason)
+			}
+		})
+	}
+	// Speakers Bose never built: no path, never another family's files.
+	for _, c := range [][3]string{
+		{"SoundTouch SA-5", "scm", "12.0.1"},
+		{"SoundTouch 300", "scm", "12.0.1"},
+		{"SoundTouch Portable", "sm2", "12.0.1"},
+	} {
+		if p := Plan(c[0], c[1], "", c[2], nil); p.Status != StatusUnsupported || p.Family != "" {
+			t.Errorf("%v: %s %s", c, p.Status, p.Family)
+		}
+	}
+	// A Wave without moduleType from 9 on cannot be told apart.
+	if p := Plan("Wave SoundTouch", "", "", "14.0.33", nil); p.Status != StatusUnsupported || p.Reason != "generation" {
+		t.Errorf("Wave without moduleType: %s %q", p.Status, p.Reason)
+	}
+	// From 15 the SoundTouch 300 has nothing to swap, the others 16.00.09
+	// only below 15.
+	if FallbackFor(FamilyST300Sm2+"-15.00.20", "14.0.33") != nil || FallbackFor(FamilyBTSm2+"-15.00.20", "15.0.20") != nil {
+		t.Error("no swap for the 300, none from 15 on")
 	}
 }

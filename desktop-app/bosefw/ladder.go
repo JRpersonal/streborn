@@ -13,12 +13,15 @@ package bosefw
 // That generation is reached with 16.00.09: 15.00.20 itself stalled on the
 // one speaker that tried it, by stick and on its update page.
 //
-// The checked ladder knows two families: the first generation SoundTouch 20,
-// 30 and Portable (FamilySTScm) and the SoundTouch 10 (FamilyST10Sm2). Every
-// other family the firmware guide covers gets its documented, unchecked route
-// as a list (StatusRoute, ladder_routes.go); a model with no known path gets
-// StatusUnsupported. None is ever offered Bose's last file in one jump from
-// below 15.
+// The checked ladder knows the first generation SoundTouch 20, 30 and Portable
+// (FamilySTScm) and the Bluetooth chassis of the newer hardware: the
+// SoundTouch 10 (FamilyST10Sm2), the SoundTouch 20 and 30 with Bluetooth and
+// the Wireless Link adapter (FamilyBTSm2), the SA-5 (FamilySA5Sm2), the
+// SoundTouch 300 (FamilyST300Sm2) and the Wave IV from 14.0.33
+// (FamilyWaveSm2). Every other family the firmware guide covers gets its
+// documented, unchecked route as a list (StatusRoute, ladder_routes.go); a
+// model with no known path gets StatusUnsupported. None is ever offered Bose's
+// last file in one jump from below 15.
 
 import (
 	"strconv"
@@ -191,7 +194,8 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		p.Status = StatusUpToDate
 		return p
 	}
-	st10 := isST10(p.Model, p.ModuleType)
+	key := modelKey(p.Model)
+	fam := sm2Family(key, p.ModuleType)
 	if cur[0] >= 15 {
 		// From 15 on, Bose's last file goes on directly, for every model: the
 		// normal guide with its one-click update handles it. A checked
@@ -199,10 +203,10 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		p.Status = StatusFinal
 		var final Step
 		switch {
-		case st10:
-			p.Family, p.ModuleType = FamilyST10Sm2, "sm2"
-			final = st10Ladder[len(st10Ladder)-1]
-		case stScmModels[strings.ToLower(p.Model)] && p.ModuleType != "sm2":
+		case fam != "":
+			p.Family, p.ModuleType = fam, "sm2"
+			final = mainLadders[fam][len(mainLadders[fam])-1]
+		case stScmModels[key] && p.ModuleType != "sm2":
 			p.Family = FamilySTScm
 			final = stScmLadder[len(stScmLadder)-1]
 		default:
@@ -214,30 +218,29 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 		}
 		return p
 	}
-	if st10 {
-		p.Family, p.ModuleType = FamilyST10Sm2, "sm2"
-		return walkLadder(p, st10Ladder, nil)
+	if fam != "" {
+		return walkSm2(p, fam)
 	}
-	if !stScmModels[strings.ToLower(p.Model)] {
+	if !stScmModels[key] {
 		return planRoute(p, cur)
 	}
 	switch p.ModuleType {
 	case "sm2":
-		// The newer hardware: the Bluetooth chassis route.
+		// A Portable that says sm2: Bose built none, so no path is known.
 		return planRoute(p, cur)
 	case "scm":
 	default:
 		// No moduleType. Below 9 it can only be scm: no sm2 image older than
 		// 9.00.41 exists. The Portable was only ever built on scm.
-		isPortable := strings.EqualFold(p.Model, "soundtouch portable")
+		isPortable := key == "soundtouch portable"
 		switch {
 		case cur[0] < 9 || isPortable:
 		case bluetooth == nil:
 			p.Status = StatusNeedsBluetooth
 			return p
 		case *bluetooth:
-			p.ModuleType = "sm2"
-			return planRoute(p, cur)
+			// The newer hardware: the Bluetooth chassis ladder.
+			return walkSm2(p, FamilyBTSm2)
 		}
 		p.ModuleType = "scm"
 	}
@@ -250,11 +253,52 @@ func Plan(model, moduleType, variant, version string, bluetooth *bool) LadderPla
 	})
 }
 
-// isST10 reports whether the speaker is a SoundTouch 10. Bose built it only on
-// the newer (sm2) hardware, so a missing moduleType still names it; a speaker
-// that says "scm" is not one the ladder knows.
-func isST10(model, moduleType string) bool {
-	return modelKey(model) == "soundtouch 10" && moduleType != "scm"
+// sm2Ladder names the checked ladders of the newer (sm2) hardware.
+var sm2Ladder = map[string]bool{
+	FamilyST10Sm2: true, FamilyBTSm2: true, FamilySA5Sm2: true, FamilyST300Sm2: true, FamilyWaveSm2: true,
+}
+
+// sm2Families maps a modelKey to its checked ladder on the newer hardware.
+var sm2Families = map[string]string{
+	"soundtouch 10":   FamilyST10Sm2,
+	"soundtouch 20":   FamilyBTSm2,
+	"soundtouch 30":   FamilyBTSm2,
+	"wireless link":   FamilyBTSm2,
+	"soundtouch sa-5": FamilySA5Sm2,
+	"soundtouch 300":  FamilyST300Sm2,
+	"wave soundtouch": FamilyWaveSm2,
+}
+
+// sm2Family returns the checked newer-hardware ladder for a speaker, or "".
+// A model Bose built only on that hardware (sm2Only) counts without a
+// moduleType, and one that says "scm" is no speaker Bose built. The
+// SoundTouch 20, 30 and the Wave exist on both generations, so the speaker
+// (or the Bluetooth answer, Plan) has to say sm2.
+func sm2Family(key, moduleType string) string {
+	fam := sm2Families[key]
+	switch {
+	case fam == "":
+		return ""
+	case sm2Only[key]:
+		if moduleType == "scm" {
+			return ""
+		}
+		return fam
+	case moduleType == "sm2":
+		return fam
+	}
+	return ""
+}
+
+// walkSm2 fills p with a newer-hardware ladder. The Wave IV has no checked
+// source for 14.00.33 (ladder_data.go), so below 14.0.33 it has no path.
+func walkSm2(p LadderPlan, fam string) LadderPlan {
+	p.Family, p.ModuleType = fam, "sm2"
+	if fam == FamilyWaveSm2 && CompareVersions(p.Current, waveSm2From) < 0 {
+		p.Status, p.Reason = StatusUnsupported, "no-source"
+		return p
+	}
+	return walkLadder(p, mainLadders[fam], nil)
 }
 
 // walkLadder fills p with the steps of ladder above p.Current, oldest first,
@@ -323,14 +367,17 @@ func FallbackFor(stepID, current string) []Step {
 		return out
 	}
 	pick := func(versions ...string) []Step { return pickIn(FamilySTScm, versions...) }
-	switch stepID {
-	case FamilyST10Sm2 + "-15.00.20":
+	if fam, ok := strings.CutSuffix(stepID, "-15.00.20"); ok && sm2Ladder[fam] {
 		// Not a smaller step in between but the swap that worked on the scm
 		// ladder: 16.00.09 in place of a 15.00.20 that stalled. It ends the
-		// list, and the plan goes on with 27.0.6 after it.
+		// list, and the plan goes on with 27.0.6 after it. A family whose
+		// archive folder has no 16.00.09 (the SoundTouch 300) gets none.
 		if cur[0] < 15 {
-			return pickIn(FamilyST10Sm2, "16.00.09")
+			return pickIn(fam, "16.00.09")
 		}
+		return nil
+	}
+	switch stepID {
 	case FamilySTScm + "-06.02.01":
 		if cur[0] < 5 {
 			return pick("05.00.23", "06.02.01")
@@ -351,8 +398,12 @@ func FallbackFor(stepID, current string) []Step {
 
 // mainLadders are the checked ladders, by family.
 var mainLadders = map[string][]Step{
-	FamilySTScm:   stScmLadder,
-	FamilyST10Sm2: st10Ladder,
+	FamilySTScm:    stScmLadder,
+	FamilyST10Sm2:  st10Ladder,
+	FamilyBTSm2:    btSm2Ladder,
+	FamilySA5Sm2:   sa5Ladder,
+	FamilyST300Sm2: st300Ladder,
+	FamilyWaveSm2:  waveSm2Ladder,
 }
 
 // StepByID finds a step of any ladder, main or fallback.
@@ -369,7 +420,10 @@ func StepByID(id string) (Step, bool) {
 // maintainer.
 func AllSteps() []Step {
 	var out []Step
-	for _, l := range [][]Step{stScmLadder, st10Ladder, stScmFallback, st10Fallback} {
+	for _, l := range [][]Step{
+		stScmLadder, st10Ladder, btSm2Ladder, sa5Ladder, st300Ladder, waveSm2Ladder,
+		stScmFallback, st10Fallback, btSm2Fallback, sa5Fallback, waveSm2Fallback,
+	} {
 		out = append(out, l...)
 	}
 	return out
