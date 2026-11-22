@@ -115,6 +115,24 @@ type firstPressRescue struct {
 func (f *firstPressRescue) noteNativeActivation(slot int, at time.Time) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.noteNativeActivationLocked(slot, at)
+}
+
+// noteNativeActivationIn is noteNativeActivation for a press that read the
+// cancel count epoch before it made sure no newer press took over: a cancel
+// since then (a double press playing the second row) drops the activation, so
+// no rescue can press the first row again. Reports whether it was noted.
+func (f *firstPressRescue) noteNativeActivationIn(epoch uint64, slot int, at time.Time) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.epoch != epoch {
+		return false
+	}
+	f.noteNativeActivationLocked(slot, at)
+	return true
+}
+
+func (f *firstPressRescue) noteNativeActivationLocked(slot int, at time.Time) {
 	// The rescue's own second press activates the same slot again. That is
 	// still the one press the user made, not a new one: keep its rescue spent
 	// (so a second failure cannot buy a third press) and keep the window

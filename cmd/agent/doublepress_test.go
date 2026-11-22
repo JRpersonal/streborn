@@ -315,6 +315,35 @@ func TestDoublePressCancelsTheFirstPressRescue(t *testing.T) {
 	}
 }
 
+// Live Portable 2026-11-22: the first press's recall noted its native
+// activation a moment AFTER the double press had cancelled the rescue, and
+// the rescue was armed for row 1 again. A superseded first press notes
+// nothing: neither when the newer press is already visible, nor when its
+// cancel lands between the epoch read and the note.
+func TestSupersededFirstPressArmsNoRescue(t *testing.T) {
+	const nativeLoc = "/station?data=eyJ9"
+	rig := newDoublePressRig(t, twoRowStore(t, true))
+	seq := rig.h.pressSeq.Add(1)
+	rig.h.pressSeq.Add(1) // the second half of the double press
+	rig.h.recallPreset(context.Background(), seq, time.Now(), 1, nativeLoc, "One")
+	if slot := rig.h.firstPress.claim(time.Now()); slot != 0 {
+		t.Fatalf("a superseded first press armed a rescue for slot %d", slot)
+	}
+
+	var f firstPressRescue
+	epoch := f.currentEpoch()
+	f.cancel()
+	if f.noteNativeActivationIn(epoch, 1, time.Now()) {
+		t.Fatal("an activation noted after a cancel must be dropped")
+	}
+	if slot := f.claim(time.Now()); slot != 0 {
+		t.Fatalf("the dropped activation was claimed for slot %d", slot)
+	}
+	if !f.noteNativeActivationIn(f.currentEpoch(), 2, time.Now()) || f.claim(time.Now()) != 2 {
+		t.Fatal("an activation without a cancel must still arm its one rescue")
+	}
+}
+
 func TestZoneFramesFeedTheGroupState(t *testing.T) {
 	h := &presetWsHandler{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if g, known := h.group.grouped(); !g || known {
