@@ -106,9 +106,10 @@ entry and then save the Spotify presets again (a preset switches back to
 the account it was saved under before each recall); nothing is promised
 about the box's native entry there. Everything else, an unknown plan
 included, gets the cohort words: Spotify refuses some accounts on players
-like (STR), usually newer ones and even on Premium, the box's own entry
-still plays the account, and playing once from another, older account on
-the (STR) entry tells the account from the speaker.
+like (STR), even on Premium, the box's own entry still plays the account,
+and playing once from another account on the (STR) entry tells the
+account from the speaker. The words say nothing about account age, which
+is not a reliable discriminator (see above).
 
 The notice is the only place the apps say this. An app-side preset recall
 (`/api/play/<slot>`) answers 200 as soon as the box is pointed at the slot

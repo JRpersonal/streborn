@@ -1684,6 +1684,8 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .spotify-refused-more { margin-top: 2px; }
 .spotify-refused-more summary { cursor: pointer; color: var(--c-muted); width: fit-content; }
 .spotify-refused-more p { margin: 4px 0 0; }
+/* Spotify support, only when Spotify itself refuses a Premium account. */
+.spotify-refused-more .spotify-refused-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 /* Battery indicator in the speaker tile (SoundTouch Portable only).
    Drawn as a real battery: a body with a terminal nub, so it reads
    unmistakably as a charge gauge. Right-aligned just left of the gear;

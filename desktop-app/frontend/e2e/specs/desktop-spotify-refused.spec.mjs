@@ -101,6 +101,9 @@ for (const ui2 of [false, true]) {
       await notice(page).locator('summary').click();
       await expect(notice(page).locator('.spotify-refused-why')).toHaveText(en('spotify.refusedFreeWhy'));
       await expect(notice(page).locator('.spotify-refused-try')).toHaveText(en('spotify.refusedFreeTry'));
+      // Not certainly Spotify's block: no support part.
+      await expect(notice(page).locator('[data-str-refusal]')).toHaveCount(0);
+      await expect(notice(page).locator('.spotify-refused-support')).toHaveCount(0);
     });
 
     test('an older agent: its short-lived flag feeds the same notice, without a name', async ({ app, mock }) => {
@@ -113,6 +116,43 @@ for (const ui2 of [false, true]) {
       await playStrSpotify(page, LR.host);
       await runFor(page, 8_000);
       await expect(lead(page)).toHaveText(en('spotify.accountRefused'));
+      // The ten-minute flag alone is not certain enough for the support part,
+      // even on a Premium plan.
+      await notice(page).locator('summary').click();
+      await expect(notice(page).locator('[data-str-refusal]')).toHaveCount(0);
+    });
+
+    test('a refused Premium account offers Spotify support and a message for it', async ({ app, mock }) => {
+      const { page } = app;
+      await mock.set('SpotifyNowPlaying', { value: REFUSED });
+      await settle(page, 9_000);
+      await playStrSpotify(page, LR.host);
+      await runFor(page, 8_000);
+      await notice(page).locator('summary').click();
+      await expect(notice(page).locator('.spotify-refused-support')).toHaveText(en('spotify.refusedSupport'));
+      const openBtn = notice(page).locator('[data-str-refusal="open"]');
+      const copyBtn = notice(page).locator('[data-str-refusal="copy"]');
+      await expect(openBtn).toHaveText(en('spotify.refusedSupportOpen'));
+      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopy'));
+
+      await openBtn.click();
+      await expect.poll(async () => (await mock.calls('runtime.BrowserOpenURL')).map((c) => c.args[0]))
+        .toEqual(['https://support.spotify.com/article/contact-us/']);
+
+      await copyBtn.click();
+      await expect.poll(async () => (await mock.calls('runtime.ClipboardSetText')).map((c) => c.args[0]))
+        .toEqual([en('spotify.refusedSupportMessage')]);
+      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopied'));
+      await runFor(page, 2_500);
+      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopy'));
+      // The next polls leave the opened help, and its buttons, in place.
+      await runFor(page, 6_000);
+      await expect(copyBtn).toBeVisible();
+      if (process.env.SHOOT_DIR) {
+        const name = ui2 ? 'spotify-refused-support-ui2.png' : 'spotify-refused-support-classic.png';
+        const target = ui2 ? page.locator('#ui2Player') : page.locator('#boxControls');
+        await target.screenshot({ path: `${process.env.SHOOT_DIR}/${name}`, animations: 'disabled' });
+      }
     });
   });
 }
@@ -120,13 +160,18 @@ for (const ui2 of [false, true]) {
 test.describe('Spotify refused, UI 2.0 accounts card', () => {
   test.use({ ui2: true, fakeClock: true, scenario: { bindings: { SpotifyNowPlaying: { value: REFUSED } } } });
 
-  test('the speaker\'s login row says it too', async ({ app }) => {
+  test('the speaker\'s login row says it too', async ({ app, mock }) => {
     const { page } = app;
     await settle(page, 9_000);
     await page.locator('#ui2Tabs .ui2-nav-item[data-view="spotify"]').click();
     await runFor(page, 2_000);
     const row = page.locator(`#sp2Accounts .sp2-acct[data-host="${LR.host}"]`);
     await expect(row.locator('.sp2-acct-refused .spotify-refused-lead')).toHaveText(en('spotify.accountRefused'));
+    // A refused Premium account: the support part is there too, and works.
+    await row.locator('.sp2-acct-refused summary').click();
+    await row.locator('[data-str-refusal="copy"]').click();
+    await expect.poll(async () => (await mock.calls('runtime.ClipboardSetText')).map((c) => c.args[0]))
+      .toEqual([en('spotify.refusedSupportMessage')]);
     if (process.env.SHOOT_DIR) {
       await page.locator('#sp2Accounts').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-ui2-accounts.png`, animations: 'disabled' });
     }

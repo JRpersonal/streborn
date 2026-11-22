@@ -8,6 +8,7 @@ import { nowKeyTag } from '../../presetrows.js';
 import { localIsAuxSocket } from '../../sourceinputs.js';
 import { spotifySongText } from '../../spotifynowplaying.js';
 import { refusalFor, refusalHTML } from '../../spotifyrefused.js';
+import { installRefusalSupport } from '../../spotifyrefusedsupport.js';
 import { state } from '../../state.js';
 import { isPlaying } from '../../boxes.js';
 import { nowLine, playingLibraryURLs, queueNowItem } from '../../librarynow.js';
@@ -318,6 +319,8 @@ export function renderNowPlayingBar() {
       refusedRow.dataset.sig = refusedHTML;
       refusedRow.innerHTML = refusedHTML;
     }
+    // The Spotify support buttons in it are wired once, by delegation.
+    if (refusedHTML) installRefusalSupport();
   }
   // Match the source case-insensitively: the firmware is not consistent about
   // casing across models, and AirPlay in particular can read as AIRPLAY,

@@ -20,14 +20,27 @@
 //            account is the way on. Nothing is claimed about the speaker's
 //            own Spotify entry here, it is not known to play free accounts.
 //   premium  everything else, including "plan unknown". Spotify refuses some
-//            accounts on unlicensed players, usually newer ones, even on
-//            Premium (docs/streaming/spotify.md, "Known limitation"). The
-//            speaker's own entry is a licensed client and keeps playing it.
-//            The decisive test is another, older account on the (STR) entry:
-//            if that one plays, the speaker is fine and it is the account.
-//            The cutoff is not known, so the words say "usually".
+//            accounts on unlicensed players, even on Premium
+//            (docs/streaming/spotify.md, "Known limitation"). The speaker's
+//            own entry is a licensed client and keeps playing it. The
+//            decisive test is another account on the (STR) entry: if that
+//            one plays, the speaker is fine and it is the account. Account
+//            age is not a reliable sign (old accounts were refused too), so
+//            the words say nothing about which accounts it hits.
+//
+// Only Spotify can lift the refusal of a Premium account. When STR is certain
+// that is what happened (the speaker's own per-account record says refused,
+// and the plan is Premium), the notice also offers Spotify's contact page and
+// a factual, ready-to-send message for Spotify support (refusalSupportFor).
+// Never on the older agent's ten-minute flag alone, and never for a free or
+// unknown plan: there the cause is not certainly Spotify's block.
 
 import { escapeHtml } from './utils.js';
+
+// SPOTIFY_SUPPORT_URL is Spotify's contact page. Spotify publishes no support
+// mail address; this page redirects to the reader's locale and leads to the
+// contact form (which itself needs a login, so it is not linked directly).
+export const SPOTIFY_SUPPORT_URL = 'https://support.spotify.com/article/contact-us/';
 
 // isFreePlan reads the plan from one /spotify/info reply: the explicit
 // product when the speaker knows it, otherwise its premiumRequired flag.
@@ -44,7 +57,18 @@ export function refusalFromReply(np) {
   return {
     name: np.accountRefused ? String(np.accountRefusedName || '').trim() : '',
     free: isFreePlan(np),
+    premium: String(np.product || '').toLowerCase() === 'premium',
+    sticky: !!np.accountRefused,
   };
+}
+
+// refusalSupportFor reports whether the notice may point at Spotify support:
+// only when STR is certain it is Spotify's block of a Premium account. That
+// takes the speaker's persistent per-account record (sticky, accountRefused),
+// not the older agent's ten-minute audioKeyRefused, and a plan the speaker
+// reported as exactly Premium. Free, open, unknown or premiumRequired: no.
+export function refusalSupportFor(ref) {
+  return !!(ref && ref.sticky && ref.premium && !ref.free);
 }
 
 // refusalText is the notice itself: with the account's name when the speaker
@@ -76,7 +100,24 @@ export function refusalHTML(ref, t, opts = {}) {
   return `<span class="spotify-refused-lead">${escapeHtml(lead)}</span>`
     + `<details class="spotify-refused-more"><summary>${escapeHtml(t('spotify.refusedMore'))}</summary>`
     + `<p class="spotify-refused-why">${escapeHtml(help.why)}</p>`
-    + `<p class="spotify-refused-try">${escapeHtml(help.tryText)}</p></details>`;
+    + `<p class="spotify-refused-try">${escapeHtml(help.tryText)}</p>`
+    + refusalSupportHTML(ref, t)
+    + '</details>';
+}
+
+// refusalSupportHTML is the line and the two buttons that point at Spotify
+// support, '' unless refusalSupportFor holds. Deterministic on purpose: the
+// now-playing row is rebuilt only when this HTML changes, and the click
+// feedback ("Copied") is set on the live button, never in here, so a poll
+// does not snap an opened toggle shut. Clicks are wired once, by delegation
+// on the data-str-refusal attribute (spotifyrefusedsupport.js).
+export function refusalSupportHTML(ref, t) {
+  if (!refusalSupportFor(ref)) return '';
+  return `<p class="spotify-refused-support">${escapeHtml(t('spotify.refusedSupport'))}</p>`
+    + '<p class="spotify-refused-actions">'
+    + `<button type="button" class="btn btn-mini" data-str-refusal="open">${escapeHtml(t('spotify.refusedSupportOpen'))}</button>`
+    + `<button type="button" class="btn btn-mini" data-str-refusal="copy">${escapeHtml(t('spotify.refusedSupportCopy'))}</button>`
+    + '</p>';
 }
 
 // strSpotifyLocation reports whether the speaker plays from STR's own Spotify
