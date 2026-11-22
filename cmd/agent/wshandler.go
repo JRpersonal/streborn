@@ -621,7 +621,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		// Bumped here on the read loop, so the first press's recall stands
 		// down from this instant on. The webhook stays with the first press.
 		seq := h.pressSeq.Add(1)
-		go h.playRow2(ctx, seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
+		go h.playRow2(row2PressContext(ctx, first), seq, slot, row2, pressAt.Sub(first), true, "second press within the window")
 		return
 	case planConfirm:
 		// Inside a group one press can arrive as two frames. The first press's

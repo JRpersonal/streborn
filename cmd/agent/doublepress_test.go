@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 )
@@ -166,6 +167,41 @@ func TestDoublePressPlaysRowTwoAndSupersedesRowOne(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if row1, row2 := rig.counts(); row1 > 1 || row2 != 1 {
 		t.Fatalf("row-1 recalls %d (want at most 1), row-2 recalls %d (want 1)", row1, row2)
+	}
+}
+
+// The row-2 recall of a double press carries when its first half arrived, so
+// the Spotify engine can tell the pause row 1's switch-away put on it from a
+// pause of the listener's (Jens' ST30, 2026-11-22: double press for the
+// playlist that played, the song just went on). Standalone and grouped alike.
+func TestDoublePressRowTwoRecallCarriesTheFirstPress(t *testing.T) {
+	for _, grouped := range []bool{false, true} {
+		rig := newDoublePressRig(t, twoRowStore(t, true))
+		if grouped {
+			rig.h.group.zone.Store(groupMember)
+			rig.h.tracePressesFn = func(int, time.Time) int { return 2 }
+		}
+		since := make(chan time.Time, 1)
+		rig.h.playSlotFn = func(ctx context.Context, slot int) (string, error) {
+			t0, ok := recallintent.PressSince(ctx)
+			if !ok {
+				t.Errorf("grouped=%v: the row-2 recall of slot %d carries no first press", grouped, slot)
+			}
+			since <- t0
+			return "", nil
+		}
+		before := time.Now()
+		ctx := context.Background()
+		rig.h.OnPresetSelected(ctx, 1, key1Location, "One")
+		rig.h.OnPresetSelected(ctx, 1, key1Location, "One")
+		select {
+		case t0 := <-since:
+			if t0.Before(before) || t0.After(time.Now()) {
+				t.Errorf("grouped=%v: first press at %v, want the first frame's arrival", grouped, t0)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("grouped=%v: row 2 never played", grouped)
+		}
 	}
 }
 
