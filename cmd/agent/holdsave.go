@@ -195,8 +195,11 @@ type holdSaver struct {
 
 	mu sync.Mutex
 	// tap is the newest selection frame a person caused (tapholdsave.go).
-	tap    tapMark
-	press  holdPress
+	tap   tapMark
+	press holdPress
+	// prev is the press that was the newest one before press: with it, a
+	// dead key tells a double press from a single one (deadkey.go).
+	prev   holdPress
 	hold   time.Time // a hold verdict no press has been paired with yet
 	vetoAt time.Time // newest tap verdict or preset activation
 	// selectAt is the newest preset activation the speaker announced.
@@ -262,6 +265,8 @@ func (h *holdSaver) NotePress(ev boxlog.KeyEvent) {
 	h.mu.Lock()
 	h.pressSeq++
 	p.seq = h.pressSeq
+	// Every branch below makes p the newest press.
+	h.prev = h.press
 	if p.producer.Physical() && h.otherDownLocked(p.at) {
 		p.combo = true
 		h.press = p
