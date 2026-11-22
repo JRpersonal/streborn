@@ -47,6 +47,25 @@ func IsWindowsMediaShare(srv Server) bool {
 // asking its Search action first (see IsWindowsMediaShare).
 func SkipsSearchAction(srv Server) bool { return IsWindowsMediaShare(srv) }
 
+// IsSTRUSBStick reports whether srv is a music stick an STR agent serves from
+// the speaker it is plugged into (internal/usbmedia). Its Search action reads
+// the stick's own folders and file names, which is everything a browse walk
+// could match and more (the folder names stand in for the artist), so an
+// answer with no hits is the whole answer: walking the stick over SOAP after
+// it would only cost the speaker a Browse per folder to find nothing again.
+// An agent from before its Search (v1.9.0) refuses the action, and is walked.
+func IsSTRUSBStick(srv Server) bool {
+	if strings.HasPrefix(strings.ToLower(srv.UDN), "uuid:str-usb-") {
+		return true
+	}
+	return srv.Manufacturer == "ST Reborn" && srv.ModelName == "USB stick"
+}
+
+// TrustsEmptySearch reports whether a Search answer from srv with no hits
+// means the library holds none (see IsSTRUSBStick). For every other server a
+// 200 with zero hits is not proof of absence (the FRITZ!Box quirk of #666).
+func TrustsEmptySearch(srv Server) bool { return IsSTRUSBStick(srv) }
+
 // TrackKey is what makes two hits from ONE server the same track. The stream
 // URL alone is not enough: Windows Media Player builds it from the object id of
 // the view the track was reached through, so the same file has a different URL

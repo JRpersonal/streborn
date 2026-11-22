@@ -137,6 +137,26 @@ func TestIsWindowsMediaShare(t *testing.T) {
 	}
 }
 
+func TestIsSTRUSBStick(t *testing.T) {
+	cases := []struct {
+		srv  dlna.Server
+		want bool
+	}{
+		{dlna.Server{UDN: "uuid:str-usb-aabbccddeeff"}, true},
+		{dlna.Server{UDN: "uuid:x", Manufacturer: "ST Reborn", ModelName: "USB stick"}, true},
+		{dlna.Server{UDN: "uuid:str-usb", Manufacturer: "Synology Inc", ModelName: "DS"}, false},
+		{dlna.Server{UDN: "uuid:4d696e69-444c-164e-9d41-001132abcdef", Manufacturer: "Justin Maggard"}, false},
+	}
+	for _, c := range cases {
+		if got := dlna.IsSTRUSBStick(c.srv); got != c.want {
+			t.Errorf("IsSTRUSBStick(%+v) = %v, want %v", c.srv, got, c.want)
+		}
+		if dlna.TrustsEmptySearch(c.srv) != c.want {
+			t.Errorf("TrustsEmptySearch(%+v) != %v", c.srv, c.want)
+		}
+	}
+}
+
 func searchHits(n int) []dlnatest.Track {
 	out := make([]dlnatest.Track, 0, n)
 	for i := 0; i < n; i++ {

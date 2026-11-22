@@ -6,7 +6,8 @@
 // the agent does the searching. Scope is deliberately the REGISTERED servers
 // (the mediaservers store), not everything SSDP can see: those are the servers
 // the user chose as music sources, and searching a neighbour's random DLNA
-// device from a speaker would surprise more than it helps.
+// device from a speaker would surprise more than it helps. The music stick in
+// this speaker is searched too, on the agent itself (usbsearch.go).
 //
 // #666 is the reason this file looks the way it does. A reporter with a 2600
 // track NAS could browse and play every song from the desktop app but the phone
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 )
 
 // librarySearchResult is one playable hit, shaped for the remote's list.
@@ -89,21 +91,30 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	// field narrows the search to album, artist or title; absent is all three,
 	// as before (#1325).
 	field := librarySearchField(r.URL.Query().Get("field"))
-	if s.mediaServers == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []librarySearchResult{}, "registered": 0})
-		return
+	var registered []mediaservers.Server
+	if s.mediaServers != nil {
+		registered = s.mediaServers.List()
 	}
-	registered := s.mediaServers.List()
+	ctx, cancel := context.WithTimeout(r.Context(), librarySearchBudget)
+	defer cancel()
+
+	// The music stick in this speaker is searched first, on the agent itself:
+	// it is in no store and answers no discovery, and before this the search
+	// never looked at it (discussion #1136).
+	results, stick, partial := s.searchUSBStick(ctx, r.Host, q, field)
 	if len(registered) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []librarySearchResult{}, "registered": 0})
+		// The stick only: no discovery round to pay for.
+		if results == nil {
+			results = []librarySearchResult{}
+		}
+		sort.SliceStable(results, func(i, j int) bool { return results[i].Title < results[j].Title })
+		writeJSON(w, http.StatusOK, map[string]any{"results": results, "registered": boolCount(stick), "partial": partial})
 		return
 	}
 
 	// Resolve the registered UDNs to live servers. Discovery is the only way
 	// to a control URL (the store keeps intent, not addresses, because DHCP
 	// moves servers around).
-	ctx, cancel := context.WithTimeout(r.Context(), librarySearchBudget)
-	defer cancel()
 	found, derr := dlna.DiscoverServers(ctx, librarySearchDiscovery)
 	if derr != nil {
 		s.logger.Info("library search: discovery failed", "err", derr)
@@ -114,10 +125,13 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.rememberMediaServerLocations(found)
 
-	var results []librarySearchResult
 	var missing []string
-	partial := false
 	for _, reg := range registered {
+		if len(results) >= librarySearchMax {
+			// The stick alone filled the list.
+			partial = true
+			break
+		}
 		key := udnKey(reg.ID)
 		srv, ok := byUDN[key]
 		if !ok {
@@ -172,7 +186,7 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(results, func(i, j int) bool { return results[i].Title < results[j].Title })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results":    results,
-		"registered": len(registered),
+		"registered": len(registered) + boolCount(stick),
 		"offline":    missing,
 		// partial says the search did NOT cover everything it was asked to.
 		// The page needs it to keep an empty answer honest: "we searched a

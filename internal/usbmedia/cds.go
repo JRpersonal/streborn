@@ -1,6 +1,7 @@
 package usbmedia
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -13,10 +14,11 @@ import (
 )
 
 // The ContentDirectory the stick is served as: a device description, the
-// service description, and the SOAP control endpoint for Browse. Small on
-// purpose. Search, sorting and eventing are not offered: a client that asks for
-// Search gets UPnP error 401 and falls back to its bounded browse walk, which
-// every STR client already does for servers without Search.
+// service description, and the SOAP control endpoint for Browse and Search.
+// Small on purpose. Sorting and eventing are not offered. Search reads the
+// stick's directories on the agent itself (search.go), so a client is not left
+// to walk the tree over SOAP, one Browse per folder, matching only what the
+// DIDL carries (discussion #1136).
 
 // Paths under the agent's :8888.
 const (
@@ -53,13 +55,25 @@ func DeviceDescription(info Info) []byte {
 	return []byte(b.String())
 }
 
-// SCPD is the ContentDirectory service description: the four actions the
+// SCPD is the ContentDirectory service description: the five actions the
 // control endpoint answers.
 const SCPD = `<?xml version="1.0" encoding="utf-8"?>
 <scpd xmlns="urn:schemas-upnp-org:service-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><actionList>` +
 	`<action><name>Browse</name><argumentList>` +
 	`<argument><name>ObjectID</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_ObjectID</relatedStateVariable></argument>` +
 	`<argument><name>BrowseFlag</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_BrowseFlag</relatedStateVariable></argument>` +
+	`<argument><name>Filter</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Filter</relatedStateVariable></argument>` +
+	`<argument><name>StartingIndex</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Index</relatedStateVariable></argument>` +
+	`<argument><name>RequestedCount</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Count</relatedStateVariable></argument>` +
+	`<argument><name>SortCriteria</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_SortCriteria</relatedStateVariable></argument>` +
+	`<argument><name>Result</name><direction>out</direction><relatedStateVariable>A_ARG_TYPE_Result</relatedStateVariable></argument>` +
+	`<argument><name>NumberReturned</name><direction>out</direction><relatedStateVariable>A_ARG_TYPE_Count</relatedStateVariable></argument>` +
+	`<argument><name>TotalMatches</name><direction>out</direction><relatedStateVariable>A_ARG_TYPE_Count</relatedStateVariable></argument>` +
+	`<argument><name>UpdateID</name><direction>out</direction><relatedStateVariable>A_ARG_TYPE_UpdateID</relatedStateVariable></argument>` +
+	`</argumentList></action>` +
+	`<action><name>Search</name><argumentList>` +
+	`<argument><name>ContainerID</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_ObjectID</relatedStateVariable></argument>` +
+	`<argument><name>SearchCriteria</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_SearchCriteria</relatedStateVariable></argument>` +
 	`<argument><name>Filter</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Filter</relatedStateVariable></argument>` +
 	`<argument><name>StartingIndex</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Index</relatedStateVariable></argument>` +
 	`<argument><name>RequestedCount</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_Count</relatedStateVariable></argument>` +
@@ -78,6 +92,7 @@ const SCPD = `<?xml version="1.0" encoding="utf-8"?>
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_Filter</name><dataType>string</dataType></stateVariable>` +
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_Index</name><dataType>ui4</dataType></stateVariable>` +
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_Count</name><dataType>ui4</dataType></stateVariable>` +
+	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_SearchCriteria</name><dataType>string</dataType></stateVariable>` +
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_SortCriteria</name><dataType>string</dataType></stateVariable>` +
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_Result</name><dataType>string</dataType></stateVariable>` +
 	`<stateVariable sendEvents="no"><name>A_ARG_TYPE_UpdateID</name><dataType>ui4</dataType></stateVariable>` +
@@ -88,11 +103,16 @@ const SCPD = `<?xml version="1.0" encoding="utf-8"?>
 
 // UPnP error codes the control endpoint answers with.
 const (
-	ErrCodeInvalidAction = 401
-	ErrCodeInvalidArgs   = 402
-	ErrCodeActionFailed  = 501
-	ErrCodeNoSuchObject  = 701
+	ErrCodeInvalidAction       = 401
+	ErrCodeInvalidArgs         = 402
+	ErrCodeActionFailed        = 501
+	ErrCodeNoSuchObject        = 701
+	ErrCodeUnsupportedCriteria = 708
 )
+
+// SearchCaps is what GetSearchCapabilities answers: the properties a Search
+// can test (ParseCriteria).
+const SearchCaps = "dc:title,upnp:artist,upnp:album,dc:creator,upnp:genre"
 
 // maxSOAPBody bounds one control request. A Browse is a few hundred bytes.
 const maxSOAPBody = 16 << 10
@@ -118,14 +138,15 @@ func (l *Library) Control(w http.ResponseWriter, r *http.Request, base string, i
 	switch soapAction(r.Header.Get("SOAPACTION"), body) {
 	case "Browse":
 		l.browse(w, body, base, info)
+	case "Search":
+		l.search(r.Context(), w, body, base, info)
 	case "GetSystemUpdateID":
 		writeResponse(w, "GetSystemUpdateID", "<Id>"+strconv.FormatUint(uint64(info.UpdateID), 10)+"</Id>")
 	case "GetSearchCapabilities":
-		writeResponse(w, "GetSearchCapabilities", "<SearchCaps></SearchCaps>")
+		writeResponse(w, "GetSearchCapabilities", "<SearchCaps>"+SearchCaps+"</SearchCaps>")
 	case "GetSortCapabilities":
 		writeResponse(w, "GetSortCapabilities", "<SortCaps></SortCaps>")
 	default:
-		// Search included: the clients fall back to their browse walk.
 		WriteFault(w, ErrCodeInvalidAction, "Invalid Action")
 	}
 }
@@ -213,6 +234,57 @@ func (l *Library) browse(w http.ResponseWriter, body []byte, base string, info I
 			"<UpdateID>"+strconv.FormatUint(uint64(info.UpdateID), 10)+"</UpdateID>")
 }
 
+type searchArgs struct {
+	ContainerID    string `xml:"Body>Search>ContainerID"`
+	SearchCriteria string `xml:"Body>Search>SearchCriteria"`
+	StartingIndex  int    `xml:"Body>Search>StartingIndex"`
+	RequestedCount int    `xml:"Body>Search>RequestedCount"`
+}
+
+// search answers the Search action from the stick's directories (Search). A
+// client pages by StartingIndex; each page searches again from the start and
+// collects one hit more than it hands over, so TotalMatches tells the client
+// whether to ask for the next page without a count of the whole tree.
+func (l *Library) search(ctx context.Context, w http.ResponseWriter, body []byte, base string, info Info) {
+	var a searchArgs
+	if err := xml.Unmarshal(body, &a); err != nil || a.StartingIndex < 0 {
+		WriteFault(w, ErrCodeInvalidArgs, "Invalid Args")
+		return
+	}
+	terms, err := ParseCriteria(a.SearchCriteria)
+	if err != nil {
+		// A test the stick cannot answer: the client walks instead.
+		WriteFault(w, ErrCodeUnsupportedCriteria, "Unsupported or invalid search criteria")
+		return
+	}
+	count := a.RequestedCount
+	if count <= 0 || count > maxBrowseCount {
+		count = maxBrowseCount
+	}
+	start := min(a.StartingIndex, SearchMaxHits)
+	res, err := l.Search(ctx, strings.TrimSpace(a.ContainerID), terms, start+count+1)
+	if err != nil {
+		faultFor(w, err)
+		return
+	}
+	total := len(res.Hits)
+	hits := res.Hits[min(start, total):]
+	if len(hits) > count {
+		hits = hits[:count]
+	}
+	var didl strings.Builder
+	didl.WriteString(didlHead)
+	for _, e := range hits {
+		writeEntry(&didl, e, base, false)
+	}
+	didl.WriteString(`</DIDL-Lite>`)
+	writeResponse(w, "Search",
+		"<Result>"+esc(didl.String())+"</Result>"+
+			"<NumberReturned>"+strconv.Itoa(len(hits))+"</NumberReturned>"+
+			"<TotalMatches>"+strconv.Itoa(total)+"</TotalMatches>"+
+			"<UpdateID>"+strconv.FormatUint(uint64(info.UpdateID), 10)+"</UpdateID>")
+}
+
 // faultFor maps a Library error to the UPnP fault a client expects: an id
 // that does not name anything on the stick is 701, which the STR clients read
 // as "this object is gone" rather than as a broken server.
@@ -236,7 +308,7 @@ func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 		parent = "-1"
 	}
 	if e.Folder {
-		fmt.Fprintf(b, `<container id="%s" parentID="%s" restricted="1" searchable="0">`, esc(e.ID), esc(parent))
+		fmt.Fprintf(b, `<container id="%s" parentID="%s" restricted="1" searchable="1">`, esc(e.ID), esc(parent))
 		b.WriteString(`<dc:title>` + esc(e.Title) + `</dc:title><upnp:class>object.container.storageFolder</upnp:class>`)
 		if self && e.Cover != "" {
 			b.WriteString(`<upnp:albumArtURI>` + esc(ArtURL(base, e.Cover)) + `</upnp:albumArtURI>`)
@@ -246,8 +318,8 @@ func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 	}
 	fmt.Fprintf(b, `<item id="%s" parentID="%s" restricted="1">`, esc(e.ID), esc(parent))
 	b.WriteString(`<dc:title>` + esc(e.Title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>`)
-	if parent != "0" {
-		b.WriteString(`<upnp:album>` + esc(path.Base(parent)) + `</upnp:album>`)
+	if album := FileAlbum(e.ID); album != "" {
+		b.WriteString(`<upnp:album>` + esc(album) + `</upnp:album>`)
 	}
 	if e.Cover != "" {
 		b.WriteString(`<upnp:albumArtURI>` + esc(ArtURL(base, e.Cover)) + `</upnp:albumArtURI>`)

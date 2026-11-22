@@ -734,13 +734,16 @@ func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string)
 				out.TitleOnlyErr = nerr
 			}
 		}
-	} else if len(res.Items) == 0 && titleRetry {
+	} else if len(res.Items) == 0 && titleRetry && !dlna.TrustsEmptySearch(srv) {
 		if narrow, nerr := dlna.SearchTitleOnly(actx, srv, query, librarySearchMaxPerServer); nerr == nil && len(narrow.Items) > 0 {
 			res, path = narrow, searchPathTitleOnly
 		}
 	}
 	acancel()
-	if err == nil && len(res.Items) > 0 {
+	// A speaker's music stick searches its own folders: no hits from it is
+	// the whole answer, and a walk would only read every folder again over
+	// SOAP to find nothing (dlna.IsSTRUSBStick).
+	if err == nil && (len(res.Items) > 0 || dlna.TrustsEmptySearch(srv)) {
 		out.Items, out.Path = res.Items, path
 		// dlna pages a server that caps its answers and corrects a count that
 		// is not one; what HasMore still reports is hits really left behind.
