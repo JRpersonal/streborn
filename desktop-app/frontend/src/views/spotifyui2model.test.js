@@ -75,6 +75,20 @@ describe('keySlots', () => {
     expect(s.filter((k) => k.here).map((k) => k.slot)).toEqual([3]);
     expect(keySlots(presets, '').some((k) => k.here)).toBe(false);
   });
+
+  // #1587: a speaker that keeps the second row offers all twelve keys; slots
+  // 7 to 12 are keys 1 to 6 pressed twice.
+  it('lists twelve keys on a speaker with two rows, each with its row', () => {
+    const two = [...presets, { slot: 9, name: 'Lo-Fi Beats', type: 'spotify', uri: PLAYLIST }];
+    const s = keySlots(two, PLAYLIST, 2);
+    expect(s.map((k) => k.slot)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(s.filter((k) => k.row === 2).map((k) => k.slot)).toEqual([7, 8, 9, 10, 11, 12]);
+    expect(s[8]).toMatchObject({ slot: 9, row: 2, name: 'Lo-Fi Beats', spotify: true, here: true });
+    expect(s[6]).toMatchObject({ slot: 7, empty: true });
+    // One row: the same six as before, a stored row-2 key left out.
+    expect(keySlots(two, PLAYLIST, 1).map((k) => k.slot)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(keySlots(two, PLAYLIST).every((k) => k.row === 1)).toBe(true);
+  });
 });
 
 describe('accountRow', () => {
@@ -199,6 +213,38 @@ describe('the classic layout is untouched', () => {
     expect(inner).toContain('SpotifyNowPlaying(box.host, box.port)');
     expect(inner.indexOf('if (!sameBoxIdentity(state.currentBox, box))')).toBeLessThan(inner.indexOf('spotifySaveContextURI('));
     expect(inner).not.toContain('state.currentBox.host, state.currentBox.port');
+  });
+
+  it('offers the second row behind the same Once | Twice switch, keys named "Key 1 · 2×"', () => {
+    const model = srcOf('keysModel', { file: 'views/spotifyui2.js' });
+    expect(model).toContain('boxPresetRows(box, state.presets)');
+    expect(model).toContain('keySlots(state.presets, now.uri, rows)');
+    expect(model).toContain('clampRow(row, rows)');
+    const html = srcOf('keysHTML', { file: 'views/spotifyui2.js' });
+    expect(html).toContain('m.slots.filter((s) => s.row === m.row)');
+    expect(html).toContain("t('ui2.spotify.saveBtn', { n: keyNum(pickedSlot.slot, t)");
+    expect(html).toContain("t('ui2.spotify.alreadyOnKey', { n: keyNum(pickedSlot.slot, t)");
+    expect(html).toContain('keyLabel(s.slot, t)');
+    const tabs = srcOf('rowTabsHTML');
+    expect(tabs).toContain("'preset.row2.tabTwice'");
+    expect(tabs).toContain('role="tablist"');
+    expect(srcOf('sp2KeyNumHTML')).toContain("t('preset.row2.badge')");
+    expect(srcOf('saveToChosenKey')).toContain("t('ui2.spotify.saved', { n: keyNum(slot, t)");
+    // The save itself takes any slot the speaker keeps: no 1..6 limit on the way.
+    expect(srcOf('saveSpotifyToSlot')).not.toMatch(/slot\s*>\s*6|slot\s*<=\s*6/);
+  });
+
+  it('names the keys pressed twice in the classic steps and drops "six" from the hint', () => {
+    const dir = new URL('../i18n/bundles/', import.meta.url);
+    const bundles = Object.fromEntries(readdirSync(dir).filter((f) => f.endsWith('.json'))
+      .map((f) => [f.replace(/\.json$/, ''), JSON.parse(readFileSync(new URL(f, dir), 'utf8'))]));
+    expect(Object.keys(bundles)).toHaveLength(14);
+    for (const [lang, b] of Object.entries(bundles)) {
+      expect(b['spotify.presetsTwice'], lang).toContain('{{twice}}');
+    }
+    expect(bundles.en['ui2.spotify.notPlayingHow']).not.toMatch(/six/);
+    expect(bundles.de['ui2.spotify.notPlayingHow']).not.toMatch(/sechs/);
+    expect(srcOf('renderSpotifyAlpha')).toContain("t('spotify.presetsTwice', { twice: t('preset.row2.tabTwice') })");
   });
 
   it('replaces the already-on-a-key note once the speaker moved it, naming what moved', () => {

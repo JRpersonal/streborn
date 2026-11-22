@@ -70,6 +70,7 @@ ${shell2Mounted() ? spotifyUi2Markup() : ''}
           <li>${escapeHtml(t('spotify.presetsStep2'))}</li>
           <li>${escapeHtml(t('spotify.presetsStep3'))}</li>
         </ol>
+        <p class="sp-twice" id="spotifyPresetsTwice">${escapeHtml(t('spotify.presetsTwice', { twice: t('preset.row2.tabTwice') }))}</p>
       </section>
 
       ${deezerCardMarkup()}
