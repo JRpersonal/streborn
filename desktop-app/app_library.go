@@ -601,10 +601,15 @@ type LibrarySearchResult struct {
 	// the root of their library could be read in time. A server whose Search
 	// action is missing or broken is NOT in here; it is walked instead (#1705).
 	Unanswered []string `json:"unanswered,omitempty"`
-	// Partial is true when a server had more hits than it handed over, or its
-	// walk was cut short, so the list is not the whole answer. Same three
-	// notes as the phone page: a server that did not answer, a partial list,
-	// nothing found.
+	// Incomplete names the servers whose folders had to be walked (they cannot
+	// search themselves) and whose walk could not cover the whole library in
+	// the time and reads a search has. Their hits are in Items; more of their
+	// library may match.
+	Incomplete []string `json:"incomplete,omitempty"`
+	// Partial is true when the list is not the whole answer: a server had more
+	// hits than it handed over (a more exact search helps), or a server is in
+	// Incomplete. The view tells the two apart by Incomplete (#1705: a walk cut
+	// short used to be explained as a server with too many hits).
 	Partial bool `json:"partial"`
 }
 
@@ -623,6 +628,13 @@ const (
 	// librarySearchMaxReadErrors caps how many unreadable containers one
 	// server's log line names.
 	librarySearchMaxReadErrors = 5
+	// librarySearchMaxBrowses is the desktop's browse budget for one server's
+	// walk. The shared default (dlna.WalkMaxBrowses, 60) was tuned on the
+	// speaker's CPU; the #1705 reporter's Synology used it up in under 3 s of
+	// its 20 s in every search of 2026-11-22, so every answer came back marked
+	// incomplete with most of the time unused. The PC has the CPU for more, and
+	// the per-server deadline still bounds the walk.
+	librarySearchMaxBrowses = 250
 )
 
 // librarySearchActionBudget is the Search action's share (both attempts): a
@@ -640,8 +652,11 @@ const (
 // was reached: the per-server log line is built from it, so a diagnostic bundle
 // shows why a server came back empty or unanswered (#1705 had nothing to go on).
 type serverSearch struct {
-	Items   []dlna.Item
-	Partial bool
+	Items []dlna.Item
+	// Truncated is a server that had more hits than it handed over; Incomplete
+	// a walk that could not cover the whole library. Either makes the merged
+	// answer partial, and each has its own note.
+	Truncated, Incomplete bool
 	// Path is searchPathSearch, searchPathTitleOnly or searchPathWalk.
 	Path string
 	// SearchErr and TitleOnlyErr are why the Search action failed, when it did.
@@ -649,6 +664,14 @@ type serverSearch struct {
 	// Browses and ReadErrors describe the walk, when one ran.
 	Browses    int
 	ReadErrors []string
+	// Shortcut, ShortcutComplete and ShortcutErr are the list a walk read
+	// ahead of the tree (dlna.WalkResult); Slowest and SlowestContainer its
+	// slowest single read, so the next bundle shows where a slow server stalls.
+	Shortcut         string
+	ShortcutComplete bool
+	ShortcutErr      error
+	Slowest          time.Duration
+	SlowestContainer string
 	// Err is set when the server could not be searched at all (the walk could
 	// not read its root). Only then is the server unanswered.
 	Err error
@@ -663,14 +686,23 @@ var librarySearchFn = librarySearchOne
 // faults or answers nothing (servers that index titles only reject it with
 // UPnPError 708, and the FRITZ!Box index answers some queries with zero for a
 // track it holds); and when that still brings nothing, the bounded browse walk
-// of dlna.WalkSearch. Synology and Windows Media Player answer Search with
-// UPnPError 501, so without the walk the app found nothing on them and called
-// them unanswered (#1705).
+// of dlna.WalkSearch. Synology answers Search with UPnPError 501, and Windows
+// Media Player's share does not answer it at all (it is walked without being
+// asked), so without the walk the app found nothing on them and called them
+// unanswered (#1705).
 func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string) serverSearch {
 	field = librarySearchField(field)
 	titleRetry := field == dlna.SearchAny || field == dlna.SearchTitle
 	var out serverSearch
 
+	// A Windows Media Player share is never asked: its Search action hangs
+	// and keeps the share busy for the folder reads after it (dlna
+	// SkipsSearchAction). Learning that per run, as searchHungServers does,
+	// cost the first search after every app start that PC (#1705).
+	if dlna.SkipsSearchAction(srv) {
+		out.SearchErr = errSearchSkipped
+		return librarySearchWalk(ctx, srv, query, field, out)
+	}
 	// A server whose Search action hung before is walked straight away: it
 	// would hang again and leave the walk no time (searchHungServers).
 	if searchHungBefore(srv) {
@@ -707,7 +739,9 @@ func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string)
 	acancel()
 	if err == nil && len(res.Items) > 0 {
 		out.Items, out.Path = res.Items, path
-		out.Partial = res.TotalMatches > len(res.Items)
+		// dlna pages a server that caps its answers and corrects a count that
+		// is not one; what HasMore still reports is hits really left behind.
+		out.Truncated = res.HasMore()
 		return out
 	}
 
@@ -717,6 +751,10 @@ func librarySearchOne(ctx context.Context, srv dlna.Server, query, field string)
 // errSearchHungBefore is the SearchErr of a server walked without asking,
 // because its Search action hung earlier in this session.
 var errSearchHungBefore = errors.New("not asked: its Search action hung earlier in this session, walking its folders instead")
+
+// errSearchSkipped is the SearchErr of a Windows Media Player share, which is
+// walked without asking.
+var errSearchSkipped = errors.New("not asked: Windows Media Player sharing does not answer Search, walking its folders instead")
 
 // searchHungServers remembers, for this run of the app, the servers whose
 // Search action ran out of time without any answer. Windows Media Player's
@@ -747,7 +785,8 @@ func noteSearchHung(srv dlna.Server) { searchHungServers.Store(searchServerKey(s
 // there at all.
 func librarySearchWalk(ctx context.Context, srv dlna.Server, query, field string, out serverSearch) serverSearch {
 	walk := dlna.WalkSearch(ctx, srv, query, field, dlna.WalkOptions{
-		MaxHits: librarySearchMaxPerServer,
+		MaxHits:    librarySearchMaxPerServer,
+		MaxBrowses: librarySearchMaxBrowses,
 		OnReadError: func(container string, start int, err error) {
 			if len(out.ReadErrors) < librarySearchMaxReadErrors {
 				out.ReadErrors = append(out.ReadErrors, fmt.Sprintf("%s@%d: %v", container, start, err))
@@ -755,8 +794,12 @@ func librarySearchWalk(ctx context.Context, srv dlna.Server, query, field string
 		},
 	})
 	out.Path, out.Items, out.Browses = searchPathWalk, walk.Items, walk.Browses
-	// A walk that stopped at the hit cap may have left more behind.
-	out.Partial = walk.Partial || len(walk.Items) >= librarySearchMaxPerServer
+	out.Shortcut, out.ShortcutComplete, out.ShortcutErr = walk.Shortcut, walk.ShortcutComplete, walk.ShortcutErr
+	out.Slowest, out.SlowestContainer = walk.SlowestBrowse, walk.SlowestContainer
+	// A walk that stopped at the hit cap left more hits behind: a more exact
+	// search helps. Any other cut is a library the walk could not cover.
+	out.Truncated = len(walk.Items) >= librarySearchMaxPerServer
+	out.Incomplete = walk.Partial && !out.Truncated
 	out.Err = walk.RootErr
 	return out
 }
@@ -792,8 +835,13 @@ func (a *App) SearchLibrary(query, field string) (LibrarySearchResult, error) {
 	}
 	out := searchServers(a.appCtx(), a.logger, servers, query, field)
 	if a.logger != nil {
+		// The server lists are joined with ", " rather than logged as a slice:
+		// a Windows Media Player name holds spaces ("<PC>: <account>:"), and
+		// the bundle's anonymiser can only mask each name when it can tell
+		// where one ends.
 		a.logger.Info("library search", "field", field, "servers", out.Searched,
-			"hits", len(out.Items), "unanswered", out.Unanswered, "partial", out.Partial)
+			"hits", len(out.Items), "unanswered", strings.Join(out.Unanswered, ", "),
+			"incomplete", strings.Join(out.Incomplete, ", "), "partial", out.Partial)
 	}
 	return out, nil
 }
@@ -823,7 +871,9 @@ func searchServers(parent context.Context, log *slog.Logger, servers []dlna.Serv
 			res := librarySearchFn(ctx, srv, query, field)
 			answers[i] = answer{name: name, res: res}
 			if res.Err == nil {
-				for _, it := range libraryPageFrom(dlna.BrowseResult{Items: res.Items}).Items {
+				// One track a server hands out twice (two views, two URLs) is
+				// one row; the same song on two servers stays two (#1705).
+				for _, it := range libraryPageFrom(dlna.BrowseResult{Items: dlna.DedupTracks(res.Items)}).Items {
 					it.Server = name
 					answers[i].items = append(answers[i].items, it)
 				}
@@ -841,7 +891,10 @@ func searchServers(parent context.Context, log *slog.Logger, servers []dlna.Serv
 			out.Unanswered = append(out.Unanswered, a.name)
 			continue
 		}
-		out.Partial = out.Partial || a.res.Partial
+		if a.res.Incomplete {
+			out.Incomplete = append(out.Incomplete, a.name)
+		}
+		out.Partial = out.Partial || a.res.Truncated || a.res.Incomplete
 		out.Items = append(out.Items, a.items...)
 	}
 	return out
@@ -855,7 +908,7 @@ func logServerSearch(log *slog.Logger, name string, srv dlna.Server, res serverS
 		return
 	}
 	args := []any{"server", name, "address", srv.Address, "path", res.Path, "hits", hits,
-		"partial", res.Partial, "ms", took.Milliseconds()}
+		"truncated", res.Truncated, "incomplete", res.Incomplete, "ms", took.Milliseconds()}
 	if res.SearchErr != nil {
 		args = append(args, "searchErr", res.SearchErr.Error())
 	}
@@ -863,7 +916,14 @@ func logServerSearch(log *slog.Logger, name string, srv dlna.Server, res serverS
 		args = append(args, "titleOnlyErr", res.TitleOnlyErr.Error())
 	}
 	if res.Path == searchPathWalk {
-		args = append(args, "browses", res.Browses)
+		args = append(args, "browses", res.Browses,
+			"slowestMs", res.Slowest.Milliseconds(), "slowestContainer", res.SlowestContainer)
+		if res.Shortcut != "" {
+			args = append(args, "shortcut", res.Shortcut, "shortcutComplete", res.ShortcutComplete)
+		}
+		if res.ShortcutErr != nil {
+			args = append(args, "shortcutErr", res.ShortcutErr.Error())
+		}
 	}
 	if len(res.ReadErrors) > 0 {
 		args = append(args, "readErrors", res.ReadErrors)

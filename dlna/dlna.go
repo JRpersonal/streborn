@@ -1073,15 +1073,72 @@ func escapeCriteriaValue(query string) string {
 	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(query)
 }
 
+// searchMaxPages bounds how many Search pages one search asks for. Most
+// servers hand the whole answer over in the first; the rest are the servers
+// that silently cap RequestedCount.
+const searchMaxPages = 5
+
+// searchWithCriteria asks the Search action for up to count hits, paging when
+// the server says it holds more than it handed over in one answer.
+//
+// TotalMatches alone is not trusted to mean "there is more" (#1705): servers
+// differ in what they put there, some send 0, some the size of the whole
+// library. When the next page brings nothing new, the server's count was not a
+// count of hits, and TotalMatches is set to what was actually handed over, so
+// HasMore does not call a complete answer cut short. A page that fails after
+// the first keeps the hits so far and leaves TotalMatches as the server said:
+// that answer really is incomplete.
 func searchWithCriteria(ctx context.Context, srv Server, criteria string, count int) (BrowseResult, error) {
-	if srv.CDSControlURL == "" {
-		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
-	}
 	if count <= 0 {
 		count = 50
 	}
-	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ContainerID>0</ContainerID><SearchCriteria>%s</SearchCriteria><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Search></s:Body></s:Envelope>`,
-		xmlEscape(criteria), count)
+	out, err := searchPage(ctx, srv, criteria, 0, count)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	seen := make(map[string]bool, len(out.Items))
+	for _, it := range out.Items {
+		seen[it.ID+"\x00"+it.StreamURL] = true
+	}
+	handed := len(out.Items) + len(out.Containers)
+	for page := 1; page < searchMaxPages && handed > 0 && len(out.Items) < count && out.TotalMatches > handed; page++ {
+		next, err := searchPage(ctx, srv, criteria, handed, count-len(out.Items))
+		if err != nil {
+			break
+		}
+		fresh := 0
+		for _, it := range next.Items {
+			if k := it.ID + "\x00" + it.StreamURL; !seen[k] {
+				seen[k] = true
+				out.Items = append(out.Items, it)
+				fresh++
+			}
+		}
+		n := len(next.Items) + len(next.Containers)
+		if n == 0 || fresh == 0 {
+			// The server ran dry before its own count: that count was not one.
+			out.TotalMatches = handed
+			break
+		}
+		handed += n
+	}
+	out.Returned = handed
+	return out, nil
+}
+
+// HasMore reports whether a Search answer says the server holds more hits
+// than it handed over. A server that sends no TotalMatches says nothing more.
+func (r BrowseResult) HasMore() bool {
+	return r.TotalMatches > max(r.Returned, len(r.Items)+len(r.Containers))
+}
+
+// searchPage posts one ContentDirectory:Search from container "0".
+func searchPage(ctx context.Context, srv Server, criteria string, start, count int) (BrowseResult, error) {
+	if srv.CDSControlURL == "" {
+		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
+	}
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ContainerID>0</ContainerID><SearchCriteria>%s</SearchCriteria><Filter>*</Filter><StartingIndex>%d</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Search></s:Body></s:Envelope>`,
+		xmlEscape(criteria), start, count)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.CDSControlURL, strings.NewReader(body))
 	if err != nil {
