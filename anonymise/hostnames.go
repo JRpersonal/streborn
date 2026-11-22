@@ -234,7 +234,11 @@ func scrubMediaServerNames(s string) string {
 
 // mediaServerLineRegex is a whole log line written by the library, DLNA and
 // media-server code.
-var mediaServerLineRegex = regexp.MustCompile(`(?m)^[^\n]*\bmsg="?(dlna:|library resolve:|library:|media server:|library search:|library browse|folder card replay:|queue)[^\n]*`)
+//
+// "library search" has no colon on purpose: the desktop's summary line of a
+// whole-library search is msg="library search", and its unanswered= list
+// carried the names of the #1705 reporter's PC and NAS in clear (2026-11-22).
+var mediaServerLineRegex = regexp.MustCompile(`(?m)^[^\n]*\bmsg="?(dlna:|library resolve:|library:|media server:|library search|library browse|folder card replay:|queue)[^\n]*`)
 
 // serverNameUnderName are the line prefixes whose "name" key is a server. On
 // the others (a queue preset save, a library key) it is the music.
@@ -243,8 +247,15 @@ var serverNameUnderName = map[string]bool{
 }
 
 // mediaServerAttrRegex is a key on such a line that carries a server's
-// friendly name ("seen" is a comma-separated list of them), quoted or bare.
-var mediaServerAttrRegex = regexp.MustCompile(`(\b(?:server|name|registered|seen)=)(?:"((?:[^"\\\n]|\\.)*)"|([^\s"]+))`)
+// friendly name, quoted or bare. "seen", "unanswered" and "incomplete" are
+// lists of them, joined with ", " (serverListKeys).
+var mediaServerAttrRegex = regexp.MustCompile(`(\b(?:server|name|registered|seen|unanswered|incomplete)=)(?:"((?:[^"\\\n]|\\.)*)"|([^\s"]+))`)
+
+// serverListKeys are the keys whose value is a list of server names. Older
+// desktops logged unanswered= as a Go slice ("[NAS PC: account:]"): the
+// brackets are kept, and since a space cannot tell one name from the next
+// there, such a list is masked as one name.
+var serverListKeys = map[string]bool{"seen=": true, "unanswered=": true, "incomplete=": true}
 
 // knownServerProducts are friendly names that name the software, not the
 // machine, when they stand alone ("MinimServer", "FRITZ!Box 7590 Mediaserver").
@@ -333,12 +344,16 @@ func scrubMediaServerAttrs(s string) string {
 				val, quoted = sub[2], true
 			}
 			var out string
-			if key == "seen=" {
+			if serverListKeys[key] {
+				lb, rb := "", ""
+				if strings.HasPrefix(val, "[") && strings.HasSuffix(val, "]") {
+					lb, rb, val = "[", "]", val[1:len(val)-1]
+				}
 				parts := strings.Split(val, ", ")
 				for i, p := range parts {
 					parts[i] = maskMediaServerName(p)
 				}
-				out = strings.Join(parts, ", ")
+				out = lb + strings.Join(parts, ", ") + rb
 			} else {
 				out = maskMediaServerName(val)
 			}
@@ -347,5 +362,37 @@ func scrubMediaServerAttrs(s string) string {
 			}
 			return key + out
 		})
+	})
+}
+
+// A network interface's name is the system's own on Linux and macOS (eth0,
+// wlan0, en0), but on Windows it is whatever the owner renamed the adapter to,
+// and a #1705 bundle (2026-11-22) carried one built from the owner's initials
+// on the "dlna: SSDP NOTIFY listener joined" line. The default names are kept,
+// anything else is hashed.
+var (
+	ifaceAttrRegex    = regexp.MustCompile(`(\biface=)(?:"((?:[^"\\\n]|\\.)*)"|([^\s"]+))`)
+	ifaceDefaultRegex = regexp.MustCompile(`(?i)^(?:(?:eth|wlan|wlp\w*|enp\w*|en|wl|lo|br|usb|rndis|bond|docker|veth|tun|tap|utun|bridge)\d*|(?:ethernet|wi-?fi|wlan|lan)(?: \d+)?|vethernet \([^)]*\)|loopback pseudo-interface \d+)$`)
+)
+
+// scrubInterfaceNames masks the iface= values that are not a default name.
+func scrubInterfaceNames(s string) string {
+	if !strings.Contains(s, "iface=") {
+		return s
+	}
+	return ifaceAttrRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := ifaceAttrRegex.FindStringSubmatch(m)
+		val, quoted := sub[3], false
+		if sub[3] == "" && strings.HasPrefix(m[len(sub[1]):], `"`) {
+			val, quoted = sub[2], true
+		}
+		if val == "" || strings.Contains(val, "#") || ifaceDefaultRegex.MatchString(val) {
+			return m
+		}
+		out := "IFACE#" + hashShort(strings.ToLower(val))
+		if quoted {
+			return sub[1] + `"` + out + `"`
+		}
+		return sub[1] + out
 	})
 }
