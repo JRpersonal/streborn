@@ -257,6 +257,13 @@ export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
 }
 
+// LibraryUSBNotices lists the USB sticks the last Library scan found in a
+// speaker but could not offer (an install stick, not FAT32, ...), as
+// {speaker, code}. Optional binding, per the note above.
+export function LibraryUSBNotices() {
+  return callOptionalBinding('LibraryUSBNotices', []);
+}
+
 // LibraryFolder is one folder of a media server as the server describes it:
 // its title, class and cover, for a folder the UI 2.0 player leads to without
 // a trail walked to it. Optional binding, per the note above.

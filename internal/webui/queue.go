@@ -19,6 +19,11 @@ type queueItem struct {
 	Duration time.Duration // 0 when the DLNA server did not report one
 	Artist   string        // "" when the media server named none
 	Album    string        // "" when the media server named none
+	// Skip is a track the queue steps over instead of handing it to the
+	// speaker: a file on this speaker's own USB stick whose sample rate the
+	// speaker cannot play (usbhires.go). It stays in the list, so the folder
+	// still matches the key that holds it, and the snapshot names it.
+	Skip bool
 }
 
 // repeatMode controls what the queue does at the end of a track / the list.
@@ -110,6 +115,47 @@ func (q *playQueue) load(items []queueItem, start int, shuffle bool, rep repeatM
 		q.pos = start
 	}
 	q.active = true
+	q.onPlayableLocked()
+}
+
+// skipAt reports whether the track at play position p is one to step over.
+func (q *playQueue) skipAt(p int) bool {
+	return p >= 0 && p < len(q.order) && q.items[q.order[p]].Skip
+}
+
+// onPlayableLocked moves pos forward, wrapping once, to the first track that
+// is not skipped. A queue with nothing playable is not active. Caller holds
+// the lock.
+func (q *playQueue) onPlayableLocked() {
+	if !q.active || !q.skipAt(q.pos) {
+		return
+	}
+	for i := 1; i < len(q.order); i++ {
+		p := (q.pos + i) % len(q.order)
+		if !q.skipAt(p) {
+			q.pos = p
+			return
+		}
+	}
+	q.active = false
+}
+
+// playable counts the tracks the queue would hand to the speaker.
+func playableCount(items []queueItem) int {
+	n := 0
+	for _, it := range items {
+		if !it.Skip {
+			n++
+		}
+	}
+	return n
+}
+
+// skippedCount is how many tracks of the loaded queue are stepped over.
+func (q *playQueue) skippedCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.items) - playableCount(q.items)
 }
 
 // buildOrder (re)builds order so the item at index keepFirst plays next at
@@ -186,9 +232,22 @@ func (q *playQueue) next() (queueItem, bool) {
 	return q.stepForwardLocked(q.repeat == repeatAll)
 }
 
-// stepForwardLocked advances pos by one. wrap controls whether running past the
-// last track wraps to the front (and reshuffles) or stops the queue.
+// stepForwardLocked advances pos to the next track that is not skipped. wrap
+// controls whether running past the last track wraps to the front (and
+// reshuffles) or stops the queue. A queue with nothing playable stops.
 func (q *playQueue) stepForwardLocked(wrap bool) (queueItem, bool) {
+	for i := 0; i <= 2*len(q.order); i++ {
+		it, ok := q.stepOnceLocked(wrap)
+		if !ok || !it.Skip {
+			return it, ok
+		}
+	}
+	q.active = false
+	return queueItem{}, false
+}
+
+// stepOnceLocked advances pos by exactly one, skipped tracks included.
+func (q *playQueue) stepOnceLocked(wrap bool) (queueItem, bool) {
 	q.pos++
 	if q.pos >= len(q.order) {
 		if wrap {
@@ -222,14 +281,20 @@ func (q *playQueue) peekNatural() (queueItem, bool) {
 	if q.repeat == repeatOne {
 		return q.currentLocked()
 	}
-	p := q.pos + 1
-	if p >= len(q.order) {
-		if q.repeat != repeatAll || q.shuffle {
-			return queueItem{}, false
+	p := q.pos
+	for i := 0; i < len(q.order); i++ {
+		p++
+		if p >= len(q.order) {
+			if q.repeat != repeatAll || q.shuffle {
+				return queueItem{}, false
+			}
+			p = 0
 		}
-		p = 0
+		if !q.skipAt(p) {
+			return q.items[q.order[p]], true
+		}
 	}
-	return q.items[q.order[p]], true
+	return queueItem{}, false
 }
 
 // setLength gives every track at url that has no length the length d, and
@@ -258,14 +323,26 @@ func (q *playQueue) prev() (queueItem, bool) {
 	if !q.active {
 		return queueItem{}, false
 	}
-	q.pos--
-	if q.pos < 0 {
-		if q.repeat == repeatAll {
+	from := q.pos
+	for i := 0; i < len(q.order); i++ {
+		q.pos--
+		if q.pos < 0 {
+			if q.repeat != repeatAll {
+				// At the front: the first track that is not skipped, which is
+				// at the latest the one that played.
+				q.pos = 0
+				for q.skipAt(q.pos) && q.pos < from {
+					q.pos++
+				}
+				return q.currentLocked()
+			}
 			q.pos = len(q.order) - 1
-		} else {
-			q.pos = 0
+		}
+		if !q.skipAt(q.pos) {
+			return q.currentLocked()
 		}
 	}
+	q.pos = from
 	return q.currentLocked()
 }
 
@@ -337,6 +414,7 @@ func (q *playQueue) restore(st playQueueState) {
 	q.items = append([]queueItem(nil), st.items...)
 	q.order = append([]int(nil), st.order...)
 	q.pos, q.repeat, q.shuffle, q.active = st.pos, st.repeat, st.shuffle, st.active
+	q.onPlayableLocked()
 }
 
 // queueSnapshot is the JSON-friendly view of the queue for GET /api/queue and
@@ -393,6 +471,14 @@ type queueSnapshot struct {
 	// and only for an end the listener should be told about: today the
 	// media server that stopped answering (#1890). Omitted otherwise.
 	LastEnd *queueLastEnd `json:"lastEnd,omitempty"`
+	// SkippedHiRes counts the tracks of the running folder the queue steps
+	// over because they are files on this speaker's USB stick with a sample
+	// rate it cannot play (usbhires.go). Omitted when there are none.
+	SkippedHiRes int `json:"skippedHiRes,omitempty"`
+	// USBRefused is the file on this speaker's USB stick the speaker refused
+	// to decode (AUDIO_ERROR_DECODER), while it is still the play on record
+	// and nothing plays. Omitted otherwise.
+	USBRefused *usbDecodeRefusal `json:"usbRefused,omitempty"`
 }
 
 // queueSnapItem is one track of the snapshot. Artist and Album are what the
@@ -404,6 +490,8 @@ type queueSnapItem struct {
 	Art    string `json:"art,omitempty"`
 	Artist string `json:"artist,omitempty"`
 	Album  string `json:"album,omitempty"`
+	// Skipped is a track the queue steps over (queueItem.Skip).
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 func (q *playQueue) snapshot() queueSnapshot {
@@ -417,7 +505,10 @@ func (q *playQueue) snapshot() queueSnapshot {
 	}
 	snap.Items = make([]queueSnapItem, len(q.items))
 	for i, it := range q.items {
-		snap.Items[i] = queueSnapItem{Title: it.Title, Art: it.Art, Artist: it.Artist, Album: it.Album}
+		snap.Items[i] = queueSnapItem{Title: it.Title, Art: it.Art, Artist: it.Artist, Album: it.Album, Skipped: it.Skip}
+		if it.Skip {
+			snap.SkippedHiRes++
+		}
 	}
 	if q.active && q.pos >= 0 && q.pos < len(q.order) {
 		snap.Pos = q.order[q.pos]

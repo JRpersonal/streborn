@@ -207,7 +207,7 @@ func TestDisplayMessageLanguage(t *testing.T) {
 		t.Errorf("fallback: %q", got)
 	}
 	for lang, texts := range displayMsgTexts {
-		for _, k := range []DisplayMsgKind{DisplayMsgSpotifyLogin, DisplayMsgStationDown, DisplayMsgNoInternet} {
+		for _, k := range []DisplayMsgKind{DisplayMsgSpotifyLogin, DisplayMsgStationDown, DisplayMsgNoInternet, DisplayMsgUSBHiRes} {
 			if texts[k] == "" {
 				t.Errorf("sysLanguage %d has no text for %s", lang, k)
 			}

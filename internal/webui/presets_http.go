@@ -115,6 +115,7 @@ func (s *Server) handlePresetsBulkPut(w http.ResponseWriter, r *http.Request) {
 		// Same art rule as the per-slot save: the store keeps the station's
 		// ORIGIN image URL, never this agent's own art-proxy wrapper (#696).
 		p.Art = healSelfArtProxy(p.Art)
+		usbLoopbackPreset(p)
 		// A copied or restored library key keeps its artist and album, bounded
 		// like a fresh save (#1839).
 		boundPresetTrackLabel(p)

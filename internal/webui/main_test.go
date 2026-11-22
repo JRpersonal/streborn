@@ -19,5 +19,14 @@ import (
 func TestMain(m *testing.M) {
 	defaultPrearmProbe = func(context.Context, string) (time.Duration, bool) { return 0, false }
 	defaultKeyLengthClient = func() *http.Client { return nil }
-	os.Exit(m.Run())
+	// No test sees the test machine's own disks as a music stick: a CI runner
+	// has a /sys/block/sda. The USB music tests point these at a fake tree.
+	noSticks, err := os.MkdirTemp("", "str-nosticks-")
+	if err != nil {
+		panic(err)
+	}
+	usbMusicSysRoot, usbProcRoot, usbDevRoot = noSticks, noSticks, noSticks
+	code := m.Run()
+	_ = os.RemoveAll(noSticks)
+	os.Exit(code)
 }

@@ -123,6 +123,9 @@ type App struct {
 	// folder click. Cleared and rebuilt on ListMediaServers.
 	libraryMu      sync.Mutex
 	libraryServers map[string]dlna.Server
+	// usbNotices are the music sticks the last Library scan found in a speaker
+	// but could not offer (library_usb.go). Guarded by libraryMu.
+	usbNotices []LibraryUSBNotice
 
 	// userLocale is the active UI language (BCP-47, e.g. "de"/"en")
 	// reported by the frontend via SetAppLocale. Server-side

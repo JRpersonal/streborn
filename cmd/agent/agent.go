@@ -1600,6 +1600,13 @@ func (a *agent) buildBoxLink() error {
 	// The firmware's once-a-minute line carries the look at the standby
 	// clock in a long standby, so it needs no timer of its own (#841).
 	keyTrace.SetMinuteHandler(oled.StandbyMinute)
+	// The kernel logs into the same ring: its USB disk lines are when a music
+	// stick goes in or out, so the agent looks at it then (and switches the
+	// firmware's read-write mount of a music stick to read-only) instead of
+	// on a timer (#1136, internal/webui/usbmusic.go).
+	keyTrace.SetUSBDiskHandler(func(ev boxlog.USBDiskEvent) {
+		webuiSrv.OnUSBDiskLine(ev.Change == boxlog.USBDiskAttached)
+	})
 	// A held preset key while STR's own stream plays (#1217): the firmware
 	// refuses to store a UPnP push, so the agent pairs the key line with the
 	// firmware's own hold verdict and saves what plays (holdsave.go).
@@ -2100,6 +2107,11 @@ func (a *agent) wireLate() error {
 		a.mdnsMu.Unlock()
 		return ann.Snapshot()
 	})
+	// Music from a USB stick in the speaker (Ideas #1136): what is plugged in is
+	// looked at once now (detection only, nothing is mounted at boot) and then
+	// only when a client opens the Library. No timer, no poll.
+	webui.RegisterDebugSection("usb_music", webuiSrv.USBMusicDebug)
+	go webuiSrv.USBMusicStartupCheck()
 	// Let the web UI's preset sync store slots natively too, on the same terms
 	// as the agent's own reconcile: only when the box reports the radio source
 	// registered, otherwise "" and the UPnP form is kept.

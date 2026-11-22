@@ -234,10 +234,18 @@ func (s *Server) handleQueueReplayCard(w http.ResponseWriter, r *http.Request) {
 			s.writeGroupedPlayError(w, err)
 			return
 		}
+		if ref := usbFolderRefusal(err); ref != nil {
+			writePlayRefusal(w, ref)
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "tracks": len(items)})
+	out := map[string]any{"status": "ok", "tracks": len(items)}
+	if n := s.queue.skippedCount(); n > 0 {
+		out["skippedHiRes"] = n
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // slotFolderCardSlot reads the card key a folder gets when it was started from
@@ -335,6 +343,10 @@ func (s *Server) replaySlotFolderCard(w http.ResponseWriter, r *http.Request, sl
 // mediaServerRegistered reports whether this UDN is one of the servers the user
 // picked as a music source.
 func (s *Server) mediaServerRegistered(udn string) bool {
+	// The stick in this speaker needs no registration: it is this agent's own.
+	if s.isUSBUDN(udn) {
+		return true
+	}
 	for _, reg := range s.mediaServers.List() {
 		if udnKey(reg.ID) == udnKey(udn) {
 			return true

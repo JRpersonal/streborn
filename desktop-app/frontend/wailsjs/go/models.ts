@@ -930,6 +930,7 @@ export namespace main {
 	    address: string;
 	    manual: boolean;
 	    notAnswering: boolean;
+	    usbSpeaker?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LibraryServer(source);
@@ -945,6 +946,21 @@ export namespace main {
 	        this.address = source["address"];
 	        this.manual = source["manual"];
 	        this.notAnswering = source["notAnswering"];
+	        this.usbSpeaker = source["usbSpeaker"];
+	    }
+	}
+	export class LibraryUSBNotice {
+	    speaker: string;
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LibraryUSBNotice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.speaker = source["speaker"];
+	        this.code = source["code"];
 	    }
 	}
 	export class LogExportRequest {

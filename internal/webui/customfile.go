@@ -133,6 +133,11 @@ var customFileProbeClient = func() *http.Client {
 // file (#830). May probe the URL once; call it outside any box lock that
 // cannot wait a few seconds.
 func (s *Server) directFileMime(ctx context.Context, p presets.Preset) string {
+	// A file on this speaker's own stick is always played directly: the
+	// probe's guarded client, like the stream proxy, refuses loopback.
+	if mime := usbFileMIME(usbLoopbackURL(p.StreamURL), ""); mime != "" {
+		return mime
+	}
 	if mime := libraryFileMime(p); mime != "" {
 		return mime
 	}
