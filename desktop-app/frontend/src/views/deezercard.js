@@ -1,4 +1,6 @@
-// views/deezercard.js: the Deezer section of the Spotify view (both layouts).
+// views/deezercard.js: the Deezer section of the Spotify & Deezer view (both
+// layouts). Its heading carries a Beta pill: the login is new and not yet
+// confirmed on every speaker (#2039).
 //
 // Signs the selected speaker into Deezer: e-mail, password, Connect,
 // Disconnect, and what the speaker made of it. The speaker's own Deezer client
@@ -27,7 +29,7 @@ let msg = { host: '', cls: '', text: '' };
 
 export function deezerCardMarkup() {
   return `<section class="sp-card" id="deezerCard" aria-labelledby="deezerCardTitle" style="display:none">
-        <h3 class="sp-card-title" id="deezerCardTitle">Deezer</h3>
+        <h3 class="sp-card-title" id="deezerCardTitle">Deezer <span class="beta-pill" title="${escapeAttr(t('deezer.betaHint'))}">${escapeHtml(t('deezer.beta'))}</span></h3>
         <div id="deezerCardBody"></div>
       </section>`;
 }

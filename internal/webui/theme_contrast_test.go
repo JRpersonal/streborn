@@ -21,7 +21,7 @@ func TestLightThemeTextMeetsWCAGAA(t *testing.T) {
 	for _, m := range regexp.MustCompile(`--([a-z0-9]+):(#[0-9a-fA-F]{6})`).FindAllStringSubmatch(block, -1) {
 		tok[m[1]] = m[2]
 	}
-	for _, fg := range []string{"fg", "muted", "accent"} {
+	for _, fg := range []string{"fg", "muted", "accent", "beta"} {
 		for _, bg := range []string{"bg", "card", "card2", "hover", "nowgrad2"} {
 			if tok[fg] == "" || tok[bg] == "" {
 				t.Fatalf("token missing: %s or %s in %q", fg, bg, block)
