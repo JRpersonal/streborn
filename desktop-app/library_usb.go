@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -38,6 +39,9 @@ type LibraryUSBNotice struct {
 type usbStick struct {
 	Server  dlna.Server
 	Speaker string
+	// Label is the stick's volume label, "" when it has none (or the agent
+	// is older than the field).
+	Label string
 }
 
 // usbAgentEntry is the stick's entry in an agent's /api/library/servers.
@@ -47,6 +51,52 @@ type usbAgentEntry struct {
 	Kind     string `json:"kind"`
 	Location string `json:"location"`
 	Refusal  string `json:"refusal"`
+	// Speaker is the name the speaker gives itself, Label the stick's volume
+	// label; an agent from before these fields sends neither.
+	Speaker string `json:"speaker"`
+	Label   string `json:"label"`
+}
+
+// usbSpeakerName is the name a stick is listed under: the speaker's name as
+// this app shows it, else the name the speaker's agent gives itself, else the
+// discovery name unless it is only the "str-<ip>" placeholder, else the
+// address. The placeholder is what a speaker found by probing its address is
+// called until its name is read (discovery_probe.go), and an ST20 owner saw
+// his stick listed as "USB stick (str-192.168.1.213)" for it (discussion
+// #1136, 2026-11-22).
+func usbSpeakerName(b BoxInfo, agentName string) string {
+	if n := strings.TrimSpace(b.FriendlyName); n != "" {
+		return n
+	}
+	if n := strings.TrimSpace(agentName); n != "" {
+		return n
+	}
+	if n := strings.TrimSpace(b.Name); n != "" && !isPlaceholderBoxName(n) {
+		return n
+	}
+	return b.Host
+}
+
+// isPlaceholderBoxName reports whether name is a stand-in rather than a
+// speaker's name: "str-<ip>" from an address probe, or "STR-<hex>" (the tail of
+// the device id) from an mDNS announce made before the name was known.
+func isPlaceholderBoxName(name string) bool {
+	if len(name) < 4 || !strings.EqualFold(name[:4], "str-") {
+		return false
+	}
+	rest := name[4:]
+	if net.ParseIP(rest) != nil {
+		return true
+	}
+	if len(rest) < 4 {
+		return false
+	}
+	for _, r := range rest {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // usbAskTimeout bounds one speaker's answer. The Library scan itself listens
@@ -85,13 +135,6 @@ func (a *App) speakerUSBSticks(ctx context.Context) ([]usbStick, []LibraryUSBNot
 // fetchSpeakerUSB reads one speaker's stick entry and describes a served
 // stick. An older agent lists no stick entry and is simply skipped.
 func fetchSpeakerUSB(ctx context.Context, client *http.Client, b BoxInfo) ([]usbStick, []LibraryUSBNotice) {
-	speaker := strings.TrimSpace(b.Name)
-	if speaker == "" {
-		speaker = strings.TrimSpace(b.FriendlyName)
-	}
-	if speaker == "" {
-		speaker = b.Host
-	}
 	cctx, cancel := context.WithTimeout(ctx, usbAskTimeout)
 	defer cancel()
 	url := fmt.Sprintf("http://%s:%d/api/library/servers", b.Host, b.Port)
@@ -119,6 +162,7 @@ func fetchSpeakerUSB(ctx context.Context, client *http.Client, b BoxInfo) ([]usb
 		if e.Kind != "usb" {
 			continue
 		}
+		speaker := usbSpeakerName(b, e.Speaker)
 		if e.Refusal != "" {
 			notices = append(notices, LibraryUSBNotice{Speaker: speaker, Code: e.Refusal})
 			continue
@@ -130,7 +174,7 @@ func fetchSpeakerUSB(ctx context.Context, client *http.Client, b BoxInfo) ([]usb
 		if err != nil || srv.UDN == "" {
 			continue
 		}
-		sticks = append(sticks, usbStick{Server: srv, Speaker: speaker})
+		sticks = append(sticks, usbStick{Server: srv, Speaker: speaker, Label: strings.TrimSpace(e.Label)})
 	}
 	return sticks, notices
 }

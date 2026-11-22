@@ -95,10 +95,12 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 	type srvOut struct {
 		UDN  string `json:"udn"`
 		Name string `json:"name"`
-		// Kind, Location and Refusal only on the stick's entry.
+		// Kind, Location, Refusal, Speaker and Label only on the stick's entry.
 		Kind     string `json:"kind,omitempty"`
 		Location string `json:"location,omitempty"`
 		Refusal  string `json:"refusal,omitempty"`
+		Speaker  string `json:"speaker,omitempty"`
+		Label    string `json:"label,omitempty"`
 	}
 	out := []srvOut{}
 	if s.mediaServers != nil {

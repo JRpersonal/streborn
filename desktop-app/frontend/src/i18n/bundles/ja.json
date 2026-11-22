@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} は前回の検索で応答しなかったため、アプリは記憶からしか知りません。それでもスピーカーに追加できます。サーバーの電源が入ってネットワークに戻るまで、どのスピーカーでも閲覧は失敗します。",
   "library.serverRefusesPC": "{{address}} のメディアサーバーがこのコンピューターを拒否しているため、ここに表示できません。メディアサーバーの設定でこの PC を許可してから（NAS では通常、許可するデバイスやメディアレシーバーの一覧）、更新してください。",
   "library.usbServerName": "USBメモリー（{{name}}）",
+  "library.usbServerNameLabel": "USBメモリー {{label}}（{{name}}）",
   "library.usbUnsupportedModel": "{{name}}はUSBメモリーの音楽を再生できません。",
   "library.usbInstallStick": "{{name}}のUSBメモリーはST Rebornのインストール用メモリーです。音楽には別のメモリーを使ってください。",
   "library.usbNotFAT32": "{{name}}のUSBメモリーはFAT32でフォーマットされていません。FAT32でフォーマットしてから、音楽をもう一度コピーしてください。",

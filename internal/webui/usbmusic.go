@@ -112,6 +112,9 @@ type usbMusicSnapshot struct {
 	// read-only mount STR made itself).
 	MountedBy    string `json:"mounted_by,omitempty"`
 	MountOptions string `json:"mount_options,omitempty"`
+	// VolumeLabel is the stick's FAT volume label, read once when it starts
+	// being served ("" when it has none).
+	VolumeLabel string `json:"volume_label,omitempty"`
 	// NameCharset is the charset file names are read in while served: "utf8",
 	// "iso8859-1" (the firmware's own mount), "iso8859-15" or "unknown".
 	NameCharset string `json:"name_charset,omitempty"`
@@ -154,6 +157,8 @@ type usbMusicState struct {
 	dev      string // "sda1" while served
 	dir      string
 	ownMount bool
+	// label is the served stick's volume label (usbmedia.ReadVolumeLabel).
+	label    string
 	updateID uint32
 	snap     usbMusicSnapshot
 	logged   string
@@ -356,8 +361,13 @@ func (s *Server) usbRefresh(allowMount bool) usbMusicSnapshot {
 		return snap
 	}
 	u.lib, u.dev, u.dir, u.ownMount = lib, part, dir, own
+	// The label names the stick in the Library ("USB stick MUSIC (Kitchen)").
+	// Read once per stick served, from the device: at most the boot sector and
+	// one cluster of the root directory (usbmedia/label.go).
+	u.label = usbmedia.ReadVolumeLabelDevice(filepath.Join(usbDevRoot, part))
 	u.updateID++
 	snap.Served = true
+	snap.VolumeLabel = u.label
 	snap.NameCharset = lib.Charset()
 	if snap.NameCharset == "" {
 		snap.NameCharset = "unknown"
@@ -502,7 +512,7 @@ func (s *Server) usbDropLocked(why string) {
 		}
 	}
 	s.logger.Info("usb music: no longer serving the stick", "why", why, "device", u.dev)
-	u.lib, u.dev, u.dir, u.ownMount = nil, "", "", false
+	u.lib, u.dev, u.dir, u.ownMount, u.label = nil, "", "", false, ""
 }
 
 // usbCommitLocked stores snap and logs it once if the state changed.
@@ -574,15 +584,38 @@ func (s *Server) isUSBUDN(udn string) bool {
 	return udn != "" && udnKey(udn) == udnKey(s.usbUDN())
 }
 
-// usbFriendlyName is what a generic UPnP client calls the stick. The STR apps
-// show their own translated label instead.
+// usbFriendlyName is what a generic UPnP client calls the stick: "USB stick",
+// its volume label when it has one, and the speaker's name. The STR apps show
+// their own translated label, built from usbSpeakerName and usbLabel.
 func (s *Server) usbFriendlyName() string {
-	if s.boxNameFn != nil {
-		if name, _ := s.boxNameFn(); strings.TrimSpace(name) != "" {
-			return "USB stick (" + strings.TrimSpace(name) + ")"
-		}
+	name := "USB stick"
+	if l := s.usbLabel(); l != "" {
+		name += " " + l
 	}
-	return "USB stick"
+	if sp := s.usbSpeakerName(); sp != "" {
+		name += " (" + sp + ")"
+	}
+	return name
+}
+
+// usbSpeakerName is this speaker's own name, "" while it is not known.
+func (s *Server) usbSpeakerName() string {
+	if s.boxNameFn == nil {
+		return ""
+	}
+	name, _ := s.boxNameFn()
+	return strings.TrimSpace(name)
+}
+
+// usbLabel is the served stick's volume label, "" when none is served or it
+// has none.
+func (s *Server) usbLabel() string {
+	s.usb.mu.Lock()
+	defer s.usb.mu.Unlock()
+	if s.usb.lib == nil {
+		return ""
+	}
+	return s.usb.label
 }
 
 // usbResolve answers resolveMediaServer for the stick's UDN: the agent's own
@@ -620,6 +653,11 @@ type usbServerEntry struct {
 	Location string `json:"location,omitempty"`
 	// Refusal is set instead of UDN when a stick is in but not served.
 	Refusal string `json:"refusal,omitempty"`
+	// Speaker is this speaker's own name, so a client can name the stick after
+	// the speaker it is in even while it knows that speaker only by address.
+	Speaker string `json:"speaker,omitempty"`
+	// Label is the stick's volume label while it is served.
+	Label string `json:"label,omitempty"`
 }
 
 // usbLibraryEntry returns the stick's line for a client that reached the
@@ -629,7 +667,7 @@ func (s *Server) usbLibraryEntry(host string) (usbServerEntry, bool) {
 	if !snap.Present {
 		return usbServerEntry{}, false
 	}
-	e := usbServerEntry{Name: s.usbFriendlyName(), Kind: "usb"}
+	e := usbServerEntry{Name: s.usbFriendlyName(), Kind: "usb", Speaker: s.usbSpeakerName()}
 	if !snap.Served {
 		if snap.Refusal == "" {
 			return usbServerEntry{}, false
@@ -638,6 +676,7 @@ func (s *Server) usbLibraryEntry(host string) (usbServerEntry, bool) {
 		return e, true
 	}
 	e.UDN = s.usbUDN()
+	e.Label = s.usbLabel()
 	if host != "" {
 		e.Location = "http://" + host + usbmedia.DescriptionPath
 	}

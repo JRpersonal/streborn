@@ -316,6 +316,7 @@
   "library.notAnsweringWarnBody": "{{name}} hat beim letzten Suchlauf nicht geantwortet, die App kennt ihn also nur aus der Erinnerung. Du kannst ihn trotzdem zu deinen Lautsprechern hinzufügen. Das Durchsuchen scheitert dann auf jedem Lautsprecher, bis der Server eingeschaltet und wieder im Netzwerk ist.",
   "library.serverRefusesPC": "Der Musikserver unter {{address}} lehnt diesen Computer ab und kann deshalb hier nicht angezeigt werden. Erlaube diesen PC in den Einstellungen des Musikservers (auf einem NAS meist eine Liste erlaubter Geräte oder Medienempfänger) und aktualisiere dann.",
   "library.usbServerName": "USB-Stick ({{name}})",
+  "library.usbServerNameLabel": "USB-Stick {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} kann keine Musik von einem USB-Stick spielen.",
   "library.usbInstallStick": "Der USB-Stick in {{name}} ist ein ST-Reborn-Installationsstick. Nimm für Musik einen eigenen Stick.",
   "library.usbNotFAT32": "Der USB-Stick in {{name}} ist nicht mit FAT32 formatiert. Formatiere ihn mit FAT32 und kopiere die Musik danach wieder darauf.",

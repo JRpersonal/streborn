@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} pēdējā meklēšanā neatbildēja, tāpēc lietotne to zina tikai no atmiņas. Tu tomēr vari to pievienot saviem skaļruņiem. Pārlūkošana neizdosies nevienā skaļrunī, kamēr serveris nebūs ieslēgts un atkal tīklā.",
   "library.serverRefusesPC": "Multivides serveris adresē {{address}} noraida šo datoru, tāpēc to nevar parādīt šeit. Atļauj šo datoru multivides servera iestatījumos (NAS ierīcē parasti tas ir atļauto ierīču vai multivides uztvērēju saraksts), pēc tam atsvaidzini.",
   "library.usbServerName": "USB zibatmiņa ({{name}})",
+  "library.usbServerNameLabel": "USB zibatmiņa {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} nevar atskaņot mūziku no USB zibatmiņas.",
   "library.usbInstallStick": "USB zibatmiņa ierīcē {{name}} ir ST Reborn instalācijas zibatmiņa. Mūzikai izmanto atsevišķu zibatmiņu.",
   "library.usbNotFAT32": "USB zibatmiņa ierīcē {{name}} nav formatēta kā FAT32. Formatē to kā FAT32 un pēc tam vēlreiz iekopē mūziku.",

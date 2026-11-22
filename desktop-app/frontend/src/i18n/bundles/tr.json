@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} son taramada yanıt vermedi, bu yüzden uygulama onu yalnızca hafızasından biliyor. Yine de hoparlörlerine ekleyebilirsin. Sunucu açılıp ağa geri dönene kadar göz atma her hoparlörde başarısız olur.",
   "library.serverRefusesPC": "{{address}} adresindeki medya sunucusu bu bilgisayarı reddediyor, bu yüzden burada listelenemiyor. Bu bilgisayara medya sunucusunun ayarlarında izin ver (NAS'ta genellikle izin verilen cihazlar veya medya alıcıları listesi), ardından yenile.",
   "library.usbServerName": "USB bellek ({{name}})",
+  "library.usbServerNameLabel": "USB bellek {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} USB bellekten müzik çalamaz.",
   "library.usbInstallStick": "{{name}} içindeki USB bellek bir ST Reborn kurulum belleği. Müzik için ayrı bir bellek kullan.",
   "library.usbNotFAT32": "{{name}} içindeki USB bellek FAT32 olarak biçimlendirilmemiş. FAT32 olarak biçimlendir, ardından müziği yeniden kopyala.",

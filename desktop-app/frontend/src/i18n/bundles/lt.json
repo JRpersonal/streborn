@@ -303,6 +303,7 @@
   "library.notAnsweringWarnBody": "{{name}} per paskutinę paiešką neatsakė, todėl programa jį žino tik iš atminties. Vis tiek gali jį pridėti prie savo garsiakalbių. Naršymas nepavyks nė viename garsiakalbyje, kol serveris nebus įjungtas ir vėl tinkle.",
   "library.serverRefusesPC": "Medijos serveris adresu {{address}} atmeta šį kompiuterį, todėl jo negalima parodyti čia. Leisk šį kompiuterį medijos serverio nustatymuose (NAS įrenginyje paprastai tai leidžiamų įrenginių arba medijos imtuvų sąrašas), tada atnaujink.",
   "library.usbServerName": "USB atmintukas ({{name}})",
+  "library.usbServerNameLabel": "USB atmintukas {{label}} ({{name}})",
   "library.usbUnsupportedModel": "{{name}} negali groti muzikos iš USB atmintuko.",
   "library.usbInstallStick": "USB atmintukas, esantis {{name}}, yra ST Reborn diegimo atmintukas. Muzikai naudok atskirą atmintuką.",
   "library.usbNotFAT32": "USB atmintukas, esantis {{name}}, nesuformatuotas FAT32 formatu. Suformatuok jį FAT32 formatu ir vėl nukopijuok muziką.",
