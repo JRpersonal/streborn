@@ -987,6 +987,7 @@ func browseRaw(ctx context.Context, srv Server, objectID, flag string, start, co
 	}
 	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
 	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`)
+	markReplayable(req)
 
 	client := &http.Client{Timeout: SOAPClientCeiling}
 	resp, err := client.Do(req)
@@ -1088,6 +1089,7 @@ func searchWithCriteria(ctx context.Context, srv Server, criteria string, count 
 	}
 	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
 	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Search"`)
+	markReplayable(req)
 
 	client := &http.Client{Timeout: SOAPClientCeiling}
 	resp, err := client.Do(req)
@@ -1103,6 +1105,19 @@ func searchWithCriteria(ctx context.Context, srv Server, criteria string, count 
 		return BrowseResult{}, fmt.Errorf("search failed: %s", soapFaultMessage(raw, resp.StatusCode))
 	}
 	return parseSearchResponse(raw)
+}
+
+// markReplayable lets the HTTP transport send a ContentDirectory read again on
+// a fresh connection when the kept-alive one it picked turns out to be closed.
+//
+// Browse and Search only read, so asking twice is harmless, but net/http never
+// retries a POST on its own: it needs an Idempotency-Key header to know. A nil
+// value marks the request without putting the header on the wire. Without it a
+// Synology NAS that drops idle connections answered a share of reads with a
+// bare "EOF" (#1705, 2026-11-22): a folder lost from the walk now and then, and
+// once the root itself, which reported the whole NAS as not answering.
+func markReplayable(req *http.Request) {
+	req.Header["X-Idempotency-Key"] = nil
 }
 
 // soapBrowseEnvelope is the relevant subset of a Browse SOAP
