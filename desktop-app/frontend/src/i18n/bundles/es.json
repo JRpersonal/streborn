@@ -263,6 +263,7 @@
   "library.wholeSearchNone": "No se encontró nada en tus servidores multimedia.",
   "library.wholeSearchOffline": "{{name}} no respondió, así que allí no se buscó nada. Eso no significa que la biblioteca esté vacía.",
   "library.wholeSearchPartial": "Puede que esta lista no esté completa: un servidor multimedia tenía más resultados de los que entrega de una vez. Busca algo más preciso.",
+  "library.wholeSearchIncomplete": "Puede que esta lista no esté completa: {{name}} no puede buscar por sí mismo y STR no pudo revisar todas sus carpetas a tiempo.",
   "library.wholeSearchClose": "Volver a la carpeta",
   "library.loadingMore": "Cargando más pistas...",
   "library.capped": "Mostrando las primeras {{n}} pistas. Usa la búsqueda para encontrar una concreta.",
