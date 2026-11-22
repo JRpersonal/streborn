@@ -42,7 +42,7 @@ media server. It shows up in the desktop Library and in the phone remote's
 library as "USB stick (speaker name)", and everything the Library does with a
 NAS works with it: browse folders, play a song, play a folder (queue), save a
 song or a folder on a key, Recently played, and the whole-library search in
-the desktop app (a browse walk, the stick has no Search action). There is no
+the desktop app and on the phone page (Search, below). There is no
 new control and no setting: the entry is there while a music stick is in, and
 gone when it is out.
 
@@ -135,14 +135,28 @@ it cannot play from a stick, instead of failing.
   sector, mount failed, root not readable) and `unsupported-model`.
 - **Browsing** is a ContentDirectory under `:8888/usb/` (`device.xml`,
   `cds.xml`, `control`): Browse (children and metadata),
-  GetSystemUpdateID, GetSearchCapabilities, GetSortCapabilities. Search
-  answers UPnP 401, and the clients walk instead. One Browse reads one
-  directory (at most 10,000 entries), never stats or opens the files in it:
+  GetSystemUpdateID, GetSearchCapabilities, GetSortCapabilities, and
+  Search (next point). One Browse reads one directory (at most 10,000 entries), never stats or opens the files in it:
   titles are file names without the extension, the album is the folder's
   name, the cover is `cover`/`folder`/`front`/`albumart` `.jpg/.jpeg/.png`
   in the folder. No tags are read, so the listing carries no durations
   (Lengths, below). Order is natural (`2 x` before `10 x`), folders first. Dot
   files, `._*` and the Windows system folders are hidden.
+- **Search** reads the stick's directories on the agent (the same reads a
+  Browse makes, no file opened, nothing cached) and matches file names and
+  folder names, case-insensitive: a title search the file name, an artist or
+  album search the names of the folders on the way to the file (the stick has
+  no tags, so `Artist/Album/` or `Artist - Album/` folders are what an artist
+  search finds), "any" both. At most 3000 folders, 16 levels and 2000 hits
+  per search. The phone page searches its own stick directly
+  (`internal/webui/usbsearch.go`; a search never mounts, so a Portable stick
+  is searched once the Library has been opened); the desktop app asks the
+  Search action of each speaker's stick and takes an empty answer as final,
+  without the browse walk it runs for a NAS (`dlna.IsSTRUSBStick`). An agent before this
+  (v1.9.0) answered Search with UPnP 401, and the clients walked it, which
+  matched only the file name and the one folder above it: an artist search
+  found nothing, and the phone page did not search the stick at all
+  (discussion #1136, 2026-11-22).
 - **Lengths** (`internal/webui/usbtracklength.go`). Without a `duration` in
   the DIDL the speaker reports a total of zero, so a stick song had no
   progress bar in the app or on the phone page (discussion #1136, ST20,
@@ -278,7 +292,6 @@ bytes). Nothing touches NAND at run time.
   Xing/Info frame, raw AAC and WMA still play without one. Reading the first
   64 KB of the visible page's files is the next step if lengths or artists in
   the listing itself are asked for.
-- **Phone remote search** does not include the stick yet (browsing does).
 - **SSDP and the native `STORED_MUSIC` source** (stage 2, Q4): the stick is
   not visible to the Bose app or to other speakers' own menus.
 - **Hot-plug events.** No netlink listener; the kernel's own syslog lines

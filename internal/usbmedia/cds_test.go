@@ -130,9 +130,10 @@ func TestTheDLNAClientDescribesAndBrowsesTheStick(t *testing.T) {
 	if _, err := dlna.Browse(ctx, ds, "../etc", 0, 10); !errors.Is(err, dlna.ErrNoSuchObject) {
 		t.Fatalf("traversal: %v", err)
 	}
-	// No Search: a fault, so the clients walk instead.
-	if _, err := dlna.Search(ctx, ds, "Test", 10); err == nil {
-		t.Fatal("Search must answer a fault")
+	// Search answers from the stick's own directories (search_test.go).
+	if s, err := dlna.Search(ctx, ds, "Test", 10); err != nil || len(s.Items) != 1 ||
+		s.Items[0].StreamURL != album.Items[1].StreamURL {
+		t.Fatalf("search: %+v %v", s, err)
 	}
 }
 

@@ -188,6 +188,30 @@ func TestLibrarySearchOneWalksWhenSearchFindsNothing(t *testing.T) {
 	}
 }
 
+// A speaker's music stick searches its own folders (discussion #1136): no hits
+// from it is the whole answer, so neither the title-only retry nor the walk
+// runs, and the speaker is not made to read every folder over SOAP again.
+func TestLibrarySearchOneTrustsTheStickWhenItFindsNothing(t *testing.T) {
+	f := &dlnatest.FakeCDS{Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "elsewhere", URL: "http://192.0.2.10/usb/file/elsewhere.mp3"}}},
+	}}
+	srv := fakeLibraryServer(t, "str-usb-aabbccddeeff", f)
+	res := librarySearchOne(context.Background(), srv, "beatles", dlna.SearchAny)
+	if res.Path != searchPathSearch || len(res.Items) != 0 || res.Err != nil || res.Incomplete {
+		t.Fatalf("got %+v, want the stick's empty answer as it is", res)
+	}
+	if searches, browses := f.Counts(); searches != 1 || browses != 0 {
+		t.Errorf("searches %d, browses %d: want one Search and no walk", searches, browses)
+	}
+	// An agent from before the stick's Search refuses it, and is walked.
+	old := fakeLibraryServer(t, "str-usb-112233445566", &dlnatest.FakeCDS{SearchFaults: true, Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "Beatles song", URL: "http://192.0.2.10/usb/file/b.mp3"}}},
+	}})
+	if res := librarySearchOne(context.Background(), old, "beatles", dlna.SearchAny); res.Path != searchPathWalk || len(res.Items) != 1 {
+		t.Fatalf("old agent: %+v", res)
+	}
+}
+
 // Only a server whose root cannot be read is unanswered, and the log says why.
 func TestSearchServersUnansweredOnlyWhenTheRootCannotBeRead(t *testing.T) {
 	srv := fakeLibraryServer(t, "Broken", &dlnatest.FakeCDS{SearchFaults: true, BrowseFaults: true})
