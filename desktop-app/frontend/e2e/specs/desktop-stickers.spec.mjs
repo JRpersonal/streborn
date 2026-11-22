@@ -89,31 +89,30 @@ test('the housing colour switch repaints the sticker and is remembered', async (
   await expect(page.locator('.sticker-speaker').nth(1).getByRole('radio', { name: en('stickers.white') })).toBeChecked();
 });
 
-test('every speaker offers the remote sticker; ticking it adds it to the sheet and is remembered', async ({ app }) => {
+test('every speaker offers the remote sticker; it is on by default, unticking takes it off the sheet and is remembered', async ({ app }) => {
   const { page } = app;
   await openFromKeys(page);
   const rows = page.locator('.sticker-speaker');
   const remote = (row) => row.getByRole('checkbox', { name: en('stickers.remote') });
-  // An ST10 and an ST20: both are offered it, and it is off until ticked.
+  // An ST10 and an ST20: both are offered it, and it is on until unticked.
   await expect(rows).toHaveCount(2);
-  for (const i of [0, 1]) await expect(remote(rows.nth(i))).not.toBeChecked();
+  for (const i of [0, 1]) await expect(remote(rows.nth(i))).toBeChecked();
   const before = await pages(page).first().evaluate((c) => c.toDataURL());
 
-  await remote(rows.nth(1)).check();
+  await remote(rows.nth(1)).uncheck();
   await expect.poll(() => pages(page).first().evaluate((c) => c.toDataURL())).not.toBe(before);
-  // Still one page: the remote sticker goes under the speakers' stickers.
   await expect(pages(page)).toHaveCount(1);
-  // Remembered for that one speaker.
+  // Remembered for that one speaker: only the untick is stored.
   const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('str.stickerRemote')));
-  expect(Object.values(stored)).toEqual([true]);
+  expect(Object.values(stored)).toEqual([false]);
 
   await page.locator('#stickerClose').click();
   await openFromKeys(page);
-  await expect(remote(page.locator('.sticker-speaker').nth(0))).not.toBeChecked();
-  await expect(remote(page.locator('.sticker-speaker').nth(1))).toBeChecked();
+  await expect(remote(page.locator('.sticker-speaker').nth(0))).toBeChecked();
+  await expect(remote(page.locator('.sticker-speaker').nth(1))).not.toBeChecked();
 
-  // Unticked again, the sheet is as it was.
-  await remote(page.locator('.sticker-speaker').nth(1)).uncheck();
+  // Ticked again, the sheet is as it was.
+  await remote(page.locator('.sticker-speaker').nth(1)).check();
   await expect.poll(() => pages(page).first().evaluate((c) => c.toDataURL())).toBe(before);
 });
 
