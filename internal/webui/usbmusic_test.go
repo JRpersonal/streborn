@@ -799,3 +799,42 @@ func TestPhoneRemoteShowsTheStick(t *testing.T) {
 		}
 	}
 }
+
+// The loopback probe client is unguarded, so only a clean stick-file URL on
+// this speaker's own loopback authority may use it.
+func TestIsUSBLoopbackFileRefusesEscapes(t *testing.T) {
+	base := usbLoopbackBase + "/usb/file/"
+	for raw, want := range map[string]bool{
+		base + "Music/song.mp3":               true,
+		base + "Music/../../api/agent/update": false,
+		base + "Music/%2e%2e/%2e%2e/api/info": false,
+		base + `Music\..\song.mp3`:            false,
+		"http://evil.example/usb/file/a.mp3":  false,
+		base + "./song.mp3":                   false,
+	} {
+		if got := isUSBLoopbackFile(raw); got != want {
+			t.Errorf("isUSBLoopbackFile(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+// The loopback client never follows a redirect away from the stick file.
+func TestUSBProbeClientDoesNotFollowRedirects(t *testing.T) {
+	hit := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/elsewhere" {
+			hit = true
+			return
+		}
+		http.Redirect(w, r, "/elsewhere", http.StatusFound)
+	}))
+	defer srv.Close()
+	resp, err := usbProbeClient().Get(srv.URL + "/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if hit || resp.StatusCode != http.StatusFound {
+		t.Fatalf("redirect followed (hit=%v, status %d)", hit, resp.StatusCode)
+	}
+}

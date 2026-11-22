@@ -45,6 +45,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -808,8 +809,24 @@ func usbIsOwnHost(host string) bool {
 // in the loopback form. Only those may be probed over loopback: the probe
 // clients refuse loopback for every other URL (SSRF guard), and the stick's
 // files are plain audio the agent itself serves.
+//
+// The prefix alone is not enough: "/usb/file/../../api/..." starts with it
+// too, and the loopback client is unguarded. So the URL must also parse to
+// exactly this speaker's loopback authority, carry no user info, and have a
+// path that is already clean (no "..", also not percent-encoded).
 func isUSBLoopbackFile(raw string) bool {
-	return strings.HasPrefix(raw, usbLoopbackBase+usbmedia.FilePrefix)
+	if !strings.HasPrefix(raw, usbLoopbackBase+usbmedia.FilePrefix) {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || strings.Contains(u.Path, "\\") {
+		return false
+	}
+	base, err := url.Parse(usbLoopbackBase)
+	if err != nil || u.Scheme != base.Scheme || u.Host != base.Host {
+		return false
+	}
+	return strings.HasPrefix(u.Path, usbmedia.FilePrefix) && path.Clean(u.Path) == u.Path
 }
 
 // usbFileMIME returns the MIME a URL is played with when it is a file on this
@@ -835,7 +852,14 @@ func usbFileMIME(raw, mime string) string {
 
 // usbProbeClient is the client a length probe of a stick file uses: plain, no
 // SSRF guard, for exactly the URLs isUSBLoopbackFile accepts.
-func usbProbeClient() *http.Client { return &http.Client{Timeout: 5 * time.Second} }
+func usbProbeClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Second,
+		// The client is unguarded on loopback, so it never follows a redirect
+		// away from the stick file it was given.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
 
 func ownInterfaceIPs() []net.IP {
 	addrs, err := net.InterfaceAddrs()
