@@ -574,10 +574,15 @@ describe('the SoundTouch 10 ladder', () => {
     expect(html).not.toContain(esc(en['fwLadder.w4']));
     expect(html).not.toContain(esc(en['fwLadder.w4Scm']));
     expect(html).toContain(esc(en['fwLadder.c1']));
-    expect(html).toContain(esc(en['fwLadder.c3FourVol']));
-    // 4 + Volume minus is only reported by the community on the 10.
-    expect(usbUpdateUnconfirmed('SoundTouch 10')).toBe(true);
-    expect(html).toContain(esc(en['fwLadder.c3Unconfirmed']));
+    // The 10 takes power first, then 4 + Volume minus: holding the keys while
+    // plugging in froze the first real one with every light on (2026-11-23).
+    expect(usbUpdateKey('SoundTouch 10')).toBe('fwLadder.c3Ten');
+    expect(html).toContain(esc(en['fwLadder.c3Ten']));
+    expect(html).not.toContain(esc(en['fwLadder.c3FourVol']));
+    expect(usbUpdateUnconfirmed('SoundTouch 10')).toBe(false);
+    expect(html).not.toContain(esc(en['fwLadder.c3Unconfirmed']));
+    expect(en['fwLadder.c3Ten']).toMatch(/^Plug the power back in first/);
+    expect(en['fwLadder.nsKeysLights']).toMatch(/Plug the power back in, then press/);
   });
   it('never asks about a hand or a display on a speaker without one', () => {
     expect(hasNoDisplay('SoundTouch 10')).toBe(true);

@@ -52,7 +52,7 @@ function usedKeys() {
 // The sentences of the USB stick route, any of which would be wrong for a
 // speaker that never reads a stick at boot.
 const STICK_KEYS = ['darkCheck.usb', 'darkCheck.usbBattery', 'fwLadder.nsPort', 'fwLadder.nsStick',
-  'fwLadder.c3Generic', 'fwLadder.c3FourVol', 'fwLadder.c3Battery', 'fwLadder.c3Unconfirmed', 'fwLadder.c4', 'fwLadder.w2'];
+  'fwLadder.c3Generic', 'fwLadder.c3FourVol', 'fwLadder.c3Ten', 'fwLadder.c3Battery', 'fwLadder.c3Unconfirmed', 'fwLadder.c4', 'fwLadder.w2'];
 
 describe('when the checklist shows', () => {
   const dark = { outcome: 'timeout', verdict: 'unreachable', confirmed: false };
@@ -207,8 +207,9 @@ describe('the stages', () => {
     const at = (k) => dark.indexOf(k);
     // Port (micro-USB: the OTG adapter) right after "insert the stick".
     expect(at('fwLadder.nsPort')).toBe(at('darkCheck.usb') + 1);
-    expect(at('fwLadder.c3FourVol')).toBeGreaterThan(at('fwLadder.nsStick'));
-    expect(at('fwLadder.c4')).toBeGreaterThan(at('fwLadder.c3FourVol'));
+    expect(at('fwLadder.c3Ten')).toBeGreaterThan(at('fwLadder.nsStick'));
+    expect(at('fwLadder.c4')).toBeGreaterThan(at('fwLadder.c3Ten'));
+    expect(dark).not.toContain('fwLadder.c3Unconfirmed');
     expect(at('fwLadder.w2')).toBeGreaterThan(at('fwLadder.c4'));
     expect(bundle('en')['fwLadder.nsPort']).toMatch(/OTG adapter/);
     expect(dark).not.toContain('fwLadder.w2Battery');
