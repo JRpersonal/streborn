@@ -31,6 +31,19 @@ spotifyd); official/eSDK partner clients use the licensed PlayPlay path
 and are unaffected, so the box's NATIVE Spotify Connect keeps working for
 exactly the accounts that fail on STR's engine.
 
+Spotify's own answer, relayed from Spotify support in the Volumio forum
+(community.volumio.com/t/2026-spotify-plugin/77605/30) and quoted by the
+go-librespot maintainer on devgianlu/go-librespot#279 (2026-11-19): these
+devices are "being phased out for security reasons", only accounts that
+played on an eSDK v1 device within the last year can keep using them, and
+new accounts can no longer be enabled. That reads "new" as new to such
+devices, not newly created, and it fits the field data better than account
+age: on #1077 (2026-11-23) a 2022 account that had never played on one was
+refused on a Premium trial, while two 2020 accounts with paid Premium
+history played on their first (STR) use in autumn 2026. If the statement
+holds, an account keeps working as long as it plays at least once a year,
+and one that pauses for longer may not come back.
+
 Signature in the agent log: engine authenticates fine (`authenticated AP`,
 `authenticated Login5`), then `failed retrieving aes key with code 1` on
 every track ("skipping track ... stopping after N consecutive unplayable
