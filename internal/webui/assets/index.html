@@ -1759,11 +1759,35 @@ function sliderBlocked(el) {
   return !!(g && g.down && (g.cancelled || !g.armed));
 }
 
+// sliderJustTouched reports whether a pointer gesture is on this slider or
+// ended a moment ago. A settings slider's own 'change' listener asks it, so
+// only the keyboard saves through 'change': a touch or a click has already
+// been decided by the guard, and Chrome on Android fires 'change' even for the
+// touch that turned into a scroll (#2066).
+var SLIDER_CHANGE_QUIET_MS = 700;
+function sliderJustTouched(el) {
+  if (!el || !sliderGuards) return false;
+  var g = sliderGuards.get(el);
+  return !!(g && (g.down || (g.endedAt && Date.now() - g.endedAt < SLIDER_CHANGE_QUIET_MS)));
+}
+
 // scrollSafeSlider guards one range input. send(value) is called when a
 // gesture is confirmed; label(value) redraws any value text.
-function scrollSafeSlider(el, send, label) {
+//
+// opts.settings is for a slider that stores a setting rather than playing
+// sound (start volume, alarm volume). Those sit in a long page people scroll
+// through, and a value changed by accident is not heard, only found later:
+// charliesz set the start volume every time he scrolled down to Software
+// update, his thumb resting on the end of the bar (#2066). So for them:
+//   - only a sideways drag changes the value; a tap puts the old value back,
+//   - send runs once, when the finger or mouse lets go, never during the drag
+//     (every start-volume write is a write to the speaker's flash).
+// A mouse press stays a slider press, so a click on the track still works on
+// the desktop browser, and the keyboard is untouched.
+function scrollSafeSlider(el, send, label, opts) {
   if (!el || !sliderGuards) return;
-  var g = { down: false, armed: true, cancelled: false, startVal: null, x0: 0, y0: 0 };
+  var settings = !!(opts && opts.settings);
+  var g = { down: false, armed: true, cancelled: false, startVal: null, x0: 0, y0: 0, endedAt: 0 };
   sliderGuards.set(el, g);
   var revert = function() {
     if (g.startVal === null) return;
@@ -1782,7 +1806,7 @@ function scrollSafeSlider(el, send, label) {
     if (!g.down || g.armed || g.cancelled) return;
     var dx = Math.abs(e.clientX - g.x0), dy = Math.abs(e.clientY - g.y0);
     if (dy > SLIDE_SCROLL_PX && dy > dx) { g.cancelled = true; revert(); return; }
-    if (dx > SLIDE_ARM_PX) { g.armed = true; send(el.value); }
+    if (dx > SLIDE_ARM_PX) { g.armed = true; if (!settings) send(el.value); }
   });
   // The browser took the gesture over for scrolling: put the value back and
   // stay quiet. This is the case the whole guard exists for.
@@ -1792,13 +1816,18 @@ function scrollSafeSlider(el, send, label) {
       g.cancelled = true;
       revert();
       g.down = false;
+      g.endedAt = Date.now();
     });
   });
   el.addEventListener('pointerup', function() {
     if (!g.down) return;
     var wasTap = !g.armed; // never wandered far enough to become a drag
     g.down = false;
+    g.endedAt = Date.now();
     if (g.cancelled) return;
+    // A setting changes only by a drag. A touch that never moved sideways is
+    // a thumb on its way somewhere else.
+    if (settings && wasTap) { revert(); return; }
     // Either a confirmed drag (already sending live) or a deliberate tap that
     // has been held back until now. Both end with the value the user chose,
     // except for the one case where "the value the user chose" is a guess the
@@ -7016,7 +7045,10 @@ function wireAlarmEditor() {
       var lab = document.getElementById('alarmVolVal');
       if (lab) lab.textContent = Number(vol.value) > 0 ? vol.value : T.alarmVolKeep;
     };
-    vol.addEventListener('input', paintVol);
+    // Read when the alarm is saved, so the guard only has to keep a scroll
+    // from moving it (#2066); it never sends anything itself.
+    scrollSafeSlider(vol, function() {}, paintVol, { settings: true });
+    vol.addEventListener('input', function() { if (!sliderBlocked(vol)) paintVol(); });
     paintVol();
   }
   [].forEach.call(document.querySelectorAll('[data-alarm-day]'), function(b) {
@@ -7348,8 +7380,11 @@ async function saveStartVol(v) {
 (function wireStartVol(){
   var sl = document.getElementById('startVol');
   if (!sl) return;
-  sl.addEventListener('input', function(){ svPaint(sl.value); });
-  sl.addEventListener('change', function(){ saveStartVol(sl.value); });
+  // Touch and mouse go through the scroll guard (#2066), which saves once on
+  // release; 'change' is left to the keyboard.
+  scrollSafeSlider(sl, saveStartVol, svPaint, { settings: true });
+  sl.addEventListener('input', function(){ if (!sliderBlocked(sl)) svPaint(sl.value); });
+  sl.addEventListener('change', function(){ if (!sliderJustTouched(sl)) saveStartVol(sl.value); });
   loadStartVol();
 })();
 
