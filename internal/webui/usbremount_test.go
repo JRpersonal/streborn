@@ -24,7 +24,7 @@ func TestAFailedRemountIsLoggedOnceAndServingGoesOn(t *testing.T) {
 	if !ok || row.UDN == "" || row.Refusal != "" {
 		t.Fatalf("the stick must be served from the read-write mount: %+v %v", row, ok)
 	}
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.Served || snap.RemountedRO || !strings.Contains(snap.RemountError, "busy") ||
 		!strings.HasPrefix(snap.MountOptions, "rw,") {
 		t.Fatalf("snapshot: %+v", snap)
@@ -50,7 +50,7 @@ func TestAFailedRemountIsLoggedOnceAndServingGoesOn(t *testing.T) {
 	f.remountErr = nil
 	f.mu.Unlock()
 	listServers(t, s)
-	snap = s.USBMusicDebug().(usbMusicSnapshot)
+	snap = s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if f.remounts() != 2 || !snap.RemountedRO || snap.RemountError != "" {
 		t.Fatalf("the retry must take: %d remounts, %+v", f.remounts(), snap)
 	}
@@ -67,7 +67,7 @@ func TestARemountThatDidNotTakeIsAnError(t *testing.T) {
 	f.remountNoop = true
 	s, _ := usbTestServer(t)
 	listServers(t, s)
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.Served || snap.RemountedRO || !strings.Contains(snap.RemountError, "still read-write") {
 		t.Fatalf("snapshot: %+v", snap)
 	}
@@ -145,7 +145,7 @@ func TestTheKernelAttachLineRemountsTheStickOnceTheFirmwareMountedIt(t *testing.
 		defer s.usb.mu.Unlock()
 		return s.usb.snap.Checks >= 1
 	})
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.Served {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.Served {
 		t.Fatalf("nothing is mounted yet, nothing may be served: %+v", snap)
 	}
 	f.firmwareMount(media, "vfat")
@@ -154,7 +154,7 @@ func TestTheKernelAttachLineRemountsTheStickOnceTheFirmwareMountedIt(t *testing.
 	s.OnUSBDiskLine(true)
 	usbWaitFor(t, "the round to end", func() bool { return !usbSettling(s) })
 
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.Served || !snap.RemountedRO || snap.MountedBy != "firmware" || snap.LastKernelEvent != "attached" {
 		t.Fatalf("snapshot: %+v", snap)
 	}
@@ -181,7 +181,7 @@ func TestTheKernelAttachLineRemountsTheStickOnceTheFirmwareMountedIt(t *testing.
 		}()
 		return !ok
 	})
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.Present || snap.LastKernelEvent != "gone" {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.Present || snap.LastKernelEvent != "gone" {
 		t.Fatalf("snapshot after the pull: %+v", snap)
 	}
 }
@@ -202,7 +202,7 @@ func TestTheKernelAttachLineLeavesAnInstallStickAlone(t *testing.T) {
 		defer s.usb.mu.Unlock()
 		return !s.usb.settling && s.usb.snap.Checks > 0
 	})
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if snap.Refusal != usbRefusalInstallStick || snap.RemountedRO || len(f.ops()) != 0 {
 		t.Fatalf("snapshot %+v, ops %v", snap, f.ops())
 	}

@@ -174,7 +174,7 @@ func TestADecoderErrorOnAStickFileIsShown(t *testing.T) {
 	if !ok || ref["title"] != "alac" || ref["reason"] != "decoder" {
 		t.Fatalf("usbRefused: %v", got)
 	}
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); !strings.Contains(snap.LastDecoderError, "AUDIO_ERROR_DECODER") {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; !strings.Contains(snap.LastDecoderError, "AUDIO_ERROR_DECODER") {
 		t.Fatalf("debug: %+v", snap)
 	}
 	// Another play takes it away; a decoder error on a NAS file is not the stick's.

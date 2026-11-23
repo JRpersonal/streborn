@@ -47,6 +47,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -199,8 +200,58 @@ const usbRemountRetryGap = time.Minute
 // USBMusicDebug is the "usb_music" debug-state section. Reading it looks at
 // the stick (detection only, it never mounts), so a bundle shows a stick that
 // was plugged in after the agent started even if nobody opened the Library.
+//
+// It also carries the kernel's own USB lines (KernelUSB). A stick that never
+// enumerates leaves nothing in sysfs, /proc/mounts or the agent log, so
+// without them a bundle cannot tell "no stick in the port" from "the port
+// gave the stick no power" (musb VBUS_ERROR, live on a mojo ST30 in #119,
+// 2026-11-23). dmesg is read once per bundle, never on a timer.
 func (s *Server) USBMusicDebug() any {
-	return s.usbRefresh(false)
+	return usbMusicDebugView{
+		usbMusicSnapshot: s.usbRefresh(false),
+		KernelUSB:        usbKernelLines(),
+	}
+}
+
+// usbMusicDebugView is the usb_music section: the snapshot the apps also get,
+// plus the kernel lines only a bundle needs.
+type usbMusicDebugView struct {
+	usbMusicSnapshot
+	KernelUSB []string `json:"kernel_usb,omitempty"`
+}
+
+// usbDmesgFn reads the kernel ring buffer. A seam for the tests.
+var usbDmesgFn = func() ([]byte, error) { return exec.Command("dmesg").Output() }
+
+// usbKernelLinePattern keeps the lines about the USB host port and a disk on
+// it. usbKernelLines leaves out the g_ether gadget lines (usb0, which carry a
+// MAC) and the stick's serial number.
+var usbKernelLinePattern = regexp.MustCompile(`(?i)musb|vbus|over-?current|\busb \d+-|usb-storage|scsi|\bsd[a-z]\d*\b|fat-fs|\bhub \d`)
+
+// usbKernelKeep is how many of the newest matching lines a bundle carries.
+const usbKernelKeep = 24
+
+// usbKernelLines returns the newest USB lines of the kernel ring buffer.
+func usbKernelLines() []string {
+	out, err := usbDmesgFn()
+	if err != nil {
+		return nil
+	}
+	var keep []string
+	for _, l := range strings.Split(string(out), "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.Contains(l, "g_ether") || strings.Contains(l, "usb0:") ||
+			strings.Contains(l, "SerialNumber") {
+			continue
+		}
+		if usbKernelLinePattern.MatchString(l) {
+			keep = append(keep, l)
+		}
+	}
+	if len(keep) > usbKernelKeep {
+		keep = keep[len(keep)-usbKernelKeep:]
+	}
+	return keep
 }
 
 // USBMusicStartupCheck looks at the stick once when the agent starts, so the
