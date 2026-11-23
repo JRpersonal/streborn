@@ -17,7 +17,8 @@
 import { state } from '../state.js';
 import { strBoxes } from '../boxes.js';
 import { formatClock } from '../format.js';
-import { playOnMasterIfGrouped } from '../groups.js';
+import { playOnMasterIfGrouped, pairUnitName } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, hideToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
@@ -995,8 +996,14 @@ function openFolderId() {
 
 // speakerName is the name of the speaker a play from here goes to, as the
 // preview's actions and feedback name it.
+// speakerName names the speaker the Library plays on. Half of a live stereo
+// pair is named as the pair, "Kitchen (stereo)", the way the sidebar and the
+// player name it, never as the half the app happens to address (#1587).
 function speakerName() {
-  return state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const b = state.currentBox;
+  if (!b) return '';
+  const pair = pairUnitName(b, state.zoneLive, state.boxes, (p) => pairDisplayName(p, () => renderLibrary()), getBoxLabel);
+  return pair ? t('ui2.side.pairName', { name: pair }) : getBoxLabel(b);
 }
 
 async function libraryPlay(item) {
