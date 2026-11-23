@@ -39,7 +39,7 @@ played on an eSDK v1 device within the last year can keep using them, and
 new accounts can no longer be enabled. That reads "new" as new to such
 devices, not newly created, and it fits the field data better than account
 age: on #1077 (2026-11-23) a 2022 account that had never played on one was
-refused on a Premium trial, while two 2020 accounts with paid Premium
+refused on a Premium trial and again after a paid upgrade, while two 2020 accounts with paid Premium
 history played on their first (STR) use in autumn 2026. If the statement
 holds, an account keeps working as long as it plays at least once a year,
 and one that pauses for longer may not come back.
