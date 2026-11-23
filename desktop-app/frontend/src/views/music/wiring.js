@@ -10,7 +10,7 @@ import { state } from '../../state.js';
 import { $, clearNoticeDismissal, showError } from '../../utils.js';
 import { renderStreamSource } from '../streamsource.js';
 import { deps } from './deps.js';
-import { action, mountTrackSeek, queueAction, refreshQueue, renderNowPlayingBar } from './nowplaying.js';
+import { action, mountTrackSeek, queueAction, refreshQueue, renderNowPlayingBar, spotifyPlayModeAction, spotifyPlayModesOn } from './nowplaying.js';
 
 // tellSpeakersServerAlive passes a returning music server on to every STR
 // speaker, so a queue it ended stops saying "music server not responding" in
@@ -96,11 +96,15 @@ export function mountWiring() {
   // before the next status poll.
   $('queuePrevBtn').onclick = () => queueAction(QueuePrev);
   $('queueNextBtn').onclick = () => queueAction(QueueNext);
+  // While a Spotify playlist plays, the same two buttons ask the speaker's
+  // engine to switch its shuffle and step its repeat (#2058).
   $('queueShuffleBtn').onclick = () => {
+    if (spotifyPlayModesOn()) { spotifyPlayModeAction('shuffle'); return; }
     const on = !(state.queue && state.queue.shuffle);
     queueAction((h, p) => QueueShuffle(h, p, on));
   };
   $('queueRepeatBtn').onclick = () => {
+    if (spotifyPlayModesOn()) { spotifyPlayModeAction('repeat'); return; }
     const cur = (state.queue && state.queue.repeat) || 'off';
     const nextMode = cur === 'off' ? 'all' : cur === 'all' ? 'one' : 'off';
     queueAction((h, p) => QueueRepeat(h, p, nextMode));

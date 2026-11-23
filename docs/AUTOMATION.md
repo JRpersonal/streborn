@@ -332,6 +332,13 @@ playlist plays`). Nothing is stored: a Spotify preset's own shuffle and repeat
 flags still apply on its next recall. Thumbs keys only, same one-thing-per-key
 rules as the sleep timer.
 
+The desktop app's player does the same step with the music folder's own
+shuffle and repeat buttons while STR's Spotify plays (#2058), through
+`POST /api/spotify/playmode` (CONTROL-API.md), without the panel notice. The
+buttons show the engine's state from `/spotify/info` (`playModes`), read on
+the now-playing refresh the app already makes; an agent without that field
+gets no buttons.
+
 ## Thumbs up and thumbs down on a Spotify song (no setting)
 
 A thumbs key that carries nothing (no group, no key action, no webhook of its

@@ -100,6 +100,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyLikeCurrent != nil && s.spotifyUnlikeCurrent != nil {
 		out["spotifyLiked"] = "true"
 	}
+	// This agent steps a Spotify playlist's shuffle and repeat for an app
+	// (POST /api/spotify/playmode, spotifyplaymode_http.go, #2058).
+	if s.spotifyToggleShuffle != nil && s.spotifyCycleRepeat != nil {
+		out["spotifyPlayModes"] = "true"
+	}
 	// The speaker's effective country and where it came from ("str": the
 	// wizard or app setting, "box": the firmware's countryCode). A US speaker
 	// gets the firmware's own Pandora and iHeartRadio back (usservices.go).

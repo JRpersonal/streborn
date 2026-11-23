@@ -234,6 +234,14 @@ export function SeekTrack(host, port, positionSec) {
   return callOptionalBinding('SeekTrack', [host, port, positionSec]);
 }
 
+// SpotifyPlayMode presses the player's shuffle ('shuffle') or repeat
+// ('repeat') button for the Spotify playlist the speaker plays (#2058) and
+// resolves to { shuffle, repeat } after the step. Optional binding, per the
+// note above.
+export function SpotifyPlayMode(host, port, action) {
+  return callOptionalBinding('SpotifyPlayMode', [host, port, action]);
+}
+
 // QueueServerAlive tells a speaker that a music server announced itself again,
 // so its "music server not responding" line clears (#1890). Optional binding,
 // per the note above.

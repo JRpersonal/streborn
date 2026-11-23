@@ -392,6 +392,10 @@ type Server struct {
 	// switches; the keys then do nothing.
 	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
 	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
+	// spotifyPlayModes reads the live shuffle and repeat for the app's
+	// buttons (#2058, spotifyplaymode_http.go). nil: the answer carries only
+	// the mode a press changed.
+	spotifyPlayModes func(ctx context.Context) (shuffle bool, repeat string, err error)
 	// spotifyLikeCurrent saves the playing song to Liked Songs and
 	// spotifyUnlikeCurrent removes it, for the remote's thumbs up and thumbs
 	// down keys (#1165, likekey.go). nil when the engine cannot; the keys
@@ -1867,6 +1871,9 @@ func (s *Server) Run(ctx context.Context) error {
 	// answers 409 there): an unregistered path falls through to the index,
 	// whose 200 + HTML would read as success.
 	mux.HandleFunc("/api/spotify/liked", s.handleSpotifyLiked)
+	// Same rule: the app's shuffle and repeat buttons for a Spotify playlist
+	// (#2058) get a 409 from a speaker without the engine, never the index.
+	mux.HandleFunc("/api/spotify/playmode", s.handleSpotifyPlayMode)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves

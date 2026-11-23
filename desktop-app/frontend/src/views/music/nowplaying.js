@@ -1,7 +1,8 @@
 // views/music/nowplaying.js: the transport actions, the DLNA queue controls, the
 // now-playing bar, the balance line and the track progress bar.
 
-import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, SeekTrack, Stop, TrackPosition } from '../../api.js';
+import { GetQueue, Next, Pause, Prev, readBoxBalance, Resume, SeekTrack, SpotifyPlayMode, Stop, TrackPosition } from '../../api.js';
+import { buttonRepeatMode, mergePlayModeAnswer, playModeUnsupported, spotifyPlayModesShown } from '../../spotifyplaymode.js';
 import { balanceSourceBox, inStereoPair, stereoPairsOf } from '../../groups.js';
 import { t } from '../../i18n/index.js';
 import { nowKeyTag } from '../../presetrows.js';
@@ -144,27 +145,74 @@ export async function refreshQueue() {
   renderNowPlayingBar();
 }
 
+// spotifyPlayModesOn says whether the queue row's shuffle and repeat buttons
+// act on a Spotify playlist right now (#2058, spotifyplaymode.js).
+export function spotifyPlayModesOn() {
+  const box = state.currentBox;
+  const unsupported = !!(box && state.spotifyPlayModeUnsupported && state.spotifyPlayModeUnsupported[box.host]);
+  return spotifyPlayModesShown({
+    location: state.nowLocation,
+    boxSpotify: !!state.nowBoxSpotify,
+    playModes: state.spotifyPlayModes,
+    unsupported,
+    queueActive: !!(state.queue && state.queue.active),
+  });
+}
+
+// spotifyPlayModeAction is a press of the shuffle ('shuffle') or repeat
+// ('repeat') button while a Spotify playlist plays: the speaker's agent takes
+// the step (the remote key's own) and answers the new state, which the
+// buttons show at once. A speaker whose agent cannot do it loses the buttons.
+export async function spotifyPlayModeAction(kind) {
+  const box = state.currentBox;
+  if (!box) return;
+  // A now-playing reply asked for before this press describes the state
+  // before it (status.js).
+  state.spotifyPlayModePressAt = Date.now();
+  try {
+    const out = await SpotifyPlayMode(box.host, box.port, kind);
+    if (state.currentBox !== box) return;
+    state.spotifyPlayModes = mergePlayModeAnswer(state.spotifyPlayModes, out);
+  } catch (e) {
+    if (state.currentBox !== box) return;
+    if (playModeUnsupported(e)) {
+      state.spotifyPlayModeUnsupported = { ...(state.spotifyPlayModeUnsupported || {}), [box.host]: true };
+    } else {
+      transportFailed('queue', e, box);
+    }
+  }
+  renderQueueControls();
+}
+
 // renderQueueControls shows/hides the queue transport controls and reflects the
-// shuffle/repeat/position state. Purely DOM-driven from state.queue.
-function renderQueueControls() {
+// shuffle/repeat/position state. Purely DOM-driven from state.queue, and from
+// state.spotifyPlayModes while a Spotify playlist plays: then only the shuffle
+// and repeat buttons show (Spotify skips with the track buttons beside Play).
+export function renderQueueControls() {
   const wrap = $('queueControls');
   if (!wrap) return;
   const q = state.queue;
   const active = !!(q && q.active);
-  wrap.classList.toggle('hidden', !active);
-  if (!active) return;
+  const spotify = !active && spotifyPlayModesOn();
+  wrap.classList.toggle('hidden', !active && !spotify);
+  for (const id of ['queuePrevBtn', 'queueNextBtn', 'queuePos']) {
+    const el = $(id);
+    if (el) el.classList.toggle('hidden', spotify);
+  }
+  if (!active && !spotify) return;
+  const pm = spotify ? state.spotifyPlayModes : null;
   const shuffleBtn = $('queueShuffleBtn');
-  if (shuffleBtn) shuffleBtn.classList.toggle('active', !!q.shuffle);
+  if (shuffleBtn) shuffleBtn.classList.toggle('active', spotify ? !!pm.shuffle : !!q.shuffle);
   const repeatBtn = $('queueRepeatBtn');
   if (repeatBtn) {
-    const mode = q.repeat || 'off';
+    const mode = spotify ? buttonRepeatMode(pm.repeat) : (q.repeat || 'off');
     repeatBtn.classList.toggle('active', mode !== 'off');
     // "Repeat one" gets a small superscript 1 so the two repeat modes are
     // distinguishable at a glance.
     repeatBtn.innerHTML = mode === 'one' ? '&#128257;¹' : '&#128257;';
   }
   const pos = $('queuePos');
-  if (pos) {
+  if (pos && !spotify) {
     const items = q.items || [];
     const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
     // Only the position. The running song's artist and album (#1033) used to
@@ -191,6 +239,7 @@ export function resetNowPlaying() {
   state.nowBitrate = 0;
   state.spotifyNow = null;
   state.spotifyRecall = null;
+  state.spotifyPlayModes = null;
   state.spotifyNowGen = (state.spotifyNowGen || 0) + 1;
   state.optimisticUntil = 0;
   state.lastStatusHTML = '';

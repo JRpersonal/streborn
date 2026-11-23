@@ -6,6 +6,7 @@ import { SpotifyNowPlaying, Status } from '../../api.js';
 import { t } from '../../i18n/index.js';
 import { sourceAccountFrom } from '../../nowsourceaccount.js';
 import { acceptSpotifyReply, recallSettled, snapshotFromReply } from '../../spotifynowplaying.js';
+import { playModesFromReply } from '../../spotifyplaymode.js';
 import { refusalFromReply } from '../../spotifyrefused.js';
 import { state } from '../../state.js';
 import { isPlaying } from '../../boxes.js';
@@ -28,6 +29,7 @@ import {
   pollTrackPosition,
   refreshQueue,
   renderNowPlayingBar,
+  renderQueueControls,
   resetTrackProgress,
   trackPos,
 } from './nowplaying.js';
@@ -267,8 +269,22 @@ export async function refreshStatus() {
       if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {
         state.lastSpotifyNowFetch = Date.now();
         const sentGen = state.spotifyNowGen || 0;
+        const sentAt = Date.now();
         SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
           if (!np) return;
+          // The playlist's shuffle and repeat for the player's buttons (#2058),
+          // the engine's state whatever the song fields below say. A reply
+          // asked for before the last press there describes the state before
+          // it, and the press's own answer is newer. A reply without them (an
+          // engine that did not answer this once) keeps the last known state;
+          // an older agent never sends them, so its player never gets the
+          // buttons. A speaker switch clears them (resetNowPlaying).
+          const pm = playModesFromReply(np);
+          if (pm && state.currentBox === npBox && !((state.spotifyPlayModePressAt || 0) >= sentAt)) {
+            const before = JSON.stringify(state.spotifyPlayModes || null);
+            state.spotifyPlayModes = pm;
+            if (JSON.stringify(pm) !== before) renderQueueControls();
+          }
           // Only a reply about the preset clicked last may paint the line, and
           // only as a whole (#1077). A rejected reply leaves the previous
           // snapshot (none, right after a click) in place and the next status
