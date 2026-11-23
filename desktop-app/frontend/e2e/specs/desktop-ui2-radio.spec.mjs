@@ -111,8 +111,12 @@ test.describe('UI 2.0 Radio', () => {
       await expect(r.locator('[data-act="fav"]')).toHaveAttribute('aria-label', `Add ${ROCK.name} to favorites`);
       await expect(r.locator('[data-act="key"]')).toHaveAttribute('aria-label', `Put on key: ${ROCK.name} on ${LR.friendlyName}`);
       await expect(r.locator('[data-act="key"]')).toHaveText('Put on key');
-      // The search field is part of Discover.
+      // The search field is part of Discover, on the tab row right over the
+      // filters, not up by the title (#1587).
       await expect(page.locator('#searchQ')).toBeVisible();
+      await expect(page.locator('.ui2-radio-bar #searchQ')).toHaveCount(1);
+      await expect(page.locator('.topbar-head #searchQ')).toHaveCount(0);
+      await expect(page.locator('.ui2-radio-bar [role="tablist"] #searchQ')).toHaveCount(0);
     });
 
     test('4b. emptying the search field takes its results away at once, without Search', async ({ app, mock }) => {
