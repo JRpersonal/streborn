@@ -212,12 +212,19 @@ func (s *Server) handleStartVolume(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "volume must be 0 (off) or 1..100", http.StatusBadRequest)
 			return
 		}
+		prev, _ := s.startVolume()
 		if err := persistFlagFile(path, strconv.Itoa(body.Volume)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_ = exec.Command("sync").Run()
-		s.logger.Info("start volume set", "vol", body.Volume)
+		// Who set it, from what. A start level of 100 nobody remembered
+		// setting woke a speaker at full volume every morning (#2070), and
+		// the bundle could not say whether the desktop app or a thumb on the
+		// phone page's slider had written it. The user agent tells the two
+		// apart (the phone page reports a mobile browser).
+		s.logger.Info("start volume set", "vol", body.Volume, "was", prev,
+			"remote", r.RemoteAddr, "ua", r.UserAgent())
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "volume": body.Volume})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
