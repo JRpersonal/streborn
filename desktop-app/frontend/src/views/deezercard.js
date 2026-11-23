@@ -14,7 +14,7 @@
 import { $, escapeHtml, escapeAttr } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { state } from '../state.js';
-import { DeezerStatus, DeezerRecheck, UnlinkMusicService } from '../api.js';
+import { DeezerStatus, DeezerRecheck, UnlinkMusicService, BrowserOpenURL, ClipboardSetText } from '../api.js';
 import {
   deezerView, deezerStatusLine, deezerPill, deezerCanDisconnect,
   deezerRefreshDelays, deezerDisconnectError,
@@ -26,6 +26,13 @@ import { confirmFor } from './settings/shared.js';
 let gen = 0;
 let pending = [];
 let msg = { host: '', cls: '', text: '' };
+
+// DEEZER_SUPPORT_URL is Deezer's help centre, where its chat and contact form
+// start. The support line asks owners to request access for open-source
+// projects: since October 2025 Deezer registers no new API apps for private
+// persons, which is the one door that would let STR sign a speaker in.
+export const DEEZER_SUPPORT_URL = 'https://support.deezer.com/';
+export const COPIED_MS = 2000;
 
 export function deezerCardMarkup() {
   return `<section class="sp-card" id="deezerCard" aria-labelledby="deezerCardTitle" style="display:none">
@@ -99,8 +106,37 @@ function paint(box, v) {
     </div>
     <div id="deezerCardMsg" class="small">${keep.text ? `<div class="${escapeAttr(keep.cls)}">${escapeHtml(keep.text)}</div>` : ''}</div>
     <p class="muted small">${escapeHtml(t('deezer.linkHint'))}</p>
-    <p class="muted small">${escapeHtml(t('deezer.diagHint'))}</p>`;
+    <p class="muted small">${escapeHtml(t('deezer.diagHint'))}</p>
+    ${deezerSupportHTML(t)}`;
   wire(box);
+}
+
+// deezerSupportHTML is the line and the two buttons that point owners at
+// Deezer support with a ready message asking for access for open-source
+// projects like ST Reborn. Shown on every speaker: a new Deezer sign-in is
+// impossible everywhere until Deezer opens such a door.
+export function deezerSupportHTML(tr) {
+  return `<p class="small deezer-support">${escapeHtml(tr('deezer.support'))}</p>`
+    + '<p class="deezer-support-actions" style="display:flex;gap:8px;flex-wrap:wrap">'
+    + `<button type="button" class="btn btn-mini" id="deezerSupportOpen">${escapeHtml(tr('deezer.supportOpen'))}</button>`
+    + `<button type="button" class="btn btn-mini" id="deezerSupportCopy">${escapeHtml(tr('deezer.supportCopy'))}</button>`
+    + '</p>';
+}
+
+// deezerSupportCopy copies the message and shows "Copied" on the button for
+// COPIED_MS. deps carries the side effects so a test can drive it.
+export function deezerSupportCopy(btn, deps) {
+  const label = deps.t('deezer.supportCopy');
+  return Promise.resolve()
+    .then(() => deps.copy(deps.t('deezer.supportMessage')))
+    .then((ok) => {
+      // Wails answers false when the clipboard refused the text.
+      if (ok === false) return false;
+      btn.textContent = deps.t('deezer.supportCopied');
+      deps.later(() => { btn.textContent = label; }, COPIED_MS);
+      return true;
+    })
+    .catch(() => false);
 }
 
 function refreshSoon() {
@@ -124,6 +160,12 @@ function wire(box) {
       say(box, 'setup-err', t(k, p));
     }
     renderDeezerCard().catch(() => {});
+  };
+  const open = $('deezerSupportOpen');
+  if (open) open.onclick = () => { BrowserOpenURL(DEEZER_SUPPORT_URL); };
+  const copy = $('deezerSupportCopy');
+  if (copy) copy.onclick = () => {
+    deezerSupportCopy(copy, { copy: ClipboardSetText, later: setTimeout, t });
   };
   const ref = $('deezerRefresh');
   if (ref) ref.onclick = () => {
