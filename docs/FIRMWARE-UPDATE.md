@@ -96,8 +96,10 @@ Try these in order. Stop as soon as the speaker shows 27.0.6.
    SoundTouch app and connect it to your Wi-Fi. Once the speaker is set
    up there, the app shows a firmware update. Take it and let the
    speaker restart by itself. This is the easiest way, and it still
-   works. If the app shows no update, or cannot add the speaker, go on
-   with step 2.
+   works. A speaker that still carries an old setup is reset first;
+   [`RESET-AND-SETUP.md`](./RESET-AND-SETUP.md) has the steps per model.
+   If the app shows no update, or cannot add the speaker, go on with
+   step 2.
 2. **ST Reborn.** Install ST Reborn on a computer
    ([st-reborn.de](https://st-reborn.de)), open it and let it find the
    speaker. When the speaker's firmware is too old, the app shows a

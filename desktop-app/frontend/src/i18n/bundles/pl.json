@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Daj głośnikowi minutę na dokończenie restartu, a potem naciśnij Zainstaluj ponownie.",
   "setup.help.netLogs": "Jeśli nadal się nie udaje, użyj Zapisz dzienniki na dole okna i dołącz plik do zgłoszenia.",
   "setup.help.firmwareFirst": "Najpierw zaktualizuj oprogramowanie głośnika według instrukcji powyżej, a potem ponownie naciśnij Zainstaluj. Do tego czasu instalacja nie może się udać i tylko uruchamia głośnik ponownie.",
+  "setup.help.boseAppSetup": "Skonfiguruj głośnik raz w aplikacji Bose SoundTouch z App Store lub Google Play. Przywróć ustawienia fabryczne zgodnie z instrukcją Bose dla Twojego modelu, dodaj go w aplikacji jako nowy głośnik w swojej sieci Wi-Fi i zainstaluj aktualizację oprogramowania, jeśli aplikacja ją zaproponuje.",
+  "setup.help.boseAppRetry": "Potem ponownie naciśnij Zainstaluj. Dopóki głośnik nie zostanie raz skonfigurowany, instalacja nie przejdzie dalej w tym miejscu i tylko go uruchomi ponownie.",
   "setup.help.waitRefresh": "Poczekaj kilka minut, a potem naciśnij Odśwież na liście głośników. Jeśli głośnik pojawi się z wersją ST Reborn, instalacja się powiodła i nic więcej nie trzeba robić.",
   "setup.help.repairRestarted": "Głośnik sam uruchomił się ponownie w trakcie instalacji i w ciągu kilku minut wróci sam. Na razie nie naciskaj ponownie Zainstaluj: ta sama instalacja zatrzymałaby się w tym samym miejscu. Poczekaj około pięciu minut, a potem naciśnij Odśwież na liście głośników.",
   "setup.awaitBoxReadyTitle": "Zrób teraz to na głośniku:",

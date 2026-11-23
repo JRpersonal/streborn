@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Palaukite minutę, kol garsiakalbis baigs paleidimą iš naujo, tada dar kartą paspauskite Įdiegti.",
   "setup.help.netLogs": "Jei vis tiek nepavyksta, apačioje lange naudokite Įrašyti žurnalus ir prisekite failą prie savo pranešimo.",
   "setup.help.firmwareFirst": "Pirmiausia atnaujinkite garsiakalbio programinę įrangą pagal aukščiau pateiktą vadovą, tada vėl paspauskite Įdiegti. Iki tol diegimas negali pavykti ir tik paleidžia garsiakalbį iš naujo.",
+  "setup.help.boseAppSetup": "Vieną kartą nustatykite garsiakalbį su Bose SoundTouch programėle iš App Store arba Google Play. Atkurkite gamyklinius nustatymus, kaip aprašyta Bose vadove jūsų modeliui, pridėkite jį programėlėje kaip naują garsiakalbį savo Wi-Fi tinkle ir įdiekite programinės įrangos naujinį, jei programėlė jį siūlo.",
+  "setup.help.boseAppRetry": "Tada dar kartą paspauskite Įdiegti. Kol garsiakalbis nebuvo nė karto nustatytas, diegimas toliau šios vietos nepajuda ir tik jį perkrauna.",
   "setup.help.waitRefresh": "Palaukite kelias minutes, tada garsiakalbių sąraše paspauskite Atnaujinti. Jei garsiakalbis rodomas su ST Reborn versija, diegimas pavyko ir daugiau nieko daryti nereikia.",
   "setup.help.repairRestarted": "Garsiakalbis diegimo viduryje pats paleido save iš naujo ir per kelias minutes grįš savaime. Kol kas dar kartą nespauskite Įdiegti: tas pats diegimas sustotų toje pačioje vietoje. Palaukite apie penkias minutes, tada garsiakalbių sąraše paspauskite Atnaujinti.",
   "setup.awaitBoxReadyTitle": "Dabar atlikite tai su garsiakalbiu:",

@@ -475,28 +475,31 @@ func (a *App) boxHasStoredMargeUUID(host string) bool {
 // enableSSHViaTelnetBootstrap is the factory-reset unlock: it gives the box a
 // dummy account, points its marge at a throwaway responder on this PC, injects
 // the sshd payload via envswitch, reboots, and waits for :22. Returns whether
-// SSH opened, a command log, and firewallSuspected - true when the box came back
-// on the network but never called this PC's responder, which on Windows is
-// almost always the firewall blocking the inbound to :19080. The caller uses
-// that flag to name the firewall in its user-facing advice.
+// SSH opened, a command log, and the kind of failure when one can be named:
+// errBootstrapResponderUnreachable when the box came back on the network but
+// never called this PC's responder (on Windows almost always the firewall
+// blocking the inbound to :19080), errBootstrapAccountRefused when the speaker
+// turned the account down itself before and after a restart onto the responder
+// (a speaker reset and never set up again), nil otherwise. The caller uses it to
+// give the matching advice.
 //
 // Cleanup contract: once the injection is written it embeds this PC's live LAN
 // IP in the box's persistent config, so ANY failure exit after that point calls
 // restoreStockBoseURLsAndReboot before returning, leaving the box back on stock
 // URLs. On success the caller resets boseurls to stock (so STR's own marge
 // interception takes over) before installing.
-func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, bool) {
+func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, error) {
 	var log strings.Builder
 
 	pcIP, err := localIPForBox(host)
 	if err != nil {
 		a.logger.Info("telnet-bootstrap: cannot determine this PC's LAN IP for the box; skipping factory-reset unlock", "host", host, "err", err)
-		return false, "could not determine local IP: " + err.Error(), false
+		return false, "could not determine local IP: " + err.Error(), nil
 	}
 	marge, err := startBootstrapMarge()
 	if err != nil {
 		a.logger.Warn("telnet-bootstrap: could not start the local marge responder on any candidate port; close any other STR instance or program using 19080-19085 and retry", "host", host, "err", err)
-		return false, "could not start the local marge responder: a port in the 19080-19085 range is in use by another program. Close any other running copy of this app and try again.", false
+		return false, "could not start the local marge responder: a port in the 19080-19085 range is in use by another program. Close any other running copy of this app and try again.", nil
 	}
 	defer marge.Stop()
 	fmt.Fprintf(&log, "PC marge address for the box: http://%s:%d\n", pcIP, marge.port)
@@ -508,7 +511,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 
 	t, err := dialTAP(host, 5*time.Second)
 	if err != nil {
-		return false, "port 17000 not reachable: " + err.Error(), false
+		return false, "port 17000 not reachable: " + err.Error(), nil
 	}
 
 	// Winning-sequence ORDER (this ordering bug is what failed the taigan unlock).
@@ -527,7 +530,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	} {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
-			return false, log.String(), false
+			return false, log.String(), nil
 		}
 	}
 	pairLine, accountRefused := a.setMargeAccountDummy(host)
@@ -584,13 +587,13 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 			// SSH. Stop here; the caller restores the stock URLs.
 			fmt.Fprintf(&log, "the speaker refused the dummy account before and after a restart onto the local responder; unlock stopped (margeHits=%d)\n", marge.hits.Load())
 			a.logger.Warn("telnet-bootstrap: the speaker refused the dummy account before and after a restart onto the local responder and stored none; stopping", "host", host, "margeHits", marge.hits.Load())
-			return false, log.String(), false
+			return false, log.String(), errBootstrapAccountRefused
 		}
 		// The account took after the restart. Re-open :17000 for the injection.
 		var derr error
 		t, derr = dialTAP(host, 5*time.Second)
 		if derr != nil {
-			return false, log.String() + "port 17000 not reachable after the restart: " + derr.Error() + "\n", false
+			return false, log.String() + "port 17000 not reachable after the restart: " + derr.Error() + "\n", nil
 		}
 	}
 
@@ -601,7 +604,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	for _, cmd := range buildBootstrapEnableSSHCommands(base) {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
-			return false, log.String(), false
+			return false, log.String(), nil
 		}
 	}
 	_, _ = t.send("sys reboot")
@@ -613,7 +616,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	budget := agentWaitBudget(model) + 90*time.Second
 	if a.waitForSSHOpen(host, budget) {
 		a.logger.Info("telnet-bootstrap: SSH opened on the factory-reset box via the local-marge unlock", "host", host, "margeHits", marge.hits.Load())
-		return true, log.String(), false
+		return true, log.String(), nil
 	}
 	// State-aware diagnosis instead of a blind "timed out": the box callback count
 	// plus its reachability say which failure this is, so the caller/UI can give the
@@ -625,7 +628,10 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, boo
 	// always the firewall prompt (project_bootstrap_used_box_deadend).
 	firewallSuspected := hits == 0 && reachable
 	a.logger.Info("telnet-bootstrap: SSH did not open", "host", host, "margeHits", hits, "boxReachableNow", reachable, "firewallSuspected", firewallSuspected, "diagnosis", bootstrapFailureReason(hits, reachable))
-	return false, log.String(), firewallSuspected
+	if firewallSuspected {
+		return false, log.String(), errBootstrapResponderUnreachable
+	}
+	return false, log.String(), nil
 }
 
 // bootstrapFailureReason turns the bootstrap end-state (how many times the box
