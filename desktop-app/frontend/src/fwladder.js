@@ -185,25 +185,29 @@ export function powerOffKey(model) {
 
 // usbUpdateKey is the instruction that starts the USB stick update. 4 and
 // Volume minus while plugging the power back in is confirmed on Series I and
-// II SoundTouch 20s and reported by the community for the 10 and 30. The
-// Portable cannot be started by plugging in, and the combination is not
-// confirmed on it (design risk 4): it gets its own sentence with the power
-// button, and usbUpdateUnconfirmed adds the "not confirmed" line. Every other
-// model gets the generic sentence rather than invented buttons.
+// II SoundTouch 20s and reported by the community for the 30. The SoundTouch
+// 10 takes the other order: the first owner to run the ladder on one (mail,
+// 2026-11-23) held the keys while plugging in and the speaker froze with every
+// light on; power first, then the keys for about five seconds, started the
+// update. The Portable cannot be started by plugging in, and the combination
+// is not confirmed on it (design risk 4): it gets its own sentence with the
+// power button, and usbUpdateUnconfirmed adds the "not confirmed" line. Every
+// other model gets the generic sentence rather than invented buttons.
 export function usbUpdateKey(model) {
   const m = String(model || '').trim().toLowerCase();
   if (isBatteryModel(m)) return 'fwLadder.c3Battery';
-  if (['soundtouch 10', 'soundtouch 20', 'soundtouch 30'].includes(m)) {
+  if (isMicroUsbOnly(m)) return 'fwLadder.c3Ten';
+  if (['soundtouch 20', 'soundtouch 30'].includes(m)) {
     return 'fwLadder.c3FourVol';
   }
   return 'fwLadder.c3Generic';
 }
 
 // usbUpdateUnconfirmed: the button combination is not confirmed on this model,
-// and screen C says so. On the SoundTouch 10 it is only reported by the
-// community (docs/FIRMWARE-UPDATE.md, section 5).
+// and screen C says so (docs/FIRMWARE-UPDATE.md, section 5). The SoundTouch 10
+// is confirmed since 2026-11-23, with its own order (usbUpdateKey).
 export function usbUpdateUnconfirmed(model) {
-  return isBatteryModel(model) || isMicroUsbOnly(model);
+  return isBatteryModel(model);
 }
 
 // hasNoDisplay: models without a display show the USB update with their
@@ -240,8 +244,9 @@ export function isMicroUsbOnly(model) {
 
 // notStartedStartKey is the first point of the "the update did not start"
 // checklist: the same button combination as screen C, stressed that the
-// buttons are held before the power comes on and until the hand appears (or,
-// without a display, the lights change).
+// buttons are held before the power comes on and until the hand appears. The
+// only model with known keys and no display is the SoundTouch 10, so the
+// lights sentence carries its order: power first, then the keys.
 export function notStartedStartKey(model) {
   if (isBatteryModel(model)) return 'fwLadder.nsKeysBattery';
   if (!knownStickKeys(model)) return 'fwLadder.nsKeysGeneric';

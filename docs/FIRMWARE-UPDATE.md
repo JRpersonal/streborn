@@ -418,6 +418,10 @@ This takes up to 45 minutes. Keep the speaker near a power socket.
 4. **Hold 4 and Volume minus**, and while you hold them, plug the power
    back in.
 
+   **SoundTouch 10:** the other way round. Plug the power back in first,
+   then hold **4** and **Volume minus** for about five seconds. Holding
+   them while you plug in left a SoundTouch 10 stuck with every light on.
+
    **Portable:** its battery cannot be removed, so unplugging does not
    switch it off. Keep the power supply plugged in. Switch it off with
    its power button (or hold **AUX** for about 10 seconds). Insert the
@@ -432,8 +436,8 @@ This takes up to 45 minutes. Keep the speaker near a power socket.
 8. When the speaker has restarted, pull the stick and check the version
    again ([section 1](#1-find-the-version-your-speaker-runs-now)).
 
-These button combinations are confirmed on the SoundTouch 20 only. If
-your speaker does not react, look at Bose's update article for your
+These button combinations are confirmed on the SoundTouch 20, and step
+4 in its own order on the SoundTouch 10. If your speaker does not react, look at Bose's update article for your
 model ([section 12](#12-every-source)).
 
 <details>
@@ -443,8 +447,9 @@ The reset clears a half-finished setup that can make the speaker refuse
 the file.
 
 The button combinations in steps 2 and 4 come from owners and community
-guides. They worked on SoundTouch 20 Series I and II. The Portable
-variant of step 4 is untested. On other models they are not confirmed.
+guides. They worked on SoundTouch 20 Series I and II. The SoundTouch 10
+order of step 4 comes from an owner who ran it in November 2026. The
+Portable variant of step 4 is untested. On other models they are not confirmed.
 
 </details>
 
