@@ -46,7 +46,8 @@ describe('model to sticker', () => {
   it('maps each model to its layout', () => {
     expect(stickerKind('SoundTouch 10')).toBe('st10');
     expect(stickerKind('SoundTouch 20')).toBe('st20');
-    expect(stickerKind('SoundTouch 30')).toBe('st20');
+    expect(stickerKind('SoundTouch 30')).toBe('st30');
+    expect(stickerKind('SoundTouch 30 Series III')).toBe('st30');
     expect(stickerKind('SoundTouch Portable')).toBe('portable');
     expect(stickerKind('soundtouch 20 series III')).toBe('st20');
   });
@@ -91,13 +92,54 @@ describe('model to sticker', () => {
     expect(size(0, 'qr')).toEqual([19.7, 23.3]);
     expect(size(1, 'grid')).toEqual([80, 51.5]);
     expect(size(1, 'qr')).toEqual([22, 26.3]);
-    expect(size(2, 'main')).toEqual([175, 33.7]);
+    // The ST30 is the ST20's sticker twice as tall: 175 x 67.3 mm.
+    expect(size(2, 'main')).toEqual([175, 67.3]);
     expect(size(3, 'main')).toEqual([150, 33.7]);
     // The ST20 edge follows the housing; any other model gets a rectangle.
     expect(page.pieces.find((x) => x.speaker === 2).curved).toBe(true);
     const plain = page.pieces.find((x) => x.speaker === 3);
     expect(plain.curved).toBe(false);
     expect(plain.outline).toHaveLength(4);
+  });
+
+  it('keeps the ST20 sticker at 175 x 33.7 mm, curved, with its parts at their sizes', () => {
+    const page = lay([speaker('Den', 'SoundTouch 20')]).pages[0];
+    const p = own(page)[0];
+    expect([Math.round(p.w * 10) / 10, Math.round(p.h * 10) / 10]).toEqual([175, 33.7]);
+    expect(p.curved).toBe(true);
+    expect(p.qr.size).toBeCloseTo(112 / 6, 9);
+    expect(p.tiles[0].size).toBeCloseTo(56 / 6, 9);
+  });
+
+  it('scales the ST30 sticker to its height: larger keys, code and mark, the same curve', () => {
+    const page = lay([speaker('Den', 'SoundTouch 30'), speaker('Hall', 'SoundTouch 20')]).pages[0];
+    const [st30] = own(page).filter((p) => p.speaker === 0);
+    const [st20] = own(page).filter((p) => p.speaker === 1);
+    expect(st30.h).toBeCloseTo(2 * st20.h, 9);
+    expect(st30.w).toBeCloseTo(st20.w, 9);
+    expect(st30.curved).toBe(true);
+    // The top edge is the ST20's: the same curve over the same width.
+    expect(st30.outline.slice(0, st30.outline.length / 2)).toEqual(st20.outline.slice(0, st20.outline.length / 2));
+    expect(st30.tiles[0].size / st20.tiles[0].size).toBeGreaterThan(1.4);
+    expect(st30.qr.size).toBeGreaterThan(st20.qr.size * 1.2);
+    expect(st30.brand.size).toBeCloseTo(st30.qr.size, 9);
+    // The short names of KEYS are set about 1.8 times as large, and so are
+    // the numbers.
+    const size = (p, text) => p.texts.find((x) => x.text === text).size;
+    for (const text of ['Jazz', 'News', '1', '6']) expect(size(st30, text) / size(st20, text)).toBeGreaterThan(1.7);
+    expect(size(st30, 'Talk') / size(st20, 'Talk')).toBeGreaterThan(1.7);
+    // The code and the mark stay inside their columns.
+    expect(st30.qr.x + st30.qr.size).toBeLessThanOrEqual(st30.w);
+    expect(st30.brand.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it('never sets a long name on the ST30 smaller than on the ST20', () => {
+    for (const name of ['Deutschlandfunk Kultur', 'Bayern 3 - Die Hits', '1LIVE diggi', 'Norddeutscher Rundfunk NDR Kultur']) {
+      const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, name, { name: 'Morning Mix', kind: 'playlist' }));
+      const page = lay([speaker('Den', 'SoundTouch 30', 'dark', keys), speaker('Hall', 'SoundTouch 20', 'dark', keys)]).pages[0];
+      const nameSize = (i) => Math.min(...own(page).find((p) => p.speaker === i).texts.filter((x) => x.weight === 700 && x.align === 'left' && !/^([1-6]|2×)$/.test(x.text)).map((x) => x.size));
+      expect(nameSize(0), name).toBeGreaterThanOrEqual(nameSize(1));
+    }
   });
 
   it('puts the ST Reborn mark into the left column of the ST20 and ST30 sticker, mirroring the code', () => {
@@ -146,6 +188,9 @@ describe('housing colour', () => {
     expect(stickerPalette('st10', 'white').paper).toBe('#E5DCC8');
     expect(stickerPalette('st20', 'white').paper).toBe('#EFE6D6');
     expect(stickerPalette('st20', 'dark').paper).toBe('#141518');
+    // The ST30 shares the ST20's shades.
+    expect(stickerPalette('st30', 'white')).toEqual(stickerPalette('st20', 'white'));
+    expect(stickerPalette('st30', 'dark')).toEqual(stickerPalette('st20', 'dark'));
     expect(stickerPalette('portable', 'dark').paper).toBe('#707274');
   });
 
@@ -164,7 +209,7 @@ describe('housing colour', () => {
 
 describe('ST20 pairing', () => {
   it('sets two wide stickers back to back, the second on its head', () => {
-    const page = lay([speaker('Den', 'SoundTouch 20'), speaker('Hall', 'SoundTouch 30')]).pages[0];
+    const page = lay([speaker('Den', 'SoundTouch 20'), speaker('Hall', 'Wave SoundTouch')]).pages[0];
     const [a, b] = page.pieces;
     expect([a.rot, b.rot]).toEqual([0, 180]);
     expect(b.y).toBeCloseTo(a.y + a.h, 5);
@@ -172,6 +217,41 @@ describe('ST20 pairing', () => {
     // One cut separates them, and it is marked.
     expect(page.scissors).toHaveLength(1);
     expect(page.scissors[0].y).toBeCloseTo(b.y, 5);
+  });
+
+  it('pairs two ST30 stickers by their real height, the cut at the shared edge', () => {
+    const page = lay([speaker('Den', 'SoundTouch 30'), speaker('Hall', 'SoundTouch 30')]).pages[0];
+    const [a, b] = own(page);
+    expect([a.rot, b.rot]).toEqual([0, 180]);
+    expect(a.h).toBeCloseTo(404 / 6, 9);
+    expect(b.y).toBeCloseTo(a.y + a.h, 9);
+    expect(b.x).toBeCloseTo(a.x, 9);
+    expect(page.scissors).toHaveLength(1);
+    expect(page.scissors[0].y).toBeCloseTo(a.y + a.h, 9);
+  });
+
+  it('pairs an ST30 only with an ST30, and nothing overlaps', () => {
+    const { pages } = lay([
+      speaker('A', 'SoundTouch 20'), speaker('B', 'SoundTouch 30'), speaker('C', 'Wave SoundTouch'), speaker('D', 'SoundTouch 30'), speaker('E', 'SoundTouch 30'),
+    ]);
+    const by = (n) => pages.flatMap(own).find((p) => p.speaker === n);
+    // The ST20 pairs with the plain sticker, the first two ST30s with each
+    // other; the third ST30 stands alone.
+    expect(by(2).rot).toBe(180);
+    expect(by(2).y).toBeCloseTo(by(0).y + by(0).h, 9);
+    expect(by(3).rot).toBe(180);
+    expect(by(3).y).toBeCloseTo(by(1).y + by(1).h, 9);
+    expect(by(4).rot).toBe(0);
+    for (const pg of pages) {
+      const ps = own(pg);
+      for (let i = 0; i < ps.length; i++) {
+        for (let j = i + 1; j < ps.length; j++) {
+          const a = ps[i], b = ps[j];
+          const apart = Math.max(Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w), Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
+          expect(apart).toBeGreaterThanOrEqual(-1e-9);
+        }
+      }
+    }
   });
 
   it('pairs wide stickers that are not next to each other in the list', () => {
