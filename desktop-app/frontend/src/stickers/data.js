@@ -1,5 +1,5 @@
 // stickers/data.js: what goes on a speaker's sticker, read from its presets,
-// and the three things this computer remembers about the stickers.
+// and what this computer remembers about the stickers.
 //
 // No api.js and no DOM here: turning presets into keys, the fingerprint of a
 // key assignment and the storage are unit-tested as they are. Reading the
@@ -85,7 +85,7 @@ export function keysFingerprint(keys) {
 const HOUSING_KEY = 'str.stickerHousing';
 const PRINTED_KEY = 'str.stickerPrinted';
 const HINT_KEY = 'str.stickerHint';
-const REMOTE_KEY = 'str.stickerRemote';
+const LARGE_KEY = 'str.stickerLarge';
 
 const store = (storage) => (storage === undefined ? globalThis.localStorage : storage);
 
@@ -117,19 +117,15 @@ export function setHousing(id, housing, storage) {
   writeMap(HOUSING_KEY, map, storage);
 }
 
-// Whether a speaker's sheet also carries the sticker for the back of its
-// remote. Any model can have one, so it is offered for every speaker; it
-// is on until the user unticks it (Jens, 2026-11-22), and the choice is kept
-// per speaker: only an explicit false is stored.
-export function remoteOf(id, storage) {
-  return readMap(REMOTE_KEY, storage)[id] !== false;
+// Large text is one choice for the whole sheet, not per speaker: whoever
+// needs it needs it on every sticker. Off until ticked, and kept on this
+// computer; storage that cannot be read means off.
+export function largeTextOn(storage) {
+  try { return store(storage).getItem(LARGE_KEY) === '1'; } catch { return false; }
 }
 
-export function setRemote(id, on, storage) {
-  const map = readMap(REMOTE_KEY, storage);
-  if (on) delete map[id];
-  else map[id] = false;
-  writeMap(REMOTE_KEY, map, storage);
+export function setLargeText(on, storage) {
+  try { store(storage).setItem(LARGE_KEY, on ? '1' : '0'); } catch { /* blocked storage: off again next time */ }
 }
 
 // printedFingerprints is what was on each speaker's keys when the stickers

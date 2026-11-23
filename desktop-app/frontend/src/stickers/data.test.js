@@ -8,15 +8,15 @@ import {
   hintState,
   housingOf,
   keysFingerprint,
+  largeTextOn,
   logoRequest,
   noteSpeakerKeys,
   offerHint,
   presetKind,
   printedFingerprints,
   rememberPrinted,
-  remoteOf,
   setHousing,
-  setRemote,
+  setLargeText,
   speakerId,
   stickerKeys,
   stickersStale,
@@ -199,31 +199,16 @@ describe('housing colour', () => {
   });
 });
 
-describe('remote sticker choice', () => {
-  it('is on until unticked, for every model, and kept per speaker', () => {
+describe('large text', () => {
+  it('is off until ticked, is kept, and is off where storage is blocked', () => {
     const storage = fakeStorage();
-    expect(remoteOf('a', storage)).toBe(true);
-    setRemote('a', false, storage);
-    expect(remoteOf('a', storage)).toBe(false);
-    expect(remoteOf('b', storage)).toBe(true);
-    setRemote('a', true, storage);
-    expect(remoteOf('a', storage)).toBe(true);
-    expect(remoteOf('a', broken)).toBe(true);
-    expect(() => setRemote('a', true, broken)).not.toThrow();
-  });
-
-  it('reaches the sheet with the speaker, whatever its model', async () => {
-    const storage = fakeStorage();
-    setRemote(speakerId(KITCHEN), false, storage);
-    const a = {
-      GetPresets: vi.fn(async () => PRESETS),
-      PhoneAddressFor: vi.fn(async () => null),
-      PhoneQR: vi.fn(async () => 'data:image/png;base64,QRQR'),
-      ResolveStationLogo: vi.fn(async () => ''),
-      StickerImage: vi.fn(async () => ''),
-    };
-    const { speakers } = await collectSpeakers([KITCHEN, OFFICE], a, storage);
-    expect(speakers.map((sp) => [sp.name, sp.remote])).toEqual([['Kitchen', false], ['Office', true]]);
+    expect(largeTextOn(storage)).toBe(false);
+    setLargeText(true, storage);
+    expect(largeTextOn(storage)).toBe(true);
+    setLargeText(false, storage);
+    expect(largeTextOn(storage)).toBe(false);
+    expect(largeTextOn(broken)).toBe(false);
+    expect(() => setLargeText(true, broken)).not.toThrow();
   });
 });
 

@@ -11,8 +11,9 @@
 //
 // Input:  [{ name, model, housing: 'white'|'dark',
 //            keys: [{ n, name, kind: 'station'|'playlist', logo,
-//                     twice: { name, kind } | null }], qr, remote }]
-//         (remote: true adds the 40 x 75 mm sticker for the back of the remote)
+//                     twice: { name, kind } | null }], qr }]
+//         Every speaker also gets the 40 x 75 mm sticker for the back of its
+//         remote: there is no remote it would not fit, so it is not optional.
 // Output: { pages: [{ header, pieces, scissors, control }] }
 
 const u = (px) => px / 6;
@@ -37,13 +38,16 @@ const PALETTES = {
 };
 
 // stickerKind is the sticker a model gets: the ST10's two arcs, the wide
-// sticker of the ST20 and ST30, the Portable's grid, or for everything else
-// (Wave, soundbars, a model not known here) the wide sticker without its curve.
+// sticker of the ST20, the same twice as tall for the larger ST30, the
+// Portable's grid, or for everything else (Wave, soundbars such as the
+// SoundTouch 300, a model not known here) the ST20's sticker without its
+// curve.
 export function stickerKind(model) {
   const m = String(model || '').toLowerCase();
   if (/soundtouch\s*portable/.test(m)) return 'portable';
   if (/soundtouch\s*10\b/.test(m)) return 'st10';
-  if (/soundtouch\s*(20|30)\b/.test(m)) return 'st20';
+  if (/soundtouch\s*20\b/.test(m)) return 'st20';
+  if (/soundtouch\s*30\b/.test(m)) return 'st30';
   return 'plain';
 }
 
@@ -148,6 +152,77 @@ export function fitName(text, maxW, size, measure) {
   return last;
 }
 
+// ---------- large text ----------
+
+// Large text (layoutStickers' large option) sets every name as large as its
+// box allows, even when the sticker then looks full: for eyes that cannot
+// read the normal sizes from where the speaker stands. Names are searched
+// from the largest size the height allows down to the normal size in these
+// steps, and the first size at which the whole name fits wins.
+let large = false;
+const LARGE_STEP = 0.1;
+// The line height of a name, in sizes.
+const NAME_LH = 1.05;
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// sizesDown lists from, from - LARGE_STEP, ... down to to, which is always
+// the last one tried. Empty when from is smaller than to.
+function sizesDown(from, to) {
+  if (!(from >= to)) return [];
+  const out = [];
+  for (let i = 0; from - i * LARGE_STEP > to + 1e-9; i++) out.push(round3(from - i * LARGE_STEP));
+  out.push(to);
+  return out;
+}
+
+// largestWhole finds the largest size in sizes at which text fits maxW whole,
+// squeezed if need be, on at most maxLines lines that fit roomAt(size), the
+// height there is for the text at that size: { lines, size }, or null.
+function largestWhole(text, maxW, sizes, maxLines, roomAt, measure) {
+  for (const size of sizes) {
+    const n = Math.min(maxLines, Math.floor(roomAt(size) / (size * NAME_LH) + 1e-9));
+    if (n < 1) continue;
+    const font = { size, weight: 700 };
+    for (const w of [maxW, loose(maxW)]) {
+      const lines = wholeLines(text, w, font, measure, n);
+      if (lines) return { lines, size };
+    }
+  }
+  return null;
+}
+
+// twiceRoom is the width the name on a pressed-twice line of width w has at
+// size: what is left after the marker and, for a playlist, the list symbol
+// (the way addTwice lays the line out).
+function twiceRoom(twice, w, size, measure) {
+  let at = measure('2×', { size, weight: 700 }) + u(4);
+  if (twice.kind === 'playlist') at += size + u(4);
+  return Math.max(0, w - at);
+}
+
+// largeName is the large-text name of a cell together with its pressed-twice
+// line: the largest name size from the height down to the normal one at which
+// the name fits whole. The pressed-twice line grows with the name in the
+// cell's own proportion, never larger than the name, and a step smaller where
+// its name would not fit; it never goes below its normal size. roomFor(t)
+// is the height the name has beside a pressed-twice line of size t (0: none),
+// w the name's width and w2 the pressed-twice line's. Answers { fit, two },
+// or null when no size above the normal one fits.
+function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity) {
+  const ratio = s.two / s.name;
+  const twiceAt = (z) => {
+    if (!key.twice) return 0;
+    const top = Math.max(s.two, Math.min(z * ratio, twoCap));
+    for (const t of sizesDown(top, s.two)) {
+      if (measure(key.twice.name, { size: t, weight: 600 }) <= loose(twiceRoom(key.twice, w2, t, measure))) return t;
+    }
+    return s.two;
+  };
+  const from = roomFor(key.twice ? s.two : 0) / NAME_LH;
+  const fit = largestWhole(String(key.name), w, sizesDown(from, s.name), maxLines, (z) => roomFor(twiceAt(z)), measure);
+  return fit ? { fit, two: key.twice ? twiceAt(fit.size) : s.two } : null;
+}
+
 // ---------- one cell: number, tile, name, and the pressed-twice entry ----------
 
 const letterOf = (name) => (Array.from(String(name || '').trim())[0] || '').toUpperCase();
@@ -188,7 +263,7 @@ function addTwice(piece, twice, x, cy, w, size, pal, measure) {
 }
 
 function addNameLines(piece, fit, x, top, maxW, pal) {
-  const lh = fit.size * 1.05;
+  const lh = fit.size * NAME_LH;
   fit.lines.forEach((text, i) => {
     piece.texts.push({ text, x, y: top + (i + 0.5) * lh, size: fit.size, weight: 700, color: pal.ink, align: 'left', maxW });
   });
@@ -196,6 +271,8 @@ function addNameLines(piece, fit, x, top, maxW, pal) {
 
 // rowCell: number, tile and text side by side, the pressed-twice line under
 // the name. box is the cell without its padding; s the sizes of its parts.
+// box.room, where given, is the height from box.y that stays clear of a
+// curved edge over the whole width of the cell: large text keeps inside it.
 function rowCell(piece, key, box, s, pal, measure) {
   const cy = box.y + box.h / 2;
   const numW = addNumber(piece, key.n, box.x, cy, s.num, pal, measure);
@@ -203,28 +280,84 @@ function rowCell(piece, key, box, s, pal, measure) {
   addTile(piece, key, tileX, cy - s.tile / 2, s.tile);
   const textX = tileX + s.tile + u(8);
   const textW = Math.max(0, box.x + box.w - textX);
-  const fit = key.name ? fitName(key.name, textW, s.name, measure) : { lines: [], size: s.name };
-  const nameH = fit.lines.length * fit.size * 1.05;
-  const twoH = key.twice ? s.two * 1.1 : 0;
+  let fit = key.name ? fitName(key.name, textW, s.name, measure) : { lines: [], size: s.name };
+  let two = s.two;
+  let textCy = cy;
+  if (large && key.name) {
+    const room = Math.min(box.h, box.room === undefined ? box.h : box.room);
+    // Up to three lines: a cell is tall enough for them once the name is
+    // allowed to fill it.
+    const big = largeName(key, textW, textW, s, 3, (t) => room - (t ? t * 1.1 + u(3) : 0), measure);
+    if (big) ({ fit, two } = big);
+    textCy = box.y + room / 2;
+  }
+  const nameH = fit.lines.length * fit.size * NAME_LH;
+  const twoH = key.twice ? two * 1.1 : 0;
   const gap = nameH && twoH ? u(3) : 0;
-  const top = cy - (nameH + gap + twoH) / 2;
+  const top = textCy - (nameH + gap + twoH) / 2;
   addNameLines(piece, fit, textX, top, textW, pal);
-  if (key.twice) addTwice(piece, key.twice, textX, top + nameH + gap + twoH / 2, textW, s.two, pal, measure);
+  if (key.twice) addTwice(piece, key.twice, textX, top + nameH + gap + twoH / 2, textW, two, pal, measure);
 }
 
 // stackCell: number, tile and name in one line, the pressed-twice line across
 // the whole cell below. For the Portable's narrow cells.
+// In large text the name may grow past the head line: the head then grows
+// with it, downwards, and the number and tile stay where they are, so they
+// still line up with those of the other cells.
 function stackCell(piece, key, box, s, pal, measure) {
-  const headH = u(42);
-  const cy = box.y + headH / 2;
+  const head0 = u(42);
+  const cy = box.y + head0 / 2;
   const numW = addNumber(piece, key.n, box.x, cy, s.num, pal, measure);
   const tileX = box.x + numW + u(6);
   addTile(piece, key, tileX, cy - s.tile / 2, s.tile);
   const textX = tileX + s.tile + u(6);
   const textW = Math.max(0, box.x + box.w - textX);
-  const fit = key.name ? fitName(key.name, textW, s.name, measure) : { lines: [], size: s.name };
-  addNameLines(piece, fit, textX, cy - (fit.lines.length * fit.size * 1.05) / 2, textW, pal);
-  if (key.twice) addTwice(piece, key.twice, box.x, box.y + headH + u(5) + (s.two * 1.1) / 2, box.w, s.two, pal, measure);
+  let fit = key.name ? fitName(key.name, textW, s.name, measure) : { lines: [], size: s.name };
+  let two = s.two;
+  if (large && key.name) {
+    const twiceH = (t) => (t ? u(5) + t * 1.1 : 0);
+    // The pressed-twice line must still fit under the head at its normal height.
+    const twoCap = (box.h - head0 - u(5)) / 1.1;
+    const big = largeName(key, textW, box.w, s, 2, (t) => box.h - twiceH(t), measure, twoCap);
+    if (big) ({ fit, two } = big);
+  }
+  const nameH = fit.lines.length * fit.size * NAME_LH;
+  const headH = Math.max(head0, nameH);
+  addNameLines(piece, fit, textX, box.y + (headH - nameH) / 2, textW, pal);
+  if (key.twice) addTwice(piece, key.twice, box.x, box.y + headH + u(5) + (two * 1.1) / 2, box.w, two, pal, measure);
+}
+
+// tallCell is the ST30's cell: twice as tall as the ST20's but no wider. The
+// number and the tile stand in a head line and the name runs under them
+// across the whole cell, with the pressed-twice line below it: beside a tile
+// this large a name would have less width than on the ST20, and long words
+// would come out smaller there. The name is set as large as s.name and
+// shrinks in small steps to s.floor (the ST20's size) before it is broken or
+// cut; the pressed-twice line keeps its proportion to the name.
+function tallCell(piece, key, box, s, pal, measure) {
+  const numW = addNumber(piece, key.n, box.x, box.y + s.tile / 2, s.num, pal, measure);
+  addTile(piece, key, box.x + numW + u(10), box.y, s.tile);
+  const areaY = box.y + s.tile + u(8);
+  const areaH = box.h - s.tile - u(8);
+  const ratio = s.two / s.name;
+  const twiceH = (t) => (t ? t * 1.1 + u(4) : 0);
+  let fit = { lines: [], size: s.name };
+  let two = s.two;
+  if (key.name) {
+    const twoAt = (z) => (key.twice ? Math.min(s.two, z * ratio) : 0);
+    fit = largestWhole(String(key.name), box.w, sizesDown(s.name, s.floor), 3, (z) => areaH - twiceH(twoAt(z)), measure)
+      || fitName(key.name, box.w, s.floor, measure);
+    two = Math.min(s.two, fit.size * ratio);
+    if (large) {
+      const big = largeName(key, box.w, box.w, { name: fit.size, two }, 3, (t) => areaH - twiceH(t), measure);
+      if (big) ({ fit, two } = big);
+    }
+  }
+  const nameH = fit.lines.length * fit.size * NAME_LH;
+  const twoH = key.twice ? twiceH(two) : 0;
+  const top = areaY + (areaH - nameH - twoH) / 2;
+  addNameLines(piece, fit, box.x, top, box.w, pal);
+  if (key.twice) addTwice(piece, key.twice, box.x, top + nameH + twoH - (two * 1.1) / 2, box.w, two, pal, measure);
 }
 
 // ---------- pieces ----------
@@ -252,17 +385,42 @@ function newPiece(speaker, part, wPx, hPx, pal, top, bot) {
 
 const keyAt = (sp, n) => (sp.keys || []).find((k) => k && k.n === n) || { n, name: '', kind: 'station', logo: null, twice: null };
 
-// addQr places the code with the speaker's name under it, centred in a column.
-function addQr(piece, sp, x, y, w, h, qrPx, namePx, pal, measure) {
-  const qr = u(qrPx);
-  const size = u(namePx);
-  const top = y + (h - (qr + u(6) + size)) / 2;
-  piece.qr = { x: x + (w - qr) / 2, y: top, size: qr, r: u(4), src: sp.qr || null };
+// columnName is the name under the code or the mark: one line at size, or
+// as far down as min where that keeps it whole, cut at min if it does not
+// fit; in large text the largest size, up to two lines, that the room under
+// the picture holds whole, with a little air to the column's edges.
+function columnName(text, maxW, size, room, measure, min = size) {
+  const name = String(text || '');
+  const whole = sizesDown(size, min).find((z) => measure(name, { size: z, weight: 700 }) <= loose(maxW));
+  const normal = whole ? { lines: [name], size: whole } : { lines: [ellipsise(name, loose(maxW), { size: min, weight: 700 }, measure)], size: min };
+  if (!large || !name) return normal;
+  const usable = room - u(6);
+  const big = largestWhole(name, maxW, sizesDown(usable, normal.size), 2, (z) => usable + z * (NAME_LH - 1), measure);
+  return big || normal;
+}
+
+// stackUnder places a picture with a name under it, centred in a column, and
+// returns where the picture goes. The column is x, y, w, h; pic the edge of
+// the square picture.
+function stackUnder(piece, text, x, y, w, h, pic, namePx, pal, measure, minPx = namePx) {
   const maxW = w - u(12);
-  piece.texts.push({
-    text: ellipsise(sp.name, loose(maxW), { size, weight: 700 }, measure),
-    x: x + w / 2, y: top + qr + u(6) + size / 2, size, weight: 700, color: pal.ink, align: 'center', maxW,
+  const fit = columnName(text, maxW, u(namePx), h - pic - u(6), measure, u(minPx));
+  const lh = fit.size * NAME_LH;
+  const nameH = fit.size + (fit.lines.length - 1) * lh;
+  const top = y + (h - (pic + u(6) + nameH)) / 2;
+  fit.lines.forEach((line, i) => {
+    piece.texts.push({
+      text: line, x: x + w / 2, y: top + pic + u(6) + fit.size / 2 + i * lh, size: fit.size, weight: 700, color: pal.ink, align: 'center', maxW,
+    });
   });
+  return { x: x + (w - pic) / 2, y: top };
+}
+
+// addQr places the code with the speaker's name under it, centred in a column.
+function addQr(piece, sp, x, y, w, h, qrPx, namePx, pal, measure, minPx = namePx) {
+  const qr = u(qrPx);
+  const at = stackUnder(piece, sp.name, x, y, w, h, qr, namePx, pal, measure, minPx);
+  piece.qr = { x: at.x, y: at.y, size: qr, r: u(4), src: sp.qr || null };
 }
 
 function qrPiece(sp, idx, wPx, hPx, qrPx, namePx, pal, measure) {
@@ -277,9 +435,10 @@ function qrPiece(sp, idx, wPx, hPx, qrPx, namePx, pal, measure) {
 function st10Arc(sp, idx, back, pal, measure) {
   const W = 720;
   const H = back ? 105 : 102;
+  const bot = (x) => H - 33 * ((x - 360) / 360) ** 2;
   const p = newPiece(idx, back ? 'back' : 'front', W, H, pal,
     back ? (x) => 27 * ((x - 360) / 360) ** 2 : null,
-    back ? null : (x) => H - 33 * ((x - 360) / 360) ** 2);
+    back ? null : bot);
   const pads = [[26, 10], [12, 10], [12, 26]];
   // The three cells share what is left after their paddings and the two rules.
   const inner = (W - pads.reduce((a, [l, r]) => a + l + r, 0) - 2 * 1.5) / 3;
@@ -288,6 +447,9 @@ function st10Arc(sp, idx, back, pal, measure) {
   pads.forEach(([l, r], i) => {
     // Top and bottom padding: 24 and 6 on the back arc, 6 and 26 on the front.
     const box = { x: u(x + l), y: u(back ? 24 : 6), w: u(inner), h: u(back ? H - 30 : H - 32) };
+    // The front arc's curve rises into the bottom of its outer cells; large
+    // text stays above it. (The back arc's cells start below its curve.)
+    if (!back) box.room = u(Math.min(bot(x + l), bot(x + l + inner)) - 6);
     rowCell(p, keyAt(sp, (back ? 1 : 4) + i), box, s, pal, measure);
     x += l + inner + r;
     if (i < 2) {
@@ -305,42 +467,50 @@ const BRAND = 'ST Reborn';
 // addBrand places the ST Reborn mark with the name under it, centred in a
 // column, in the same frame addQr gives the code: the two columns of the wide
 // sticker then mirror each other.
-function addBrand(piece, x, y, w, h, markPx, namePx, pal) {
+function addBrand(piece, x, y, w, h, markPx, namePx, pal, measure, minPx = namePx) {
   const mark = u(markPx);
-  const size = u(namePx);
-  const top = y + (h - (mark + u(6) + size)) / 2;
-  piece.brand = { x: x + (w - mark) / 2, y: top, size: mark, color: pal.ink };
-  piece.texts.push({
-    text: BRAND, x: x + w / 2, y: top + mark + u(6) + size / 2, size, weight: 700, color: pal.ink, align: 'center', maxW: w - u(12),
-  });
+  const at = stackUnder(piece, BRAND, x, y, w, h, mark, namePx, pal, measure, minPx);
+  piece.brand = { x: at.x, y: at.y, size: mark, color: pal.ink };
 }
 
+// The two heights of the wide sticker. The ST30's is the ST20's twice as
+// tall (175 x 67 mm), for a speaker whose front leaves the room: its keys
+// get tallCell and parts about 1.8 times the ST20's, its code and mark fill
+// the width of their columns.
+const WIDE = {
+  st20: { H: 202, cell: rowCell, s: { num: u(22), tile: u(56), name: u(22), two: u(19) }, pic: 112, namePx: 17, minPx: 17 },
+  st30: { H: 404, cell: tallCell, s: { num: u(40), tile: u(84), name: u(40), two: u(34), floor: u(22) }, pic: 136, namePx: 30, minPx: 17 },
+};
+
 // wideSticker is the ST20 and ST30 sticker: the six keys in two rows and the
-// code with the name in a column on the right. curved gives it the top edge
-// that follows the housing, and a column on the left as wide as the code
-// column, so the keys sit in the middle and the curve is the same on both
-// sides (175 x 34 mm). That left column carries the ST Reborn mark. Without
-// the curve it is the plain 150 x 34 mm rectangle every other model gets.
-function wideSticker(sp, idx, curved, pal, measure) {
-  const H = 202, GRID_W = 750, TOP = 24, QR_W = 150;
+// code with the name in a column on the right. Both have the top edge that
+// follows the housing, and a column on the left as wide as the code column,
+// so the keys sit in the middle and the curve is the same on both sides
+// (175 mm wide). That left column carries the ST Reborn mark. Every other
+// model ('plain') gets the ST20's without the curve and the left column, a
+// 150 x 34 mm rectangle.
+function wideSticker(sp, idx, kind, pal, measure) {
+  const spec = kind === 'st30' ? WIDE.st30 : WIDE.st20;
+  const curved = kind !== 'plain';
+  const { H, s } = spec;
+  const GRID_W = 750, TOP = 24, QR_W = 150;
   const OFF = curved ? QR_W : 0;
   const W = OFF + GRID_W + QR_W;
   const p = newPiece(idx, 'main', W, H, pal, curved ? (x) => 1.47e-4 * (x - W / 2) ** 2 : null, null);
   const cw = GRID_W / 3;
   const ch = (H - TOP) / 2;
-  const s = { num: u(22), tile: u(56), name: u(22), two: u(19) };
   for (let i = 0; i < 6; i++) {
     const col = i % 3, row = Math.floor(i / 3);
     const x = OFF + col * cw, y = TOP + row * ch;
     const ruleR = col < 2 ? 1.5 : 0;
-    rowCell(p, keyAt(sp, i + 1), { x: u(x + 12), y: u(y), w: u(cw - 22 - ruleR), h: u(ch - (row === 0 ? 1.5 : 0)) }, s, pal, measure);
+    spec.cell(p, keyAt(sp, i + 1), { x: u(x + 12), y: u(y), w: u(cw - 22 - ruleR), h: u(ch - (row === 0 ? 1.5 : 0)) }, s, pal, measure);
     if (col < 2) p.rules.push({ x1: u(x + cw - 0.75), y1: u(y), x2: u(x + cw - 0.75), y2: u(y + ch) });
   }
   p.rules.push({ x1: u(OFF), y1: u(TOP + ch - 0.75), x2: u(OFF + GRID_W), y2: u(TOP + ch - 0.75) });
   if (OFF) p.rules.push({ x1: u(OFF - 0.75), y1: 0, x2: u(OFF - 0.75), y2: p.h });
   p.rules.push({ x1: u(OFF + GRID_W + 0.75), y1: 0, x2: u(OFF + GRID_W + 0.75), y2: p.h });
-  addQr(p, sp, u(OFF + GRID_W + 1.5), u(40), u(QR_W - 1.5), u(H - 40), 112, 17, pal, measure);
-  if (OFF) addBrand(p, 0, u(40), u(OFF - 1.5), u(H - 40), 112, 17, pal);
+  addQr(p, sp, u(OFF + GRID_W + 1.5), u(40), u(QR_W - 1.5), u(H - 40), spec.pic, spec.namePx, pal, measure, spec.minPx);
+  if (OFF) addBrand(p, 0, u(40), u(OFF - 1.5), u(H - 40), spec.pic, spec.namePx, pal, measure, spec.minPx);
   return p;
 }
 
@@ -598,10 +768,14 @@ function remoteSticker(sp, idx, label, measure) {
 const at = (piece, xPx, yPx, rot = 0) => Object.assign(piece, { x: u(xPx), y: u(yPx), rot });
 
 // A group is cut out as one block first. Pieces that share a cut line lie
-// edge to edge, and a scissors symbol marks each of those cuts.
+// edge to edge, and a scissors symbol marks each of those cuts. Two wide
+// stickers pair only when they are equally tall, so their straight edges
+// match and one cut separates them: an ST30 pairs with an ST30, an ST20 with
+// an ST20 or a plain one.
 function buildGroups(speakers, measure, remoteLabel) {
   const groups = [];
-  let openWide = null;
+  // The group waiting for a second wide sticker, by the height of its first.
+  const openWide = new Map();
   speakers.forEach((sp, idx) => {
     const kind = stickerKind(sp.model);
     const pal = stickerPalette(kind, sp.housing);
@@ -616,22 +790,25 @@ function buildGroups(speakers, measure, remoteLabel) {
         scissors: [{ x: u(480), y: u(309) + 5, rot: -90 }],
       });
     } else {
-      const piece = wideSticker(sp, idx, kind === 'st20', pal, measure);
-      if (openWide) {
+      const piece = wideSticker(sp, idx, kind, pal, measure);
+      const open = openWide.get(piece.h);
+      if (open) {
         // The second of a pair stands on its head, straight edge to straight
         // edge, so one cut separates the two.
-        openWide.pieces.push(at(piece, 0, 202, 180));
-        openWide.scissors.push({ x: -5, y: u(202), rot: 0 });
-        openWide = null;
+        const edge = open.pieces[0].h;
+        open.pieces.push(Object.assign(piece, { x: 0, y: edge, rot: 180 }));
+        open.scissors.push({ x: -5, y: edge, rot: 0 });
+        openWide.delete(piece.h);
       } else {
-        openWide = { pieces: [at(piece, 0, 0)], scissors: [] };
-        groups.push(openWide);
+        const group = { pieces: [at(piece, 0, 0)], scissors: [] };
+        groups.push(group);
+        openWide.set(piece.h, group);
       }
     }
   });
   // The remote stickers come after all of them, side by side in rows, each
   // with its own cut line: they belong to different remotes.
-  const remotes = speakers.map((sp, idx) => (sp.remote ? remoteSticker(sp, idx, remoteLabel, measure) : null)).filter(Boolean);
+  const remotes = speakers.map((sp, idx) => remoteSticker(sp, idx, remoteLabel, measure));
   for (let i = 0; i < remotes.length; i += REMOTES_PER_ROW) {
     groups.push({ pieces: remotes.slice(i, i + REMOTES_PER_ROW).map((p, j) => Object.assign(p, { x: j * (REMOTE.w + REMOTE_GAP), y: 0, rot: 0 })), scissors: [] });
   }
@@ -673,11 +850,13 @@ const REMOTES_PER_ROW = Math.floor((AREA.x + AREA.w - BLEED - GROUP_X + REMOTE_G
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
 // translated words: the two lines of the sheet and the header of the remote
 // sticker (the speakers' stickers hold no words): { instruction, control,
-// remote }. A speaker that has remote: true also gets the remote sticker. The
-// pieces of one speaker's own sticker never go on two pages; the remote
-// stickers follow them in rows of their own and carry the speaker's name.
-export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE } = {}) {
+// remote }. Every speaker also gets its remote sticker. The pieces of one
+// speaker's own sticker never go on two pages; the remote stickers follow
+// them in rows of their own and carry the speaker's name. large: true sets
+// every name as large as its box allows (Large text in the dialog).
+export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE, large: big = false } = {}) {
   squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
+  large = !!big;
   const groups = buildGroups(speakers || [], measure, texts.remote);
   const head = wrapText(texts.instruction || '', AREA.w, HEAD_FONT, measure, 4).lines;
   const header = head.map((text, i) => ({

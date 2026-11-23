@@ -545,23 +545,35 @@ body {
 }
 .sticker-hint p { margin: 0; flex: 1 1 260px; color: var(--brand-text); font-size: 13px; line-height: 1.4; }
 .phone-stickers { margin: 6px 0 0; font-size: 13px; }
-/* Only the preview scrolls, so Save stays in view under a tall sheet. */
-.sticker-modal { max-width: 720px; max-height: 92vh; display: flex; flex-direction: column; }
-.sticker-speakers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.sticker-speaker { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
-.sticker-speaker-name .muted { padding: 0; }
-.sticker-housing { display: inline-flex; gap: 14px; font-size: 13px; }
+/* Only the preview scrolls, so Save stays in view under a tall sheet. Two
+   classes, so the width wins over the plain .modal-content further down. */
+.modal-content.sticker-modal { max-width: 720px; max-height: 92vh; display: flex; flex-direction: column; }
+/* One small card per speaker in a grid. With many speakers the grid stops at
+   about two rows of cards and scrolls on its own, so the preview keeps most
+   of the dialog; with one to four it is one or two tidy rows. */
+.sticker-speakers {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px;
+  flex: 0 0 auto; max-height: min(9.5em, 22vh); overflow-y: auto; margin-bottom: 8px;
+  font-size: 13px;
+}
+.sticker-speaker {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  padding: 5px 10px; border: 1px solid var(--c-border-2); border-radius: 6px;
+}
+.sticker-speaker-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.sticker-speaker-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sticker-speaker-name .muted { padding: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sticker-housing { display: inline-flex; gap: 14px; }
 .sticker-housing label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.sticker-options { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 22px; }
-.sticker-remote { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
-.sticker-remote svg { flex: 0 0 auto; }
+.sticker-large { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; cursor: pointer; align-self: flex-start; }
+.sticker-skipped-list:empty { display: none; }
+.sticker-skipped-list { margin-bottom: 8px; }
 .sticker-skipped { margin: 0; font-size: 13px; color: var(--c-muted); }
 .sticker-status { min-height: 1.2em; margin: 8px 0; font-size: 13px; color: var(--c-muted); overflow-wrap: anywhere; }
 .sticker-status:empty { margin: 0; min-height: 0; }
 .sticker-status.is-ok { color: var(--signal-green); }
 .sticker-status.is-error { color: var(--signal-red); }
 .sticker-preview { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; flex: 1 1 auto; min-height: 140px; overflow-y: auto; }
-.sticker-speakers { flex: 0 0 auto; max-height: 34vh; overflow-y: auto; }
 .sticker-page { display: block; width: 100%; height: auto; border: 1px solid var(--c-border-2); border-radius: 2px; background: #fff; }
 
 /* The one-time row under the install success message: set off by a thin rule

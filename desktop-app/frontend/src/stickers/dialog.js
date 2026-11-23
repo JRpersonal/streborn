@@ -3,8 +3,9 @@
 // One sheet for every STR speaker on the network: per speaker a sticker with
 // what is on its keys and a QR code to its phone remote. The dialog shows the
 // pages as they will print, lets the user say white or dark per speaker (the
-// housing colour cannot be read from a speaker), offers every speaker a
-// sticker for the back of its remote, and saves the PDF.
+// housing colour cannot be read from a speaker) and saves the PDF. Every
+// speaker also gets a sticker for the back of its remote, always: there is
+// no choice to make about it (Jens, 2026-11-23).
 //
 // The window paints the pages (draw.js) and Go writes the file
 // (SaveStickerPDF); layout.js says where everything goes.
@@ -19,9 +20,10 @@ import {
   finishHint,
   hintState,
   keysFingerprint,
+  largeTextOn,
   rememberPrinted,
   setHousing,
-  setRemote,
+  setLargeText,
   stickersStale,
 } from './data.js';
 import { PRINT_DPI, drawPage, loadImages, makeMeasure, squeezeFor } from './draw.js';
@@ -31,9 +33,6 @@ import { layoutStickers } from './layout.js';
 const PREVIEW_DPI = 110;
 
 const PRINTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>';
-
-// The remote symbol of the remote sticker, beside its checkbox.
-const REMOTE_ICON = '<svg viewBox="0 0 12 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" width="8" height="15" aria-hidden="true"><rect x="1" y="0.7" width="10" height="22.6" rx="3"></rect><circle cx="6" cy="4.2" r="1" fill="currentColor"></circle><circle cx="6" cy="16.5" r="2.4"></circle><path d="M3.8 8.3h0M6 8.3h0M8.2 8.3h0M3.8 11.3h0M6 11.3h0M8.2 11.3h0" stroke-width="1.6"></path></svg>';
 
 // Tolerates a missing document: the keys view calls in here from code that is
 // also unit-tested without one.
@@ -93,7 +92,9 @@ export function stickerModalHTML() {
     <div class="modal-content sticker-modal" role="dialog" aria-modal="true" aria-labelledby="stickerTitle">
       <h3 id="stickerTitle">${escapeHtml(t('stickers.title'))}</h3>
       <p class="modal-sub">${escapeHtml(t('stickers.intro'))}</p>
+      <label class="sticker-large" title="${escapeAttr(t('stickers.largeTitle'))}"><input type="checkbox" id="stickerLarge"> ${escapeHtml(t('stickers.large'))}</label>
       <div class="sticker-speakers" id="stickerSpeakers"></div>
+      <div class="sticker-skipped-list" id="stickerSkipped"></div>
       <p class="sticker-status" id="stickerStatus" role="status" aria-live="polite"></p>
       <div class="sticker-preview" id="stickerPreview"></div>
       <div class="share-foot">
@@ -117,28 +118,33 @@ const say = (text, kind = '') => {
   el.className = `sticker-status${kind ? ` is-${kind}` : ''}`;
 };
 
-function speakersHTML(speakers, skipped) {
-  const rows = speakers.map((sp, i) => `<div class="sticker-speaker" role="group" aria-labelledby="stickerSp-${i}">
-      <span class="sticker-speaker-name"><strong id="stickerSp-${i}">${escapeHtml(sp.name)}</strong> <span class="muted small">${escapeHtml(sp.model)}</span></span>
-      <span class="sticker-options">
+// speakersHTML is one small card per speaker: its name with the model under
+// it, and the white/dark choice. The cards sit in a grid that scrolls on its
+// own, so a network of many speakers does not push the preview out of the
+// dialog.
+function speakersHTML(speakers) {
+  return speakers.map((sp, i) => `<div class="sticker-speaker" role="group" aria-labelledby="stickerSp-${i}">
+      <span class="sticker-speaker-name"><strong id="stickerSp-${i}" title="${escapeAttr(sp.name)}">${escapeHtml(sp.name)}</strong> <span class="muted small" title="${escapeAttr(sp.model)}">${escapeHtml(sp.model)}</span></span>
       <span class="sticker-housing" role="radiogroup" aria-label="${escapeAttr(t('stickers.housing'))}">
         ${['white', 'dark'].map((h) => `<label><input type="radio" name="stickerHousing-${i}" value="${h}" data-speaker="${i}"${sp.housing === h ? ' checked' : ''}> ${escapeHtml(t(h === 'white' ? 'stickers.white' : 'stickers.dark'))}</label>`).join('')}
       </span>
-      <label class="sticker-remote" title="${escapeAttr(t('stickers.remoteTitle'))}"><input type="checkbox" data-remote="${i}"${sp.remote ? ' checked' : ''}> ${REMOTE_ICON} ${escapeHtml(t('stickers.remote'))}</label>
-      </span>
     </div>`).join('');
-  const left = skipped.map((name) => `<p class="sticker-skipped">${escapeHtml(t('stickers.skipped', { name }))}</p>`).join('');
-  return rows + left;
+}
+
+// skippedHTML names the speakers that did not answer, under the grid.
+function skippedHTML(skipped) {
+  return skipped.map((name) => `<p class="sticker-skipped">${escapeHtml(t('stickers.skipped', { name }))}</p>`).join('');
 }
 
 // redraw lays the sheet out again and paints the preview. Called after the
-// speakers were read and after every colour switch.
+// speakers were read, after every colour switch and when Large text changes.
 async function redraw(mine) {
   const m = model;
   if (!m) return;
   m.layout = layoutStickers(m.speakers, {
     measure: m.measure,
     squeeze: m.squeeze,
+    large: m.large,
     texts: { instruction: t('stickers.sheetInstruction'), control: t('stickers.sheetControl'), remote: t('stickers.remoteHeader') },
   });
   m.images = await loadImages(m.layout);
@@ -205,9 +211,18 @@ export async function openStickerDialog() {
   model = null;
   returnFocus = document.activeElement;
   $('stickerSpeakers').innerHTML = '';
+  $('stickerSkipped').innerHTML = '';
   $('stickerPreview').innerHTML = '';
   const saveBtn = $('stickerSave');
   saveBtn.disabled = true;
+  const largeBox = $('stickerLarge');
+  largeBox.checked = largeTextOn();
+  largeBox.onchange = () => {
+    setLargeText(largeBox.checked);
+    if (!model) return;
+    model.large = largeBox.checked;
+    redraw(run);
+  };
   saveBtn.onclick = () => { save(run); };
   $('stickerClose').onclick = closeStickerDialog;
   modal.onclick = (e) => { if (e.target === modal) closeStickerDialog(); };
@@ -228,19 +243,12 @@ export async function openStickerDialog() {
 
   const { speakers, skipped } = await collectSpeakers(state.boxes, { GetPresets, PhoneAddressFor, PhoneQR, ResolveStationLogo, StickerImage });
   if (mine !== run || modal.classList.contains('hidden')) return;
-  model = { speakers, skipped, measure: makeMeasure(), squeeze: squeezeFor(), layout: null, images: new Map() };
+  model = { speakers, skipped, measure: makeMeasure(), squeeze: squeezeFor(), large: largeBox.checked, layout: null, images: new Map() };
   const list = $('stickerSpeakers');
-  list.innerHTML = speakersHTML(speakers, skipped);
+  list.innerHTML = speakersHTML(speakers);
+  $('stickerSkipped').innerHTML = skippedHTML(skipped);
   list.onchange = (e) => {
     const input = e.target;
-    if (input && input.type === 'checkbox' && input.dataset.remote !== undefined) {
-      const sp = speakers[Number(input.dataset.remote)];
-      if (!sp) return;
-      sp.remote = input.checked;
-      setRemote(sp.id, sp.remote);
-      redraw(run);
-      return;
-    }
     if (!input || input.type !== 'radio' || !input.checked) return;
     const sp = speakers[Number(input.dataset.speaker)];
     if (!sp) return;
