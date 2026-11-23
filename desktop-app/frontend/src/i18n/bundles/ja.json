@@ -265,6 +265,8 @@
   "library.wholeSearchOffline": "{{name}} が応答しなかったため、そこは検索していません。ライブラリが空という意味ではありません。",
   "library.wholeSearchPartial": "この一覧は完全ではないかもしれません。メディアサーバーが一度に返す件数より多くの結果がありました。もっと具体的に検索してください。",
   "library.wholeSearchIncomplete": "この一覧は完全ではないかもしれません。{{name}} は自分で検索できず、STR は時間内にすべてのフォルダーを確認できませんでした。",
+  "library.wholeSearchAsked": "検索したサーバー: {{names}}。",
+  "library.wholeSearchNoHits": "見つからなかったサーバー: {{names}}。",
   "library.wholeSearchClose": "フォルダーに戻る",
   "library.loadingMore": "さらに曲を読み込み中...",
   "library.capped": "最初の {{n}} 曲を表示しています。特定の曲は検索で見つけてください。",

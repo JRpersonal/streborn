@@ -278,6 +278,8 @@
   "library.wholeSearchOffline": "{{name}} non ha risposto, quindi lì non è stato cercato nulla. Non è la stessa cosa di una libreria vuota.",
   "library.wholeSearchPartial": "Questo elenco potrebbe non essere completo: un server multimediale aveva più risultati di quanti ne consegni in una volta. Prova una ricerca più precisa.",
   "library.wholeSearchIncomplete": "Questo elenco potrebbe non essere completo: {{name}} non sa cercare da solo e STR non ha fatto in tempo a esaminare tutte le sue cartelle.",
+  "library.wholeSearchAsked": "Cercato su: {{names}}.",
+  "library.wholeSearchNoHits": "Niente trovato su {{names}}.",
   "library.wholeSearchClose": "Torna alla cartella",
   "library.loadingMore": "Caricamento di altri brani...",
   "library.capped": "Mostro i primi {{n}} brani. Usa la ricerca per trovarne uno specifico.",

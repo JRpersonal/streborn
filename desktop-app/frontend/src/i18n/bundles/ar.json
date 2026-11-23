@@ -265,6 +265,8 @@
   "library.wholeSearchOffline": "لم يستجب {{name}}، لذلك لم يُبحث فيه عن شيء. هذا لا يعني أن المكتبة فارغة.",
   "library.wholeSearchPartial": "قد لا تكون هذه القائمة كاملة: لدى أحد خوادم الوسائط نتائج أكثر مما يرسله دفعة واحدة. ابحث بدقة أكبر.",
   "library.wholeSearchIncomplete": "قد لا تكون هذه القائمة كاملة: لا يستطيع {{name}} البحث بنفسه، ولم يتمكن STR من تصفح كل مجلداته في الوقت المتاح.",
+  "library.wholeSearchAsked": "تم البحث في: {{names}}.",
+  "library.wholeSearchNoHits": "لم يُعثر على شيء في: {{names}}.",
   "library.wholeSearchClose": "العودة إلى المجلد",
   "library.loadingMore": "جارٍ تحميل مزيد من المقاطع...",
   "library.capped": "عرض أول {{n}} مقطع. استخدم البحث للعثور على مقطع محدّد.",

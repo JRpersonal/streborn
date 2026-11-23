@@ -278,6 +278,8 @@
   "library.wholeSearchOffline": "{{name}} hat nicht geantwortet, dort wurde also nichts durchsucht. Das heißt nicht, dass die Bibliothek leer ist.",
   "library.wholeSearchPartial": "Diese Liste ist vielleicht nicht vollständig: Ein Medienserver hatte mehr Treffer, als er auf einmal liefert. Such genauer.",
   "library.wholeSearchIncomplete": "Diese Liste ist vielleicht nicht vollständig: {{name}} kann nicht selbst suchen, und STR konnte nicht rechtzeitig alle Ordner dort durchsehen.",
+  "library.wholeSearchAsked": "Durchsucht: {{names}}.",
+  "library.wholeSearchNoHits": "Nichts gefunden auf {{names}}.",
   "library.wholeSearchClose": "Zurück zum Ordner",
   "library.loadingMore": "Lädt weitere Titel...",
   "library.capped": "Zeigt die ersten {{n}} Titel. Nutze die Suche, um einen bestimmten zu finden.",

@@ -278,6 +278,8 @@
   "library.wholeSearchOffline": "{{name}} 沒有回應，所以那裡沒有被搜尋。這不代表音樂庫是空的。",
   "library.wholeSearchPartial": "這份清單可能不完整：某個媒體伺服器的結果比它一次提供的還多。請搜尋得更精確。",
   "library.wholeSearchIncomplete": "這份清單可能不完整：{{name}} 無法自行搜尋，STR 也來不及查看它的所有資料夾。",
+  "library.wholeSearchAsked": "已搜尋：{{names}}。",
+  "library.wholeSearchNoHits": "以下伺服器沒有結果：{{names}}。",
   "library.wholeSearchClose": "返回資料夾",
   "library.loadingMore": "正在載入更多曲目...",
   "library.capped": "只顯示前 {{n}} 首曲目。要找特定一首請用搜尋。",

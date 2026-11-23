@@ -265,6 +265,8 @@
   "library.wholeSearchOffline": "{{name}} neatbildēja, tāpēc tur nekas netika meklēts. Tas nenozīmē, ka bibliotēka ir tukša.",
   "library.wholeSearchPartial": "Šis saraksts var nebūt pilnīgs: multivides serverim bija vairāk rezultātu, nekā tas atdod vienā reizē. Meklē precīzāk.",
   "library.wholeSearchIncomplete": "Šis saraksts var nebūt pilnīgs: {{name}} pats meklēt nespēj, un STR nepaspēja laikus pārskatīt visas tā mapes.",
+  "library.wholeSearchAsked": "Meklēts: {{names}}.",
+  "library.wholeSearchNoHits": "Nekas netika atrasts: {{names}}.",
   "library.wholeSearchClose": "Atpakaļ uz mapi",
   "library.loadingMore": "Tiek ielādēti vairāk ierakstu...",
   "library.capped": "Tiek rādīti pirmie {{n}} ieraksti. Izmantojiet meklēšanu, lai atrastu konkrētu.",
