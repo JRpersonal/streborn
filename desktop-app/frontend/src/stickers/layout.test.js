@@ -37,7 +37,10 @@ const KEYS = [
 ];
 const speaker = (name, model, housing = 'dark', keys = KEYS) => ({ name, model, housing, keys, qr: 'data:image/png;base64,AAAA' });
 const lay = (speakers) => layoutStickers(speakers, { measure, texts });
-const parts = (page, i) => page.pieces.filter((p) => p.speaker === i).map((p) => p.part);
+// Every speaker also gets its remote sticker, after all the speaker stickers.
+// Most checks are about a speaker's own sticker and leave those out.
+const own = (page) => page.pieces.filter((p) => p.part !== 'remote');
+const parts = (page, i) => own(page).filter((p) => p.speaker === i).map((p) => p.part);
 
 describe('model to sticker', () => {
   it('maps each model to its layout', () => {
@@ -155,7 +158,7 @@ describe('housing colour', () => {
 
   it('colours each piece by its own speaker', () => {
     const page = lay([speaker('Den', 'SoundTouch 20', 'white'), speaker('Hall', 'SoundTouch 20', 'dark')]).pages[0];
-    expect(page.pieces.map((p) => p.pal.paper)).toEqual(['#EFE6D6', '#141518']);
+    expect(own(page).map((p) => p.pal.paper)).toEqual(['#EFE6D6', '#141518']);
   });
 });
 
@@ -181,14 +184,14 @@ describe('ST20 pairing', () => {
 
   it('leaves a single wide sticker upright and without scissors', () => {
     const page = lay([speaker('Den', 'SoundTouch 20')]).pages[0];
-    expect(page.pieces).toHaveLength(1);
+    expect(own(page)).toHaveLength(1);
     expect(page.pieces[0].rot).toBe(0);
     expect(page.scissors).toEqual([]);
   });
 
   it('starts a new pair with the third', () => {
     const page = lay(['A', 'B', 'C'].map((n) => speaker(n, 'SoundTouch 20'))).pages[0];
-    expect(page.pieces.map((p) => p.rot)).toEqual([0, 180, 0]);
+    expect(own(page).map((p) => p.rot)).toEqual([0, 180, 0]);
     expect(page.pieces[2].y).toBeGreaterThan(page.pieces[1].y + page.pieces[1].h);
   });
 });
@@ -358,18 +361,19 @@ describe('pages', () => {
 
   it('starts a new page when the next group does not fit', () => {
     // An ST10 group is 34.5 mm high plus bleed and gap: five fit one page,
-    // the sixth does not.
-    expect(lay(many(5, 'SoundTouch 10')).pages).toHaveLength(1);
+    // the sixth does not. The remote stickers follow on the next page.
+    const five = lay(many(5, 'SoundTouch 10')).pages;
+    expect(new Set(own(five[0]).map((p) => p.speaker))).toEqual(new Set([0, 1, 2, 3, 4]));
     const { pages } = lay(many(6, 'SoundTouch 10'));
-    expect(pages).toHaveLength(2);
-    expect(new Set(pages[1].pieces.map((p) => p.speaker))).toEqual(new Set([5]));
+    expect(new Set(own(pages[0]).map((p) => p.speaker))).toEqual(new Set([0, 1, 2, 3, 4]));
+    expect(new Set(own(pages[1]).map((p) => p.speaker))).toEqual(new Set([5]));
   });
 
   it('never splits one speaker, or a pair, across pages', () => {
     const speakers = [...many(4, 'SoundTouch Portable'), ...many(6, 'SoundTouch 20'), ...many(4, 'SoundTouch 10')];
     const { pages } = lay(speakers);
     const pageOf = new Map();
-    pages.forEach((page, n) => page.pieces.forEach((p) => {
+    pages.forEach((page, n) => own(page).forEach((p) => {
       if (pageOf.has(p.speaker)) expect(pageOf.get(p.speaker)).toBe(n);
       pageOf.set(p.speaker, n);
     }));
@@ -385,7 +389,7 @@ describe('pages', () => {
   it('does not let groups overlap', () => {
     for (const page of lay([...many(2, 'SoundTouch 10'), ...many(3, 'SoundTouch 20'), ...many(2, 'SoundTouch Portable')]).pages) {
       const bySpeaker = new Map();
-      for (const p of page.pieces) {
+      for (const p of own(page)) {
         const b = bySpeaker.get(p.speaker) || { y0: Infinity, y1: -Infinity };
         bySpeaker.set(p.speaker, { y0: Math.min(b.y0, p.y), y1: Math.max(b.y1, p.y + p.h) });
       }
@@ -437,12 +441,12 @@ describe('the remote sticker', () => {
     key(5, 'Südwestrundfunk SWR1 Baden-Württemberg', { name: 'Sonntagmorgenfrühstücksmusik', kind: 'playlist' }),
     key(6, 'Klassik Radio Filmmusik', { name: 'Kinderliederzusammenstellung', kind: 'playlist' }),
   ];
-  const remoteSpeaker = (name, model, keys, housing = 'white') => ({ ...speaker(name, model, housing, keys), remote: true });
+  const remoteSpeaker = (name, model, keys, housing = 'white') => speaker(name, model, housing, keys);
   const remotesOf = (pages) => pages.flatMap((pg) => pg.pieces.filter((p) => p.part === 'remote'));
   const one = (sp, extra = {}) => remotesOf(layoutStickers([sp], { measure, texts: { ...texts, remote: 'Remote' }, ...extra }).pages)[0];
   const textsOf = (piece) => piece.texts.map((x) => x.text);
 
-  it('is a plain 40 x 75 mm rectangle with a cut line, offered for every model', () => {
+  it('is a plain 40 x 75 mm rectangle with a cut line, for every model', () => {
     for (const model of ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch 30', 'SoundTouch Portable', 'Wave SoundTouch', 'SoundTouch 300', '', undefined]) {
       const p = one(remoteSpeaker('Kitchen', model, REALISTIC));
       expect(p, String(model)).toBeTruthy();
@@ -454,14 +458,14 @@ describe('the remote sticker', () => {
     }
   });
 
-  it('is only on the sheet when asked for, and leaves the speaker stickers as they were', () => {
-    const plain = lay([speaker('Den', 'SoundTouch 20')]).pages[0];
-    const withRemote = layoutStickers([remoteSpeaker('Den', 'SoundTouch 20', KEYS, 'dark')], { measure, texts }).pages[0];
-    expect(remotesOf([plain])).toHaveLength(0);
-    expect(remotesOf([withRemote])).toHaveLength(1);
-    const main = (page) => page.pieces.find((p) => p.part === 'main');
-    expect(main(withRemote).texts).toEqual(main(plain).texts);
-    expect(main(withRemote).y).toBeCloseTo(main(plain).y, 9);
+  it("is always on the sheet, one per speaker, after the speakers' own stickers", () => {
+    const speakers = ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch Portable', 'Wave SoundTouch'].map((m, i) => speaker(`Room ${i + 1}`, m));
+    const { pages } = lay(speakers);
+    expect(remotesOf(pages).map((p) => p.speaker)).toEqual([0, 1, 2, 3]);
+    // Nothing of a speaker's own sticker comes after the first remote sticker.
+    const all = pages.flatMap((pg) => pg.pieces);
+    const first = all.findIndex((p) => p.part === 'remote');
+    expect(all.slice(first).every((p) => p.part === 'remote')).toBe(true);
   });
 
   it('says it is for the remote: the symbol, the word and the speaker name in the header', () => {

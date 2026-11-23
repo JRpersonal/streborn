@@ -2735,8 +2735,6 @@
   "stickers.sheetControl": "Contrôle : cette ligne mesure exactement 100 mm",
   "stickers.hint": "Nouveau : imprimez des étiquettes qui montrent ce qui se trouve sur chaque touche de vos enceintes.",
   "stickers.settingsLink": "Imprimer des étiquettes avec ce code et les touches de vos enceintes",
-  "stickers.remote": "Étiquette pour la télécommande",
-  "stickers.remoteTitle": "Ajoute une étiquette de 7,5 × 4 cm pour le dos de la télécommande, avec ce qui se trouve sur chaque touche",
   "stickers.remoteHeader": "Télécommande",
   "ui2.radio.keysEditHint": "Maintenez une touche enfoncée ou appuyez sur Maj+Entrée pour la modifier",
   "ui2.radio.keyEditTitle": "Modifier la touche {{n}} de {{speaker}}",

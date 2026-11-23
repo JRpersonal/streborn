@@ -7,7 +7,7 @@
 // The backend calls come in as `api` so the flow is tested without one.
 
 import { isStr, labelOf } from '../boxes.js';
-import { housingOf, logoRequest, remoteOf, speakerId, stickerKeys } from './data.js';
+import { housingOf, logoRequest, speakerId, stickerKeys } from './data.js';
 
 const isDataImage = (s) => typeof s === 'string' && /^data:image\//i.test(s);
 
@@ -69,7 +69,7 @@ async function collectOne(box, api, storage) {
     }),
   ]);
   const id = speakerId(box);
-  return { id, name: labelOf(box), model: box.model || '', housing: housingOf(id, storage, box.model || ''), remote: remoteOf(id, storage), keys, qr };
+  return { id, name: labelOf(box), model: box.model || '', housing: housingOf(id, storage, box.model || ''), keys, qr };
 }
 
 // collectSpeakers reads every STR speaker of the list. Returns the speakers

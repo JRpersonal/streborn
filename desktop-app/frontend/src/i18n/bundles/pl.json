@@ -2735,8 +2735,6 @@
   "stickers.sheetControl": "Kontrola: ta linia ma dokładnie 100 mm długości",
   "stickers.hint": "Nowość: wydrukuj naklejki, które pokazują, co jest pod każdym przyciskiem głośników.",
   "stickers.settingsLink": "Drukuj naklejki z tym kodem i przyciskami głośników",
-  "stickers.remote": "Naklejka na pilota",
-  "stickers.remoteTitle": "Dodaje naklejkę 7,5 × 4 cm na tył pilota, która pokazuje, co jest pod każdym przyciskiem",
   "stickers.remoteHeader": "Pilot",
   "ui2.radio.keysEditHint": "Przytrzymaj przycisk lub naciśnij Shift+Enter, aby go zmienić",
   "ui2.radio.keyEditTitle": "Zmień przycisk {{n}} ({{speaker}})",

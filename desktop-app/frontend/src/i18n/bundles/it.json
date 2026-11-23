@@ -2735,8 +2735,6 @@
   "stickers.sheetControl": "Controllo: questa linea è lunga esattamente 100 mm",
   "stickers.hint": "Novità: stampa gli adesivi che mostrano cosa c'è su ogni tasto dei tuoi altoparlanti.",
   "stickers.settingsLink": "Stampa gli adesivi con questo codice e i tasti dei tuoi altoparlanti",
-  "stickers.remote": "Adesivo per il telecomando",
-  "stickers.remoteTitle": "Aggiunge un adesivo di 7,5 × 4 cm per il retro del telecomando, con cosa c'è su ogni tasto",
   "stickers.remoteHeader": "Telecomando",
   "ui2.radio.keysEditHint": "Tieni premuto un tasto o premi Maiusc+Invio per modificarlo",
   "ui2.radio.keyEditTitle": "Modifica il tasto {{n}} su {{speaker}}",

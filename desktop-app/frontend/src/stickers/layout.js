@@ -11,8 +11,9 @@
 //
 // Input:  [{ name, model, housing: 'white'|'dark',
 //            keys: [{ n, name, kind: 'station'|'playlist', logo,
-//                     twice: { name, kind } | null }], qr, remote }]
-//         (remote: true adds the 40 x 75 mm sticker for the back of the remote)
+//                     twice: { name, kind } | null }], qr }]
+//         Every speaker also gets the 40 x 75 mm sticker for the back of its
+//         remote: there is no remote it would not fit, so it is not optional.
 // Output: { pages: [{ header, pieces, scissors, control }] }
 
 const u = (px) => px / 6;
@@ -631,7 +632,7 @@ function buildGroups(speakers, measure, remoteLabel) {
   });
   // The remote stickers come after all of them, side by side in rows, each
   // with its own cut line: they belong to different remotes.
-  const remotes = speakers.map((sp, idx) => (sp.remote ? remoteSticker(sp, idx, remoteLabel, measure) : null)).filter(Boolean);
+  const remotes = speakers.map((sp, idx) => remoteSticker(sp, idx, remoteLabel, measure));
   for (let i = 0; i < remotes.length; i += REMOTES_PER_ROW) {
     groups.push({ pieces: remotes.slice(i, i + REMOTES_PER_ROW).map((p, j) => Object.assign(p, { x: j * (REMOTE.w + REMOTE_GAP), y: 0, rot: 0 })), scissors: [] });
   }
@@ -673,9 +674,9 @@ const REMOTES_PER_ROW = Math.floor((AREA.x + AREA.w - BLEED - GROUP_X + REMOTE_G
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
 // translated words: the two lines of the sheet and the header of the remote
 // sticker (the speakers' stickers hold no words): { instruction, control,
-// remote }. A speaker that has remote: true also gets the remote sticker. The
-// pieces of one speaker's own sticker never go on two pages; the remote
-// stickers follow them in rows of their own and carry the speaker's name.
+// remote }. Every speaker also gets its remote sticker. The pieces of one
+// speaker's own sticker never go on two pages; the remote stickers follow
+// them in rows of their own and carry the speaker's name.
 export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE } = {}) {
   squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
   const groups = buildGroups(speakers || [], measure, texts.remote);

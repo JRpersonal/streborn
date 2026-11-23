@@ -2735,8 +2735,6 @@
   "stickers.sheetControl": "Comprobación: esta línea mide exactamente 100 mm",
   "stickers.hint": "Nuevo: imprime pegatinas que muestran lo que hay en cada tecla de tus altavoces.",
   "stickers.settingsLink": "Imprimir pegatinas con este código y las teclas de tus altavoces",
-  "stickers.remote": "Pegatina para el mando",
-  "stickers.remoteTitle": "Añade una pegatina de 7,5 × 4 cm para la parte trasera del mando, con lo que hay en cada tecla",
   "stickers.remoteHeader": "Mando a distancia",
   "ui2.radio.keysEditHint": "Mantén pulsada una tecla o pulsa Mayús+Intro para cambiarla",
   "ui2.radio.keyEditTitle": "Cambiar la tecla {{n}} de {{speaker}}",

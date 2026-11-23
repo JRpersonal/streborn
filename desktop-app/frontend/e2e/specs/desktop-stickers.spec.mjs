@@ -4,8 +4,9 @@
 // hands the pages to SaveStickerPDF. Covered: the button by the keys in both
 // layouts, the link under the phone QR code in Settings, who is on the sheet
 // and who is named as left off, the white/dark switch and that it is
-// remembered, what Save sends, the out-of-date marker after a key changes,
-// and the one-time hint after the first saved preset.
+// remembered, the remote sticker that every speaker always gets, the compact
+// speaker list with many speakers, what Save sends, the out-of-date marker
+// after a key changes, and the one-time hint after the first saved preset.
 
 import { test, expect } from '../fixtures.mjs';
 import { en } from '../helpers/i18n.mjs';
@@ -40,6 +41,23 @@ const inkAt = (page, xMm, yMm) => page.evaluate(([x, y]) => {
   const k = c.width / 210;
   return [...c.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data].slice(0, 3);
 }, [xMm, yMm]);
+
+// lowestBlock finds, in one column of the first page (x in mm), the lowest
+// run of painted pixels that is taller than 10 mm, so the control line and
+// its caption do not count: { top, bottom } in mm.
+const lowestBlock = (page, xMm) => page.evaluate((x) => {
+  const c = document.querySelector('#stickerPreview canvas.sticker-page');
+  const k = c.width / 210;
+  const col = c.getContext('2d').getImageData(Math.round(x * k), 0, 1, c.height).data;
+  const runs = [];
+  let start = -1;
+  for (let y = 0; y <= c.height; y++) {
+    const painted = y < c.height && Math.min(col[y * 4], col[y * 4 + 1], col[y * 4 + 2]) < 245;
+    if (painted && start < 0) start = y;
+    if (!painted && start >= 0) { runs.push({ top: start / k, bottom: y / k }); start = -1; }
+  }
+  return runs.filter((r) => r.bottom - r.top > 10).pop() || { top: 0, bottom: 0 };
+}, xMm);
 
 for (const ui2 of [false, true]) {
   test.describe(ui2 ? 'UI 2.0 preview' : 'classic layout', () => {
@@ -89,31 +107,41 @@ test('the housing colour switch repaints the sticker and is remembered', async (
   await expect(page.locator('.sticker-speaker').nth(1).getByRole('radio', { name: en('stickers.white') })).toBeChecked();
 });
 
-test('every speaker offers the remote sticker; it is on by default, unticking takes it off the sheet and is remembered', async ({ app }) => {
+test("there is no remote checkbox: every speaker's remote sticker is always on the sheet", async ({ app }) => {
   const { page } = app;
   await openFromKeys(page);
-  const rows = page.locator('.sticker-speaker');
-  const remote = (row) => row.getByRole('checkbox', { name: en('stickers.remote') });
-  // An ST10 and an ST20: both are offered it, and it is on until unticked.
-  await expect(rows).toHaveCount(2);
-  for (const i of [0, 1]) await expect(remote(rows.nth(i))).toBeChecked();
-  const before = await pages(page).first().evaluate((c) => c.toDataURL());
+  await expect(page.locator('.sticker-speaker')).toHaveCount(2);
+  await expect(page.locator('.sticker-speaker input[type="checkbox"]')).toHaveCount(0);
+  // The remote stickers stand side by side in a row under the speaker
+  // stickers: the lowest tall block at the inner left edge of the first and
+  // of the second is a 75 mm sticker with its bleed, and there is no third.
+  const rowStart = 17.5;
+  const pitch = 40 + 6;
+  const [first, second, third] = await Promise.all([0, 1, 2].map((i) => lowestBlock(page, rowStart + i * pitch + 1)));
+  for (const b of [first, second]) expect(b.bottom - b.top).toBeCloseTo(75 + 2 * 1.5, 0);
+  expect(second.bottom).toBeCloseTo(first.bottom, 0);
+  expect(third.bottom).toBeLessThan(first.top);
+});
 
-  await remote(rows.nth(1)).uncheck();
-  await expect.poll(() => pages(page).first().evaluate((c) => c.toDataURL())).not.toBe(before);
-  await expect(pages(page)).toHaveCount(1);
-  // Remembered for that one speaker: only the untick is stored.
-  const stored = JSON.parse(await page.evaluate(() => localStorage.getItem('str.stickerRemote')));
-  expect(Object.values(stored)).toEqual([false]);
+test.describe('with six speakers', () => {
+  test.use({ scenario: { boxes: ['livingRoom', 'bedroom', 'oldAgent', 'terraceLeft', 'terraceRight', 'dining'] } });
 
-  await page.locator('#stickerClose').click();
-  await openFromKeys(page);
-  await expect(remote(page.locator('.sticker-speaker').nth(0))).toBeChecked();
-  await expect(remote(page.locator('.sticker-speaker').nth(1))).not.toBeChecked();
-
-  // Ticked again, the sheet is as it was.
-  await remote(page.locator('.sticker-speaker').nth(1)).check();
-  await expect.poll(() => pages(page).first().evaluate((c) => c.toDataURL())).toBe(before);
+  test('the speaker list stays about two cards tall and the preview keeps most of the dialog', async ({ app }) => {
+    const { page } = app;
+    await openFromKeys(page);
+    const cards = page.locator('.sticker-speaker');
+    await expect(cards).toHaveCount(6);
+    // Every card keeps its own white/dark choice.
+    await expect(page.locator('.sticker-speaker [role="radiogroup"]')).toHaveCount(6);
+    const list = await page.locator('#stickerSpeakers').boundingBox();
+    const card = await cards.first().boundingBox();
+    // About two rows of cards; the list scrolls past that.
+    expect(list.height).toBeLessThanOrEqual(2.6 * card.height + 6);
+    const preview = await page.locator('#stickerPreview').boundingBox();
+    expect(preview.height).toBeGreaterThan(2 * list.height);
+    await expect(pages(page).first()).toBeInViewport();
+    if (process.env.SHOOT_DIR) await modal(page).locator('.sticker-modal').screenshot({ path: `${process.env.SHOOT_DIR}/dialog-six-speakers.png`, animations: 'disabled' });
+  });
 });
 
 test('Save sends one A4 page image per page and says where the file went', async ({ app, mock }) => {

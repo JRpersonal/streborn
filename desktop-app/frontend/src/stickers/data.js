@@ -85,7 +85,6 @@ export function keysFingerprint(keys) {
 const HOUSING_KEY = 'str.stickerHousing';
 const PRINTED_KEY = 'str.stickerPrinted';
 const HINT_KEY = 'str.stickerHint';
-const REMOTE_KEY = 'str.stickerRemote';
 
 const store = (storage) => (storage === undefined ? globalThis.localStorage : storage);
 
@@ -115,21 +114,6 @@ export function setHousing(id, housing, storage) {
   const map = readMap(HOUSING_KEY, storage);
   map[id] = housing === 'white' ? 'white' : 'dark';
   writeMap(HOUSING_KEY, map, storage);
-}
-
-// Whether a speaker's sheet also carries the sticker for the back of its
-// remote. Any model can have one, so it is offered for every speaker; it
-// is on until the user unticks it (Jens, 2026-11-22), and the choice is kept
-// per speaker: only an explicit false is stored.
-export function remoteOf(id, storage) {
-  return readMap(REMOTE_KEY, storage)[id] !== false;
-}
-
-export function setRemote(id, on, storage) {
-  const map = readMap(REMOTE_KEY, storage);
-  if (on) delete map[id];
-  else map[id] = false;
-  writeMap(REMOTE_KEY, map, storage);
 }
 
 // printedFingerprints is what was on each speaker's keys when the stickers

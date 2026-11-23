@@ -2735,8 +2735,6 @@
   "stickers.sheetControl": "Pārbaude: šī līnija ir tieši 100 mm gara",
   "stickers.hint": "Jaunums: izdrukājiet uzlīmes, kurās redzams, kas piešķirts katrai jūsu skaļruņu pogai.",
   "stickers.settingsLink": "Drukāt uzlīmes ar šo kodu un jūsu skaļruņu pogām",
-  "stickers.remote": "Uzlīme pultij",
-  "stickers.remoteTitle": "Pievieno 7,5 × 4 cm uzlīmi pults aizmugurei, kurā redzams, kas piešķirts katrai pogai",
   "stickers.remoteHeader": "Pults",
   "ui2.radio.keysEditHint": "Turiet pogu nospiestu vai nospiediet Shift+Enter, lai to mainītu",
   "ui2.radio.keyEditTitle": "Mainīt pogu {{n}} ({{speaker}})",
