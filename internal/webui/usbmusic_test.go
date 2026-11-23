@@ -273,7 +273,7 @@ func TestFirmwareMountedMusicStickIsListedAndRemountedReadOnly(t *testing.T) {
 	if ops := f.ops(); len(ops) != 1 || ops[0] != "remount-ro "+media {
 		t.Fatalf("a firmware mount is only switched to read-only in place, got %v", ops)
 	}
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.Served || snap.MountedBy != "firmware" || snap.Classification != "music" || snap.FATType != "FAT32" ||
 		snap.ClusterBytes != 32<<10 || snap.Variant != "rhino" || !snap.RemountedRO || snap.RemountError != "" ||
 		!strings.HasPrefix(snap.MountOptions, "ro,") || snap.MountDir != media {
@@ -304,7 +304,7 @@ func TestPortableStickIsMountedReadOnlyOnlyWhenTheLibraryOpens(t *testing.T) {
 	if ops := f.ops(); len(ops) != 0 {
 		t.Fatalf("nothing may be mounted at agent start, got %v", ops)
 	}
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); !snap.WaitingForLibrary || snap.Served {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; !snap.WaitingForLibrary || snap.Served {
 		t.Fatalf("startup snapshot: %+v", snap)
 	}
 	if _, ok := usbRow(listServers(t, s)); !ok {
@@ -314,7 +314,7 @@ func TestPortableStickIsMountedReadOnlyOnlyWhenTheLibraryOpens(t *testing.T) {
 	if ops := f.ops(); len(ops) != 1 || ops[0] != "mount sda1 "+f.files {
 		t.Fatalf("want exactly one mount, got %v", ops)
 	}
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.Served || snap.MountedBy != "agent" || !strings.Contains(snap.MountOptions, "ro") {
 		t.Fatalf("snapshot: %+v", snap)
 	}
@@ -383,7 +383,7 @@ func TestSticksThatAreNotServedSayWhy(t *testing.T) {
 			if n := f.remounts(); n != 0 {
 				t.Fatalf("a refused stick must never be remounted, got %v", f.ops())
 			}
-			if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.RemountedRO {
+			if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.RemountedRO {
 				t.Fatalf("snapshot: %+v", snap)
 			}
 			// Nothing about it is browsable.
@@ -400,7 +400,7 @@ func TestNoStickNoEntry(t *testing.T) {
 	if _, ok := usbRow(listServers(t, s)); ok {
 		t.Fatal("no stick, no entry")
 	}
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.Present {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.Present {
 		t.Fatalf("snapshot: %+v", snap)
 	}
 }
@@ -474,7 +474,7 @@ func TestTheStickBrowsesThroughTheAgentLikeAnyMediaServer(t *testing.T) {
 		tr.Art != "http://192.0.2.10:8888/usb/art/Album%201/cover.jpg" {
 		t.Fatalf("phone track: %+v", tr)
 	}
-	snap := s.USBMusicDebug().(usbMusicSnapshot)
+	snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot
 	if !snap.RootListed && snap.Browses == 0 {
 		t.Fatalf("browses must be counted: %+v", snap)
 	}
@@ -644,7 +644,7 @@ func TestALatin1FirmwareMountShowsUmlautsAndPlays(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("the speaker could not fetch the file: %d", resp.StatusCode)
 	}
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.NameCharset != "iso8859-1" {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.NameCharset != "iso8859-1" {
 		t.Fatalf("snapshot: %+v", snap)
 	}
 }
@@ -717,7 +717,7 @@ func TestTheStickIsNamedAfterItsLabelAndItsSpeaker(t *testing.T) {
 	if !ok || row.Name != "USB stick MUSIK (Kitchen)" || row.Speaker != "Kitchen" || row.Label != "MUSIK" {
 		t.Fatalf("usb row: %+v %v", row, ok)
 	}
-	if snap := s.USBMusicDebug().(usbMusicSnapshot); snap.VolumeLabel != "MUSIK" {
+	if snap := s.USBMusicDebug().(usbMusicDebugView).usbMusicSnapshot; snap.VolumeLabel != "MUSIK" {
 		t.Fatalf("debug state: %+v", snap)
 	}
 	srv := startUSBAgent(t, s)
