@@ -22,7 +22,8 @@ import { t } from '../i18n/index.js';
 import { state } from '../state.js';
 import { strBoxes } from '../boxes.js';
 import { SpotifyNowPlaying } from '../api.js';
-import { sameBoxIdentity } from '../groups.js';
+import { pairUnitName, sameBoxIdentity } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 import { parsePresetConflict, presetConflictNote } from '../presetmove.js';
 import { saveSpotifyToSlot, presetMoveOffer } from './music/save.js';
 import { loadPresets } from './music/presets.js';
@@ -49,11 +50,16 @@ let accounts = { rows: null, busy: false, gen: 0 };
 
 const hostKey = (b) => (b ? `${b.host}:${b.port}` : '');
 
-// speakerName is the selected speaker as the sidebar names it.
+// speakerName is the selected speaker as the sidebar names it. Half of a live
+// stereo pair is named as the pair, "Kitchen (stereo)", never as the half the
+// app happens to address (#1587). The ticker repaints every second, so a pair
+// name still being looked up shows on the next tick.
 function speakerName(box) {
   if (!box) return '';
   const known = ((deps.strBoxes ? deps.strBoxes() : []) || []).find((b) => b.host === box.host && b.port === box.port);
-  return (known && known.name) || box.friendlyName || box.name || box.host || '';
+  const label = (b) => (b === box && known && known.name) || b.friendlyName || b.name || b.host || '';
+  const pair = pairUnitName(box, state.zoneLive, state.boxes, (p) => pairDisplayName(p), label);
+  return pair ? t('ui2.side.pairName', { name: pair }) : label(box);
 }
 
 export function spotifyUi2Markup() {
