@@ -172,6 +172,9 @@ export const state = {
   spotifyNowGen: 0,           // bumped by every reset, so a late reply is recognised as stale
   spotifyRecall: undefined,   // the recall still settling ({ uri, ... }) or null
   lastSpotifyNowFetch: 0,     // Date.now() of the last SpotifyNowPlaying call
+  spotifyPlayModes: null,     // { shuffle, repeat } of the playing Spotify playlist, null when unknown (#2058)
+  spotifyPlayModeUnsupported: null, // host -> true when the agent cannot do the shuffle/repeat press
+  spotifyPlayModePressAt: 0,  // Date.now() of the last shuffle/repeat press on a Spotify playlist
   nowBoxSpotify: undefined,   // the speaker's NATIVE Spotify track, or null
   nowSpotifySlot: undefined,  // the key the playing Spotify context belongs to, or null
   spotifyAccountNames: undefined, // account id -> display name, merged from the replies

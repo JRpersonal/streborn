@@ -422,6 +422,8 @@ export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
 
+export function SpotifyPlayMode(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
+
 export function SpotifyQuality(arg1:string,arg2:number):Promise<main.SpotifyQualityState>;
 
 export function StartQueue(arg1:string,arg2:number,arg3:string):Promise<void>;

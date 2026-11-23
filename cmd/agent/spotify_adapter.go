@@ -30,6 +30,7 @@ var (
 	_ webui.SpotifyStatusPages     = (*spotifyEngine)(nil)
 	_ webui.SpotifyEngineLifecycle = (*spotifyEngine)(nil)
 	_ webui.SpotifyRemoteKeys      = (*spotifyEngine)(nil)
+	_ webui.SpotifyPlayModeReader  = (*spotifyEngine)(nil)
 	_ webui.SpotifyLibrary         = (*spotifyEngine)(nil)
 	_ webui.SpotifyRecallRecovery  = (*spotifyEngine)(nil)
 )
@@ -109,6 +110,11 @@ func (e *spotifyEngine) ToggleShuffle(ctx context.Context) (bool, error) {
 }
 func (e *spotifyEngine) CycleRepeat(ctx context.Context) (string, error) {
 	return e.m.CycleRepeat(ctx)
+}
+
+// webui.SpotifyPlayModeReader
+func (e *spotifyEngine) PlayModes(ctx context.Context) (bool, string, error) {
+	return e.m.PlayModes(ctx)
 }
 
 // webui.SpotifyLibrary

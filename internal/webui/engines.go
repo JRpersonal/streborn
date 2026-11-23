@@ -140,6 +140,16 @@ type SpotifyRemoteKeys interface {
 	CycleRepeat(ctx context.Context) (mode string, err error)
 }
 
+// SpotifyPlayModeReader reads the live playlist's shuffle and repeat, for the
+// answer of the app's shuffle and repeat buttons (#2058). Without it
+// GET /api/spotify/playmode answers 409 and a POST reports only the mode it
+// changed.
+type SpotifyPlayModeReader interface {
+	// PlayModes (spotifyPlayModes): shuffle on or off, and the repeat mode
+	// ("off", "context", "track"), read fresh from the engine.
+	PlayModes(ctx context.Context) (shuffle bool, repeat string, err error)
+}
+
 // SpotifyLikedTrack is the song a thumbs up or thumbs down was about.
 type SpotifyLikedTrack struct {
 	URI  string
@@ -221,6 +231,9 @@ func WithSpotify(e SpotifyEngine) Option {
 			s.spotifyHeardPrev = k.HeardPrev
 			s.spotifyToggleShuffle = k.ToggleShuffle
 			s.spotifyCycleRepeat = k.CycleRepeat
+		}
+		if p, ok := e.(SpotifyPlayModeReader); ok {
+			s.spotifyPlayModes = p.PlayModes
 		}
 		if l, ok := e.(SpotifyLibrary); ok {
 			s.spotifyLikeCurrent = l.LikeCurrentTrack

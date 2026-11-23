@@ -255,6 +255,11 @@ type SpotifyNow struct {
 	// a token without the scope, no engine). The save gate shows a soft hint
 	// on "" because premiumRequired false cannot tell Premium from "unknown".
 	Product string `json:"product"`
+	// PlayModes is the playlist's shuffle and repeat as the speaker's engine
+	// has them now (#2058). nil on an agent older than the player's Spotify
+	// shuffle and repeat buttons, and when the engine did not answer: the
+	// buttons stay hidden then.
+	PlayModes *SpotifyPlayModes `json:"playModes,omitempty"`
 }
 
 func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
