@@ -490,6 +490,20 @@ func (a *App) installUnlockOrAdvise(r *installRun) bool {
 	// after them, the 2026-10-22 Wave answered :8090 right after the
 	// restart command and was told "install window closed, use the stick"
 	// on all seven attempts instead of "it is restarting, wait".
+	// The speaker refused the stand-in account itself, before and after a
+	// restart onto this PC's responder, and never called it. That is a speaker
+	// reset and never set up again (a Wave IV, five installs across four
+	// releases, 2026-11-18 to 11-23): no firewall, no stick and no second press
+	// changes it, one setup in Bose's own SoundTouch app does. Checked before
+	// the generic restart advice, which would only send the owner round again.
+	if rebootedByUs && errors.Is(unlockErr, errBootstrapAccountRefused) {
+		res.Code = "speaker-not-set-up"
+		res.Message = withFW("The speaker turned down ST Reborn's stand-in account itself (Bose error 1038) and never contacted this PC. "+
+			"A speaker does that when it was reset and never set up again. ST Reborn put its original settings back and restarted it.") +
+			"\n\n" + speakerNotSetUpAdvice
+		a.logger.Warn("install_str: the speaker refused the stand-in account itself; sending the owner to one setup in the Bose SoundTouch app", "host", host, "unlock", unlockOutcome)
+		return true
+	}
 	if rebootedByUs {
 		// WE rebooted this speaker moments ago, as part of undoing the
 		// failed unlock. Of course nothing answers yet. Blaming a firewall

@@ -1716,6 +1716,8 @@
   "setup.help.netRetry": "Dai all'altoparlante un minuto per finire di riavviarsi, poi premi di nuovo Installa.",
   "setup.help.netLogs": "Se continua a non funzionare, usa Salva log in fondo alla finestra e allega il file alla tua segnalazione.",
   "setup.help.firmwareFirst": "Aggiorna prima il firmware dell'altoparlante con la guida qui sopra, poi premi di nuovo Installa. Fino ad allora, premere Installa non può funzionare e riavvia soltanto l'altoparlante.",
+  "setup.help.boseAppSetup": "Configura una volta il diffusore con l'app SoundTouch di Bose, da App Store o Google Play. Ripristinalo alle impostazioni di fabbrica come descrive la guida Bose per il tuo modello, aggiungilo nell'app come nuovo diffusore sulla tua rete Wi-Fi e installa l'aggiornamento del firmware se l'app ne propone uno.",
+  "setup.help.boseAppRetry": "Poi premi di nuovo Installa. Finché il diffusore non è stato configurato una volta, l'installazione non può andare oltre questo punto e lo riavvia soltanto.",
   "setup.help.waitRefresh": "Aspetta qualche minuto, poi premi Aggiorna nell'elenco degli altoparlanti. Se l'altoparlante compare con una versione di ST Reborn, l'installazione è riuscita e non c'è altro da fare.",
   "setup.help.repairRestarted": "L'altoparlante si è riavviato da solo a metà dell'installazione e torna disponibile da solo in pochi minuti. Per ora non premere di nuovo Installa: la stessa installazione si fermerebbe nello stesso punto. Aspetta circa cinque minuti, poi aggiorna l'elenco degli altoparlanti.",
   "setup.awaitBoxReadyTitle": "Ora fai questo sull'altoparlante:",

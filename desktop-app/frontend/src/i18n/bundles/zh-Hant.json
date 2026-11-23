@@ -1716,6 +1716,8 @@
   "setup.help.netRetry": "給喇叭一分鐘把重新啟動跑完，然後再按一次「安裝」。",
   "setup.help.netLogs": "如果還是失敗，請用視窗下方的「儲存紀錄」，把檔案附在你的回報裡。",
   "setup.help.firmwareFirst": "請先依照上方的指南更新喇叭韌體，然後再按一次「安裝」。在那之前，安裝不可能成功，只會讓喇叭重新啟動。",
+  "setup.help.boseAppSetup": "請先用 Bose 官方的 SoundTouch App（App Store 或 Google Play）設定這台喇叭一次。依照 Bose 針對您機型的說明將它重設為原廠設定，在 App 中把它加入為您 Wi-Fi 上的新喇叭，若 App 提供韌體更新也請一併安裝。",
+  "setup.help.boseAppRetry": "接著再按一次「安裝」。在喇叭至少設定過一次之前，安裝無法通過這一步，只會讓它重新啟動。",
   "setup.help.waitRefresh": "請等幾分鐘，然後在喇叭清單中按「重新整理」。如果喇叭顯示出 ST Reborn 版本，表示安裝已成功，不需要再做任何事。",
   "setup.help.repairRestarted": "喇叭在安裝途中自行重新啟動，幾分鐘內會自動恢復。暫時不要再按「安裝」：同樣的安裝會在同一個地方停下來。請等候約五分鐘，然後在喇叭清單中按「重新整理」。",
   "setup.awaitBoxReadyTitle": "現在請在喇叭上這樣做：",

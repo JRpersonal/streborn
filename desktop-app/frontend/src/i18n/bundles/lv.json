@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Dodiet skaļrunim minūti, lai tas pabeidz pārstartēšanu, un tad vēlreiz nospiediet Instalēt.",
   "setup.help.netLogs": "Ja joprojām neizdodas, izmantojiet Saglabāt žurnālus loga apakšā un pievienojiet failu savam ziņojumam.",
   "setup.help.firmwareFirst": "Vispirms atjauniniet skaļruņa programmaparatūru pēc iepriekš dotās pamācības, tad vēlreiz nospiediet Instalēt. Līdz tam instalēšana nevar izdoties un tikai restartē skaļruni.",
+  "setup.help.boseAppSetup": "Vienreiz iestatiet skaļruni ar Bose SoundTouch lietotni no App Store vai Google Play. Atiestatiet to uz rūpnīcas iestatījumiem, kā aprakstīts Bose rokasgrāmatā jūsu modelim, pievienojiet to lietotnē kā jaunu skaļruni savā Wi-Fi tīklā un instalējiet programmaparatūras atjauninājumu, ja lietotne to piedāvā.",
+  "setup.help.boseAppRetry": "Pēc tam vēlreiz nospiediet Instalēt. Kamēr skaļrunis nav vienreiz iestatīts, instalēšana šajā vietā netiek tālāk un to tikai restartē.",
   "setup.help.waitRefresh": "Pagaidiet dažas minūtes un pēc tam skaļruņu sarakstā nospiediet Atjaunināt. Ja skaļrunis parādās ar ST Reborn versiju, instalēšana ir izdevusies un vairāk nekas nav jādara.",
   "setup.help.repairRestarted": "Skaļrunis instalēšanas vidū pats pārstartējās un pēc dažām minūtēm atgriezīsies pats. Pagaidām vēlreiz nespiediet Instalēt: tā pati instalēšana apstātos tajā pašā vietā. Pagaidiet apmēram piecas minūtes un pēc tam skaļruņu sarakstā nospiediet Atjaunināt.",
   "setup.awaitBoxReadyTitle": "Tagad veiciet šo ar skaļruni:",

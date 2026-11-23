@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Laissez à l'enceinte une minute pour finir de redémarrer, puis appuyez à nouveau sur Installer.",
   "setup.help.netLogs": "Si cela échoue toujours, utilisez Enregistrer les journaux en bas de la fenêtre et joignez le fichier à votre rapport.",
   "setup.help.firmwareFirst": "Mettez d'abord à jour le firmware de l'enceinte avec le guide ci-dessus, puis appuyez de nouveau sur Installer. D'ici là, l'installation ne peut pas fonctionner et ne fait que redémarrer l'enceinte.",
+  "setup.help.boseAppSetup": "Configurez une fois l'enceinte avec l'application SoundTouch de Bose, depuis l'App Store ou Google Play. Réinitialisez-la aux réglages d'usine comme l'indique le guide Bose de votre modèle, ajoutez-la dans l'application comme nouvelle enceinte sur votre Wi-Fi, et installez la mise à jour du firmware si l'application en propose une.",
+  "setup.help.boseAppRetry": "Appuyez ensuite à nouveau sur Installer. Tant que l'enceinte n'a pas été configurée une fois, l'installation ne peut pas aller plus loin et ne fait que la redémarrer.",
   "setup.help.waitRefresh": "Attendez quelques minutes, puis appuyez sur Actualiser dans la liste des enceintes. Si l'enceinte apparaît avec une version ST Reborn, l'installation a réussi et il n'y a rien d'autre à faire.",
   "setup.help.repairRestarted": "L'enceinte a redémarré d'elle-même au milieu de l'installation et revient toute seule en quelques minutes. N'appuyez pas de nouveau sur Installer pour l'instant : la même installation s'arrêterait au même endroit. Attendez environ cinq minutes, puis appuyez sur Actualiser dans la liste des enceintes.",
   "setup.awaitBoxReadyTitle": "Maintenant, faites ceci sur l'enceinte :",

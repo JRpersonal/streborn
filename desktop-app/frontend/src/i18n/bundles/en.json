@@ -1716,6 +1716,8 @@
   "setup.help.netRetry": "Give the speaker a minute to finish restarting, then press Install again.",
   "setup.help.netLogs": "If it still fails, use Save logs at the bottom of the window and attach the file to your report.",
   "setup.help.firmwareFirst": "Update the speaker firmware first with the guide above, then press Install again. Until then, pressing Install cannot work and only restarts the speaker.",
+  "setup.help.boseAppSetup": "Set the speaker up once with Bose's own SoundTouch app from the App Store or Google Play. Reset it to factory settings as Bose's guide for your model describes, add it in the app as a new speaker on your Wi-Fi, and take a firmware update if the app offers one.",
+  "setup.help.boseAppRetry": "Then press Install again. Until the speaker has been set up once, Install cannot get past this point and only restarts it.",
   "setup.help.waitRefresh": "Wait a few minutes, then press Refresh in the speaker list. If the speaker appears with an ST Reborn version, the install succeeded and there is nothing more to do.",
   "setup.help.repairRestarted": "The speaker restarted by itself in the middle of the install and comes back on its own within a few minutes. Do not press Install again for now: the same install would stop at the same point. Wait about five minutes, then refresh the speaker list.",
   "setup.awaitBoxReadyTitle": "Now do this on the speaker:",

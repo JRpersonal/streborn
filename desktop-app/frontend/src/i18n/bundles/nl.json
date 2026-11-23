@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Geef de speaker een minuut om opnieuw op te starten en druk daarna nog een keer op Installeren.",
   "setup.help.netLogs": "Als het nog steeds mislukt, gebruik onderaan het venster Logs opslaan en voeg het bestand toe aan je melding.",
   "setup.help.firmwareFirst": "Werk eerst de firmware van de speaker bij met de handleiding hierboven en druk daarna opnieuw op Installeren. Tot die tijd kan de installatie niet lukken en start de speaker alleen opnieuw op.",
+  "setup.help.boseAppSetup": "Stel de speaker één keer in met Bose' eigen SoundTouch-app uit de App Store of Google Play. Zet hem terug naar de fabrieksinstellingen zoals de handleiding van Bose voor jouw model beschrijft, voeg hem in de app toe als nieuwe speaker op je wifi en installeer een firmware-update als de app er een aanbiedt.",
+  "setup.help.boseAppRetry": "Druk daarna opnieuw op Installeren. Zolang de speaker niet één keer is ingesteld, komt de installatie hier niet verder en start ze hem alleen opnieuw op.",
   "setup.help.waitRefresh": "Wacht een paar minuten en druk dan op Vernieuwen in de speakerlijst. Verschijnt de speaker met een ST Reborn-versie, dan is de installatie gelukt en hoef je verder niets te doen.",
   "setup.help.repairRestarted": "De speaker is midden in de installatie vanzelf opnieuw opgestart en komt binnen een paar minuten vanzelf terug. Druk voorlopig niet opnieuw op Installeren: dezelfde installatie zou op hetzelfde punt stoppen. Wacht ongeveer vijf minuten en druk dan op Vernieuwen in de speakerlijst.",
   "setup.awaitBoxReadyTitle": "Doe nu dit op de speaker:",

@@ -1580,6 +1580,8 @@
   "setup.help.netRetry": "Dale al altavoz un minuto para terminar de reiniciarse y pulsa Instalar de nuevo.",
   "setup.help.netLogs": "Si sigue fallando, usa Guardar registros en la parte inferior de la ventana y adjunta el archivo a tu informe.",
   "setup.help.firmwareFirst": "Primero actualiza el firmware del altavoz con la guía de arriba y después pulsa Instalar de nuevo. Hasta entonces la instalación no puede funcionar y solo reinicia el altavoz.",
+  "setup.help.boseAppSetup": "Configura el altavoz una vez con la app SoundTouch de Bose, desde App Store o Google Play. Restablécelo a los ajustes de fábrica como indica la guía de Bose para tu modelo, añádelo en la app como altavoz nuevo en tu Wi-Fi e instala la actualización de firmware si la app te ofrece una.",
+  "setup.help.boseAppRetry": "Después pulsa Instalar de nuevo. Mientras el altavoz no se haya configurado una vez, la instalación no puede pasar de este punto y solo lo reinicia.",
   "setup.help.waitRefresh": "Espera unos minutos y pulsa Actualizar en la lista de altavoces. Si el altavoz aparece con una versión de ST Reborn, la instalación ha funcionado y no hay nada más que hacer.",
   "setup.help.repairRestarted": "El altavoz se reinició por sí solo en mitad de la instalación y vuelve por sí mismo en unos minutos. No pulses Instalar otra vez por ahora: la misma instalación se detendría en el mismo punto. Espera unos cinco minutos y luego pulsa Actualizar en la lista de altavoces.",
   "setup.awaitBoxReadyTitle": "Ahora haz esto en el altavoz:",

@@ -67,6 +67,15 @@ var errUnlockDidNotOpenSSH = errors.New("the :17000 stick-free unlock did not op
 // unlock failed check `!opened` instead.
 var errBootstrapResponderUnreachable = errors.New("the factory-reset bootstrap ran but the speaker never reached this PC's marge responder; stock URLs restored and the speaker restarted (likely a firewall block)")
 
+// errBootstrapAccountRefused: the factory-reset bootstrap ran and the speaker
+// turned the stand-in account down itself (SET_MARGE_ACCOUNT_ERROR 1038 in a
+// tenth of a second, no call to this PC), before and after a restart onto the
+// local responder. Seen on a Wave that was reset and never set up again
+// (2026-11-18 to 11-23, four releases of fixes did not move it). Another flavour
+// of errUnlockDidNotOpenSSH, so the install can send the owner to the Bose
+// SoundTouch app for one setup instead of to the firewall or the stick.
+var errBootstrapAccountRefused = errors.New("the factory-reset bootstrap ran but the speaker refused the stand-in account itself (error 1038) and never called this PC; stock URLs restored and the speaker restarted")
+
 // ensureSSHOpen opens root SSH on a speaker without a USB stick through its
 // :17000 setup shell, the same unlock every caller used to spell out itself.
 //
@@ -115,11 +124,11 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	if !opened && a.shouldTryBootstrapUnlock(host, o) {
 		a.logger.Info(o.tag+": plain unlock did not open SSH and the box carries no account; trying the factory-reset bootstrap", "host", host, "model", model)
 		var blog string
-		var firewallSuspected bool
-		opened, blog, firewallSuspected = a.enableSSHViaTelnetBootstrap(host, model)
+		var kind error
+		opened, blog, kind = a.enableSSHViaTelnetBootstrap(host, model)
 		note += blog
-		if !opened && firewallSuspected {
-			failErr = errBootstrapResponderUnreachable
+		if !opened && kind != nil {
+			failErr = kind
 		}
 	}
 	if opened {
@@ -145,7 +154,7 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	// unlocks in a row could not say whether the seed took (2026-11-15). The
 	// bundle export anonymises it.
 	a.logger.Warn(o.tag+": the :17000 stick-free unlock did not open SSH; stock URLs restored and the speaker restarted",
-		"host", host, "firewallSuspected", errors.Is(failErr, errBootstrapResponderUnreachable), "log", discovery.LastN(note, 6000))
+		"host", host, "firewallSuspected", errors.Is(failErr, errBootstrapResponderUnreachable), "accountRefused", errors.Is(failErr, errBootstrapAccountRefused), "log", discovery.LastN(note, 6000))
 	return false, note, failErr
 }
 

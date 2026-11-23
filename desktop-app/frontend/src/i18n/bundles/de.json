@@ -1716,6 +1716,8 @@
   "setup.help.netRetry": "Gib dem Lautsprecher eine Minute, bis er fertig neu gestartet ist, und drücke dann erneut auf Installieren.",
   "setup.help.netLogs": "Wenn es weiter fehlschlägt, nutze unten im Fenster Protokolle speichern und hänge die Datei an deine Meldung an.",
   "setup.help.firmwareFirst": "Aktualisiere zuerst die Firmware des Lautsprechers mit der Anleitung oben und drücke danach erneut auf Installieren. Vorher kann die Installation nicht klappen und würde den Lautsprecher nur neu starten.",
+  "setup.help.boseAppSetup": "Richte den Lautsprecher einmal mit Boses eigener SoundTouch App aus dem App Store oder Google Play ein. Setz ihn auf Werkseinstellungen zurück, wie Boses Anleitung für dein Modell es beschreibt, füge ihn in der App als neuen Lautsprecher in deinem WLAN hinzu und nimm ein Firmware-Update mit, wenn die App eins anbietet.",
+  "setup.help.boseAppRetry": "Drücke danach erneut auf Installieren. Solange der Lautsprecher nicht einmal eingerichtet wurde, kommt die Installation an dieser Stelle nicht weiter und startet ihn nur neu.",
   "setup.help.waitRefresh": "Warte ein paar Minuten und drücke dann in der Lautsprecherliste auf Aktualisieren. Erscheint der Lautsprecher mit einer ST Reborn-Version, hat die Installation geklappt und es ist nichts weiter zu tun.",
   "setup.help.repairRestarted": "Der Lautsprecher hat sich mitten in der Installation von selbst neu gestartet und ist nach ein paar Minuten von allein wieder da. Drücke vorerst nicht noch einmal auf Installieren: Dieselbe Installation würde an derselben Stelle wieder abbrechen. Warte etwa fünf Minuten und aktualisiere dann die Lautsprecherliste.",
   "setup.awaitBoxReadyTitle": "Mach das jetzt am Lautsprecher:",
