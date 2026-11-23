@@ -324,6 +324,115 @@ describe('text fitting', () => {
   });
 });
 
+describe('large text', () => {
+  const MODELS = ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch 30', 'SoundTouch Portable', 'Wave SoundTouch'];
+  const both = (speakers) => [false, true].map((large) => layoutStickers(speakers, { measure, texts, large }).pages);
+  // The name lines of the keys: bold, left-aligned, in ink, not a key number
+  // (on the Portable's grey the numbers are in ink too) and not the marker.
+  // The speaker name under the code is centred.
+  const nameLines = (p) => p.texts.filter((x) => x.weight === 700 && x.align === 'left' && x.color === p.pal.ink && !/^([1-6]|2×)$/.test(x.text));
+  const twiceLines = (p) => p.texts.filter((x) => x.weight === 600);
+  const maxSize = (xs) => Math.max(...xs.map((x) => x.size));
+  const NAMES = ['Jazz', 'SWR3', 'Radio Paradise', 'Bayern 3 - Die Hits', 'Deutschlandfunk Kultur', 'Norddeutscher Rundfunk NDR Kultur', '日本放送協会ラジオ第一放送'];
+
+  // edgeAt is the top or bottom cut line of a piece at x, from its outline:
+  // the first half runs along the top from left to right, the second half
+  // along the bottom from right to left.
+  const edgeAt = (pts, x) => {
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+      if (x >= Math.min(x0, x1) - 1e-9 && x <= Math.max(x0, x1) + 1e-9) return x1 === x0 ? Math.max(y0, y1) : y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    }
+    return null;
+  };
+  // expectInside: no line is wider than its box allows, its box stays inside
+  // the piece, and the line stays inside the cut line, the curved one too.
+  const expectInside = (pages) => {
+    for (const p of pages.flatMap((pg) => pg.pieces)) {
+      const n = p.outline.length / 2;
+      const top = p.outline.slice(0, n);
+      const bottom = p.outline.slice(n).reverse();
+      for (const x of p.texts) {
+        expect(measure(x.text, { size: x.size }) * SQUEEZE, x.text).toBeLessThanOrEqual(x.maxW + 1e-9);
+        const left = x.align === 'center' ? x.x - x.maxW / 2 : x.x;
+        expect(left).toBeGreaterThanOrEqual(-1e-9);
+        expect(left + x.maxW).toBeLessThanOrEqual(p.w + 1e-9);
+        expect(x.y - x.size / 2).toBeGreaterThanOrEqual(0);
+        expect(x.y + x.size / 2).toBeLessThanOrEqual(p.h);
+        const drawn = Math.min(measure(x.text, { size: x.size }), x.maxW);
+        const from = x.align === 'center' ? x.x - drawn / 2 : x.x;
+        for (let k = 0; k <= 8; k++) {
+          const at = from + (drawn * k) / 8;
+          expect(x.y - x.size / 2, `${p.part} ${x.text}`).toBeGreaterThanOrEqual(edgeAt(top, at) - 1e-9);
+          expect(x.y + x.size / 2, `${p.part} ${x.text}`).toBeLessThanOrEqual(edgeAt(bottom, at) + 1e-9);
+        }
+      }
+    }
+  };
+
+  it('sets a short name larger than normal on every kind of sticker', () => {
+    for (const model of MODELS) {
+      const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Jazz', n % 2 ? { name: 'Talk', kind: 'station' } : null));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]).map((pages) => own(pages[0]));
+      for (let i = 0; i < normal.length; i++) {
+        if (!nameLines(normal[i]).length) continue;
+        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.2);
+        // The pressed-twice line grows too, but never past the name.
+        expect(maxSize(twiceLines(big[i])), model).toBeGreaterThan(maxSize(twiceLines(normal[i])));
+        expect(maxSize(twiceLines(big[i])), model).toBeLessThanOrEqual(Math.min(...nameLines(big[i]).map((x) => x.size)) + 1e-9);
+        // The speaker name under the code grows as well.
+        const qrName = (p) => p.texts.find((x) => x.align === 'center' && x.text === 'Den');
+        const q = normal.findIndex((p) => qrName(p));
+        expect(qrName(big[q]).size, model).toBeGreaterThan(qrName(normal[q]).size);
+      }
+    }
+  });
+
+  for (const name of NAMES) {
+    it(`never sets a name or a pressed-twice line smaller than normal: ${name}`, () => {
+      for (const twice of [null, { name, kind: 'playlist' }]) {
+        const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, name, twice));
+        const [normal, big] = both(MODELS.map((m) => speaker(name, m, 'dark', keys))).map((pages) => pages.flatMap(own));
+        expect(big.map((p) => p.part)).toEqual(normal.map((p) => p.part));
+        for (let i = 0; i < normal.length; i++) {
+          if (!nameLines(normal[i]).length) continue;
+          const label = `${normal[i].part} ${name}`;
+          expect(Math.min(...nameLines(big[i]).map((x) => x.size)), label).toBeGreaterThanOrEqual(Math.min(...nameLines(normal[i]).map((x) => x.size)) - 1e-9);
+          if (twice) expect(Math.min(...twiceLines(big[i]).map((x) => x.size)), label).toBeGreaterThanOrEqual(Math.min(...twiceLines(normal[i]).map((x) => x.size)) - 1e-9);
+        }
+      }
+    });
+  }
+
+  // One test per set of names: every remote sticker on these sheets is
+  // planned too, which takes most of the time.
+  const long = 'An extraordinarily long station name with many words in it';
+  const SETS = [
+    ['short names', KEYS],
+    ['a very long name everywhere', [1, 2, 3, 4, 5, 6].map((n) => key(n, long, { name: long, kind: 'playlist' }))],
+    ['the fullest cell', [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Deutschlandfunk Kultur Nova', { name: 'Morning Mix Nova', kind: 'playlist' }))],
+    ...NAMES.map((name) => [name, [1, 2, 3, 4, 5, 6].map((n) => key(n, name, n % 2 ? { name: 'Bayern 3', kind: 'station' } : null))]),
+  ];
+  for (const [label, keys] of SETS) {
+    it(`keeps every line inside its piece and its cut line, in normal and in large text: ${label}`, () => {
+      for (const pages of both(MODELS.map((m) => speaker('Wohnzimmer', m, 'dark', keys)))) expectInside(pages);
+    });
+  }
+
+  it('leaves the number and tile of every Portable cell where they line up', () => {
+    const keys = [key(1, 'Jazz'), key(2, 'Deutschlandfunk Kultur'), key(3, 'SWR3', { name: 'Talk', kind: 'station' }), key(4, 'FIP'), key(5, 'Bayern 3 - Die Hits'), key(6)];
+    const [normal, big] = both([speaker('Den', 'SoundTouch Portable', 'dark', keys)]).map((pages) => own(pages[0]));
+    const grid = (ps) => ps.find((p) => p.part === 'grid');
+    expect(grid(big).tiles.map((x) => x.y)).toEqual(grid(normal).tiles.map((x) => x.y));
+  });
+
+  it('leaves the remote sticker as it is: it already sets its names as large as they fit', () => {
+    const [normal, big] = both([speaker('Den', 'SoundTouch 20', 'white', KEYS)]);
+    const remote = (pages) => pages.flatMap((pg) => pg.pieces).find((p) => p.part === 'remote');
+    expect(remote(big).texts).toEqual(remote(normal).texts);
+  });
+});
+
 describe('pages', () => {
   const many = (n, model) => Array.from({ length: n }, (_, i) => speaker(`Room ${i + 1}`, model));
 

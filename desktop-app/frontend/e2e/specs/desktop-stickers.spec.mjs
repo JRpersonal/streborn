@@ -4,9 +4,10 @@
 // hands the pages to SaveStickerPDF. Covered: the button by the keys in both
 // layouts, the link under the phone QR code in Settings, who is on the sheet
 // and who is named as left off, the white/dark switch and that it is
-// remembered, the remote sticker that every speaker always gets, the compact
-// speaker list with many speakers, what Save sends, the out-of-date marker
-// after a key changes, and the one-time hint after the first saved preset.
+// remembered, the remote sticker that every speaker always gets, Large text
+// and that it is remembered, the compact speaker list with many speakers,
+// what Save sends, the out-of-date marker after a key changes, and the
+// one-time hint after the first saved preset.
 
 import { test, expect } from '../fixtures.mjs';
 import { en } from '../helpers/i18n.mjs';
@@ -121,6 +122,30 @@ test("there is no remote checkbox: every speaker's remote sticker is always on t
   for (const b of [first, second]) expect(b.bottom - b.top).toBeCloseTo(75 + 2 * 1.5, 0);
   expect(second.bottom).toBeCloseTo(first.bottom, 0);
   expect(third.bottom).toBeLessThan(first.top);
+});
+
+test('Large text is off at first, lays the sheet out again when ticked and is remembered', async ({ app }) => {
+  const { page } = app;
+  await openFromKeys(page);
+  const large = modal(page).getByRole('checkbox', { name: en('stickers.large') });
+  await expect(large).not.toBeChecked();
+  await expect(modal(page).locator('label.sticker-large')).toHaveAttribute('title', en('stickers.largeTitle'));
+  const sheet = () => pages(page).first().evaluate((c) => c.toDataURL());
+  const before = await sheet();
+
+  await large.check();
+  await expect.poll(sheet).not.toBe(before);
+  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('1');
+
+  await page.locator('#stickerClose').click();
+  await openFromKeys(page);
+  await expect(modal(page).getByRole('checkbox', { name: en('stickers.large') })).toBeChecked();
+  await expect.poll(sheet).not.toBe(before);
+
+  // Unticked, the sheet is the normal one again.
+  await modal(page).getByRole('checkbox', { name: en('stickers.large') }).uncheck();
+  await expect.poll(sheet).toBe(before);
+  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('0');
 });
 
 test.describe('with six speakers', () => {

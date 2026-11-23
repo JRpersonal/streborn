@@ -565,6 +565,7 @@ body {
 .sticker-speaker-name .muted { padding: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sticker-housing { display: inline-flex; gap: 14px; }
 .sticker-housing label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.sticker-large { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; cursor: pointer; align-self: flex-start; }
 .sticker-skipped-list:empty { display: none; }
 .sticker-skipped-list { margin-bottom: 8px; }
 .sticker-skipped { margin: 0; font-size: 13px; color: var(--c-muted); }

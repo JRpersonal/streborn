@@ -2735,6 +2735,8 @@
   "stickers.sheetControl": "Patikra: šios linijos ilgis yra lygiai 100 mm",
   "stickers.hint": "Nauja: atspausdinkite lipdukus, kuriuose matyti, kas priskirta kiekvienam jūsų garsiakalbių mygtukui.",
   "stickers.settingsLink": "Spausdinti lipdukus su šiuo kodu ir jūsų garsiakalbių mygtukais",
+  "stickers.large": "Didelis tekstas",
+  "stickers.largeTitle": "Panaudoja laisvą vietą ant kiekvieno mygtuko didžiausiam tekstui, kuris telpa, net jei lipdukas tada atrodo perpildytas",
   "stickers.remoteHeader": "Pultelis",
   "ui2.radio.keysEditHint": "Palaikykite mygtuką nuspaudę arba paspauskite Shift+Enter, kad jį pakeistumėte",
   "ui2.radio.keyEditTitle": "Keisti mygtuką {{n}} ({{speaker}})",

@@ -20,8 +20,10 @@ import {
   finishHint,
   hintState,
   keysFingerprint,
+  largeTextOn,
   rememberPrinted,
   setHousing,
+  setLargeText,
   stickersStale,
 } from './data.js';
 import { PRINT_DPI, drawPage, loadImages, makeMeasure, squeezeFor } from './draw.js';
@@ -90,6 +92,7 @@ export function stickerModalHTML() {
     <div class="modal-content sticker-modal" role="dialog" aria-modal="true" aria-labelledby="stickerTitle">
       <h3 id="stickerTitle">${escapeHtml(t('stickers.title'))}</h3>
       <p class="modal-sub">${escapeHtml(t('stickers.intro'))}</p>
+      <label class="sticker-large" title="${escapeAttr(t('stickers.largeTitle'))}"><input type="checkbox" id="stickerLarge"> ${escapeHtml(t('stickers.large'))}</label>
       <div class="sticker-speakers" id="stickerSpeakers"></div>
       <div class="sticker-skipped-list" id="stickerSkipped"></div>
       <p class="sticker-status" id="stickerStatus" role="status" aria-live="polite"></p>
@@ -134,13 +137,14 @@ function skippedHTML(skipped) {
 }
 
 // redraw lays the sheet out again and paints the preview. Called after the
-// speakers were read and after every colour switch.
+// speakers were read, after every colour switch and when Large text changes.
 async function redraw(mine) {
   const m = model;
   if (!m) return;
   m.layout = layoutStickers(m.speakers, {
     measure: m.measure,
     squeeze: m.squeeze,
+    large: m.large,
     texts: { instruction: t('stickers.sheetInstruction'), control: t('stickers.sheetControl'), remote: t('stickers.remoteHeader') },
   });
   m.images = await loadImages(m.layout);
@@ -211,6 +215,14 @@ export async function openStickerDialog() {
   $('stickerPreview').innerHTML = '';
   const saveBtn = $('stickerSave');
   saveBtn.disabled = true;
+  const largeBox = $('stickerLarge');
+  largeBox.checked = largeTextOn();
+  largeBox.onchange = () => {
+    setLargeText(largeBox.checked);
+    if (!model) return;
+    model.large = largeBox.checked;
+    redraw(run);
+  };
   saveBtn.onclick = () => { save(run); };
   $('stickerClose').onclick = closeStickerDialog;
   modal.onclick = (e) => { if (e.target === modal) closeStickerDialog(); };
@@ -231,7 +243,7 @@ export async function openStickerDialog() {
 
   const { speakers, skipped } = await collectSpeakers(state.boxes, { GetPresets, PhoneAddressFor, PhoneQR, ResolveStationLogo, StickerImage });
   if (mine !== run || modal.classList.contains('hidden')) return;
-  model = { speakers, skipped, measure: makeMeasure(), squeeze: squeezeFor(), layout: null, images: new Map() };
+  model = { speakers, skipped, measure: makeMeasure(), squeeze: squeezeFor(), large: largeBox.checked, layout: null, images: new Map() };
   const list = $('stickerSpeakers');
   list.innerHTML = speakersHTML(speakers);
   $('stickerSkipped').innerHTML = skippedHTML(skipped);

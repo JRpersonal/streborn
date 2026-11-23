@@ -2735,6 +2735,8 @@
   "stickers.sheetControl": "Kontrolle: Diese Linie ist genau 100 mm lang",
   "stickers.hint": "Neu: Drucke Sticker, die zeigen, was auf jeder Taste deiner Lautsprecher liegt.",
   "stickers.settingsLink": "Sticker mit diesem Code und den Tasten deiner Lautsprecher drucken",
+  "stickers.large": "Große Schrift",
+  "stickers.largeTitle": "Nutzt den freien Platz auf jeder Taste für die größte Schrift, die passt, auch wenn der Sticker dann voll wirkt",
   "stickers.remoteHeader": "Fernbedienung",
   "ui2.radio.keysEditHint": "Halte eine Taste gedrückt oder drücke Umschalt+Eingabe, um sie zu ändern",
   "ui2.radio.keyEditTitle": "Taste {{n}} auf {{speaker}} ändern",
