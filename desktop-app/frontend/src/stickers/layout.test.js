@@ -485,7 +485,9 @@ describe('large text', () => {
   }
 
   // One test per set of names: every remote sticker on these sheets is
-  // planned too, which takes most of the time.
+  // planned too, which takes most of the time. About 2 s alone, but well past
+  // vitest's 5 s default while the whole suite loads the machine, so each
+  // gets 30 s.
   const long = 'An extraordinarily long station name with many words in it';
   const SETS = [
     ['short names', KEYS],
@@ -496,7 +498,7 @@ describe('large text', () => {
   for (const [label, keys] of SETS) {
     it(`keeps every line inside its piece and its cut line, in normal and in large text: ${label}`, () => {
       for (const pages of both(MODELS.map((m) => speaker('Wohnzimmer', m, 'dark', keys)))) expectInside(pages);
-    });
+    }, 30_000);
   }
 
   it('leaves the number and tile of every Portable cell where they line up', () => {
