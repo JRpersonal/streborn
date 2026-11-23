@@ -1,13 +1,13 @@
 // The short notice that Spotify refuses the speaker's account on (STR) (#1671).
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as refused from './spotifyrefused.js';
 import {
   refusalFor, refusalFromReply, refusalHelp, refusalHTML, refusalNoticeFor, refusalSupportFor, refusalText,
-  SPOTIFY_SUPPORT_URL, strSpotifyLocation,
+  strSpotifyLocation,
 } from './spotifyrefused.js';
-import { COPIED_MS, refusalSupportAction } from './spotifyrefusedsupport.js';
 import { accountRow } from './views/spotifyui2model.js';
 import { srcOf } from './test/source.js';
 
@@ -166,7 +166,7 @@ describe('status poll', () => {
   });
 });
 
-describe('Spotify support, only when it is certainly Spotify\'s block', () => {
+describe('Spotify\'s rule, only when it is certainly Spotify\'s block', () => {
   const from = (np) => refusalFromReply(np);
 
   it('holds only for the sticky per-account record on a Premium plan', () => {
@@ -195,16 +195,12 @@ describe('Spotify support, only when it is certainly Spotify\'s block', () => {
     expect(refusalSupportFor(refusalFor(st))).toBe(true);
   });
 
-  it('puts the line and both buttons inside the folded help, and only then', () => {
+  it('puts the one line inside the folded help, and only then', () => {
     const premium = refusalHTML(from({ accountRefused: true, product: 'premium' }), t);
     expect(premium).toContain('<p class="spotify-refused-support">spotify.refusedSupport</p>');
-    expect(premium).toContain('<button type="button" class="btn btn-mini" data-str-refusal="open">spotify.refusedSupportOpen</button>');
-    expect(premium).toContain('<button type="button" class="btn btn-mini" data-str-refusal="copy">spotify.refusedSupportCopy</button>');
-    // Inside the <details>, after the why and the test.
+    // Inside the <details>, after the why and the test, and nothing after it.
     expect(premium.indexOf('spotify-refused-try')).toBeLessThan(premium.indexOf('spotify-refused-support'));
-    expect(premium.endsWith('</p></details>')).toBe(true);
-    // No inline handler: the clicks are wired by delegation.
-    expect(premium).not.toMatch(/onclick/i);
+    expect(premium.endsWith('<p class="spotify-refused-support">spotify.refusedSupport</p></details>')).toBe(true);
     // Deterministic, so the poll's rebuild-on-change never snaps it shut.
     expect(refusalHTML(from({ accountRefused: true, product: 'premium' }), t)).toBe(premium);
     for (const np of [
@@ -212,115 +208,46 @@ describe('Spotify support, only when it is certainly Spotify\'s block', () => {
       { accountRefused: true, premiumRequired: true }, { audioKeyRefused: true, product: 'premium' },
     ]) {
       const html = refusalHTML(from(np), t);
-      expect(html, JSON.stringify(np)).not.toContain('data-str-refusal');
       expect(html, JSON.stringify(np)).not.toContain('spotify.refusedSupport');
     }
   });
 
-  it('points at Spotify\'s contact page, not an address', () => {
-    expect(SPOTIFY_SUPPORT_URL).toBe('https://support.spotify.com/article/contact-us/');
+  it('sends nobody to Spotify support: no buttons, no contact page, no message (#1077)', () => {
+    const premium = refusalHTML(from({ accountRefused: true, product: 'premium' }), t);
+    expect(premium).not.toContain('<button');
+    expect(premium).not.toContain('data-str-refusal');
+    expect(premium).not.toContain('spotify-refused-actions');
+    expect(premium).not.toMatch(/refusedSupport(Open|Copy|Copied|Message)/);
+    expect(refused.SPOTIFY_SUPPORT_URL).toBeUndefined();
+    expect(existsSync(join(here, 'spotifyrefusedsupport.js'))).toBe(false);
+    expect(srcOf('renderNowPlayingBar')).not.toContain('installRefusalSupport');
+    expect(srcOf('paintAccounts')).not.toContain('installRefusalSupport');
+    expect(readFileSync(join(here, 'style.css'), 'utf8')).not.toContain('spotify-refused-actions');
   });
 });
 
-describe('Spotify support buttons', () => {
-  const fakeButton = (action) => {
-    const attrs = { 'data-str-refusal': action };
-    return { textContent: 'label', getAttribute: (k) => attrs[k] ?? null };
-  };
-  const deps = () => {
-    const d = { opened: [], copied: [], timers: [] };
-    d.open = (u) => d.opened.push(u);
-    d.copy = (s) => { d.copied.push(s); return Promise.resolve(true); };
-    d.later = (fn, ms) => d.timers.push({ fn, ms });
-    d.t = t;
-    return d;
-  };
-  const tick = () => new Promise((r) => setTimeout(r, 0));
-
-  it('opens the support page', () => {
-    const d = deps();
-    expect(refusalSupportAction(fakeButton('open'), d)).toBe('open');
-    expect(d.opened).toEqual([SPOTIFY_SUPPORT_URL]);
-    expect(d.copied).toEqual([]);
-  });
-
-  it('copies the message and says so on the button for a moment', async () => {
-    const d = deps();
-    const btn = fakeButton('copy');
-    expect(refusalSupportAction(btn, d)).toBe('copy');
-    await tick();
-    expect(d.copied).toEqual(['spotify.refusedSupportMessage']);
-    expect(btn.textContent).toBe('spotify.refusedSupportCopied');
-    expect(d.timers).toHaveLength(1);
-    expect(d.timers[0].ms).toBe(COPIED_MS);
-    d.timers[0].fn();
-    expect(btn.textContent).toBe('spotify.refusedSupportCopy');
-  });
-
-  it('claims nothing when the clipboard refused', async () => {
-    const d = deps();
-    const btn = fakeButton('copy');
-    d.copy = () => Promise.resolve(false);
-    refusalSupportAction(btn, d);
-    await tick();
-    expect(btn.textContent).toBe('label');
-    d.copy = () => Promise.reject(new Error('no clipboard'));
-    refusalSupportAction(btn, d);
-    await tick();
-    expect(btn.textContent).toBe('label');
-    expect(d.timers).toHaveLength(0);
-  });
-
-  it('ignores anything else', () => {
-    expect(refusalSupportAction(fakeButton('other'), deps())).toBe('');
-    expect(refusalSupportAction(null, deps())).toBe('');
-  });
-
-  it('is wired once, by delegation, from both places the notice is drawn', () => {
-    expect(srcOf('renderNowPlayingBar')).toContain('installRefusalSupport()');
-    expect(srcOf('paintAccounts')).toContain('installRefusalSupport()');
-    expect(srcOf('installRefusalSupport')).toContain("closest('[data-str-refusal]')");
-  });
-});
-
-describe('the Spotify support words, in every language', () => {
-  const keys = [
-    'spotify.refusedSupport', 'spotify.refusedSupportOpen', 'spotify.refusedSupportCopy',
+describe('Spotify\'s rule, in every language', () => {
+  const removed = [
+    'spotify.refusedSupportOpen', 'spotify.refusedSupportCopy',
     'spotify.refusedSupportCopied', 'spotify.refusedSupportMessage',
   ];
 
-  it('has every key, non-empty, in all 14 bundles', () => {
+  it('has the line in all 14 bundles, and none of the support keys', () => {
     for (const l of LANGS) {
       const b = bundle(l);
-      for (const k of keys) {
-        expect(typeof b[k], `${l} ${k}`).toBe('string');
-        expect(b[k].trim(), `${l} ${k}`).not.toBe('');
-        expect(b[k], `${l} ${k}`).not.toMatch(/[–—]| - /);
-        // Spotify has a contact page, not a published address.
-        expect(b[k], `${l} ${k}`).not.toMatch(/e-?mail|@/i);
-      }
-      const msg = b['spotify.refusedSupportMessage'];
-      // The facts Spotify support needs, in every language.
-      for (const fact of ['Premium', 'Bose', 'SoundTouch', 'go-librespot', '2026', '1']) {
-        expect(msg, `${l} message`).toContain(fact);
-      }
-      expect(msg.split('\n\n').length, `${l} message paragraphs`).toBeGreaterThanOrEqual(4);
+      const line = b['spotify.refusedSupport'];
+      expect(typeof line, `${l} spotify.refusedSupport`).toBe('string');
+      expect(line.trim(), l).not.toBe('');
+      expect(line, l).not.toMatch(/[–—]| - /);
+      expect(line, l).toContain('STR');
+      // Spotify's rule, not a support step.
+      expect(line, l).not.toMatch(/e-?mail|@|support|https?:/i);
+      for (const k of removed) expect(b[k], `${l} ${k}`).toBeUndefined();
     }
   });
 
   it('says it in English and German as agreed', () => {
-    const en = bundle('en');
-    expect(en['spotify.refusedSupport']).toBe('Only Spotify can lift this. Tell Spotify support, and the more people report it, the likelier they act.');
-    expect(en['spotify.refusedSupportOpen']).toBe('Contact Spotify support');
-    expect(en['spotify.refusedSupportCopy']).toBe('Copy a message for Spotify');
-    expect(en['spotify.refusedSupportCopied']).toBe('Copied');
-    expect(en['spotify.refusedSupportMessage']).toMatch(/^Hello Spotify Support,\n\nmy Spotify Premium account/);
-    expect(en['spotify.refusedSupportMessage']).toContain('(error code 1)');
-    const de = bundle('de');
-    expect(de['spotify.refusedSupport']).toBe('Aufheben kann das nur Spotify. Sag es dem Spotify-Support, je mehr Leute es melden, desto eher handelt Spotify.');
-    expect(de['spotify.refusedSupportOpen']).toBe('Spotify-Support kontaktieren');
-    expect(de['spotify.refusedSupportCopy']).toBe('Nachricht für Spotify kopieren');
-    expect(de['spotify.refusedSupportCopied']).toBe('Kopiert');
-    expect(de['spotify.refusedSupportMessage']).toMatch(/^Hallo Spotify-Support,\n\nmein Spotify-Premium-Konto/);
+    expect(bundle('en')['spotify.refusedSupport']).toBe('Spotify has said it no longer enables accounts that have not played on players like this within the last year. Nothing in STR or your speaker can change that.');
+    expect(bundle('de')['spotify.refusedSupport']).toBe('Spotify hat erklärt, dass es Konten, die im letzten Jahr nicht auf solchen Playern gespielt haben, nicht mehr freischaltet. Daran können weder STR noch dein Lautsprecher etwas ändern.');
   });
 });

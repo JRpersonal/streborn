@@ -93,34 +93,26 @@ test.describe('phone: a free account', () => {
   });
 });
 
-const SUPPORT_LINE = 'Only Spotify can lift this. Tell Spotify support, and the more people report it, the likelier they act.';
+const SUPPORT_LINE = 'Spotify has said it no longer enables accounts that have not played on players like this within the last year. Nothing in STR or your speaker can change that.';
 
 test.describe('phone: a refused Premium account', () => {
   test.use({ phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: { ...INFO, product: 'premium' } } } });
 
-  test('offers Spotify support and a message for it', async ({ phone }) => {
+  test("states Spotify's rule, with no support buttons", async ({ phone }) => {
     const { page } = phone;
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await expect(lead(page)).toHaveText(NAMED);
     await notice(page).locator('summary').click();
     // The why and the test stay first.
     await expect(notice(page).locator('details p').nth(0)).toHaveText(WHY);
-    await expect(notice(page).locator('.sp-refused-support p')).toHaveText(SUPPORT_LINE);
-    const link = notice(page).locator('#spRefusedSupportOpen');
-    await expect(link).toHaveText('Contact Spotify support');
-    await expect(link).toHaveAttribute('href', 'https://support.spotify.com/article/contact-us/');
-    await expect(link).toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute('rel', 'noopener');
-    const copy = notice(page).locator('#spRefusedSupportCopy');
-    await expect(copy).toHaveText('Copy a message for Spotify');
-    await copy.click();
-    await expect(copy).toHaveText('Copied');
-    await expect(copy).toHaveText('Copy a message for Spotify', { timeout: 5_000 });
-    // The status poll leaves the opened help, and its buttons, in place.
+    const rule = notice(page).locator('.sp-refused-support');
+    await expect(rule).toHaveText(SUPPORT_LINE);
+    // Spotify support cannot lift the refusal (#1077), so nothing points there.
+    await expect(notice(page).locator('a, button')).toHaveCount(0);
+    // The status poll leaves the opened help in place.
     const polls = () => phone.handler.calls.filter((c) => new URL(c.url).pathname === '/api/status').length;
     const before = polls();
     await expect.poll(polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 1);
-    await expect(copy).toBeVisible();
+    await expect(rule).toBeVisible();
     if (process.env.SHOOT_DIR) {
       await page.locator('#statusCard').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-support-phone.png`, animations: 'disabled' });
     }

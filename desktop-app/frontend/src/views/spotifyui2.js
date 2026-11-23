@@ -31,7 +31,6 @@ import { accountRow, keySlots, spotifyPlaying } from './spotifyui2model.js';
 import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, slotKey } from '../presetrows.js';
 import { wireRowTabs } from './music/presettiles.js';
 import { refusalHTML } from '../spotifyrefused.js';
-import { installRefusalSupport } from '../spotifyrefusedsupport.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { openSpeakers } from '../shell2/speakers/index.js';
 
@@ -390,9 +389,6 @@ function paintAccounts() {
   const root = $('sp2Accounts');
   if (!root) return;
   const rows = accounts.rows;
-  // The Spotify support buttons a refused row may carry are wired once, by
-  // delegation (spotifyrefusedsupport.js).
-  if (rows && rows.some((r) => r && r.refused)) installRefusalSupport();
   const active = document.activeElement;
   const hadFocus = !!active && active.id === 'sp2AcctRefresh';
   let list;

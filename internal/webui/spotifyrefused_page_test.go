@@ -125,18 +125,30 @@ func TestPhoneSpotifyRefusedFreeCureSavesThePresetsAgain(t *testing.T) {
 	}
 }
 
-// Only Spotify can lift its refusal of a Premium account, so when the page is
-// certain that is what happened it offers Spotify's contact page and a ready
-// message for Spotify support. Certain means the speaker's persistent
-// per-account record (accountRefused, not an older agent's audioKeyRefused)
-// and a plan reported as exactly Premium; the desktop app's
+// When the page is certain Spotify blocks a Premium account, the notice also
+// states Spotify's rule: it no longer enables accounts that have not played on
+// such players within the last year, and nothing in STR or the speaker can
+// change that. There is no support step any more (decided on discussion
+// #1077): Spotify support cannot lift it. Certain means the speaker's
+// persistent per-account record (accountRefused, not an older agent's
+// audioKeyRefused) and a plan reported as exactly Premium; the desktop app's
 // refusalSupportFor (spotifyrefused.js) holds the same rule.
-var spSupportKeys = []string{
-	"spRefusedSupport:", "spRefusedSupportOpen:", "spRefusedSupportCopy:",
-	"spRefusedSupportCopied:", "spRefusedSupportMessage:",
+var spRuleText = map[string]string{
+	"en": "Spotify has said it no longer enables accounts that have not played on players like this within the last year. Nothing in STR or your speaker can change that.",
+	"de": "Spotify hat erklärt, dass es Konten, die im letzten Jahr nicht auf solchen Playern gespielt haben, nicht mehr freischaltet. Daran können weder STR noch dein Lautsprecher etwas ändern.",
+	"nl": "Spotify heeft laten weten dat het accounts die het afgelopen jaar niets op zulke spelers hebben afgespeeld, niet meer vrijgeeft. Daar kunnen STR en je speaker niets aan veranderen.",
+	"fr": "Spotify a indiqué ne plus activer les comptes qui n'ont rien lu sur ce type de lecteur au cours de la dernière année. Ni STR ni ton enceinte ne peuvent y changer quoi que ce soit.",
+	"es": "Spotify ha dicho que ya no habilita cuentas que no hayan reproducido nada en reproductores como este en el último año. Ni STR ni tu altavoz pueden cambiarlo.",
+	"pl": "Spotify poinformowało, że nie włącza już kont, które w ciągu ostatniego roku nic nie odtwarzały na takich odtwarzaczach. Ani STR, ani twój głośnik nie mogą tego zmienić.",
+	"tr": "Spotify, son bir yıl içinde bu tür oynatıcılarda hiçbir şey çalmamış hesapları artık etkinleştirmediğini açıkladı. Bunu ne STR ne de hoparlörün değiştirebilir.",
+	"ar": "أعلنت Spotify أنها لم تعد تفعّل الحسابات التي لم تُشغّل شيئًا على مثل هذه المشغلات خلال العام الماضي. لا يمكن لـ STR ولا لمكبر الصوت لديك تغيير ذلك.",
+	"ja": "Spotifyは、過去1年以内にこの種のプレーヤーで再生していないアカウントを今後は有効にしないと表明しています。STRやスピーカー側では変えられません。",
+	"lt": "Spotify pranešė, kad nebeįjungia paskyrų, kurios per pastaruosius metus nieko negrojo tokiuose grotuvuose. Nei STR, nei tavo garsiakalbis to pakeisti negali.",
+	"lv": "Spotify ir paziņojis, ka vairs neaktivizē kontus, kuros pēdējā gada laikā nekas nav atskaņots šādos atskaņotājos. Ne STR, ne tavs skaļrunis to nevar mainīt.",
+	"uk": "Spotify повідомив, що більше не вмикає облікові записи, які протягом останнього року нічого не відтворювали на таких плеєрах. Ні STR, ні твій динамік не можуть цього змінити.",
 }
 
-func TestPhoneSpotifySupportIsTranslatedEverywhere(t *testing.T) {
+func TestPhoneSpotifyRuleIsTranslatedEverywhere(t *testing.T) {
 	page := readIndexHTML(t)
 	start := strings.Index(page, "var I18N2 = {")
 	if start < 0 {
@@ -144,7 +156,8 @@ func TestPhoneSpotifySupportIsTranslatedEverywhere(t *testing.T) {
 	}
 	end := strings.Index(page[start:], "\n};")
 	lang := regexp.MustCompile(`^  ([a-z]{2}):\{`)
-	value := regexp.MustCompile(`(spRefusedSupport(?:Open|Copy|Copied|Message)?):"((?:[^"\\]|\\.)*)"`)
+	value := regexp.MustCompile(`spRefusedSupport:"((?:[^"\\]|\\.)*)"`)
+	gone := regexp.MustCompile(`spRefusedSupport(?:Open|Copy|Copied|Message):`)
 	dash := regexp.MustCompile(`[–—]| - `)
 	seen := 0
 	for _, line := range strings.Split(page[start:start+end], "\n") {
@@ -153,25 +166,21 @@ func TestPhoneSpotifySupportIsTranslatedEverywhere(t *testing.T) {
 			continue
 		}
 		seen++
-		got := map[string]string{}
-		for _, v := range value.FindAllStringSubmatch(line, -1) {
-			got[v[1]+":"] = v[2]
+		want, ok := spRuleText[m[1]]
+		if !ok {
+			t.Errorf("language %q has no agreed text for Spotify's rule", m[1])
 		}
-		for _, k := range spSupportKeys {
-			v, ok := got[k]
-			if !ok || strings.TrimSpace(v) == "" {
-				t.Errorf("language %q has no %s", m[1], strings.TrimSuffix(k, ":"))
-				continue
-			}
-			if dash.MatchString(v) {
-				t.Errorf("language %q: %s has a dash: %q", m[1], strings.TrimSuffix(k, ":"), v)
-			}
+		v := value.FindStringSubmatch(line)
+		switch {
+		case v == nil:
+			t.Errorf("language %q has no spRefusedSupport", m[1])
+		case ok && v[1] != want:
+			t.Errorf("language %q: spRefusedSupport = %q, want %q", m[1], v[1], want)
+		case dash.MatchString(v[1]):
+			t.Errorf("language %q: spRefusedSupport has a dash: %q", m[1], v[1])
 		}
-		msg := got["spRefusedSupportMessage:"]
-		for _, fact := range []string{"Premium", "Bose", "SoundTouch", "go-librespot", "2026", `\n\n`} {
-			if !strings.Contains(msg, fact) {
-				t.Errorf("language %q: the message for Spotify lacks %q", m[1], fact)
-			}
+		if k := gone.FindString(line); k != "" {
+			t.Errorf("language %q still carries %s", m[1], strings.TrimSuffix(k, ":"))
 		}
 	}
 	if seen < 12 {
@@ -179,10 +188,9 @@ func TestPhoneSpotifySupportIsTranslatedEverywhere(t *testing.T) {
 	}
 }
 
-func TestPhoneSpotifySupportOnlyWhenCertain(t *testing.T) {
+func TestPhoneSpotifyRuleOnlyWhenCertain(t *testing.T) {
 	page := readIndexHTML(t)
 	for _, want := range []string{
-		"var SP_SUPPORT_URL = 'https://support.spotify.com/article/contact-us/';",
 		"premium: String(info.product || '').toLowerCase() === 'premium',",
 		"sticky: !!info.accountRefused",
 		"return !!(ref && ref.sticky && ref.premium && !ref.free);",
@@ -191,14 +199,22 @@ func TestPhoneSpotifySupportOnlyWhenCertain(t *testing.T) {
 		"var support = spSupportFor(ref);",
 		"[lead].concat(help, [support ? 'support' : '']).join('|')",
 		"if (support) more.appendChild(spSupportBlock());",
-		// A new tab for Spotify's page, and the plain-http-safe copy.
-		"open.target = '_blank';",
-		"open.rel = 'noopener';",
-		"await shareCopy(T.spRefusedSupportMessage)",
-		"copy.textContent = T.spRefusedSupportCopied;",
+		// Just the line.
+		"line.className = 'sp-refused-support';",
+		"line.textContent = T.spRefusedSupport;",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
+		}
+	}
+	// Nobody is sent to Spotify support any more: no contact page, no ready
+	// message, no buttons.
+	for _, gone := range []string{
+		"SP_SUPPORT_URL", "support.spotify.com", "sp-refused-actions",
+		"spRefusedSupportOpen", "spRefusedSupportCopy", "spRefusedSupportCopied", "spRefusedSupportMessage",
+	} {
+		if strings.Contains(page, gone) {
+			t.Errorf("page still contains %q", gone)
 		}
 	}
 }
