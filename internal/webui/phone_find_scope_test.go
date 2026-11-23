@@ -21,7 +21,7 @@ func TestPhoneFindScopePickerSitsUnderTheSearchField(t *testing.T) {
 	srch := strings.Index(indexHTML, `id="btnSearch"`)
 	row := strings.Index(indexHTML, `id="libFieldRow"`)
 	results := strings.Index(indexHTML, `<div id="results"></div>`)
-	if srch < 0 || row < 0 || results < 0 || !(srch < row && row < results) {
+	if srch < 0 || row < 0 || results < 0 || srch >= row || row >= results {
 		t.Fatalf("the Search in picker must sit between the search field and the station results (btnSearch %d, libFieldRow %d, results %d)", srch, row, results)
 	}
 	for _, v := range []string{"any", "stations", "lib", "album", "artist", "title"} {
