@@ -5706,6 +5706,13 @@ async function loadZone() {
     btn.style.display = zone.master ? '' : 'none';
     if (!zone.master && sum) sum.textContent += ' ' + fmt(T.grpFollow, { name: zone.masterName });
   }
+  // Settle the scope BEFORE the slider adopts the group level. On the first
+  // read after the page opens the scope is still 'one' (nothing was known to
+  // be grouped), so adopting first skipped the group level, the scope then
+  // switched to the group, and the speaker's own reading was no longer
+  // allowed to fill the slider either: it sat at 0 until the slow zone poll
+  // came round, about 10 to 15 s later (Jens on an ST30, 2026-11-23).
+  applyScopeUI();
   // The group slider reads the LOUDEST member, not the average: with a kitchen
   // at 40 and a bathroom at 10 the average is 25, and nothing in the room is
   // playing at 25. Older agents report no loudest; fall back to the average
@@ -5722,7 +5729,6 @@ async function loadZone() {
     if (el) { el.value = shown; document.getElementById('volval').textContent = shown; volLast = shown; }
     grpVol.shown = shown;
   }
-  applyScopeUI();
   suGroupChanged(wasGrp);
 }
 (function wireUngroup(){
