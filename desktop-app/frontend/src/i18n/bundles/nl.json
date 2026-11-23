@@ -265,6 +265,8 @@
   "library.wholeSearchOffline": "{{name}} gaf geen antwoord, daar is dus niets doorzocht. Dat betekent niet dat de bibliotheek leeg is.",
   "library.wholeSearchPartial": "Deze lijst is misschien niet compleet: een mediaserver had meer treffers dan hij in één keer levert. Zoek preciezer.",
   "library.wholeSearchIncomplete": "Deze lijst is misschien niet compleet: {{name}} kan niet zelf zoeken en STR kon niet op tijd al zijn mappen doorlopen.",
+  "library.wholeSearchAsked": "Doorzocht: {{names}}.",
+  "library.wholeSearchNoHits": "Niets gevonden op {{names}}.",
   "library.wholeSearchClose": "Terug naar de map",
   "library.loadingMore": "Meer nummers laden...",
   "library.capped": "De eerste {{n}} nummers worden getoond. Gebruik de zoekfunctie om een specifiek nummer te vinden.",

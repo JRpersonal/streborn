@@ -1716,6 +1716,24 @@ function libraryWholeSearchNote(s) {
   return '';
 }
 
+// libraryWholeSearchCoverage says which servers the search asked and which of
+// them had nothing (#1705). Without it a search that finds nothing, or finds
+// something on one server only, leaves open whether the others were searched
+// at all. A server that did not answer or could not be looked through in time
+// already has its own note and is left out here. '' while nothing was asked.
+function libraryWholeSearchCoverage(s) {
+  if (s.loading) return '';
+  const named = (list, name) => (list || []).some((x) => String(x).includes(name));
+  const asked = libState.servers.map((srv) => srv.friendlyName || srv.address).filter(Boolean)
+    .filter((name) => !named(s.unanswered, name));
+  if (!asked.length) return '';
+  const hits = new Set(s.items.map((it) => it.server).filter(Boolean));
+  const empty = asked.filter((name) => !hits.has(name) && !named(s.incomplete, name));
+  const lines = [t('library.wholeSearchAsked', { names: asked.join(', ') })];
+  if (empty.length) lines.push(t('library.wholeSearchNoHits', { names: empty.join(', ') }));
+  return lines.join(' ');
+}
+
 // libraryWholeSearchBox is the search row above the folder: the query, the
 // category and the button.
 function libraryWholeSearchBox() {
@@ -1760,9 +1778,11 @@ function libraryWholeSearchBody() {
         </li>`;
   }).join('');
   const note = libraryWholeSearchNote(s);
+  const coverage = libraryWholeSearchCoverage(s);
   return head
     + (rows ? `<ul class="library-list">${rows}</ul>` : '')
-    + (note ? `<p class="library-empty-folder">${escapeHtml(note)}</p>` : '');
+    + (note ? `<p class="library-empty-folder">${escapeHtml(note)}</p>` : '')
+    + (coverage ? `<p class="muted small library-search-coverage">${escapeHtml(coverage)}</p>` : '');
 }
 
 function wireWholeSearch(el) {
@@ -1951,11 +1971,13 @@ function ui2SearchHTML() {
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);
+  const coverage = libraryWholeSearchCoverage(s);
+  const coverageHTML = coverage ? `<p class="lib2-note lib2-search-coverage">${escapeHtml(coverage)}</p>` : '';
   // No hits from servers that all answered: what to try next, and the way
   // back to the search field.
   if (note && !s.items.length && !s.unanswered.length && !s.partial) {
     const any = (LIB_SEARCH_FIELDS.find(([v]) => v === 'any') || [])[1] || 'library.fieldAll';
-    return html + stateHTML({
+    return html + coverageHTML + stateHTML({
       tone: 'info',
       title: note,
       body: s.field !== 'any' ? t('ui2.feedback.tryAnotherField', { field: t(any) }) : '',
@@ -1963,7 +1985,7 @@ function ui2SearchHTML() {
     });
   }
   if (note) html += `<p class="lib2-note" role="status">${escapeHtml(note)}</p>`;
-  return html;
+  return html + coverageHTML;
 }
 
 // ui2ServersHTML is the top level: the media servers on the network, or what

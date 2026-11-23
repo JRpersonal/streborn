@@ -265,6 +265,8 @@
   "library.wholeSearchOffline": "{{name}} neatsakė, todėl jame nieko nebuvo ieškota. Tai nereiškia, kad biblioteka tuščia.",
   "library.wholeSearchPartial": "Šis sąrašas gali būti nepilnas: medijos serveris turėjo daugiau rezultatų, nei pateikia iš karto. Ieškok tiksliau.",
   "library.wholeSearchIncomplete": "Šis sąrašas gali būti nepilnas: {{name}} pats ieškoti negali, o STR nespėjo peržiūrėti visų jo aplankų.",
+  "library.wholeSearchAsked": "Ieškota: {{names}}.",
+  "library.wholeSearchNoHits": "Nieko nerasta: {{names}}.",
   "library.wholeSearchClose": "Atgal į aplanką",
   "library.loadingMore": "Įkeliama daugiau kūrinių...",
   "library.capped": "Rodoma pirmieji {{n}} kūriniai. Naudokite paiešką konkrečiam surasti.",

@@ -57,3 +57,32 @@ describe('the whole-library search', () => {
     }
   });
 });
+
+// #1705: a search that finds nothing, or finds something on one server only,
+// says which servers it asked and which of them had nothing.
+describe('the servers a whole-library search asked', () => {
+  const coverage = (servers, s) => new Function('t', 'libState', `${srcOf('libraryWholeSearchCoverage')}\nreturn libraryWholeSearchCoverage;`)(
+    (k, v) => `${k}:${v.names}`, { servers })({ loading: false, items: [], unanswered: [], incomplete: [], ...s });
+  const SERVERS = [{ friendlyName: 'PC one' }, { friendlyName: 'PC two' }, { friendlyName: 'NAS' }, { address: 'http://192.0.2.1:8200/' }];
+
+  it('names every server asked, and the ones with no hit', () => {
+    expect(coverage(SERVERS, {})).toBe('library.wholeSearchAsked:PC one, PC two, NAS, http://192.0.2.1:8200/ library.wholeSearchNoHits:PC one, PC two, NAS, http://192.0.2.1:8200/');
+    expect(coverage(SERVERS, { items: [{ server: 'NAS' }, { server: 'PC one' }] }))
+      .toBe('library.wholeSearchAsked:PC one, PC two, NAS, http://192.0.2.1:8200/ library.wholeSearchNoHits:PC two, http://192.0.2.1:8200/');
+  });
+
+  it('leaves out a server that did not answer, and one cut short keeps its own note', () => {
+    expect(coverage(SERVERS, { unanswered: ['PC two'], incomplete: ['NAS'], items: [{ server: 'PC one' }, { server: 'http://192.0.2.1:8200/' }] }))
+      .toBe('library.wholeSearchAsked:PC one, NAS, http://192.0.2.1:8200/');
+  });
+
+  it('says nothing while searching or with no server', () => {
+    expect(coverage(SERVERS, { loading: true })).toBe('');
+    expect(coverage([], {})).toBe('');
+  });
+
+  it('shows the line in both layouts', () => {
+    expect(src).toContain('library-search-coverage');
+    expect(src).toContain('lib2-search-coverage');
+  });
+});

@@ -278,6 +278,8 @@
   "library.wholeSearchOffline": "{{name}} did not answer, so nothing there was searched. That is not the same as an empty library.",
   "library.wholeSearchPartial": "This list may not be complete: a media server had more hits than it hands over at once. Try a more exact search.",
   "library.wholeSearchIncomplete": "This list may not be complete: {{name}} cannot search by itself, and STR could not look through all of its folders in time.",
+  "library.wholeSearchAsked": "Searched: {{names}}.",
+  "library.wholeSearchNoHits": "Nothing found on {{names}}.",
   "library.wholeSearchClose": "Back to the folder",
   "library.loadingMore": "Loading more tracks...",
   "library.capped": "Showing the first {{n}} tracks. Use the search to find a specific one.",
