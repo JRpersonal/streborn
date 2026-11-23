@@ -122,32 +122,21 @@ for (const ui2 of [false, true]) {
       await expect(notice(page).locator('[data-str-refusal]')).toHaveCount(0);
     });
 
-    test('a refused Premium account offers Spotify support and a message for it', async ({ app, mock }) => {
+    test("a refused Premium account states Spotify's rule, with no support buttons", async ({ app, mock }) => {
       const { page } = app;
       await mock.set('SpotifyNowPlaying', { value: REFUSED });
       await settle(page, 9_000);
       await playStrSpotify(page, LR.host);
       await runFor(page, 8_000);
       await notice(page).locator('summary').click();
-      await expect(notice(page).locator('.spotify-refused-support')).toHaveText(en('spotify.refusedSupport'));
-      const openBtn = notice(page).locator('[data-str-refusal="open"]');
-      const copyBtn = notice(page).locator('[data-str-refusal="copy"]');
-      await expect(openBtn).toHaveText(en('spotify.refusedSupportOpen'));
-      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopy'));
-
-      await openBtn.click();
-      await expect.poll(async () => (await mock.calls('runtime.BrowserOpenURL')).map((c) => c.args[0]))
-        .toEqual(['https://support.spotify.com/article/contact-us/']);
-
-      await copyBtn.click();
-      await expect.poll(async () => (await mock.calls('runtime.ClipboardSetText')).map((c) => c.args[0]))
-        .toEqual([en('spotify.refusedSupportMessage')]);
-      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopied'));
-      await runFor(page, 2_500);
-      await expect(copyBtn).toHaveText(en('spotify.refusedSupportCopy'));
-      // The next polls leave the opened help, and its buttons, in place.
+      const rule = notice(page).locator('.spotify-refused-support');
+      await expect(rule).toHaveText(en('spotify.refusedSupport'));
+      // Spotify support cannot lift the refusal (#1077), so nothing points there.
+      await expect(notice(page).locator('button')).toHaveCount(0);
+      await expect(notice(page).locator('[data-str-refusal]')).toHaveCount(0);
+      // The next polls leave the opened help in place.
       await runFor(page, 6_000);
-      await expect(copyBtn).toBeVisible();
+      await expect(rule).toBeVisible();
       if (process.env.SHOOT_DIR) {
         const name = ui2 ? 'spotify-refused-support-ui2.png' : 'spotify-refused-support-classic.png';
         const target = ui2 ? page.locator('#ui2Player') : page.locator('#boxControls');
@@ -160,18 +149,17 @@ for (const ui2 of [false, true]) {
 test.describe('Spotify refused, UI 2.0 accounts card', () => {
   test.use({ ui2: true, fakeClock: true, scenario: { bindings: { SpotifyNowPlaying: { value: REFUSED } } } });
 
-  test('the speaker\'s login row says it too', async ({ app, mock }) => {
+  test('the speaker\'s login row says it too', async ({ app }) => {
     const { page } = app;
     await settle(page, 9_000);
     await page.locator('#ui2Tabs .ui2-nav-item[data-view="spotify"]').click();
     await runFor(page, 2_000);
     const row = page.locator(`#sp2Accounts .sp2-acct[data-host="${LR.host}"]`);
     await expect(row.locator('.sp2-acct-refused .spotify-refused-lead')).toHaveText(en('spotify.accountRefused'));
-    // A refused Premium account: the support part is there too, and works.
+    // A refused Premium account: Spotify's rule is there too, with no buttons.
     await row.locator('.sp2-acct-refused summary').click();
-    await row.locator('[data-str-refusal="copy"]').click();
-    await expect.poll(async () => (await mock.calls('runtime.ClipboardSetText')).map((c) => c.args[0]))
-      .toEqual([en('spotify.refusedSupportMessage')]);
+    await expect(row.locator('.spotify-refused-support')).toHaveText(en('spotify.refusedSupport'));
+    await expect(row.locator('[data-str-refusal]')).toHaveCount(0);
     if (process.env.SHOOT_DIR) {
       await page.locator('#sp2Accounts').screenshot({ path: `${process.env.SHOOT_DIR}/spotify-refused-ui2-accounts.png`, animations: 'disabled' });
     }
