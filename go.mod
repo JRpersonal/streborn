@@ -3,7 +3,7 @@ module github.com/JRpersonal/streborn
 go 1.26.0
 
 require (
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/miekg/dns v1.1.73
 	golang.org/x/net v0.63.0
