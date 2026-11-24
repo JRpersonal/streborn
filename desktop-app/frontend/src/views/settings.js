@@ -45,6 +45,7 @@ import { renderNetworkSections, wireNetworkSections } from './settings/network.j
 import { renderInfoSections, wireInfoSections, refreshForeignInfluence, refreshBoxLevelRows } from './settings/info.js';
 import { renderActionSections, wireActionSections } from './settings/actions.js';
 import { renderAdvancedSections, wireAdvancedSections } from './settings/advanced.js';
+import { renderAlarmSections, wireAlarmSections } from './settings/alarms.js';
 // The UI 2.0 preview's page for one speaker adopts this view's body into its
 // tabs (shell2/speakers/speaker.js); both hooks do nothing without the shell.
 import { arrangeSpeakerSections, placeSettingsBody } from '../shell2/speakers/speaker.js';
@@ -575,6 +576,7 @@ function isEmptySettings(s) {
 function groupSettingsSections(byGroup) {
   const GROUPS = [
     { key: 'basics', label: t('settingsView.groupBasics'), open: true },
+    { key: 'alarms', label: t('settingsView.groupAlarms'), open: false },
     { key: 'sound', label: t('settingsView.groupSound'), open: false },
     { key: 'network', label: t('settingsView.groupNetwork'), open: false },
     { key: 'info', label: t('settingsView.groupInfo'), open: false },
@@ -609,6 +611,7 @@ function renderBoxSettings(s, box) {
   const parts = [
     renderStatusSection(ctx),
     renderBasicsSections(ctx),
+    renderAlarmSections(ctx),
     renderSoundSections(ctx),
     renderNetworkSections(ctx),
     renderInfoSections(ctx),
@@ -626,6 +629,7 @@ function renderBoxSettings(s, box) {
   // instead of running.
   wireStatusSections(ctx);
   wireBasicsSections(ctx);
+  wireAlarmSections(ctx);
   wireSoundSections(ctx);
   wireNetworkSections(ctx);
   wireInfoSections(ctx);

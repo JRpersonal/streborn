@@ -16,7 +16,7 @@ import en from '../../i18n/bundles/en.json';
 
 setLocale('en');
 
-const MODULES = ['status', 'basics', 'sound', 'network', 'info', 'actions', 'advanced'];
+const MODULES = ['status', 'basics', 'alarms', 'sound', 'network', 'info', 'actions', 'advanced'];
 const settingsSrc = Object.fromEntries(MODULES.map((m) => [m, fileSource(`views/settings/${m}.js`)]));
 const keysIn = (src) => [...src.matchAll(/data-ui2-sec="([A-Za-z]+)"/g)].map((m) => m[1]);
 

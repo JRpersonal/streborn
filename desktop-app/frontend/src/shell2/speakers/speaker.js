@@ -72,8 +72,8 @@
 // sidebar and the list show a pair as one row that opens its main speaker, so
 // the head of a half's page leads to the other half (otherPairHalf).
 //
-// Classic Speaker settings has no alarm settings; the tab's name follows the
-// mockup and carries the sleep and snooze key actions.
+// Keys and alarms carries the alarm clock (views/settings/alarms.js, #2090)
+// next to the sleep and snooze key actions.
 //
 // Restart, remove and reset sit in Maintenance; every confirmation that acts
 // on this speaker names it in the preview (shared.js confirmFor).
@@ -124,6 +124,7 @@ export const SPEAKER_SECTIONS = Object.freeze([
   ['musicLib', 'network'],
   ['usServices', 'network'],
   ['hwKeys', 'keys'],
+  ['alarms', 'keys'],
   ['syncKeys', 'keys'],
   ['keyMap', 'keys'],
   ['urlPreset', 'keys'],
