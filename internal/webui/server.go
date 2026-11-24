@@ -834,6 +834,9 @@ type Server struct {
 	alarmWakeBoxFn      func(ctx context.Context, vol int)
 	alarmRecallSlotFn   func(ctx context.Context, slot int) int
 	alarmPlayingCheckFn func(slot int, since time.Time) bool
+	// alarmAlreadyPlayingFn replaces the stream proxy's "this key is playing
+	// right now" in tests; nil means the proxy.
+	alarmAlreadyPlayingFn func(slot int) bool
 
 	// storm1036Fn reports whether the box is currently rejecting essentially
 	// every recall (1036), how many rejections are in the window and since
