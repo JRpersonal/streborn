@@ -5,7 +5,8 @@
 // current layout never sees them:
 //
 //   - "Put the playing playlist on a key": what the selected speaker plays from
-//     Spotify, its six keys, and one named action that stores it through the
+//     Spotify, its keys (six, or twelve behind the same Once | Twice switch the
+//     Radio view's keys have, #1110/#1587), and one named action that stores it through the
 //     same save path a long press on a key in the Music view takes
 //     (saveSpotifyToSlot). Done is said only after the speaker stored it; every
 //     outcome is reported in the card, not as a window-wide toast.
@@ -21,12 +22,15 @@ import { t } from '../i18n/index.js';
 import { state } from '../state.js';
 import { strBoxes } from '../boxes.js';
 import { SpotifyNowPlaying } from '../api.js';
-import { sameBoxIdentity } from '../groups.js';
+import { pairUnitName, sameBoxIdentity } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 import { parsePresetConflict, presetConflictNote } from '../presetmove.js';
 import { saveSpotifyToSlot, presetMoveOffer } from './music/save.js';
 import { loadPresets } from './music/presets.js';
 import { refreshStatus } from './music/status.js';
 import { accountRow, keySlots, spotifyPlaying } from './spotifyui2model.js';
+import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, slotKey } from '../presetrows.js';
+import { wireRowTabs } from './music/presettiles.js';
 import { refusalHTML } from '../spotifyrefused.js';
 import { listStateNow, noSpeakersState } from '../shell2/state.js';
 import { openSpeakers } from '../shell2/speakers/index.js';
@@ -35,6 +39,9 @@ let deps = { strBoxes: () => [] };
 
 // The key picked for the save, per speaker; the last outcome, per speaker.
 const chosen = new Map();
+// The row of keys shown (1 pressed once, 2 pressed twice), per speaker, once
+// the user switched it here.
+const shownRows = new Map();
 const results = new Map();
 let busyHost = '';
 let keysSig = '';
@@ -43,11 +50,16 @@ let accounts = { rows: null, busy: false, gen: 0 };
 
 const hostKey = (b) => (b ? `${b.host}:${b.port}` : '');
 
-// speakerName is the selected speaker as the sidebar names it.
+// speakerName is the selected speaker as the sidebar names it. Half of a live
+// stereo pair is named as the pair, "Kitchen (stereo)", never as the half the
+// app happens to address (#1587). The ticker repaints every second, so a pair
+// name still being looked up shows on the next tick.
 function speakerName(box) {
   if (!box) return '';
   const known = ((deps.strBoxes ? deps.strBoxes() : []) || []).find((b) => b.host === box.host && b.port === box.port);
-  return (known && known.name) || box.friendlyName || box.name || box.host || '';
+  const label = (b) => (b === box && known && known.name) || b.friendlyName || b.name || b.host || '';
+  const pair = pairUnitName(box, state.zoneLive, state.boxes, (p) => pairDisplayName(p), label);
+  return pair ? t('ui2.side.pairName', { name: pair }) : label(box);
 }
 
 export function spotifyUi2Markup() {
@@ -94,23 +106,35 @@ function keysModel() {
   const name = speakerName(box);
   const now = spotifyPlaying(state);
   const key = hostKey(box);
-  const slots = box ? keySlots(state.presets, now.uri) : [];
+  const rows = box ? boxPresetRows(box, state.presets) : 1;
+  const slots = box ? keySlots(state.presets, now.uri, rows) : [];
   let slot = chosen.get(key) || 0;
   if (!now.playing) slot = 0;
+  if (slot > rows * 6) slot = 0;
+  // The row the keys open on: the one switched to here, else the row of the
+  // chosen key, else the row of the key that already holds what plays, else
+  // the row the Radio view's keys show.
+  let row = shownRows.get(key) || 0;
+  if (!row && slot) row = slot > 6 ? 2 : 1;
+  if (!row) {
+    const here = slots.find((s) => s.here);
+    row = here ? here.row : state.presetRow;
+  }
+  row = clampRow(row, rows);
   // A result is about the playlist it saved: another one playing now drops it.
   let result = results.get(key) || null;
   if (result && now.playing && result.uri && now.uri && result.uri !== now.uri) {
     results.delete(key);
     result = null;
   }
-  return { box, key, name, now, slots, slot, busy: !!key && busyHost === key, result };
+  return { box, key, name, now, rows, row, slots, slot, busy: !!key && busyHost === key, result };
 }
 
 function paintKeys(force) {
   const root = $('sp2Keys');
   if (!root) return;
   const m = keysModel();
-  const sig = JSON.stringify({ k: m.key, n: m.name, now: m.now, s: m.slots, slot: m.slot, busy: m.busy, r: m.result });
+  const sig = JSON.stringify({ k: m.key, n: m.name, now: m.now, rows: m.rows, row: m.row, s: m.slots, slot: m.slot, busy: m.busy, r: m.result });
   if (!force && sig === keysSig) return;
   keysSig = sig;
   const active = document.activeElement;
@@ -150,19 +174,19 @@ function keysHTML(m) {
   const what = m.now.name || t('ui2.spotify.unnamed');
   const pickedSlot = m.slot ? m.slots.find((s) => s.slot === m.slot) : null;
   let hint = t('ui2.spotify.pickKey');
-  if (pickedSlot && pickedSlot.here) hint = t('ui2.spotify.alreadyOnKey', { n: pickedSlot.slot, name: m.name });
+  if (pickedSlot && pickedSlot.here) hint = t('ui2.spotify.alreadyOnKey', { n: keyNum(pickedSlot.slot, t), name: m.name });
   else if (pickedSlot && !pickedSlot.empty) hint = t('ui2.spotify.replaces', { current: pickedSlot.name });
   else if (pickedSlot) hint = t('ui2.spotify.keyIsEmpty');
   const canSave = !!pickedSlot && !pickedSlot.here && !m.busy;
   const btnText = m.busy
     ? t('ui2.spotify.saving', { name: m.name })
-    : (pickedSlot ? t('ui2.spotify.saveBtn', { n: pickedSlot.slot, name: m.name }) : t('ui2.spotify.saveBtnNoKey'));
-  const keys = m.slots.map((s) => {
+    : (pickedSlot ? t('ui2.spotify.saveBtn', { n: keyNum(pickedSlot.slot, t), name: m.name }) : t('ui2.spotify.saveBtnNoKey'));
+  const keys = m.slots.filter((s) => s.row === m.row).map((s) => {
     const sub = s.here ? t('ui2.spotify.keyHere') : (s.empty ? t('ui2.spotify.keyEmpty') : (s.spotify ? t('ui2.spotify.keySpotify') : t('ui2.spotify.keyOther')));
     const name = s.empty ? '' : `<span class="sp2-key-name">${escapeHtml(s.name)}</span>`;
     return `<button type="button" class="sp2-key${s.slot === m.slot ? ' is-chosen' : ''}${s.here ? ' is-here' : ''}" data-slot="${s.slot}" aria-pressed="${s.slot === m.slot ? 'true' : 'false'}"${m.busy ? ' disabled' : ''}>
-        <span class="sp2-key-n" aria-hidden="true">${s.slot}</span>
-        <span class="sp2-key-text"><span class="u-sr-only">${escapeHtml(t('ui2.spotify.keyN', { n: s.slot }))}</span>${name}<span class="sp2-key-sub">${escapeHtml(sub)}</span></span>
+        ${sp2KeyNumHTML(s.slot)}
+        <span class="sp2-key-text"><span class="u-sr-only">${escapeHtml(s.row === 2 ? keyLabel(s.slot, t) : t('ui2.spotify.keyN', { n: s.slot }))}</span>${name}<span class="sp2-key-sub">${escapeHtml(sub)}</span></span>
       </button>`;
   }).join('');
   return `${title}
@@ -171,12 +195,32 @@ function keysHTML(m) {
       <span class="sp2-now-text">${escapeHtml(t('ui2.spotify.playingOn', { name: m.name, title: what }))}<span class="sp2-muted"> · ${escapeHtml(kindLabel(m.now.kind))}</span></span>
     </p>
     <p class="sp2-sub" id="sp2KeysLabel">${escapeHtml(t('ui2.spotify.keysLabel', { name: m.name }))}</p>
-    <div class="sp2-keys" role="group" aria-labelledby="sp2KeysLabel">${keys}</div>
+    ${rowTabsHTML(m)}
+    <div class="sp2-keys" id="sp2KeysGrid" ${m.rows >= 2 ? `role="tabpanel" aria-labelledby="sp2RowTab${m.row}"` : 'role="group" aria-labelledby="sp2KeysLabel"'}>${keys}</div>
     <div class="sp2-actions">
       <button type="button" class="u-btn u-btn--primary" id="sp2Save"${canSave ? '' : ' disabled'}>${escapeHtml(btnText)}</button>
       <span class="sp2-hint sp2-muted" id="sp2Hint">${escapeHtml(hint)}</span>
     </div>
     ${resultHTML(m.result)}`;
+}
+
+// sp2KeyNumHTML is the number square of a key: "3" on the first row, the "2×"
+// badge and "3" on the second, as the Radio view's tiles and the stickers
+// mark a key pressed twice. The label for assistive technology is separate.
+function sp2KeyNumHTML(slot) {
+  if (!(slot > 6)) return `<span class="sp2-key-n" aria-hidden="true">${slot}</span>`;
+  return `<span class="sp2-key-n is-row2" aria-hidden="true"><span class="row2-badge">${escapeHtml(t('preset.row2.badge'))}</span>${slotKey(slot)}</span>`;
+}
+
+// rowTabsHTML is the Once | Twice switch over the keys, the same one the Radio
+// view and the key picker have, on a speaker that keeps the second row only.
+function rowTabsHTML(m) {
+  if (m.rows < 2) return '';
+  const tab = (r) => `<button type="button" role="tab" class="preset-row-tab" id="sp2RowTab${r}" data-row="${r}"`
+    + ` aria-selected="${r === m.row ? 'true' : 'false'}" aria-controls="sp2KeysGrid" tabindex="${r === m.row ? '0' : '-1'}"${m.busy ? ' disabled' : ''}>`
+    + `<span class="prt-label">${escapeHtml(t(r === 2 ? 'preset.row2.tabTwice' : 'preset.row2.tabOnce'))}</span>`
+    + `<span class="u-sr-only">, ${escapeHtml(t(r === 2 ? 'preset.row2.tabTwiceName' : 'preset.row2.tabOnceName', { speaker: m.name }))}</span></button>`;
+  return `<div class="preset-row-tabs sp2-rows" id="sp2Rows" role="tablist" aria-label="${escapeAttr(t('preset.row2.tablistName', { speaker: m.name }))}">${tab(1)}${tab(2)}</div>`;
 }
 
 // resultHTML is the outcome of the last save on this speaker, in the card. A
@@ -196,6 +240,17 @@ function wireKeys(root, m) {
       paintKeys(true);
     });
   });
+  const tabs = root.querySelector('#sp2Rows');
+  if (tabs) {
+    wireRowTabs(tabs, (r) => {
+      if (m.busy) return;
+      if (r === 2) markRow2Seen();
+      shownRows.set(m.key, r);
+      paintKeys(true);
+      const el = root.querySelector(`#sp2RowTab${r}`);
+      if (el) el.focus();
+    });
+  }
   const save = root.querySelector('#sp2Save');
   if (save) save.addEventListener('click', () => { saveToChosenKey(); });
 }
@@ -234,7 +289,7 @@ export async function saveToChosenKey() {
     } else {
       const title = now.name || t('ui2.spotify.unnamed');
       ok = await saveSpotifyToSlot(slot, {
-        saved: (savedName) => lines.push({ tone: 'ok', text: t('ui2.spotify.saved', { n: slot, name, title: savedName || title }) }),
+        saved: (savedName) => lines.push({ tone: 'ok', text: t('ui2.spotify.saved', { n: keyNum(slot, t), name, title: savedName || title }) }),
         notice: (k) => { if (tone !== 'error') tone = 'warn'; lines.push({ tone: 'warn', text: t(k) }); },
         error: (k) => fail(t(k)),
         switched: () => fail(t('ui2.spotify.speakerChanged', { name })),
@@ -269,7 +324,7 @@ export async function saveToChosenKey() {
       // Only while this is still the card's last result: a newer save or a
       // change of what plays has its own line by then.
       if (!moved || results.get(key) !== result) return;
-      results.set(key, { tone: 'ok', lines: [{ tone: 'ok', text: t('ui2.spotify.moved', { from: moved.from, n: slot, name, title: moved.title }) }], uri: startUri });
+      results.set(key, { tone: 'ok', lines: [{ tone: 'ok', text: t('ui2.spotify.moved', { from: keyNum(moved.from, t), n: keyNum(slot, t), name, title: moved.title }) }], uri: startUri });
       paintKeys(true);
     });
   }

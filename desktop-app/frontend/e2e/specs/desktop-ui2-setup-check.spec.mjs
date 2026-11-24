@@ -229,7 +229,7 @@ test.describe('UI 2.0 setup check: firmware', () => {
   test.describe('on 10.x, another model', () => {
     test.use({
       scenario: fwScenario(SETUP_CHECK.guide, {
-        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 10', current: '10.0.11' } },
+        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'Wave SoundTouch', current: '10.0.11' } },
         GetFirmwareLadder: { value: SETUP_CHECK.routePlan },
       }),
     });
@@ -239,9 +239,9 @@ test.describe('UI 2.0 setup check: firmware', () => {
       await expect(step).toHaveAttribute('data-case', 'guide');
       await expect(step.locator('.u-check-callout')).toContainText(en('ui2.setup.check.guideIntro', { name: NAME, version: '10.0.11', required: '27.0.6' }));
       const lad = step.locator('.u-check-guide .fw-ladder');
-      await expect(lad).toContainText(en('fwLadder.routeTitle', { n: 2 }));
+      await expect(lad).toContainText(en('fwLadder.routeTitle', { n: 3 }));
       await expect(lad).toContainText(en('fwLadder.routeWhy'));
-      await expect(lad.locator('.fw-ladder-steps li')).toHaveCount(2);
+      await expect(lad.locator('.fw-ladder-steps li')).toHaveCount(3);
       await expect(lad.locator('[data-ladder="open-url"]').first()).toHaveText(en('fwLadder.docs'));
       await expect(lad.locator('[data-fwflash], [data-ladder="prepare"], .fw-guide-download')).toHaveCount(0);
       await expect(step.locator('[data-check="skip"]')).toBeHidden();
@@ -250,8 +250,8 @@ test.describe('UI 2.0 setup check: firmware', () => {
 
   test.describe('on 10.x, a model with no known path', () => {
     test.use({
-      scenario: fwScenario(SETUP_CHECK.guide, {
-        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'SoundTouch 10', current: '10.0.11' } },
+      scenario: fwScenario(SETUP_CHECK.guideNoPath, {
+        GetFirmwareGuide: { value: { ...SETUP_CHECK.guideOne, model: 'Wave SoundTouch', current: '10.0.11' } },
         GetFirmwareLadder: { value: SETUP_CHECK.noPathPlan },
       }),
     });

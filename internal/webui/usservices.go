@@ -70,6 +70,7 @@ type nativeBoxAPI interface {
 	GetSources(ctx context.Context) ([]boxapi.Source, error)
 	ListServiceStations(ctx context.Context, source, account string) ([]boxapi.ServiceStation, error)
 	SelectContentItem(ctx context.Context, item string) error
+	NotifySourcesUpdated(ctx context.Context) error
 }
 
 func (s *Server) nativeBox() nativeBoxAPI {
@@ -385,6 +386,31 @@ type nativeRemoveFlight struct {
 // an app sent three DELETEs at once). One that arrives after it finished runs
 // its own, which finds nothing left to remove and answers 200.
 func (s *Server) removeNativeAccountShared(ctx context.Context, typ, display string) nativeRemoveResult {
+	return s.removeAccountShared(ctx, typ, display, s.nativeAccountStore(typ))
+}
+
+// musicAccountStore is STR's side of one service's account, as a removal
+// needs it: the account STR holds for it, the one carried over from before
+// STR, and forgetting both. answered, when set, sees the speaker's answer to
+// the removal call (the Deezer forensics, deezer.go).
+type musicAccountStore struct {
+	registered  func() string
+	carriedOver func() string
+	clear       func() error
+	answered    func(err error)
+}
+
+// nativeAccountStore is a US service's account in the stand-in.
+func (s *Server) nativeAccountStore(typ string) musicAccountStore {
+	return musicAccountStore{
+		registered:  func() string { return s.native.NativeUsername(typ) },
+		carriedOver: func() string { return s.native.CarriedOverAccount(typ) },
+		clear:       func() error { return s.native.ClearNative(typ) },
+	}
+}
+
+// removeAccountShared is removeNativeAccountShared for any service's store.
+func (s *Server) removeAccountShared(ctx context.Context, typ, display string, st musicAccountStore) nativeRemoveResult {
 	s.nativeRemoveMu.Lock()
 	if f, ok := s.nativeRemoveFlights[typ]; ok {
 		s.nativeRemoveMu.Unlock()
@@ -418,12 +444,12 @@ func (s *Server) removeNativeAccountShared(ctx context.Context, typ, display str
 		s.nativeRemoveMu.Unlock()
 		close(f.done)
 	}()
-	f.res = s.removeNativeAccount(ctx, typ, display)
+	f.res = s.removeNativeAccount(ctx, typ, display, st)
 	return f.res
 }
 
-// removeNativeAccount is DELETE /api/{pandora,iheart}/account; callers go
-// through removeNativeAccountShared.
+// removeNativeAccount is DELETE /api/{pandora,iheart,deezer}/account; callers
+// go through removeAccountShared.
 //
 // The account to remove is the one STR registered, else the one the firmware
 // lists, else the one carried over in the reflect file. A carried-over account
@@ -432,9 +458,9 @@ func (s *Server) removeNativeAccountShared(ctx context.Context, typ, display str
 // (#1101). Success is only reported once /sources no longer lists the service
 // READY with an account. A speaker that answers the account is already gone
 // (SOURCE_ALREADY_REMOVED) counts as a removal: the cleanup runs the same.
-func (s *Server) removeNativeAccount(ctx context.Context, typ, display string) nativeRemoveResult {
+func (s *Server) removeNativeAccount(ctx context.Context, typ, display string, st musicAccountStore) nativeRemoveResult {
 	box := s.nativeBox()
-	user := s.native.NativeUsername(typ)
+	user := st.registered()
 	origin := "registration"
 	if user == "" {
 		if srcs, err := box.GetSources(ctx); err == nil {
@@ -444,11 +470,15 @@ func (s *Server) removeNativeAccount(ctx context.Context, typ, display string) n
 		}
 	}
 	if user == "" {
-		user, origin = s.native.CarriedOverAccount(typ), "carried-over"
+		user, origin = st.carriedOver(), "carried-over"
 	}
 	alreadyRemoved := false
 	if user != "" {
-		if err := box.RemoveMusicServiceAccount(ctx, typ, display, user); err != nil {
+		err := box.RemoveMusicServiceAccount(ctx, typ, display, user)
+		if st.answered != nil {
+			st.answered(err)
+		}
+		if err != nil {
 			if !isSourceAlreadyRemoved(err) {
 				s.logger.Warn("us-services: the speaker refused the removal", "service", typ, "account", origin, "err", err)
 				return nativeRemoveResult{status: http.StatusBadGateway, body: map[string]any{
@@ -460,7 +490,7 @@ func (s *Server) removeNativeAccount(ctx context.Context, typ, display string) n
 			s.logger.Info("us-services: account already removed on the speaker", "service", typ, "account", origin, "err", err)
 		}
 	}
-	if err := s.native.ClearNative(typ); err != nil {
+	if err := st.clear(); err != nil {
 		s.logger.Warn("us-services: could not clear the stored source", "service", typ, "err", err)
 		return nativeRemoveResult{status: http.StatusInternalServerError, body: map[string]any{
 			"error": "could not clear the stored source",

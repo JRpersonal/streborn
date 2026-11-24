@@ -9,11 +9,12 @@ package streamproxy
 // follows the (live) media playlist, fetches each new segment in order,
 // demuxes the audio elementary stream out of the MPEG-TS container (or
 // passes a raw ADTS-AAC / MP3 segment straight through), and writes the
-// result to the box as one endless ADTS/MP3 stream. fMP4/CMAF segments and
-// DASH (.mpd) are not handled yet and fall back to the not-playable path.
+// result to the box as one endless ADTS/MP3 stream. fMP4/CMAF segments are
+// unpacked the same way (fmp4.go). DASH (.mpd) is not handled and falls back
+// to the not-playable path.
 //
-// This is the staged plan from #124: stage 1 (playlist following) + stage 2
-// (MPEG-TS -> ADTS). Stage 3 (fMP4 -> ADTS) is a follow-up.
+// This is the staged plan from #124: stage 1 (playlist following), stage 2
+// (MPEG-TS -> ADTS) and stage 3 (fMP4 -> ADTS, 2026-11-23).
 
 import (
 	"bufio"
@@ -68,6 +69,10 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 	var bytesToBox int64    // total audio bytes handed to the box this stream
 	consecFetchFail := 0    // consecutive segment-fetch failures (dropout signal)
 	hlsStart := time.Now()  // for time-to-first-audio and total-played timing
+	// fMP4/CMAF (stage 3): the audio track read from the init segment, and
+	// the init URL it came from, so a new EXT-X-MAP is read again.
+	var track *fmp4Track
+	trackFrom := ""
 
 	for {
 		if r.Context().Err() != nil {
@@ -98,13 +103,23 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			s.logger.Info("hls: media playlist", "targetDur", pl.targetDur,
 				"segments", len(pl.segments), "live", !pl.endList)
 		}
-		if pl.isFMP4 {
-			// Stage 3 (fMP4 -> ADTS) not implemented yet. Report not-playable so
-			// the box shows a clear state instead of silence.
+		if pl.isFMP4 && pl.initURL == "" {
+			// An EXT-X-MAP with a byte range or without a URI: not handled.
 			if !headersSent {
-				return fmt.Errorf("hls: fMP4/CMAF segments not supported yet")
+				return fmt.Errorf("hls: fMP4 init segment given as a byte range, not supported")
 			}
 			return nil
+		}
+		if pl.isFMP4 && pl.initURL != trackFrom {
+			t, err := s.loadFMP4Init(ctx, pl.initURL)
+			if err != nil {
+				if !headersSent {
+					return fmt.Errorf("hls: %w", err)
+				}
+				s.logger.Warn("hls: new fMP4 init segment unreadable, ending", "err", err)
+				return nil
+			}
+			track, trackFrom = &t, pl.initURL
 		}
 		if len(pl.segments) == 0 {
 			if !headersSent {
@@ -216,9 +231,21 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			}
 			consecFetchFail = 0
 			audio, ok := demuxSegment(data)
+			if !ok && isBoxSegment(data) {
+				// fMP4: with the track from EXT-X-MAP, or from a moov carried
+				// inline at the start of the segment.
+				if t, err := parseFMP4Init(data); err == nil {
+					track = &t
+				} else if track == nil && !headersSent {
+					return fmt.Errorf("hls: %w", err)
+				}
+				if track != nil {
+					audio, ok = fmp4ToAudio(data, *track)
+				}
+			}
 			if !ok {
 				if !headersSent {
-					return fmt.Errorf("hls: unsupported segment format (need MPEG-TS AAC/MP3 or raw ADTS/MP3)")
+					return fmt.Errorf("hls: unsupported segment format (need MPEG-TS AAC/MP3, raw ADTS/MP3 or fMP4 AAC/MP3)")
 				}
 				// Mid-stream odd segment: skip it rather than tearing down.
 				s.logger.Debug("hls: skipping unsupported segment", "url", seg)
@@ -355,6 +382,7 @@ type mediaPlaylist struct {
 	targetDur   int      // #EXT-X-TARGETDURATION seconds (0 if absent)
 	endList     bool     // #EXT-X-ENDLIST present (VOD, not live)
 	isFMP4      bool     // #EXT-X-MAP present (fMP4/CMAF init segment) -> stage 3
+	initURL     string   // the EXT-X-MAP URI, absolute; "" when it has a BYTERANGE or no URI
 }
 
 // parseMediaPlaylist parses a media playlist body, resolving segment URIs
@@ -373,6 +401,10 @@ func parseMediaPlaylist(body, baseURL string) mediaPlaylist {
 		case strings.HasPrefix(line, "#EXT-X-MAP"):
 			// An init segment means fMP4/CMAF segments follow.
 			pl.isFMP4 = true
+			pl.initURL = ""
+			if uri := hlsAttr(line, "URI"); uri != "" && hlsAttr(line, "BYTERANGE") == "" {
+				pl.initURL = resolveURL(baseURL, uri)
+			}
 		case strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"):
 			pl.mediaSeq = atoi64Safe(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"))
 			pl.hasMediaSeq = true
@@ -392,19 +424,16 @@ func parseMediaPlaylist(body, baseURL string) mediaPlaylist {
 
 // demuxSegment turns one HLS segment into the audio bytes the box can play:
 // MPEG-TS is demuxed to its audio elementary stream (ADTS-AAC or MP3), a raw
-// ADTS/MP3 segment passes through, and anything else (fMP4, unknown) returns
-// ok=false so the caller treats the stream as not playable.
+// ADTS/MP3 segment passes through, and anything else returns ok=false. An
+// fMP4 segment (isBoxSegment) also returns ok=false here: it needs the track
+// from the init segment, so serveHLS converts it with fmp4ToAudio.
 func demuxSegment(seg []byte) (audio []byte, ok bool) {
 	if len(seg) < 4 {
 		return nil, false
 	}
-	// fMP4/CMAF: a box-structured segment ("....ftyp/styp/moof/sidx"). Not
-	// supported yet (stage 3). Needs at least the 8-byte box header.
-	if len(seg) >= 8 {
-		switch string(seg[4:8]) {
-		case "ftyp", "styp", "moof", "sidx", "moov":
-			return nil, false
-		}
+	// fMP4/CMAF: a box-structured segment. Converted by the caller.
+	if isBoxSegment(seg) {
+		return nil, false
 	}
 	// MPEG-TS: 0x47 sync byte, packets of 188 bytes.
 	if seg[0] == 0x47 && len(seg) >= 188 {
@@ -426,6 +455,73 @@ func demuxSegment(seg []byte) (audio []byte, ok bool) {
 		return seg, true
 	}
 	return nil, false
+}
+
+// isBoxSegment reports whether seg starts like an ISO-BMFF (fMP4/CMAF)
+// segment: "....ftyp/styp/moof/sidx/moov/emsg".
+func isBoxSegment(seg []byte) bool {
+	if len(seg) < 8 {
+		return false
+	}
+	switch string(seg[4:8]) {
+	case "ftyp", "styp", "moof", "sidx", "moov", "emsg":
+		return true
+	}
+	return false
+}
+
+// hlsAttr returns the value of one attribute of an HLS tag line, without
+// quotes ("" when absent).
+func hlsAttr(line, name string) string {
+	i := strings.IndexByte(line, ':')
+	if i < 0 {
+		return ""
+	}
+	rest := line[i+1:]
+	for rest != "" {
+		eq := strings.IndexByte(rest, '=')
+		if eq < 0 {
+			return ""
+		}
+		key := strings.TrimSpace(rest[:eq])
+		rest = rest[eq+1:]
+		var val string
+		if strings.HasPrefix(rest, "\"") {
+			end := strings.IndexByte(rest[1:], '"')
+			if end < 0 {
+				return ""
+			}
+			val, rest = rest[1:1+end], rest[2+end:]
+		} else if c := strings.IndexByte(rest, ','); c >= 0 {
+			val, rest = rest[:c], rest[c:]
+		} else {
+			val, rest = rest, ""
+		}
+		rest = strings.TrimPrefix(rest, ",")
+		if strings.EqualFold(key, name) {
+			return val
+		}
+	}
+	return ""
+}
+
+// loadFMP4Init fetches and reads an fMP4 init segment.
+func (s *Server) loadFMP4Init(ctx context.Context, initURL string) (fmp4Track, error) {
+	data, err := s.fetchBytes(ctx, initURL)
+	if err != nil {
+		return fmp4Track{}, fmt.Errorf("fMP4 init segment fetch failed: %w", err)
+	}
+	t, err := parseFMP4Init(data)
+	if err != nil {
+		return fmp4Track{}, err
+	}
+	codec := "aac"
+	if t.codec == fmp4MP3 {
+		codec = "mp3"
+	}
+	s.logger.Info("hls: fMP4 audio track", "codec", codec, "track", t.trackID,
+		"profile", t.profile, "freqIdx", t.freqIdx, "channels", t.channels)
+	return t, nil
 }
 
 // ---- small helpers ----

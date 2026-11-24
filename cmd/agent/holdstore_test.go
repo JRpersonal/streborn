@@ -108,13 +108,13 @@ func TestHeldPresetUnknownProxySlotIsRefused(t *testing.T) {
 }
 
 // What the firmware refuses itself for UPnP arrives here for other sources
-// (a Deezer playlist, an unreadable descriptor): not keepable, store untouched.
+// (an Amazon playlist, an unreadable descriptor): not keepable, store untouched.
 func TestHeldPresetForeignOrUnreadableIsRefused(t *testing.T) {
 	store := holdTestStore(t)
 	keep := newHeldPresetKeeper(store, heldLive{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	cases := []marge.HeldItem{
 		{Slot: 2, Source: "UPNP", Type: "audio", Location: boxurl.StreamSlot(4), SourceAccount: "UPnPUserName"},
-		{Slot: 2, Source: "DEEZER", Type: "playlist", Location: "123456789", SourceAccount: "1234567890"},
+		{Slot: 2, Source: "AMAZON", Type: "playlist", Location: "123456789", SourceAccount: "1234567890"},
 		heldRadio(2, "/station?data=@@@", "x"),
 		heldRadio(2, "http://example.com/live.mp3", "x"),
 	}

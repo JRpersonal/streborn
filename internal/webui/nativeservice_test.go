@@ -50,7 +50,7 @@ func TestValidNativeItem(t *testing.T) {
 	}
 	for name, bad := range map[string]*presets.NativeItem{
 		"nil":            nil,
-		"unknown source": {Source: "DEEZER", Location: "x"},
+		"unknown source": {Source: "AMAZON", Location: "x"},
 		"no location":    {Source: "PANDORA"},
 		"space":          {Source: "PANDORA", Location: "a b"},
 		"quote":          {Source: "PANDORA", Location: `a"b`},
@@ -108,7 +108,7 @@ func TestPresetPutNativeWithoutItemNeedsTheSpeaker(t *testing.T) {
 	if _, ok := s.presets.Get(2); ok {
 		t.Fatal("stored without an item")
 	}
-	bad := putPreset(t, s, 2, `{"name":"x","type":"native","native":{"source":"DEEZER","location":"1"}}`)
+	bad := putPreset(t, s, 2, `{"name":"x","type":"native","native":{"source":"AMAZON","location":"1"}}`)
 	if bad.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown source: status %d", bad.Code)
 	}

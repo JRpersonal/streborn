@@ -12,6 +12,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 )
@@ -25,10 +26,12 @@ func presetItemsToQueue(in []presets.PresetItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
-			Mime:     it.Mime,
+			Art:      usbLoopbackURL(it.Art),
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,
@@ -133,6 +136,14 @@ func (s *Server) RecallSlotPress(ctx context.Context, slot int, press SlotPress)
 	items := presetItemsToQueue(p.Items)
 	if len(items) == 0 {
 		return false
+	}
+	// A folder of nothing but files on this speaker's USB stick that it
+	// cannot play (sample rate above 48 kHz, usbhires.go) does not wake it.
+	if marked, n := s.usbMarkHiRes(items); n > 0 && playableCount(marked) == 0 {
+		s.logger.Warn("preset slot recall (hardware): every track of the key's folder has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
+			"slot", slot, "name", p.Name, "tracks", len(items))
+		s.ShowKeyMessage(DisplayMsgUSBHiRes)
+		return true
 	}
 	// Bind this slot as the in-flight queue recall BEFORE the queue starts, so a
 	// box-native /stream/<slot> fetch that races ahead of the first track load can
@@ -590,6 +601,25 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	if len(items) == 0 {
 		return errors.New("empty queue")
 	}
+	// Files on this speaker's USB stick that the speaker cannot play are
+	// stepped over, not handed to it (usbhires.go). A folder of nothing else
+	// is refused before the speaker is woken.
+	hiRes := 0
+	if spec.resume != nil {
+		st := *spec.resume
+		st.items, hiRes = s.usbMarkHiRes(st.items)
+		spec.resume = &st
+		items = st.items
+	} else {
+		items, hiRes = s.usbMarkHiRes(items)
+	}
+	if hiRes > 0 {
+		s.logger.Info("usb music: the folder has tracks with a sample rate above 48 kHz, which this speaker cannot play; the queue steps over them",
+			"skipped", hiRes, "tracks", len(items))
+	}
+	if hiRes > 0 && playableCount(items) == 0 {
+		return errUSBFolderAllHiRes
+	}
 	if spec.resume != nil {
 		s.queue.restore(*spec.resume)
 	} else {
@@ -616,6 +646,9 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 	if !ok {
 		return errors.New("empty queue")
 	}
+	// A song on a USB stick has no length in its listing: read from the file
+	// (usbtracklength.go), so the speaker reports a total.
+	it = s.withStickLength(ctx, it)
 	loaded := s.queue.save()
 	// A sleeping speaker is kept silent through its own resume until the
 	// first track has taken over (#1557, newplaywake.go). A preset recall that
@@ -895,6 +928,7 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 		return
 	}
 	s.ClearUserStop()
+	it = s.withStickLength(s.queueCtx(), it)
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
@@ -927,6 +961,7 @@ func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
 	ctx := s.queueCtx()
 	s.ensureBoxReady(ctx)
 	s.ClearUserStop()
+	it = s.withStickLength(ctx, it)
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.logger.Warn("queue watcher: the second start failed too", "title", it.Title, "err", err)
 		return false
@@ -996,6 +1031,7 @@ func (s *Server) queueSkipLocked(forward bool) (queueItem, bool, error) {
 		return queueItem{}, false, nil
 	}
 	s.ClearUserStop()
+	it = s.withStickLength(s.queueCtx(), it)
 	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
@@ -1732,10 +1768,12 @@ func toQueueItems(in []queueStartItem) []queueItem {
 			continue
 		}
 		out = append(out, queueItem{
-			URL:      it.URL,
+			// A file on this speaker's own USB stick is fetched over loopback,
+			// and always directly with the MIME of its extension.
+			URL:      usbLoopbackURL(it.URL),
 			Title:    it.Title,
-			Art:      it.Art,
-			Mime:     it.Mime,
+			Art:      usbLoopbackURL(it.Art),
+			Mime:     usbFileMIME(usbLoopbackURL(it.URL), it.Mime),
 			Duration: time.Duration(it.DurationSec) * time.Second,
 			Artist:   it.Artist,
 			Album:    it.Album,
@@ -1790,6 +1828,10 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		if err := s.startQueue(playCtx, items, req.Start, shuffle, rep, card); err != nil {
 			if isGroupedRejection(err) {
 				s.writeGroupedPlayError(w, err)
+				return
+			}
+			if ref := usbFolderRefusal(err); ref != nil {
+				writePlayRefusal(w, ref)
 				return
 			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -1866,6 +1908,7 @@ func (s *Server) enqueueSpotifySkip(req spotifySkipReq) {
 		s.spotifySkipCh = make(chan spotifySkipReq, 3)
 		go s.spotifySkipWorker()
 	})
+	s.spotifySkipSeq.Add(1)
 	select {
 	case s.spotifySkipCh <- req:
 	default:
@@ -2108,11 +2151,27 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		return
 	}
 	slot := slotFromSpotifyStreamURL(boxURL)
+	seq := s.spotifySkipSeq.Load()
+	// A newer press owns the speaker from here: its teardown is what this
+	// check would see as "not playing", and a recall into it undid the press
+	// (Jens' ST30, 2026-11-21: the check of a Next fired one second into the
+	// Back that followed it). The newer skip schedules a check of its own.
+	superseded := func() bool {
+		if s.spotifySkipSeq.Load() == seq {
+			return false
+		}
+		s.logger.Info("spotify skip recovery: a newer skip came in, leaving the speaker to it", "slot", slot)
+		return true
+	}
+	first, second := 5*time.Second, 4*time.Second
+	if s.skipRecoverWaits[0] > 0 {
+		first, second = s.skipRecoverWaits[0], s.skipRecoverWaits[1]
+	}
 	go func() {
-		time.Sleep(5 * time.Second)
+		time.Sleep(first)
 		// Do not fight a deliberate stop, and do not thrash a box that reported
 		// not-logged-in (a re-login is already in flight, re-pushing can wedge it).
-		if s.userStoppedRecently() || s.recentLoginError() {
+		if s.userStoppedRecently() || s.recentLoginError() || superseded() {
 			return
 		}
 		// Soft skip (and any box that re-synced on its own): already playing, leave it.
@@ -2125,8 +2184,8 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		// PLAY_STATE, so a single early check would fire a recall that
 		// restarts the track the user just skipped to. One more beat, then
 		// decide for real.
-		time.Sleep(4 * time.Second)
-		if s.userStoppedRecently() || s.recentLoginError() {
+		time.Sleep(second)
+		if s.userStoppedRecently() || s.recentLoginError() || superseded() {
 			return
 		}
 		if s.boxSpotifyReallyPlaying() {
@@ -2136,10 +2195,11 @@ func (s *Server) spotifyRecoverAfterSkip() {
 		// A soft skip that (unusually) left the box not playing recovers with the
 		// same proven clean slot recall the hardware path uses - identical to
 		// /api/play/<slot>, which reloads the context and hands the box a clean
-		// track boundary. For a shuffle preset (slots 4/5) that lands a fresh track;
-		// a resume preset restarts its context.
+		// track boundary. It keeps the track the skip landed on: the warm
+		// recall's "same key again moves on" is for a person's press, and here
+		// it skipped the song the listener had just chosen.
 		if presets.ValidSlot(slot) {
-			s.recallSlotClean(context.Background(), slot)
+			s.recallSlotClean(recallintent.WithKeepTrack(context.Background()), slot)
 			s.logger.Info("spotify skip recovery: clean slot recall after a skip left the box not playing", "slot", slot)
 			return
 		}
@@ -2191,14 +2251,23 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 // plays, Next and Previous step to the next or previous radio key (#1619,
 // radiostep.go).
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
+	// A group follower plays its main speaker's audio; what it last played
+	// itself is from before it joined, and a skip or a re-attach of that would
+	// take it out of the group (traceskip.go).
+	if s.followsGroupForKeys(ctx) {
+		return "group-follower", nil
+	}
 	slot := s.currentSpotifySlot()
 	if !presets.ValidSlot(slot) {
 		// A radio key steps to the next or previous radio key (#1619).
 		if src, handled := s.stepRadioPreset(ctx, forward); handled {
 			return src, nil
 		}
+		s.traceSkip.noteFrame(time.Now())
 		return s.transportSkip(ctx, forward)
 	}
+	// The key trace reports this press too; it must not skip a second time.
+	s.traceSkip.noteFrame(time.Now())
 	// Hold the competing auto-repoint off for the whole handover: the box is
 	// tearing its UPnP source down right now while go-librespot still plays, so
 	// maybeActivate is primed to fire the instant it sees no sink.
@@ -2433,6 +2502,7 @@ func (s *Server) queueSnapshotWithCard() queueSnapshot {
 	} else {
 		snap.File = s.loneFileInfo()
 		snap.LastEnd = s.queueLastEndShown()
+		snap.USBRefused = s.usbDecodeRefusalShown()
 	}
 	if s.presets != nil {
 		snap.PresetRev = s.presets.Revision()

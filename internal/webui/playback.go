@@ -150,6 +150,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 1<<16, &req) {
 		return
 	}
+	// A file on this speaker's own USB stick is fetched over loopback.
+	req.URL, req.Icon = usbLoopbackURL(req.URL), usbLoopbackURL(req.Icon)
+	// ...and always played directly with the MIME of its extension, whether
+	// the caller named one or not (usbFileMIME).
+	req.Mime = usbFileMIME(req.URL, req.Mime)
 	if req.URL == "" {
 		http.Error(w, "url required", http.StatusBadRequest)
 		return
@@ -164,6 +169,20 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("play request refused: not a stream URL", "url", req.URL)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a stream URL", "url": req.URL})
 		return
+	}
+	// A file on this speaker's USB stick with a sample rate the speaker
+	// cannot play is refused before the speaker is touched (usbhires.go).
+	if ref := s.usbHiResRefusal(req.URL, req.Title, 0); ref != nil {
+		writePlayRefusal(w, ref)
+		return
+	}
+	// A song on a USB stick has no length in the stick's listing, so the
+	// client sent none: it is read from the file, and the speaker then reports
+	// a total and the app draws its progress bar (usbtracklength.go).
+	if req.DurationSec <= 0 && req.Mime != "" {
+		if d := s.stickFileLength(r.Context(), req.URL, req.Mime); d > 0 {
+			req.DurationSec = int(d / time.Second)
+		}
 	}
 	// A client that names no MIME for a file this agent knows as a
 	// music-library file (a third-party remote replaying a Recently-played
@@ -540,6 +559,9 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// here pinned the folder's first song to the front of every shuffled
 		// start from the app and the phone (#1701).
 		if err := s.startQueueLocked(playCtx, items, -1, shuffle, rep, card); err != nil {
+			if ref := usbFolderRefusal(err); ref != nil {
+				return playResult{}, ref
+			}
 			return playResult{}, playFailed("Folder could not be played", err)
 		}
 		recallDelivered = true
@@ -660,7 +682,10 @@ func (s *Server) playSlot(ctx context.Context, slot int) (playResult, *playRefus
 		// station context before the save-side unwrap existed.
 		uri, name, art, account, shuffle, repeat := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle, p.Repeat
 		go func() {
-			bg := context.Background()
+			// The caller's values travel with the recall (a recovery that
+			// must keep the track, recallintent), its deadline does not: the
+			// recall outlives the request that started it.
+			bg := context.WithoutCancel(ctx)
 			t0 := time.Now()
 			warm := s.spotifyReady == nil || s.spotifyReady()
 			if s.spotifyReady != nil && !s.spotifyReady() {

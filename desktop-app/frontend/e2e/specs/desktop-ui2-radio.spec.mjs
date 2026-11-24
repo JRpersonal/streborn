@@ -13,6 +13,7 @@ import { onHost } from '../helpers/mockclient.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { KILL_ANIM, WCAG_TAGS } from '../helpers/a11y.mjs';
 import { en } from '../helpers/i18n.mjs';
+import { openTopList } from '../helpers/ui2radio.mjs';
 import { ROSTER, STATIONS } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
@@ -62,6 +63,7 @@ test.describe('UI 2.0 Radio', () => {
 
     test('2. follows the speaker chosen in the sidebar', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       await page.locator(`#ui2SpkLists .ui2-spk-pick[data-host="${BR.host}"]`).click();
       await expect(page.locator('#ui2KeysTitle')).toHaveText(`Keys on ${BR.friendlyName}`);
       // One row of keys: no tabs, and the heading names the grid.
@@ -93,22 +95,46 @@ test.describe('UI 2.0 Radio', () => {
   });
 
   test.describe('Discover', () => {
-    test('4. opens with the top list, every action named with station and speaker', async ({ app }) => {
+    test('4. starts with an empty list like the current layout; the top list names every action with station and speaker', async ({ app, mock }) => {
       const { page } = app;
       await expect(tab(page, 'discover')).toHaveAttribute('aria-selected', 'true');
       await expect(page.locator('#ui2RadioPanel')).toHaveAttribute('aria-labelledby', 'ui2RadioTab-discover');
+      // Nothing is fetched on its own: a list at every start read as the last
+      // search coming back after the app was closed (discussion #1587).
+      await expect(page.locator('#topBtn')).toBeVisible();
+      await expect(rows(page)).toHaveCount(0);
+      expect(await mock.count('RadioSearchDetailed')).toBe(0);
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       const r = row(page, ROCK.name);
       await expect(r.locator('[data-act="play"]')).toHaveAttribute('aria-label', `Play ${ROCK.name} on ${LR.friendlyName}`);
       await expect(r.locator('[data-act="fav"]')).toHaveAttribute('aria-label', `Add ${ROCK.name} to favorites`);
       await expect(r.locator('[data-act="key"]')).toHaveAttribute('aria-label', `Put on key: ${ROCK.name} on ${LR.friendlyName}`);
       await expect(r.locator('[data-act="key"]')).toHaveText('Put on key');
-      // The search field is part of Discover.
+      // The search field is part of Discover, on the tab row right over the
+      // filters, not up by the title (#1587).
       await expect(page.locator('#searchQ')).toBeVisible();
+      await expect(page.locator('.ui2-radio-bar #searchQ')).toHaveCount(1);
+      await expect(page.locator('.topbar-head #searchQ')).toHaveCount(0);
+      await expect(page.locator('.ui2-radio-bar [role="tablist"] #searchQ')).toHaveCount(0);
+    });
+
+    test('4b. emptying the search field takes its results away at once, without Search', async ({ app, mock }) => {
+      const { page } = app;
+      const q = page.locator('#searchQ');
+      await q.fill('rock');
+      await q.press('Enter');
+      await expect(rows(page)).toHaveCount(STATIONS.length);
+      await mock.resetCalls();
+      await q.fill('');
+      await expect(rows(page)).toHaveCount(0);
+      await expect(page.locator('#searchCount')).toBeHidden();
+      expect(await mock.count('RadioSearchDetailed')).toBe(0);
     });
 
     test('5. keeps the technical data in the station details', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       const r = row(page, ROCK.name);
       const main = r.locator('.ui2-st-main');
       await expect(main).toBeVisible();
@@ -137,13 +163,7 @@ test.describe('UI 2.0 Radio', () => {
       await mock.set('RadioSearchDetailed', { value: { relaxed: false, stations: [
         { name: 'Dead Air FM', url: 'http://example.com/dead', url_resolved: 'http://example.com/dead', stationuuid: 'dead', codec: 'MP3', bitrate: 128, lastcheckok: 0 },
       ] } });
-      // The Top list is already open, and a click on its pressed button
-      // closes it (#1521): close it, then open it again on the new answer.
-      const top = page.locator('#topBtn');
-      await expect(top).toHaveAttribute('aria-pressed', 'true');
-      await top.click();
-      await expect(top).toHaveAttribute('aria-pressed', 'false');
-      await top.click();
+      await openTopList(page);
       const r = row(page, 'Dead Air FM');
       await expect(r).toHaveClass(/is-broken/);
       await expect(r.locator('.ui2-st-broken')).toHaveText('Not reachable at the last directory check');
@@ -156,6 +176,7 @@ test.describe('UI 2.0 Radio', () => {
     test('7. "playing" only once the speaker reports it', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
+      await openTopList(page);
       await mock.resetCalls();
       const r = row(page, JAZZ.name);
       // The live region stays the same element: a replaced one arrives
@@ -181,6 +202,7 @@ test.describe('UI 2.0 Radio', () => {
     test('8. reports in its own row, not in a toast', async ({ app }) => {
       const { page } = app;
       await settle(page, 9_000);
+      await openTopList(page);
       const r = row(page, ROCK.name);
       await r.locator('[data-act="play"]').click();
       await waitForRowStatus(page, r, /^Did not play/);
@@ -195,6 +217,7 @@ test.describe('UI 2.0 Radio', () => {
   test.describe('Put on key', () => {
     test('9. the picker names the speaker and every key; done only after the speaker read back', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await mock.resetCalls();
       const r = row(page, JAZZ.name);
       await r.locator('[data-act="key"]').click();
@@ -213,6 +236,7 @@ test.describe('UI 2.0 Radio', () => {
 
     test('18. the picker is a dialog for the keyboard and gives the focus back', async ({ app, mock }) => {
       const { page } = app;
+      await openTopList(page);
       await mock.resetCalls();
       const r = row(page, JAZZ.name);
       const open = r.locator('[data-act="key"]');
@@ -256,6 +280,7 @@ test.describe('UI 2.0 Radio', () => {
 
       test('10. says the speaker did not confirm, in the row', async ({ app }) => {
         const { page } = app;
+        await openTopList(page);
         const r = row(page, JAZZ.name);
         await r.locator('[data-act="key"]').click();
         await page.locator('#pickGrid .pick-slot').nth(2).click();
@@ -269,6 +294,7 @@ test.describe('UI 2.0 Radio', () => {
 
       test('11. shows the refusal in the row, not in a window-wide dialog', async ({ app }) => {
         const { page } = app;
+        await openTopList(page);
         const r = row(page, JAZZ.name);
         await r.locator('[data-act="key"]').click();
         await page.locator('#pickGrid .pick-slot').nth(4).click();
@@ -282,6 +308,7 @@ test.describe('UI 2.0 Radio', () => {
   test.describe('Favorites', () => {
     test('12. a separate tab with the starred stations; the star and the key stay two actions', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       const star = row(page, ROCK.name).locator('[data-act="fav"]');
       await star.click();
       await expect(star).toHaveAttribute('aria-pressed', 'true');
@@ -311,6 +338,7 @@ test.describe('UI 2.0 Radio', () => {
     test('19. the Discover filters, hidden on Favorites, do not hide a favorite', async ({ app }) => {
       const { page } = app;
       const bbc = STATIONS.find((s) => s.bitrate < 192);
+      await openTopList(page);
       await row(page, bbc.name).locator('[data-act="fav"]').click();
       await page.locator('#ui2Filters > summary').click();
       await page.locator('#searchBitrate').selectOption('192');
@@ -356,6 +384,7 @@ test.describe('UI 2.0 Radio', () => {
 
       test(`15. the keys, the tabs and the rows (details open) have no WCAG findings (${theme})`, async ({ app }) => {
         const { page } = app;
+        await openTopList(page);
         await expect(rows(page)).toHaveCount(STATIONS.length);
         await row(page, ROCK.name).locator('[data-act="details"]').click();
         await row(page, JAZZ.name).locator('[data-act="fav"]').click();
@@ -374,6 +403,7 @@ test.describe('UI 2.0 Radio', () => {
 
     test('16. rows and keys fit without a horizontal scroll, targets stay 40px', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       const main = page.locator('#ui2Main');
       const overflow = await main.evaluate((m) => m.scrollWidth - m.clientWidth);
@@ -418,6 +448,7 @@ test.describe('UI 2.0 Radio', () => {
 
     test('21. the hold hint is said once, and the first station row shows without scrolling', async ({ app }) => {
       const { page } = app;
+      await openTopList(page);
       await expect(rows(page)).toHaveCount(STATIONS.length);
       await expect(page.locator('#ui2KeysHint')).toContainText(en('ui2.radio.keysEditHint'));
       await expect(page.locator('#presets .preset-hint:visible')).toHaveCount(0);
@@ -441,5 +472,18 @@ test.describe('current layout', () => {
     await expect(page.locator('#searchResults .result-row')).toHaveCount(STATIONS.length);
     await expect(page.locator('#searchResults .ui2-st')).toHaveCount(0);
     await expect(page.locator('#searchResults .result-row').first()).toContainText(`${ROCK.bitrate} kbit/s`);
+  });
+
+  test('17b. emptying the search field takes its results away at once, without Search', async ({ app, mock }) => {
+    const { page } = app;
+    const q = page.locator('#searchQ');
+    await q.fill('rock');
+    await page.locator('#searchBtn').click();
+    await expect(page.locator('#searchResults .result-row')).toHaveCount(STATIONS.length);
+    await mock.resetCalls();
+    await q.fill('');
+    await expect(page.locator('#searchResults .result-row')).toHaveCount(0);
+    await expect(page.locator('#searchCount')).toBeHidden();
+    expect(await mock.count('RadioSearchDetailed')).toBe(0);
   });
 });

@@ -22,10 +22,13 @@
 // route of a model outside the checked ladder, and "no known path yet".
 //
 // The checked ladder covers the SoundTouch 20, 30 and Portable on the older
-// (scm) hardware. Every other family docs/FIRMWARE-UPDATE.md covers (Wave,
-// SA-4 and Stereo JC, CineMate, the Bluetooth chassis, SoundTouch 10) gets its
-// documented route as a list (backend status "route"): the steps are not
-// checked and their files have no known fingerprint, so the app prepares no
+// (scm) hardware and the Bluetooth chassis of the newer (sm2) hardware: the
+// SoundTouch 10, the SoundTouch 20 and 30 with Bluetooth, the SA-5, the
+// SoundTouch 300, the Wireless Link adapter, and the Wave IV from 14.0.33.
+// Every other family docs/FIRMWARE-UPDATE.md covers (first generation Wave,
+// SA-4 and Stereo JC, CineMate) gets its documented route as a list (backend
+// status "route"): the steps are not checked and their files have no known
+// fingerprint, so the app prepares no
 // stick for them and links the guide instead. Below 15 no screen offers Bose's
 // last file in one jump (the docs: it stalls on an empty progress bar), and
 // FlashBoseFirmware refuses it too.
@@ -34,15 +37,25 @@
 // fwladder.test.js without a DOM); wireFirmwareLadders does the clicking with
 // the backend calls passed in.
 import { t } from './i18n/index.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, neverReadsStick } from './utils.js';
 
 export const LADDER_MODELS = ['soundtouch 20', 'soundtouch 30', 'soundtouch portable'];
+// SM2_LADDER_MODELS have a checked ladder on the newer (sm2) hardware, and
+// Bose built them on nothing else, so a missing moduleType counts (keys as
+// modelKey folds them). The SoundTouch 20 and 30 have one there too, and the
+// Wave IV from WAVE_SM2_FROM on, but those exist on both hardware generations
+// and need the speaker to say sm2.
+export const SM2_LADDER_MODELS = ['soundtouch 10', 'soundtouch sa-5', 'soundtouch 300', 'wireless link'];
+export const WAVE_SM2_FROM = '14.0.33';
 export const FIRMWARE_DOCS_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/FIRMWARE-UPDATE.md';
 // The guide's sections the screens point at: the ladder, the other models'
 // routes, and what an empty progress bar means.
 export const FIRMWARE_LADDER_URL = `${FIRMWARE_DOCS_URL}#7-very-old-firmware-the-step-by-step-ladder`;
 export const FIRMWARE_OTHER_MODELS_URL = `${FIRMWARE_DOCS_URL}#other-models-no-checked-ladder-yet`;
 export const FIRMWARE_STALL_URL = `${FIRMWARE_DOCS_URL}#6-what-you-see-while-it-updates`;
+// Route B, the speaker's own update page: the other way for a model that does
+// not read a USB stick when it starts.
+export const FIRMWARE_ROUTE_B_URL = `${FIRMWARE_DOCS_URL}#4-route-b-boses-update-page-on-the-speakers-own-wi-fi`;
 // The Internet Archive collection the guide links. STR links it and never
 // copies a file from it.
 export const ARCHIVE_COLLECTION_URL = 'https://archive.org/details/bose-soundtouch-software-and-firmware';
@@ -62,9 +75,13 @@ export const MANUAL_VERSIONS = [
   { id: '15', labelKey: 'fwLadder.v15', version: '15.0.20' },
 ];
 const MANUAL_MODELS = [
+  { model: 'SoundTouch 10', label: 'SoundTouch 10' },
   { model: 'SoundTouch 20', label: 'SoundTouch 20' },
   { model: 'SoundTouch 30', label: 'SoundTouch 30' },
   { model: 'SoundTouch Portable', label: 'SoundTouch Portable' },
+  { model: 'SoundTouch 300', label: 'SoundTouch 300' },
+  { model: 'SoundTouch SA-5', label: 'SoundTouch SA-5' },
+  { model: 'SoundTouch Wireless Link adapter', label: 'SoundTouch Wireless Link adapter' },
   { model: '', labelKey: 'fwLadder.manualOther' },
 ];
 
@@ -112,14 +129,30 @@ function inFamily(model) {
   return LADDER_MODELS.includes(String(model || '').trim().toLowerCase());
 }
 
-// ladderApplies is the gate in firmwareGuideMount: the ladder replaces the
-// single-step guide for a phase-1 model below 15.x. moduleType "sm2" is the
-// newer hardware, which has no ladder yet.
+// modelKey folds the names a speaker may report onto one key, as the backend
+// does (bosefw modelKey): a Wave can say "Wave SoundTouch music system IV",
+// the adapter "SoundTouch Wireless Link Adapter".
+export function modelKey(model) {
+  const m = String(model || '').trim().toLowerCase();
+  if (m.startsWith('wave soundtouch')) return 'wave soundtouch';
+  if (m.includes('wireless link')) return 'wireless link';
+  return m;
+}
+
+// ladderApplies: below 15.x the speaker is on a checked stick ladder: the
+// first generation SoundTouch 20/30/Portable, or the Bluetooth chassis of the
+// newer hardware (SM2_LADDER_MODELS, a SoundTouch 20 or 30 that says sm2, a
+// Wave IV from 14.0.33). A SoundTouch 20 or 30 without a moduleType goes to
+// the ladder too, which asks about the Bluetooth button.
 export function ladderApplies(ident) {
   const id = ident || {};
   const mj = major(id.current);
   if (mj === null || mj >= LADDER_BELOW_MAJOR) return false;
-  if (String(id.moduleType || '').trim().toLowerCase() === 'sm2') return false;
+  const mt = String(id.moduleType || '').trim().toLowerCase();
+  const key = modelKey(id.model);
+  if (SM2_LADDER_MODELS.includes(key)) return mt !== 'scm';
+  if (key === 'wave soundtouch') return mt === 'sm2' && versionReached(id.current, WAVE_SM2_FROM);
+  if (mt === 'sm2') return key === 'soundtouch 20' || key === 'soundtouch 30';
   return inFamily(id.model);
 }
 
@@ -152,31 +185,87 @@ export function powerOffKey(model) {
 
 // usbUpdateKey is the instruction that starts the USB stick update. 4 and
 // Volume minus while plugging the power back in is confirmed on Series I and
-// II SoundTouch 20s and reported by the community for the 10 and 30. The
-// Portable cannot be started by plugging in, and the combination is not
-// confirmed on it (design risk 4): it gets its own sentence with the power
-// button, and usbUpdateUnconfirmed adds the "not confirmed" line. Every other
-// model gets the generic sentence rather than invented buttons.
+// II SoundTouch 20s and reported by the community for the 30. The SoundTouch
+// 10 takes the other order: the first owner to run the ladder on one (mail,
+// 2026-11-23) held the keys while plugging in and the speaker froze with every
+// light on; power first, then the keys for about five seconds, started the
+// update. The Portable cannot be started by plugging in, and the combination
+// is not confirmed on it (design risk 4): it gets its own sentence with the
+// power button, and usbUpdateUnconfirmed adds the "not confirmed" line. Every
+// other model gets the generic sentence rather than invented buttons.
 export function usbUpdateKey(model) {
   const m = String(model || '').trim().toLowerCase();
   if (isBatteryModel(m)) return 'fwLadder.c3Battery';
-  if (['soundtouch 10', 'soundtouch 20', 'soundtouch 30'].includes(m)) {
+  if (isMicroUsbOnly(m)) return 'fwLadder.c3Ten';
+  if (['soundtouch 20', 'soundtouch 30'].includes(m)) {
     return 'fwLadder.c3FourVol';
   }
   return 'fwLadder.c3Generic';
 }
 
 // usbUpdateUnconfirmed: the button combination is not confirmed on this model,
-// and screen C says so.
+// and screen C says so (docs/FIRMWARE-UPDATE.md, section 5). The SoundTouch 10
+// is confirmed since 2026-11-23, with its own order (usbUpdateKey).
 export function usbUpdateUnconfirmed(model) {
   return isBatteryModel(model);
 }
 
+// hasNoDisplay: models without a display show the USB update with their
+// lights only (docs/FIRMWARE-UPDATE.md, section 6), so no screen asks them
+// about a hand symbol or a progress bar.
+export function hasNoDisplay(model) {
+  return ['soundtouch 10', 'soundtouch sa-5', 'soundtouch 300', 'wireless link'].includes(modelKey(model));
+}
+
+// noStickStart: a model STR's notes say never reads a USB stick when it starts
+// (utils.js neverReadsStick, docs/MODELS.md: the SoundTouch 300, SA-5, Wave
+// and the Wireless Link adapter among them). The ladder still prepares the
+// checked file on a stick, but screens A and C say the stick start is not
+// confirmed there and name the speaker's own update page (Route B) as the
+// other way to put the same Update.stu on.
+export function noStickStart(model) {
+  return neverReadsStick({ model: String(model || '') });
+}
+
+// knownStickKeys: the models whose USB update start (4 and Volume minus) and
+// reset (1 and Volume minus) come from owners and community guides. Every
+// other model gets no invented buttons.
+function knownStickKeys(model) {
+  return ['soundtouch 10', 'soundtouch 20', 'soundtouch 30', 'soundtouch portable'].includes(modelKey(model));
+}
+
+// isMicroUsbOnly: the SoundTouch 10's only USB port is a small micro-USB
+// socket. A stick goes in through a micro-USB OTG adapter (or is an OTG
+// stick); a plain micro-USB cable does not work. Screen C says so in place of
+// the generic port line.
+export function isMicroUsbOnly(model) {
+  return String(model || '').trim().toLowerCase() === 'soundtouch 10';
+}
+
 // notStartedStartKey is the first point of the "the update did not start"
 // checklist: the same button combination as screen C, stressed that the
-// buttons are held before the power comes on and until the hand appears.
+// buttons are held before the power comes on and until the hand appears. The
+// only model with known keys and no display is the SoundTouch 10, so the
+// lights sentence carries its order: power first, then the keys.
 export function notStartedStartKey(model) {
-  return isBatteryModel(model) ? 'fwLadder.nsKeysBattery' : 'fwLadder.nsKeys';
+  if (isBatteryModel(model)) return 'fwLadder.nsKeysBattery';
+  if (!knownStickKeys(model)) return 'fwLadder.nsKeysGeneric';
+  return hasNoDisplay(model) ? 'fwLadder.nsKeysLights' : 'fwLadder.nsKeys';
+}
+
+// notStartedResetKey is the last point of that checklist: Bose's factory
+// reset with 1 and Volume minus where it is known, the manual's otherwise.
+export function notStartedResetKey(model) {
+  if (!knownStickKeys(model)) return 'darkCheck.resetGeneric';
+  return hasNoDisplay(model) ? 'fwLadder.nsResetLights' : 'fwLadder.nsReset';
+}
+
+// noStickNote is the line a noStickStart model gets on screens A and C, with
+// the link to Route B.
+function noStickNote(model) {
+  if (!noStickStart(model)) return '';
+  return `<div class="fw-ladder-note small" data-ladder-note="no-stick">${esc(t('fwLadder.noStick'))} `
+    + `${openLink(FIRMWARE_ROUTE_B_URL, t('fwLadder.routeBLink'))}</div>`;
 }
 
 // portSetupB: a SoundTouch 20 or 30 of the older hardware (moduleType scm,
@@ -432,6 +521,9 @@ function screenA(plan, st) {
     + `<ol class="fw-ladder-steps">${list}</ol>`
     + `<div class="muted small">${esc(t('fwLadder.time', { min: mins.min, max: mins.max }))}</div>`
     + (plan.oldStart ? `<div class="fw-ladder-note">${esc(t('fwLadder.oldStart'))}</div>` : '')
+    // Said before the start, so the owner has the adapter at hand for step 1.
+    + (isMicroUsbOnly(plan.model) ? `<div class="fw-ladder-note" data-ladder-note="micro-usb">${esc(t('fwLadder.w4St10'))}</div>` : '')
+    + noStickNote(plan.model)
     + `<div class="fw-ladder-warn">${esc(t('fwLadder.w1', { n }))}</div>`
     + `<label class="fw-ladder-ack"><input type="checkbox" data-ladder="ack"${st.ack ? ' checked' : ''}> ${esc(t('fwLadder.w1Check'))}</label>`
     + `<div class="fw-guide-dl"><button type="button" class="btn btn-mini btn-primary" data-ladder="start"${st.ack ? '' : ' disabled'}>${esc(t('fwLadder.start'))}</button></div>`
@@ -524,13 +616,13 @@ function stalledHelp(plan, st, step, model) {
       + `<li>${esc(t(notStartedStartKey(model)))}</li>`
       + `<li>${esc(t('fwLadder.nsPort'))}</li>`
       + `<li>${esc(t('fwLadder.nsStick'))}</li>`
-      + `<li>${esc(t('fwLadder.nsReset'))}</li>`
+      + `<li>${esc(t(notStartedResetKey(model)))}</li>`
       + '</ul></div>'
       + '<div class="fw-guide-dl">'
       + `<button type="button" class="btn btn-mini" data-ladder="retry">${esc(t('fwLadder.retry'))}</button>`
       + '</div>';
   }
-  return `<div><b>${esc(t('fwLadder.startedQ'))}</b></div>`
+  return `<div><b>${esc(t(hasNoDisplay(model) ? 'fwLadder.startedQLights' : 'fwLadder.startedQ'))}</b></div>`
     + `<div class="muted small">${esc(t('fwLadder.startedWhy'))}</div>`
     + '<div class="fw-guide-dl">'
     + `<button type="button" class="btn btn-mini" data-ladder="started-yes">${esc(t('fwLadder.startedYes'))}</button> `
@@ -553,9 +645,14 @@ function screenC(plan, st, step, ident) {
     + (st.ejectedByHand ? `<div class="small fw-ladder-note">${esc(t('fwLadder.ejectByHand'))}</div>` : '')
     + '<ol class="fw-guide-steps">'
     + `<li>${esc(t(powerOffKey(model)))}</li>`
-    + `<li>${esc(t('fwLadder.c2'))}<div class="muted small">${esc(t('fwLadder.w4'))}`
-    + (portSetupB(model, plan.moduleType || (ident && ident.moduleType)) ? ` ${esc(t('fwLadder.w4Scm'))}` : '')
-    + '</div></li>'
+    + `<li>${esc(t('fwLadder.c2'))}`
+    + (isMicroUsbOnly(model)
+      ? `<div class="fw-ladder-note small" data-ladder-note="micro-usb">${esc(t('fwLadder.w4St10'))}</div>`
+      : `<div class="muted small">${esc(t('fwLadder.w4'))}`
+        + (portSetupB(model, plan.moduleType || (ident && ident.moduleType)) ? ` ${esc(t('fwLadder.w4Scm'))}` : '')
+        + '</div>')
+    + noStickNote(model)
+    + '</li>'
     + `<li>${esc(t(usbUpdateKey(model)))}`
     + (usbUpdateUnconfirmed(model) ? `<div class="muted small">${esc(t('fwLadder.c3Unconfirmed'))}</div>` : '')
     + '</li>'

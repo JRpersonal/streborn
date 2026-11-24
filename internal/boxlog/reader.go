@@ -110,6 +110,8 @@ type Reader struct {
 	// minuteHandler hears the firmware's once-a-minute Wi-Fi quality line
 	// (minute.go).
 	minuteHandler func(at time.Time)
+	// usbDiskHandler hears the kernel's USB disk lines (usbdisk.go).
+	usbDiskHandler USBDiskHandler
 }
 
 // New returns a reader that will call handler for every key event.
@@ -275,6 +277,7 @@ func (r *Reader) handleLine(line string, now time.Time) {
 		r.firePower(fev)
 		r.firePlayFailure(fev)
 		r.fireMinute(fev)
+		r.fireUSBDisk(fev)
 	}
 	if r.handleGestureLines(line, now) {
 		return
@@ -350,6 +353,19 @@ func (r *Reader) EventsSnapshot() map[string]any { return r.forensics.sectionSna
 // lines with the localhost-retry spam and the clock-sync chatter dropped and
 // SSIDs hashed, so a bundle carries the minutes before a report.
 func (r *Reader) TailSnapshot() []string { return r.forensics.tailSnapshot() }
+
+// DeezerTailSnapshot is the box_syslog_deezer debug section: every firmware
+// line about Deezer or a music-service account call this run, redacted, so
+// the Deezer login test (docs/streaming/deezer.md, A2) can be read from a
+// bundle taken minutes later.
+func (r *Reader) DeezerTailSnapshot() map[string]any { return r.forensics.deezerSnapshot() }
+
+// DeezerLastRetry is the code of the firmware's last Deezer relogin retry
+// this run ("3351" no token, "3330" token refused by Deezer) and when it was
+// read; ok is false before the first one.
+func (r *Reader) DeezerLastRetry() (code string, at time.Time, ok bool) {
+	return r.forensics.deezerLastRetry()
+}
 
 // SetupTailSnapshot is the box_setup_tail debug section: the ring as it stood
 // when the firmware's setup state machine first spoke, plus the lines that

@@ -68,6 +68,31 @@ type deadKeyVerdict struct {
 	Source string
 	// Why says why the key is (or is not) dead, for the log.
 	Why string
+	// Double is set when the press was the second of two quick presses of
+	// the key (doublePressWindow): the listener asked for the key's second
+	// row, exactly as on a key the speaker still holds (#1110). Gap is the
+	// time between the two presses.
+	Double bool
+	Gap    time.Duration
+}
+
+// deadKeyDoubleLocked reports whether press p is the second half of a double
+// press: the press right before it was a physical press of the same key, no
+// hold and no key combination, at most doublePressWindow earlier. A dead key
+// emits no selection frame, so the frame-based detector (doublepress.go) never
+// sees it; the key trace's presses are all there is, and they are physical by
+// construction, so inside a group too. Callers hold h.mu.
+func (h *holdSaver) deadKeyDoubleLocked(p holdPress) (bool, time.Duration) {
+	prev := h.prev
+	if prev.seq == 0 || prev.seq+1 != p.seq || prev.slot != p.slot || !prev.producer.Physical() ||
+		prev.used || prev.combo || p.at.Before(prev.at) {
+		return false, 0
+	}
+	gap := p.at.Sub(prev.at)
+	if gap > doublePressWindow {
+		return false, 0
+	}
+	return true, gap
 }
 
 // deadKeyFromList decides from the store's preset for slot (have false: the
@@ -176,6 +201,7 @@ func (h *holdSaver) deadKeyPress(p holdPress) bool {
 	if ok {
 		h.press.used = true
 		h.press.dead = true
+		v.Double, v.Gap = h.deadKeyDoubleLocked(p)
 	}
 	screen := h.press.seq == p.seq && h.press.screen
 	h.mu.Unlock()
@@ -189,7 +215,8 @@ func (h *holdSaver) deadKeyPress(p holdPress) bool {
 	}
 	h.logger.Info("dead key: the speaker lost key "+strconv.Itoa(p.slot)+" and the press did nothing, STR plays it and re-registers the keys",
 		"slot", p.slot, "source", v.Source, "why", v.Why, "name", v.Name, "type", v.Type,
-		"listedKeys", v.Listed, "producer", p.producer.String(), "origin", string(p.origin))
+		"listedKeys", v.Listed, "producer", p.producer.String(), "origin", string(p.origin),
+		"double", v.Double, "gapMs", v.Gap.Milliseconds())
 	h.spawn(func() { h.playDeadKey(p.slot, v) })
 	return true
 }
@@ -199,7 +226,9 @@ func (h *holdSaver) deadKeyPress(p holdPress) bool {
 func (h *holdSaver) checkDeadKey(p holdPress) { h.deadKeyPress(p) }
 
 // playDeadKey plays a dead key through the app's recall path and asks for the
-// key re-sync the press consents to (deadkey.go header).
+// key re-sync the press consents to (deadkey.go header). A double press plays
+// the key's second row when that is set, as it does on a key the speaker still
+// holds; with an empty second row the key plays its own preset, also as there.
 func (h *presetWsHandler) playDeadKey(ctx context.Context, slot int, v deadKeyVerdict) {
 	h.pressSeq.Add(1)
 	h.firstPress.cancel()
@@ -212,13 +241,34 @@ func (h *presetWsHandler) playDeadKey(ctx context.Context, slot int, v deadKeyVe
 		h.logger.Warn("dead key: no recall path wired, the key cannot play", "slot", slot)
 		return
 	}
-	showNotice(oled.PresetPlaying(slot, v.Name))
+	play, notice := deadKeyTarget(h.store, slot, v)
+	if play != slot {
+		h.logger.Info("dead key: double press on key "+strconv.Itoa(slot)+" -> row 2 slot "+strconv.Itoa(play)+" '"+notice+"'",
+			"key", slot, "slot", play, "gapMs", v.Gap.Milliseconds())
+		notice = "2x " + notice
+	} else if v.Double {
+		h.logger.Info("dead key: double press on key "+strconv.Itoa(slot)+": row 2 slot "+strconv.Itoa(presets.Row2Slot(slot))+" empty, playing row 1",
+			"key", slot, "gapMs", v.Gap.Milliseconds())
+	}
+	showNotice(oled.PresetPlaying(slot, notice))
 	playCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	name, err := h.playSlotFn(playCtx, slot)
+	name, err := h.playSlotFn(playCtx, play)
 	if err != nil {
-		h.logger.Warn("dead key: slot "+strconv.Itoa(slot)+" did not start", "slot", slot, "source", v.Source, "err", err)
+		h.logger.Warn("dead key: slot "+strconv.Itoa(play)+" did not start", "slot", play, "key", slot, "source", v.Source, "err", err)
 		return
 	}
-	h.logger.Info("dead key: playing slot "+strconv.Itoa(slot)+" '"+name+"'", "slot", slot, "was", v.Source)
+	h.logger.Info("dead key: playing slot "+strconv.Itoa(play)+" '"+name+"'", "slot", play, "key", slot, "was", v.Source)
+}
+
+// deadKeyTarget picks the slot a dead key's press plays and the name for its
+// notice: the key's second row on a double press when that row is set, the
+// key's own slot otherwise.
+func deadKeyTarget(store *presets.Store, slot int, v deadKeyVerdict) (int, string) {
+	if v.Double && store != nil && presets.IsBoxSlot(slot) {
+		if p, ok := store.Get(presets.Row2Slot(slot)); ok {
+			return p.Slot, p.Name
+		}
+	}
+	return slot, v.Name
 }

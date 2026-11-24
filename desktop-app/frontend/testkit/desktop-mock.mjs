@@ -36,7 +36,7 @@ export const MODELLED_BINDINGS = [
   'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
-  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'LibraryFolder', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
+  'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'LibraryFolder', 'LibraryUSBNotices', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
   'LogClientError', 'MovePreset', 'Next', 'Pause', 'PhoneQR', 'PlaySlot', 'PlayURL', 'Prev', 'PreviewPresetKeyCopy',
   'RadioClick', 'RadioLanguages', 'RadioSearch', 'RadioSearchDetailed', 'RadioTags', 'RadioVote',
   'RecentPlayed', 'RefreshKnownBoxes', 'ResolveStationLogo', 'Resume', 'RunSpeakerUpdate',
@@ -405,6 +405,8 @@ export function installDesktopMock({ scenario, demo }) {
       throw new Error(`browse metadata: no container ${id}`);
     },
     SearchLibrary: () => clone(demo.librarySearch),
+    // No speaker in the demo fleet has a USB stick in it.
+    LibraryUSBNotices: () => [],
     // A folder play: the speaker plays its first track.
     StartQueue: ([h, , payloadJSON]) => {
       let p = {};

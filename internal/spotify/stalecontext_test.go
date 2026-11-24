@@ -17,6 +17,20 @@ func newTestManagerAt(t *testing.T, apiURL string) *Manager {
 	t.Helper()
 	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	m.apiAddr = strings.TrimPrefix(apiURL, "http://")
+	// A recall's resume check runs on in the background for its whole window
+	// (12 s unshortened) and keeps posting to this address after the test has
+	// returned. httptest hands out ports again, so a later test's fake engine
+	// can sit on the same one and count those resumes as its own (CI
+	// 2026-11-23: "5 resumes, want 3", two of them a leftover check's
+	// retries). Supersede whatever recall is still running when the test ends,
+	// the same way a newer press does.
+	t.Cleanup(func() {
+		m.recallCmdMu.Lock()
+		m.mu.Lock()
+		m.recallSeq++
+		m.mu.Unlock()
+		m.recallCmdMu.Unlock()
+	})
 	return m
 }
 

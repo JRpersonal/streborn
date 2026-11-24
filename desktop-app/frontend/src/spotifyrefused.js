@@ -20,12 +20,23 @@
 //            account is the way on. Nothing is claimed about the speaker's
 //            own Spotify entry here, it is not known to play free accounts.
 //   premium  everything else, including "plan unknown". Spotify refuses some
-//            accounts on unlicensed players, usually newer ones, even on
-//            Premium (docs/streaming/spotify.md, "Known limitation"). The
-//            speaker's own entry is a licensed client and keeps playing it.
-//            The decisive test is another, older account on the (STR) entry:
-//            if that one plays, the speaker is fine and it is the account.
-//            The cutoff is not known, so the words say "usually".
+//            accounts on unlicensed players, even on Premium
+//            (docs/streaming/spotify.md, "Known limitation"). The speaker's
+//            own entry is a licensed client and keeps playing it. The
+//            decisive test is another account on the (STR) entry: if that
+//            one plays, the speaker is fine and it is the account. Account
+//            age is not a reliable sign (old accounts were refused too), so
+//            the words say nothing about which accounts it hits.
+//
+// When STR is certain Spotify blocks a Premium account (the speaker's own
+// per-account record says refused, and the plan is Premium), the notice also
+// states Spotify's rule: Spotify support has said that only accounts that
+// played on such players within the last year keep working and that no other
+// account gets enabled any more (docs/streaming/spotify.md, "Known
+// limitation"). So there is no support step and no button: contacting Spotify
+// cannot lift it (decided on discussion #1077). Never on the older agent's
+// ten-minute flag alone, and never for a free or unknown plan: there the
+// cause is not certainly Spotify's block (refusalSupportFor).
 
 import { escapeHtml } from './utils.js';
 
@@ -44,7 +55,19 @@ export function refusalFromReply(np) {
   return {
     name: np.accountRefused ? String(np.accountRefusedName || '').trim() : '',
     free: isFreePlan(np),
+    premium: String(np.product || '').toLowerCase() === 'premium',
+    sticky: !!np.accountRefused,
   };
+}
+
+// refusalSupportFor reports whether the notice may state Spotify's rule for
+// refused accounts: only when STR is certain it is Spotify's block of a
+// Premium account. That
+// takes the speaker's persistent per-account record (sticky, accountRefused),
+// not the older agent's ten-minute audioKeyRefused, and a plan the speaker
+// reported as exactly Premium. Free, open, unknown or premiumRequired: no.
+export function refusalSupportFor(ref) {
+  return !!(ref && ref.sticky && ref.premium && !ref.free);
 }
 
 // refusalText is the notice itself: with the account's name when the speaker
@@ -76,7 +99,20 @@ export function refusalHTML(ref, t, opts = {}) {
   return `<span class="spotify-refused-lead">${escapeHtml(lead)}</span>`
     + `<details class="spotify-refused-more"><summary>${escapeHtml(t('spotify.refusedMore'))}</summary>`
     + `<p class="spotify-refused-why">${escapeHtml(help.why)}</p>`
-    + `<p class="spotify-refused-try">${escapeHtml(help.tryText)}</p></details>`;
+    + `<p class="spotify-refused-try">${escapeHtml(help.tryText)}</p>`
+    + refusalSupportHTML(ref, t)
+    + '</details>';
+}
+
+// refusalSupportHTML is the one line that states Spotify's rule (it no longer
+// enables accounts that have not played on such players within the last
+// year, and nothing in STR or the speaker changes that), '' unless
+// refusalSupportFor holds. No buttons and no support step: Spotify support
+// cannot lift it. Deterministic on purpose: the now-playing row is rebuilt
+// only when this HTML changes, so a poll does not snap an opened toggle shut.
+export function refusalSupportHTML(ref, t) {
+  if (!refusalSupportFor(ref)) return '';
+  return `<p class="spotify-refused-support">${escapeHtml(t('spotify.refusedSupport'))}</p>`;
 }
 
 // strSpotifyLocation reports whether the speaker plays from STR's own Spotify

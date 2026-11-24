@@ -28,10 +28,10 @@ html.ui2 #view-box #refreshBtn {
   background: var(--u-raised);
   color: var(--u-text);
 }
-/* The search, next to the title (ui2radio.js moves the row here): the field
+/* The search, on the tab row (ui2radio.js moves the row here): the field
    takes the room, Search and Top list follow as quiet buttons. The field is
    told by its outline, so that edge is the 3:1 one. */
-html.ui2 #view-box .topbar-head .search-input-row {
+html.ui2 #view-box .ui2-radio-bar .search-input-row {
   display: flex;
   flex: 1 1 22em;
   flex-wrap: nowrap;
@@ -39,7 +39,7 @@ html.ui2 #view-box .topbar-head .search-input-row {
   min-width: 0;
   margin: 0;
 }
-html.ui2 #view-box .topbar-head .search-input-row input {
+html.ui2 #view-box .ui2-radio-bar .search-input-row input {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
@@ -51,9 +51,9 @@ html.ui2 #view-box .topbar-head .search-input-row input {
   font-family: var(--u-font);
   font-size: var(--u-fs-md);
 }
-html.ui2 #view-box .topbar-head .search-input-row input::placeholder { color: var(--u-muted); opacity: 1; }
-html.ui2 #view-box .topbar-head .search-input-row input.has-query { border-color: var(--u-accent); box-shadow: inset 0 0 0 1px var(--u-accent); }
-html.ui2 #view-box .topbar-head .search-input-row .btn {
+html.ui2 #view-box .ui2-radio-bar .search-input-row input::placeholder { color: var(--u-muted); opacity: 1; }
+html.ui2 #view-box .ui2-radio-bar .search-input-row input.has-query { border-color: var(--u-accent); box-shadow: inset 0 0 0 1px var(--u-accent); }
+html.ui2 #view-box .ui2-radio-bar .search-input-row .btn {
   flex: 0 0 auto;
   min-height: 44px;
   padding: 0 14px;
@@ -66,18 +66,18 @@ html.ui2 #view-box .topbar-head .search-input-row .btn {
   font-weight: var(--u-fw-semibold);
   white-space: nowrap;
 }
-html.ui2 #view-box .topbar-head .search-input-row .btn:hover { background: color-mix(in srgb, var(--u-raised) 94%, var(--u-text)); }
+html.ui2 #view-box .ui2-radio-bar .search-input-row .btn:hover { background: color-mix(in srgb, var(--u-raised) 94%, var(--u-text)); }
 /* The list that is showing (Top list, Pandora): the selected fill and an
    accent edge, the classic "pressed" mark in the preview's colours. */
-html.ui2 #view-box .topbar-head .search-input-row .btn.mode-pressed {
+html.ui2 #view-box .ui2-radio-bar .search-input-row .btn.mode-pressed {
   border-color: var(--u-accent);
   background: var(--u-selected);
   color: var(--u-text);
 }
 /* The row shows when it showed in its old place: not without a speaker (it
    lived in the speaker's controls), and not on Favorites. */
-html.ui2 #view-box:has(#boxControls.hidden) .topbar-head .search-input-row,
-html.ui2 #view-box:has(#ui2RadioPanel[data-ui2-tab="favorites"]) .topbar-head .search-input-row { display: none; }
+html.ui2 #view-box:has(#boxControls.hidden) .ui2-radio-bar .search-input-row,
+html.ui2 #view-box:has(#ui2RadioPanel[data-ui2-tab="favorites"]) .ui2-radio-bar .search-input-row { display: none; }
 
 /* ---------- Keys ---------- */
 
@@ -207,11 +207,20 @@ html.ui2 #view-box .preset :is(.ren, .del) { min-width: 36px; }
 
 /* ---------- Tabs ---------- */
 
+/* The tabs on the left, the search field taking the rest of the row; in a
+   narrow window the field wraps under the tabs. */
+html.ui2 .ui2-radio-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--u-space-2) var(--u-space-4);
+  margin: 0 0 var(--u-space-3);
+}
 html.ui2 .ui2-radio-tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: var(--u-space-1);
   border-bottom: 1px solid var(--u-hairline);
-  margin: 0 0 var(--u-space-3);
 }
 html.ui2 .ui2-radio-tab {
   min-height: var(--u-target);
@@ -414,7 +423,7 @@ html.ui2 .ui2-st-site { color: var(--u-accent); }
 /* The same double ring as the shell chrome, for what the preview made
    reachable by keyboard here. !important like the shell's: style.css forces
    its own ring on every focused element that way. */
-html.ui2 #view-box :is(.ui2-radio-tab, .ui2-st button, .ui2-st a, #refreshBtn, .topbar-head .search-input-row input, .topbar-head .search-input-row .btn, .preset-transfer-btn, #streamSourceDetails > summary, .ui2-filters > summary, .ui2-filters select, .ui2-filters input):focus-visible,
+html.ui2 #view-box :is(.ui2-radio-tab, .ui2-st button, .ui2-st a, #refreshBtn, .ui2-radio-bar .search-input-row input, .ui2-radio-bar .search-input-row .btn, .preset-transfer-btn, #streamSourceDetails > summary, .ui2-filters > summary, .ui2-filters select, .ui2-filters input):focus-visible,
 html.ui2 #view-box .preset:has(.preset-body[role="button"]:focus-visible),
 html.ui2 #pickModal .pick-slot:focus-visible {
   outline: var(--u-focus-ring) !important;

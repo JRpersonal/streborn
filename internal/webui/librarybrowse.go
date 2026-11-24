@@ -81,6 +81,12 @@ const (
 // handleLibraryServers lists the registered media servers for the phone page.
 // Store only, no network I/O: whether a server currently answers is settled by
 // the first browse tap, where the answer can be shown next to the action.
+//
+// A music stick in this speaker is listed last (kind "usb", usbmusic.go): as a
+// server to browse when it is served, or with the reason it is not. The
+// desktop app reads the same entry from every speaker. Looking for the stick is
+// a sysfs glob and one read of /proc/mounts; opening this list is also what
+// lets the agent mount a stick nothing mounted (the Portable).
 func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "GET only", http.StatusMethodNotAllowed)
@@ -89,12 +95,21 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 	type srvOut struct {
 		UDN  string `json:"udn"`
 		Name string `json:"name"`
+		// Kind, Location, Refusal, Speaker and Label only on the stick's entry.
+		Kind     string `json:"kind,omitempty"`
+		Location string `json:"location,omitempty"`
+		Refusal  string `json:"refusal,omitempty"`
+		Speaker  string `json:"speaker,omitempty"`
+		Label    string `json:"label,omitempty"`
 	}
 	out := []srvOut{}
 	if s.mediaServers != nil {
 		for _, reg := range s.mediaServers.List() {
 			out = append(out, srvOut{UDN: reg.ID, Name: reg.Name})
 		}
+	}
+	if e, ok := s.usbLibraryEntry(r.Host); ok {
+		out = append(out, srvOut(e))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -115,6 +130,10 @@ func (s *Server) handleLibraryServers(w http.ResponseWriter, r *http.Request) {
 // So the browse handler treats a Browse failure as a signal to re-resolve
 // FRESH (recall skipped) and retry once; see handleLibraryBrowse.
 func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Server, []dlna.Server, bool) {
+	// The music stick in this speaker is reached over loopback, never discovered.
+	if srv, isUSB, ok := s.usbResolve(udn); isUSB {
+		return srv, nil, ok
+	}
 	key := udnKey(udn)
 	if srv, ok := s.recallMediaServer(ctx, key); ok {
 		return srv, nil, true
@@ -132,6 +151,9 @@ func (s *Server) resolveMediaServer(ctx context.Context, udn string) (dlna.Serve
 // genuinely-moved-server case #749 targeted), so a real move is still corrected
 // without wiping the one reachable address when discovery comes back empty.
 func (s *Server) resolveMediaServerFresh(ctx context.Context, udn string) (dlna.Server, []dlna.Server, bool) {
+	if srv, isUSB, ok := s.usbResolve(udn); isUSB {
+		return srv, nil, ok
+	}
 	key := udnKey(udn)
 	// The speaker's own discovery cache first, and only its CHEAP half: one
 	// boxapi GET plus one description fetch, a second or two. The firmware
@@ -577,13 +599,24 @@ func (s *Server) handleLibraryBrowse(w http.ResponseWriter, r *http.Request) {
 		folders = append(folders, folderOut{ID: c.ID, Title: c.Title, ChildCount: c.ChildCount, Class: c.Class})
 	}
 	tracks := []trackOut{}
+	// The stick's covers are handed out on the loopback address the agent
+	// browsed itself on; the phone needs the address it reached the agent at.
+	usbArt := func(art string) string { return art }
+	if s.isUSBUDN(udn) && r.Host != "" {
+		usbArt = func(art string) string {
+			if strings.HasPrefix(art, usbLoopbackBase+"/usb/") {
+				return "http://" + r.Host + strings.TrimPrefix(art, usbLoopbackBase)
+			}
+			return art
+		}
+	}
 	for _, it := range res.Items {
 		if it.StreamURL == "" {
 			continue
 		}
 		tracks = append(tracks, trackOut{
 			Title: it.Title, Artist: it.Artist, Album: it.Album,
-			URL: it.StreamURL, Art: it.AlbumArtURL, Mime: trackMime(it),
+			URL: it.StreamURL, Art: usbArt(it.AlbumArtURL), Mime: trackMime(it),
 			DurationSec: it.DurationSec,
 			TrackNumber: it.TrackNumber, DiscNumber: it.DiscNumber,
 		})

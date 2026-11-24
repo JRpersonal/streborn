@@ -138,6 +138,14 @@ export function CurrentWiFi() {
   return window['go']['main']['App']['CurrentWiFi']();
 }
 
+export function DeezerRecheck(arg1, arg2) {
+  return window['go']['main']['App']['DeezerRecheck'](arg1, arg2);
+}
+
+export function DeezerStatus(arg1, arg2) {
+  return window['go']['main']['App']['DeezerStatus'](arg1, arg2);
+}
+
 export function DeletePreset(arg1, arg2, arg3) {
   return window['go']['main']['App']['DeletePreset'](arg1, arg2, arg3);
 }
@@ -354,6 +362,10 @@ export function LibraryRefusedServers() {
   return window['go']['main']['App']['LibraryRefusedServers']();
 }
 
+export function LibraryUSBNotices() {
+  return window['go']['main']['App']['LibraryUSBNotices']();
+}
+
 export function LinkMusicService(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['LinkMusicService'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -424,6 +436,10 @@ export function PhoneQR(arg1) {
 
 export function PickFirmwareFile() {
   return window['go']['main']['App']['PickFirmwareFile']();
+}
+
+export function PlayDeezerLink(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['PlayDeezerLink'](arg1, arg2, arg3, arg4);
 }
 
 export function PlayPandoraStation(arg1, arg2, arg3, arg4, arg5) {
@@ -816,6 +832,10 @@ export function SpotifyBitrate(arg1, arg2) {
 
 export function SpotifyNowPlaying(arg1, arg2) {
   return window['go']['main']['App']['SpotifyNowPlaying'](arg1, arg2);
+}
+
+export function SpotifyPlayMode(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SpotifyPlayMode'](arg1, arg2, arg3);
 }
 
 export function SpotifyQuality(arg1, arg2) {

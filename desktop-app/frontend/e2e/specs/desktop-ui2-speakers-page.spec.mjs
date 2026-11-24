@@ -50,7 +50,7 @@ const CONTROLS = {
       '#boxWlanForgetOthers', '#boxWlanSave', '#wlanForgetOthersBtn', '#wlanCopyBtn', '#usServicesBody'],
   },
   keys: {
-    shown: ['#boxSyncPresetsBtn', '#webhookSection > summary'],
+    shown: ['#boxSyncPresetsBtn', '#webhookSection > summary', '#alarmsSection'],
     placed: ['#webhookKeyMap', '#webhookTarget', '#webhookMode', '#keyActionSelect', '#webhookType', '#webhookUrl',
       '#webhookMethod', '#webhookBody', '#webhookMac', '#webhookUdpHost', '#webhookUdpPort', '#webhookUdpEnc',
       '#webhookUdpPayload', '#webhookOn', '#webhookOff', '#webhookTestBtn', '#webhookSaveBtn', '#webhookHaGuideBtn',
@@ -63,10 +63,10 @@ const CONTROLS = {
     placed: ['#boxRemoveConflictBtn', '#sshOn', '#sshOff', '#foreignList', '#boxRestoreXml', '#boxRestoreBtn'],
   },
 };
-// Every section on the page: 30 of the 31 of the classic view (the syncKeys
+// Every section on the page: 31 of the 32 of the classic view (the syncKeys
 // expert section empties into the page's hwKeys card and goes) and the
-// page's own two cards.
-const ALL_SECTIONS = 32;
+// page's own two cards. The alarm clock (#2090) is the newest.
+const ALL_SECTIONS = 33;
 
 const nav = (page, view) => page.locator(`#ui2Tabs .ui2-nav-item[data-view="${view}"]`);
 const tab = (page, key) => page.locator(`#ui2SpkTab-${key}`);

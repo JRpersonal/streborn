@@ -66,6 +66,9 @@ func (s *Server) handleBoseFirmware(w http.ResponseWriter, r *http.Request) {
 	// speaker in standby lifts wireless power-save for the transfer.
 	defer s.boostUploadThroughput("bose-firmware")()
 	s.hushForUpload("bose-firmware")
+	// The firmware goes down on purpose while it flashes: the :8090 outage
+	// must not turn into "unplug the speaker" meanwhile.
+	s.noteBoseFirmwareHandover()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), boseFirmwareUploadBudget)
 	defer cancel()
 	counted := &countingReader{r: r.Body}

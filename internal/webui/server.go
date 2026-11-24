@@ -63,6 +63,16 @@ type Server struct {
 	// (usservices.go). nativeBoxOverride is a test seam.
 	native            NativeServicesBackend
 	nativeBoxOverride nativeBoxAPI
+	// deezer is the stand-in's side of the kept Deezer login (deezer.go);
+	// deezerRecreateMu keeps one recreate running at a time and guards
+	// deezerRecreateAt, when the last one ran; deezerRecreating is set while
+	// its account call is out; deezerHTTP is the test seam for the link and
+	// title lookups (deezerplay.go).
+	deezer           DeezerBackend
+	deezerRecreateMu sync.Mutex
+	deezerRecreateAt time.Time
+	deezerRecreating atomic.Bool
+	deezerHTTP       *http.Client
 	// pandoraStations is the last station list read from the speaker, so a
 	// play can hand back the exact item it listed (pandorastations.go).
 	pandoraMu       sync.Mutex
@@ -179,7 +189,11 @@ type Server struct {
 	likeKey likeKeyState
 	// radioStep runs the remote's Next/Prev while a radio key plays. See
 	// radiostep.go.
-	radioStep   radioStepState
+	radioStep radioStepState
+	// traceSkip pairs the key trace's Next/Prev with the gabbo skip frame on
+	// Spotify and the play queue, so a press the frame missed still skips.
+	// See traceskip.go.
+	traceSkip   traceSkipState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -362,7 +376,11 @@ type Server struct {
 	// acknowledged immediately and drained back-to-back by one worker, so a
 	// slow go-librespot ack can never stack button presses into a minute-long
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
-	spotifySkipCh   chan spotifySkipReq
+	spotifySkipCh chan spotifySkipReq
+	// spotifySkipSeq counts the Spotify skips handed to the queue, so a skip's
+	// recovery (spotifyRecoverAfterSkip) can tell that a newer press came in
+	// while it waited.
+	spotifySkipSeq  atomic.Uint64
 	spotifySkipOnce sync.Once
 	// spotifyHeardPrev is Back on a Spotify playlist, from the remote and
 	// the apps alike: the song before inside the first seconds heard, a
@@ -374,6 +392,10 @@ type Server struct {
 	// switches; the keys then do nothing.
 	spotifyToggleShuffle func(ctx context.Context) (on bool, err error)
 	spotifyCycleRepeat   func(ctx context.Context) (mode string, err error)
+	// spotifyPlayModes reads the live shuffle and repeat for the app's
+	// buttons (#2058, spotifyplaymode_http.go). nil: the answer carries only
+	// the mode a press changed.
+	spotifyPlayModes func(ctx context.Context) (shuffle bool, repeat string, err error)
 	// spotifyLikeCurrent saves the playing song to Liked Songs and
 	// spotifyUnlikeCurrent removes it, for the remote's thumbs up and thumbs
 	// down keys (#1165, likekey.go). nil when the engine cannot; the keys
@@ -812,6 +834,9 @@ type Server struct {
 	alarmWakeBoxFn      func(ctx context.Context, vol int)
 	alarmRecallSlotFn   func(ctx context.Context, slot int) int
 	alarmPlayingCheckFn func(slot int, since time.Time) bool
+	// alarmAlreadyPlayingFn replaces the stream proxy's "this key is playing
+	// right now" in tests; nil means the proxy.
+	alarmAlreadyPlayingFn func(slot int) bool
 
 	// storm1036Fn reports whether the box is currently rejecting essentially
 	// every recall (1036), how many rejections are in the window and since
@@ -960,6 +985,15 @@ type Server struct {
 	// (playmodekey.go). nil means production.
 	radioStepPlayFn func(ctx context.Context, slot int) error
 	playModeShowFn  func(n oled.Notice)
+	// groupFollowerFn replaces the zone read that tells whether this speaker
+	// follows a group (zonePushWouldFightGroup), and traceSkipWait how long a
+	// traced Next/Prev waits for its gabbo frame (traceskip.go). Zero values
+	// mean production.
+	groupFollowerFn func() (bool, string)
+	traceSkipWait   time.Duration
+	// skipRecoverWaits replaces the two looks of a skip's recovery
+	// (spotifyRecoverAfterSkip, 5 s and 4 s). Zero means production.
+	skipRecoverWaits [2]time.Duration
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
@@ -1078,13 +1112,9 @@ type Server struct {
 	groupReadFails     int
 	groupReadSkipUntil time.Time
 
-	// BoseApp (:8090) outage episodes, fed by the /api/status fetch path. The
-	// 2026-08-18 ST20 freeze was only provable by counting statusStaleWarned
-	// transitions by hand; this records the episodes so a bundle answers "how
-	// long and how often was the firmware webserver dead" directly. Guarded by
-	// statusMu. boseappDownSince is zero while :8090 answers.
-	boseappDownSince time.Time
-	boseappOutages   []boseappOutage
+	// boseapp is the :8090 outage tracker (boseapp_health.go), fed by every
+	// read of the speaker's own firmware webserver.
+	boseapp boseappTracker
 
 	// queue is the agent-side DLNA library play queue (#202 follow-up). It
 	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
@@ -1164,6 +1194,8 @@ type Server struct {
 	// baseCtx is the server-lifetime context (set in Run), the parent for the
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context
+	// usb is the music stick this speaker serves, or none (usbmusic.go).
+	usb usbMusicState
 }
 
 // boxPresetTombstoneTTL is how long a just-deleted slot is filtered out of the
@@ -1842,6 +1874,9 @@ func (s *Server) Run(ctx context.Context) error {
 	// answers 409 there): an unregistered path falls through to the index,
 	// whose 200 + HTML would read as success.
 	mux.HandleFunc("/api/spotify/liked", s.handleSpotifyLiked)
+	// Same rule: the app's shuffle and repeat buttons for a Spotify playlist
+	// (#2058) get a 409 from a speaker without the engine, never the index.
+	mux.HandleFunc("/api/spotify/playmode", s.handleSpotifyPlayMode)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves
@@ -1859,6 +1894,9 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/iheart/account", s.handleNativeAccount("IHEART"))
 	mux.HandleFunc("/api/pandora/stations", s.handlePandoraStations)
 	mux.HandleFunc("/api/pandora/play", s.handlePandoraPlay)
+	mux.HandleFunc("/api/deezer/account", s.handleDeezerAccount)
+	mux.HandleFunc("/api/deezer/recheck", s.handleDeezerRecheck)
+	mux.HandleFunc("/api/deezer/play", s.handleDeezerPlay)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
@@ -1906,6 +1944,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/library/locate", s.handleLibraryLocate)
 	mux.HandleFunc("/api/queue/replay-card", s.handleQueueReplayCard)
 	mux.HandleFunc("/api/library/play-folder", s.handleLibraryPlayFolder)
+	// A music stick in the speaker, served as a ContentDirectory (usbmusic.go).
+	mux.HandleFunc("/usb/", s.handleUSB)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)

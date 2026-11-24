@@ -34,7 +34,7 @@ func TestSearchServersMergesEveryServerAndNamesTheMissingOnes(t *testing.T) {
 		switch srv.FriendlyName {
 		case "Zeta NAS":
 			// More matches than handed over: the list is not the whole answer.
-			return serverSearch{Path: searchPathSearch, Partial: true, Items: []dlna.Item{
+			return serverSearch{Path: searchPathSearch, Truncated: true, Items: []dlna.Item{
 				{ID: "z1", Title: "Tom Sawyer", Class: "object.item.audioItem.musicTrack", StreamURL: "http://192.0.2.2/z1.flac"},
 			}}
 		case "Alpha NAS":
@@ -188,6 +188,30 @@ func TestLibrarySearchOneWalksWhenSearchFindsNothing(t *testing.T) {
 	}
 }
 
+// A speaker's music stick searches its own folders (discussion #1136): no hits
+// from it is the whole answer, so neither the title-only retry nor the walk
+// runs, and the speaker is not made to read every folder over SOAP again.
+func TestLibrarySearchOneTrustsTheStickWhenItFindsNothing(t *testing.T) {
+	f := &dlnatest.FakeCDS{Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "elsewhere", URL: "http://192.0.2.10/usb/file/elsewhere.mp3"}}},
+	}}
+	srv := fakeLibraryServer(t, "str-usb-aabbccddeeff", f)
+	res := librarySearchOne(context.Background(), srv, "beatles", dlna.SearchAny)
+	if res.Path != searchPathSearch || len(res.Items) != 0 || res.Err != nil || res.Incomplete {
+		t.Fatalf("got %+v, want the stick's empty answer as it is", res)
+	}
+	if searches, browses := f.Counts(); searches != 1 || browses != 0 {
+		t.Errorf("searches %d, browses %d: want one Search and no walk", searches, browses)
+	}
+	// An agent from before the stick's Search refuses it, and is walked.
+	old := fakeLibraryServer(t, "str-usb-112233445566", &dlnatest.FakeCDS{SearchFaults: true, Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "Beatles song", URL: "http://192.0.2.10/usb/file/b.mp3"}}},
+	}})
+	if res := librarySearchOne(context.Background(), old, "beatles", dlna.SearchAny); res.Path != searchPathWalk || len(res.Items) != 1 {
+		t.Fatalf("old agent: %+v", res)
+	}
+}
+
 // Only a server whose root cannot be read is unanswered, and the log says why.
 func TestSearchServersUnansweredOnlyWhenTheRootCannotBeRead(t *testing.T) {
 	srv := fakeLibraryServer(t, "Broken", &dlnatest.FakeCDS{SearchFaults: true, BrowseFaults: true})
@@ -230,7 +254,64 @@ func TestLibrarySearchOneDeadlineAfterRootIsPartial(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("a server whose root answered was reported unanswered: %v", res.Err)
 	}
-	if !res.Partial {
-		t.Errorf("a walk cut short by the deadline must be partial: %+v", res)
+	if !res.Incomplete || res.Truncated {
+		t.Errorf("a walk cut short by the deadline is incomplete, not a server with too many hits: %+v", res)
+	}
+}
+
+// #1705, 2026-11-21: Windows Media Player's share never answered the Search
+// action, the walk's first folder read then queued behind the abandoned query
+// and timed out, and the PC was reported as not answering although browsing
+// it worked. A server whose Search ran out of time without an answer is
+// walked straight away on the next search, and finds the track.
+func TestLibrarySearchWalksAServerWhoseSearchHungBefore(t *testing.T) {
+	old := librarySearchActionBudget
+	librarySearchActionBudget = 200 * time.Millisecond
+	t.Cleanup(func() { librarySearchActionBudget = old })
+
+	f := &dlnatest.FakeCDS{Children: map[string]dlnatest.Container{
+		"0": {Tracks: []dlnatest.Track{{ID: "t1", Title: "I Can't Stand The Rain", Artist: "Tina Turner", Album: "Private Dancer", URL: "http://192.0.2.10/1.mp3"}}},
+	}}
+	searches := 0
+	var mu sync.Mutex
+	release := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("SOAPACTION"), "#Search") {
+			mu.Lock()
+			searches++
+			mu.Unlock()
+			// Never answers, like the WMP share; released at cleanup so the
+			// test server can close.
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		f.ServeHTTP(w, r)
+	}))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) }) // runs before ts.Close
+	srv := dlna.Server{UDN: "uuid:wmp-hangs-" + t.Name(), FriendlyName: "PCMusic", CDSControlURL: ts.URL}
+	t.Cleanup(func() { searchHungServers.Delete(srv.UDN) })
+
+	first := librarySearchOne(context.Background(), srv, "rain", dlna.SearchAny)
+	if !errors.Is(first.SearchErr, context.DeadlineExceeded) {
+		t.Fatalf("first search: SearchErr = %v, want the action's deadline", first.SearchErr)
+	}
+	if !searchHungBefore(srv) {
+		t.Fatal("a Search that ran out of time was not remembered")
+	}
+	second := librarySearchOne(context.Background(), srv, "rain", dlna.SearchAny)
+	if second.SearchErr != errSearchHungBefore || second.Path != searchPathWalk {
+		t.Fatalf("second search did not go straight to the walk: path=%s err=%v", second.Path, second.SearchErr)
+	}
+	if len(second.Items) != 1 {
+		t.Fatalf("the walk found %d items, want the one track", len(second.Items))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if searches != 1 {
+		t.Errorf("the Search action was asked %d times, want once (no title-only retry behind a hung query, none on the second search)", searches)
 	}
 }

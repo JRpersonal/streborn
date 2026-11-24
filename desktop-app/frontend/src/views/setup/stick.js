@@ -158,7 +158,7 @@ async function renderDrives() {
     };
   };
   if (!state.drives.length) {
-    $('drivesList').innerHTML = prepBanner + `<div class="muted">${escapeHtml(t('setup.noSticksFound'))}</div>`;
+    $('drivesList').innerHTML = prepBanner + `<p class="muted small setup-no-sticks">${escapeHtml(t('setup.noSticksFound'))}</p>`;
     $('setupGo').disabled = true;
     $('updateInfo').classList.add('hidden');
     $('formatWarn').classList.add('hidden');

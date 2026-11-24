@@ -20,9 +20,10 @@ import (
 // them, the speaker's own list does not) while it plays source.
 type deadRig struct {
 	*holdRig
-	dmu    sync.Mutex
-	played []int
-	reads  int
+	dmu      sync.Mutex
+	played   []int
+	verdicts []deadKeyVerdict
+	reads    int
 }
 
 func newDeadRig(t *testing.T, source string, dead ...int) *deadRig {
@@ -41,12 +42,112 @@ func newDeadRig(t *testing.T, source string, dead ...int) *deadRig {
 		return deadKeyVerdict{Dead: true, Name: "Station " + string(rune('0'+slot)), Type: "radio",
 			Source: source, Why: "the store holds a preset on this key, the speaker's own list lacks it"}
 	}
-	r.hs.playDeadKey = func(slot int, _ deadKeyVerdict) {
+	r.hs.playDeadKey = func(slot int, v deadKeyVerdict) {
 		r.dmu.Lock()
 		r.played = append(r.played, slot)
+		r.verdicts = append(r.verdicts, v)
 		r.dmu.Unlock()
 	}
 	return r
+}
+
+func (r *deadRig) playedVerdicts() []deadKeyVerdict {
+	r.dmu.Lock()
+	defer r.dmu.Unlock()
+	return append([]deadKeyVerdict(nil), r.verdicts...)
+}
+
+// TestDeadKeyDoublePress replays Jens' ST30 (2026-11-22): the speaker had lost
+// its keys, and two quick presses of key 2 reached the key trace (press,
+// release, press, release within 35 ms, each with a tap verdict) and nothing
+// else. The dead key used to play key 2's own station; the press is a double
+// press and says so, so the key's second row plays. A single press and two
+// presses too far apart stay single, and two keys are no double press.
+func TestDeadKeyDoublePress(t *testing.T) {
+	r := newDeadRig(t, "UPNP", 2, 3)
+	r.key("PRESET_2", boxlog.StatePressed, 0)
+	r.key("PRESET_2", boxlog.StateReleased, 23)
+	r.gesture(false, 27)
+	r.key("PRESET_2", boxlog.StatePressed, 28)
+	r.key("PRESET_2", boxlog.StateReleased, 34)
+	r.gesture(false, 35)
+	r.fireAfter(holdConfirmAfter)
+	got := r.playedVerdicts()
+	if len(got) != 1 || r.playedSlots()[0] != 2 || !got[0].Double || got[0].Gap != 28*time.Millisecond {
+		t.Fatalf("played %v %+v, want key 2 once as a double press 28 ms apart\n%s", r.playedSlots(), got, r.log.String())
+	}
+	if !strings.Contains(r.log.String(), "double=true") {
+		t.Fatalf("the dead-key line must say it was a double press:\n%s", r.log.String())
+	}
+
+	for _, tc := range []struct {
+		name   string
+		second string
+		ms     int
+		want   int
+	}{
+		{"second press after the window", "PRESET_2", int(doublePressWindow/time.Millisecond) + 100, 2},
+		{"second press on another key", "PRESET_3", 200, 3},
+	} {
+		r := newDeadRig(t, "UPNP", 2, 3)
+		r.key("PRESET_2", boxlog.StatePressed, 0)
+		r.key("PRESET_2", boxlog.StateReleased, 60)
+		r.key(tc.second, boxlog.StatePressed, tc.ms)
+		r.key(tc.second, boxlog.StateReleased, tc.ms+60)
+		r.fireAfter(holdConfirmAfter)
+		got := r.playedVerdicts()
+		if len(got) != 1 || r.playedSlots()[0] != tc.want || got[0].Double {
+			t.Fatalf("%s: played %v %+v, want key %d once as a single press", tc.name, r.playedSlots(), got, tc.want)
+		}
+	}
+
+	r = newDeadRig(t, "UPNP", 2)
+	r.key("PRESET_2", boxlog.StatePressed, 0)
+	r.key("PRESET_2", boxlog.StateReleased, 60)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.playedVerdicts(); len(got) != 1 || got[0].Double {
+		t.Fatalf("a single press: %+v", got)
+	}
+}
+
+// TestPlayDeadKeyDoublePressPlaysRowTwo: a double press on a dead key plays
+// the key's second row; with nothing there, the key's own preset, exactly as
+// on a key the speaker still holds.
+func TestPlayDeadKeyDoublePressPlaysRowTwo(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		row2   bool
+		double bool
+		want   int
+	}{
+		{"double press, row 2 set", true, true, 8},
+		{"double press, row 2 empty", false, true, 2},
+		{"single press, row 2 set", true, false, 2},
+	} {
+		var buf bytes.Buffer
+		store := presets.New()
+		_ = store.SetSlot(presets.Preset{Slot: 2, Name: "WDR2", StreamURL: "http://radio.example/two", Type: "radio"})
+		if tc.row2 {
+			_ = store.SetSlot(presets.Preset{Slot: 8, Name: "Herbst Chillout", Type: "spotify", URI: "spotify:playlist:x"})
+		}
+		var recalled []int
+		h := &presetWsHandler{
+			logger: slog.New(slog.NewTextHandler(&buf, nil)),
+			resync: newResyncAsks(),
+			store:  store,
+			playSlotFn: func(_ context.Context, slot int) (string, error) {
+				recalled = append(recalled, slot)
+				return "x", nil
+			},
+		}
+		h.playDeadKey(context.Background(), 2, deadKeyVerdict{Dead: true, Name: "WDR2", Source: "UPNP", Double: tc.double, Gap: 28 * time.Millisecond})
+		if !reflect.DeepEqual(recalled, []int{tc.want}) {
+			t.Fatalf("%s: recalled %v, want [%d]\n%s", tc.name, recalled, tc.want, buf.String())
+		}
+		if tc.want == 8 && !strings.Contains(buf.String(), "dead key: double press on key 2 -> row 2 slot 8") {
+			t.Fatalf("%s: missing the row-2 line:\n%s", tc.name, buf.String())
+		}
+	}
 }
 
 func (r *deadRig) playedSlots() []int {

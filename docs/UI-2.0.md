@@ -142,7 +142,8 @@ releases later.
   had the 3:1 edge a text field needs. Now the neutral surfaces are layered
   and parted by hairlines (see the colour tokens), and the strong edge is
   left to what is told by its outline. In the same pass: the search field
-  sits next to the Radio title; the six keys take one row, like the six
+  sits next to the Radio title (since 24 November on the Discover and
+  Favorites row, right over the filters, #1587); the six keys take one row, like the six
   buttons on the speaker (two rows of three in the smallest window or at a
   larger text size); the player has one round primary button, Play or Pause,
   with Stop and power as quiet round buttons beside it (their words stay as

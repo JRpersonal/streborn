@@ -119,9 +119,11 @@ type presetWsHandler struct {
 	// nothing else on the key. Both nil-safe.
 	onLikeKey   func()
 	onUnlikeKey func()
-	// onRadioStepKey steps to the next or previous radio key when the key
-	// trace reports Next or Previous (webui.RadioStepKey, #1619). nil-safe.
-	onRadioStepKey func(forward bool)
+	// onTrackKey answers Next or Previous as the key trace reports them
+	// (webui.RemoteTrackKey): a radio key steps to the next one (#1619), and
+	// a Spotify or queue press the gabbo skip frame missed still skips.
+	// nil-safe.
+	onTrackKey func(forward bool)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
@@ -635,7 +637,11 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		// Bumped here on the read loop, so the first press's recall stands
 		// down from this instant on. The webhook stays with the first press.
 		seq := h.pressSeq.Add(1)
-		go h.playExtraRow(ctx, seq, slot, selected, selectedRow, pressAt.Sub(first), true,
+		playCtx := ctx
+		if selectedRow == 2 {
+			playCtx = row2PressContext(ctx, first)
+		}
+		go h.playExtraRow(playCtx, seq, slot, selected, selectedRow, pressAt.Sub(first), true,
 			strconv.Itoa(selectedRow)+" presses within the window")
 		return
 	case planConfirm:
@@ -919,10 +925,29 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	if isNativeRadioLocation(location) {
 		h.logger.Info("hardware preset: native radio preset, the box activates it itself",
 			"slot", slot, "location", location)
+		// A newer press owns the speaker already: the second half of a double
+		// press that plays the key's second row (#1110). Its playRow2 cancels
+		// the first-press rescue, but this goroutine can get here a moment
+		// after that cancel, and noting the activation then re-armed the rescue
+		// for row 1: when the cut-off station reported no first frame, the
+		// rescue was one "is it playing" check away from pressing key 1 again
+		// over row 2 (live Portable 2026-11-22). Nor may this press's
+		// Recently-played card or last-play record land after the newer one.
+		// The cancel count is read first: the newer press bumps the sequence
+		// before its playRow2 cancels, so a cancel this check misses is still
+		// caught by the epoch.
+		epoch := h.firstPress.currentEpoch()
+		if h.pressSeq.Load() != seq {
+			h.logger.Info("hardware preset: native radio preset superseded by a newer press, no rescue and no last-play record", "slot", slot)
+			return
+		}
 		// Standing back is right, and it is not the same as looking away: if
 		// the firmware then tells its own log that it got no first frame, this
 		// press is the one that failed (see firstpressrescue.go).
-		h.firstPress.noteNativeActivation(slot, time.Now())
+		if !h.firstPress.noteNativeActivationIn(epoch, slot, time.Now()) {
+			h.logger.Info("hardware preset: native radio preset superseded by a newer press, no rescue and no last-play record", "slot", slot)
+			return
+		}
 		if p, ok := h.store.Get(slot); ok {
 			if h.noteRecentPreset != nil {
 				h.noteRecentPreset(p)

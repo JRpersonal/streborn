@@ -74,6 +74,10 @@ export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:
 
 export function CurrentWiFi():Promise<string>;
 
+export function DeezerRecheck(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function DeezerStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
@@ -182,6 +186,8 @@ export function LibraryFolder(arg1:string,arg2:string):Promise<main.LibraryConta
 
 export function LibraryRefusedServers():Promise<Array<main.LibraryRefusal>>;
 
+export function LibraryUSBNotices():Promise<Array<main.LibraryUSBNotice>>;
+
 export function LinkMusicService(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function ListBoxMediaServers(arg1:string,arg2:number):Promise<Array<main.BoxMediaServer>>;
@@ -217,6 +223,8 @@ export function PhoneAddressFor(arg1:string,arg2:number):Promise<main.PhoneAddre
 export function PhoneQR(arg1:string):Promise<string>;
 
 export function PickFirmwareFile():Promise<string>;
+
+export function PlayDeezerLink(arg1:string,arg2:number,arg3:string,arg4:string):Promise<Record<string, any>>;
 
 export function PlayPandoraStation(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<void>;
 
@@ -413,6 +421,8 @@ export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
+
+export function SpotifyPlayMode(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function SpotifyQuality(arg1:string,arg2:number):Promise<main.SpotifyQualityState>;
 

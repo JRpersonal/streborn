@@ -333,9 +333,18 @@ const (
 )
 
 func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover string, state liveTrackState) {
+	track, artist, cover, state, _ = m.liveNowPlayingStatus(ctx)
+	return track, artist, cover, state
+}
+
+// liveNowPlayingStatus is liveNowPlayingState plus the playlist's shuffle and
+// repeat from the same /status answer, so /spotify/info reports them without
+// a second engine read (#2058). modes is nil when the engine did not answer or
+// its answer could not be read.
+func (m *Manager) liveNowPlayingStatus(ctx context.Context) (track, artist, cover string, state liveTrackState, modes *playModes) {
 	data, err := m.apiGet(ctx, "/status")
 	if err != nil {
-		return "", "", "", liveStatusUnknown
+		return "", "", "", liveStatusUnknown, nil
 	}
 	var st struct {
 		Track *struct {
@@ -344,12 +353,14 @@ func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover
 			ArtistNames   []string `json:"artist_names"`
 			AlbumCoverURL string   `json:"album_cover_url"`
 		} `json:"track"`
+		playModes
 	}
 	if json.Unmarshal(data, &st) != nil {
-		return "", "", "", liveStatusUnknown
+		return "", "", "", liveStatusUnknown, nil
 	}
+	modes = &st.playModes
 	if st.Track == nil || st.Track.Name == "" {
-		return "", "", "", liveStatusNoTrack
+		return "", "", "", liveStatusNoTrack, modes
 	}
 	track = st.Track.Name
 	artist = strings.Join(st.Track.ArtistNames, ", ")
@@ -363,7 +374,7 @@ func (m *Manager) liveNowPlayingState(ctx context.Context) (track, artist, cover
 	m.mu.Unlock()
 	m.notifyTrack()
 	m.noteResume()
-	return track, artist, cover, liveStatusTrack
+	return track, artist, cover, liveStatusTrack, modes
 }
 
 // TrackChange is what the onTrack hook receives for each new song: the song
@@ -487,7 +498,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	refused, refusedName := m.accountRefusedFor(refusedUser)
 	// Prefer the live track from /status over the laggy cached metadata events.
-	lt, la, lc, state := m.liveNowPlayingState(r.Context())
+	lt, la, lc, state, modes := m.liveNowPlayingStatus(r.Context())
 	switch state {
 	case liveStatusTrack:
 		track, artist, cover = lt, la, lc
@@ -595,6 +606,12 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// READ rather than inferred: on its first hardware run there was no way to
 		// tell a working pair advert from a no-op.
 		Stereo StereoStatus `json:"stereo"`
+		// PlayModes is the playlist's shuffle and repeat as the engine has them
+		// now, from the same /status read as the song. The desktop app's
+		// shuffle and repeat buttons show it while a Spotify playlist plays
+		// (#2058). Absent when the engine did not answer, and on an agent older
+		// than this, which the app reads as "no buttons".
+		PlayModes *InfoPlayModes `json:"playModes,omitempty"`
 	}{
 		Ready:              m.Ready(),
 		Bitrate:            m.Bitrate(),
@@ -615,6 +632,9 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		AccountRefusedName: refusedName,
 		GroupedRefusal:     m.GroupedRefusal(),
 		Stereo:             m.StereoStatusNow(),
+	}
+	if modes != nil {
+		resp.PlayModes = &InfoPlayModes{Shuffle: modes.Shuffle, Repeat: modes.repeat()}
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

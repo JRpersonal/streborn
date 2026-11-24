@@ -12,10 +12,8 @@ package bosefw
 // reads the table back from the doc and fails when the two drift apart. The
 // only checksums are the ones the table lists under "Known values".
 //
-// One step is read from the "Never use" column rather than the route column:
-// the archive's Wave IV 14.00.33 is the SA-5's file, so no usable copy of that
-// step is known, and a Wave IV below 14.0.33 gets "no-source" like the SA-4
-// below 14. The doc row says so too.
+// The Bluetooth chassis (newer sm2 hardware) is no route family any more: its
+// models have checked ladders (ladder_data.go).
 
 import "strings"
 
@@ -24,9 +22,6 @@ const (
 	FamilyWaveScm     = "wave-scm"     // Wave SoundTouch, first generation
 	FamilySA4Scm      = "sa4-scm"      // SA-4 and Stereo JC, first generation
 	FamilyCinemateScm = "cinemate-scm" // CineMate adapter, first generation
-	FamilyBTSm2       = "bt-sm2"       // SoundTouch 20/30 with Bluetooth, SA-5, 300, Wireless Link
-	FamilyWaveSm2     = "wave-sm2"     // Wave IV
-	FamilyST10Sm2     = "st10-sm2"     // SoundTouch 10
 )
 
 // innerFP is the size and CRC-32 of an Update.stu.
@@ -74,20 +69,9 @@ var routes = []route{
 		Family: FamilyCinemateScm, Models: []string{"cinemate"}, ModuleType: "scm",
 		Versions: []string{"06.00.91", "07.00.37", "14.00.33", "15.00.20"},
 	},
-	{
-		Family: FamilyBTSm2, Models: []string{"soundtouch 20", "soundtouch 30", "soundtouch sa-5", "soundtouch 300", "wireless link"}, ModuleType: "sm2",
-		Versions: []string{"14.00.33", "15.00.20"},
-	},
-	{
-		Family: FamilyWaveSm2, Models: []string{"wave soundtouch"}, ModuleType: "sm2",
-		Versions:      []string{"14.00.33", "15.00.20"},
-		NoSourceBelow: "14.0.33",
-		Avoid:         []string{"14.00.33"},
-	},
-	{
-		Family: FamilyST10Sm2, Models: []string{"soundtouch 10"}, ModuleType: "sm2",
-		Versions: []string{"15.00.20"},
-	},
+	// The Bluetooth chassis (SoundTouch 10, 20/30 with Bluetooth, SA-5, 300,
+	// Wireless Link, Wave IV) has checked ladders (ladder_data.go), so Plan
+	// never routes it here.
 }
 
 // sm2Only are the models Bose only ever built on the newer hardware, so a

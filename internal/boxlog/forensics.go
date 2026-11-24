@@ -24,6 +24,11 @@ const (
 	eventRingLen = 200
 	// tailRingLen bounds the redacted raw tail.
 	tailRingLen = 150
+	// deezerRingLen bounds the Deezer tail: every firmware line that names
+	// Deezer or a music-service account call, kept apart from the raw tail so
+	// a chatty box cannot roll the login test out of it before the bundle is
+	// taken (docs/streaming/deezer.md, A2).
+	deezerRingLen = 80
 	// setupTailFollow is how many further lines the frozen setup tail keeps
 	// after the event that triggered it.
 	setupTailFollow = 200
@@ -94,6 +99,15 @@ const (
 	// standby, firmware clock correct and enabled) had no evidence of which
 	// state the panel was in or when it changed.
 	ClassDisplayClock Class = "display_clock" // HSM: ChangeState(StandbyClock >> StandbyNoClock) and back
+	// ClassDisplayState is the display controller moving between its states
+	// while the speaker is ON (LoadingPleaseWait, OnShelby, Idle, OnAux ...).
+	// Ring only: it changes on every source change, and the frozen tail in a
+	// bundle is all it takes. A Lifestyle 650 (discussion #2091) shows
+	// "searching, buffering" on the TV while a station plays, and its bundle
+	// caught the controller still in LoadingPleaseWait at the next power-off,
+	// where an ST10 and a Wave were in OnShelby; nothing showed when, or
+	// whether, it ever left LoadingPleaseWait.
+	ClassDisplayState Class = "display_state" // HSM: DisplayController ChangeState(A >> B), neither side Standby
 	// ClassGroupError is the firmware refusing to activate a source because
 	// its group is not whole: EVT_SYSTEM_GROUP_STATE_IN_ERROR, which lands it
 	// straight back in standby. Measured on a speaker that is the RIGHT half
@@ -123,6 +137,11 @@ const (
 	ClassMargeError Class = "marge_error"
 	// BoseApp overload.
 	ClassSwamped Class = "swamped"
+	// ClassUSBDisk is the kernel announcing a USB disk coming or going (the
+	// SCSI attach, the partition list, a FAT warning at mount time, the USB
+	// disconnect). Ring only: the agent's music stick code logs its own
+	// reading of the stick once per change (usbdisk.go).
+	ClassUSBDisk Class = "usb_disk"
 )
 
 // Event is one classified firmware line.
@@ -137,6 +156,10 @@ type Event struct {
 	Facility string `json:"facility,omitempty"`
 	// Message is the redacted, truncated message after the DPrint prefix.
 	Message string `json:"message"`
+	// Backlog is a line logread replayed from the ring at its (re)start
+	// rather than one it just delivered (lineIsBacklog). Set for the classes
+	// a hook acts on at the moment of the line (usb_disk); never encoded.
+	Backlog bool `json:"-"`
 }
 
 // Line is one syslog line split into its fields. The ring's format is
@@ -211,6 +234,10 @@ func IsNoise(line string) bool {
 func Classify(l Line) (Class, bool) {
 	m := l.Message
 	switch {
+	// Kernel lines first and only from the kernel: no Bose daemon logs these
+	// shapes, and none of the cases below should see a kernel line.
+	case l.Process == "kernel" && isUSBDiskLine(m):
+		return ClassUSBDisk, true
 	case strings.Contains(m, "PlaybackFailure"):
 		return ClassPlayFailure, true
 	case strings.Contains(m, "SERVER ERROR: Server state"):
@@ -357,6 +384,9 @@ func classifyStateChange(m string) (Class, bool) {
 	case strings.HasPrefix(from, "Standby") && strings.HasPrefix(to, "Standby") &&
 		(strings.Contains(from, "Clock") || strings.Contains(to, "Clock")):
 		return ClassDisplayClock, true
+	case !strings.HasPrefix(from, "Standby") && !strings.HasPrefix(to, "Standby") &&
+		strings.Contains(m, "DisplayController:"):
+		return ClassDisplayState, true
 	}
 	return "", false
 }
@@ -421,16 +451,44 @@ var bssidRe = regexp.MustCompile(`\b[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\b`)
 // ("VerifyProfileData Passphrase: <secret>"), and wpa_supplicant-style lines
 // carry psk=. Everything after the separator is dropped, quoted or not: a
 // passphrase may contain spaces, so there is no safe place to stop early.
-var secretRe = regexp.MustCompile(`(?i)\b(passphrase|password|passwd|wpapsk|psk)(\s*[:=]\s*)\S.*$`)
+//
+// The same rule drops an account token or a music-service password the
+// firmware might print while it links a service (the Deezer login test,
+// docs/streaming/deezer.md): access_token=, refresh_token=, token=, secret=,
+// arl=, pass= and pw:. The last one is not hypothetical: BoseApp logs a
+// music-service login as
+//
+//	STSServiceProxy::SendCreateAccountRequest(usr:<mail>, pw:<password>*DEEZER), resp:...
+//
+// with the password in clear, and on v1.9.0 that line reached a public
+// bundle (#2040, 2026-11-22) because pw: was missing from this list.
+var secretRe = regexp.MustCompile(`(?i)\b(passphrase|password|passwd|pwd|pass|pw|wpapsk|psk|access_token|refresh_token|token|secret|arl)(\s*[:=]\s*)\S.*$`)
 
-// Redact replaces every SSID value and every MAC address with a hash tag, and
-// drops every Wi-Fi secret the line carries. The
+// emailRe matches an e-mail address, the shape a music-service account name
+// has (the Deezer and Pandora logins). The line keeps two characters and the
+// domain, enough to tell two accounts apart, as the stand-in's own masking
+// does (marge.maskAccount).
+var emailRe = regexp.MustCompile(`([A-Za-z0-9._%+-]{1,64})@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})`)
+
+// Redact replaces every SSID value and every MAC address with a hash tag,
+// drops every secret the line carries (Wi-Fi, account token, password), and
+// masks every e-mail address. The
 // app's bundle anonymizer masks IPs and device ids on its own, but it cannot
 // recognise a bare network name in free text, so that happens here, on the
 // speaker.
 func Redact(s string) string {
-	if containsFoldASCII(s, "pass") || containsFoldASCII(s, "psk") {
+	if containsFoldASCII(s, "pass") || containsFoldASCII(s, "psk") || containsFoldASCII(s, "token") || containsFoldASCII(s, "pw") ||
+		containsFoldASCII(s, "secret") || containsFoldASCII(s, "arl=") || containsFoldASCII(s, "arl:") {
 		s = secretRe.ReplaceAllString(s, "${1}${2}<secret-redacted>")
+	}
+	if strings.IndexByte(s, '@') >= 0 {
+		s = emailRe.ReplaceAllStringFunc(s, func(m string) string {
+			local, domain, _ := strings.Cut(m, "@")
+			if len(local) > 2 {
+				local = local[:2]
+			}
+			return local + "***@" + domain
+		})
 	}
 	if containsFoldASCII(s, "ssid=") {
 		s = ssidRe.ReplaceAllStringFunc(s, func(m string) string {
@@ -573,11 +631,19 @@ func (r *ring[T]) last() (T, bool) {
 
 // forensics holds the bounded state behind the two debug sections.
 type forensics struct {
-	mu          sync.Mutex
-	events      *ring[Event]
-	tail        *ring[string]
-	lastLogged  map[Class]time.Time
-	lastPlayErr Event
+	mu     sync.Mutex
+	events *ring[Event]
+	tail   *ring[string]
+	// deezer is the Deezer tail (deezerRingLen), allocated on the first
+	// Deezer line, so a speaker that never logs one carries none of it.
+	deezer     *ring[string]
+	deezerSeen uint64
+	// deezerRetry is the code of the firmware's last Deezer relogin retry
+	// (UserInfoRecreateFailureCB '3351'), deezerRetryAt when it was read.
+	deezerRetry   string
+	deezerRetryAt time.Time
+	lastLogged    map[Class]time.Time
+	lastPlayErr   Event
 	// lastPresetRefusal is when the firmware last logged that it refused a
 	// preset write (UpdatePresetFailureCB). The CLI answers such a write as if
 	// it had succeeded, so this line is the only evidence; see
@@ -667,11 +733,21 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	// The play clock and the stale-URL stamp are read as "now" by the file
 	// resume, so a line logread -f replays from the ring at its (re)start
 	// must not land there as if it had just been logged (see lineIsBacklog).
-	backlog := (isOffset || class == ClassPlayStaleURL || class == ClassPlayUnderrun) && lineIsBacklog(l.Stamp, now)
+	backlog := (isOffset || class == ClassPlayStaleURL || class == ClassPlayUnderrun || class == ClassUSBDisk) && lineIsBacklog(l.Stamp, now)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tail.push(tailLine)
 	f.feedSetupTailLocked(tailLine)
+	if isDeezerLine(l) {
+		if f.deezer == nil {
+			f.deezer = newRing[string](deezerRingLen)
+		}
+		f.deezer.push(tailLine)
+		f.deezerSeen++
+		if m := deezerRetryPattern.FindStringSubmatch(l.Message); m != nil {
+			f.deezerRetry, f.deezerRetryAt = m[1], now
+		}
+	}
 	if isOffset && !backlog {
 		f.audioOffset, f.audioOffsetAt = offset, now
 		// The account counts the play again: whatever ran under a stale id
@@ -692,7 +768,7 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 		f.freezeSetupTailLocked(class, now)
 	}
 	f.classified++
-	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg}
+	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg, Backlog: backlog}
 	f.events.push(ev)
 	if class.Playback() {
 		f.lastPlayErr = ev
@@ -921,6 +997,48 @@ func (f *forensics) sectionSnapshot() map[string]any {
 	out := f.eventsSnapshot()
 	out["powerSignal"] = f.powerSnapshot()
 	return out
+}
+
+// isDeezerLine reports whether a firmware line is about Deezer or about a
+// music-service account call (setMusicServiceAccount and its siblings log
+// through the same names). The words are read case-insensitively in the
+// message, the facility and the process, because nobody knows yet which
+// daemon carries the firmware's Deezer client.
+func isDeezerLine(l Line) bool {
+	return containsFoldASCII(l.Message, "deezer") || containsFoldASCII(l.Facility, "deezer") ||
+		containsFoldASCII(l.Process, "deezer") || containsFoldASCII(l.Message, "MusicServiceAccount") ||
+		containsFoldASCII(l.Message, "MusicServiceOAuth")
+}
+
+// deezerSnapshot is the box_syslog_deezer debug section: the Deezer tail,
+// newest last, redacted like the raw tail, and how many such lines this run
+// has seen in all.
+func (f *forensics) deezerSnapshot() map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lines := []string{}
+	if f.deezer != nil {
+		lines = f.deezer.items()
+	}
+	out := map[string]any{"seen": f.deezerSeen, "lines": lines}
+	if f.deezerRetry != "" {
+		out["lastRetryCode"] = f.deezerRetry
+		out["lastRetryAt"] = f.deezerRetryAt
+	}
+	return out
+}
+
+// deezerRetryPattern reads the code of the firmware's Deezer relogin retry:
+// "UserInfoRecreateFailureCB '3351', retry relogin timer". The firmware logs
+// it every few seconds while its Deezer client cannot log in (3351: it has
+// no token; 3330: Deezer refused the token, docs/streaming/deezer.md).
+var deezerRetryPattern = regexp.MustCompile(`UserInfoRecreateFailureCB\s+'(\d{1,6})'`)
+
+// deezerLastRetry is the last relogin retry code and when it was read.
+func (f *forensics) deezerLastRetry() (code string, at time.Time, ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deezerRetry, f.deezerRetryAt, f.deezerRetry != ""
 }
 
 // tailSnapshot is the box_syslog_tail debug section.

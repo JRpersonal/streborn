@@ -51,7 +51,7 @@ type radioStepVia int
 
 const (
 	radioStepViaSkipFrame radioStepVia = iota // QPLAY_SKIP_*_FAILED (HardwareSkip)
-	radioStepViaKeyTrace                      // the key trace (RadioStepKey)
+	radioStepViaKeyTrace                      // the key trace (RemoteTrackKey)
 )
 
 // radioStepState is what the radio step keeps between presses.
@@ -189,16 +189,6 @@ func (s *Server) radioStepBoxAgrees(ctx context.Context, slot int) (bool, string
 // goes on with the song skip.
 func (s *Server) stepRadioPreset(ctx context.Context, forward bool) (source string, handled bool) {
 	return s.radioStep.step(ctx, s, forward, radioStepViaSkipFrame, time.Now())
-}
-
-// RadioStepKey answers a Next/Prev press the speaker's key trace reported
-// (cmd/agent keytrace.go). It does nothing unless a radio key plays; the
-// song skip of Spotify and the music library stays with HardwareSkip. Call
-// it off the key reader's goroutine: a step recalls a station.
-func (s *Server) RadioStepKey(forward bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	s.radioStep.step(ctx, s, forward, radioStepViaKeyTrace, time.Now())
 }
 
 func (st *radioStepState) step(ctx context.Context, s *Server, forward bool, via radioStepVia, at time.Time) (string, bool) {

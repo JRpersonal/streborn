@@ -1,5 +1,5 @@
 // stickers/data.js: what goes on a speaker's sticker, read from its presets,
-// and the three things this computer remembers about the stickers.
+// and what this computer remembers about the stickers.
 //
 // No api.js and no DOM here: turning presets into keys, the fingerprint of a
 // key assignment and the storage are unit-tested as they are. Reading the
@@ -85,6 +85,7 @@ export function keysFingerprint(keys) {
 const HOUSING_KEY = 'str.stickerHousing';
 const PRINTED_KEY = 'str.stickerPrinted';
 const HINT_KEY = 'str.stickerHint';
+const LARGE_KEY = 'str.stickerLarge';
 
 const store = (storage) => (storage === undefined ? globalThis.localStorage : storage);
 
@@ -114,6 +115,17 @@ export function setHousing(id, housing, storage) {
   const map = readMap(HOUSING_KEY, storage);
   map[id] = housing === 'white' ? 'white' : 'dark';
   writeMap(HOUSING_KEY, map, storage);
+}
+
+// Large text is one choice for the whole sheet, not per speaker: whoever
+// needs it needs it on every sticker. Off until ticked, and kept on this
+// computer; storage that cannot be read means off.
+export function largeTextOn(storage) {
+  try { return store(storage).getItem(LARGE_KEY) === '1'; } catch { return false; }
+}
+
+export function setLargeText(on, storage) {
+  try { store(storage).setItem(LARGE_KEY, on ? '1' : '0'); } catch { /* blocked storage: off again next time */ }
 }
 
 // printedFingerprints is what was on each speaker's keys when the stickers

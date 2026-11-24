@@ -25,7 +25,9 @@ describe('native service presets', () => {
     expect(nativeServiceLabel('PANDORA')).toBe('Pandora');
     expect(nativeServiceLabel('iheart')).toBe('iHeartRadio');
     expect(nativeServiceLabel('IHEARTRADIO')).toBe('iHeartRadio');
-    expect(nativeServiceLabel('DEEZER')).toBe('');
+    expect(nativeServiceLabel('deezer')).toBe('Deezer');
+    expect(nativeServiceSaveable('DEEZER')).toBe(true);
+    expect(nativeServiceLabel('AMAZON')).toBe('');
     expect(nativeServiceLabel(undefined)).toBe('');
     expect(nativeServiceSaveable('PANDORA')).toBe(true);
     expect(nativeServiceSaveable('LOCAL_INTERNET_RADIO')).toBe(false);

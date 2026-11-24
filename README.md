@@ -38,6 +38,8 @@ Download the app for Windows, macOS or Linux from **[st-reborn.de](https://st-re
 
 Speaker firmware too old? [`docs/FIRMWARE-UPDATE.md`](./docs/FIRMWARE-UPDATE.md) shows how to bring it to Bose's last version.
 
+Install stops because the speaker was reset and never set up again, or it still carries a previous owner's setup? [`docs/RESET-AND-SETUP.md`](./docs/RESET-AND-SETUP.md) walks through a factory reset and one setup in the Bose SoundTouch app.
+
 ## Community apps
 
 Independent community projects that build on STR:

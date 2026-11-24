@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -276,5 +277,27 @@ func TestStartVolumeStillAppliesOnAPlainPowerOn(t *testing.T) {
 	playing.Store(true)
 	if !waitForStartVol(func() bool { return calls.Load() == 1 }, startVolumeApplyDelay+2*time.Second) || last.Load() != 20 {
 		t.Fatalf("start level set %d times, last %d; want once, 20", calls.Load(), last.Load())
+	}
+}
+
+// #2070: a start level of 100 nobody remembered setting. The log line of a
+// save says what it was before and who sent it, so a bundle can tell the
+// desktop app from the phone page.
+func TestStartVolumeSaveLogsWhoAndFromWhat(t *testing.T) {
+	var buf bytes.Buffer
+	s := startVolServer(t)
+	s.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	if code, _ := postStartVol(t, s, `{"volume":30}`); code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/api/box/start-volume", strings.NewReader(`{"volume":100}`))
+	r.RemoteAddr = "192.168.1.21:5555"
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Linux; Android 14) Mobile")
+	s.handleStartVolume(httptest.NewRecorder(), r)
+	log := buf.String()
+	for _, want := range []string{"vol=100", "was=30", "remote=192.168.1.21:5555", "Android 14"} {
+		if !strings.Contains(log, want) {
+			t.Errorf("save log lacks %q:\n%s", want, log)
+		}
 	}
 }

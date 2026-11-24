@@ -112,6 +112,12 @@ const INSTALL_HELP_STEPS = {
   // Install again repeats the same restart (an ST20, twice, 2026-10-26), so
   // the steps say wait and send the logs, never retry, and name no stick.
   'repair-box-restarted': ['repairRestarted', 'netLogs'],
+  // The speaker turned ST Reborn's stand-in account down itself (Bose error
+  // 1038, no call to this PC), before and after a restart onto the local
+  // responder: a speaker reset and never set up again (a Wave IV, five installs
+  // across four releases, 2026-11-18 to 11-23). Nothing on the PC changes that,
+  // so the steps send the owner to one setup in Bose's own SoundTouch app.
+  'speaker-not-set-up': ['boseAppSetup', 'boseAppRetry', 'logs'],
 };
 
 // INSTALL_HELP_STEPS_NET is the OTA/network-install counterpart of the map
@@ -136,6 +142,7 @@ const INSTALL_HELP_STEPS_NET = {
   'firmware-too-old': ['firmwareFirst', 'netLogs'],
   'speaker-starting': ['waitRefresh', 'netLogs'],
   'repair-box-restarted': ['repairRestarted', 'netLogs'],
+  'speaker-not-set-up': ['boseAppSetup', 'boseAppRetry', 'netLogs'],
 };
 const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
 

@@ -55,6 +55,14 @@ func (s *Server) recallRefusal(slot int, pp *presets.Preset) *playRefusal {
 		s.logger.Warn("preset recall (app): the saved folder has no playable tracks, not waking the speaker", "slot", slot)
 		return textRefusal(http.StatusUnprocessableEntity, "preset has no playable tracks")
 	}
+	// A song key on a file of this speaker's USB stick that the speaker cannot
+	// play (sample rate above 48 kHz, usbhires.go): refused before the wake.
+	// Only a stick URL costs a header read; every other key passes at once.
+	if p.Type != "queue" && p.Type != "spotify" {
+		if ref := s.usbHiResRefusal(usbLoopbackURL(p.StreamURL), p.Name, slot); ref != nil {
+			return ref
+		}
+	}
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The

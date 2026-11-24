@@ -121,6 +121,9 @@ func (s *Server) savePresetSlot(ctx context.Context, req presetSaveRequest) (pre
 	// self-proxy stream heal below; the box side re-wraps at write time
 	// anyway, so the display loses nothing.
 	p.Art = healSelfArtProxy(p.Art)
+	// A key on a file of this speaker's own USB stick keeps the loopback
+	// address the speaker can fetch (usbmusic.go).
+	usbLoopbackPreset(&p)
 	// A library key saved from a listing this agent served (the phone page)
 	// gets the track's object id, so a server that renumbers its file URLs
 	// does not kill it (#919, libraryreresolve.go).

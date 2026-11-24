@@ -26,6 +26,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
 // prearmTimeout bounds the reads against the media server for one track.
@@ -102,7 +104,13 @@ var defaultPrearmProbe = probeMP3Length
 // probeMP3Length reads the size of the MP3 at url and estimates its length
 // from its first frame. exact is true only for a Xing/Info or VBRI frame count.
 func probeMP3Length(ctx context.Context, url string) (time.Duration, bool) {
+	if netutil.SafeHTTPURL(url) != nil {
+		return 0, false
+	}
 	cl := customFileProbeClient()
+	if isUSBLoopbackFile(url) {
+		cl = usbProbeClient() // the guarded client refuses loopback
+	}
 	verdict, size := probeFileStep(ctx, cl, http.MethodHead, url)
 	if verdict == fileUnknown {
 		verdict, size = probeFileStep(ctx, cl, http.MethodGet, url)

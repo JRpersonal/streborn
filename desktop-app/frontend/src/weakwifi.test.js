@@ -23,6 +23,7 @@ describe('boxHasWeakWifiDropout', () => {
     expect(boxHasWeakWifiDropout(box({ weakWifiDropout: 'POOR_SIGNAL', offline: true }))).toBe(false);
     expect(boxHasWeakWifiDropout(box({ weakWifiDropout: 'POOR_SIGNAL', kind: 'stock' }))).toBe(false);
     expect(boxHasWeakWifiDropout(box({ weakWifiDropout: 'POOR_SIGNAL', boxHealth: 'wedged' }))).toBe(false);
+    expect(boxHasWeakWifiDropout(box({ weakWifiDropout: 'POOR_SIGNAL', boxHealth: 'firmware-unresponsive' }))).toBe(false);
     // No internet: the station cannot play at all, that hint is the one to show.
     expect(boxHasWeakWifiDropout(box({ weakWifiDropout: 'POOR_SIGNAL', internet: 'unreachable' }))).toBe(false);
   });

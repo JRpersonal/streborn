@@ -188,7 +188,7 @@ export {
   SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';
 
-export { BrowserOpenURL, ClipboardSetText, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+export { BrowserOpenURL, ClipboardSetText, EventsOn, EventsOff, WindowIsMinimised } from '../wailsjs/runtime/runtime';
 
 // Optional bindings. The wailsjs bindings are regenerated only when the Go
 // backend and the frontend are built together, so a frontend change that
@@ -234,6 +234,14 @@ export function SeekTrack(host, port, positionSec) {
   return callOptionalBinding('SeekTrack', [host, port, positionSec]);
 }
 
+// SpotifyPlayMode presses the player's shuffle ('shuffle') or repeat
+// ('repeat') button for the Spotify playlist the speaker plays (#2058) and
+// resolves to { shuffle, repeat } after the step. Optional binding, per the
+// note above.
+export function SpotifyPlayMode(host, port, action) {
+  return callOptionalBinding('SpotifyPlayMode', [host, port, action]);
+}
+
 // QueueServerAlive tells a speaker that a music server announced itself again,
 // so its "music server not responding" line clears (#1890). Optional binding,
 // per the note above.
@@ -255,6 +263,13 @@ export function PreviewPresetKeyCopy(srcHost, srcPort, dstHost, dstPort, slots) 
 // binding, per the note above.
 export function LibraryRefusedServers() {
   return callOptionalBinding('LibraryRefusedServers', []);
+}
+
+// LibraryUSBNotices lists the USB sticks the last Library scan found in a
+// speaker but could not offer (an install stick, not FAT32, ...), as
+// {speaker, code}. Optional binding, per the note above.
+export function LibraryUSBNotices() {
+  return callOptionalBinding('LibraryUSBNotices', []);
 }
 
 // LibraryFolder is one folder of a media server as the server describes it:
@@ -401,6 +416,20 @@ export function LinkMusicService(host, port, service, user, password) {
 }
 export function UnlinkMusicService(host, port, service) {
   return callOptionalBinding('UnlinkMusicService', [host, port, service]);
+}
+// Deezer on the speaker's own client (deezer.js). Sign-out goes through
+// UnlinkMusicService with service 'deezer'; a new sign-in is not possible
+// without Bose. Optional bindings, per the note above: brand new.
+export function DeezerStatus(host, port) {
+  return callOptionalBinding('DeezerStatus', [host, port]);
+}
+// DeezerRecheck is the card's Check again: the agent hands a kept login back
+// to a speaker that lost it, then answers like DeezerStatus.
+export function DeezerRecheck(host, port) {
+  return callOptionalBinding('DeezerRecheck', [host, port]);
+}
+export function PlayDeezerLink(host, port, link, name) {
+  return callOptionalBinding('PlayDeezerLink', [host, port, link, name || '']);
 }
 export function PandoraStations(host, port) {
   return callOptionalBinding('PandoraStations', [host, port]);

@@ -140,8 +140,8 @@ func TestRoutesMatchDocTable(t *testing.T) {
 	doc := readFirmwareDoc(t)
 	sec := docSection(t, doc, "### Other models: no checked ladder yet", "## 8.")
 	rows := tableRows(sec)
-	if len(rows) != 4 {
-		t.Fatalf("the doc table has %d rows, the test knows 4", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("the doc table has %d rows, the test knows 3", len(rows))
 	}
 	knownRE := regexp.MustCompile(`(\d{1,2}\.\d{1,2}\.\d{1,2}) inside: ([\d ]+) / ` + "`" + `([0-9a-f]{8})` + "`")
 	boseRE := regexp.MustCompile(`Bose 27\.0\.6: ([\d ]+) / ` + "`" + `([0-9a-f]{8})` + "`")
@@ -155,8 +155,8 @@ func TestRoutesMatchDocTable(t *testing.T) {
 			fam = FamilySA4Scm
 		case strings.HasPrefix(speaker, "CineMate adapter"):
 			fam = FamilyCinemateScm
-		case strings.HasPrefix(speaker, "Bluetooth chassis"):
-			checkBluetoothRow(t, routeCell, never)
+		case strings.Contains(speaker, "Bluetooth"):
+			t.Errorf("the Bluetooth chassis has checked ladders, it has no row here any more: %q", speaker)
 			continue
 		default:
 			t.Errorf("a new row in the doc table: %q", speaker)
@@ -188,32 +188,111 @@ func TestRoutesMatchDocTable(t *testing.T) {
 	}
 }
 
-func checkBluetoothRow(t *testing.T, routeCell, never string) {
-	t.Helper()
-	parts := strings.Split(routeCell, "SoundTouch 10 below 15:")
-	if len(parts) != 2 {
-		t.Fatalf("the Bluetooth chassis row changed shape: %q", routeCell)
+// Section 7, "Bluetooth chassis (newer hardware)", table "Which steps a
+// Bluetooth chassis speaker needs": every row against the checked ladder.
+func TestSm2LaddersMatchDocTable(t *testing.T) {
+	doc := readFirmwareDoc(t)
+	sec := docSection(t, doc, "**Which steps a Bluetooth chassis speaker needs:**", "On 15 or newer")
+	models := map[string][]string{
+		"SoundTouch 10": {"SoundTouch 10"},
+		"SoundTouch 20 or 30 with a Bluetooth button, Wireless Link adapter": {"SoundTouch 20", "SoundTouch 30", "SoundTouch Wireless Link adapter"},
+		"SA-5":               {"SoundTouch SA-5"},
+		"SoundTouch 300":     {"SoundTouch 300"},
+		"Wave SoundTouch IV": {"Wave SoundTouch music system IV"},
 	}
-	bt, st10 := parts[0], parts[1]
-	wave := ""
-	if i := strings.Index(st10, "Wave IV below"); i >= 0 {
-		st10, wave = st10[:i], st10[i:]
+	// Samples per column: below 14.0.33, and 14.0.33 up to 14.x.
+	below, from := []string{"9.0.41", "12.0.1", "14.0.15"}, []string{"14.0.33", "14.0.40"}
+	rows := tableRows(sec)
+	if len(rows) != len(models) {
+		t.Fatalf("the doc table has %d rows, the test knows %d", len(rows), len(models))
 	}
-	if got, want := withFinal(routeByFamily(t, FamilyBTSm2).Versions), strings.Join(docVersionRE.FindAllString(bt, -1), " "); got != want {
-		t.Errorf("bt-sm2: route %q, the doc says %q", got, want)
+	for _, row := range rows {
+		names, ok := models[row[0]]
+		if !ok {
+			t.Errorf("a new row in the doc table: %q. Add it to this test and to the ladder.", row[0])
+			continue
+		}
+		for _, model := range names {
+			for _, col := range []struct {
+				cell string
+				vs   []string
+			}{{row[1], below}, {row[2], from}} {
+				for _, v := range col.vs {
+					p := Plan(model, "sm2", "", v, nil)
+					if strings.HasPrefix(col.cell, "No source known") {
+						if p.Status != StatusUnsupported || p.Reason != "no-source" {
+							t.Errorf("%s on %s: the doc says no source, the app %s %q", model, v, p.Status, p.Reason)
+						}
+						continue
+					}
+					want := strings.Join(docVersionRE.FindAllString(col.cell, -1), " ")
+					if got := versions(p.Steps); p.Status != StatusLadder || got != want {
+						t.Errorf("%s on %s: %s %q, the doc says %q", model, v, p.Status, got, want)
+					}
+				}
+			}
+			p := Plan(model, "sm2", "", "14.0.33", nil)
+			want := strings.Join(docVersionRE.FindAllString(row[3], -1), " ")
+			if got := versions(p.Fallbacks[p.Family+"-15.00.20"]); got != want {
+				t.Errorf("%s: if 15.00.20 stalls the app offers %q, the doc %q", model, got, want)
+			}
+		}
 	}
-	if got, want := withFinal(routeByFamily(t, FamilyST10Sm2).Versions), strings.Join(docVersionRE.FindAllString(st10, -1), " "); got != want {
-		t.Errorf("st10-sm2: route %q, the doc says %q", got, want)
+}
+
+// The files table under it: every archive file the doc names is the step's
+// file, with the same zip and inner values, and every archive step of the
+// Bluetooth chassis is in the table.
+func TestSm2FilesMatchDocTable(t *testing.T) {
+	doc := readFirmwareDoc(t)
+	sec := docSection(t, doc, "### Bluetooth chassis (newer hardware)", "### Other models")
+	inner := regexp.MustCompile(`^([\d ]+) / ` + "`" + `([0-9a-f]{8})` + "`$")
+	seen := map[string]bool{}
+	for _, row := range tableRows(sec) {
+		if len(row) != 7 || !strings.HasSuffix(row[2], ".zip`") {
+			continue
+		}
+		file := strings.Trim(row[2], "`")
+		var found bool
+		for _, s := range AllSteps() {
+			if s.FileName != file || !sm2Ladder[s.Family] {
+				continue
+			}
+			found = true
+			seen[s.ID] = true
+			m := inner.FindStringSubmatch(row[5])
+			if s.Version != row[1] || s.ZipSize != docBytes(t, row[3]) || "`"+s.ZipSHA1+"`" != row[4] || m == nil ||
+				s.InnerSize != docBytes(t, m[1]) || s.InnerCRC32 != docCRC(t, m[2]) {
+				t.Errorf("%s: the doc row %q does not match %+v", s.ID, row, s)
+			}
+			if strings.Contains(row[6], "fallback") != s.Fallback {
+				t.Errorf("%s: fallback %v, the doc says %q", s.ID, s.Fallback, row[6])
+			}
+		}
+		if !found {
+			t.Errorf("the doc names %s, no Bluetooth chassis step has it", file)
+		}
 	}
-	w := routeByFamily(t, FamilyWaveSm2)
-	if withFinal(w.Versions) != withFinal(routeByFamily(t, FamilyBTSm2).Versions) {
-		t.Errorf("wave-sm2 is the Bluetooth chassis route: %v", w.Versions)
+	for _, s := range AllSteps() {
+		if sm2Ladder[s.Family] && s.Source == SourceArchive && !seen[s.ID] {
+			// The shared 14.00.33 is one file for two families: one row each.
+			t.Errorf("%s: not in the doc's files table", s.ID)
+		}
 	}
-	m := regexp.MustCompile(`Wave IV below (\d+\.\d+\.\d+): no source known`).FindStringSubmatch(wave)
-	if m == nil || m[1] != w.NoSourceBelow {
-		t.Errorf("wave-sm2: NoSourceBelow %q against the doc's %q", w.NoSourceBelow, wave)
+	// The inner sha1 table names the same values as the steps.
+	shaRE := regexp.MustCompile("`([^`]+\\.zip)` \\| `([0-9a-f]{40})`")
+	n := 0
+	for _, m := range shaRE.FindAllStringSubmatch(sec, -1) {
+		for _, s := range AllSteps() {
+			if s.FileName == m[1] && s.InnerSHA1 != m[2] {
+				t.Errorf("%s: inner sha1 %s, the doc says %s", s.ID, s.InnerSHA1, m[2])
+			}
+		}
+		n++
 	}
-	checkAvoid(t, FamilyWaveSm2, w.Avoid, never)
+	if n == 0 {
+		t.Error("the doc lists no inner sha1 for the Bluetooth chassis")
+	}
 }
 
 // checkAvoid: every file the doc's "Never use" cell names is in the list.
@@ -307,17 +386,17 @@ func TestPlanRoutes(t *testing.T) {
 		{"Wave on 14.0.33 still needs 15.00.20", "Wave SoundTouch", "scm", "14.0.33", nil, StatusRoute, "", FamilyWaveScm, "15.00.20 27.0.6"},
 		{"Wave without moduleType below 9 is the first generation", "Wave SoundTouch", "", "7.0.37", nil, StatusRoute, "", FamilyWaveScm, "14.00.33 15.00.20 27.0.6"},
 		{"Wave without moduleType from 9 on cannot be told apart", "Wave SoundTouch", "", "10.0.11", nil, StatusUnsupported, "generation", "", ""},
-		{"Wave IV on 14.0.33", "Wave SoundTouch music system IV", "sm2", "14.0.33", nil, StatusRoute, "", FamilyWaveSm2, "15.00.20 27.0.6"},
+		{"Wave IV on 14.0.33: the checked ladder", "Wave SoundTouch music system IV", "sm2", "14.0.33", nil, StatusLadder, "", FamilyWaveSm2, "15.00.20 27.0.6"},
 		{"Wave IV below 14.0.33: no usable 14.00.33 known", "Wave SoundTouch", "sm2", "10.0.11", nil, StatusUnsupported, "no-source", FamilyWaveSm2, ""},
 		{"SA-4 below 14: no source", "SoundTouch SA-4", "scm", "10.0.11", nil, StatusUnsupported, "no-source", FamilySA4Scm, ""},
 		{"SA-4 on 14.0.15", "SoundTouch SA-4", "scm", "14.0.15", nil, StatusRoute, "", FamilySA4Scm, "14.0.33 15.0.20 27.0.6"},
 		{"Stereo JC on 14.0.33", "SoundTouch Stereo JC", "scm", "14.0.33", nil, StatusRoute, "", FamilySA4Scm, "15.0.20 27.0.6"},
 		{"SA-4 on the newer hardware: no route in the doc", "SoundTouch SA-4", "sm2", "14.0.15", nil, StatusUnsupported, "model", "", ""},
 		{"CineMate on 6.x", "Cinemate", "scm", "6.0.20", nil, StatusRoute, "", FamilyCinemateScm, "06.00.91 07.00.37 14.00.33 15.00.20 27.0.6"},
-		{"SA-5 without moduleType is sm2", "SoundTouch SA-5", "", "12.0.1", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
-		{"SoundTouch 300", "SoundTouch 300", "sm2", "14.0.15", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
-		{"Wireless Link adapter", "SoundTouch Wireless Link Adapter", "", "13.0.5", nil, StatusRoute, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
-		{"SoundTouch 10 without moduleType", "SoundTouch 10", "", "10.0.11", nil, StatusRoute, "", FamilyST10Sm2, "15.00.20 27.0.6"},
+		{"SA-5 without moduleType: the checked ladder", "SoundTouch SA-5", "", "12.0.1", nil, StatusLadder, "", FamilySA5Sm2, "14.00.33 15.00.20 27.0.6"},
+		{"SoundTouch 300: the checked ladder", "SoundTouch 300", "sm2", "14.0.15", nil, StatusLadder, "", FamilyST300Sm2, "14.00.33 15.00.20 27.0.6"},
+		{"Wireless Link adapter: the checked ladder", "SoundTouch Wireless Link Adapter", "", "13.0.5", nil, StatusLadder, "", FamilyBTSm2, "14.00.33 15.00.20 27.0.6"},
+		{"SoundTouch 10 without moduleType: the checked ladder", "SoundTouch 10", "", "10.0.11", nil, StatusLadder, "", FamilyST10Sm2, "14.00.33 15.00.20 27.0.6"},
 		{"Lifestyle: no known path", "Lifestyle", "sm2", "10.0.11", nil, StatusUnsupported, "model", "", ""},
 		{"no model at all", "", "", "7.0.37", nil, StatusUnsupported, "model", "", ""},
 		{"from 15 every model gets the normal guide", "Wave SoundTouch", "scm", "15.0.20", nil, StatusFinal, "", "", ""},

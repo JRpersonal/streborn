@@ -242,6 +242,8 @@ describe('below 15, no single jump', () => {
       { model: 'Wave SoundTouch', current: '2.1.51' },
       { model: 'SoundTouch 10', moduleType: 'sm2', current: '10.0.11' },
       { model: 'SoundTouch 20', moduleType: 'sm2', current: '14.0.15' },
+      { model: 'SoundTouch 300', moduleType: 'sm2', current: '14.0.15' },
+      { model: 'Wave SoundTouch', moduleType: 'sm2', current: '10.0.11' },
       { model: 'Lifestyle', current: '10.0.11' },
     ]) {
       expect(firmwareGuideMount(ident), ident.model).toContain('data-fwladder=');

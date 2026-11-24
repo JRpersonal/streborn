@@ -8,6 +8,7 @@ import {
   hintState,
   housingOf,
   keysFingerprint,
+  largeTextOn,
   logoRequest,
   noteSpeakerKeys,
   offerHint,
@@ -15,6 +16,7 @@ import {
   printedFingerprints,
   rememberPrinted,
   setHousing,
+  setLargeText,
   speakerId,
   stickerKeys,
   stickersStale,
@@ -194,6 +196,19 @@ describe('housing colour', () => {
     expect(housingOf('p', storage, 'SoundTouch Portable')).toBe('white');
     setHousing('a', 'white', storage);
     expect(housingOf('a', storage, 'SoundTouch 20')).toBe('white');
+  });
+});
+
+describe('large text', () => {
+  it('is off until ticked, is kept, and is off where storage is blocked', () => {
+    const storage = fakeStorage();
+    expect(largeTextOn(storage)).toBe(false);
+    setLargeText(true, storage);
+    expect(largeTextOn(storage)).toBe(true);
+    setLargeText(false, storage);
+    expect(largeTextOn(storage)).toBe(false);
+    expect(largeTextOn(broken)).toBe(false);
+    expect(() => setLargeText(true, broken)).not.toThrow();
   });
 });
 

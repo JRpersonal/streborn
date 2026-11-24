@@ -1,18 +1,42 @@
 # Bringing a speaker to firmware 27.0.6
 
-STR is built and tested against Bose firmware **27.0.6.46330.5043500**,
-the last release Bose ever published (September 2022). A speaker that
-never got that far can still be brought to it. This page shows how,
-including the in-between steps very old speakers need.
-
-Bose's end-of-life page says "firmware updates are no longer available
-now that the cloud is offline". That is true of the update button in the
-Bose app, which asked a server that is gone. It is not true of the files
-themselves: Bose's own download host still serves them. Only the web
-pages that used to link them were taken down. Verified on 2026-09-08.
+**What this is, and do I need it?** Every SoundTouch speaker runs
+software from Bose that is built into the speaker, its *firmware*. STR
+needs the last version Bose ever released, **27.0.6** (September 2022).
+Many speakers already have it. If yours runs an older version, this page
+shows how to bring it up to 27.0.6 before you install STR. If your
+speaker already shows 27.0.6, there is nothing to do here.
 
 STR does not host, mirror or change any firmware file. Every link on
 this page points at Bose's own server or at the Internet Archive.
+
+<details>
+<summary>More detail: are Bose's files still available?</summary>
+
+STR is built and tested against Bose firmware **27.0.6.46330.5043500**,
+the last release Bose ever published (September 2022). A speaker that
+never got that far can still be brought to it, including the in-between
+steps very old speakers need.
+
+Bose's end-of-life page says "firmware updates are no longer available
+now that the cloud is offline". In practice that is not the case: the
+Bose SoundTouch app still offers the update once a speaker is set up in
+it (seen on 2026-11-22), and Bose's own download host still serves the
+files (verified on 2026-09-08). Only the web pages that used to link them
+were taken down.
+
+</details>
+
+**Four words you will meet on this page**
+
+- **Firmware**: the software Bose built into the speaker. It is not STR.
+- **USB stick** (also called flash drive or thumb drive): the small
+  memory stick you plug into a computer.
+- **FAT32**: a way of preparing (formatting) a USB stick so the speaker
+  can read it. Windows and macOS can both do it.
+- **OTG adapter**: a small plug adapter that lets a normal USB stick go
+  into the much smaller socket on the SoundTouch 10 and the Portable.
+  [Section 5](#the-port) shows what it looks like.
 
 **Contents**
 
@@ -33,37 +57,123 @@ this page points at Bose's own server or at the Internet Archive.
 
 ## 1. Find the version your speaker runs now
 
-Use whichever of these you can reach. You need the first two or three
-numbers, for example `7.0.37` or `27.0.3`.
+You need the first two or three numbers, for example `9.0.41` or
+`27.0.3`. Use whichever of these you can reach:
 
-- **ST Reborn app.** Open the speaker's settings. The firmware version
-  is listed there. If the speaker is not found on your network, the
-  setup screen also shows the version once it reaches the speaker.
+- **ST Reborn.** Open the app and let it find the speaker. The firmware
+  version is listed in the speaker's settings. If the app does not find
+  the speaker on your network, the setup screen also shows the version
+  once it reaches the speaker.
 - **Bose SoundTouch app**, if you still have it. Open the settings,
   pick the speaker and look at its speaker information.
-- **The speaker's info page.** In a browser on the same network, open
-  `http://<speaker address>:8090/info`. Look for `softwareVersion`
-  next to `SCM`. Your router's device list shows the speaker's address.
-  If the speaker is not on your network, put it into setup mode
-  ([section 4](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi),
-  steps 2 and 3), join its own Wi-Fi and open
-  `http://192.0.2.1:8090/info` (or `http://192.168.1.1:8090/info`).
-  Unverified on very old firmware.
-- **On the speaker itself.** Hold **5** and **Volume minus** together
-  until the display shows the version. Reported by owners, not tested
-  by this project.
+- **On the speaker itself**, on models with a display: hold **5** and
+  **Volume minus** together until the display shows the version.
+  Reported by owners, not tested by me.
 
 Anything that does not start with `27.` needs this page. `27.0.6` is the
 end of the line. There is nothing newer.
 
+<details>
+<summary>More detail: read the version from the speaker's info page</summary>
+
+In a browser on the same network, open
+`http://<speaker address>:8090/info`. Look for `softwareVersion` next to
+`SCM`. Your router's device list shows the speaker's address.
+
+If the speaker is not on your network, put it into setup mode
+([section 4](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi),
+steps 2 and 3), join its own Wi-Fi and open
+`http://192.0.2.1:8090/info` (or `http://192.168.1.1:8090/info`).
+Unverified on very old firmware.
+
+</details>
+
 ## 2. Pick your route
+
+Try these in order. Stop as soon as the speaker shows 27.0.6.
+
+1. **Bose's own SoundTouch app.** Set the speaker up in the Bose
+   SoundTouch app and connect it to your Wi-Fi. Once the speaker is set
+   up there, the app shows a firmware update. Take it and let the
+   speaker restart by itself. This is the easiest way, and it still
+   works. A speaker that still carries an old setup is reset first;
+   [`RESET-AND-SETUP.md`](./RESET-AND-SETUP.md) has the steps per model.
+   If the app shows no update, or cannot add the speaker, go on with
+   step 2.
+2. **ST Reborn.** Install ST Reborn on a computer
+   ([st-reborn.de](https://st-reborn.de)), open it and let it find the
+   speaker. When the speaker's firmware is too old, the app shows a
+   firmware notice. Follow it:
+   - If it shows an **Update now** button, click it.
+     [Section 3](#3-route-a-one-click-in-st-reborn) shows what happens.
+   - If it shows numbered steps with a **Prepare stick** button, follow
+     them one at a time. [Section 3](#when-the-app-shows-numbered-steps)
+     walks you through them.
+   - If it says there is no tested path yet for your speaker, read
+     [When there is no tested path yet](#when-there-is-no-tested-path-yet)
+     below.
+3. **By hand**, only when steps 1 and 2 cannot help: Bose's update page
+   ([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi))
+   or a USB stick ([Route C](#5-route-c-usb-stick)).
+
+**Update the firmware before you install STR.** STR is tested on 27.0.6
+only. Three field reports failed at install on older firmware.
+
+### What ST Reborn can do for your speaker today
+
+On firmware **15 or newer**, the app offers **Update now** for every
+model, as long as it can name the one Bose file that fits the speaker.
+
+On firmware **14 or older**, one update straight to 27.0.6 does not
+work. The speaker needs several updates in a row, and that is only
+checked for some models so far:
+
+| Your speaker | On firmware 14 or older, today |
+|---|---|
+| SoundTouch 20 or 30 without a Bluetooth button (first generation), SoundTouch Portable | **Numbered steps in the app.** The app prepares every USB stick for you. Each step up to 16.00.09 worked on one SoundTouch 20. The last step from there is not tested yet. |
+| SoundTouch 10 | **Numbered steps in the app.** The app prepares every USB stick for you: below 14.0.33 it starts with 14.00.33, then 15.00.20, then Bose's 27.0.6. No step has run on a real SoundTouch 10 yet, so the app marks each one as not tested. |
+| SoundTouch 20 or 30 with a Bluetooth button | **Numbered steps in the app.** The app prepares every USB stick for you: below 14.0.33 it starts with 14.00.33, then 15.00.20, then Bose's 27.0.6. No step has run on one of these speakers yet, so the app marks each one as not tested. |
+| SA-5, SoundTouch 300, Wireless Link adapter | **Numbered steps in the app**, the same three steps with each model's own files. Not tested on a real speaker yet. These models do not read a USB stick when they start, so the stick step is not confirmed on them: the app says so and names the speaker's own update page ([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) as the other way to put the same file on. |
+| Wave SoundTouch IV | From 14.0.33: **numbered steps in the app** (15.00.20, then Bose's 27.0.6), not tested, with the same note about the stick. Below 14.0.33: no known source for the first step. |
+| Wave SoundTouch (first generation), CineMate adapter (first generation) | **No tested path yet.** The app lists a probable route, but cannot prepare the stick. |
+| SA-4, Stereo JC (first generation) | On 14.x: probable route listed, not tested. Below 14: no known source for the first step. |
+| Any other model | No known path yet. |
+
+### When there is no tested path yet
+
+For some speakers I do not have a checked list of in-between updates
+yet. The app then
+lists the probable route, says it is not checked, and cannot prepare
+the USB stick. Or it says "No known update path for this speaker yet".
+
+What you can do:
+
+- **Wait.** I am working on checked steps for more models. If the
+  app later shows numbered steps with a
+  **Prepare stick** button for your speaker, follow them. Keep ST
+  Reborn up to date: it updates itself in place.
+- **Tell me about your speaker.** Write to me
+  ([section 10](#10-if-you-are-stuck-send-us-this)) with the model and
+  the version. That helps me decide which model comes next, and I can
+  write back when there is news.
+- **Do not put 27.0.6 on in one go.** From firmware 14 or older, that
+  jump stalled or ended in a restart loop on the speakers that tried
+  it.
+- **If you want to try the probable route yourself, write to me first.**
+  It is not tested. An interrupted or wrong update can leave the
+  speaker unusable.
+
+Until then, the speaker keeps working the way it does today.
+
+<details>
+<summary>More detail: the routes by version, and why there is no single jump</summary>
 
 | Your version | Route |
 |---|---|
 | 27.0.6 | Nothing to do. |
 | 15.x or newer | **Route A**, one click in ST Reborn. Untested on 15.x so far. If it fails, Route B or C with Bose's file from [section 9](#9-boses-files-for-2706-per-model). |
 | 14.x or older | **The ladder in [section 7](#7-very-old-firmware-the-step-by-step-ladder)**, one USB stick step at a time. Do not jump straight to 27.0.6. |
-| Unknown | Find it first. Hold **5** and **Volume minus**, or open the info page in setup mode ([section 1](#1-find-the-version-your-speaker-runs-now)). If you still cannot see it, ask us ([section 10](#10-if-you-are-stuck-send-us-this)). Do not put 27.0.6 on a stick blindly: on a 14.x speaker that jump can end in a restart loop. |
+| Unknown | Find it first. Hold **5** and **Volume minus**, or open the info page in setup mode ([section 1](#1-find-the-version-your-speaker-runs-now)). If you still cannot see it, ask me ([section 10](#10-if-you-are-stuck-send-us-this)). Do not put 27.0.6 on a stick blindly: on a 14.x speaker that jump can end in a restart loop. |
 
 Why not jump from 14.x or older to 27.0.6 in one go? Readers tried. On
 one speaker, both from 5.x and again from 06.02.01, the progress bar
@@ -71,13 +181,41 @@ stayed empty. On a 14.0.15 speaker the bar filled, then the speaker
 restarted in a loop
 ([issue #854](https://github.com/JRpersonal/streborn/issues/854)).
 
-**Update the firmware before you install STR.** STR is tested on 27.0.6
-only. Three field reports failed at install on older firmware.
+Below 15 the app never offers Bose's last file in one jump, for any
+model, and its own **Update now** refuses it too. The probable routes
+per model are in
+[section 7](#other-models-no-checked-ladder-yet).
+
+</details>
 
 ## 3. Route A: one click in ST Reborn
 
-For speakers on **15.x or newer** that ST Reborn finds on your home
-network.
+This is the main way. You need a computer with ST Reborn on the same
+home network as the speaker.
+
+### When the app shows Update now
+
+For speakers on firmware **15 or newer**.
+
+1. Plug the speaker into power. A Portable belongs on its power supply,
+   not on battery.
+2. In ST Reborn, open the speaker's settings, or the setup screen. The
+   firmware notice says the speaker needs an update. Click **Update
+   now** and confirm.
+3. The app shows what it is doing: "Checking Bose's file...", then
+   "Downloading from Bose", then "Sending the update to the speaker".
+4. The app says the speaker installs the update and restarts. Leave the
+   speaker alone and powered. The whole update takes about ten minutes.
+5. The app shows "Done. The speaker now runs firmware 27.0.6."
+
+The speaker keeps its name, Wi-Fi and presets, and STR if it is
+already installed.
+
+If there is no **Update now** button, or the update fails, the app says
+so and shows the steps by hand: Route B or C.
+
+<details>
+<summary>More detail: what Update now does, and what was tested</summary>
 
 When the app sees a speaker older than 27.0.6, the firmware notice (in
 the speaker's settings, and on the setup screen) has an **Update now**
@@ -91,9 +229,6 @@ button. The app then:
 3. waits for the speaker to restart and shows the version it comes back
    with.
 
-It takes about ten minutes. Leave the speaker powered the whole time.
-A Portable belongs on its power supply, not on battery.
-
 This also works on a speaker that already runs STR. A firmware update
 replaces Bose's firmware only. STR, its settings, the speaker's name,
 Wi-Fi and presets stay as they were (verified on a Portable on
@@ -101,13 +236,61 @@ Wi-Fi and presets stay as they were (verified on a Portable on
 with STR installed).
 
 The button only appears when the app can name one file for the speaker
-for certain. If it does not appear, or the upload fails, use Route B or
-C.
+for certain. Below 15 it refuses Bose's last file: from there the
+single jump stalls ([section 2](#2-pick-your-route)).
+
+</details>
+
+### When the app shows numbered steps
+
+For a speaker on firmware **14 or older**, where the app has a checked
+list of in-between updates ([section 2](#what-st-reborn-can-do-for-your-speaker-today)
+says which). Each step is one update from a USB stick. You need an
+empty USB stick of 2 to 8 GB, and for a SoundTouch 10 or a Portable an
+OTG adapter ([section 5](#the-port)).
+
+1. Read the warning at the top: the in-between files are copies kept by
+   the Internet Archive, not by Bose. Tick **I understand and want to
+   continue** and click **Start step 1**.
+2. Put the USB stick into the computer. Pick it in the app and click
+   **Prepare stick**. The app downloads the file, checks it, copies it
+   to the stick and ejects the stick. Wait until it says "The stick is
+   ready."
+3. Take the stick to the speaker. The app shows the button steps for
+   your speaker. Do them as shown (they are also in
+   [section 5](#step-by-step)).
+4. The display or the lights show that an update is running. Wait. It
+   can take up to **45 minutes**. Do not unplug the speaker.
+5. When the speaker has restarted by itself, pull the stick. On the
+   computer, click **Done, check again**. The app reads the version and
+   shows the next step. If it cannot reach the speaker, it asks which
+   version the speaker shows now.
+6. Repeat for every step. The last step is Bose's own 27.0.6, over the
+   network or by stick.
+
+The app remembers the step for each speaker, so you can stop between
+steps and pick up later.
+
+If something looks wrong while it updates,
+[section 6](#6-what-you-see-while-it-updates) says what it means.
+
+<details>
+<summary>More detail: what the app checks before it writes the stick</summary>
+
+The full list is in
+[section 7](#let-the-app-do-the-stepping). In short: every file is
+checked against the size and checksum the Internet Archive publishes,
+and the `Update.stu` inside against its own size and CRC-32. A file
+that does not match is never written to the stick.
+
+</details>
 
 ## 4. Route B: Bose's update page on the speaker's own Wi-Fi
 
-This is the route Bose's own support articles describe. It needs a
-computer with Wi-Fi and a browser.
+Use this when **Update now** in ST Reborn does not appear or does not
+work, on a speaker with firmware 15 or newer. This is the route Bose's
+own support articles describe. You need a computer with Wi-Fi and a
+browser.
 
 1. Download Bose's file for your model ([section 9](#9-boses-files-for-2706-per-model))
    and check it ([section 8](#8-checking-a-download)). Do not rename it.
@@ -125,74 +308,119 @@ computer with Wi-Fi and a browser.
    internet.
 4. Open `http://192.168.1.1:17008/update.html`. If that does not open,
    try `http://192.0.2.1:17008/update.html` (Bose's articles name both).
-5. Click **Choose File**, pick the file, click **Upload**. Do not close
-   the page or unplug the speaker until it restarts by itself.
+5. Click **Choose File**, pick the file, click **Upload**. A progress
+   bar shows the update. Do not close the page or unplug the speaker
+   until it restarts by itself.
 6. Switch the computer back to your home Wi-Fi.
+
+Very old firmware may not have this page. Then use Route C.
+
+<details>
+<summary>More detail: Bose's USB cable route</summary>
 
 Bose also describes a USB cable route: connect the computer to the
 speaker's USB port (the smaller one if there are two) and open
 `http://203.0.113.1:17008/update.html` instead of steps 2 to 4.
 
-Very old firmware may not have this page. Then use Route C.
+</details>
 
 ## 5. Route C: USB stick
 
 The speaker can install an update from a USB stick by itself. No app,
-no network.
+no network. If ST Reborn shows numbered steps for your speaker, it
+prepares the stick for you, and you can go straight to
+[The port](#the-port).
 
 ### The stick
 
 - **Small: 2 to 8 GB is best.** Larger sticks often fail. Over 32 GB
-  almost always fails, because the speaker cannot read the large
-  clusters such sticks get.
-- **Formatted as FAT32.** Not exFAT, not NTFS. Windows offers FAT32
-  only for sticks up to 32 GB, one more reason to use a 2 to 8 GB stick.
-- **Only one file on it: `Update.stu`, at the top level** (the root),
-  not in a folder.
-- **Keep the exact name `Update.stu`.** Do not rename it. A browser that
-  saves it as `Update(1).stu` or `Update.stu.zip` breaks it. Check
-  that file extensions are visible on your computer.
-- **No other files.** Delete everything else, including hidden folders.
-  If you can, format the stick fresh before you copy the file. On
-  Windows: right-click the stick in File Explorer, choose **Format**,
-  pick **FAT32**. On a Mac: Disk Utility, **Erase**, format **MS-DOS
-  (FAT)**.
+  almost always fails.
+- **Formatted as FAT32.** Not exFAT, not NTFS.
+- **Only one file on it: `Update.stu`**, at the top level, not in a
+  folder. No other files.
+- **Keep the exact name `Update.stu`.** Do not rename it.
+- **Eject the stick properly** before you pull it from the computer.
+
+<details>
+<summary>More detail: preparing the stick by hand</summary>
+
+- Over 32 GB almost always fails, because the speaker cannot read the
+  large clusters such sticks get. Windows offers FAT32 only for sticks
+  up to 32 GB, one more reason to use a 2 to 8 GB stick.
+- A browser that saves the file as `Update(1).stu` or `Update.stu.zip`
+  breaks it. Check that file extensions are visible on your computer.
+- Delete everything else, including hidden folders. If you can, format
+  the stick fresh before you copy the file. On Windows: right-click the
+  stick in File Explorer, choose **Format**, pick **FAT32**. On a Mac:
+  Disk Utility, **Erase**, format **MS-DOS (FAT)**.
 - **Formatting erases everything on the drive.** Before you click,
   check that the drive letter, name and size are the USB stick's, not
   another disk.
-- **Eject the stick properly** before you pull it from the computer.
+- For the ladder steps from the Internet Archive, the download is a
+  zip. Open the zip and copy only the `Update.stu` inside it to the
+  stick.
 
-For the ladder steps from the Internet Archive, the download is a zip.
-Open the zip and copy only the `Update.stu` inside it to the stick.
+</details>
 
 ### The port
 
-- SoundTouch 20 and 30 of Series II and III have a normal USB-A port
-  on the back.
-- SoundTouch 20 of Series I (no Bluetooth button) has two sockets on
-  the back: **SETUP A** (micro-USB) and **SETUP B** (USB-A). Use
-  **SETUP B**, the normal USB-A socket; Bose's own USB update
-  instructions use it too. No OTG adapter needed. A first generation
-  SoundTouch 30 with the same two sockets: the same rule.
-- SoundTouch 10 and Portable have a small micro-USB port. You need an
-  OTG adapter (micro-USB to USB-A) or an OTG stick. A plain micro-USB
-  cable will not do.
+Where the stick goes depends on your speaker. Look at the back:
+
+| Your speaker | Socket on the back | What you need |
+|---|---|---|
+| SoundTouch 10 | One small micro-USB socket | An OTG adapter (micro-USB to USB-A), or an OTG stick |
+| SoundTouch Portable | One small micro-USB socket | An OTG adapter (micro-USB to USB-A), or an OTG stick |
+| SoundTouch 20, first generation (no Bluetooth button) | Two sockets: **SETUP A** (micro-USB) and **SETUP B** (normal USB-A) | Nothing extra. Use **SETUP B**. |
+| SoundTouch 30, first generation, with the same two sockets | **SETUP A** and **SETUP B** | Nothing extra. Use **SETUP B**. |
+| SoundTouch 20 and 30, Series II and III | One normal USB-A socket | Nothing extra |
+| Other models | Not described here yet | Photos are welcome ([Pictures](#pictures)) |
+
+**What an OTG adapter is.** A normal USB stick has a wide, flat plug
+(USB-A). The SoundTouch 10 and the Portable have a much smaller socket
+instead, micro-USB, the kind many older phones used for charging: a flat
+socket with two slanted corners. An OTG adapter is a
+small piece, about the size of a fingertip, with a micro-USB plug on
+one side and a normal USB-A socket on the other. Plug the stick into
+the adapter and the adapter into the speaker.
+
+Electronics shops, phone accessory shops and online shops sell it as
+"micro-USB OTG adapter". It is inexpensive. Make sure it says
+**micro-USB**: many adapters sold today are for USB-C, an oval plug
+that does not fit these speakers. An *OTG stick* is a USB stick with
+both plugs built in, micro-USB and normal USB-A, so it needs no
+adapter. A plain micro-USB charging cable does not work.
+
+<details>
+<summary>More detail: why SETUP B on the first generation SoundTouch 20 and 30</summary>
+
+SoundTouch 20 of Series I (no Bluetooth button) has two sockets on the
+back: **SETUP A** (micro-USB) and **SETUP B** (USB-A). Use **SETUP B**,
+the normal USB-A socket; Bose's own USB update instructions use it too.
+No OTG adapter needed. A first generation SoundTouch 30 with the same
+two sockets: the same rule.
+
+</details>
 
 ### Step by step
 
-1. **Battery models (Portable): plug into the power supply first** and
-   keep it plugged in until the end.
+This takes up to 45 minutes. Keep the speaker near a power socket.
+
+1. **Portable: plug into the power supply first** and keep it plugged
+   in until the end.
 2. **Reset the speaker first.** Hold **1** and **Volume minus** together
    for about 10 seconds, until the speaker restarts. **This is Bose's
    factory reset.** It erases the presets, the speaker's name and its
    Wi-Fi, and you have to set the speaker up again afterwards. STR, if
-   it is already installed, survives it. The reset clears a
-   half-finished setup that can make the speaker refuse the file. If
-   you want to keep your presets, try steps 3 to 8 without it first.
+   it is already installed, survives it. If you want to keep your
+   presets, try steps 3 to 8 without it first.
 3. **Switch the speaker off.** SoundTouch 10, 20, 30: unplug it from
-   power. Insert the stick.
+   power. Insert the stick ([The port](#the-port) says where).
 4. **Hold 4 and Volume minus**, and while you hold them, plug the power
    back in.
+
+   **SoundTouch 10:** the other way round. Plug the power back in first,
+   then hold **4** and **Volume minus** for about five seconds. Holding
+   them while you plug in left a SoundTouch 10 stuck with every light on.
 
    **Portable:** its battery cannot be removed, so unplugging does not
    switch it off. Keep the power supply plugged in. Switch it off with
@@ -208,11 +436,22 @@ Open the zip and copy only the `Update.stu` inside it to the stick.
 8. When the speaker has restarted, pull the stick and check the version
    again ([section 1](#1-find-the-version-your-speaker-runs-now)).
 
+These button combinations are confirmed on the SoundTouch 20, and step
+4 in its own order on the SoundTouch 10. If your speaker does not react, look at Bose's update article for your
+model ([section 12](#12-every-source)).
+
+<details>
+<summary>More detail: why the reset, and where the button combinations come from</summary>
+
+The reset clears a half-finished setup that can make the speaker refuse
+the file.
+
 The button combinations in steps 2 and 4 come from owners and community
-guides. They worked on SoundTouch 20 Series I and II. The Portable
-variant of step 4 is untested. On other models
-they are not confirmed. If yours does not react, look at Bose's update
-article for your model ([section 12](#12-every-source)).
+guides. They worked on SoundTouch 20 Series I and II. The SoundTouch 10
+order of step 4 comes from an owner who ran it in November 2026. The
+Portable variant of step 4 is untested. On other models they are not confirmed.
+
+</details>
 
 ## 6. What you see while it updates
 
@@ -220,32 +459,68 @@ article for your model ([section 12](#12-every-source)).
 |---|---|---|
 | A hand symbol, then a bar that fills | The update runs. | Wait. Do not touch the power. |
 | The bar stands still for a few minutes | Normal. | Keep waiting, up to 45 minutes in total. |
-| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. Seen on one speaker given 27.0.6 directly, from 5.x and again from 06.02.01, and given 15.00.20 from 14.00.33 (by stick and on its update page). | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
-| The bar fills, then the speaker restarts again and again | Seen once when 14.0.15 got 27.0.6 directly. | Pull the stick, unplug power, then try the ladder step for your version. Send us the details ([section 10](#10-if-you-are-stuck-send-us-this)). |
-| After the update: an **orange Wi-Fi symbol and a book icon**, or an orange Wi-Fi symbol with "Download the SoundTouch controller app" (seen after 14.00.33, picture below) | **The update worked.** The speaker has forgotten its Wi-Fi and waits for setup. | Pull the stick. Set up Wi-Fi again with the Bose SoundTouch app (or ST Reborn's setup), or go straight on with the next stick step, which needs no Wi-Fi. Check the version before every step. |
-| Nothing at all after plugging power in | The speaker did not see the stick or the combination. | Check the stick rules above, the name `Update.stu`, the OTG adapter, and try the combination again. |
+| The bar stays **empty** for 30 minutes or more | The speaker did not accept this file. | Unplug power, wait 10 seconds, pull the stick, plug power back in. Check the version. If it did not change, use a smaller step from [section 7](#7-very-old-firmware-the-step-by-step-ladder), or try another, smaller stick. |
+| The bar fills, then the speaker restarts again and again | The jump was too big for this speaker. | Pull the stick, unplug power, then try the ladder step for your version. Send me the details ([section 10](#10-if-you-are-stuck-send-us-this)). |
+| After the update: an **orange Wi-Fi symbol and a book icon**, or an orange Wi-Fi symbol with "Download the SoundTouch controller app" (picture below) | **The update worked.** The speaker has forgotten its Wi-Fi and waits for setup. | Pull the stick. Set up Wi-Fi again with the Bose SoundTouch app (or ST Reborn's setup), or go straight on with the next stick step, which needs no Wi-Fi. Check the version before every step. |
+| Nothing at all after plugging power in | The speaker did not see the stick or the combination. | Check the stick rules in [section 5](#the-stick), the name `Update.stu`, the OTG adapter, and try the combination again. |
 
 <img src="images/firmware/st20-series1-after-14.00.33.jpg" width="240" alt="SoundTouch 20 Series I display after the 14.00.33 update: orange Wi-Fi symbol and the text Download the SoundTouch controller app">
 
 *A first generation SoundTouch 20 right after 14.00.33 went in by stick.
 Photo: a reader, shared with permission.*
 
-Models without a display (SoundTouch 10, SA-5, Wireless Link) show the
-update with their lights only. We do not have a confirmed description of
-the light pattern per model yet. Photos are welcome.
+Models without a display (SoundTouch 10, SA-5, SoundTouch 300, Wireless
+Link) show the update with their lights only. I do not have a confirmed
+description of the light pattern per model yet. Photos are welcome.
+
+<details>
+<summary>More detail: where these observations come from</summary>
+
+- **Empty bar**: seen on one speaker given 27.0.6 directly, from 5.x and
+  again from 06.02.01, and given 15.00.20 from 14.00.33 (by stick and on
+  its update page).
+- **Restart loop**: seen once when 14.0.15 got 27.0.6 directly
+  ([issue #854](https://github.com/JRpersonal/streborn/issues/854)).
+- **Orange Wi-Fi symbol with "Download the SoundTouch controller app"**:
+  seen after 14.00.33 on a first generation SoundTouch 20.
+
+</details>
 
 ## 7. Very old firmware: the step-by-step ladder
 
 A speaker on 14.x or older needs several updates in a row. Each step is
 one USB stick update (Route C), and the version must be checked after
-every step before the next one.
+every step before the next one. Where ST Reborn has the steps, it does
+all of this for you ([section 3](#when-the-app-shows-numbered-steps)).
+The rest of this section is the reference behind it.
 
 ### Let the app do the stepping
 
-For the first generation SoundTouch 20, 30 and Portable, ST Reborn walks
-you through the ladder. When such a speaker reports a firmware older
-than 15, the firmware notice turns into a numbered list of updates. For
-each step the app:
+For the first generation SoundTouch 20, 30 and Portable, and for the
+Bluetooth chassis (SoundTouch 10, SoundTouch 20 and 30 with a Bluetooth
+button, SA-5, SoundTouch 300, Wireless Link adapter, and the Wave
+SoundTouch IV from 14.0.33), ST Reborn walks you through the ladder.
+When such a speaker reports a firmware older than 15, the firmware
+notice turns into a numbered list of updates. The app prepares each USB
+stick, shows the button steps for your speaker, and after **Done, check
+again** moves on to the next step. The last step is Bose's own 27.0.6,
+over the network or by stick. The app remembers the step per speaker,
+so it picks up again after a restart. On the SA-5, SoundTouch 300,
+Wireless Link adapter and Wave IV the stick step is not confirmed,
+because these models do not read a USB stick when they start; the app
+then names the speaker's own update page
+([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) for
+the same `Update.stu`.
+
+For other models the app lists the probable route, says it is not
+checked, and links this page. It cannot prepare the stick for those
+steps, because their file names and checksums are not known yet. A
+model with no known route gets a plain "no known path yet".
+
+<details>
+<summary>More detail: exactly what the app does in each step</summary>
+
+For each step the app:
 
 1. downloads that step's zip from the Internet Archive, on your
    computer, only when you click **Prepare stick** (or takes a zip or
@@ -258,38 +533,35 @@ each step the app:
    writes back to such a stick (only files ST Reborn writes itself,
    never yours; for anything else the log notes only how many files,
    their size and their extensions, never their names, and the app
-   suggests an empty stick), then copies only `Update.stu` to the root of the stick you
-   picked, reads it back, checks it again and ejects the stick;
+   suggests an empty stick), then copies only `Update.stu` to the root
+   of the stick you picked, reads it back, checks it again and ejects
+   the stick;
 4. shows the button steps for your speaker and, after **Done, check
    again**, reads the version and moves on to the next step.
 
-The last step is Bose's own 27.0.6, over the network or by stick. The
-app remembers the step per speaker, so it picks up again after a
-restart. The table the app uses lives in `desktop-app/bosefw/ladder_data.go`;
+The table the app uses lives in `desktop-app/bosefw/ladder_data.go`;
 every value in it comes from the Internet Archive's metadata or the zip
 itself, never from memory.
 
 For the other models below, the app lists the probable route from the
 table under "Other models", says it is not checked, and links this page.
-It cannot prepare the stick for those steps, because their file names
-and checksums are not known yet. A model with no known route gets a
-plain "no known path yet". Below 15 the app never offers Bose's last
-file in one jump, for any model, and its own **Update now** refuses it
-too.
+Below 15 the app never offers Bose's last file in one jump, for any
+model, and its own **Update now** refuses it too.
+
+</details>
 
 ### Where the in-between files come from
 
-Bose still serves 26.0.1, 27.0.1, 27.0.2, 27.0.3 and 27.0.6. Its paths
-for 14.0.33 up to 25.0.0 answer 403 (checked 2026-10-25). For older
-steps the only source we know is a community collection on the Internet
-Archive:
+Bose still serves its last versions, but not the old in-between ones.
+For those, the only source I know is a community collection on the
+Internet Archive:
 <https://archive.org/details/bose-soundtouch-software-and-firmware>.
 
 > **Read this before you use an archive file.** These copies are not
 > from Bose. Somebody uploaded them in 2024. STR cannot check them
 > beyond the size and sha1 the archive itself publishes, and the size
 > and CRC32 of the `Update.stu` inside. Where an archived Bose catalogue
-> lists the same file, we say so in the table. You use them at your own
+> lists the same file, I say so in the table. You use them at your own
 > risk. An interrupted or wrong update can leave the speaker unusable.
 > STR links these files and never copies or hosts them.
 
@@ -303,10 +575,18 @@ Two more rules:
 - **The last step to 27.0.6 always comes from Bose**, never from the
   archive.
 
+<details>
+<summary>More detail: which versions Bose still serves</summary>
+
+Bose still serves 26.0.1, 27.0.1, 27.0.2, 27.0.3 and 27.0.6. Its paths
+for 14.0.33 up to 25.0.0 answer 403 (checked 2026-10-25).
+
+</details>
+
 ### SoundTouch 20, 30 and Portable, first generation (no Bluetooth)
 
-Archive folder:
-<https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/>
+ST Reborn does these steps for you. The tables are here so you can
+check what it does, or do it by hand.
 
 **Which steps your speaker needs:**
 
@@ -319,8 +599,14 @@ Archive folder:
 | 14.0.33 | 16.00.09, 27.0.6 |
 | 15.x or newer | 27.0.6 (Route A or B, untested from 15 and 16; if it stalls, 20.00.06 first, see below) |
 
+<details>
+<summary>More detail: the files, their checksums, the fallback steps and why 15.00.20 is skipped</summary>
+
+Archive folder:
+<https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2013-2015_No_Bluetooth/Airplay-1_ST20-30-Portable/>
+
 The ladder skips 15.00.20. Bose changed the update format at 15, and
-16.00.09 already carries the new format, so it lands that change just
+16.00.09 already carries the new format, so it lands that change all
 the same. On the one speaker that tried 15.00.20, it stalled twice, by
 stick and on the speaker's own update page, while 16.00.09 then went in
 by stick.
@@ -375,7 +661,7 @@ Unverified.
 |---|---|---|---|---|---|
 | 20.00.06 | `Airplay-1_ST20-30-Portable_Update_ti_20.00.06.44144.3075410.scm.stu.zip` | 72 549 266 | `80a4c22cb800eb5c2056457337de3b99b5960f46` | 98 225 732 / `2f95d0db` | Unverified fallback |
 
-Please tell us how it went
+Please tell me how it went
 ([section 10](#10-if-you-are-stuck-send-us-this)), so this becomes a
 checked route.
 
@@ -387,32 +673,144 @@ first, then continue with 06.02.01. Unverified.
 | 05.00.23 | `Airplay-1_ST20-30-Portable_05.00.23.zip` | 54 117 996 | `70b09185de8b027ff6bcdcd1f76374b48286e2b3` | 76 821 995 / `3bae21ab` | Unverified. Inner sha1 `107166e5cb7b2993376add269792f19e854a9227` |
 
 A step that worked can be repeated. 06.02.01 re-installed fine from a
-stick on a speaker where 27.0.6 had just failed.
+stick on a speaker where 27.0.6 had failed shortly before.
+
+</details>
+
+### Bluetooth chassis (newer hardware)
+
+The SoundTouch 10, the SoundTouch 20 and 30 with a Bluetooth button,
+the SA-5, the SoundTouch 300, the Wireless Link adapter and the Wave
+SoundTouch IV. ST Reborn does these steps for you too, but **none of
+them has run on a real speaker yet**, so the app marks every step as
+not tested. Please tell me how it went
+([section 10](#10-if-you-are-stuck-send-us-this)).
+
+**Which steps a Bluetooth chassis speaker needs:**
+
+| Your speaker | Below 14.0.33 | 14.0.33 up to 14.x | If 15.00.20 leaves it on 14.x |
+|---|---|---|---|
+| SoundTouch 10 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SoundTouch 20 or 30 with a Bluetooth button, Wireless Link adapter | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SA-5 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | 16.00.09 in its place |
+| SoundTouch 300 | 14.00.33, 15.00.20, 27.0.6 | 15.00.20, 27.0.6 | None: the archive holds no such file for it |
+| Wave SoundTouch IV | No source known: the archive's file for it is the SA-5's | 15.00.20, 27.0.6 | 16.00.09 in its place |
+
+On 15 or newer, every one of them needs only Bose's 27.0.6
+([Route A](#3-route-a-one-click-in-st-reborn)).
+
+**The USB stick on the SA-5, SoundTouch 300, Wireless Link adapter and
+Wave IV.** These models do not read a USB stick when they start
+([`MODELS.md`](MODELS.md)), and no button combination for a stick
+update is known for them. So the stick step is not confirmed there. The
+same `Update.stu` can go on through the speaker's own update page
+([Route B](#4-route-b-boses-update-page-on-the-speakers-own-wi-fi)) if
+the speaker's firmware has that page: copy it from the stick the app
+prepared to your computer and upload it there.
+
+<details>
+<summary>More detail: the files, their checksums, and why these</summary>
+
+Archive folders, under
+<https://archive.org/download/bose-soundtouch-software-and-firmware/Firmware/2015-2020_Bluetooth/>:
+`Bluetooth_ST10`, `Bluetooth_ST20-30_or_Wireless_Link_Adapter`,
+`Bluetooth_SA5`, `Bluetooth_ST300`, `Bluetooth_Wave_SoundTouch_IV`.
+
+Why these files:
+
+- **14.00.33 is Bose's own file for each model**, byte for byte. Bose's
+  archived 14.0.33 catalogue (`Firmware/xml/index 14.0.33.xml` in the
+  same archive item) gives the SoundTouch 10, the SoundTouch 20 and 30
+  with Bluetooth and the Wireless Link adapter one shared file, and the
+  SA-5 and the SoundTouch 300 their own. The archive's zips hold exactly
+  those.
+- **The Wave IV has no checked 14.00.33.** Bose's file for it is 86 543 011
+  bytes / `a2419a57`, and the archive's Wave IV 14.00.33 zip holds the
+  SA-5's file instead. Never use it.
+- **No Bose catalogue of 15.0.20 or 16.0.9 survives.** Those files are
+  checked only by the archive's own values and their place in the
+  model's folder: each names the model's line inside the zip, and the
+  27.0.6 in the same folder is Bose's current file for that model.
+- **16.00.09** is the step the app offers in place of a 15.00.20 that
+  leaves the speaker on 14.x, the swap that worked on the first
+  generation ladder.
+
+| Speaker | Step | File to download | Zip bytes | Zip sha1 | Inside: bytes / CRC32 | Status |
+|---|---|---|---|---|---|---|
+| SoundTouch 10 | 14.00.33 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | 60 560 964 | `0d70632bfd53b04253d9ca473dacad03bcbd71fe` | 79 892 339 / `b5300c87` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 10 | 15.00.20 | `Bluetooth_ST10_Update_ti_15.00.20.37272.2363762.rhino.sm2.zip` | 71 036 950 | `0fb7424457eccd8fcc5c0dc91f7993ff378ab850` | 91 956 244 / `3f6c9be3` | Unverified |
+| SoundTouch 10 | 16.00.09 | `Bluetooth_ST10_Update_ti_16.00.09.37890.2412967.rhino.sm2.zip` | 65 986 629 | `2bff77ff551e82822ae18d227ce2c8d385bad7de` | 85 550 216 / `8a52bda7` | Unverified fallback |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 14.00.33 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | 60 560 964 | `0d70632bfd53b04253d9ca473dacad03bcbd71fe` | 79 892 339 / `b5300c87` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 15.00.20 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_15.00.20.37272.2363762.sm2.zip` | 73 891 694 | `e94fee290f4597cbccee90314eec9e4f290d7a95` | 95 495 188 / `56107f80` | Unverified |
+| SoundTouch 20/30 with Bluetooth, Wireless Link | 16.00.09 | `Bluetooth_ST20-30_or_ST_WLA_Update_ti_16.00.09.37890.2412967.sm2.zip` | 68 604 564 | `475063ca3c0a48b3d4c60b3b5045ae9e9f9b8e90` | 89 089 160 / `afab1b5c` | Unverified fallback |
+| SA-5 | 14.00.33 | `Bluetooth_SA5_14.00.33.zip` | 61 360 424 | `25c603ac10b3898db2b5ad6e8edffe4a4a3ac6b3` | 81 409 611 / `85f253e2` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SA-5 | 15.00.20 | `Bluetooth_SA5_Update_ti_15.00.20.37272.2363762.burns.sm2.zip` | 74 690 356 | `534fa06d0942fddfbbe6621916d8c27d5089620c` | 97 013 524 / `02bef2f1` | Unverified |
+| SA-5 | 16.00.09 | `Bluetooth_SA5_Update_ti_16.00.09.37890.2412967.burns.sm2.zip` | 69 382 982 | `3d97cfc98ec7b88b19123188ff83f8fe8b5b81f5` | 90 575 272 / `e0f64638` | Unverified fallback |
+| SoundTouch 300 | 14.00.33 | `Bluetooth_ST300_14.00.33.zip` | 61 648 136 | `e156049e4bcb25683e5540b429f63a3188d3b050` | 82 612 595 / `7647c0be` | Unverified. Matches Bose's archived 14.0.33 catalogue. |
+| SoundTouch 300 | 15.00.20 | `Bluetooth_ST300_Update_ti_15.00.20.37272.2363762.ginger.sm2.zip` | 74 972 804 | `aa4f7896cfb235ef6e001fb9a89b2707b1d5a011` | 98 214 156 / `b478ccf6` | Unverified |
+| Wave SoundTouch IV | 15.00.20 | `Bluetooth_WST4_Update_ti_15.00.20.37272.2363762.nelson.sm2.zip` | 74 168 336 | `ee8e51fd2c6aad9246f8f74c393a96d3168c83c1` | 96 583 876 / `32a5024d` | Unverified |
+| Wave SoundTouch IV | 16.00.09 | `Bluetooth_WST4_Update_ti_16.00.09.37890.2412967.nelson.sm2.zip` | 69 015 749 | `e776d0b1a8e9c2b0ee332be50cb196f13fa38995` | 90 305 140 / `6e7d017c` | Unverified fallback |
+
+The last step, 27.0.6, comes from Bose for every one of them: the `sm2`
+rows of [section 9](#9-boses-files-for-2706-per-model).
+
+Full sha1 of the inner `Update.stu`, if your tool shows it:
+
+| File | Inner `Update.stu` sha1 |
+|---|---|
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_14.00.33.34225.2189603.sm2.zip` | `ed8365e8daa97ee9c3a995c598d61fd76ccbfdd4` |
+| `Bluetooth_ST10_Update_ti_15.00.20.37272.2363762.rhino.sm2.zip` | `505cc0066d41251e4c1efbdfa0cb24afaddc3464` |
+| `Bluetooth_ST10_Update_ti_16.00.09.37890.2412967.rhino.sm2.zip` | `5d881e824e541bacab55d2ed33d661d082359f52` |
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_15.00.20.37272.2363762.sm2.zip` | `0d2fc1debee883009d8b6eb15e6729e1a6e21a48` |
+| `Bluetooth_ST20-30_or_ST_WLA_Update_ti_16.00.09.37890.2412967.sm2.zip` | `d4d3d1abda779cf974e5d2e1996cc9b4e3c76e3d` |
+| `Bluetooth_SA5_14.00.33.zip` | `ac23c15af16b85490db8c010d63d40e3bf2f1ea0` |
+| `Bluetooth_SA5_Update_ti_15.00.20.37272.2363762.burns.sm2.zip` | `33dcf13bc463e214544142663354fd54bcef81fe` |
+| `Bluetooth_SA5_Update_ti_16.00.09.37890.2412967.burns.sm2.zip` | `afd89183c1bf60d5b83457c94b598bf092ec8c3c` |
+| `Bluetooth_ST300_14.00.33.zip` | `f2c0396257c6ae0ae69552a51f27c778b718df1c` |
+| `Bluetooth_ST300_Update_ti_15.00.20.37272.2363762.ginger.sm2.zip` | `6bd6dd11e7ee099f4f02f3238aef597d1e0cb9ed` |
+| `Bluetooth_WST4_Update_ti_15.00.20.37272.2363762.nelson.sm2.zip` | `09efc54d585bc71de32926614957c496e41367a2` |
+| `Bluetooth_WST4_Update_ti_16.00.09.37890.2412967.nelson.sm2.zip` | `78e272cb2b5b33cb3882f28f0ac9e93217ad4e65` |
+
+</details>
 
 ### Other models: no checked ladder yet
 
-For these we know the route in outline, but we have not yet pulled the
-file names and checksums for every step. Until we have, treat this as a
+For these I know the route in outline, but I have not yet pulled the
+file names and checksums for every step. Until I have, treat this as a
 pointer, not a recipe. If your speaker is one of these and on 14.x or
 older, please get in touch ([section 10](#10-if-you-are-stuck-send-us-this))
-before you start.
+before you start. [When there is no tested path yet](#when-there-is-no-tested-path-yet)
+says what you can do in the meantime.
+
+<details>
+<summary>More detail: the probable route per model, with archive folders and files to avoid</summary>
 
 | Speaker | Probable route | Known values | Never use |
 |---|---|---|---|
 | Wave SoundTouch, first generation (folder `Airplay-1_Wave_SoundTouch`) | 06.02.01, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/n/Update.stu`) | 15.00.20 inside: 107 842 648 / `686cad33`. Bose 27.0.6: 112 367 416 / `49d88de4` | 16.00.09 and 18 to 24 from that folder: they are the SoundTouch 20/30 file |
 | SA-4, Stereo JC, first generation (folder `Airplay-1_SA4_or_STJC`) | Below 14: no source known. From 14.x: 14.0.33, 15.0.20, then 27.0.6 from Bose (`stu/l/Update.stu`) | 15.0.20 inside: 106 491 816 / `f6ef441d` | 14.0.15, 16.0.09, 17.0.08, 18, 19, 22, 23, 24 from that folder: they are the SoundTouch 20/30 file |
 | CineMate adapter, first generation | 06.00.91, 07.00.37, 14.00.33, 15.00.20, then 27.0.6 from Bose (`stu/t/Update.stu`) | | |
-| Bluetooth chassis: SoundTouch 10, SoundTouch 20/30 with Bluetooth, SA-5, 300, Wave IV, Wireless Link | Below 14: 14.00.33, 15.00.20, then 27.0.6 from Bose (the `sm2` path in section 9). SoundTouch 10 below 15: 15.00.20, then 27.0.6. Wave IV below 14.0.33: no source known, because the archive's 14.00.33 for it is the SA-5's file. | | Wave IV 14.00.33 from the archive: it is the SA-5's file |
 
 All of this table is unverified.
 
+</details>
+
 ## 8. Checking a download
+
+ST Reborn does these checks for you. You only need this section if you
+download a file by hand.
 
 A short or damaged download is the one thing that can leave a speaker
 stuck halfway. Check every file before it goes near the speaker. It
-takes a few seconds.
+takes a few seconds. If any number does not match, delete the file and
+download it again. A file that does not match must never go on the
+stick.
 
-**1. The size, to the byte.** Compare with the tables above.
+<details>
+<summary>More detail: how to check the size, the sha1 and the CRC32</summary>
+
+**1. The size, to the byte.** Compare with the tables in sections 7
+and 9.
 
 - Windows (PowerShell): `(Get-Item .\Update.stu).Length`
 - macOS: `stat -f %z Update.stu`
@@ -435,9 +833,7 @@ Windows prints the sha1 in capitals. That is the same value.
 - Windows: open the zip in 7-Zip. The `Size` and `CRC` columns show
   both.
 
-If any number does not match, delete the file and download it again.
-Do not resume a broken download. A file that does not match must never
-go on the stick.
+Do not resume a broken download.
 
 Bose's own files come without a sha1. For those, Bose's catalogue gives
 the size and the CRC32, listed in [section 9](#9-boses-files-for-2706-per-model).
@@ -448,18 +844,16 @@ Portable file (`stu/s/Update.stu`) a sha1 is also known, taken from
 the identical archive copy:
 `e8694f872e8631118564b2354dd7e2e3047977bc`.
 
+</details>
+
 ## 9. Bose's files for 27.0.6, per model
 
-Bose publishes one catalogue for every model. It names the file, its
-exact size and its CRC32:
-
-    https://downloads.bose.com/ced/soundtouch/downloads_stockholm/index.xml
-
-Two generations of the same model exist, and they take **different
-files**. The newer chassis has `sm2` in its path. If you are unsure,
-ST Reborn names the chassis on the speaker's settings page, and
-[`MODEL-VARIANTS.md`](MODEL-VARIANTS.md) explains the difference. As a
-rule of thumb: a SoundTouch 20 or 30 with a Bluetooth button is `sm2`.
+ST Reborn picks the right file for you. If you download it by hand
+(Route B or C), find your model below. Some models were built in two
+generations that take **different files**: the newer one has `sm2` in
+its path. As a rule of thumb, a SoundTouch 20 or 30 with a Bluetooth
+button is `sm2`. ST Reborn names the generation on the speaker's
+settings page.
 
 All paths below start with `https://downloads.bose.com`. All files are
 version `27.0.6.46330.5043500`.
@@ -484,6 +878,18 @@ version `27.0.6.46330.5043500`.
 | Lifestyle, VideoWave | sm2 | `/ced/soundtouch/downloads_stockholm/stu/m/sm2/Update.stu` | 203 977 300 | `3f489bd5` |
 | Wireless Link adapter | sm2 | `/ced/soundtouch/downloads_stockholm/stu/s/sm2/Update.stu` | 99 445 800 | `536e6d6f` |
 
+<details>
+<summary>More detail: Bose's catalogue, and download commands</summary>
+
+Bose publishes one catalogue for every model. It names the file, its
+exact size and its CRC32:
+
+    https://downloads.bose.com/ced/soundtouch/downloads_stockholm/index.xml
+
+The table above is taken from it. If you are unsure which generation
+your speaker is, [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md) explains the
+difference.
+
 Bose's own support pages name a different path for the SA-5. Where they
 disagree, the catalogue above is the one the speaker itself uses.
 
@@ -502,6 +908,8 @@ macOS or Linux:
 ```bash
 curl -L -o Update.stu https://downloads.bose.com/ced/soundtouch/downloads_stockholm/stu/s/Update.stu
 ```
+
+</details>
 
 ## 10. If you are stuck, send us this
 
@@ -548,7 +956,24 @@ address in a public discussion.
 - 14.00.33 to 15.00.20 stalled on an empty bar, by USB stick and on the
   speaker's own update page.
 
-**Field reports, not reproduced:**
+**Unverified:**
+
+- The step from 16.00.09 to 27.0.6, the fallback steps, the 2.x
+  route, and every model other than the first generation SoundTouch 20.
+- Whether Route A or B works on 15.x (the update page exists on 27.x;
+  on 15.x it is expected but untested).
+- The button combinations (1, 4 and 5 with Volume minus) on any model
+  other than SoundTouch 20 Series I and II.
+- How long each step takes, and what the lights show on models without
+  a display.
+- Whether the speaker checks a signature on the file. If it does, a
+  damaged file is refused. If it does not, the size and checksum
+  checks in section 8 are what protect you.
+
+STR itself has never been tested below firmware 27.0.6.
+
+<details>
+<summary>More detail: field reports, not reproduced</summary>
 
 - July 2026 ([discussion #447](https://github.com/JRpersonal/streborn/discussions/447),
   [issue #476](https://github.com/JRpersonal/streborn/issues/476)): a
@@ -562,21 +987,7 @@ address in a public discussion.
   SoundTouch 20 on 14.0.15 filled the bar with 27.0.6 and then
   restarted in a loop.
 
-**Unverified:**
-
-- The step from 16.00.09 to 27.0.6, the fallback steps, the 2.x
-  route, and every model other than the first generation SoundTouch 20.
-- Whether Route A or B works on 15.x (the update page exists on 27.x;
-  on 15.x it is expected but untested).
-- The button combinations (1, 4 and 5 with Volume minus) on any model
-  other than SoundTouch 20 Series I and II.
-- How long each step takes, and what the lights show on models without
-  a display.
-- Whether the speaker checks a signature on the file. If it does, a
-  damaged file is simply refused. If it does not, the size and checksum
-  checks in section 8 are what protect you.
-
-STR itself has never been tested below firmware 27.0.6.
+</details>
 
 ## 12. Every source
 
@@ -615,8 +1026,9 @@ STR itself has never been tested below firmware 27.0.6.
 ## Pictures
 
 One so far, in [section 6](#6-what-you-see-while-it-updates). Pictures
-of the USB port on each model, of the buttons held for a combination,
-and of the display during an update would help. Guessing them from memory is how wrong instructions
-get written. If you have a speaker in front of you and take those
-photos, please share them in a discussion or a pull request. They will
-be added here with credit.
+of the USB port on each model (a SoundTouch 10 or Portable with an OTG
+adapter plugged in would help most), of the buttons held for a
+combination, and of the display or lights during an update would help.
+Guessing them from memory is how wrong instructions get written. If
+you have a speaker in front of you and take those photos, please share
+them in a discussion or a pull request. I add them here with credit.

@@ -122,6 +122,17 @@ func (s *Server) alarmRecallSlot(ctx context.Context, slot int) int {
 	return s.recallSlotClean(ctx, slot)
 }
 
+// alarmSlotAlreadyPlaying reports whether the speaker is pulling the alarm's
+// key's stream right now, before the alarm did anything. Only the stream
+// proxy's open connection counts: no request to the speaker, and a key that
+// plays outside the proxy (Spotify, a folder) is fired as before.
+func (s *Server) alarmSlotAlreadyPlaying(slot int) bool {
+	if s.alarmAlreadyPlayingFn != nil {
+		return s.alarmAlreadyPlayingFn(slot)
+	}
+	return s.streamProxy != nil && s.streamProxy.SlotFetchLive(slot)
+}
+
 // alarmPlayingCheck reports whether the alarm's preset has been playing since
 // the fire.
 func (s *Server) alarmPlayingCheck(slot int, since time.Time) bool {
@@ -373,6 +384,18 @@ func (s *Server) driveAlarm(a alarm.Alarm, due time.Time) {
 	// The alarm is STARTING from here and ringing once the recall returned:
 	// a snooze key pressed in between is ignored (alarmsnooze.go).
 	ring := s.ringStart(a, due, firedAt)
+
+	// Somebody already up and listening to this very key: recalling it again
+	// only cut the stream for a moment, and arming the alarm's switch-off
+	// would end, hours later, listening the alarm never started (mail
+	// 2026-11-24, an ST20 on NDR 1 since 06:44 with a 07:00 alarm on key 1).
+	// Left alone, and recorded as a fire that found its station playing.
+	if s.alarmSlotAlreadyPlaying(a.Slot) {
+		s.logger.Info("alarm: the speaker is already playing this key, leaving it alone", "id", a.ID, "slot", a.Slot)
+		s.alarmState.NoteOutcome(alarm.FireOutcome{ID: a.ID, At: due, Slot: a.Slot, OK: true, Detail: "already playing"})
+		s.endRing(ring, "the speaker was already playing this key")
+		return
+	}
 
 	// Armed BEFORE the wake, not after the recall: the firmware resumes its own
 	// last station on power-on (wakeForAlarm stops it a moment later), and that

@@ -23,6 +23,8 @@ import { t } from '../../i18n/index.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
+import { pairUnitName } from '../../groups.js';
+import { pairDisplayName } from '../../stereoNames.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
 import { claimPlay, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop } from '../../shell2/playclaim.js';
@@ -56,12 +58,16 @@ const status = new Map();
 const open = new Set();
 // The Discover mode to return to from Favorites (top list, search, Pandora).
 let discoverMode = 'top';
-// The top list is fetched once on its own when the preview first shows Radio:
-// Discover with nothing in it would be an empty page.
-let discoverLoaded = false;
 
 const on = () => !!state.ui2Shell;
-const speakerName = (box = state.currentBox) => (box ? getBoxLabel(box) : '');
+// speakerName names the speaker the keys belong to. Half of a live stereo pair
+// is named as the pair, "Kitchen (stereo)", the way the sidebar names it
+// (#1587); a pair name still being looked up repaints the keys when it lands.
+const speakerName = (box = state.currentBox) => {
+  if (!box) return '';
+  const pair = pairUnitName(box, state.zoneLive, state.boxes, (p) => pairDisplayName(p, () => syncUi2Keys()), getBoxLabel);
+  return pair ? t('ui2.side.pairName', { name: pair }) : getBoxLabel(box);
+};
 
 // ensureUi2Radio builds the preview's additions to the Radio view once the
 // shell is mounted. Safe to call from any render path.
@@ -85,13 +91,6 @@ export function ensureUi2Radio() {
   title.className = 'ui2-radio-title';
   title.textContent = t('ui2.nav.radio');
   head.insertBefore(title, head.firstChild);
-  // The search field sits next to the title, the first thing on the page, not
-  // in a row of its own under the keys. It is the Music view's own row, moved
-  // (field, Search, Top list and the Pandora switch keep their ids and their
-  // handlers); ui2radio.css shows it exactly when the row showed before: with
-  // a speaker chosen, on Discover.
-  const searchRow = search.querySelector('.search-input-row');
-  if (searchRow) head.insertBefore(searchRow, title.nextSibling);
   // Phase 5: the state of the speakers under the title (no speaker, none
   // chosen, only Bose originals), filled by fillUi2RadioState.
   const stateSlot = document.createElement('div');
@@ -128,7 +127,19 @@ export function ensureUi2Radio() {
   tabs.setAttribute('aria-label', t('ui2.radio.tabs'));
   tabs.innerHTML = ['discover', 'favorites'].map((id) => `<button type="button" class="ui2-radio-tab" role="tab" id="ui2RadioTab-${id}" data-tab="${id}" aria-controls="ui2RadioPanel">`
     + `${escapeHtml(t(id === 'discover' ? 'ui2.radio.discover' : 'ui2.radio.favorites'))}</button>`).join('');
-  search.parentNode.insertBefore(tabs, search);
+  // The search field sits on the tab row, right of Discover and Favorites and
+  // directly over Stream source and Filters, so the whole query reads in one
+  // place (#1587: next to the title it sat a screen's height away from its
+  // filters). It is the Music view's own row, moved (field, Search, Top list
+  // and the Pandora switch keep their ids and their handlers), and it stays
+  // outside the tablist; ui2radio.css shows it exactly when the row showed
+  // before: with a speaker chosen, on Discover.
+  const bar = document.createElement('div');
+  bar.className = 'ui2-radio-bar';
+  search.parentNode.insertBefore(bar, search);
+  bar.appendChild(tabs);
+  const searchRow = search.querySelector('.search-input-row');
+  if (searchRow) bar.appendChild(searchRow);
   search.id = 'ui2RadioPanel';
   search.setAttribute('role', 'tabpanel');
   wireTabs(tabs);
@@ -309,14 +320,10 @@ export function syncUi2Keys() {
   upgradeSentRows();
   // Another speaker was chosen: the rows' actions name the new one.
   if (rows.length && speaker !== rowsSpeaker && state.searchLastMode !== 'pandora') renderSearchResults();
-  // Discover starts with the top list, once, the first time Radio shows with
-  // a speaker to play on.
-  const res = $('searchResults');
-  if (!discoverLoaded && box && state.view === 'box' && !(state.searchResults || []).length
-    && state.searchLastMode === 'top' && res && !res.children.length) {
-    discoverLoaded = true;
-    doRefilter();
-  }
+  // Discover starts with an empty list, as the current layout does: no list
+  // is fetched on its own here. A top list that filled Radio at every start
+  // read as the last search coming back after the app was closed
+  // (discussion #1587); the search field and Top list are right above it.
 }
 
 // wireKeyEdit gives a key tile the keyboard's way to its choices

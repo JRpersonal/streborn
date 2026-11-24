@@ -2,16 +2,24 @@
 // which sticker, how two wide stickers pair, where a page ends, and that
 // nothing is placed outside the area that prints on A4 and on US Letter.
 import { describe, expect, it } from 'vitest';
+import { PRINT_DPI } from './draw.js';
 import {
   AREA,
   BLEED,
   CONTROL_LENGTH,
   PAGE,
+  REMOTE,
+  REMOTE_GRIDS,
+  REMOTE_SIZE_MAX,
+  REMOTE_SIZE_MIN,
+  REMOTE_TWO_COLUMNS_GAIN,
   SCISSORS_HALF,
   SQUEEZE,
+  chooseRemoteGrid,
   ellipsise,
   fitName,
   layoutStickers,
+  planRemote,
   stickerKind,
   stickerPalette,
   wrapText,
@@ -29,13 +37,17 @@ const KEYS = [
 ];
 const speaker = (name, model, housing = 'dark', keys = KEYS) => ({ name, model, housing, keys, qr: 'data:image/png;base64,AAAA' });
 const lay = (speakers) => layoutStickers(speakers, { measure, texts });
-const parts = (page, i) => page.pieces.filter((p) => p.speaker === i).map((p) => p.part);
+// Every speaker also gets its remote sticker, after all the speaker stickers.
+// Most checks are about a speaker's own sticker and leave those out.
+const own = (page) => page.pieces.filter((p) => p.part !== 'remote');
+const parts = (page, i) => own(page).filter((p) => p.speaker === i).map((p) => p.part);
 
 describe('model to sticker', () => {
   it('maps each model to its layout', () => {
     expect(stickerKind('SoundTouch 10')).toBe('st10');
     expect(stickerKind('SoundTouch 20')).toBe('st20');
-    expect(stickerKind('SoundTouch 30')).toBe('st20');
+    expect(stickerKind('SoundTouch 30')).toBe('st30');
+    expect(stickerKind('SoundTouch 30 Series III')).toBe('st30');
     expect(stickerKind('SoundTouch Portable')).toBe('portable');
     expect(stickerKind('soundtouch 20 series III')).toBe('st20');
   });
@@ -80,13 +92,54 @@ describe('model to sticker', () => {
     expect(size(0, 'qr')).toEqual([19.7, 23.3]);
     expect(size(1, 'grid')).toEqual([80, 51.5]);
     expect(size(1, 'qr')).toEqual([22, 26.3]);
-    expect(size(2, 'main')).toEqual([175, 33.7]);
+    // The ST30 is the ST20's sticker twice as tall: 175 x 67.3 mm.
+    expect(size(2, 'main')).toEqual([175, 67.3]);
     expect(size(3, 'main')).toEqual([150, 33.7]);
     // The ST20 edge follows the housing; any other model gets a rectangle.
     expect(page.pieces.find((x) => x.speaker === 2).curved).toBe(true);
     const plain = page.pieces.find((x) => x.speaker === 3);
     expect(plain.curved).toBe(false);
     expect(plain.outline).toHaveLength(4);
+  });
+
+  it('keeps the ST20 sticker at 175 x 33.7 mm, curved, with its parts at their sizes', () => {
+    const page = lay([speaker('Den', 'SoundTouch 20')]).pages[0];
+    const p = own(page)[0];
+    expect([Math.round(p.w * 10) / 10, Math.round(p.h * 10) / 10]).toEqual([175, 33.7]);
+    expect(p.curved).toBe(true);
+    expect(p.qr.size).toBeCloseTo(112 / 6, 9);
+    expect(p.tiles[0].size).toBeCloseTo(56 / 6, 9);
+  });
+
+  it('scales the ST30 sticker to its height: larger keys, code and mark, the same curve', () => {
+    const page = lay([speaker('Den', 'SoundTouch 30'), speaker('Hall', 'SoundTouch 20')]).pages[0];
+    const [st30] = own(page).filter((p) => p.speaker === 0);
+    const [st20] = own(page).filter((p) => p.speaker === 1);
+    expect(st30.h).toBeCloseTo(2 * st20.h, 9);
+    expect(st30.w).toBeCloseTo(st20.w, 9);
+    expect(st30.curved).toBe(true);
+    // The top edge is the ST20's: the same curve over the same width.
+    expect(st30.outline.slice(0, st30.outline.length / 2)).toEqual(st20.outline.slice(0, st20.outline.length / 2));
+    expect(st30.tiles[0].size / st20.tiles[0].size).toBeGreaterThan(1.4);
+    expect(st30.qr.size).toBeGreaterThan(st20.qr.size * 1.2);
+    expect(st30.brand.size).toBeCloseTo(st30.qr.size, 9);
+    // The short names of KEYS are set about 1.8 times as large, and so are
+    // the numbers.
+    const size = (p, text) => p.texts.find((x) => x.text === text).size;
+    for (const text of ['Jazz', 'News', '1', '6']) expect(size(st30, text) / size(st20, text)).toBeGreaterThan(1.7);
+    expect(size(st30, 'Talk') / size(st20, 'Talk')).toBeGreaterThan(1.7);
+    // The code and the mark stay inside their columns.
+    expect(st30.qr.x + st30.qr.size).toBeLessThanOrEqual(st30.w);
+    expect(st30.brand.x).toBeGreaterThanOrEqual(0);
+  });
+
+  it('never sets a long name on the ST30 smaller than on the ST20', () => {
+    for (const name of ['Deutschlandfunk Kultur', 'Bayern 3 - Die Hits', '1LIVE diggi', 'Norddeutscher Rundfunk NDR Kultur']) {
+      const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, name, { name: 'Morning Mix', kind: 'playlist' }));
+      const page = lay([speaker('Den', 'SoundTouch 30', 'dark', keys), speaker('Hall', 'SoundTouch 20', 'dark', keys)]).pages[0];
+      const nameSize = (i) => Math.min(...own(page).find((p) => p.speaker === i).texts.filter((x) => x.weight === 700 && x.align === 'left' && !/^([1-6]|2×)$/.test(x.text)).map((x) => x.size));
+      expect(nameSize(0), name).toBeGreaterThanOrEqual(nameSize(1));
+    }
   });
 
   it('puts the ST Reborn mark into the left column of the ST20 and ST30 sticker, mirroring the code', () => {
@@ -135,6 +188,9 @@ describe('housing colour', () => {
     expect(stickerPalette('st10', 'white').paper).toBe('#E5DCC8');
     expect(stickerPalette('st20', 'white').paper).toBe('#EFE6D6');
     expect(stickerPalette('st20', 'dark').paper).toBe('#141518');
+    // The ST30 shares the ST20's shades.
+    expect(stickerPalette('st30', 'white')).toEqual(stickerPalette('st20', 'white'));
+    expect(stickerPalette('st30', 'dark')).toEqual(stickerPalette('st20', 'dark'));
     expect(stickerPalette('portable', 'dark').paper).toBe('#707274');
   });
 
@@ -147,13 +203,13 @@ describe('housing colour', () => {
 
   it('colours each piece by its own speaker', () => {
     const page = lay([speaker('Den', 'SoundTouch 20', 'white'), speaker('Hall', 'SoundTouch 20', 'dark')]).pages[0];
-    expect(page.pieces.map((p) => p.pal.paper)).toEqual(['#EFE6D6', '#141518']);
+    expect(own(page).map((p) => p.pal.paper)).toEqual(['#EFE6D6', '#141518']);
   });
 });
 
 describe('ST20 pairing', () => {
   it('sets two wide stickers back to back, the second on its head', () => {
-    const page = lay([speaker('Den', 'SoundTouch 20'), speaker('Hall', 'SoundTouch 30')]).pages[0];
+    const page = lay([speaker('Den', 'SoundTouch 20'), speaker('Hall', 'Wave SoundTouch')]).pages[0];
     const [a, b] = page.pieces;
     expect([a.rot, b.rot]).toEqual([0, 180]);
     expect(b.y).toBeCloseTo(a.y + a.h, 5);
@@ -161,6 +217,41 @@ describe('ST20 pairing', () => {
     // One cut separates them, and it is marked.
     expect(page.scissors).toHaveLength(1);
     expect(page.scissors[0].y).toBeCloseTo(b.y, 5);
+  });
+
+  it('pairs two ST30 stickers by their real height, the cut at the shared edge', () => {
+    const page = lay([speaker('Den', 'SoundTouch 30'), speaker('Hall', 'SoundTouch 30')]).pages[0];
+    const [a, b] = own(page);
+    expect([a.rot, b.rot]).toEqual([0, 180]);
+    expect(a.h).toBeCloseTo(404 / 6, 9);
+    expect(b.y).toBeCloseTo(a.y + a.h, 9);
+    expect(b.x).toBeCloseTo(a.x, 9);
+    expect(page.scissors).toHaveLength(1);
+    expect(page.scissors[0].y).toBeCloseTo(a.y + a.h, 9);
+  });
+
+  it('pairs an ST30 only with an ST30, and nothing overlaps', () => {
+    const { pages } = lay([
+      speaker('A', 'SoundTouch 20'), speaker('B', 'SoundTouch 30'), speaker('C', 'Wave SoundTouch'), speaker('D', 'SoundTouch 30'), speaker('E', 'SoundTouch 30'),
+    ]);
+    const by = (n) => pages.flatMap(own).find((p) => p.speaker === n);
+    // The ST20 pairs with the plain sticker, the first two ST30s with each
+    // other; the third ST30 stands alone.
+    expect(by(2).rot).toBe(180);
+    expect(by(2).y).toBeCloseTo(by(0).y + by(0).h, 9);
+    expect(by(3).rot).toBe(180);
+    expect(by(3).y).toBeCloseTo(by(1).y + by(1).h, 9);
+    expect(by(4).rot).toBe(0);
+    for (const pg of pages) {
+      const ps = own(pg);
+      for (let i = 0; i < ps.length; i++) {
+        for (let j = i + 1; j < ps.length; j++) {
+          const a = ps[i], b = ps[j];
+          const apart = Math.max(Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w), Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
+          expect(apart).toBeGreaterThanOrEqual(-1e-9);
+        }
+      }
+    }
   });
 
   it('pairs wide stickers that are not next to each other in the list', () => {
@@ -173,14 +264,14 @@ describe('ST20 pairing', () => {
 
   it('leaves a single wide sticker upright and without scissors', () => {
     const page = lay([speaker('Den', 'SoundTouch 20')]).pages[0];
-    expect(page.pieces).toHaveLength(1);
+    expect(own(page)).toHaveLength(1);
     expect(page.pieces[0].rot).toBe(0);
     expect(page.scissors).toEqual([]);
   });
 
   it('starts a new pair with the third', () => {
     const page = lay(['A', 'B', 'C'].map((n) => speaker(n, 'SoundTouch 20'))).pages[0];
-    expect(page.pieces.map((p) => p.rot)).toEqual([0, 180, 0]);
+    expect(own(page).map((p) => p.rot)).toEqual([0, 180, 0]);
     expect(page.pieces[2].y).toBeGreaterThan(page.pieces[1].y + page.pieces[1].h);
   });
 });
@@ -313,6 +404,117 @@ describe('text fitting', () => {
   });
 });
 
+describe('large text', () => {
+  const MODELS = ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch 30', 'SoundTouch Portable', 'Wave SoundTouch'];
+  const both = (speakers) => [false, true].map((large) => layoutStickers(speakers, { measure, texts, large }).pages);
+  // The name lines of the keys: bold, left-aligned, in ink, not a key number
+  // (on the Portable's grey the numbers are in ink too) and not the marker.
+  // The speaker name under the code is centred.
+  const nameLines = (p) => p.texts.filter((x) => x.weight === 700 && x.align === 'left' && x.color === p.pal.ink && !/^([1-6]|2×)$/.test(x.text));
+  const twiceLines = (p) => p.texts.filter((x) => x.weight === 600);
+  const maxSize = (xs) => Math.max(...xs.map((x) => x.size));
+  const NAMES = ['Jazz', 'SWR3', 'Radio Paradise', 'Bayern 3 - Die Hits', 'Deutschlandfunk Kultur', 'Norddeutscher Rundfunk NDR Kultur', '日本放送協会ラジオ第一放送'];
+
+  // edgeAt is the top or bottom cut line of a piece at x, from its outline:
+  // the first half runs along the top from left to right, the second half
+  // along the bottom from right to left.
+  const edgeAt = (pts, x) => {
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+      if (x >= Math.min(x0, x1) - 1e-9 && x <= Math.max(x0, x1) + 1e-9) return x1 === x0 ? Math.max(y0, y1) : y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    }
+    return null;
+  };
+  // expectInside: no line is wider than its box allows, its box stays inside
+  // the piece, and the line stays inside the cut line, the curved one too.
+  const expectInside = (pages) => {
+    for (const p of pages.flatMap((pg) => pg.pieces)) {
+      const n = p.outline.length / 2;
+      const top = p.outline.slice(0, n);
+      const bottom = p.outline.slice(n).reverse();
+      for (const x of p.texts) {
+        expect(measure(x.text, { size: x.size }) * SQUEEZE, x.text).toBeLessThanOrEqual(x.maxW + 1e-9);
+        const left = x.align === 'center' ? x.x - x.maxW / 2 : x.x;
+        expect(left).toBeGreaterThanOrEqual(-1e-9);
+        expect(left + x.maxW).toBeLessThanOrEqual(p.w + 1e-9);
+        expect(x.y - x.size / 2).toBeGreaterThanOrEqual(0);
+        expect(x.y + x.size / 2).toBeLessThanOrEqual(p.h);
+        const drawn = Math.min(measure(x.text, { size: x.size }), x.maxW);
+        const from = x.align === 'center' ? x.x - drawn / 2 : x.x;
+        for (let k = 0; k <= 8; k++) {
+          const at = from + (drawn * k) / 8;
+          expect(x.y - x.size / 2, `${p.part} ${x.text}`).toBeGreaterThanOrEqual(edgeAt(top, at) - 1e-9);
+          expect(x.y + x.size / 2, `${p.part} ${x.text}`).toBeLessThanOrEqual(edgeAt(bottom, at) + 1e-9);
+        }
+      }
+    }
+  };
+
+  it('sets a short name larger than normal on every kind of sticker', () => {
+    for (const model of MODELS) {
+      const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Jazz', n % 2 ? { name: 'Talk', kind: 'station' } : null));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]).map((pages) => own(pages[0]));
+      for (let i = 0; i < normal.length; i++) {
+        if (!nameLines(normal[i]).length) continue;
+        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.2);
+        // The pressed-twice line grows too, but never past the name.
+        expect(maxSize(twiceLines(big[i])), model).toBeGreaterThan(maxSize(twiceLines(normal[i])));
+        expect(maxSize(twiceLines(big[i])), model).toBeLessThanOrEqual(Math.min(...nameLines(big[i]).map((x) => x.size)) + 1e-9);
+        // The speaker name under the code grows as well.
+        const qrName = (p) => p.texts.find((x) => x.align === 'center' && x.text === 'Den');
+        const q = normal.findIndex((p) => qrName(p));
+        expect(qrName(big[q]).size, model).toBeGreaterThan(qrName(normal[q]).size);
+      }
+    }
+  });
+
+  for (const name of NAMES) {
+    it(`never sets a name or a pressed-twice line smaller than normal: ${name}`, () => {
+      for (const twice of [null, { name, kind: 'playlist' }]) {
+        const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, name, twice));
+        const [normal, big] = both(MODELS.map((m) => speaker(name, m, 'dark', keys))).map((pages) => pages.flatMap(own));
+        expect(big.map((p) => p.part)).toEqual(normal.map((p) => p.part));
+        for (let i = 0; i < normal.length; i++) {
+          if (!nameLines(normal[i]).length) continue;
+          const label = `${normal[i].part} ${name}`;
+          expect(Math.min(...nameLines(big[i]).map((x) => x.size)), label).toBeGreaterThanOrEqual(Math.min(...nameLines(normal[i]).map((x) => x.size)) - 1e-9);
+          if (twice) expect(Math.min(...twiceLines(big[i]).map((x) => x.size)), label).toBeGreaterThanOrEqual(Math.min(...twiceLines(normal[i]).map((x) => x.size)) - 1e-9);
+        }
+      }
+    });
+  }
+
+  // One test per set of names: every remote sticker on these sheets is
+  // planned too, which takes most of the time. About 2 s alone, but well past
+  // vitest's 5 s default while the whole suite loads the machine, so each
+  // gets 30 s.
+  const long = 'An extraordinarily long station name with many words in it';
+  const SETS = [
+    ['short names', KEYS],
+    ['a very long name everywhere', [1, 2, 3, 4, 5, 6].map((n) => key(n, long, { name: long, kind: 'playlist' }))],
+    ['the fullest cell', [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Deutschlandfunk Kultur Nova', { name: 'Morning Mix Nova', kind: 'playlist' }))],
+    ...NAMES.map((name) => [name, [1, 2, 3, 4, 5, 6].map((n) => key(n, name, n % 2 ? { name: 'Bayern 3', kind: 'station' } : null))]),
+  ];
+  for (const [label, keys] of SETS) {
+    it(`keeps every line inside its piece and its cut line, in normal and in large text: ${label}`, () => {
+      for (const pages of both(MODELS.map((m) => speaker('Wohnzimmer', m, 'dark', keys)))) expectInside(pages);
+    }, 30_000);
+  }
+
+  it('leaves the number and tile of every Portable cell where they line up', () => {
+    const keys = [key(1, 'Jazz'), key(2, 'Deutschlandfunk Kultur'), key(3, 'SWR3', { name: 'Talk', kind: 'station' }), key(4, 'FIP'), key(5, 'Bayern 3 - Die Hits'), key(6)];
+    const [normal, big] = both([speaker('Den', 'SoundTouch Portable', 'dark', keys)]).map((pages) => own(pages[0]));
+    const grid = (ps) => ps.find((p) => p.part === 'grid');
+    expect(grid(big).tiles.map((x) => x.y)).toEqual(grid(normal).tiles.map((x) => x.y));
+  });
+
+  it('leaves the remote sticker as it is: it already sets its names as large as they fit', () => {
+    const [normal, big] = both([speaker('Den', 'SoundTouch 20', 'white', KEYS)]);
+    const remote = (pages) => pages.flatMap((pg) => pg.pieces).find((p) => p.part === 'remote');
+    expect(remote(big).texts).toEqual(remote(normal).texts);
+  });
+});
+
 describe('pages', () => {
   const many = (n, model) => Array.from({ length: n }, (_, i) => speaker(`Room ${i + 1}`, model));
 
@@ -350,18 +552,19 @@ describe('pages', () => {
 
   it('starts a new page when the next group does not fit', () => {
     // An ST10 group is 34.5 mm high plus bleed and gap: five fit one page,
-    // the sixth does not.
-    expect(lay(many(5, 'SoundTouch 10')).pages).toHaveLength(1);
+    // the sixth does not. The remote stickers follow on the next page.
+    const five = lay(many(5, 'SoundTouch 10')).pages;
+    expect(new Set(own(five[0]).map((p) => p.speaker))).toEqual(new Set([0, 1, 2, 3, 4]));
     const { pages } = lay(many(6, 'SoundTouch 10'));
-    expect(pages).toHaveLength(2);
-    expect(new Set(pages[1].pieces.map((p) => p.speaker))).toEqual(new Set([5]));
+    expect(new Set(own(pages[0]).map((p) => p.speaker))).toEqual(new Set([0, 1, 2, 3, 4]));
+    expect(new Set(own(pages[1]).map((p) => p.speaker))).toEqual(new Set([5]));
   });
 
   it('never splits one speaker, or a pair, across pages', () => {
     const speakers = [...many(4, 'SoundTouch Portable'), ...many(6, 'SoundTouch 20'), ...many(4, 'SoundTouch 10')];
     const { pages } = lay(speakers);
     const pageOf = new Map();
-    pages.forEach((page, n) => page.pieces.forEach((p) => {
+    pages.forEach((page, n) => own(page).forEach((p) => {
       if (pageOf.has(p.speaker)) expect(pageOf.get(p.speaker)).toBe(n);
       pageOf.set(p.speaker, n);
     }));
@@ -377,7 +580,7 @@ describe('pages', () => {
   it('does not let groups overlap', () => {
     for (const page of lay([...many(2, 'SoundTouch 10'), ...many(3, 'SoundTouch 20'), ...many(2, 'SoundTouch Portable')]).pages) {
       const bySpeaker = new Map();
-      for (const p of page.pieces) {
+      for (const p of own(page)) {
         const b = bySpeaker.get(p.speaker) || { y0: Infinity, y1: -Infinity };
         bySpeaker.set(p.speaker, { y0: Math.min(b.y0, p.y), y1: Math.max(b.y1, p.y + p.h) });
       }
@@ -408,5 +611,233 @@ describe('pages', () => {
   it('makes no page for no speaker', () => {
     expect(lay([]).pages).toEqual([]);
     expect(layoutStickers(null, { measure, texts }).pages).toEqual([]);
+  });
+});
+
+describe('the remote sticker', () => {
+  const bundles = import.meta.glob('../i18n/bundles/*.json', { eager: true, import: 'default' });
+  const REALISTIC = [
+    key(1, 'Radio Paradise', { name: 'Lofi Beats', kind: 'playlist' }),
+    key(2, 'SWR3', { name: 'Discover Weekly', kind: 'playlist' }),
+    key(3, 'Deutschlandfunk', { name: 'WDR 2', kind: 'station' }),
+    key(4, 'BBC Radio 6 Music', { name: 'Klassik Radio', kind: 'station' }),
+    key(5, 'FIP', { name: 'Bayern 3', kind: 'station' }),
+    key(6, 'Jazz24', { name: 'Release Radar', kind: 'playlist' }),
+  ];
+  const GERMAN = [
+    key(1, 'Deutschlandfunk Kultur', { name: 'Bayerischer Rundfunk Klassik', kind: 'station' }),
+    key(2, 'Mitteldeutscher Rundfunk Sputnik', { name: 'Wochenend-Entspannungsmusik', kind: 'playlist' }),
+    key(3, 'Donnerstagnachmittagsplaylist', { name: 'Hessischer Rundfunk hr-iNFO', kind: 'station' }),
+    key(4, 'Norddeutscher Rundfunk NDR Kultur', { name: 'Rundfunk Berlin-Brandenburg radioeins', kind: 'station' }),
+    key(5, 'Südwestrundfunk SWR1 Baden-Württemberg', { name: 'Sonntagmorgenfrühstücksmusik', kind: 'playlist' }),
+    key(6, 'Klassik Radio Filmmusik', { name: 'Kinderliederzusammenstellung', kind: 'playlist' }),
+  ];
+  const remoteSpeaker = (name, model, keys, housing = 'white') => speaker(name, model, housing, keys);
+  const remotesOf = (pages) => pages.flatMap((pg) => pg.pieces.filter((p) => p.part === 'remote'));
+  const one = (sp, extra = {}) => remotesOf(layoutStickers([sp], { measure, texts: { ...texts, remote: 'Remote' }, ...extra }).pages)[0];
+  const textsOf = (piece) => piece.texts.map((x) => x.text);
+
+  it('is a plain 40 x 75 mm rectangle with a cut line, for every model', () => {
+    for (const model of ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch 30', 'SoundTouch Portable', 'Wave SoundTouch', 'SoundTouch 300', '', undefined]) {
+      const p = one(remoteSpeaker('Kitchen', model, REALISTIC));
+      expect(p, String(model)).toBeTruthy();
+      expect([p.w, p.h]).toEqual([REMOTE.w, REMOTE.h]);
+      expect([REMOTE.w, REMOTE.h]).toEqual([40, 75]);
+      expect(p.curved).toBe(false);
+      expect(p.outline).toEqual([[0, 0], [40, 0], [40, 75], [0, 75]]);
+      expect(p.rot).toBe(0);
+    }
+  });
+
+  it("is always on the sheet, one per speaker, after the speakers' own stickers", () => {
+    const speakers = ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch Portable', 'Wave SoundTouch'].map((m, i) => speaker(`Room ${i + 1}`, m));
+    const { pages } = lay(speakers);
+    expect(remotesOf(pages).map((p) => p.speaker)).toEqual([0, 1, 2, 3]);
+    // Nothing of a speaker's own sticker comes after the first remote sticker.
+    const all = pages.flatMap((pg) => pg.pieces);
+    const first = all.findIndex((p) => p.part === 'remote');
+    expect(all.slice(first).every((p) => p.part === 'remote')).toBe(true);
+  });
+
+  it('says it is for the remote: the symbol, the word and the speaker name in the header', () => {
+    const p = one(remoteSpeaker('Living Room', 'SoundTouch 10', REALISTIC));
+    expect(p.remote).toBeTruthy();
+    expect(p.remote.h).toBeCloseTo(p.remote.w * 2, 9);
+    // The symbol sits in the header, above the first rule.
+    const firstRule = Math.min(...p.rules.filter((r) => r.y1 === r.y2).map((r) => r.y1));
+    expect(p.remote.y + p.remote.h).toBeLessThan(firstRule);
+    const head = p.texts.filter((x) => x.y < firstRule);
+    expect(head.map((x) => x.text)).toEqual(['Remote', 'Living Room']);
+    // The speaker stickers carry no symbol.
+    const sheet = layoutStickers([remoteSpeaker('Den', 'SoundTouch 20', KEYS)], { measure, texts }).pages[0];
+    expect(sheet.pieces.filter((x) => x.part !== 'remote').every((x) => x.remote === null)).toBe(true);
+  });
+
+  it('lists all twelve: every key pressed once and, under it, pressed twice', () => {
+    const p = one(remoteSpeaker('Kitchen', 'SoundTouch 20', REALISTIC));
+    const all = textsOf(p);
+    for (const n of ['1', '2', '3', '4', '5', '6']) expect(all).toContain(n);
+    for (const k of REALISTIC) {
+      expect(all).toContain(k.name);
+      expect(all).toContain(k.twice.name);
+    }
+    expect(all.filter((x) => x === '2×')).toHaveLength(6);
+    // Nothing is cut in a realistic set, and the keys stand in one column.
+    expect(all.some((x) => x.endsWith('…'))).toBe(false);
+    expect(p.grid).toMatchObject({ cols: 1, rows: 6, fits: true });
+    // Key n pressed twice is set under key n pressed once.
+    for (const k of REALISTIC) {
+      const once = p.texts.find((x) => x.text === k.name);
+      const twice = p.texts.find((x) => x.text === k.twice.name);
+      expect(twice.y).toBeGreaterThan(once.y);
+      expect(twice.size).toBeLessThan(once.size + 1e-9);
+    }
+  });
+
+  it('uses the largest name size that fits, by measurement', () => {
+    for (const keys of [REALISTIC, GERMAN, KEYS]) {
+      const { grid, plan } = chooseRemoteGrid(keys, measure);
+      expect(plan.size).toBeLessThanOrEqual(REMOTE_SIZE_MAX);
+      expect(plan.size).toBeGreaterThanOrEqual(REMOTE_SIZE_MIN);
+      if (plan.ok && plan.size < REMOTE_SIZE_MAX) {
+        // One step larger does not fit whole.
+        expect(planRemote(keys, grid, measure, plan.size + 0.1).size).toBeCloseTo(plan.size, 9);
+      }
+    }
+    // Short names are set larger than long ones.
+    expect(chooseRemoteGrid(REALISTIC, measure).plan.size).toBeGreaterThan(chooseRemoteGrid(GERMAN, measure).plan.size);
+  });
+
+  it('keeps one column unless two allow clearly larger names', () => {
+    // Long names need the full width.
+    expect(chooseRemoteGrid(GERMAN, measure).grid.cols).toBe(1);
+    expect(chooseRemoteGrid(REALISTIC, measure).grid.cols).toBe(1);
+    // Short names on every key, pressed once and twice: one column is held
+    // down by the height of its rows, two columns are not.
+    const short = [1, 2, 3, 4, 5, 6].map((n) => key(n, `FM${n}`, { name: `AM${n}`, kind: 'station' }));
+    const pick = chooseRemoteGrid(short, measure);
+    const [a, b] = REMOTE_GRIDS.map((g) => planRemote(short, g, measure));
+    expect(b.size).toBeGreaterThanOrEqual(a.size * REMOTE_TWO_COLUMNS_GAIN);
+    expect(pick.grid.cols).toBe(2);
+    const p = one(remoteSpeaker('Den', 'SoundTouch 30', short));
+    expect(p.grid.cols).toBe(2);
+    // A rule between the columns.
+    expect(p.rules.some((r) => r.x1 === r.x2 && r.x1 > 15 && r.x1 < 25)).toBe(true);
+  });
+
+  it('keeps every line inside the sticker, with long German names too', () => {
+    for (const keys of [REALISTIC, GERMAN, KEYS]) {
+      const p = one(remoteSpeaker('Wohnzimmer Lautsprecher am Fenster links', 'SoundTouch 20', keys));
+      for (const x of p.texts) {
+        expect(measure(x.text, { size: x.size }) * SQUEEZE).toBeLessThanOrEqual(x.maxW + 1e-9);
+        expect(x.x).toBeGreaterThanOrEqual(2 - 1e-9);
+        expect(x.x + x.maxW).toBeLessThanOrEqual(p.w - 2 + 1e-9);
+        expect(x.y - x.size / 2).toBeGreaterThanOrEqual(0);
+        expect(x.y + x.size / 2).toBeLessThanOrEqual(p.h);
+        expect(x.size).toBeGreaterThanOrEqual(REMOTE_SIZE_MIN * 0.8 - 1e-9);
+      }
+    }
+  });
+
+  it('never breaks a long German word in the middle', () => {
+    const p = one(remoteSpeaker('Kitchen', 'SoundTouch 20', GERMAN));
+    expect(p.grid.fits).toBe(true);
+    const words = GERMAN.flatMap((k) => [k.name, k.twice.name]).flatMap((s) => s.split(/\s+/)).flatMap((w) => [w, ...w.split(/(?<=-)/)]);
+    const body = p.texts.filter((x) => x.y > 13 && !/^[1-6]$/.test(x.text) && x.text !== '2×');
+    for (const x of body) {
+      for (const w of x.text.split(/\s+/)) expect(words, x.text).toContain(w);
+    }
+  });
+
+  it('breaks a name without spaces between characters', () => {
+    const cjk = [1, 2, 3, 4, 5, 6].map((n) => key(n, '日本放送協会ラジオ第一放送東京', { name: 'ＮＨＫ交響楽団', kind: 'station' }));
+    const p = one(remoteSpeaker('リビング', 'SoundTouch 10', cjk));
+    expect(p.grid.fits).toBe(true);
+    expect(textsOf(p).some((x) => x.endsWith('…'))).toBe(false);
+  });
+
+  it('shows an empty key as its number, and a key with only its second entry', () => {
+    const keys = [key(1, 'Jazz'), key(2), key(3, '', { name: 'Talk', kind: 'station' }), key(4), key(5), key(6)];
+    const p = one(remoteSpeaker('Den', 'SoundTouch 20', keys));
+    expect(textsOf(p)).toEqual(['Remote', 'Den', '1', 'Jazz', '2', '3', '2×', 'Talk', '4', '5', '6']);
+    const empty = one(remoteSpeaker('Den', 'SoundTouch 20', []));
+    expect(textsOf(empty)).toEqual(['Remote', 'Den', '1', '2', '3', '4', '5', '6']);
+    expect(empty.grid.cols).toBe(1);
+  });
+
+  it('cuts a speaker name only when two small lines do not hold it', () => {
+    const p = one(remoteSpeaker('Wohnzimmer Lautsprecher', 'SoundTouch 20', KEYS));
+    const head = p.texts.filter((x) => x.y < 12.5).map((x) => x.text);
+    expect(head.join(' ')).toBe('Remote Wohnzimmer Lautsprecher');
+    const cut = one(remoteSpeaker('x'.repeat(90), 'SoundTouch 20', KEYS));
+    expect(cut.texts[1].text.endsWith('…')).toBe(true);
+  });
+
+  it('fits the word for remote of every language bundle uncut', () => {
+    expect(Object.keys(bundles).length).toBeGreaterThanOrEqual(14);
+    for (const [file, b] of Object.entries(bundles)) {
+      const word = b['stickers.remoteHeader'];
+      expect(word, file).toBeTruthy();
+      const p = one(remoteSpeaker('Kitchen', 'SoundTouch 20', GERMAN), { texts: { ...texts, remote: word } });
+      expect(p.texts[0].text, file).toBe(word);
+    }
+  });
+
+  it('follows the housing colour', () => {
+    expect(one(remoteSpeaker('Den', 'SoundTouch 10', KEYS, 'white')).pal.paper).toBe('#EFE6D6');
+    expect(one(remoteSpeaker('Den', 'SoundTouch Portable', KEYS, 'dark')).pal.paper).toBe('#141518');
+  });
+
+  it('sets remote stickers side by side after the speaker stickers, inside the area, without overlap', () => {
+    const speakers = ['SoundTouch 10', 'SoundTouch 20', 'SoundTouch Portable', 'Wave SoundTouch', 'SoundTouch 30', 'SoundTouch 10']
+      .map((m, i) => remoteSpeaker(`Room ${i + 1}`, m, GERMAN));
+    const { pages } = layoutStickers(speakers, { measure, texts: { ...texts, remote: 'Remote' } });
+    const remotes = remotesOf(pages);
+    expect(remotes.map((p) => p.speaker).sort()).toEqual([0, 1, 2, 3, 4, 5]);
+    for (const page of pages) {
+      const rs = page.pieces.filter((p) => p.part === 'remote');
+      const others = page.pieces.filter((p) => p.part !== 'remote');
+      for (const r of rs) {
+        expect(r.x - BLEED).toBeGreaterThanOrEqual(AREA.x - 1e-9);
+        expect(r.x + r.w + BLEED).toBeLessThanOrEqual(AREA.x + AREA.w + 1e-9);
+        expect(r.y - BLEED).toBeGreaterThanOrEqual(AREA.y - 1e-9);
+        expect(r.y + r.h + BLEED).toBeLessThanOrEqual(AREA.y + AREA.h + 1e-9);
+        // Below every speaker sticker of the page.
+        for (const o of others) expect(r.y - BLEED).toBeGreaterThan(o.y + o.h + BLEED);
+        expect(page.control.y).toBeGreaterThan(r.y + r.h + BLEED);
+      }
+      // Bleeds never touch: every remote is cut on its own.
+      for (let i = 0; i < rs.length; i++) {
+        for (let j = i + 1; j < rs.length; j++) {
+          const a = rs[i], b = rs[j];
+          const apartX = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+          const apartY = Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h);
+          expect(Math.max(apartX, apartY)).toBeGreaterThanOrEqual(2 * BLEED);
+        }
+      }
+    }
+    // Four side by side in a row.
+    const rows = new Map();
+    for (const r of remotes) rows.set(Math.round(r.y * 1000), (rows.get(Math.round(r.y * 1000)) || 0) + 1);
+    expect(Math.max(...rows.values())).toBe(4);
+  });
+
+  it('prints at exactly 40 x 75 mm from a 100 % print of the PDF', () => {
+    // draw.js paints A4 at PRINT_DPI with the canvas rounded to whole pixels;
+    // Go (stickers.go) stretches that image over an A4 page of 595.28 x
+    // 841.89 pt. Through both steps a millimetre of the layout stays a
+    // millimetre on paper.
+    const k = PRINT_DPI / 25.4;
+    const canvasW = Math.round(PAGE.w * k);
+    const canvasH = Math.round(PAGE.h * k);
+    const PT = 25.4 / 72;
+    const onPaperX = (mm) => ((mm * k) / canvasW) * 595.28 * PT;
+    const onPaperY = (mm) => ((mm * k) / canvasH) * 841.89 * PT;
+    expect(595.28 * PT).toBeCloseTo(PAGE.w, 1);
+    expect(841.89 * PT).toBeCloseTo(PAGE.h, 1);
+    expect(Math.abs(onPaperX(REMOTE.w) - 40)).toBeLessThan(0.02);
+    expect(Math.abs(onPaperY(REMOTE.h) - 75)).toBeLessThan(0.02);
+    // The 100 mm control line beside it comes out the same way.
+    expect(Math.abs(onPaperX(CONTROL_LENGTH) - 100)).toBeLessThan(0.05);
   });
 });

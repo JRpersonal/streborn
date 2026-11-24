@@ -466,6 +466,15 @@ func (a *agent) buildStores() error {
 // 0600, never leaves the speaker; see internal/marge/deezerlogin.go).
 const keptDeezerLoginPath = "/mnt/nv/streborn/deezer-login.json"
 
+// deezerRecreateStartWait is how long after the first box read the start-up
+// recreate looks at the speaker's Deezer source: long enough for a firmware
+// that holds a working token to have logged in with Deezer by itself.
+// deezerRecreateOutcomeWait is when it reads the outcome once more.
+const (
+	deezerRecreateStartWait   = 90 * time.Second
+	deezerRecreateOutcomeWait = 30 * time.Second
+)
+
 // buildMarge creates the marge stand-in (streaming.bose.com) with its stores
 // and forensic sections, starts the deviceID correction and the pair
 // adoption, and records why this agent started.
@@ -602,7 +611,8 @@ func (a *agent) buildMarge() error {
 		return margeSrv.RecentRequestLines(60)
 	})
 	// Whether a Deezer login is kept for the account document, its type and
-	// origin: never the login, never the account.
+	// origin, and the last new login STR handed to the firmware with what the
+	// firmware did next (lastAttempt): never the login, never the account.
 	webui.RegisterDebugSection("deezer_login", func() any {
 		return margeSrv.DeezerLoginSnapshot()
 	})
@@ -1074,6 +1084,8 @@ func (a *agent) buildWebui() error {
 		// The stereo-pair record and the developer relay (marge_adapter.go).
 		webui.WithMarge(margeSrv),
 		webui.WithNativeServices(margeSrv),
+		// Deezer: the kept login and a new one (/api/deezer/account).
+		webui.WithDeezer(margeSrv),
 		webui.WithRegionResolver(regionRes),
 		webui.WithRecent(recentStore))
 
@@ -1312,9 +1324,9 @@ func (a *agent) buildBoxLink() error {
 		onPlayModeKey:   webuiSrv.PlayModeKeyPress,
 		// Thumbs up with nothing else on the key saves the playing Spotify
 		// song to Liked Songs, thumbs down removes it (#1165).
-		onLikeKey:      webuiSrv.LikeKeyPress,
-		onUnlikeKey:    webuiSrv.UnlikeKeyPress,
-		onRadioStepKey: webuiSrv.RadioStepKey,
+		onLikeKey:   webuiSrv.LikeKeyPress,
+		onUnlikeKey: webuiSrv.UnlikeKeyPress,
+		onTrackKey:  webuiSrv.RemoteTrackKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).
@@ -1489,6 +1501,11 @@ func (a *agent) buildBoxLink() error {
 	// provable by hand-counting stale-status WARNs) and the box-owned preset
 	// slots STR preserves in the marge answer (the Deezer slot-3 loss class).
 	webui.RegisterDebugSection("boseapp_health", func() any { return webuiSrv.BoseAppHealth() })
+	// Every read of this speaker's :8090 the agent makes anyway (boxapi and
+	// the autopair heartbeat) feeds that record, so a firmware webserver that
+	// stopped answering is noticed without a probe of its own and turns into
+	// boxHealth "firmware-unresponsive" (the power-cycle hint).
+	boxapi.ObserveReachability(a.flags.boxHost, webuiSrv.NoteBoseAppReach)
 	// What drawing the playback screen costs: how long STR held the panel,
 	// how often it drew, and the CPU time of BoseApp and the agent, so two
 	// readings a few minutes apart (screen on, screen off) give the
@@ -1596,6 +1613,13 @@ func (a *agent) buildBoxLink() error {
 	// The firmware's once-a-minute line carries the look at the standby
 	// clock in a long standby, so it needs no timer of its own (#841).
 	keyTrace.SetMinuteHandler(oled.StandbyMinute)
+	// The kernel logs into the same ring: its USB disk lines are when a music
+	// stick goes in or out, so the agent looks at it then (and switches the
+	// firmware's read-write mount of a music stick to read-only) instead of
+	// on a timer (#1136, internal/webui/usbmusic.go).
+	keyTrace.SetUSBDiskHandler(func(ev boxlog.USBDiskEvent) {
+		webuiSrv.OnUSBDiskLine(ev.Change == boxlog.USBDiskAttached)
+	})
 	// A held preset key while STR's own stream plays (#1217): the firmware
 	// refuses to store a UPnP push, so the agent pairs the key line with the
 	// firmware's own hold verdict and saves what plays (holdsave.go).
@@ -1707,6 +1731,14 @@ func (a *agent) buildBoxLink() error {
 	// flapping was gone long before a bundle was exported. This one is
 	// snapshotted the moment the firmware's setup state machine first speaks.
 	webui.RegisterDebugSection("box_setup_tail", func() any { return keyTrace.SetupTailSnapshot() })
+	// Every firmware line about Deezer or a music-service account call, kept
+	// apart from the rolling tail so the Deezer login test (A2,
+	// docs/streaming/deezer.md) is still in a bundle taken minutes later.
+	// Redacted like the tail: accounts masked, tokens and passwords dropped.
+	webui.RegisterDebugSection("box_syslog_deezer", func() any { return keyTrace.DeezerTailSnapshot() })
+	// The firmware's last Deezer relogin retry code (3351 no token, 3330 token
+	// rejected by Deezer) for the deezer_login section and the Deezer card.
+	margeSrv.SetDeezerRetrySource(keyTrace.DeezerLastRetry)
 	// Tell the gabbo classifier about STR's OWN transport commands: the box
 	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
 	// indistinguishable from the user pressing stop, and reading it as a user
@@ -1932,6 +1964,24 @@ func (a *agent) startBackground() error {
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
 	}()
 
+	// Deezer: hand a kept login back to a speaker that lists Deezer without a
+	// working account (internal/webui/deezer.go). Once per start, after the
+	// first box read and a wait long enough for the firmware to have logged
+	// in by itself; without a kept login it returns at once, no call made.
+	if ws := a.webuiSrv; ws != nil {
+		a.wg.Add(1)
+		go func() {
+			defer a.wg.Done()
+			select {
+			case <-seedFirstRead:
+			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
+				return
+			}
+			ws.DeezerRecreateAtStart(ctx, deezerRecreateStartWait, deezerRecreateOutcomeWait)
+		}()
+	}
+
 	// Resource heartbeat: a one-line MemAvailable + loadavg snapshot
 	// every 5 minutes. The box has ~120 MB RAM and no swap, so a slow
 	// leak ends in an OOM freeze that otherwise leaves no trace; this
@@ -2096,6 +2146,11 @@ func (a *agent) wireLate() error {
 		a.mdnsMu.Unlock()
 		return ann.Snapshot()
 	})
+	// Music from a USB stick in the speaker (Ideas #1136): what is plugged in is
+	// looked at once now (detection only, nothing is mounted at boot) and then
+	// only when a client opens the Library. No timer, no poll.
+	webui.RegisterDebugSection("usb_music", webuiSrv.USBMusicDebug)
+	go webuiSrv.USBMusicStartupCheck()
 	// Let the web UI's preset sync store slots natively too, on the same terms
 	// as the agent's own reconcile: only when the box reports the radio source
 	// registered, otherwise "" and the UPnP form is kept.

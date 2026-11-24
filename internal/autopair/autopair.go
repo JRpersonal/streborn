@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
@@ -135,11 +136,16 @@ func New(logger *slog.Logger, cfg Config) *Manager {
 	if cfg.Email == "" {
 		cfg.Email = defaultEmail
 	}
+	// Both clients report every round trip to the speaker's :8090 outage
+	// tracker (boxapi.ObserveReachability): the heartbeat /info read is the
+	// one :8090 read that happens on a healthy idle speaker no matter what,
+	// so it is what notices a firmware webserver that stopped answering.
+	observed := boxapi.ObservedTransport(cfg.BoxHost, nil)
 	return &Manager{
 		logger:     logger,
 		cfg:        cfg,
-		client:     &http.Client{Timeout: statusTimeout},
-		pairClient: &http.Client{Timeout: pairTimeout},
+		client:     &http.Client{Timeout: statusTimeout, Transport: observed},
+		pairClient: &http.Client{Timeout: pairTimeout, Transport: observed},
 		base:       "http://" + cfg.BoxHost + ":8090",
 	}
 }

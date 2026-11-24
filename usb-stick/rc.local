@@ -14,6 +14,70 @@ mkdir -p "$LOGDIR" 2>/dev/null || true
 # Erster Reboot Marker, hilft beim Debuggen falls Stick fehlt
 echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
 
+# Defined HERE, above their first caller, for the same reason as
+# install_boot_script below: sh runs this file top to bottom.
+# usb-stick/tests/foreign_stick_test.sh guards the order.
+stick_has_str_marker() {
+    # Returns 0 when the directory $1 is the top level of an STR or Bose stick.
+    #
+    # KEEP BYTE-IDENTICAL to its twin in the other file (usb-stick/rc.local and
+    # usb-stick/run.sh, for the reason given at install_boot_script), together
+    # with usb_stick_mounts and foreign_stick_only below.
+    # usb-stick/tests/foreign_stick_test.sh fails if the copies drift.
+    #
+    # A stick that is not ours (a music stick left in the speaker) must not be
+    # waited on, fscked, mounted over or written to. A marker is any file STR's
+    # install wizard puts on a stick (sticksetup.PayloadFileNames: the
+    # usb-stick templates, the agent, the Spotify engine, the version stamp and
+    # the wizard's config files; sticksetup's tests fail when a payload file is
+    # missing here), the keep-open debug switch, or a file the Bose firmware
+    # itself reacts to (remote_services, Update.stu). What STR only ever writes
+    # ONTO a stick it already recognised (setup.log, cap*.ogg) is deliberately
+    # not a marker: a music stick an older STR scribbled on would otherwise
+    # stay "ours" for good. FAT matches names without regard to case; Update.stu
+    # is also listed in the other spellings a case-sensitive file system shows.
+    [ -n "${1:-}" ] && [ -d "$1" ] || return 1
+    for _shsm in \
+        run.sh install.sh rc.local autostart.sh provision-wlan.sh \
+        iptables-setup.sh setup-tls.sh presets.json version.txt str-shim.so \
+        streborn-armv7l streborn go-librespot remote_services keep-open \
+        wlan.conf wlan.ssid wlan.pass region.conf name.conf name.raw lang.conf \
+        Update.stu update.stu UPDATE.STU; do
+        [ -e "$1/$_shsm" ] && return 0
+    done
+    return 1
+}
+
+usb_stick_mounts() {
+    # Prints the mount point of every mounted USB stick file system, one per
+    # line. Bose's udev mount.sh puts a stick at /media/sd<x><n>, the places
+    # the boot scripts search for STR's stick, so that is what counts. Only
+    # the mount point is matched, never a bare /dev/sd* device: what else a
+    # host has mounted from one (a test runner's own disk) is not a stick.
+    # PROC_MOUNTS is a test seam and nothing else; on the speaker it is
+    # /proc/mounts.
+    [ -r "${PROC_MOUNTS:-/proc/mounts}" ] || return 0
+    while read -r _usm_dev _usm_mnt _usm_rest; do
+        case "$_usm_mnt" in
+            /media/sd*) echo "$_usm_mnt" ;;
+        esac
+    done < "${PROC_MOUNTS:-/proc/mounts}"
+}
+
+foreign_stick_only() {
+    # Returns 0 when at least one USB stick is mounted and none of the mounted
+    # ones carries an STR or Bose marker: the only stick in the speaker is the
+    # user's own. The boot then goes on as if no stick were in. Returns 1 when
+    # nothing is mounted (yet), so a stick that is still mounting is waited on
+    # as before, and when any mounted stick is ours.
+    _fso_rc=1
+    for _fso_mnt in $(usb_stick_mounts); do
+        stick_has_str_marker "$_fso_mnt" && return 1
+        _fso_rc=0
+    done
+    return $_fso_rc
+}
+
 # USB stick is mounted async by udev. Both the NAND override path
 # and the fallback path need the stick directory (binary,
 # version.txt, wlan.conf). Wait up to 30s for the stick before
@@ -88,6 +152,15 @@ while :; do
     done
     if [ -n "$STICK_PATH" ]; then
         echo "$(date): stick detected at $STICK_PATH after ${i}s" >> "$LOGDIR/boot.log"
+        break
+    fi
+    # A mounted stick without any STR or Bose marker is the user's own (a
+    # music stick left in). Waiting the full STICK_WAIT for it to turn into an
+    # STR stick only made every such boot 30s slower, so go on at once, as if
+    # no stick were in. A stick that is still mounting has no /proc/mounts
+    # entry yet, so it is still waited on exactly as before.
+    if foreign_stick_only; then
+        echo "$(date): only a non-STR USB stick is mounted ($(usb_stick_mounts | tr '\n' ' ')), going on without a stick after ${i}s" >> "$LOGDIR/boot.log"
         break
     fi
     if [ $i -ge "$STICK_WAIT" ]; then

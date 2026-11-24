@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/recallintent"
 )
 
 // makeWarm makes m look like a box is attached and audibly streaming the
@@ -137,6 +139,109 @@ func TestPlayWarmPausedRepressResumes(t *testing.T) {
 	}
 	if m.skipCutArmed() {
 		t.Error("a resume must clear the recall cut (no BOS is coming)")
+	}
+}
+
+// pausedEngine is a go-librespot stand-in whose engine reports paused, the
+// state SwitchedAway leaves behind. It records every call but /status.
+func pausedEngine(t *testing.T) (*Manager, func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			_, _ = w.Write([]byte(`{"username":"u","paused":true,"track":{"uri":"spotify:track:cur","name":"Cur"}}`))
+			return
+		}
+		mu.Lock()
+		got = append(got, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ts.Close)
+	return newTestManagerAt(t, ts.URL), func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), got...)
+	}
+}
+
+func sawPath(paths []string, want string) bool {
+	for _, p := range paths {
+		if p == want {
+			return true
+		}
+	}
+	return false
+}
+
+// A double press whose row 1 is a radio key and whose row 2 is the playlist
+// that plays: the first press switched away and paused the playing engine, so
+// the second finds it paused. That pause is STR's own, so the press moves on
+// to the next track like every re-press of the playing playlist, instead of
+// resuming the song that played (Jens' ST30, 2026-11-22).
+func TestPlayWarmDoublePressMovesOnPastTheFirstPressSwitchAway(t *testing.T) {
+	m, calls := pausedEngine(t)
+	const ctxURI = "spotify:playlist:abc"
+	makeWarm(m, ctxURI)
+	m.mu.Lock()
+	m.sinkLastPageAt = time.Now() // the box was being fed audio
+	m.mu.Unlock()
+	first := time.Now()
+	m.SwitchedAway(context.Background()) // row 1's recall on the first press
+	m.ArmRecallCut()
+
+	if err := m.Play(recallintent.WithPressSince(context.Background(), first), ctxURI, PlayOptions{Shuffle: false}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	got := calls()
+	if !sawPath(got, "/player/next") {
+		t.Errorf("the double press must move on to the next track, calls %v", got)
+	}
+	if sawPath(got, "/player/play") {
+		t.Errorf("a re-press must not reload the playlist, calls %v", got)
+	}
+	if !m.skipCutArmed() {
+		t.Error("the recall cut must stay armed so the /player/next BOS drops the old tail")
+	}
+}
+
+// The engine paused for any other reason still resumes where it stood on a
+// double press: the listener paused it before (no audio reached the box when
+// the first press switched away), or the switch-away came before this press.
+func TestPlayWarmDoublePressResumesAPauseThatIsNotItsOwn(t *testing.T) {
+	cases := []struct {
+		name        string
+		lastPageAgo time.Duration
+		pressAfter  bool // the press began after the switch-away
+	}{
+		{"engine already paused by the listener", time.Minute, false},
+		{"switch-away from an earlier press", 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, calls := pausedEngine(t)
+			const ctxURI = "spotify:playlist:abc"
+			makeWarm(m, ctxURI)
+			m.mu.Lock()
+			m.sinkLastPageAt = time.Now().Add(-tc.lastPageAgo)
+			m.mu.Unlock()
+			first := time.Now()
+			m.SwitchedAway(context.Background())
+			if tc.pressAfter {
+				first = time.Now().Add(time.Millisecond)
+			}
+			m.ArmRecallCut()
+			if err := m.Play(recallintent.WithPressSince(context.Background(), first), ctxURI, PlayOptions{Shuffle: false}); err != nil {
+				t.Fatalf("Play: %v", err)
+			}
+			if got := calls(); sawPath(got, "/player/next") {
+				t.Errorf("a pause that is not the press's own must resume, not skip, calls %v", got)
+			}
+			if m.skipCutArmed() {
+				t.Error("a resume must clear the recall cut (no BOS is coming)")
+			}
+		})
 	}
 }
 
@@ -381,5 +486,29 @@ func TestRecallCutWindowAndStaleSnapshot(t *testing.T) {
 	m.noteSkipBoundary()
 	if got := m.LastBoundaryStaleKB(); got != 0 {
 		t.Errorf("LastBoundaryStaleKB = %d, want 0 (never negative)", got)
+	}
+}
+
+// STR's own recall after a skip (webui spotifyRecoverAfterSkip) keeps the
+// track the listener just chose: no next, no reshuffle, for a shuffle preset
+// and a resume preset alike (Jens' ST30, 2026-11-21: Back landed two songs on).
+func TestPlayWarmRecoveryRecallKeepsTheTrack(t *testing.T) {
+	for _, shuffle := range []bool{true, false} {
+		m, calls, cleanup := mockLibrespot(t)
+		const ctxURI = "spotify:playlist:abc"
+		makeWarm(m, ctxURI)
+		m.ArmRecallCut()
+		if err := m.Play(recallintent.WithKeepTrack(context.Background()), ctxURI, PlayOptions{Shuffle: shuffle}); err != nil {
+			t.Fatalf("Play: %v", err)
+		}
+		for _, p := range pathsOf(calls()) {
+			if p == "/player/next" || p == "/player/shuffle_context" || p == "/player/play" {
+				t.Errorf("shuffle=%v: a recovery recall called %s (calls %v)", shuffle, p, pathsOf(calls()))
+			}
+		}
+		if m.skipCutArmed() {
+			t.Errorf("shuffle=%v: no track boundary is coming, the cut must be cleared", shuffle)
+		}
+		cleanup()
 	}
 }

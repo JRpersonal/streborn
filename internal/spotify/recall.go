@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/anonymise"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 )
 
 // normalizeContextURI unwraps an ephemeral autoplay STATION context
@@ -544,14 +545,32 @@ func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions, 
 	// for a moment. A paused engine is resumed where it stood instead, since
 	// that press asks for the music back, not for another song.
 	skipped := false
-	if opts.Shuffle {
+	if recallintent.KeepTrack(ctx) {
+		// STR's own recall after a skip (webui spotifyRecoverAfterSkip): the
+		// listener just picked this track with Next or Back, so it stays. No
+		// reshuffle either, that would also move off it.
+		m.clearSkipCut()
+		m.logger.Info("spotify: warm recall keeps the playing track (STR's recovery after a skip, not a key press)", "uri", uri)
+	} else if opts.Shuffle {
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
 		_ = m.apiPost(ctx, "/player/next", "")
 		skipped = true
 	} else {
 		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
-		if st, ok := m.readEngineStatus(ctx); ok && st.Paused != nil && *st.Paused {
+		st, ok := m.readEngineStatus(ctx)
+		paused := ok && st.Paused != nil && *st.Paused
+		if since, double := recallintent.PressSince(ctx); paused && double && m.pausedBySwitchAwaySince(since) {
+			// The second press of a double press whose row 1 is no Spotify
+			// key: that first press paused the playing engine a moment ago to
+			// switch away (SwitchedAway). The listener never paused anything,
+			// the playlist played until the press, so this is a re-press of
+			// the playing playlist like any other (Jens' ST30, 2026-11-22: the
+			// song just went on).
+			m.logger.Info("spotify: the engine is paused only because the first press switched away, moving on to the next track as on any re-press of the playing playlist", "uri", uri)
+			paused = false
+		}
+		if paused {
 			m.clearSkipCut()
 		} else if err := m.apiPost(ctx, "/player/next", ""); err != nil {
 			m.logger.Debug("spotify: next on a re-pressed key failed", "err", err)
@@ -806,9 +825,13 @@ func (m *Manager) SwitchedAway(ctx context.Context) {
 	if m == nil {
 		return
 	}
+	at := time.Now()
 	m.mu.Lock()
-	m.suppressActivateUntil = time.Now().Add(10 * time.Second)
+	m.suppressActivateUntil = at.Add(10 * time.Second)
 	running := m.sink != nil || m.cmd != nil
+	// Whether the box was being fed audio right up to now: the engine played,
+	// so the pause below is STR's and not the listener's (switchAwayPausedAt).
+	playing := m.sink != nil && !m.sinkLastPageAt.IsZero() && at.Sub(m.sinkLastPageAt) < switchAwayPlayingWithin
 	m.mu.Unlock()
 	if !running {
 		return
@@ -817,11 +840,31 @@ func (m *Manager) SwitchedAway(ctx context.Context) {
 	// after I pressed another key" could not tell a missing switch-away from
 	// one the engine ignored (#1065).
 	if m.logger != nil {
-		m.logger.Info("spotify: speaker switched to another source, pausing the engine and holding off auto-attach")
+		m.logger.Info("spotify: speaker switched to another source, pausing the engine and holding off auto-attach", "wasPlaying", playing)
 	}
 	if err := m.Pause(ctx); err != nil {
 		m.logger.Debug("spotify: pause on source-switch failed", "err", err)
+		return
 	}
+	if playing {
+		m.mu.Lock()
+		m.switchAwayPausedAt = at
+		m.mu.Unlock()
+	}
+}
+
+// switchAwayPlayingWithin is how recently the box must have been handed a
+// page for SwitchedAway to count the engine as playing. A playing engine's
+// pages reach the box at least every maxFlushAge.
+const switchAwayPlayingWithin = 5 * time.Second
+
+// pausedBySwitchAwaySince reports whether SwitchedAway paused a playing engine
+// at or after t, i.e. whether a paused engine a recall finds now is paused
+// only because the first half of the same press switched the speaker away.
+func (m *Manager) pausedBySwitchAwaySince(t time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.switchAwayPausedAt.IsZero() && !m.switchAwayPausedAt.Before(t)
 }
 
 // PlayingContext returns the Spotify context URI (playlist/album) go-librespot is

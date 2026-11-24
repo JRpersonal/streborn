@@ -8,7 +8,7 @@
 
 import { t } from './i18n/index.js';
 import { formatClock } from './format.js';
-import { labelOf as getBoxLabel } from './boxes.js';
+import { labelOf as getBoxLabel, needsPowerCycle } from './boxes.js';
 import { libraryFileGoneName, libraryFileGoneNotice, libraryServerOffName, libraryServerOffNotice } from './libraryserveroff.js';
 import { MAX_SLOT } from './presetrows.js';
 
@@ -622,6 +622,9 @@ export function friendlyErrorText(msg) {
   if (text.includes('radio directory unreachable')) {
     return t('radio.mirrorsDown');
   }
+  // A file on the speaker's USB stick above 48 kHz (#1136): the agent's code
+  // comes first in the reduced "code: message" form, its English sentence after.
+  if (text.includes('library-file-hires')) return t('library.usbHiRes');
   // File-gone first: its check is exact on the body's code, the server-off
   // one also answers for a bare code without a body.
   const goneServer = libraryFileGoneName(text);
@@ -643,12 +646,13 @@ export function searchErrorText(err) {
 }
 
 // stormBannerBoxes picks the speakers the soft-restart notice (Bose 1036 storm
-// or silent recall refusal) is about. A speaker whose health check says it is
-// wedged already gets the "unplug it" banner; a restart notice next to it
-// gave two contradicting pieces of advice for the same speaker (#1065), and a
-// wedged box cannot run the soft restart anyway. So it is left out here.
+// or silent recall refusal) is about. A speaker whose health check says it
+// needs a power cycle already gets the "unplug it" banner; a restart notice
+// next to it gave two contradicting pieces of advice for the same speaker
+// (#1065), and such a box cannot run the soft restart anyway. So it is left
+// out here.
 export function stormBannerBoxes(boxes) {
-  return (boxes || []).filter(b => b && (b.storm1036 || b.recallRefusal) && b.boxHealth !== 'wedged');
+  return (boxes || []).filter(b => b && (b.storm1036 || b.recallRefusal) && !needsPowerCycle(b));
 }
 
 // holdRefusedBannerKey picks the text for a long press STR could not keep.

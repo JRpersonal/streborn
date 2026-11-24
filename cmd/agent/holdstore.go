@@ -23,7 +23,7 @@ import (
 )
 
 // errNotKeepable is the reason class for items the speaker may hold but STR
-// has no preset form for (a UPnP push, a Deezer playlist, an unreadable
+// has no preset form for (a UPnP push, an Amazon playlist, an unreadable
 // station descriptor).
 var errNotKeepable = errors.New("not a station STR can keep")
 

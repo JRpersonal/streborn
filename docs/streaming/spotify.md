@@ -20,13 +20,29 @@ ever drops the frozen eSDK. The rest of this document is the spike trail.
 ## Known limitation: accounts in Spotify's PlayPlay-DRM cohort (2026)
 
 Since roughly December 2025 Spotify has been forcing a per-account DRM
-migration: accounts created after a cutoff somewhere in 2024/2025 get
-**every** legacy AES audio-key request refused with `code 1`, while older
-accounts on the same device, track, and network keep playing. This hits
+migration: affected accounts get **every** legacy AES audio-key request
+refused with `code 1`, while other accounts on the same device, track, and
+network keep playing. Newer accounts (created from about 2024 on) are hit
+most often, but account age is not a reliable rule: an account from 2022
+(#1077, 2026-11-21) and one more than eight years old (#1737) were refused
+too, as were older accounts reported on librespot-org/librespot#1649. This hits
 every open-source Spotify Connect client (go-librespot, librespot-org,
 spotifyd); official/eSDK partner clients use the licensed PlayPlay path
 and are unaffected, so the box's NATIVE Spotify Connect keeps working for
 exactly the accounts that fail on STR's engine.
+
+Spotify's own answer, relayed from Spotify support in the Volumio forum
+(community.volumio.com/t/2026-spotify-plugin/77605/30) and quoted by the
+go-librespot maintainer on devgianlu/go-librespot#279 (2026-11-19): these
+devices are "being phased out for security reasons", only accounts that
+played on an eSDK v1 device within the last year can keep using them, and
+new accounts can no longer be enabled. That reads "new" as new to such
+devices, not newly created, and it fits the field data better than account
+age: on #1077 (2026-11-23) a 2022 account that had never played on one was
+refused on a Premium trial and again after a paid upgrade, while two 2020 accounts with paid Premium
+history played on their first (STR) use in autumn 2026. If the statement
+holds, an account keeps working as long as it plays at least once a year,
+and one that pauses for longer may not come back.
 
 Signature in the agent log: engine authenticates fine (`authenticated AP`,
 `authenticated Login5`), then `failed retrieving aes key with code 1` on
@@ -41,8 +57,9 @@ and client-token changes are all documented not to help, and implementing
 PlayPlay upstream was rejected as a DMCA hazard (go-librespot#317). Our
 fork already carries the mitigations that exist (alternative-track
 relinking, PR #267; skip-on-refusal, commit bad77f3). Discriminator for
-support: a pre-2024 account plays on the same (STR) device while the new
-account does not. Upstream tracking: librespot-org/librespot#1649,
+support: another account plays on the same (STR) device while this one
+does not. That proves the speaker and the engine fine and the refusal
+per account; asking for the account's creation date only gives a hint. Upstream tracking: librespot-org/librespot#1649,
 devgianlu/go-librespot#279. First field case: #78 (2026-08-01).
 
 Engine builds from JRpersonal/go-librespot#9 on (#480) stop on the third
@@ -102,9 +119,10 @@ entry and then save the Spotify presets again (a preset switches back to
 the account it was saved under before each recall); nothing is promised
 about the box's native entry there. Everything else, an unknown plan
 included, gets the cohort words: Spotify refuses some accounts on players
-like (STR), usually newer ones and even on Premium, the box's own entry
-still plays the account, and playing once from another, older account on
-the (STR) entry tells the account from the speaker.
+like (STR), even on Premium, the box's own entry still plays the account,
+and playing once from another account on the (STR) entry tells the
+account from the speaker. The words say nothing about account age, which
+is not a reliable discriminator (see above).
 
 The notice is the only place the apps say this. An app-side preset recall
 (`/api/play/<slot>`) answers 200 as soon as the box is pointed at the slot

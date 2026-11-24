@@ -41,6 +41,8 @@ All request and response bodies are JSON.
 | `GET`  | `/api/position` | - | Where the speaker is inside the track: `{"ok":true,"positionSec":N,"durationSec":N,"seekable":bool}`. `durationSec` is `0` for radio. `seekable` says whether `/api/seek` would take a jump right now. |
 | `POST` | `/api/seek` | `{"positionSec":90}` | Jump to that second of the playing track. Only for a music-library file the speaker fetches itself (alone or as the current track of a folder) while it plays. Answers `{"ok":true,"positionSec":N,"durationSec":N}`, or `{"error":"...","reason":"..."}` with `409` (`not-seekable` for radio, Spotify and proxied tracks, `not-playing` while paused or stopped, `length-unknown`), `400` (`bad-position`, `out-of-range`) or `502` (`seek-refused`, `speaker-unreachable`). |
 | `POST` | `/api/spotify/liked` | `{"liked":true}` / `{"liked":false}` | Save the playing Spotify song to Liked Songs, or remove it from there: what the remote's thumbs keys do, for an app. Only while STR's own Spotify is what the speaker plays (also paused); a speaker with a display shows LIKED or REMOVED. The song goes to the Liked Songs of the Spotify account the SPEAKER's engine is logged in with, which may differ from the account on the phone that asks. Answers `{"ok":true,"liked":bool,"uri":"spotify:track:...","name":"...","repeat":bool}` (`repeat`: the same request for the same song a moment ago, nothing written twice), or `{"error":"...","reason":"..."}` with `409` (`not-playing` when STR's Spotify is not what plays, `no-track`, `not-a-song`, `no-engine` on a speaker without the Spotify engine), `400` (`bad-body`, or plain text for invalid JSON) or `502` when the engine or Spotify refused (`engine-too-old`, `no-session`, `unauthorized-401`, `forbidden-403`, `rate-limited-429`, `rejected-400`, `timeout`, `failed`). An agent that has this reports `"spotifyLiked":"true"` in `/api/agent/version`. |
+| `POST` | `/api/spotify/playmode` | `{"action":"shuffle"}` / `{"action":"repeat"}` | Switch the playing Spotify playlist's shuffle on or off, or step its repeat (off, the whole playlist, the one song, off): what a remote key bound to shuffle or repeat does, without the display notice. The state is read fresh from the engine first, so a press moves on from what is really set. Only while STR's own Spotify is what the speaker plays (also paused). Answers `{"ok":true,"shuffle":bool,"repeat":"off"/"context"/"track"}` with the state after the step (the field the press did not change is left out when the engine could not be read), or `{"error":"...","reason":"..."}` with `409` (`not-playing`, `no-engine`), `400` (`bad-body`, or plain text for invalid JSON) or `502` (`engine-refused`). An agent that has this reports `"spotifyPlayModes":"true"` in `/api/agent/version`; `/spotify/info` then carries the same state as `"playModes":{"shuffle":bool,"repeat":"..."}`. |
+| `GET`  | `/api/spotify/playmode` | - | The engine's shuffle and repeat now, unchanged: `{"ok":true,"shuffle":bool,"repeat":"off"/"context"/"track"}`, or `409` `no-engine` / `502` `engine-refused`. |
 | `GET`  | `/api/stream/title` | - | Live radio title of the stream STR is proxying: `{"title":"Artist - Title","swapped":bool}`. `title` is `""` when the station sends none. `swapped` says the station below is flagged and its title was already turned round. |
 | `GET`  | `/api/stream/title-swap` | - | `{"stations":[...],"swapped":bool}`: the stream URLs flagged as sending their title "Title - Artist", and whether the station playing now is one of them. |
 | `POST` | `/api/stream/title-swap` | `{"swap":true}` | Flag (or with `false` unflag) a station whose live title arrives as "Title - Artist" instead of "Artist - Title". Without `"station":"<stream url>"` it acts on the station playing now (`409` when nothing is). The flag is kept per station in `/mnt/nv/streborn/title-swap.json` and applies to everything that shows the title: the speaker display, the app, Recently played and the phone remote. Answers `{"ok":true,"station":"...","swapped":bool,"title":"<live title now>"}`. |
@@ -70,7 +72,7 @@ For a relative change ("volume up 5"), read `GET /api/box/volume`, add to
 | `PUT` / `DELETE` | `/api/presets/<slot>` | a preset / - | Save or clear slot `1`-`18`. |
 | `POST` | `/api/box/preset-move` | `{"from":N,"to":M}` | Move the station on slot `N` to slot `M` (1-18, including between rows), replacing what `M` held. Deliberately outside the `/api/presets/` prefix: an agent that predates it then answers a plain 404, which nothing else does. |
 | `POST` | `/api/box/preset-copy` | `{"targets":["<ip>"]}` or `{"all":true}` | Copy this speaker's keys to other STR speakers, the way the desktop app's Transfer does: this agent writes the set onto each target (`PUT /api/presets`, key by key on an older target), syncs its hardware keys and, when a Spotify key goes along, hands on this speaker's Spotify login. All rows the target supports are copied; later rows are omitted when the target supports fewer. Targets must be in this speaker's peer list (`/api/peers`; `all` means every peer that answered the last sweep). Answers `200` with `{"keys","rows","done","total","results":[{"name","ip","ok","copied","row1Only","notCopied","spotify","code","conflict","error"}]}` once every target is done; `code` is `already-on-slot` (with `conflict` `{name,slot}`, nothing written there), `unreachable`, `refused` or `unknown-speaker`. `409` with `code` `busy`, `no-presets` or `no-targets`. LAN only. |
-| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-18): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
+| `POST` | `/api/box/save-playing` | `{"slot":N}` | Keep what the speaker plays on slot `N` (1-18): the playing music-library folder, the library song, a copy of the key that plays, or the station itself. Answers `{"slot","kind","name","unchanged"}`; `422` with a `code` when nothing that can be kept plays (Spotify and Pandora/iHeartRadio/Deezer go through `PUT /api/presets/<slot>`), and the same `409 already-on-slot` as a save. |
 | `PATCH` | `/api/presets/<slot>` | `{"name":"..."}` | Rename slot `1`-`18`. Only the name changes; the station, its artwork and a Spotify key's playlist stay as they are. Names longer than 64 characters are shortened, an empty one is refused (422), an empty key answers 404. |
 | `GET`  | `/api/box/presets` | - | The hardware preset buttons as the box reports them (always 1-6). |
 | `POST` | `/api/box/presets/recall` | `{"slot":N}` | Recall hardware preset `N` (1-6). This presses the speaker's own key, so extra rows are not directly reachable here; use `/api/play/<slot>`. |
@@ -159,6 +161,27 @@ first. A request after the account is gone answers `200` without touching the
 speaker. The `error` text is a short English sentence for people; branch on
 `code`. It never carries the speaker's raw reply, which stays in the agent
 log.
+
+## Deezer
+
+The speaker's own Deezer client ([`streaming/deezer.md`](streaming/deezer.md)).
+A new Deezer login is not possible without the Bose cloud (A2 is closed), so
+STR only keeps the login a speaker already had and hands it back when the
+firmware lost it. No switch is needed: Deezer is offered on every speaker.
+LAN only, like the Pandora calls; `POST` needs a JSON content type.
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`    | `/api/deezer/account` | - | Where Deezer stands: `{"state","detail","account","stuck","rejected","source":{"status","hasAccount"},"login":{...}}`. `state` is `connected`, `connecting` (STR handed the kept login back less than 90 s ago and the speaker is not `READY` yet), `unavailable` (the speaker holds an account it is not logged in with), `not-connected` or `unknown` (the source list could not be read); an older agent also answered `failed`. `stuck`: the speaker's last Deezer account call answered `1024` or not at all, its Deezer client hangs until a power cycle. `rejected`: the firmware's last relogin retry says Deezer refused the token (code `3330`). `account` is masked; `login` is the `deezer_login` debug section (never the login itself), with `lastAttempt` and `lastRetry` (`{"code","meaning","at"}`). Reads the speaker's `/sources` once. |
+| `POST`   | `/api/deezer/account` | ignored | `410 Gone`, `{"code":"new-login-unsupported","error":"..."}`. The e-mail and password sign-in of earlier versions; refused so an older app cannot hang the speaker's Deezer client again. The body is never read or handed on. |
+| `POST`   | `/api/deezer/recheck` | `{}` | The card's Check again. When STR keeps a Deezer login and the speaker lists `DEEZER` without a working account, removes the speaker's account (`removeMusicServiceAccount`) and sends it `<updates deviceID=".."><sourcesUpdated/></updates>` on `:8090/notification`; the firmware re-reads `/full` and creates the account again with the kept token. Answers like `GET`, plus `"recreate":{"ran","skipped","error"}` (`skipped`: `no-kept-login`, `not-listed`, `ready`, `unreadable`, `busy`, `ran-recently`; at most one run a minute). The agent runs the same step once after it starts. |
+| `DELETE` | `/api/deezer/account` | - | Removes the account from the speaker (`removeMusicServiceAccount`) and forgets STR's kept copy of the login. The same answers and the same one-at-a-time rule as the Pandora removal above; `200` adds `"status"`. A removed Deezer account cannot be linked again without Bose. |
+| `POST`   | `/api/deezer/play` | `{"url":"https://www.deezer.com/en/album/123","name":"..."}` | Plays a Deezer playlist, album or track link on the speaker's own Deezer client. A canonical `deezer.com` link is read as it is; a share link (`link.deezer.com`, `deezer.page.link`) is followed through Deezer's own hosts only. `name` is optional (else Deezer's public API names it). Answers `{"ok":true,"kind","id","name"}`; `409` `deezer-not-linked` or `native-service-unavailable`, `422` `deezer-link-unresolved`, `502` `select-failed` or `sources-unreadable`. |
+
+To keep a Deezer item on a key, start it and save the key with
+`PUT /api/presets/<slot>` and `{"type":"native","name":"..."}`, or hold the
+key on the speaker: Deezer is a native service like Pandora, so the agent
+takes the item from what the speaker plays.
 
 ## Favourites
 
@@ -348,7 +371,7 @@ newest level.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `presetRows` for the three supported rows, and `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `presetRows` for the three supported rows, `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`, and `"spotifyPlayModes":"true"` on one that takes `POST /api/spotify/playmode`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`, and for a music-library entry (`source` `upnp`) `mime` and `durationSec`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
@@ -376,8 +399,46 @@ for a radio station and filed it under `radio`. Later agents recognise the
 file, but only `/api/queue/replay-card` plays more than the first track of
 an album.
 
-## Wi-Fi
+## Music library and a USB stick in the speaker
 
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `GET`  | `/api/library/servers` | - | The media servers registered on this speaker, `[{"udn","name"}]`. While a USB stick is in the speaker, the last entry is the stick: `{"udn":"uuid:str-usb-<id>","name":"USB stick <label> (<speaker>)","kind":"usb","location":"http://<host>/usb/device.xml","speaker":"<speaker>","label":"<label>"}`, with `location` built from the address you used (`:8888` or `:17008`); `speaker` is the speaker's own name and `label` the stick's FAT volume label, each left out (and out of `name`) when not known. A stick that is not served has no `udn` and carries `"refusal"` instead: `install-stick`, `not-fat32`, `big-clusters`, `unreadable` or `unsupported-model`. Opening this list is also what lets the speaker mount a stick nothing mounted yet (read-only). |
+| `GET`  | `/api/library/browse?udn=<udn>&id=<container>&start=<n>` | - | One page of a folder of a registered server or of the stick: `{"server","folders":[{"id","title"}],"tracks":[{"title","url","art","mime",...}],"total","start","count"}`, or `{"offline":true,"server":"<name>"}`. `id` empty is the top level. Play a track with `POST /api/play` and its `url` and `mime`. |
+
+The stick itself is a UPnP ContentDirectory (LAN only, no SSDP
+announcement), so any DLNA client can browse it at its `location`:
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| `GET`  | `/usb/device.xml` | Device description (`MediaServer:1`). `404` when no music stick is served. |
+| `GET`  | `/usb/cds.xml` | ContentDirectory service description. |
+| `POST` | `/usb/control` | SOAP: `Browse` (`BrowseDirectChildren`, `BrowseMetadata`), `GetSystemUpdateID`, `GetSearchCapabilities`, `GetSortCapabilities`. `Search` answers UPnP error 401; an unknown object 701. Object ids are the stick-relative paths, `0` is the top level. |
+| `GET`  | `/usb/file/<path>` | A file, only `.mp3 .flac .m4a .aac .ogg .oga .wav .wma`, with Range support. The URL ends in the file's real name, which the speaker's renderer needs. |
+| `GET`  | `/usb/art/<path>` | A folder's cover: `cover`, `folder`, `front` or `albumart` as `.jpg`, `.jpeg` or `.png`. |
+
+A stick URL played on the speaker that holds the stick is fetched by it over
+`127.0.0.1:8888`; the agent rewrites its own LAN address there by itself.
+
+The speaker plays FLAC and WAV up to 48 kHz only. A FLAC or WAV on the stick
+above that is listed, but not handed to the speaker:
+
+- `POST /api/play` with such a file, and `POST /api/play/<slot>` on a key
+  that holds one, answer `422`
+  `{"error":"This speaker cannot play this file: it has a sample rate above 48 kHz.","code":"library-file-hires","sampleRate":96000,"title":"..."}`
+  (plus `"slot"` for a key). Nothing is sent to the speaker.
+- A folder (`POST /api/queue`, `POST /api/library/play-folder`, a folder
+  card, a folder key) steps over such tracks. The `/api/queue` answer
+  carries `"skippedHiRes":<n>` and marks each one `"skipped":true` in
+  `items`; `play-folder` and `replay-card` carry `"skippedHiRes":<n>`. A
+  folder of nothing else answers `422` with the same `code` and
+  `"folder":true`.
+- When the speaker refuses to decode a stick file anyway
+  (`AUDIO_ERROR_DECODER`), `GET /api/queue` carries
+  `"usbRefused":{"title":"...","reason":"decoder","at":"<RFC 3339>"}` while
+  that file is still the last play and no folder runs.
+
+## Wi-Fi
 LAN-only, like every other call here, and refused from outside the private
 address ranges.
 

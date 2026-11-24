@@ -57,10 +57,26 @@ describe('checkCase', () => {
     }
   });
 
-  it('below 15 on the newer hardware or another model keeps the single-step guide', () => {
-    expect(checkCase(fw('7.0.37', { moduleType: 'sm2' }), BOX)).toBe('guide');
-    expect(checkCase(fw('10.0.11', { model: 'SoundTouch 10', moduleType: 'sm2' }), BOX)).toBe('guide');
+  it('below 15 a model with no checked ladder keeps the guide', () => {
+    expect(checkCase(fw('10.0.11', { model: 'SoundTouch SA-4', moduleType: 'sm2' }), BOX)).toBe('guide');
     expect(checkCase(fw('2.1.51', { model: 'Wave SoundTouch', moduleType: '' }), BOX)).toBe('guide');
+    // A Wave IV below 14.0.33 has no source for its first step.
+    expect(checkCase(fw('10.0.11', { model: 'Wave SoundTouch', moduleType: 'sm2' }), BOX)).toBe('guide');
+    expect(checkCase(fw('10.0.11', { model: 'Lifestyle', moduleType: 'sm2' }), BOX)).toBe('guide');
+  });
+
+  it('below 15 the Bluetooth chassis gets its checked stick ladder', () => {
+    expect(checkCase(fw('10.0.11', { model: 'SoundTouch 20', moduleType: 'sm2' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('9.0.41', { model: 'SoundTouch 30', moduleType: 'sm2' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('12.0.1', { model: 'SoundTouch SA-5', moduleType: '' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('14.0.15', { model: 'SoundTouch 300', moduleType: 'sm2' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('13.0.5', { model: 'SoundTouch Wireless Link Adapter', moduleType: '' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('14.0.33', { model: 'Wave SoundTouch music system IV', moduleType: 'sm2' }), BOX)).toBe('ladder');
+  });
+
+  it('below 15 a SoundTouch 10 gets its own stick ladder', () => {
+    expect(checkCase(fw('9.0.41', { model: 'SoundTouch 10', moduleType: 'sm2' }), BOX)).toBe('ladder');
+    expect(checkCase(fw('9.0.41', { model: 'SoundTouch 10', moduleType: '' }), BOX)).toBe('ladder');
   });
 
   it('falls back to the chosen box for the model', () => {

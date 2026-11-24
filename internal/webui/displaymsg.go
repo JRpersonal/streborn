@@ -56,6 +56,10 @@ const (
 	DisplayMsgStationDown DisplayMsgKind = "station-unreachable"
 	// DisplayMsgNoInternet: the speaker has no internet connection.
 	DisplayMsgNoInternet DisplayMsgKind = "no-internet"
+	// DisplayMsgUSBHiRes: a key's file (or every file of a key's folder) on the
+	// speaker's USB stick has a sample rate above 48 kHz, which the speaker
+	// cannot play (usbhires.go).
+	DisplayMsgUSBHiRes DisplayMsgKind = "usb-file-hires"
 	// DisplayMsgIfOffline is a request, not a message: show
 	// DisplayMsgNoInternet if the speaker is offline, otherwise nothing. Used
 	// where a key failed for a reason that is only worth telling the user when
@@ -119,26 +123,31 @@ var displayMsgTexts = map[int]map[DisplayMsgKind]string{
 		DisplayMsgSpotifyLogin: "Spotify: tap this speaker once in the Spotify app",
 		DisplayMsgStationDown:  "Station not responding, try again later",
 		DisplayMsgNoInternet:   "No internet connection",
+		DisplayMsgUSBHiRes:     "Cannot play: file above 48 kHz",
 	},
 	2: {
 		DisplayMsgSpotifyLogin: "Spotify: Lautsprecher einmal in der Spotify-App antippen",
 		DisplayMsgStationDown:  "Sender antwortet nicht, später nochmal versuchen",
 		DisplayMsgNoInternet:   "Keine Internetverbindung",
+		DisplayMsgUSBHiRes:     "Datei über 48 kHz, nicht abspielbar",
 	},
 	4: {
 		DisplayMsgSpotifyLogin: "Spotify: toca este altavoz una vez en la app de Spotify",
 		DisplayMsgStationDown:  "La emisora no responde, inténtalo más tarde",
 		DisplayMsgNoInternet:   "Sin conexión a Internet",
+		DisplayMsgUSBHiRes:     "No se puede reproducir: más de 48 kHz",
 	},
 	5: {
 		DisplayMsgSpotifyLogin: "Spotify : touchez cette enceinte une fois dans l'app Spotify",
 		DisplayMsgStationDown:  "La station ne répond pas, réessayez plus tard",
 		DisplayMsgNoInternet:   "Pas de connexion Internet",
+		DisplayMsgUSBHiRes:     "Lecture impossible : plus de 48 kHz",
 	},
 	7: {
 		DisplayMsgSpotifyLogin: "Spotify: tik deze speaker één keer aan in de Spotify-app",
 		DisplayMsgStationDown:  "Zender reageert niet, probeer het later opnieuw",
 		DisplayMsgNoInternet:   "Geen internetverbinding",
+		DisplayMsgUSBHiRes:     "Kan niet afspelen: meer dan 48 kHz",
 	},
 }
 

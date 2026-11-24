@@ -1,8 +1,12 @@
 # Deezer
 
-Status: **route A1 built, not yet confirmed on a speaker.** A speaker
-that is logged into Deezer when STR is installed keeps that login (A1
-below). A new login is still open (A2). Vote thread: idea #1239.
+Status: **A1 built and its recreate step confirmed on a speaker; A2 closed.**
+A speaker that is logged into Deezer when STR is installed keeps that login
+(A1 below), and STR hands a kept login back to a speaker that lost it (the
+recreate, confirmed on a Portable with a fake token, 2026-11-22). A new
+login cannot work without Bose: the black-box tests of 2026-11-22 (below,
+"What the 2026-11-22 tests showed") closed A2, and the e-mail and password
+form came out of both apps. Vote thread: idea #1239.
 
 Researched 2026-11-21 from the code in this repository, read-only probes
 of five STR speakers, a neighbour project's field reports, and public
@@ -19,6 +23,52 @@ There are three ways Deezer could reach a SoundTouch speaker:
 Recommendation: route A, in two steps, starting with a measurement
 that costs no user anything. Route B stays ruled out (as answered in
 #1239 on 2026-10-30). Route C is worth a FAQ line, nothing more.
+
+## What the 2026-11-22 tests showed
+
+Black-box tests on two of Jens' Portables (taigan, 27.0.6), with a throwaway
+e-mail and a fake token only; no real Deezer account was used. Observed from
+the speaker's own syslog, its `:8090` answers and STR's stand-in log; no
+decompiled detail.
+
+- **A new login hangs the speaker's Deezer client.** `setMusicServiceAccount`
+  with source `DEEZER` is accepted by BoseApp and handed to the firmware's
+  Deezer client over loopback, which drops it: the call hangs for about 60 s
+  and no account is created. From then on every Deezer account call for that
+  e-mail answers `1024` `SOURCE_ALREADY_EXISTS`, and only a power cycle clears
+  it (a soft reboot did not). This is AfterTouch's "handshake starts but never
+  completes" (#574), now with a cause.
+- **The OAuth call is refused.** `setMusicServiceOAuthAccount` with source
+  `DEEZER` answers `1046`.
+- **Only a token works, and only Bose's.** The firmware's Deezer client does
+  log in with Deezer by itself when it holds a token: a token handed over in
+  `/full` reaches `api.deezer.com` (a fake one comes back "Invalid OAuth
+  access token"). But a token that Deezer accepts has to be issued to Bose's
+  Deezer partner application. Deezer stopped registering developer
+  applications for private persons on 2025-10-19 and limits other
+  applications to 30-second previews, so STR cannot mint one.
+- **The firmware ignores a new token for an account it already has.** A
+  speaker that lists `DEEZER` `UNAVAILABLE` (an account with an empty secret,
+  what older STR versions left behind) only updates the secret it has and
+  keeps retrying with the empty one when `/full` later carries a token.
+- **Remove and notify makes it take the token.** `removeMusicServiceAccount`
+  for that account (empty password, answers 200), then
+  `<updates deviceID="..."><sourcesUpdated/></updates>` to
+  `:8090/notification`: within a second the firmware deletes the source at the
+  stand-in, reads `/sources` and `/full` again, and creates the account anew
+  with the token from `/full`. Confirmed with STR's own build on the second
+  Portable: the start-up run and Check again both did it, and the fake token
+  reached Deezer 15 s later (retry code 3330).
+- **The relogin retry names the cause.** While its Deezer client cannot log
+  in, the firmware retries every 15 s and logs
+  `UserInfoRecreateFailureCB '3351'` when it has no token and `'3330'` when
+  Deezer refused the token (expired, revoked, or not a real one). STR reads
+  that line from the Deezer syslog tail.
+
+What that means: STR keeps and hands back a login the speaker had (A1, with
+the recreate below). A 3330 on a kept login means Deezer no longer accepts
+it, and without Bose it cannot be renewed. Everything else reaches the
+speaker over Bluetooth, or AirPlay where the speaker has it.
 
 ## What the firmware does with Deezer
 
@@ -70,7 +120,7 @@ is known, and how firmly:
    playlists play when sent to `/select` by their Deezer id (#574).
    *Established by a third party, not on an STR speaker.*
 
-5. **A new login without Bose is the open part.**
+5. **A new login without Bose was the open part** (closed 2026-11-22, see above).
    - Bose's own help page (HC1296) describes linking Deezer as a login
      "through the default browser" from the SoundTouch app, which reads
      like a Deezer OAuth login under Bose's Deezer application. For
@@ -98,9 +148,9 @@ is known, and how firmly:
    - Pandora is the template that works: there the firmware logs in
      itself and registers the source with the stand-in
      (`POST /streaming/account/<id>/source`), which STR stores and
-     hands back (`docs/streaming/us-services.md`). If the Deezer client
-     behaves the same, STR's side is a table entry.
-   *Open.*
+     hands back (`docs/streaming/us-services.md`). The Deezer client does
+     not: it drops a new login (see the 2026-11-22 tests).
+   *Closed.*
 
 6. **Choosing content needs no login on STR's side.** Deezer's public
    API (`https://api.deezer.com/search/playlist?q=...`, albums, tracks)
@@ -185,40 +235,115 @@ Open details:
   serve all of that owner's speakers);
 - whether `provider_settings` needs an entry for provider 14.
 
-UI: none. The speaker simply keeps playing Deezer. Not done: one line
-in the existing "lost services" notice when a Deezer entry had no token
-to carry.
+6. **Recreate.** A kept login does not help a speaker that already holds a
+   Deezer account without a working token (see the 2026-11-22 tests): its
+   firmware ignores the new secret. So when STR keeps a login and the
+   speaker lists `DEEZER` not `READY`, the agent removes the speaker's
+   account and sends a `sourcesUpdated` notification, and the firmware
+   re-creates the account from `/full` with the token
+   (`internal/webui/deezer.go`). It runs once per agent start (90 s after
+   the first box read, so a working login has had time to come up by
+   itself) and on the card's Check again (`POST /api/deezer/recheck`), at
+   most once a minute. No timer, no polling. Each step is logged
+   (`deezer: recreate: ...`) and the debug section `deezer_login` records
+   it as `lastAttempt` (`kind` `recreate`, `trigger` `start` or
+   `check-again`, the removal's and the notification's answers, and every
+   stand-in request in the minute after).
+7. **Retry code.** The debug section `deezer_login.lastRetry` carries the
+   firmware's last relogin retry code (`3351` no token, `3330` token
+   rejected by Deezer) with its meaning; `box_syslog_deezer` has it as
+   `lastRetryCode`. With 3330 the card says Deezer rejected the login and
+   that it cannot be renewed without Bose.
 
-### A2. A new login on the speaker
+UI: the Deezer card (desktop Spotify & Deezer view, phone More tab) shows
+the speaker's Deezer state, Check again and Disconnect, says that a new
+sign-in is not possible without Bose, and tells the owner to unplug the
+speaker for ten seconds when its Deezer client is stuck (the last account
+call answered 1024 or not at all).
 
-Only if the firmware's own Deezer client can still log in without Bose.
-The odds are poor (point 5: the Bose app linked Deezer through a
-browser login, and AfterTouch's password attempt hung), but the test
-is cheap and settles it (below). If the firmware registers the
-source with the stand-in the way Pandora does, the build is the
-Pandora one:
+### A2. A new login on the speaker (closed 2026-11-22)
 
-- `DEEZER` in `nativeServices` (`internal/marge/usservices.go`),
-  provider id 14, availability on by default (Deezer is not
-  geo-restricted like Pandora);
-- `POST/DELETE /api/deezer/account` calling the speaker's own
-  `setMusicServiceAccount` / `removeMusicServiceAccount`;
-- a Deezer card next to the Pandora one in speaker settings (e-mail,
-  password, Connect, Disconnect);
-- content: paste a Deezer link (playlist, album, track) into the
-  existing play-URL field and hold a key to keep it, which needs only
-  the id from the link; a station list in the Find tab only if the
-  speaker's `/navigate` lists the account's playlists.
+Closed by the 2026-11-22 tests (above): the firmware's Deezer client drops a
+new login and hangs until a power cycle. The e-mail and password form is
+gone from both apps, and `POST /api/deezer/account` now answers `410 Gone`
+(code `new-login-unsupported`) without reading the body, so an older app
+cannot hang a speaker again. What follows is the design as it was built,
+kept for the record; the forensics and the Deezer links still serve A1.
 
-Effort if the test passes: 1 to 2 days for the stand-in and the
-agent endpoints, 2 to 3 days for the card and the link handling. UI:
-one settings card plus accepting Deezer links where URLs are already
-accepted. No new tab.
+Only works if the firmware's own Deezer client can still log in without
+Bose. The odds are poor (point 5: the Bose app linked Deezer through a
+browser login, and AfterTouch's password attempt hung), but it was built
+before the test, with the test's forensics built in, so one evening on a
+real speaker settles it. What is there:
 
-If the handshake hangs on STR as it did on AfterTouch, the request log
-and syslog show where. If it waits on a Bose host that is gone, A2 is
-closed: STR does not impersonate Bose's OAuth service or reuse Bose's
-Deezer application credentials.
+- **Stand-in.** Deezer is offered available in `serviceAvailability` on
+  every speaker (it already was; Deezer is not geo-restricted like
+  Pandora). A Deezer registration from the firmware
+  (`POST /streaming/account/<id>/source`, provider 14) is answered as
+  Deezer and its credential is written to the same kept-login file A1
+  fills, so a kept login and a new one are one thing: `/full` and the
+  account source list hand it back the same way, revealed only to a
+  loopback caller. Deezer is deliberately not a row of `nativeServices`
+  (`internal/marge/usservices.go`): that list's own store, US gate and
+  `/full` entry would name the same account twice.
+- **Agent.** `GET/POST/DELETE /api/deezer/account`
+  (`internal/webui/deezer.go`, `docs/CONTROL-API.md`). `POST` calls the
+  speaker's own `setMusicServiceAccount` with
+  `<credentials source="DEEZER" displayName="Deezer Premium"><user>..</user><pass>..</pass></credentials>`,
+  the shape AfterTouch sent, then reads `:8090/sources` once and answers
+  with a state (`connected`, `connecting`, `failed` with a reason,
+  `unavailable`, `not-connected`). `DELETE` calls
+  `removeMusicServiceAccount` and forgets the kept login and the
+  carried-over entry. One login hand-over at a time; removals share the
+  Pandora removal's one-at-a-time rule. No timer, no polling: the apps
+  read the state again 6, 30 and 95 seconds after a Connect.
+- **Apps.** A Deezer card in the desktop app's Spotify view (both
+  layouts) and in the phone page's More tab: e-mail, password, Connect,
+  Disconnect, Check again, and the state in plain words. It says that the
+  feature is new and not yet confirmed.
+- **Content.** A Deezer playlist, album or track link pasted into the
+  station search (desktop and phone) shows one card that plays it on the
+  speaker's own Deezer client (`POST /api/deezer/play`): the agent sends
+  `<ContentItem source="DEEZER" type="album|track|playlist" location="<id>" sourceAccount="<the account /sources lists>">`
+  to `/select`, the form AfterTouch #574 used. Canonical `deezer.com`
+  links are read directly; share links (`link.deezer.com`,
+  `deezer.page.link`) are followed through Deezer's own hosts only, at
+  most three hops. The title comes from Deezer's public API (no key). A
+  key held while Deezer plays keeps it: `DEEZER` is now a native service
+  in `internal/presets` (the Pandora mechanism), so the item is stored as
+  the speaker's own and written back by the reconcile only while the
+  speaker lists Deezer `READY`. This also applies to a speaker that kept
+  its login through A1: a hold of its key while Deezer plays is now kept
+  instead of refused.
+- **Forensics** (all without the password, the token or the account):
+  - agent log, INFO: `deezer: handing a new login ...`,
+    `deezer: the speaker answered the new login` (HTTP status and the
+    firmware's error code and name only, never its raw answer),
+    `deezer: the speaker's Deezer source after the login`, one
+    `deezer: stand-in request during the login attempt` line for every
+    request the firmware makes to the stand-in in the 60 s after the
+    login (method, host, path, size), and
+    `deezer: source registration from the box` if it registers;
+  - debug section `deezer_login.lastAttempt`: time, `firmwareStatus`,
+    `firmwareError`, `firmwareDetail` (the firmware's text with the
+    account and the password taken out), `sourceStatus` as last read,
+    `registered` / `registeredCredential`, and `standInRequests` (up to
+    40, with `afterMs` and a `deezer` flag on those that name Deezer);
+  - debug section `box_syslog_deezer`: every firmware log line this run
+    that names Deezer or a music-service account call (up to 80, kept
+    apart from the rolling tail so they survive until the bundle is
+    taken), with e-mail addresses masked and token, secret and password
+    values dropped.
+
+Not built: a station list of the account's own playlists in the Find tab
+(only if the speaker's `/navigate` lists them; untested), and a
+`provider_settings` entry for provider 14 (the forensics show whether the
+firmware asks for one).
+
+If it waits on a Bose host that is gone, A2 is closed: STR does not
+impersonate Bose's OAuth service or reuse Bose's Deezer application
+credentials. Then the card should come out again, or say plainly that a
+new login cannot work.
 
 ## Route B: an unofficial client in STR
 
@@ -309,12 +434,42 @@ Ordered by cost. None needs a test build in a user's hands.
    who had Deezer (the #1239 reporters, the 2026-06 and 2026-08 mail
    reporters) answer whether converted speakers can still be helped.
    No account, no risk.
-2. **Can the firmware log in to Deezer without Bose?** On Jens' own
-   Portable: take a Deezer trial (Premium),
-   call `setMusicServiceAccount` with source `DEEZER`, then read
-   `:8090/sources`, the stand-in's request log and the box syslog.
-   Undo with `removeMusicServiceAccount`. Cost: one evening and a free
-   trial; power-cycle recoverable.
+2. **Can the firmware log in to Deezer without Bose?** Answered no on
+   2026-11-22 (see above); the procedure below needs the old build. On Jens' own
+   Portable, with the build that carries A2 and a Deezer trial (Premium):
+   1. Desktop app, Spotify view, Deezer card, the Portable selected:
+      type the trial's e-mail and password, Connect.
+   2. Wait for the card's last re-read (about 95 s) or press Check
+      again. Note the state and its sentence.
+   3. If it says connected: paste a Deezer album link
+      (`https://www.deezer.com/<lang>/album/<id>`) into the station
+      search, Play. Then hold key 6 while it plays, power-cycle the
+      speaker, press key 6.
+   4. Save a diagnostic file right after step 2 (and again after 3).
+   5. Undo: Disconnect in the card.
+
+   Reading the result, from the bundle:
+   - **Pass:** `deezer_login.lastAttempt.firmwareStatus` 200,
+     `registered` and `registeredCredential` true, `sourceStatus`
+     `READY`, the card says connected, the album plays, and key 6 plays
+     after the power cycle (`deezer_login.kept` true, `from`
+     `registration`). A2 is then the Pandora case: confirm it in
+     FEATURES.md and drop "not yet confirmed".
+   - **Refused at once:** `firmwareStatus` 4xx/5xx, `firmwareError`
+     names the reason. The firmware's Deezer client rejects the
+     password path; `box_syslog_deezer` may say why.
+   - **Taken, never finished:** status 200, `registered` false,
+     `sourceStatus` stays `UNAVAILABLE` or `absent` (the card ends on
+     "took the login but did not finish it"). This is AfterTouch's hang.
+     `standInRequests` shows whether the firmware asked the stand-in for
+     anything (an unknown path there is the next lead); an empty list
+     with `box_syslog_deezer` lines naming a Bose host or an OAuth step
+     means it waits on Bose, and A2 is closed (see above).
+   - **Registered without a credential:** `registered` true,
+     `registeredCredential` false: the firmware expects the cloud to
+     mint the token. Closed too, for the same reason.
+
+   Cost: one evening and a free trial; power-cycle recoverable.
 3. **Does A1 keep a live login?** Needs a speaker that is still stock
    and logged into Deezer, after A1 shipped in a normal release. The
    owner installs that release and opens `:8090/sources`: `DEEZER`
@@ -337,8 +492,9 @@ same thread and would do as well.
 |---|---|---|---|
 | Mask every `<credential>` in the request log | done | none | nothing |
 | Bundle reports `Sources.xml` entries (type, secret present yes/no) | done | none | nothing |
-| A2 login test on an own speaker | one evening | none | a Deezer Premium trial |
+| A2 login test on an own speaker | done 2026-11-22: closed | none | nothing |
 | A1 keep the existing login across an install | done, field check open | none | a stock, Deezer-linked speaker for the field check |
-| A2 build, only if the test passes | 3 to 5 days | one settings card, Deezer links in the play-URL field | the same trial account |
+| A2 build (login, forensics, Deezer links, hold-to-save) | login form removed, the rest kept | a Deezer card (state, Check again, Disconnect) in the Spotify view and on the phone's More tab, Deezer links in the station search | nothing |
+| A1 recreate (remove + sourcesUpdated) and retry code | done, confirmed with a fake token | Check again on the card | a kept login |
 | Route B | about a week | a source in Find | ruled out (decryption) |
 | Route C | a FAQ answer | none | nothing |

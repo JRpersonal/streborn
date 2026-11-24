@@ -172,9 +172,11 @@ type BoxInfo struct {
 	// false fleet-wide, and a retry toasted "already up to date"). Transient,
 	// never persisted to the discovery cache.
 	OTAPending bool `json:"otaPending,omitempty"`
-	// BoxHealth is the agent's wedged-control verdict ("ok" or "wedged"): a
-	// wedged box accepts transport pushes but never plays, and only a
-	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
+	// BoxHealth is the agent's power-cycle verdict: "ok", "wedged" (the box
+	// accepts transport pushes but never plays) or "firmware-unresponsive"
+	// (the speaker's own Bose webserver stopped answering while the agent
+	// runs). Only a power-cycle clears either; the UI turns both into a
+	// pull-the-plug hint (frontend powercycle.js).
 	BoxHealth string `json:"boxHealth,omitempty"`
 	// Internet is the agent's passive verdict on whether the speaker reaches
 	// the internet: "ok", "unreachable" or "unknown" (empty from agents that

@@ -17,7 +17,8 @@
 import { state } from '../state.js';
 import { strBoxes } from '../boxes.js';
 import { formatClock } from '../format.js';
-import { playOnMasterIfGrouped } from '../groups.js';
+import { playOnMasterIfGrouped, pairUnitName } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 import { $, escapeHtml, escapeAttr, showError, showToast, hideToast, getBoxLabel, confirmWarn, folderFallbackArt, beginLibraryNowPlaying, friendlyErrorText } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { keyNum } from '../presetrows.js';
@@ -25,6 +26,7 @@ import {
   ProbeTrackDelivery,
   ListMediaServers,
   LibraryRefusedServers,
+  LibraryUSBNotices,
   LibraryFolder,
   SearchLibrary,
   BrowseLibrary,
@@ -32,6 +34,7 @@ import {
   RemoveManualMediaServer,
   PlayURL,
   StartQueue,
+  GetQueue,
   SaveFolderPreset,
   Status,
   EnableBoxMediaServer,
@@ -85,6 +88,7 @@ export function initLibraryView(d) {
 const libState = {
   servers: [],
   refused: [],        // media servers that refused to describe themselves to this PC
+  usbNotices: [],     // USB sticks in a speaker that are not offered, and why (#1136)
   currentUDN: '',
   stack: [{ id: '0', title: '' }],
   page: null,
@@ -102,7 +106,7 @@ const libState = {
   sort: SORT_SERVER,
   // The whole-library search across every media server (#1325). active means
   // its results stand in for the folder list until the user goes back.
-  search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], partial: false, token: 0 },
+  search: { active: false, query: '', field: 'any', loading: false, items: [], unanswered: [], incomplete: [], partial: false, token: 0 },
   // What only the UI 2.0 preview draws (#1286, shell2/library.js): the
   // feedback line of each row and of the folder actions, keyed by statusKey;
   // the error of the level that failed, shown in its place instead of the
@@ -338,7 +342,13 @@ async function loadMediaServers(opts = {}) {
   renderLibrary();
   try {
     const list = await ListMediaServers(3);
-    libState.servers = list || [];
+    libState.servers = localizeUSBServers(list || []);
+    // A stick in a speaker that cannot be offered says why, in one line.
+    try {
+      libState.usbNotices = (await LibraryUSBNotices()) || [];
+    } catch {
+      libState.usbNotices = []; // older build without the binding
+    }
     // A server that answers this PC's description request with a SOAP fault is
     // not listed, and without a word about it the user only sees whatever else
     // that host announces (a QNAP's admin device, which cannot be browsed).
@@ -454,6 +464,62 @@ export function libraryRefusedNote(refused) {
   return list.map(r =>
     `<div class="library-server-dark-note" title="${escapeAttr(r.detail || '')}">${escapeHtml(t('library.serverRefusesPC', { address: r.address }))}</div>`,
   ).join('');
+}
+
+// USB_NOTICE_KEYS maps the agent's reason a stick is not offered to its line.
+const USB_NOTICE_KEYS = {
+  'unsupported-model': 'library.usbUnsupportedModel',
+  'install-stick': 'library.usbInstallStick',
+  'not-fat32': 'library.usbNotFAT32',
+  'big-clusters': 'library.usbBigClusters',
+  unreadable: 'library.usbUnreadable',
+};
+
+// libraryUSBNote is one line per USB stick a speaker holds but cannot offer:
+// what is wrong with it and what to do, named by the speaker it is in. An
+// unknown code (a newer agent) still says that the stick could not be read.
+export function libraryUSBNote(notices) {
+  const list = (notices || []).filter(n => n && n.speaker && n.code);
+  if (!list.length) return '';
+  return list.map(n =>
+    `<div class="library-server-dark-note">${escapeHtml(t(USB_NOTICE_KEYS[n.code] || 'library.usbUnreadable', { name: n.speaker }))}</div>`,
+  ).join('');
+}
+
+// isUSBFileURL reports whether a track URL is a file on a speaker's USB stick
+// (the agent serves those under /usb/file/, #1136).
+export function isUSBFileURL(url) {
+  return /\/usb\/file\//.test(String(url || ''));
+}
+
+// usbHiResSkippedNote is the line for a folder whose songs on the speaker's
+// USB stick above 48 kHz the speaker's queue steps over, '' when none are.
+// It asks the speaker's queue once, and only for a folder with stick files.
+export async function usbHiResSkippedNote(box, items) {
+  if (!box || !(items || []).some((it) => isUSBFileURL(it && it.url))) return '';
+  try {
+    const q = await GetQueue(box.host, box.port);
+    const n = (q && Number(q.skippedHiRes)) || 0;
+    return n > 0 ? t('library.usbHiResSkipped', { n }) : '';
+  } catch {
+    return '';
+  }
+}
+
+// localizeUSBServers names a speaker's music stick in the user's language, with
+// the stick's volume label when it has one ("USB stick MUSIC (Kitchen)"). The
+// agent names it in English, for generic UPnP clients; every place the Library
+// shows or files a server's name then reads this one.
+export function localizeUSBServers(list) {
+  return (list || []).map(s => (s && s.usbSpeaker
+    ? {
+      ...s,
+      friendlyName: s.usbLabel
+        ? t('library.usbServerNameLabel', { name: s.usbSpeaker, label: s.usbLabel })
+        : t('library.usbServerName', { name: s.usbSpeaker }),
+      modelName: '',
+    }
+    : s));
 }
 
 // libraryServerLabel is the text the server picker shows for one entry. An entry
@@ -930,8 +996,14 @@ function openFolderId() {
 
 // speakerName is the name of the speaker a play from here goes to, as the
 // preview's actions and feedback name it.
+// speakerName names the speaker the Library plays on. Half of a live stereo
+// pair is named as the pair, "Kitchen (stereo)", the way the sidebar and the
+// player name it, never as the half the app happens to address (#1587).
 function speakerName() {
-  return state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const b = state.currentBox;
+  if (!b) return '';
+  const pair = pairUnitName(b, state.zoneLive, state.boxes, (p) => pairDisplayName(p, () => renderLibrary()), getBoxLabel);
+  return pair ? t('ui2.side.pairName', { name: pair }) : getBoxLabel(b);
 }
 
 async function libraryPlay(item) {
@@ -1066,9 +1138,14 @@ async function verifyLibraryPlayback(item, target, report) {
   // the state a blocked or unreachable probe lands in, and the app can be kept
   // from a server the speaker reaches perfectly well, so it keeps the older
   // format wording rather than inventing a verdict.
-  const msg = probe.known && !probe.delivered
+  let msg = probe.known && !probe.delivered
     ? t('library.serverNotDelivering', { title: item.title || '' })
     : t('library.formatMaybeUnsupported', { title: item.title || '' });
+  // A file the speaker's own USB stick delivers that the speaker would not
+  // play: the speaker could not decode it (#1136), so say what it plays.
+  if (isUSBFileURL(item.streamURL) && !(probe.known && !probe.delivered)) {
+    msg = t('library.usbCannotDecode', { title: item.title || '' });
+  }
   if (report) report({ ok: false, msg });
   else showToast(msg, 9000);
 }
@@ -1239,6 +1316,9 @@ async function libraryPlayFolder(fromId) {
     // A stereo pair is not in the zone map, so its following half is only
     // known once it refuses: the folder then starts on the leading half (#1878).
     target = await playOnMasterIfGrouped(target, state.boxes, (b) => StartQueue(b.host, b.port, JSON.stringify(payload)));
+    // Songs on the speaker's USB stick above 48 kHz are stepped over, and
+    // the folder says how many (#1136).
+    const hiResNote = await usbHiResSkippedNote(target, items);
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
     state.lastLibraryPlay = null;
@@ -1258,12 +1338,16 @@ async function libraryPlayFolder(fromId) {
       waitForPlayState(target, Date.now() + 26000).then((v) => {
         if (openFolderId() !== folder) return; // another folder is open by now
         if (v === 'gone') setLibStatus('folder', null);
-        else if (v === 'playing') setLibStatus('folder', { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
-        else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
+        else if (v === 'playing') {
+          setLibStatus('folder', hiResNote
+            ? { tone: 'warn', text: `${t('ui2.library.folderPlaying', { name: spk })} ${hiResNote}` }
+            : { tone: 'ok', text: t('ui2.library.folderPlaying', { name: spk }) });
+        } else setLibStatus('folder', { tone: 'warn', text: t('ui2.library.folderNotStarted', { name: spk }) });
       });
       return;
     }
-    showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree));
+    showToast(t('library.folderQueued', { n: items.length - start }) + libraryTreeNoteSuffix(tree)
+      + (hiResNote ? ` ${hiResNote}` : ''), hiResNote ? 9000 : undefined);
   } catch (e) {
     if (ui2()) {
       if (openFolderId() === folder) setLibStatus('folder', { tone: 'error', text: t('ui2.library.playFailed', { name: spk, detail: String(e) }) });
@@ -1592,7 +1676,7 @@ export async function libraryWholeSearch(query, field) {
   s.field = field || 'any';
   if (!q) return;
   const token = ++s.token;
-  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], partial: false, failed: '' });
+  Object.assign(s, { active: true, loading: true, items: [], unanswered: [], incomplete: [], partial: false, failed: '' });
   renderLibrary();
   let res = null;
   let failed = false;
@@ -1613,6 +1697,7 @@ export async function libraryWholeSearch(query, field) {
   } else {
     s.items = res.items || [];
     s.unanswered = (res.unanswered || []).filter(Boolean);
+    s.incomplete = (res.incomplete || []).filter(Boolean);
     s.partial = !!res.partial;
   }
   renderLibrary();
@@ -1620,11 +1705,33 @@ export async function libraryWholeSearch(query, field) {
 
 // libraryWholeSearchNote picks the one note under the results, in the phone
 // page's order: a server that did not answer, then a partial list, then no hits.
+// A partial list is one of two things (#1705): a server whose folders could not
+// all be looked through in time (named), or one with more hits than it hands
+// over at once, the only case a more exact search helps.
 function libraryWholeSearchNote(s) {
   if (s.unanswered.length) return t('library.wholeSearchOffline', { name: s.unanswered.join(', ') });
+  if ((s.incomplete || []).length) return t('library.wholeSearchIncomplete', { name: s.incomplete.join(', ') });
   if (s.partial) return t('library.wholeSearchPartial');
   if (!s.items.length) return t('library.wholeSearchNone');
   return '';
+}
+
+// libraryWholeSearchCoverage says which servers the search asked and which of
+// them had nothing (#1705). Without it a search that finds nothing, or finds
+// something on one server only, leaves open whether the others were searched
+// at all. A server that did not answer or could not be looked through in time
+// already has its own note and is left out here. '' while nothing was asked.
+function libraryWholeSearchCoverage(s) {
+  if (s.loading) return '';
+  const named = (list, name) => (list || []).some((x) => String(x).includes(name));
+  const asked = libState.servers.map((srv) => srv.friendlyName || srv.address).filter(Boolean)
+    .filter((name) => !named(s.unanswered, name));
+  if (!asked.length) return '';
+  const hits = new Set(s.items.map((it) => it.server).filter(Boolean));
+  const empty = asked.filter((name) => !hits.has(name) && !named(s.incomplete, name));
+  const lines = [t('library.wholeSearchAsked', { names: asked.join(', ') })];
+  if (empty.length) lines.push(t('library.wholeSearchNoHits', { names: empty.join(', ') }));
+  return lines.join(' ');
 }
 
 // libraryWholeSearchBox is the search row above the folder: the query, the
@@ -1671,9 +1778,11 @@ function libraryWholeSearchBody() {
         </li>`;
   }).join('');
   const note = libraryWholeSearchNote(s);
+  const coverage = libraryWholeSearchCoverage(s);
   return head
     + (rows ? `<ul class="library-list">${rows}</ul>` : '')
-    + (note ? `<p class="library-empty-folder">${escapeHtml(note)}</p>` : '');
+    + (note ? `<p class="library-empty-folder">${escapeHtml(note)}</p>` : '')
+    + (coverage ? `<p class="muted small library-search-coverage">${escapeHtml(coverage)}</p>` : '');
 }
 
 function wireWholeSearch(el) {
@@ -1772,7 +1881,9 @@ function ui2FolderRowsHTML() {
 // Media Server.
 function ui2ServerToolsHTML() {
   const cur = libState.servers.find((s) => s.udn === libState.currentUDN);
-  if (!cur) return '';
+  // A speaker's USB stick is no network server: the other speakers cannot
+  // take it as a source of their own, and nothing was added by hand.
+  if (!cur || cur.usbSpeaker) return '';
   const remove = cur.manual
     ? `<button type="button" class="u-btn u-btn--secondary" id="libManualRemoveBtn">${escapeHtml(t('library.removeServerBtn'))}</button>`
     : '';
@@ -1860,11 +1971,13 @@ function ui2SearchHTML() {
   })).join('');
   if (rows) html += `<ul class="lib2-list" data-list="search">${rows}</ul>`;
   const note = libraryWholeSearchNote(s);
+  const coverage = libraryWholeSearchCoverage(s);
+  const coverageHTML = coverage ? `<p class="lib2-note lib2-search-coverage">${escapeHtml(coverage)}</p>` : '';
   // No hits from servers that all answered: what to try next, and the way
   // back to the search field.
   if (note && !s.items.length && !s.unanswered.length && !s.partial) {
     const any = (LIB_SEARCH_FIELDS.find(([v]) => v === 'any') || [])[1] || 'library.fieldAll';
-    return html + stateHTML({
+    return html + coverageHTML + stateHTML({
       tone: 'info',
       title: note,
       body: s.field !== 'any' ? t('ui2.feedback.tryAnotherField', { field: t(any) }) : '',
@@ -1872,7 +1985,7 @@ function ui2SearchHTML() {
     });
   }
   if (note) html += `<p class="lib2-note" role="status">${escapeHtml(note)}</p>`;
-  return html;
+  return html + coverageHTML;
 }
 
 // ui2ServersHTML is the top level: the media servers on the network, or what
@@ -1896,10 +2009,11 @@ function ui2ServersHTML() {
       title: t('ui2.library.noServersTitle'),
       body: t('ui2.library.noServersBody'),
       actions: [{ id: 'libRefreshBtn', label: t('ui2.library.searchAgain'), primary: true }],
-    }) + libraryRefusedNote(libState.refused) + manual(true);
+    }) + libraryRefusedNote(libState.refused) + libraryUSBNote(libState.usbNotices) + manual(true);
   }
   return levelHeadHTML(t('ui2.library.serversTitle'))
     + libraryRefusedNote(libState.refused)
+    + libraryUSBNote(libState.usbNotices)
     + `<ul class="lib2-list" data-list="servers">${serverRowsHTML(libState.servers)}</ul>`
     + `<div class="lib2-tool-row"><button type="button" class="u-btn u-btn--secondary" id="libRefreshBtn">${escapeHtml(t('ui2.library.searchAgain'))}</button></div>`
     + manual(false);
@@ -2165,7 +2279,7 @@ function renderLibrary() {
     //
     // Whole-household by default, because a server belongs to the house rather
     // than to one speaker, and every speaker discovers it under the same id.
-    const onSpeakersBtn = libState.currentUDN
+    const onSpeakersBtn = libState.currentUDN && !(cur && cur.usbSpeaker)
       ? `<button class="btn btn-mini" id="libOnSpeakersBtn" title="${escapeAttr(t('library.onSpeakersHint'))}">${escapeHtml(t('library.onSpeakersBtn'))}</button>`
       : '';
     serverPicker = `
@@ -2252,7 +2366,7 @@ function renderLibrary() {
   const wholeSearch = libState.servers.length > 0 ? libraryWholeSearchBox() : '';
   if (libState.search.active) body = libraryWholeSearchBody();
 
-  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + manualAdd + wholeSearch + body;
+  el.innerHTML = intro + serverPicker + libraryRefusedNote(libState.refused) + libraryUSBNote(libState.usbNotices) + manualAdd + wholeSearch + body;
   wireWholeSearch(el);
 
   // Wire interactions.

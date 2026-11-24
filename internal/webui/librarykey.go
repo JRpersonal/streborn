@@ -201,6 +201,16 @@ func (c *fileLengths) put(url string, fl fileLength) {
 // server that serves no ranges); a size without a readable length is ok with
 // length 0.
 func currentFileLength(ctx context.Context, cl *http.Client, cache *fileLengths, url, mime string) (fl fileLength, readNow, ok bool) {
+	return currentFileLengthWith(ctx, cl, cache, url, mime, readFileLengthKind)
+}
+
+// lengthReader reads the play length of the file at url (size bytes) and says
+// whether it is exact: readFileLengthKind, or readStickFileLengthKind for a
+// file on a USB stick STR serves.
+type lengthReader func(ctx context.Context, cl *http.Client, url, mime string, size int64) (time.Duration, bool)
+
+// currentFileLengthWith is currentFileLength with the length read by read.
+func currentFileLengthWith(ctx context.Context, cl *http.Client, cache *fileLengths, url, mime string, read lengthReader) (fl fileLength, readNow, ok bool) {
 	if netutil.SafeHTTPURL(url) != nil {
 		return fileLength{}, false, false
 	}
@@ -214,7 +224,7 @@ func currentFileLength(ctx context.Context, cl *http.Client, cache *fileLengths,
 	if c, hit := cache.get(url); hit && c.size == size {
 		return c, false, true
 	}
-	d, exact := readFileLengthKind(ctx, cl, url, mime, size)
+	d, exact := read(ctx, cl, url, mime, size)
 	fl = fileLength{size: size, length: d, exact: exact}
 	// A read cut short by the budget (a NAS disk still spinning up) says
 	// nothing about the file; caching it would pin length 0 on this URL until
@@ -242,13 +252,18 @@ func (s *Server) keyRecallLength(ctx context.Context, p presets.Preset, mime str
 		clientFn = defaultKeyLengthClient
 	}
 	cl := clientFn()
+	read := lengthReader(readFileLengthKind)
+	if cl != nil && isUSBLoopbackFile(p.StreamURL) {
+		cl = usbProbeClient() // the guarded client refuses loopback
+		read = readStickFileLengthKind
+	}
 	if mime == "" || cl == nil {
 		return recallLength{d: stored}
 	}
 	ctx, cancel := context.WithTimeout(ctx, keyLengthCheckBudget)
 	defer cancel()
 	start := time.Now()
-	fl, readNow, ok := currentFileLength(ctx, cl, &s.fileLens, p.StreamURL, mime)
+	fl, readNow, ok := currentFileLengthWith(ctx, cl, &s.fileLens, p.StreamURL, mime, read)
 	if !ok || fl.length <= 0 || !fl.exact {
 		if readNow || !ok {
 			s.logger.Info("library key: no exact length from the file, using the stored one",
@@ -435,6 +450,16 @@ func (s *Server) recallLibraryFileSlot(ctx context.Context, slot int, p presets.
 	// track (#1339, #919), is not acted on here: a hardware press has no screen
 	// to say so, and the press goes ahead as it always did. The log says why.
 	s.logHardwareLibraryVerdict(slot, p.Name, s.healLibraryKeyIfMoved(ctx, slot, &p))
+	// A file on this speaker's USB stick with a sample rate the speaker
+	// cannot play is not handed to it (usbhires.go). The press is claimed,
+	// nothing plays, the log says why, and a speaker with a screen says so
+	// there (displaymsg.go guards decide whether it can).
+	if f, hi := s.usbHiResFormat(usbLoopbackURL(p.StreamURL)); hi {
+		s.logger.Warn("preset slot recall (hardware): the key's file on the USB stick has a sample rate above 48 kHz, which this speaker cannot play; not playing it",
+			"slot", slot, "name", p.Name, "sampleRate", f.SampleRate)
+		s.ShowKeyMessage(DisplayMsgUSBHiRes)
+		return true
+	}
 	mime := s.directFileMime(ctx, p)
 	if mime == "" {
 		return false

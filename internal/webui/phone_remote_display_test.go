@@ -70,7 +70,10 @@ func TestPhoneRemoteStartVolumeCard(t *testing.T) {
 		"api('/api/box/start-volume')",
 		"api('/api/box/start-volume', 'POST', { volume: v })",
 		"if (!r || r.supported !== true) return;",
-		"sl.addEventListener('change', function(){ saveStartVol(sl.value); });",
+		// Touch and mouse save through the scroll guard on release (#2066),
+		// the keyboard through 'change'.
+		"scrollSafeSlider(sl, saveStartVol, svPaint, { settings: true });",
+		"sl.addEventListener('change', function(){ if (!sliderJustTouched(sl)) saveStartVol(sl.value); });",
 		"['bassCard', 'identCard', 'svCard', 'dispCard']",
 		"if (name === 'More') loadStartVol();",
 	} {

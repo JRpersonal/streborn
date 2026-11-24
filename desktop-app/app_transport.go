@@ -556,6 +556,12 @@ const (
 
 	restartingAfterUnlockNoStickAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing, unplug it for about 30 seconds, plug it back in and leave it alone for five minutes. Do not press Install while it is still starting: a second attempt on top of the first one only restarts it again."
 
+	// speakerNotSetUpAdvice closes the message for a speaker that refused the
+	// stand-in account itself (speaker-not-set-up): reset and never set up
+	// again. Bose's own app still sets a speaker up on the home Wi-Fi, and
+	// that is the one thing that brings it out of the state.
+	speakerNotSetUpAdvice = "Set it up once with Bose's own SoundTouch app (App Store or Google Play): reset it to factory settings as Bose's guide for your model describes, add it in the app as a new speaker on your Wi-Fi, and take a firmware update if the app offers one. Then press Install again. Until it has been set up once, Install cannot get past this point and only restarts the speaker."
+
 	alreadyInstalledNoStickAdvice = "Refresh the speaker list: ST Reborn already runs on this speaker, and this model never needs a USB stick."
 
 	// firmwareFirstAdvice closes the message for a speaker whose Bose firmware

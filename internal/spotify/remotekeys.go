@@ -192,6 +192,24 @@ func (m *Manager) readPlayModes(ctx context.Context) (playModes, error) {
 	return p, nil
 }
 
+// InfoPlayModes is the shuffle and repeat /spotify/info reports (#2058).
+// Repeat is RepeatOff, RepeatContext or RepeatTrack.
+type InfoPlayModes struct {
+	Shuffle bool   `json:"shuffle"`
+	Repeat  string `json:"repeat"`
+}
+
+// PlayModes reads the live playlist's shuffle and repeat fresh from the
+// engine: the answer the app's shuffle and repeat buttons get after a press
+// (#2058). One read, no cache.
+func (m *Manager) PlayModes(ctx context.Context) (shuffle bool, repeat string, err error) {
+	p, err := m.readPlayModes(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	return p.Shuffle, p.repeat(), nil
+}
+
 // ToggleShuffle switches the live playlist's shuffle and reports the new
 // state. The state is read fresh, so a change made in the Spotify app since
 // is what the press flips.

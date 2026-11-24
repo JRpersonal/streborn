@@ -6,7 +6,8 @@
 // the agent does the searching. Scope is deliberately the REGISTERED servers
 // (the mediaservers store), not everything SSDP can see: those are the servers
 // the user chose as music sources, and searching a neighbour's random DLNA
-// device from a speaker would surprise more than it helps.
+// device from a speaker would surprise more than it helps. The music stick in
+// this speaker is searched too, on the agent itself (usbsearch.go).
 //
 // #666 is the reason this file looks the way it does. A reporter with a 2600
 // track NAS could browse and play every song from the desktop app but the phone
@@ -18,12 +19,14 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/dlna"
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 )
 
 // librarySearchResult is one playable hit, shaped for the remote's list.
@@ -63,6 +66,12 @@ const (
 	libraryRecallTimeout = 4 * time.Second
 )
 
+// librarySearchActionShare is the Search action's part of librarySearchPerServer
+// (the widened and the title-only query together), so a Search that never
+// answers still leaves the walk 7 s. The desktop splits its 20 s the same way
+// (12 s). A var for the tests.
+var librarySearchActionShare = 8 * time.Second
+
 // handleLibrarySearch answers GET /api/library/search?q=... with matching
 // audio items from every registered media server. LAN-only like the other
 // endpoints that make the speaker reach out.
@@ -82,21 +91,30 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	// field narrows the search to album, artist or title; absent is all three,
 	// as before (#1325).
 	field := librarySearchField(r.URL.Query().Get("field"))
-	if s.mediaServers == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []librarySearchResult{}, "registered": 0})
-		return
+	var registered []mediaservers.Server
+	if s.mediaServers != nil {
+		registered = s.mediaServers.List()
 	}
-	registered := s.mediaServers.List()
+	ctx, cancel := context.WithTimeout(r.Context(), librarySearchBudget)
+	defer cancel()
+
+	// The music stick in this speaker is searched first, on the agent itself:
+	// it is in no store and answers no discovery, and before this the search
+	// never looked at it (discussion #1136).
+	results, stick, partial := s.searchUSBStick(ctx, r.Host, q, field)
 	if len(registered) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []librarySearchResult{}, "registered": 0})
+		// The stick only: no discovery round to pay for.
+		if results == nil {
+			results = []librarySearchResult{}
+		}
+		sort.SliceStable(results, func(i, j int) bool { return results[i].Title < results[j].Title })
+		writeJSON(w, http.StatusOK, map[string]any{"results": results, "registered": boolCount(stick), "partial": partial})
 		return
 	}
 
 	// Resolve the registered UDNs to live servers. Discovery is the only way
 	// to a control URL (the store keeps intent, not addresses, because DHCP
 	// moves servers around).
-	ctx, cancel := context.WithTimeout(r.Context(), librarySearchBudget)
-	defer cancel()
 	found, derr := dlna.DiscoverServers(ctx, librarySearchDiscovery)
 	if derr != nil {
 		s.logger.Info("library search: discovery failed", "err", derr)
@@ -107,10 +125,13 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.rememberMediaServerLocations(found)
 
-	var results []librarySearchResult
 	var missing []string
-	partial := false
 	for _, reg := range registered {
+		if len(results) >= librarySearchMax {
+			// The stick alone filled the list.
+			partial = true
+			break
+		}
 		key := udnKey(reg.ID)
 		srv, ok := byUDN[key]
 		if !ok {
@@ -165,7 +186,7 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(results, func(i, j int) bool { return results[i].Title < results[j].Title })
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results":    results,
-		"registered": len(registered),
+		"registered": len(registered) + boolCount(stick),
 		"offline":    missing,
 		// partial says the search did NOT cover everything it was asked to.
 		// The page needs it to keep an empty answer honest: "we searched a
@@ -258,6 +279,9 @@ func (s *Server) rememberMediaServerLocationAs(key, loc string) {
 // registeredName returns the friendly name the user registered a server under,
 // looked up by its normalised UDN key, or "" when no registered server matches.
 func (s *Server) registeredName(key string) string {
+	if key != "" && key == udnKey(s.usbUDN()) {
+		return s.usbFriendlyName()
+	}
 	if s.mediaServers == nil {
 		return ""
 	}
@@ -371,8 +395,30 @@ func librarySearchField(raw string) string {
 // retry only makes sense where the title is part of what was asked: an artist
 // search answered with title hits would list the wrong songs.
 func (s *Server) searchOneServerBy(ctx context.Context, srv dlna.Server, q, field string) ([]dlna.Item, bool) {
+	// Windows Media Player's share never answers the Search action, and the
+	// query it is left chewing on holds up the folder reads after it (#1705):
+	// walk it without asking.
+	if dlna.SkipsSearchAction(srv) {
+		s.logger.Info("library search: Windows Media Player sharing, walking the tree without asking Search",
+			"server", srv.FriendlyName, "q", q, "field", field)
+		return s.walkOneServerBy(ctx, srv, q, field)
+	}
 	titleRetry := field == dlna.SearchAny || field == dlna.SearchTitle
-	res, err := dlna.SearchBy(ctx, srv, q, field, librarySearchMax)
+	// The Search action gets a share of the server's time, not all of it: a
+	// server that never answers it used to take the whole 15 s with the
+	// widened and the title-only query, and the walk then ran with no time
+	// left and 0 reads (#1705, the reporter's PC on 2026-11-22).
+	actx, acancel := context.WithTimeout(ctx, librarySearchActionShare)
+	defer acancel()
+	res, err := dlna.SearchBy(actx, srv, q, field, librarySearchMax)
+	if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		// No answer at all, not a refusal: a title-only retry would only
+		// queue behind the query the server is still busy with.
+		s.logger.Info("library search: Search action did not answer, walking the tree (bounded)",
+			"server", srv.FriendlyName, "q", q, "field", field, "err", err)
+		acancel()
+		return s.walkOneServerBy(ctx, srv, q, field)
+	}
 	if err != nil && !titleRetry {
 		s.logger.Info("library search: Search action refused the field, walking the tree (bounded)",
 			"server", srv.FriendlyName, "q", q, "field", field, "err", err)
@@ -380,7 +426,7 @@ func (s *Server) searchOneServerBy(ctx context.Context, srv dlna.Server, q, fiel
 		// A server that indexes titles only faults on the widened criteria
 		// (UPnPError 708) instead of answering it. Ask the narrow way before
 		// paying for the walk.
-		if narrow, nerr := dlna.SearchTitleOnly(ctx, srv, q, librarySearchMax); nerr == nil {
+		if narrow, nerr := dlna.SearchTitleOnly(actx, srv, q, librarySearchMax); nerr == nil {
 			res, err = narrow, nil
 		} else {
 			s.logger.Info("library search: Search action unavailable, walking the tree (bounded)",
@@ -392,14 +438,18 @@ func (s *Server) searchOneServerBy(ctx context.Context, srv dlna.Server, q, fiel
 		// the same track, and the widened boolean criteria has its own quirks
 		// per server. One narrow retry is a single cheap SOAP call next to the
 		// walk it can save.
-		if narrow, nerr := dlna.SearchTitleOnly(ctx, srv, q, librarySearchMax); nerr == nil && len(narrow.Items) > 0 {
+		if narrow, nerr := dlna.SearchTitleOnly(actx, srv, q, librarySearchMax); nerr == nil && len(narrow.Items) > 0 {
 			res = narrow
 		}
 	}
+	acancel()
 	if err == nil && len(res.Items) > 0 {
 		s.logger.Info("library search: server answered the Search action",
 			"server", srv.FriendlyName, "q", q, "hits", len(res.Items), "total", res.TotalMatches)
-		return res.Items, res.TotalMatches > len(res.Items)
+		// dlna pages a capped answer and corrects a count that is not one, so
+		// HasMore is hits really left behind; one track listed twice under
+		// two URLs is one hit.
+		return dlna.DedupTracks(res.Items), res.HasMore()
 	}
 	if err == nil {
 		// The query rides along because a bundle without it cannot separate
@@ -438,6 +488,8 @@ func (s *Server) walkOneServerBy(ctx context.Context, srv dlna.Server, q, field 
 		},
 	})
 	s.logger.Info("library search: bounded walk finished",
-		"server", srv.FriendlyName, "q", q, "browses", res.Browses, "hits", len(res.Items), "partial", res.Partial)
+		"server", srv.FriendlyName, "q", q, "browses", res.Browses, "hits", len(res.Items), "partial", res.Partial,
+		"shortcut", res.Shortcut, "shortcutComplete", res.ShortcutComplete,
+		"slowestMs", res.SlowestBrowse.Milliseconds(), "slowestContainer", res.SlowestContainer)
 	return res.Items, res.Partial
 }

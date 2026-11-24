@@ -54,6 +54,24 @@ as a DNS server for any other device, and does not phone home.
   recall. Anyone with root SSH access (open while the install stick
   is inserted, or when the persistent opt-in marker is set) can read
   those credentials, which is part of why SSH is kept opt-in.
+- **Music-service logins handed to the firmware (Pandora, iHeartRadio;
+  Deezer only as a kept login).** The e-mail and password typed into the app
+  or the phone page travel app (or phone) to agent over the LAN and agent to
+  the speaker's own `:8090/setMusicServiceAccount` over loopback, the path
+  Pandora has always used. STR never stores, logs or echoes the password.
+  Deezer takes no new login (it cannot work without Bose): the agent refuses
+  it with `410` without reading the body. What the firmware stores is its
+  own business (its `Sources.xml`). The token the firmware then registers
+  with STR's cloud stand-in is kept in `/mnt/nv/streborn/` (mode 0600) and
+  handed back only to a loopback caller, the speaker itself; a LAN client
+  gets `***`. Like every agent endpoint the account calls are LAN-only but
+  not authenticated: anyone on the LAN can sign the speaker into an account
+  of their own or sign it out, not read the owner's login. Disconnect deletes
+  STR's kept copy. The firmware log lines in a diagnostic file have e-mail
+  addresses masked and token, secret and password values dropped, in case
+  the firmware prints one while it logs in. The Deezer new
+  login is built but **not yet confirmed on a speaker**
+  (`docs/streaming/deezer.md`, A2).
 
 Each boundary is covered in detail in
 [`SECURITY.md`](../SECURITY.md).
@@ -81,6 +99,17 @@ Each boundary is covered in detail in
   vector against the speaker's own privileged services. Private LAN
   ranges stay reachable so a user's local Icecast/DLNA stream still
   plays.
+- A music stick in the speaker (`/usb/`, docs/streaming/usb-stick.md) is
+  served like any DLNA server: anyone on the LAN (`isLocalLAN`) can list and
+  download its music, with no authentication. Nothing else on it can be
+  reached: every path goes through `os.Root` (no `..`, no absolute path, no
+  symlink out), only audio files and cover images are served by name, the
+  agent's own mount is `ro,nosuid,nodev,noexec`, the firmware's read-write
+  mount of a music stick is remounted read-only (never an install stick's),
+  nothing is ever written to the stick, and a stick carrying any STR or Bose marker (an install stick
+  with `wlan.pass`, a firmware image) is never served at all. Only the
+  speaker's own stick files may be probed over loopback (`isUSBLoopbackFile`);
+  every other loopback URL stays refused by the SSRF guard.
 - Every URL the agent hands to the speaker's UPnP renderer or fetches
   through the stream proxy (including HLS playlist segments) is
   restricted to `http`/`https` schemes (`safeHTTPURL`), so `file://`
@@ -246,7 +275,8 @@ touch `/mnt/nv/streborn/`, and that directory holds everything STR consists
 of on the speaker: the agent binary, the boot hook (`run-override.sh`), the
 per-speaker CA and its private key, the preset store, the persisted Spotify
 credential, the speaker's own Deezer login if it had one (kept from the
-firmware's `Sources.xml`, see `docs/streaming/deezer.md`) and the SSH opt-in
+firmware's `Sources.xml`, or registered by the firmware after a Deezer login
+made from STR, see `docs/streaming/deezer.md`) and the SSH opt-in
 marker if one was set. After a factory reset the
 speaker boots straight back into STR.
 

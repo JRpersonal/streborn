@@ -60,31 +60,69 @@ func (s *Server) PlayModeKeyPress(action string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), playModeKeyTimeout)
 	defer cancel()
-	if s.spotifyToggleShuffle == nil || s.spotifyCycleRepeat == nil {
+	st, reason, err := s.stepPlayModeLocked(ctx, action)
+	switch reason {
+	case playModeNoEngine:
 		s.logger.Info(action + " key pressed, but this speaker has no Spotify engine; the key does nothing here")
 		return
-	}
-	if !s.spotifyIsStreaming() && !s.boxSourceIsSpotify(ctx) {
+	case playModeNotPlaying:
 		s.logger.Info(action + " key pressed, but no Spotify playlist plays; the key only works on Spotify")
 		return
+	case playModeEngineRefused:
+		s.logger.Warn(action+" key pressed, but Spotify did not take the change", "err", err)
+		return
+	}
+	if action == keyactions.ActionShuffle {
+		s.logger.Info("shuffle key pressed", "shuffle", st.shuffle)
+		s.showPlayModeNotice(oled.Shuffle(st.shuffle))
+		return
+	}
+	s.logger.Info("repeat key pressed", "repeat", st.repeat)
+	s.showPlayModeNotice(oled.Repeat(st.repeat))
+}
+
+// Why a shuffle or repeat step did not happen: the short words the control
+// API answers with (spotifyplaymode_http.go).
+const (
+	playModeNoEngine      = "no-engine"
+	playModeNotPlaying    = "not-playing"
+	playModeEngineRefused = "engine-refused"
+)
+
+// playModeStep is the mode one shuffle or repeat step set: shuffle after a
+// shuffle step, repeat ("off", "context", "track") after a repeat step.
+type playModeStep struct {
+	shuffle bool
+	repeat  string
+}
+
+// stepPlayModeLocked flips the live Spotify playlist's shuffle or moves its
+// repeat on one mode, the core the remote's keys and the app's buttons share
+// (#1679, #2058). It neither logs the outcome nor shows it: the key shows a
+// notice, the app has its own button. reason is "" on success, otherwise one
+// of the playMode* words, with err set for playModeEngineRefused. The caller
+// holds playModeKey.mu, so a key press and an app press never interleave.
+func (s *Server) stepPlayModeLocked(ctx context.Context, action string) (st playModeStep, reason string, err error) {
+	if s.spotifyToggleShuffle == nil || s.spotifyCycleRepeat == nil {
+		return st, playModeNoEngine, nil
+	}
+	if !s.spotifyIsStreaming() && !s.boxSourceIsSpotify(ctx) {
+		return st, playModeNotPlaying, nil
 	}
 	if action == keyactions.ActionShuffle {
 		on, err := s.spotifyToggleShuffle(ctx)
 		if err != nil {
-			s.logger.Warn("shuffle key pressed, but Spotify did not take the change", "err", err)
-			return
+			return st, playModeEngineRefused, err
 		}
-		s.logger.Info("shuffle key pressed", "shuffle", on)
-		s.showPlayModeNotice(oled.Shuffle(on))
-		return
+		st.shuffle = on
+		return st, "", nil
 	}
 	mode, err := s.spotifyCycleRepeat(ctx)
 	if err != nil {
-		s.logger.Warn("repeat key pressed, but Spotify did not take the change", "err", err)
-		return
+		return st, playModeEngineRefused, err
 	}
-	s.logger.Info("repeat key pressed", "repeat", mode)
-	s.showPlayModeNotice(oled.Repeat(mode))
+	st.repeat = mode
+	return st, "", nil
 }
 
 // showPlayModeNotice puts the new state on this speaker's panel. Like the

@@ -45,6 +45,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recallintent"
 )
 
 const (
@@ -319,7 +320,11 @@ func (h *presetWsHandler) confirmDoublePress(ctx context.Context, order uint64, 
 		if n <= rows {
 			if extra, ok := h.store.Get(presets.RowSlot(n, key)); ok {
 				seq := h.pressSeq.Add(1)
-				h.playExtraRow(ctx, seq, key, extra, n, pressAt.Sub(first), true,
+				playCtx := ctx
+				if n == 2 {
+					playCtx = row2PressContext(ctx, first)
+				}
+				h.playExtraRow(playCtx, seq, key, extra, n, pressAt.Sub(first), true,
 					"key trace confirms "+strconv.Itoa(n)+" presses")
 				return
 			}
@@ -339,6 +344,16 @@ func (h *presetWsHandler) confirmDoublePress(ctx context.Context, order uint64, 
 		h.logger.Info("multiple press on key "+strconv.Itoa(key)+": ignored, group echo without trace", "key", key)
 	}
 	h.ordinaryPress(ctx, pressAt, key, location, title, false)
+}
+
+// row2PressContext marks the recall of a double press's second row with when
+// its first half arrived. Row 1's recall ran on that first half, and when it
+// is no Spotify key it paused the engine to switch the speaker away; with the
+// mark, the Spotify engine tells that pause from one the listener made, so a
+// double press for the playlist that plays moves on to its next track like
+// every re-press of a playing playlist (recallintent.WithPressSince).
+func row2PressContext(ctx context.Context, first time.Time) context.Context {
+	return recallintent.WithPressSince(ctx, first)
 }
 
 // playRow2 plays the second-row preset of key through the app's recall path,

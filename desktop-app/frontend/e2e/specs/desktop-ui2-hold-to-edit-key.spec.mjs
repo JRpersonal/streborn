@@ -15,6 +15,7 @@ import { test, expect } from '../fixtures.mjs';
 import { onHost } from '../helpers/mockclient.mjs';
 import { settle, runFor } from '../helpers/clock.mjs';
 import { en } from '../helpers/i18n.mjs';
+import { openTopList } from '../helpers/ui2radio.mjs';
 import { PRESETS, ROSTER, STATIONS } from '../../testkit/demo-data.mjs';
 
 const LR = ROSTER.livingRoom;
@@ -271,6 +272,7 @@ test.describe('UI 2.0: hold a key to change it', () => {
   test('16. Choose a favorite opens the key editor on that key with the favourites, also after a search there', async ({ app, mock }) => {
     const { page } = app;
     // A favourite, starred on Radio.
+    await openTopList(page);
     await row(page, JAZZ.name).locator('[data-act="fav"]').click();
     // A search in the editor first, from key 1's "Find a station".
     await body(page, 1).focus();
@@ -407,6 +409,7 @@ test.describe('UI 2.0: hold a key to change it', () => {
       // Radio's own Put on key was never aimed: it starts on the first key.
       await page.locator('#ui2Tabs .ui2-nav-item[data-view="box"]').click();
       await expect(tile(page, 5).locator('.name')).toHaveText('KEXP');
+      await openTopList(page);
       await row(page, JAZZ.name).locator('[data-act="key"]').click();
       await expect(page.locator('#pickModal')).toBeVisible();
       await expect(page.locator('#pickGrid .pick-slot').first()).toBeFocused();

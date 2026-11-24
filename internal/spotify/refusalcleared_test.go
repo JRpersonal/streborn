@@ -210,7 +210,29 @@ func TestCredentialSnapshotCarriesTheRefusalState(t *testing.T) {
 func TestSpotifyInfoDropsAudioKeyRefusedOnAudio(t *testing.T) {
 	m, _, cleanup := mockLibrespot(t)
 	defer cleanup()
+	// The refusal and the audio each record the account in the background
+	// (noteKeyRefusalEpisode, noteAccountStreamed). A write still running when
+	// the test returns races TempDir's cleanup ("sp-accounts: directory not
+	// empty", flaky in CI twice on 2026-11-21), so wait for both to land.
+	settle := func(done func() bool) {
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline) && !done(); {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	refusedFile := func() bool { _, err := os.Stat(m.accountRefusedPath()); return err == nil }
+	defer settle(func() bool {
+		m.mu.Lock()
+		busy := m.refusedClearBusy
+		m.mu.Unlock()
+		if busy || refusedFile() {
+			return false
+		}
+		m.storeWriteMu.Lock()
+		m.storeWriteMu.Unlock() //nolint:staticcheck // waits out a write in flight
+		return true
+	})
 	m.noteLibrespotLine(engineStopLine)
+	settle(refusedFile)
 	read := func() any {
 		w := httptest.NewRecorder()
 		m.ServeInfo(w, httptest.NewRequest(http.MethodGet, "/spotify/info", nil))
