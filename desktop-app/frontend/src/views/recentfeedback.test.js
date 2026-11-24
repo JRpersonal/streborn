@@ -2,6 +2,9 @@
 // answer, so the UI 2.0 preview can say whose history is missing; the current
 // layout ignores them and draws exactly what it drew before.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { state } from '../state.js';
+import { setLocale } from '../i18n/index.js';
+import * as recent from './recent.js';
 
 const api = vi.hoisted(() => ({ RecentPlayed: vi.fn(), GetPresets: vi.fn(), Status: vi.fn() }));
 vi.mock('../api.js', async (importOriginal) => ({ ...(await importOriginal()), ...api }));
@@ -28,15 +31,10 @@ function fakeDocument() {
   return { getElementById: node, querySelectorAll: () => [], activeElement: null, nodes };
 }
 
-let recent;
-let state;
-
-beforeEach(async () => {
-  vi.resetModules();
+beforeEach(() => {
   Object.values(api).forEach((f) => f.mockReset());
   globalThis.document = fakeDocument();
-  ({ state } = await import('../state.js'));
-  (await import('../i18n/index.js')).setLocale('en');
+  setLocale('en');
   state.boxes = [KITCHEN, OFFICE];
   state.currentBox = KITCHEN;
   state.recentAllBoxes = true;
@@ -44,7 +42,6 @@ beforeEach(async () => {
   state.view = 'recent';
   api.GetPresets.mockResolvedValue([]);
   api.Status.mockResolvedValue('<nowPlaying source="STANDBY"></nowPlaying>');
-  recent = await import('./recent.js');
 });
 
 describe('loadRecentCards', () => {

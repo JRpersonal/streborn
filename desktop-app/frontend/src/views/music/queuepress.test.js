@@ -3,6 +3,9 @@
 // The optimistic card must hold until the press returns and a little after,
 // never for the 6 s every other key gets.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { state } from '../../state.js';
+import { setLocale } from '../../i18n/index.js';
+import { play } from './play.js';
 
 const api = vi.hoisted(() => ({ PlaySlot: vi.fn(), boxFetch: vi.fn() }));
 vi.mock('../../api.js', () => api);
@@ -13,24 +16,22 @@ vi.mock('./live.js', () => ({ scheduleLiveBitrate: vi.fn(), scheduleLiveTitle: v
 vi.mock('../settings.js', () => ({ throttledSetVolume: vi.fn() }));
 vi.mock('./volume.js', () => ({ currentPairTarget: () => null, musicVolEl: null, musicVolValEl: null, pairSetVolume: vi.fn() }));
 
-let state;
-let play;
 const BOX = { host: '192.0.2.1', port: 8888, friendlyName: 'Kitchen' };
 
-beforeEach(async () => {
-  vi.resetModules();
+beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-11-08T10:00:00Z'));
   api.PlaySlot.mockReset();
-  ({ state } = await import('../../state.js'));
-  (await import('../../i18n/index.js')).setLocale('en');
-  ({ play } = await import('./play.js'));
+  setLocale('en');
   state.currentBox = BOX;
   state.boxes = [BOX];
   state.presetErrors = {};
   state.nowPlayState = '';
   state.nowSource = 'STANDBY';
   state.nowLocation = '';
+  state.optimisticQueueSlot = null;
+  state.optimisticQueueInFlight = 0;
+  state.optimisticUntil = 0;
   state.presets = [
     { slot: 3, type: 'queue', name: 'Blues album', stream_url: '' },
     { slot: 1, type: 'radio', name: 'Radio One', stream_url: 'http://radio.example/one' },
