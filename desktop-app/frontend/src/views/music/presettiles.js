@@ -36,6 +36,7 @@ import {
   isKeyChrome,
   nativeSlotStale,
   orionStationPayload,
+  presetAddress,
   presetBitrateLine,
   presetOwnArt,
   queueSlotActive,
@@ -305,6 +306,10 @@ export function renderPresets() {
       // No bitrate line on a native Pandora / iHeartRadio key, nor on a media-server
       // key that has no rate (presetBitrateLine, #1065).
       const bitrateLine = isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate);
+      // The station address rides on the bitrate line as a hover title (#2103),
+      // so the tile itself shows nothing new.
+      const address = isNativeServicePreset(p) ? '' : presetAddress(p, decodeProxyUrl);
+      const addressAttr = address ? ` title="${escapeAttr(address)}"` : '';
       // A key shows what is SAVED on it: a short, static name, plus the markers
       // that say it is the one playing (the green .playing tile and the
       // Playing/Buffering/Paused line from presetStateLabel). It deliberately
@@ -325,7 +330,7 @@ export function renderPresets() {
             <div class="name clamp-2" title="${escapeAttr(p.name || label)}">${escapeHtml(p.name || label)}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
-            ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
+            ${bitrateLine ? `<div class="preset-bitrate"${addressAttr}>${bitrateLine}</div>` : ''}
             ${stateLabel}
           </div>
         </div>
