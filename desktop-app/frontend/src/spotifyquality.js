@@ -54,3 +54,28 @@ export function qualityOptions(st, t) {
     { value: 320, label: '320 kbps (Premium)', selected: high },
   ];
 }
+
+// qualityUnits turns the speaker list into the rows the quality list shows:
+// one per speaker, except that a stereo pair is ONE row, named after the pair
+// and set on its master. While two speakers are paired only the master runs
+// the Spotify engine (the other half idles and plays what the master sends), so
+// a row for the other half changed nothing the listener could hear, and the
+// list read as if the pair were two speakers (#2100). pairFor(box) answers null
+// for a speaker on its own, else { masterHost, name }. A pair whose master is
+// not among the speakers keeps its halves as they are, so nobody loses a row.
+export function qualityUnits(boxes, pairFor) {
+  const list = boxes || [];
+  const hosts = new Set(list.map((b) => b && b.host));
+  const out = [];
+  for (const b of list) {
+    if (!b) continue;
+    const p = typeof pairFor === 'function' ? pairFor(b) : null;
+    if (!p || !p.masterHost || !hosts.has(p.masterHost)) {
+      out.push({ box: b, name: b.name || b.host });
+      continue;
+    }
+    if (p.masterHost !== b.host) continue;
+    out.push({ box: b, name: p.name || b.name || b.host });
+  }
+  return out;
+}
