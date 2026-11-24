@@ -372,6 +372,19 @@ export function beginLibraryNowPlaying(st, play, now) {
   st.optimisticUntil = url ? now + 6000 : 0;
 }
 
+// presetAddress is the station address a radio key plays, shown when the
+// pointer rests on the key's bitrate line (discussion #2103: one station often
+// has several addresses, some with ads, and the tile only named the station).
+// A key saved through STR's stream proxy stores the proxy form, so decode
+// (decodeProxyUrl from presets.js) turns it back into the station's own URL.
+// Spotify, library and queue keys have no station address: ''.
+export function presetAddress(p, decode) {
+  if (!p || p.type === 'spotify' || p.type === 'queue' || p.source || (p.items && p.items.length)) return '';
+  const raw = p.stream_url || '';
+  const real = typeof decode === 'function' ? decode(raw) : raw;
+  return /^https?:\/\//i.test(real || '') ? real : '';
+}
+
 // presetBitrateLine is the bitrate line of a preset key: "<n> kbit/s", the
 // "- kbit/s" placeholder of a radio key with no rate yet, or '' for no line at
 // all. A key that plays from a media server (a single library track, a saved
