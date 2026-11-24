@@ -216,6 +216,18 @@ func (c *Client) noteSourceTransition(ctx context.Context, prev, src string, upn
 	// diagnostic bundle pins down what the box actually reports when
 	// the app cannot tell it is playing.
 	c.logger.Info("box ws: source changed", "from", prev, "to", src)
+	// A power-on that arrives as the speaker's own failed resume of STR's
+	// source, with neither of the other two power-on signals (#1771,
+	// selfresumewake.go).
+	if c.noteSelfResumeTransition(prev, src, time.Now()) {
+		if since, recent := c.sinceSkipFailure(); recent {
+			c.logger.Info("box ws: the speaker gave up STR's source right after a failed remote skip - teardown, not a power-on; not resuming",
+				"sinceSkipMs", since.Milliseconds())
+		} else {
+			c.logger.Info("box ws: power-on wake (the speaker tried STR's source itself after a standby and gave up)")
+			c.firePowerWake(ctx, "self-resume-give-up")
+		}
+	}
 	// Every transition, for handlers that follow what a press did
 	// to the source (the agent's first-press rescue). Optional, so
 	// handlers that do not need it (tests) are unaffected. Runs on
@@ -461,7 +473,7 @@ func (c *Client) handlePowerState(ctx context.Context, f *gabboFrame, data []byt
 			// The resume is gated by a per-box setting AND suppressed if a
 			// DO_NOT_RESUME was seen in the same window, so it can never resume a
 			// self-wake.
-			c.handler.OnPowerWake(ctx)
+			c.firePowerWake(ctx, "powerState")
 		}
 	}
 }
@@ -861,9 +873,7 @@ func (c *Client) handleRestoredSelection(ctx context.Context, pe *wsPreset, data
 			// zone-membership self-wake guard (see webui.ResumeLastPlay), so a
 			// stereo-pair self-wake never auto-resumes.
 			c.logger.Info("box ws: power-on wake (DO_NOT_RESUME restore), box will not resume natively")
-			if c.handler != nil {
-				c.handler.OnPowerWake(ctx)
-			}
+			c.firePowerWake(ctx, "do-not-resume")
 		} else {
 			// DEBUG: the box emits this id=0 INVALID_SOURCE self-activation after
 			// EVERY hardware preset press (the actual press is logged at INFO
