@@ -202,6 +202,14 @@ type Client struct {
 	// from STANDBY lets the STOP_STATE handler recognise the bounce. Guarded by mu.
 	lastStandbyFlapAt time.Time
 
+	// The power-on the bus reports as the speaker's own failed resume of STR's
+	// source (selfresumewake.go, #1771): when STANDBY began, when UPNP came
+	// straight out of a real standby, and when a power-on was last delivered
+	// (one resume per power-on, whichever signal came first). Guarded by mu.
+	standbyEnteredAt  time.Time
+	upnpFromStandbyAt time.Time
+	lastPowerWakeAt   time.Time
+
 	// Thumb-trigger heuristic state. The remote thumbs keys surface only as a
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
 	// playing / preset event around it) as a thumb press and fire
