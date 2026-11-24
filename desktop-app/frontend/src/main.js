@@ -80,6 +80,7 @@ import {
   CheckFirewall,
   AllowThroughFirewall,
 } from './api.js';
+import { windowHidden } from './statuspause.js';
 
 // Global frontend crash capture, registered as early as possible.
 // A JavaScript error during startup does not reach str.log on its own,
@@ -2766,9 +2767,25 @@ function nextStatusDelayMs() {
   }
   return STATUS_IDLE_MS;
 }
+// While the window is hidden or minimised the poll skips its rounds
+// (statuspause.js): an app left open over night must not read the chosen
+// speaker every 15 s, which can keep it out of deep standby. Shown again, the
+// status is fetched at once instead of on the next tick.
+// statusSkipped: a round was skipped since the last status the user could see.
+let statusSkipped = false;
 (function statusPollLoop() {
   setTimeout(async () => {
-    try { await refreshStatus(); } catch {}
+    try {
+      if (await windowHidden()) statusSkipped = true;
+      else { statusSkipped = false; await refreshStatus(); }
+    } catch {}
     statusPollLoop();
   }, nextStatusDelayMs());
 })();
+async function catchUpStatusWhenShown() {
+  if (!statusSkipped || await windowHidden()) return;
+  statusSkipped = false;
+  try { await refreshStatus(); } catch {}
+}
+document.addEventListener('visibilitychange', catchUpStatusWhenShown);
+window.addEventListener('focus', catchUpStatusWhenShown);
