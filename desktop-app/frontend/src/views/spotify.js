@@ -13,7 +13,9 @@ import { openSpeakers } from '../shell2/speakers/index.js';
 import { onStatesChange } from '../shell2/state.js';
 import { state } from '../state.js';
 import { refreshAccounts, renderSpotifyUi2, spotifyUi2Markup } from './spotifyui2.js';
-import { qualityOptions, qualityStatusText } from '../spotifyquality.js';
+import { qualityOptions, qualityStatusText, qualityUnits } from '../spotifyquality.js';
+import { pairOfBox, pairMasterBox } from '../groups.js';
+import { pairDisplayName } from '../stereoNames.js';
 import { deezerCardMarkup, renderDeezerCard } from './deezercard.js';
 
 let deps = { switchView: () => {}, strBoxes: () => [] };
@@ -246,6 +248,21 @@ async function syncUi2(btn) {
   }
 }
 
+// qualityRowBoxes is the speaker list as the quality rows show it: a stereo
+// pair is one row, on its master and under the pair's name, because only the
+// master runs the engine while the two are paired (spotifyquality.js
+// qualityUnits, #2100).
+function qualityRowBoxes(boxes) {
+  const zl = state.zoneLive || {};
+  const all = state.boxes || boxes;
+  return qualityUnits(boxes, (b) => {
+    const pair = pairOfBox(b, zl);
+    const mb = pair ? pairMasterBox(pair, all) : null;
+    if (!mb) return null;
+    return { masterHost: mb.host, name: pairDisplayName(pair) || pair.name || '' };
+  }).map((u) => ({ ...u.box, name: u.name }));
+}
+
 // refreshQualityList paints one row per STR speaker with its configured
 // engine bitrate (#728). Speakers whose agent predates /spotify/quality (or
 // is unreachable) show a hint instead of a selector. 320 kbps only reaches
@@ -255,7 +272,7 @@ async function syncUi2(btn) {
 async function refreshQualityList() {
   const root = $('spotifyQualityList');
   if (!root) return;
-  const boxes = (deps.strBoxes ? deps.strBoxes() : []) || [];
+  const boxes = qualityRowBoxes((deps.strBoxes ? deps.strBoxes() : []) || []);
   if (!boxes.length) {
     root.innerHTML = `<p class="muted small">${escapeHtml(t('spotify.qualityNoBoxes'))}</p>`;
     return;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { qualityOptions, qualityStatusText, qualityReasonKey, QUALITY_I18N_KEYS } from './spotifyquality.js';
+import { qualityOptions, qualityStatusText, qualityReasonKey, qualityUnits, QUALITY_I18N_KEYS } from './spotifyquality.js';
 import { srcOf } from './test/source.js';
 
 // The speaker defaults to 320 kbps on Premium and 160 otherwise; the row where
@@ -57,5 +57,35 @@ describe('Spotify streaming quality row', () => {
       for (const k of QUALITY_I18N_KEYS) expect(b[k], `${k} missing in ${l}`).toBeTruthy();
       expect(b['spotify.qualityActive'], `placeholders in ${l}`).toMatch(/\{\{kbps\}\}.*\{\{reason\}\}/);
     }
+  });
+});
+
+describe('quality rows for a stereo pair (#2100)', () => {
+  const left = { host: '192.0.2.10', name: 'Grace left' };
+  const right = { host: '192.0.2.11', name: 'Grace right' };
+  const solo = { host: '192.0.2.12', name: 'Bose 1' };
+  const pairFor = (b) => (b === left || b === right ? { masterHost: left.host, name: 'Kitchen pair' } : null);
+
+  it('shows a pair as one row on its master, named after the pair', () => {
+    const rows = qualityUnits([left, right, solo], pairFor);
+    expect(rows.map((r) => [r.box.host, r.name])).toEqual([
+      [left.host, 'Kitchen pair'],
+      [solo.host, 'Bose 1'],
+    ]);
+  });
+
+  it('keeps both halves when the master is not in the list', () => {
+    const rows = qualityUnits([right, solo], pairFor);
+    expect(rows.map((r) => r.name)).toEqual(['Grace right', 'Bose 1']);
+  });
+
+  it('falls back to the speaker name when the pair has none', () => {
+    const rows = qualityUnits([left, right], () => ({ masterHost: left.host, name: '' }));
+    expect(rows.map((r) => r.name)).toEqual(['Grace left']);
+  });
+
+  it('lists every speaker when nobody is paired', () => {
+    expect(qualityUnits([left, right, solo], () => null)).toHaveLength(3);
+    expect(qualityUnits(null)).toEqual([]);
   });
 });
