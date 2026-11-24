@@ -2731,6 +2731,10 @@ html:not(.ui2) .settings-section figcaption.muted { padding-left: 0; }
 .setup-section h3 { margin: 0 0 10px 0; font-size: 14px; color: var(--c-text-2); font-weight: 500; }
 .setup-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .setup-section-head h3 { margin: 0; }
+/* "No USB sticks found": a note like the others in the step, not a headline
+   (#2096: it inherited the section's size and stood out larger than the step
+   heading's neighbours). */
+#drivesList .setup-no-sticks { margin: 4px 0 8px; padding: 0; line-height: 1.45; }
 .setup-target-section { border-left: 3px solid var(--brand, #58a); }
 .setup-target-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .setup-target-card { background: var(--c-bg); border: 1px solid var(--c-surface-3); border-radius: 6px; padding: 10px 12px; cursor: pointer; text-align: left; width: 100%; color: var(--c-text); font: inherit; transition: background .15s, border-color .15s; }
