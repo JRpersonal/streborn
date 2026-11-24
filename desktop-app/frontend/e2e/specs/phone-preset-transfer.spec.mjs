@@ -60,30 +60,31 @@ test.describe('one target', () => {
   });
 });
 
-test.describe('both rows', () => {
+test.describe('three supported rows', () => {
   test.use({
     phoneRow2: true,
     phoneOverrides: {
+      '/api/agent/version': { body: { version: 'v1.0.19', build: '2026-10-23', presetRows: '3' } },
       [COPY]: {
         body: {
-          keys: 10, rows: 2, done: 2, total: 2,
+          keys: 10, rows: 3, done: 2, total: 2,
           results: [ok('Bedroom', '192.0.2.52', 10), ok('Kitchen', '192.0.2.51', 6, { row1Only: true, notCopied: 4 })],
         },
       },
     },
   });
 
-  test('says both rows are overwritten, sends "all" and names the one-row speaker', async ({ phone }) => {
+  test('says all press-count rows are overwritten and names a speaker with fewer rows', async ({ phone }) => {
     const { page } = phone;
     await bootDone(page);
     await page.locator('#btnXfer').click();
-    await expect(page.locator('#xferScope')).toHaveText('On the speaker you choose, every key set here, pressed once or twice, overwrites the same key there. All other keys there stay as they are.');
+    await expect(page.locator('#xferScope')).toHaveText('Every preset row set here replaces the same key on the speaker you choose; its other keys stay as they are.');
     await page.locator('#xferTarget').selectOption('__all');
     expect(await confirmAndCatch(page)).toEqual({ all: true });
     const lines = page.locator('#xferMsg p');
     await expect(lines).toHaveText([
       'All 2 speakers took the keys.',
-      'Kitchen has only one row of keys, so the keys pressed twice were not copied there.',
+      'Some preset rows were not copied because the target supports fewer rows.',
     ]);
     await expect(page.locator('#xferMsg')).toHaveClass(/ok/);
   });

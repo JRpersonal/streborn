@@ -36,7 +36,7 @@ test.describe('classic layout', () => {
     await mock.resetCalls();
     await openTransfer(page);
     await expect(page.locator('#presetXferKeys legend')).toHaveText(en('presets.transferKeysLegend'));
-    // Living Room keeps both rows: six keys pressed once and two pressed twice.
+    // Living Room has six keys pressed once and two keys pressed twice.
     await expect(keyBoxes(page)).toHaveCount(8);
     for (const box of await keyBoxes(page).all()) await expect(box).toBeChecked();
     await expect(page.locator('#presetXferKeys')).toContainText(en('preset.row2.key', { n: 1 }));
@@ -45,11 +45,11 @@ test.describe('classic layout', () => {
     await expect(page.locator('#warnBody')).toContainText(en('presets.transferIntro'));
     await expect(page.locator('#warnBody')).not.toContainText(en('settingsView.copyPresetsHelpAll'));
     const scope = page.locator('#presetXferScope');
-    await expect(scope).toHaveText(en('presets.transferReplacesBoth'));
+    await expect(scope).toHaveText(en('presets.transferReplacesExtra'));
     await keyBox(page, 3).uncheck();
     await expect(scope).toHaveText(en('presets.transferKeysNote'));
     await page.locator('#presetXferKeys [data-xfer-keys="all"]').click();
-    await expect(scope).toHaveText(en('presets.transferReplacesBoth'));
+    await expect(scope).toHaveText(en('presets.transferReplacesExtra'));
     await page.locator('#presetXferTarget').selectOption(`${BR.host}|${BR.port}`);
     await page.locator('#warnConfirm').click();
     await mock.expectCalled('CopyPresetsAcrossBoxes', { times: 1 });

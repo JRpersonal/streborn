@@ -6,7 +6,7 @@
 // the Once | Twice tabs and their keyboard model, the explainer of an empty
 // second row and its way to the station search, the "New" marker, putting a
 // station on "Key 2 · 2×" from the search, the lit key and the now-playing
-// line while a row-2 key plays, copying both rows to another speaker (and row
+// line while a row-2 key plays, copying every supported row to another speaker (and row
 // 1 only to one without the second row), and a speaker whose agent predates
 // the second row showing exactly the classic grid.
 
@@ -145,12 +145,12 @@ test.describe('the now-playing line on a station that is no key', () => {
 test.describe('copying to a speaker with the second row', () => {
   test.use({ scenario: { boxPatches: { bedroom: { presetRows: '2' } } } });
 
-  test('carries both rows and says both are replaced', async ({ app, mock }) => {
+  test('copies all supported rows and says matching keys are replaced', async ({ app, mock }) => {
     const { page } = app;
     await mock.resetCalls();
     await page.locator('#presetTransferBtn').click();
     await expect(page.locator('#warnBody')).toContainText(en('presets.transferIntro'));
-    await expect(page.locator('#warnBody')).toContainText(en('presets.transferReplacesBoth'));
+    await expect(page.locator('#warnBody')).toContainText(en('presets.transferReplacesExtra'));
     await page.locator('#presetXferTarget').selectOption('192.0.2.52|8888');
     await page.locator('#warnConfirm').click();
     await mock.expectCalled('CopyPresetsAcrossBoxes', { times: 1 });
@@ -169,7 +169,7 @@ test.describe('copying to a speaker without the second row', () => {
     await page.locator('#warnConfirm').click();
     await mock.expectCalled('CopyPresetsAcrossBoxes', { times: 1 });
     await expect(page.locator('#toast')).toHaveText(
-      en('settingsView.copyPresetsDone', { n: 6, target: 'Bedroom' }) + ' ' + en('settingsView.copyPresetsRow1Only', { target: 'Bedroom' }),
+      en('settingsView.copyPresetsDone', { n: 6, target: 'Bedroom' }) + ' ' + en('settingsView.copyPresetsRowsNotKept', { target: 'Bedroom' }),
     );
   });
 });
