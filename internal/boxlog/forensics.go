@@ -99,6 +99,15 @@ const (
 	// standby, firmware clock correct and enabled) had no evidence of which
 	// state the panel was in or when it changed.
 	ClassDisplayClock Class = "display_clock" // HSM: ChangeState(StandbyClock >> StandbyNoClock) and back
+	// ClassDisplayState is the display controller moving between its states
+	// while the speaker is ON (LoadingPleaseWait, OnShelby, Idle, OnAux ...).
+	// Ring only: it changes on every source change, and the frozen tail in a
+	// bundle is all it takes. A Lifestyle 650 (discussion #2091) shows
+	// "searching, buffering" on the TV while a station plays, and its bundle
+	// caught the controller still in LoadingPleaseWait at the next power-off,
+	// where an ST10 and a Wave were in OnShelby; nothing showed when, or
+	// whether, it ever left LoadingPleaseWait.
+	ClassDisplayState Class = "display_state" // HSM: DisplayController ChangeState(A >> B), neither side Standby
 	// ClassGroupError is the firmware refusing to activate a source because
 	// its group is not whole: EVT_SYSTEM_GROUP_STATE_IN_ERROR, which lands it
 	// straight back in standby. Measured on a speaker that is the RIGHT half
@@ -375,6 +384,9 @@ func classifyStateChange(m string) (Class, bool) {
 	case strings.HasPrefix(from, "Standby") && strings.HasPrefix(to, "Standby") &&
 		(strings.Contains(from, "Clock") || strings.Contains(to, "Clock")):
 		return ClassDisplayClock, true
+	case !strings.HasPrefix(from, "Standby") && !strings.HasPrefix(to, "Standby") &&
+		strings.Contains(m, "DisplayController:"):
+		return ClassDisplayState, true
 	}
 	return "", false
 }

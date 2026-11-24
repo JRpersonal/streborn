@@ -73,6 +73,11 @@ func TestClassify(t *testing.T) {
 		{`Oct 14 18:51:00 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(PDO_CLOCK_TIME_UPDATE) >> Standby > Main > Top [ChangeState(StandbyNoClock >> StandbyClock), StandbyNoClock(EXIT)]`, ClassDisplayClock, true},
 		{`Oct  9 21:05:10 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_STATUS_STANDBY) >> Bootup > Main > Top [ChangeState(Bootup >> StandbyNoClock), Bootup(EXIT)]`, ClassStandby, true},
 		{`Oct 13 19:48:46 spotty local0.info BoseApp[1959]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_SYSTEM_STATUS_ON) >> Standby [ChangeState(StandbyNoClock >> Idle), Standby(EXIT)]`, ClassWake, true},
+		// #2091: the display controller's states while the speaker is on.
+		// Ring only (logGap 0); the system controller's own source changes
+		// (lineSrcChange) stay unclassified.
+		{`Nov 24 13:36:49 lisa local0.info BoseApp[1802]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_NOW_PLAYING_CHANGE) >> LoadingPleaseWait > OnPlayable > Main > Top [ChangeState(LoadingPleaseWait >> OnShelby), LoadingPleaseWait(EXIT)]`, ClassDisplayState, true},
+		{`Nov 24 13:36:40 lisa local0.info BoseApp[1802]: [(002001):HSM:INFO]DisplayController: HandleMessage(EVT_SOURCE_SELECT) >> OnShelby > OnPlayable > Main > Top [ChangeState(OnShelby >> LoadingPleaseWait), OnShelby(EXIT)]`, ClassDisplayState, true},
 		{lineWake, ClassWake, true},
 		{lineSrcChange, "", false},
 		{lineLowPower, ClassPowerEvent, true},
