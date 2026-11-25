@@ -119,7 +119,9 @@ entry and then save the Spotify presets again (a preset switches back to
 the account it was saved under before each recall); nothing is promised
 about the box's native entry there. Everything else, an unknown plan
 included, gets the cohort words: Spotify refuses some accounts on players
-like (STR), even on Premium, the box's own entry still plays the account,
+like (STR), even on Premium, the box's own entry, if it shows one, still
+plays the account (only boxes that had a Spotify account linked before the
+Bose cloud shut down show it, #2119),
 and playing once from another account on the (STR) entry tells the
 account from the speaker. The words say nothing about account age, which
 is not a reliable discriminator (see above).

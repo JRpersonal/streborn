@@ -22,7 +22,10 @@
 //   premium  everything else, including "plan unknown". Spotify refuses some
 //            accounts on unlicensed players, even on Premium
 //            (docs/streaming/spotify.md, "Known limitation"). The speaker's
-//            own entry is a licensed client and keeps playing it. The
+//            own entry is a licensed client and keeps playing it, but only
+//            speakers that had a Spotify account linked before the Bose
+//            cloud shut down show that entry, so the words say "if" (#2119).
+//            The
 //            decisive test is another account on the (STR) entry: if that
 //            one plays, the speaker is fine and it is the account. Account
 //            age is not a reliable sign (old accounts were refused too), so

@@ -13,7 +13,7 @@ const INFO = {
   accountNames: { a1b2c3d4e5f6a7b8c9d0e1f2a3: 'Anna' }, audioKeyRefused: false,
   accountRefused: true, accountRefusedName: 'Anna',
 };
-const NAMED = "Spotify won't stream the account Anna on (STR). The speaker's own Spotify entry, the one without (STR), still plays it.";
+const NAMED = "Spotify won't stream the account Anna on (STR). If the speaker also shows its own Spotify entry, the one without (STR), that one still plays it.";
 
 const notice = (page) => page.locator('#statusCard #spRefused');
 const lead = (page) => page.locator('#statusCard #spRefused .sp-refused-lead');
@@ -76,7 +76,7 @@ test.describe('phone: German', () => {
   test.use({ phoneLang: 'de', phonePlaying: STR_SPOTIFY, phoneOverrides: { '/spotify/info': { body: { ...INFO, accountRefusedName: '' } } } });
 
   test('without a name it speaks about this account', async ({ phone }) => {
-    await expect(lead(phone.page)).toHaveText('Spotify sperrt dieses Konto für (STR). Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt es weiterhin.');
+    await expect(lead(phone.page)).toHaveText('Spotify sperrt dieses Konto für (STR). Zeigt der Lautsprecher auch seinen eigenen Spotify-Eintrag ohne (STR), spielt der es weiterhin.');
   });
 });
 
