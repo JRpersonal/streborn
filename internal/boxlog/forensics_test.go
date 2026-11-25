@@ -265,8 +265,13 @@ func TestObserveRingsAndRateLimit(t *testing.T) {
 func TestRingBounds(t *testing.T) {
 	f := newForensics()
 	now := time.Now()
+	// Alternate two lines: identical neighbours fold into one entry.
 	for i := 0; i < eventRingLen+50; i++ {
-		f.observe(lineUnderrun, now.Add(time.Duration(i)*time.Second))
+		l := lineUnderrun
+		if i%2 == 1 {
+			l = lineBadURL
+		}
+		f.observe(l, now.Add(time.Duration(i)*time.Second))
 	}
 	if n := len(f.eventsSnapshot()["events"].([]map[string]any)); n != eventRingLen {
 		t.Fatalf("event ring holds %d, want %d", n, eventRingLen)
@@ -343,5 +348,36 @@ func TestRedactDropsWiFiSecrets(t *testing.T) {
 	}
 	if got := Redact("passphrase check skipped"); got != "passphrase check skipped" {
 		t.Errorf("a line without a secret changed: %q", got)
+	}
+}
+
+// A line the firmware repeats every second folds into one entry with a count,
+// so a stall cannot push the display transitions before it out of the ring
+// (discussion #2091: 134 of 200 slots held one underrun line).
+func TestRepeatedLineFoldsIntoOneEntry(t *testing.T) {
+	f := newForensics()
+	now := time.Date(2026, 11, 25, 12, 38, 0, 0, time.UTC)
+	f.observe(lineSelect, now)
+	for i := 0; i < 50; i++ {
+		f.observe(lineUnderrun, now.Add(time.Duration(i+1)*time.Second))
+	}
+	f.observe(lineBadURL, now.Add(60*time.Second))
+	f.observe(lineUnderrun, now.Add(61*time.Second))
+	evs := f.eventsSnapshot()["events"].([]map[string]any)
+	if len(evs) != 4 {
+		t.Fatalf("ring holds %d entries, want 4: %v", len(evs), evs)
+	}
+	stall := evs[1]
+	if stall["class"] != string(ClassPlayUnderrun) || stall["repeats"] != 49 {
+		t.Fatalf("folded entry %v, want underrun with 49 repeats", stall)
+	}
+	if stall["at"] != now.Add(time.Second).Format(time.RFC3339) || stall["lastAt"] != now.Add(50*time.Second).Format(time.RFC3339) {
+		t.Fatalf("folded entry spans %v .. %v", stall["at"], stall["lastAt"])
+	}
+	if _, ok := evs[3]["repeats"]; ok {
+		t.Fatal("an underrun after a different line starts a new entry without a count")
+	}
+	if f.classified != 53 {
+		t.Fatalf("classified counts every line, got %d", f.classified)
 	}
 }

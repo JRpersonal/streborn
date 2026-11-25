@@ -65,7 +65,7 @@ func TestUSBDiskHandlerHearsLiveLinesNotTheReplayedRing(t *testing.T) {
 	n := 0
 	for _, e := range r.forensics.events.items() {
 		if e.Class == ClassUSBDisk {
-			n++
+			n += 1 + e.Repeats // the replayed attach and its live twin fold into one entry
 		}
 	}
 	if n != 3 {
