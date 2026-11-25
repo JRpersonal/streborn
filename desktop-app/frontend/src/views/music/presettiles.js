@@ -11,6 +11,7 @@ import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds, spotif
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
 import { syncStickerEntry } from '../../stickers/dialog.js';
+import { speakerUnitName } from '../../unitname.js';
 import {
   ROW_SIZE,
   boxPresetRows,
@@ -32,7 +33,6 @@ import {
   escapeAttr,
   escapeHtml,
   friendlyErrorText,
-  getBoxLabel,
   isKeyChrome,
   nativeSlotStale,
   orionStationPayload,
@@ -456,9 +456,10 @@ let lastLitKey = null;
 
 // lostKeyNotice explains, in the UI 2.0 preview's key line, a key left over
 // from before STR was reinstalled, with key and speaker named. The current
-// layout keeps its toast (renderPresets).
+// layout keeps its toast (renderPresets). A key of a stereo pair is named
+// with the pair (unitname.js), as the heading over the keys is.
 export function lostKeyNotice(slot, report) {
-  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const speaker = speakerUnitName(state.currentBox);
   report(t('ui2.feedback.keyLost', { n: keyNum(slot, t), speaker }), 'warn');
 }
 
@@ -474,7 +475,7 @@ export async function clearPresetKey(slot, report = null, mark = null) {
   const box = state.currentBox;
   if (!box) return;
   const n = keyNum(slot, t);
-  const speaker = getBoxLabel(box);
+  const speaker = speakerUnitName(box);
   try {
     await DeletePreset(box.host, box.port, slot);
     if (!report) { loadPresets(); return; }
@@ -505,7 +506,7 @@ export async function renameOutcome(slot, name, err, report = null, box = state.
     loadPresets();
     return;
   }
-  const speaker = box ? getBoxLabel(box) : '';
+  const speaker = speakerUnitName(box);
   if (err) {
     report(keyFailedVerdict(n, speaker, friendlyErrorText(String((err && err.message) || err))).text, 'error');
     return;
@@ -543,7 +544,7 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
     grid.removeAttribute('aria-labelledby');
     return;
   }
-  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const speaker = speakerUnitName(state.currentBox);
   const count2 = rowCount(state.presets, 2);
   const isNew = showNewMarker(rows, count2, row2Seen());
   const tab = (row) => {
@@ -686,7 +687,7 @@ async function renamePresetKey(slot) {
     // The preview's key line names the key and the speaker (null: toasts).
     const box = state.currentBox;
     const report = keyReport(slot, box);
-    if (report) report(t('ui2.feedback.keyRenaming', { n: keyNum(slot, t), speaker: getBoxLabel(box) }), 'busy');
+    if (report) report(t('ui2.feedback.keyRenaming', { n: keyNum(slot, t), speaker: speakerUnitName(box) }), 'busy');
     let failed = null;
     try {
       await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
