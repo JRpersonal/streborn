@@ -9,6 +9,7 @@ import {
   CONTROL_LENGTH,
   LARGE_CAP,
   LARGE_OUTLIERS,
+  LARGE_RATIO,
   PAGE,
   REMOTE,
   REMOTE_GRIDS,
@@ -526,6 +527,28 @@ describe('large text', () => {
     }
   });
 
+  it('never sets a name more than LARGE_RATIO times larger than the smallest, unless pinned at normal size', () => {
+    const SETS = [
+      ['1LIVE', 'Rock', 'Absolut Relax', 'Energy NRJ Digital', 'Best Of Rock.FM Alternative Rock', 'Gute-Laune-Mix'],
+      ['Jazz', 'Rock', 'SWR3', 'FIP', 'Bayern 3', 'Xyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzy'],
+      ['Jazz', 'Rock', 'Deutschlandfunk Kultur', 'Norddeutscher Rundfunk NDR Kultur', 'SWR3', 'FIP'],
+    ];
+    for (const names of SETS) {
+      for (const model of MODELS) {
+        const keys = names.map((name, i) => key(i + 1, name, i === 1 ? { name: 'Nrj Dance', kind: 'station' } : (i === 3 ? { name: 'Morning Mix Nova Extra Long', kind: 'playlist' } : null)));
+        const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+        const label = `${model}: ${names.join(', ')}`;
+        for (const [lines, normalLines] of [[keyNames(big), keyNames(normal)], [big.flatMap(own).flatMap(twiceLines), normal.flatMap(own).flatMap(twiceLines)]]) {
+          const sizes = lines.map((x) => x.size);
+          const hi = Math.max(...sizes);
+          const lo = Math.min(...sizes);
+          // Past the bound only where the larger ones are down at normal size.
+          if (hi > lo * LARGE_RATIO + 1e-6) expect(hi, label).toBeLessThanOrEqual(Math.max(...normalLines.map((x) => x.size)) + 1e-6);
+        }
+      }
+    }
+  });
+
   it('shares one size again when more names are long than may be left out', () => {
     // Three names that fit only a little above normal, or not even at normal
     // size on a narrow cell: too many to leave out, so the short ones come
@@ -554,13 +577,18 @@ describe('large text', () => {
       const isOutlier = (x) => outlier.includes(x.text.replace('…', ''));
       const others = keyNames(big).filter((x) => !isOutlier(x));
       expect(sizesOf(others), model).toHaveLength(1);
-      // Not below what those names have in normal text, and larger in fact.
-      expect(others[0].size, model).toBeGreaterThan(Math.max(...keyNames(normal).filter((x) => !isOutlier(x)).map((x) => x.size)));
-      // The same as without the outlier: it was left out of the choice.
+      // Not below what those names have in normal text.
+      const normalTop = Math.max(...keyNames(normal).filter((x) => !isOutlier(x)).map((x) => x.size));
+      expect(others[0].size, model).toBeGreaterThanOrEqual(normalTop - 1e-9);
+      // No larger than without the outlier, and within LARGE_RATIO of it
+      // unless they are down at normal size.
       const [, plain] = both([speaker('Den', model, 'dark', [...MIXED.slice(0, 5), 'Jazz'].map((name, i) => key(i + 1, name)))]);
-      expect(others[0].size, model).toBeCloseTo(sizesOf(keyNames(plain))[0], 6);
+      expect(others[0].size, model).toBeLessThanOrEqual(sizesOf(keyNames(plain))[0] + 1e-9);
+      const outlierLines = keyNames(big).filter(isOutlier);
+      const smallest = Math.min(...outlierLines.map((x) => x.size));
+      if (others[0].size > normalTop + 1e-9) expect(others[0].size, model).toBeLessThanOrEqual(smallest * LARGE_RATIO + 1e-6);
       // The outlier itself is set no larger than the others.
-      for (const x of keyNames(big).filter(isOutlier)) expect(x.size, model).toBeLessThanOrEqual(others[0].size);
+      for (const x of outlierLines) expect(x.size, model).toBeLessThanOrEqual(others[0].size);
     }
   });
 

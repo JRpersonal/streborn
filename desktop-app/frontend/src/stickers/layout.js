@@ -167,6 +167,7 @@ const LARGE_STEP = 0.1;
 // The line height of a name, in sizes.
 const NAME_LH = 1.05;
 const round3 = (v) => Math.round(v * 1000) / 1000;
+const down3 = (v) => Math.floor(v * 1000 + 1e-6) / 1000;
 
 // sizesDown lists from, from - LARGE_STEP, ... down to to, which is always
 // the last one tried. Empty when from is smaller than to.
@@ -227,7 +228,9 @@ function withSize(sizes, size, top) {
 // starts no higher than shared.name, and the pressed-twice line no higher
 // than shared.two. A name never fills more than LARGE_CAP of its height on
 // one line, so a short name does not tower over the others.
-function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity, base = s.name, also = null) {
+// shown is the size the name has where large text leaves it alone (its
+// normal fit), which the ratio bound in evenly needs to know.
+function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity, base = s.name, also = null, shown = s.name) {
   const ratio = s.two / s.name;
   const twoTop = Math.min(twoCap, shared && shared.two ? shared.two : Infinity);
   // The pressed-twice size at name size z, and whether its name fits whole.
@@ -248,9 +251,17 @@ function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity,
   const sizes = withSize(sizesDown(from, s.name), also && also.name, from);
   const fit = largestWhole(String(key.name), w, sizes, maxLines, (z) => roomFor(twiceAt(z).t), measure);
   const tw = fit && key.twice ? twiceAt(fit.size) : null;
-  if (shared && shared.probe) shared.probe.push({ size: fit ? fit.size : null, base });
-  // Only the names set at the shared size choose the pressed-twice size.
-  if (shared && shared.twos && tw && tw.fits && fit.size >= shared.name - 1e-9) shared.twos.push(tw.t);
+  if (shared && shared.probe) shared.probe.push({ size: fit ? fit.size : null, base, shown });
+  if (shared && shared.twos && key.twice) {
+    // Only the names set at the shared size choose the pressed-twice size;
+    // every pressed-twice line counts for the ratio bound.
+    if (tw && tw.fits && fit.size >= shared.name - 1e-9) shared.twos.push(tw.t);
+    // As drawn: addTwice sets a line one step smaller where its name does
+    // not fit at its size.
+    const drawn = tw || twiceAt(0);
+    shared.twosAll.push(drawn.fits ? drawn.t : drawn.t * 0.9);
+    shared.twoLows.push(low);
+  }
   return fit ? { fit, two: tw ? tw.t : low } : null;
 }
 
@@ -265,8 +276,12 @@ const LARGE_LINES = 2;
 // their own instead, so one long name does not undo large text for the rest.
 const LARGE_FLOOR = 1.2;
 export const LARGE_OUTLIERS = 2;
+// No name of a sticker is set more than this many times larger than its
+// smallest name, unless that would take the others below normal size. The
+// pressed-twice lines are bound among themselves the same way.
+export const LARGE_RATIO = 1.25;
 // What evenly hands the cells while one sticker is built in large text:
-// { probe: [] } collects every name's own largest size, { name, twos: [] }
+// { probe: [] } collects every name's own largest size, { name, twos, ... }
 // sets the names at the shared size and collects the pressed-twice sizes,
 // { name, two } is the final pass. null outside of it.
 let shared = null;
@@ -278,9 +293,11 @@ let shared = null;
 // is left out of the choice and sets itself as large as it fits on its own,
 // never larger than the others, down to normal and cut only where even that
 // does not hold it. With more outliers than that the names share the size the
-// smallest of them fits, normal size at least. The pressed-twice lines share
-// their size the same way. build makes the sticker's pieces and is called up
-// to three times.
+// smallest of them fits, normal size at least. Either way the shared size is
+// then brought down to LARGE_RATIO times the smallest name, outliers
+// included, but not below normal size: a sticker never mixes giant and tiny
+// names. The pressed-twice lines share their size the same way. build makes
+// the sticker's pieces and is called up to three times.
 function evenly(build) {
   if (!large) return build();
   try {
@@ -295,10 +312,22 @@ function evenly(build) {
     // fit whole even at normal size to normal size.
     else if (rows.length) name = Math.min(...rows.map((r) => (r.size !== null && r.size >= r.base - 1e-9 ? r.size : r.base)));
     else return first;
-    shared = { name, twos: [] };
+    // The ratio bound: an outlier sets itself as large as it fits (size), or
+    // keeps its normal fit (shown) where even normal size does not hold it.
+    const smallest = Math.min(...rows.map((r) => (r.size !== null ? r.size : r.shown)));
+    // Never below normal size: not below the sticker's base, and not below the
+    // normal size of any name that takes part (the ST30 sizes its names one by
+    // one in normal text), unless the shared fit itself is lower.
+    const normalTop = Math.max(...rows.filter((r) => r.size !== null).map((r) => r.shown));
+    const floor = Math.max(Math.max(...rows.map((r) => r.base)), Math.min(name, normalTop));
+    // Rounded down: the size steps are in thousandths, and rounding up could
+    // step past the bound.
+    name = Math.max(floor, down3(Math.min(name, LARGE_RATIO * smallest)));
+    shared = { name, twos: [], twosAll: [], twoLows: [] };
     const second = build();
     if (!shared.twos.length) return second;
-    shared = { name, two: Math.min(...shared.twos) };
+    const two = Math.max(Math.min(...shared.twoLows), down3(Math.min(Math.min(...shared.twos), LARGE_RATIO * Math.min(...shared.twosAll))));
+    shared = { name, two };
     return build();
   } finally {
     shared = null;
@@ -367,7 +396,7 @@ function rowCell(piece, key, box, s, pal, measure) {
   let textCy = cy;
   if (large && key.name) {
     const room = Math.min(box.h, box.room === undefined ? box.h : box.room);
-    const big = largeName(key, textW, textW, s, LARGE_LINES, (t) => room - (t ? t * 1.1 + u(3) : 0), measure);
+    const big = largeName(key, textW, textW, s, LARGE_LINES, (t) => room - (t ? t * 1.1 + u(3) : 0), measure, Infinity, s.name, null, fit.size);
     if (big) ({ fit, two } = big);
     textCy = box.y + room / 2;
   }
@@ -398,7 +427,7 @@ function stackCell(piece, key, box, s, pal, measure) {
     const twiceH = (t) => (t ? u(5) + t * 1.1 : 0);
     // The pressed-twice line must still fit under the head at its normal height.
     const twoCap = (box.h - head0 - u(5)) / 1.1;
-    const big = largeName(key, textW, box.w, s, LARGE_LINES, (t) => box.h - twiceH(t), measure, twoCap);
+    const big = largeName(key, textW, box.w, s, LARGE_LINES, (t) => box.h - twiceH(t), measure, twoCap, s.name, null, fit.size);
     if (big) ({ fit, two } = big);
   }
   const nameH = fit.lines.length * fit.size * NAME_LH;
@@ -433,7 +462,7 @@ function tallCell(piece, key, box, s, pal, measure) {
       // breaks a name: the names of the sticker share one size, and a short
       // name must be able to come down to the size a longer one needs. Up to
       // three lines, like normal text on this tall cell.
-      const big = largeName(key, box.w, box.w, { name: s.floor, two: s.floor * ratio }, 3, (t) => areaH - twiceH(t), measure, Infinity, s.floor, { name: fit.size, two });
+      const big = largeName(key, box.w, box.w, { name: s.floor, two: s.floor * ratio }, 3, (t) => areaH - twiceH(t), measure, Infinity, s.floor, { name: fit.size, two }, fit.size);
       if (big) ({ fit, two } = big);
     }
   }
