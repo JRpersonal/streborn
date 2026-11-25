@@ -617,7 +617,7 @@ html.ui2 #view-spotify .sp2-q-note { color: var(--u-muted); font-size: var(--u-f
 html.ui2 #view-spotify #spotifySyncBtn[aria-disabled="true"] { opacity: .6; cursor: not-allowed; }
 html.ui2 #view-spotify .sp2-acct-open { margin-top: var(--u-space-2); }
 
-/* ---------- Holding a key to change it (ui2keyedit.js) ---------- */
+/* ---------- Holding a key to save onto it (ui2keyedit.js) ---------- */
 
 /* The hold fills the bar along the key's foot in the accent colour, a little
    thicker than the classic one so it reads as the key filling up. With less

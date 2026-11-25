@@ -2741,7 +2741,7 @@
   "stickers.large": "Liels teksts",
   "stickers.largeTitle": "Izmanto brīvo vietu uz katras pogas lielākajam tekstam, kas ietilpst, pat ja uzlīme tad izskatās pārpildīta",
   "stickers.remoteHeader": "Pults",
-  "ui2.radio.keysEditHint": "Turiet pogu nospiestu vai nospiediet Shift+Enter, lai to mainītu",
+  "ui2.radio.keysEditHint": "Turiet pogu, lai saglabātu to, kas skan; labais klikšķis vai Shift+Enter to maina",
   "ui2.radio.keyEditTitle": "Mainīt pogu {{n}} ({{speaker}})",
   "ui2.radio.keyAssignTitle": "Aizpildīt pogu {{n}} ({{speaker}})",
   "ui2.radio.keyEditNow": "Šobrīd uz šīs pogas: {{name}}",

@@ -1,13 +1,16 @@
-// Hold a key to change it, in the UI 2.0 preview (views/music/ui2keyedit.js):
-// a short press plays the key, a hold of about 700 ms opens its choices under
-// the grid instead (and never also plays), an empty key opens them on a short
-// press, and the keyboard gets there with Shift+Enter or the context-menu
-// key. The quick choices stay in the card (the save of what plays, the rename
-// and clear icons); "Find a station" and "Choose a favorite" open the one key
-// editor, Speakers > the speaker > Keys and alarms
-// (shell2/speakers/keyeditor.js), with that key chosen and the station search
-// or the favourites in front. The last block checks that the current layout
-// kept its hold-to-save.
+// Hold a key to save onto it, and a key's choices, in the UI 2.0 preview
+// (views/music/ui2keyedit.js): a short press plays the key; a hold of 1.1 s
+// saves what is playing onto it, as in the classic layout (since 25 November
+// 2026, discussion #1077), and opens its choices under the grid when there is
+// nothing to save (nothing plays, or the speaker's own key); a hold never also
+// plays. A right click, a long touch and macOS Ctrl+click open the choices and
+// never save, an empty key opens them on a short press, and the keyboard gets
+// there with Shift+Enter or the context-menu key. The quick choices stay in
+// the card (the save of what plays, the rename and clear icons); "Find a
+// station" and "Choose a favorite" open the one key editor, Speakers > the
+// speaker > Keys and alarms (shell2/speakers/keyeditor.js), with that key
+// chosen and the station search or the favourites in front. The last block
+// checks that the current layout kept its hold-to-save.
 //
 //   E2E_PORT=4184 npx playwright test specs/desktop-ui2-hold-to-edit-key.spec.mjs --project=desktop
 
@@ -87,7 +90,7 @@ async function onKeysTab(page, slot) {
   await expect(page.locator('#kaeTab-radio')).toHaveAttribute('aria-selected', 'true');
 }
 
-test.describe('UI 2.0: hold a key to change it', () => {
+test.describe('UI 2.0: hold a key to save onto it, and its choices', () => {
   test.use({ ui2: true });
 
   test.describe('on the page clock', () => {
@@ -105,7 +108,7 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await expect(panel(page)).toBeHidden();
     });
 
-    test('2. a hold opens the key\'s choices, named with key and speaker, and never also plays', async ({ app, mock }) => {
+    test('2. a hold while something plays saves it onto the key, opens nothing and never also plays', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
       await expect(body(page, 4)).toContainText('Jazz24');
@@ -113,10 +116,38 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await body(page, 4).hover();
       await page.mouse.down();
       await runFor(page, 400);
-      // Held, not yet open. The run asks for less motion, so the bar stands
+      // Held, not yet saved. The run asks for less motion, so the bar stands
       // full at once instead of growing.
       await expect(tile(page, 4)).toHaveClass(/long-press/);
       expect(await barWidth(page, 4)).toBe(100);
+      // The 0.7 s of the choices hold is gone: at 0.8 s nothing happened yet.
+      await runFor(page, 400);
+      expect(await mock.count('SetPreset')).toBe(0);
+      await expect(panel(page)).toBeHidden();
+      await runFor(page, 400);
+      // Living Room plays its key 2, so the hold copies key 2 onto key 4.
+      await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 4, times: 1 });
+      await page.mouse.up();
+      await runFor(page, 2_000);
+      await expect(keyLine(page, 4)).toHaveText(en('ui2.radio.saved', { n: 4, speaker: LR.friendlyName }));
+      await expect(tile(page, 4)).toContainText('Best Of Rock.FM');
+      await expect(panel(page)).toBeHidden();
+      expect(await mock.count('PlaySlot')).toBe(0);
+      expect(await mock.count('SetPreset')).toBe(1);
+      await expect(tile(page, 4)).not.toHaveClass(/long-press/);
+    });
+
+    test('2b. a hold with nothing playing opens the key\'s choices, named with key and speaker', async ({ app, mock }) => {
+      const { page } = app;
+      await settle(page, 9_000);
+      await setPlaying(page, LR.host, 'STANDBY');
+      await runFor(page, 8_000);
+      await expect(body(page, 4)).toContainText('Jazz24');
+      await mock.resetCalls();
+      await body(page, 4).hover();
+      await page.mouse.down();
+      await runFor(page, 800);
+      await expect(tile(page, 4)).toHaveClass(/long-press/);
       await expect(panel(page)).toBeHidden();
       await runFor(page, 400);
       await expect(panel(page)).toBeVisible();
@@ -124,11 +155,11 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await expect(panel(page)).toHaveAttribute('aria-labelledby', 'ui2KeyEditTitle');
       await expect(panel(page).locator('#ui2KeyEditTitle')).toHaveText(en('ui2.radio.keyEditTitle', { n: 4, speaker: LR.friendlyName }));
       await expect(panel(page).locator('.ui2-key-edit-now')).toHaveText(en('ui2.radio.keyEditNow', { name: 'Jazz24' }));
-      // Living Room plays, so saving what plays is offered first and has the
-      // keyboard; the key's own rename and clear follow.
-      expect(await ids(page)).toEqual(['save', 'find', 'favorites', 'rename', 'clear']);
-      await expect(choice(page, 'save')).toBeFocused();
-      await expect(choice(page, 'save')).toHaveClass(/u-btn--primary/);
+      // Nothing plays, so there is nothing to save: finding a station comes
+      // first and has the keyboard; the key's own rename and clear follow.
+      expect(await ids(page)).toEqual(['find', 'favorites', 'rename', 'clear']);
+      await expect(choice(page, 'find')).toBeFocused();
+      await expect(choice(page, 'find')).toHaveClass(/u-btn--primary/);
       await expect(choice(page, 'close')).toHaveAttribute('aria-label', en('ui2.popover.close'));
       await runFor(page, 2_000);
       expect(await mock.count('PlaySlot')).toBe(0);
@@ -156,24 +187,27 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await expect(panel(page)).toBeHidden();
     });
 
-    test('10. a long touch opens the choices on its context menu, and lifting the finger does not play', async ({ app, mock }) => {
+    test('10. a long touch opens the choices on its context menu, never saves, and lifting the finger does not play', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
       await mock.resetCalls();
       await fire(page, 4, [['touchstart']]);
       // Chromium reports a long touch as a context menu at about 500 ms,
-      // before the hold itself would open the choices.
+      // before the hold itself would save: the menu ends the press, so a
+      // long touch opens the choices even while something plays.
       await runFor(page, 550);
       await fire(page, 4, [['contextmenu', { button: 2 }]]);
       await expect(panel(page)).toBeVisible();
+      await runFor(page, 1_500);
       await fire(page, 4, [['touchend']]);
       await runFor(page, 1_500);
       expect(await mock.count('PlaySlot')).toBe(0);
+      expect(await mock.count('SetPreset')).toBe(0);
       await expect(panel(page).locator('#ui2KeyEditTitle')).toHaveText(en('ui2.radio.keyEditTitle', { n: 4, speaker: LR.friendlyName }));
       await expect(tile(page, 4)).not.toHaveClass(/long-press/);
     });
 
-    test('11. macOS Ctrl+click opens the choices and does not play', async ({ app, mock }) => {
+    test('11. macOS Ctrl+click opens the choices, does not save and does not play', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
       await mock.resetCalls();
@@ -183,9 +217,10 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await runFor(page, 1_500);
       await expect(panel(page)).toBeVisible();
       expect(await mock.count('PlaySlot')).toBe(0);
+      expect(await mock.count('SetPreset')).toBe(0);
     });
 
-    test('12. a press the grid is rebuilt under does not open the choices later', async ({ app, mock }) => {
+    test('12. a press the grid is rebuilt under does not save or open the choices later', async ({ app, mock }) => {
       const { page } = app;
       await settle(page, 9_000);
       await mock.resetCalls();
@@ -200,6 +235,8 @@ test.describe('UI 2.0: hold a key to change it', () => {
       await runFor(page, 1_500);
       await expect(panel(page)).toBeHidden();
       expect(await mock.count('PlaySlot')).toBe(0);
+      // Living Room plays: without the guard the old tile's hold would save.
+      expect(await mock.count('SetPreset')).toBe(0);
     });
 
     test('13. a repaint by the status poll keeps the panel and the keyboard on its choice', async ({ app }) => {
@@ -233,7 +270,10 @@ test.describe('UI 2.0: hold a key to change it', () => {
       test.describe(`the speaker's ${kind} key`, () => {
         test.use({ scenario: key6Scenario(KEY6[kind]) });
 
-        test(`14. ${kind}: a hold fills the bar and opens the choices, without a save over the speaker's own key, and does not recall`, async ({ app, mock }) => {
+        const title = kind === 'native'
+          ? '14. native: a hold fills the bar and opens the choices, never saves over the speaker\'s own key, and does not recall'
+          : '14. lost: a hold fills the bar and saves what plays onto the key, and does not recall';
+        test(title, async ({ app, mock }) => {
           const { page } = app;
           await settle(page, 9_000);
           await expect(body(page, 6)).toContainText(KEY6[kind].name);
@@ -243,14 +283,24 @@ test.describe('UI 2.0: hold a key to change it', () => {
           await runFor(page, 400);
           await expect(tile(page, 6)).toHaveClass(/long-press/);
           expect(await barWidth(page, 6)).toBe(100);
-          await runFor(page, 400);
-          await expect(panel(page)).toBeVisible();
+          await runFor(page, 800);
+          if (kind === 'native') {
+            await expect(panel(page)).toBeVisible();
+          } else {
+            await mock.expectCalled('SetPreset', { pred: (c) => onHost(LR.host)(c) && c.args[2] === 6, times: 1 });
+          }
           await page.mouse.up();
           await runFor(page, 1_500);
-          expect(await ids(page)).toEqual(kind === 'native' ? ['find', 'favorites'] : ['save', 'find', 'favorites']);
+          if (kind === 'native') {
+            expect(await ids(page)).toEqual(['find', 'favorites']);
+            expect(await mock.count('SetPreset')).toBe(0);
+            await expect(keyLine(page, 6)).toHaveText('');
+          } else {
+            await expect(panel(page)).toBeHidden();
+            await expect(keyLine(page, 6)).not.toHaveText('');
+          }
           expect(await mock.count('PlaySlot')).toBe(0);
           expect(await mock.count('RecallBoxPreset')).toBe(0);
-          await expect(keyLine(page, 6)).toHaveText('');
         });
       });
     }
@@ -359,9 +409,13 @@ test.describe('UI 2.0: hold a key to change it', () => {
     await choice(page, 'close').click();
     await expect(panel(page)).toBeHidden();
     await expect.poll(() => focusedKey(page)).toBe('2:body');
+    // Living Room plays, and a right click still only opens the choices.
     await body(page, 1).click({ button: 'right' });
     await expect(panel(page).locator('#ui2KeyEditTitle')).toHaveText(en('ui2.radio.keyEditTitle', { n: 1, speaker: LR.friendlyName }));
+    expect(await ids(page)).toEqual(['save', 'find', 'favorites', 'rename', 'clear']);
+    await expect(choice(page, 'save')).toBeFocused();
     expect(await mock.count('PlaySlot')).toBe(0);
+    expect(await mock.count('SetPreset')).toBe(0);
   });
 
   test.describe('an empty key', () => {

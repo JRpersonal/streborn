@@ -2741,7 +2741,7 @@
   "stickers.large": "Texto grande",
   "stickers.largeTitle": "Usa el espacio libre de cada tecla para el texto más grande que quepa, aunque la pegatina se vea llena",
   "stickers.remoteHeader": "Mando a distancia",
-  "ui2.radio.keysEditHint": "Mantén pulsada una tecla o pulsa Mayús+Intro para cambiarla",
+  "ui2.radio.keysEditHint": "Mantén pulsada una tecla para guardar lo que suena; clic derecho o Mayús+Intro para cambiarla",
   "ui2.radio.keyEditTitle": "Cambiar la tecla {{n}} de {{speaker}}",
   "ui2.radio.keyAssignTitle": "Asignar la tecla {{n}} de {{speaker}}",
   "ui2.radio.keyEditNow": "Ahora en esta tecla: {{name}}",

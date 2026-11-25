@@ -2741,7 +2741,7 @@
   "stickers.large": "Large text",
   "stickers.largeTitle": "Uses the free room on every key for the largest text that fits, even if the sticker looks full",
   "stickers.remoteHeader": "Remote",
-  "ui2.radio.keysEditHint": "Hold a key or press Shift+Enter to change it",
+  "ui2.radio.keysEditHint": "Hold a key to save what plays; right-click or Shift+Enter to change it",
   "ui2.radio.keyEditTitle": "Change key {{n}} on {{speaker}}",
   "ui2.radio.keyAssignTitle": "Fill key {{n}} on {{speaker}}",
   "ui2.radio.keyEditNow": "On this key now: {{name}}",
