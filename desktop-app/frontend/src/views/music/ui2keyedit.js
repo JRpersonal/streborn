@@ -25,7 +25,8 @@
 import { t } from '../../i18n/index.js';
 import { keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
-import { $, escapeAttr, escapeHtml, getBoxLabel } from '../../utils.js';
+import { speakerUnitName } from '../../unitname.js';
+import { $, escapeAttr, escapeHtml } from '../../utils.js';
 import { saveCurrentToSlot } from './save.js';
 import { keyReport, restoreKeyFocus } from './ui2radio.js';
 
@@ -142,12 +143,15 @@ function panel() {
 }
 
 // draw fills the panel for the key and returns its signature (kind, name,
-// choices), so a repaint of the grid only redraws it when one changed.
+// choices, speaker), so a repaint of the grid only redraws it when one
+// changed. The speaker is named as the heading over the keys names it: a key
+// of a stereo pair with the pair (unitname.js).
 function draw(el, slot, box) {
   const { kind, name } = keyFromTile(tileOf(slot));
   const actions = keyEditActions(kind, playingNow());
-  const sig = `${kind}|${name}|${actions.join(',')}`;
-  el.innerHTML = keyEditHTML(keyEditWords({ kind, slot, speaker: getBoxLabel(box), name, actions }));
+  const speaker = speakerUnitName(box);
+  const sig = `${kind}|${name}|${actions.join(',')}|${speaker}`;
+  el.innerHTML = keyEditHTML(keyEditWords({ kind, slot, speaker, name, actions }));
   el.dataset.slot = String(slot);
   return sig;
 }
@@ -215,7 +219,7 @@ export function syncKeyEditor() {
   const el = $('ui2KeyEdit');
   if (!el || el.hidden || !box || box.host !== edit.host || !tileOf(edit.slot)) { closeKeyEditor(false); return; }
   const { kind, name } = keyFromTile(tileOf(edit.slot));
-  const sig = `${kind}|${name}|${keyEditActions(kind, playingNow()).join(',')}`;
+  const sig = `${kind}|${name}|${keyEditActions(kind, playingNow()).join(',')}|${speakerUnitName(box)}`;
   if (sig !== edit.sig) {
     const active = document.activeElement;
     const inside = el.contains(active);

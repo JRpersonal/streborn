@@ -24,6 +24,7 @@ import { isNativeServicePreset, nativeServiceLabel } from '../../nativeservice.j
 import { state } from '../../state.js';
 import { strBoxes } from '../../boxes.js';
 import { noteSpeakerKeys } from '../../stickers/data.js';
+import { speakerUnitName } from '../../unitname.js';
 import {
   $,
   appArtFromBoxArt,
@@ -367,7 +368,8 @@ export async function recallBoxPreset(slot, report = null) {
   const box = state.currentBox;
   if (!box) return;
   const n = keyNum(slot, t);
-  const speaker = getBoxLabel(box);
+  // A key of a stereo pair is named with the pair (unitname.js).
+  const speaker = speakerUnitName(box);
   if (report) report(t('ui2.feedback.keyStarting', { n, speaker }), 'busy');
   try {
     await RecallBoxPreset(box.host, box.port, slot);

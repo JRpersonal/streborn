@@ -136,3 +136,41 @@ describe('a key left over from before a reinstall', () => {
     expect(ui.showToast).not.toHaveBeenCalled();
   });
 });
+
+describe('a key of a stereo pair', () => {
+  // The pair's keys live on its left half; every line names the pair, the way
+  // the sidebar and the heading over the keys do, never the half (#1587).
+  const left = { host: '192.0.2.11', port: 8888, deviceID: 'AA0000000001', friendlyName: 'Left half' };
+  const right = { host: '192.0.2.12', port: 8888, deviceID: 'AA0000000002', friendlyName: 'Right half' };
+  const pair = { stereo: { id: 'pair-1', masterDeviceID: left.deviceID, name: 'Kitchen pair', members: [
+    { deviceID: left.deviceID, ip: left.host, role: 'LEFT' },
+    { deviceID: right.deviceID, ip: right.host, role: 'RIGHT' },
+  ] } };
+  beforeEach(() => {
+    state.currentBox = left;
+    state.boxes = [left, right];
+    state.zoneLive = { [left.deviceID]: pair, [right.deviceID]: pair };
+  });
+
+  it('is cleared under the name of the pair', async () => {
+    api.DeletePreset.mockResolvedValue();
+    api.GetPresets.mockResolvedValue([]);
+    const report = vi.fn();
+    await tiles.clearPresetKey(2, report);
+    expect(api.DeletePreset).toHaveBeenCalledWith(left.host, left.port, 2);
+    expect(report).toHaveBeenLastCalledWith('Key 2 of Kitchen pair (stereo) is empty now. The speaker confirmed it.', 'ok');
+  });
+
+  it('is renamed under the name of the pair', async () => {
+    presets.list = [{ slot: 2, name: 'New Name' }];
+    const report = vi.fn();
+    await tiles.renameOutcome(2, 'New Name', null, report, left);
+    expect(report).toHaveBeenLastCalledWith('Key 2 of Kitchen pair (stereo) is now called New Name. The speaker confirmed it.', 'ok');
+  });
+
+  it('left over from before a reinstall names the pair', () => {
+    const report = vi.fn();
+    tiles.lostKeyNotice(4, report);
+    expect(report).toHaveBeenCalledWith(expect.stringMatching(/^Key 4 of Kitchen pair \(stereo\) is left over/), 'warn');
+  });
+});

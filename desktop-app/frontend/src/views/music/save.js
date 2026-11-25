@@ -19,13 +19,13 @@ import { ROW_SIZE, keyNum } from '../../presetrows.js';
 import { offerPresetMove, parsePresetConflict, presetConflictNote } from '../../presetmove.js';
 import { sameBoxIdentity } from '../../groups.js';
 import { state } from '../../state.js';
+import { speakerUnitName } from '../../unitname.js';
 import {
   activeSlotFromLocation,
   appArtFromBoxArt,
   confirmWarn,
   escapeHtml,
   friendlyErrorText,
-  getBoxLabel,
   libraryPlayMatches,
   orionStationPayload,
   queueSaveFallsThrough,
@@ -40,9 +40,10 @@ import { decodeProxyUrl, loadPresets } from './presets.js';
 import { refreshStatus } from './status.js';
 
 // keyWords names a key and its speaker for the report lines of the UI 2.0
-// preview ("key 3", "Kitchen").
+// preview ("key 3", "Kitchen"). A key of a stereo pair is named with the pair,
+// "Kitchen (stereo)", as the heading over the keys is (unitname.js).
 function keyWords(slot, box = state.currentBox) {
-  return { n: keyNum(slot, t), speaker: box ? getBoxLabel(box) : '' };
+  return { n: keyNum(slot, t), speaker: speakerUnitName(box) };
 }
 
 // reportKeyFailed puts a save that did not happen into the key's own line,
