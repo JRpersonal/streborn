@@ -333,5 +333,7 @@ export function drawPage(canvas, page, { dpi = PRINT_DPI, images = new Map() } =
     ctx.stroke();
     drawText(ctx, k, page.control.caption);
   }
+  // The home screen steps: plain lines like the header's.
+  for (const tx of page.guide || []) drawText(ctx, k, tx);
   return canvas;
 }

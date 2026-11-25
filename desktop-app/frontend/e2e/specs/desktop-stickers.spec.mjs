@@ -124,28 +124,40 @@ test("there is no remote checkbox: every speaker's remote sticker is always on t
   expect(third.bottom).toBeLessThan(first.top);
 });
 
-test('Large text is off at first, lays the sheet out again when ticked and is remembered', async ({ app }) => {
+test('Large text is on at first, lays the sheet out again when unticked and is remembered', async ({ app }) => {
   const { page } = app;
   await openFromKeys(page);
-  const large = modal(page).getByRole('checkbox', { name: en('stickers.large') });
-  await expect(large).not.toBeChecked();
+  const large = () => modal(page).getByRole('checkbox', { name: en('stickers.large') });
+  await expect(large()).toBeChecked();
   await expect(modal(page).locator('label.sticker-large')).toHaveAttribute('title', en('stickers.largeTitle'));
   const sheet = () => pages(page).first().evaluate((c) => c.toDataURL());
-  const before = await sheet();
+  const big = await sheet();
 
-  await large.check();
-  await expect.poll(sheet).not.toBe(before);
-  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('1');
+  await large().uncheck();
+  await expect.poll(sheet).not.toBe(big);
+  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('0');
+  const normal = await sheet();
 
+  // Unticked stays unticked when the dialog opens again.
   await page.locator('#stickerClose').click();
   await openFromKeys(page);
-  await expect(modal(page).getByRole('checkbox', { name: en('stickers.large') })).toBeChecked();
-  await expect.poll(sheet).not.toBe(before);
+  await expect(large()).not.toBeChecked();
+  await expect.poll(sheet).toBe(normal);
 
-  // Unticked, the sheet is the normal one again.
-  await modal(page).getByRole('checkbox', { name: en('stickers.large') }).uncheck();
-  await expect.poll(sheet).toBe(before);
-  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('0');
+  // Ticked again, the sheet is the large one again.
+  await large().check();
+  await expect.poll(sheet).toBe(big);
+  expect(await page.evaluate(() => localStorage.getItem('str.stickerLarge'))).toBe('1');
+});
+
+test.describe('with Large text switched off in an earlier session', () => {
+  test.use({ preInit: "try { localStorage.setItem('str.stickerLarge', '0'); } catch (e) {}" });
+
+  test('a stored off stays off', async ({ app }) => {
+    const { page } = app;
+    await openFromKeys(page);
+    await expect(modal(page).getByRole('checkbox', { name: en('stickers.large') })).not.toBeChecked();
+  });
 });
 
 test.describe('with six speakers', () => {

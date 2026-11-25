@@ -14,7 +14,9 @@
 //                     twice: { name, kind } | null }], qr }]
 //         Every speaker also gets the 40 x 75 mm sticker for the back of its
 //         remote: there is no remote it would not fit, so it is not optional.
-// Output: { pages: [{ header, pieces, scissors, control }] }
+// Output: { pages: [{ header, pieces, scissors, control, guide }] }
+//         guide holds the text lines of the home screen steps (texts.homeScreen):
+//         on the last page under the control line, or on a page of its own.
 
 const u = (px) => px / 6;
 
@@ -154,16 +156,18 @@ export function fitName(text, maxW, size, measure) {
 
 // ---------- large text ----------
 
-// Large text (layoutStickers' large option) sets every name as large as its
-// box allows, even when the sticker then looks full: for eyes that cannot
-// read the normal sizes from where the speaker stands. Names are searched
-// from the largest size the height allows down to the normal size in these
-// steps, and the first size at which the whole name fits wins.
+// Large text (layoutStickers' large option) sets the names larger than
+// normal, for eyes that cannot read the normal sizes from where the speaker
+// stands. Names are searched from the largest size the height allows (capped
+// by LARGE_CAP) down to the normal size in these steps, and the first size at
+// which the whole name fits wins; evenly then gives all names of one sticker
+// the same size, so the sticker reads as a set.
 let large = false;
 const LARGE_STEP = 0.1;
 // The line height of a name, in sizes.
 const NAME_LH = 1.05;
 const round3 = (v) => Math.round(v * 1000) / 1000;
+const down3 = (v) => Math.floor(v * 1000 + 1e-6) / 1000;
 
 // sizesDown lists from, from - LARGE_STEP, ... down to to, which is always
 // the last one tried. Empty when from is smaller than to.
@@ -200,6 +204,13 @@ function twiceRoom(twice, w, size, measure) {
   return Math.max(0, w - at);
 }
 
+// withSize adds size to a list from sizesDown, in its place, when it is not
+// above top.
+function withSize(sizes, size, top) {
+  if (!(size > 0) || size > top + 1e-9 || sizes.some((z) => Math.abs(z - size) < 1e-9)) return sizes;
+  return [...sizes, size].sort((a, b) => b - a);
+}
+
 // largeName is the large-text name of a cell together with its pressed-twice
 // line: the largest name size from the height down to the normal one at which
 // the name fits whole. The pressed-twice line grows with the name in the
@@ -208,19 +219,119 @@ function twiceRoom(twice, w, size, measure) {
 // is the height the name has beside a pressed-twice line of size t (0: none),
 // w the name's width and w2 the pressed-twice line's. Answers { fit, two },
 // or null when no size above the normal one fits.
-function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity) {
+// base is the smallest name size that takes part in the sticker's shared
+// size (see evenly). also, where given, is { name, two }: the cell's own
+// normal sizes. The name's is tried in its place among the steps, which could
+// step over it otherwise; the pressed-twice line's is its lowest size.
+//
+// Within one sticker the names share one size (see evenly): the size search
+// starts no higher than shared.name, and the pressed-twice line no higher
+// than shared.two. A name never fills more than LARGE_CAP of its height on
+// one line, so a short name does not tower over the others.
+// shown is the size the name has where large text leaves it alone (its
+// normal fit), which the ratio bound in evenly needs to know.
+function largeName(key, w, w2, s, maxLines, roomFor, measure, twoCap = Infinity, base = s.name, also = null, shown = s.name) {
   const ratio = s.two / s.name;
+  const twoTop = Math.min(twoCap, shared && shared.two ? shared.two : Infinity);
+  // The pressed-twice size at name size z, and whether its name fits whole.
+  // The pressed-twice line never goes below its normal size, unless the
+  // shared name size is below this cell's normal one: it then keeps its
+  // proportion to that name, like the other cells' lines.
+  const low = also && also.two > 0 ? Math.max(s.two, Math.min(also.two, shared && shared.name ? round3(shared.name * ratio) : Infinity)) : s.two;
   const twiceAt = (z) => {
-    if (!key.twice) return 0;
-    const top = Math.max(s.two, Math.min(z * ratio, twoCap));
-    for (const t of sizesDown(top, s.two)) {
-      if (measure(key.twice.name, { size: t, weight: 600 }) <= loose(twiceRoom(key.twice, w2, t, measure))) return t;
+    if (!key.twice) return { t: 0, fits: true };
+    const top = Math.max(low, Math.min(z * ratio, twoTop));
+    for (const t of sizesDown(top, low)) {
+      if (measure(key.twice.name, { size: t, weight: 600 }) <= loose(twiceRoom(key.twice, w2, t, measure))) return { t, fits: true };
     }
-    return s.two;
+    return { t: low, fits: false };
   };
-  const from = roomFor(key.twice ? s.two : 0) / NAME_LH;
-  const fit = largestWhole(String(key.name), w, sizesDown(from, s.name), maxLines, (z) => roomFor(twiceAt(z)), measure);
-  return fit ? { fit, two: key.twice ? twiceAt(fit.size) : s.two } : null;
+  let from = Math.min(roomFor(key.twice ? low : 0) / NAME_LH, Math.max(base, (LARGE_CAP * roomFor(0)) / NAME_LH));
+  if (shared && shared.name) from = Math.min(from, shared.name);
+  const sizes = withSize(sizesDown(from, s.name), also && also.name, from);
+  const fit = largestWhole(String(key.name), w, sizes, maxLines, (z) => roomFor(twiceAt(z).t), measure);
+  const tw = fit && key.twice ? twiceAt(fit.size) : null;
+  if (shared && shared.probe) shared.probe.push({ size: fit ? fit.size : null, base, shown });
+  if (shared && shared.twos && key.twice) {
+    // Only the names set at the shared size choose the pressed-twice size;
+    // every pressed-twice line counts for the ratio bound.
+    if (tw && tw.fits && fit.size >= shared.name - 1e-9) shared.twos.push(tw.t);
+    // As drawn: addTwice sets a line one step smaller where its name does
+    // not fit at its size.
+    const drawn = tw || twiceAt(0);
+    shared.twosAll.push(drawn.fits ? drawn.t : drawn.t * 0.9);
+    shared.twoLows.push(low);
+  }
+  return fit ? { fit, two: tw ? tw.t : low } : null;
+}
+
+// ---------- one size per sticker ----------
+
+// The share of a cell's height one line of a large name may take at most.
+export const LARGE_CAP = 0.6;
+// The lines a large name may take.
+const LARGE_LINES = 2;
+// The shared size is not taken down below this many times the normal size
+// for the sake of up to LARGE_OUTLIERS long names: those are set smaller on
+// their own instead, so one long name does not undo large text for the rest.
+const LARGE_FLOOR = 1.2;
+export const LARGE_OUTLIERS = 2;
+// No name of a sticker is set more than this many times larger than its
+// smallest name, unless that would take the others below normal size. The
+// pressed-twice lines are bound among themselves the same way.
+export const LARGE_RATIO = 1.25;
+// What evenly hands the cells while one sticker is built in large text:
+// { probe: [] } collects every name's own largest size, { name, twos, ... }
+// sets the names at the shared size and collects the pressed-twice sizes,
+// { name, two } is the final pass. null outside of it.
+let shared = null;
+
+// evenly builds one sticker in large text so that all its names share one
+// size: the largest at which every name fits whole. A name that would take
+// that size below LARGE_FLOOR times normal (an outlier) does not pull the
+// others down, as long as there are no more than LARGE_OUTLIERS of them: it
+// is left out of the choice and sets itself as large as it fits on its own,
+// never larger than the others, down to normal and cut only where even that
+// does not hold it. With more outliers than that the names share the size the
+// smallest of them fits, normal size at least. Either way the shared size is
+// then brought down to LARGE_RATIO times the smallest name, outliers
+// included, but not below normal size: a sticker never mixes giant and tiny
+// names. The pressed-twice lines share their size the same way. build makes
+// the sticker's pieces and is called up to three times.
+function evenly(build) {
+  if (!large) return build();
+  try {
+    shared = { probe: [] };
+    const first = build();
+    const rows = shared.probe;
+    const all = rows.filter((r) => r.size !== null && r.size >= r.base - 1e-9);
+    const strong = all.filter((r) => r.size >= r.base * LARGE_FLOOR - 1e-9);
+    let name;
+    if (strong.length && rows.length - strong.length <= LARGE_OUTLIERS) name = Math.min(...strong.map((r) => r.size));
+    // Too many long names: all come down to the smallest, a name that does not
+    // fit whole even at normal size to normal size.
+    else if (rows.length) name = Math.min(...rows.map((r) => (r.size !== null && r.size >= r.base - 1e-9 ? r.size : r.base)));
+    else return first;
+    // The ratio bound: an outlier sets itself as large as it fits (size), or
+    // keeps its normal fit (shown) where even normal size does not hold it.
+    const smallest = Math.min(...rows.map((r) => (r.size !== null ? r.size : r.shown)));
+    // Never below normal size: not below the sticker's base, and not below the
+    // normal size of any name that takes part (the ST30 sizes its names one by
+    // one in normal text), unless the shared fit itself is lower.
+    const normalTop = Math.max(...rows.filter((r) => r.size !== null).map((r) => r.shown));
+    const floor = Math.max(Math.max(...rows.map((r) => r.base)), Math.min(name, normalTop));
+    // Rounded down: the size steps are in thousandths, and rounding up could
+    // step past the bound.
+    name = Math.max(floor, down3(Math.min(name, LARGE_RATIO * smallest)));
+    shared = { name, twos: [], twosAll: [], twoLows: [] };
+    const second = build();
+    if (!shared.twos.length) return second;
+    const two = Math.max(Math.min(...shared.twoLows), down3(Math.min(Math.min(...shared.twos), LARGE_RATIO * Math.min(...shared.twosAll))));
+    shared = { name, two };
+    return build();
+  } finally {
+    shared = null;
+  }
 }
 
 // ---------- one cell: number, tile, name, and the pressed-twice entry ----------
@@ -285,9 +396,7 @@ function rowCell(piece, key, box, s, pal, measure) {
   let textCy = cy;
   if (large && key.name) {
     const room = Math.min(box.h, box.room === undefined ? box.h : box.room);
-    // Up to three lines: a cell is tall enough for them once the name is
-    // allowed to fill it.
-    const big = largeName(key, textW, textW, s, 3, (t) => room - (t ? t * 1.1 + u(3) : 0), measure);
+    const big = largeName(key, textW, textW, s, LARGE_LINES, (t) => room - (t ? t * 1.1 + u(3) : 0), measure, Infinity, s.name, null, fit.size);
     if (big) ({ fit, two } = big);
     textCy = box.y + room / 2;
   }
@@ -318,7 +427,7 @@ function stackCell(piece, key, box, s, pal, measure) {
     const twiceH = (t) => (t ? u(5) + t * 1.1 : 0);
     // The pressed-twice line must still fit under the head at its normal height.
     const twoCap = (box.h - head0 - u(5)) / 1.1;
-    const big = largeName(key, textW, box.w, s, 2, (t) => box.h - twiceH(t), measure, twoCap);
+    const big = largeName(key, textW, box.w, s, LARGE_LINES, (t) => box.h - twiceH(t), measure, twoCap, s.name, null, fit.size);
     if (big) ({ fit, two } = big);
   }
   const nameH = fit.lines.length * fit.size * NAME_LH;
@@ -349,7 +458,11 @@ function tallCell(piece, key, box, s, pal, measure) {
       || fitName(key.name, box.w, s.floor, measure);
     two = Math.min(s.two, fit.size * ratio);
     if (large) {
-      const big = largeName(key, box.w, box.w, { name: fit.size, two }, 3, (t) => areaH - twiceH(t), measure);
+      // Searched down to s.floor, the size normal text shrinks to before it
+      // breaks a name: the names of the sticker share one size, and a short
+      // name must be able to come down to the size a longer one needs. Up to
+      // three lines, like normal text on this tall cell.
+      const big = largeName(key, box.w, box.w, { name: s.floor, two: s.floor * ratio }, 3, (t) => areaH - twiceH(t), measure, Infinity, s.floor, { name: fit.size, two }, fit.size);
       if (big) ({ fit, two } = big);
     }
   }
@@ -781,16 +894,17 @@ function buildGroups(speakers, measure, remoteLabel) {
     const pal = stickerPalette(kind, sp.housing);
     if (kind === 'st10') {
       groups.push({
-        pieces: [at(st10Arc(sp, idx, true, pal, measure), 0, 0), at(st10Arc(sp, idx, false, pal, measure), 0, 105), at(qrPiece(sp, idx, 118, 140, 98, 16, pal, measure), 720, 27)],
+        // Both arcs are one sticker: their six names share one size.
+        pieces: [...evenly(() => [at(st10Arc(sp, idx, true, pal, measure), 0, 0), at(st10Arc(sp, idx, false, pal, measure), 0, 105)]), at(qrPiece(sp, idx, 118, 140, 98, 16, pal, measure), 720, 27)],
         scissors: [{ x: -5, y: u(105), rot: 0 }, { x: u(720), y: 1.5, rot: 90 }],
       });
     } else if (kind === 'portable') {
       groups.push({
-        pieces: [at(portableGrid(sp, idx, pal, measure), 0, 0), at(qrPiece(sp, idx, 132, 158, 108, 20, pal, measure), 480, 0)],
+        pieces: [at(evenly(() => portableGrid(sp, idx, pal, measure)), 0, 0), at(qrPiece(sp, idx, 132, 158, 108, 20, pal, measure), 480, 0)],
         scissors: [{ x: u(480), y: u(309) + 5, rot: -90 }],
       });
     } else {
-      const piece = wideSticker(sp, idx, kind, pal, measure);
+      const piece = evenly(() => wideSticker(sp, idx, kind, pal, measure));
       const open = openWide.get(piece.h);
       if (open) {
         // The second of a pair stands on its head, straight edge to straight
@@ -847,13 +961,99 @@ const INK = '#111111';
 const REMOTE_GAP = 2 * BLEED + 3;
 const REMOTES_PER_ROW = Math.floor((AREA.x + AREA.w - BLEED - GROUP_X + REMOTE_GAP) / (REMOTE.w + REMOTE_GAP));
 
+// ---------- the home screen steps ----------
+
+// The steps from the app's "Put it on the phone's home screen" card, in two
+// columns: iPhone left, Android right. Plain text in the sheet's ink.
+const GUIDE_TITLE_FONT = HEAD_FONT;
+const GUIDE_HEAD_FONT = { size: 2.8, weight: 700 };
+const GUIDE_STEP_FONT = CAPTION_FONT;
+const GUIDE_NOTE_FONT = { size: 2.5, weight: 400 };
+// Line height as a share of the font size.
+const GUIDE_LH = 1.3;
+const GUIDE_COL_GAP = 8;
+const GUIDE_COL_W = (AREA.w - GUIDE_COL_GAP) / 2;
+// The width the step number takes before its text.
+const GUIDE_NUM_W = 4;
+const GUIDE_STEP_LINES = 4;
+const GUIDE_NOTE_LINES = 3;
+// From the control line to the top of the block: past the caption under the
+// line and a clear gap.
+export const GUIDE_TOP = 10;
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'", nbsp: ' ' };
+
+// plainText drops the markup a translated string may carry (<b>, **), so a
+// tag is never printed as text.
+export function plainText(s) {
+  return String(s || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/&(amp|lt|gt|quot|apos|#39|nbsp);/g, (_, e) => ENTITIES[e])
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// guideColumn sets one column's heading, numbered steps and note, with y
+// measured from the top of the block. Returns the lines and the height.
+function guideColumn(title, steps, note, x, measure) {
+  const items = [];
+  let y = 0;
+  const lines = (text, font, lx, w, max) => {
+    const lh = font.size * GUIDE_LH;
+    const r = wrapText(text, w, font, measure, max).lines;
+    r.forEach((line, i) => items.push({ text: line, x: lx, y: y + (i + 0.5) * lh, size: font.size, weight: font.weight, color: INK, align: 'left', maxW: w }));
+    return r.length * lh;
+  };
+  const head = plainText(title);
+  if (head) y += lines(head, GUIDE_HEAD_FONT, x, GUIDE_COL_W, 2) + 1;
+  let n = 0;
+  for (const raw of Array.isArray(steps) ? steps : []) {
+    const step = plainText(raw);
+    if (!step) continue;
+    n += 1;
+    const lh = GUIDE_STEP_FONT.size * GUIDE_LH;
+    items.push({ text: `${n}.`, x, y: y + lh / 2, size: GUIDE_STEP_FONT.size, weight: 700, color: INK, align: 'left', maxW: GUIDE_NUM_W });
+    y += lines(step, GUIDE_STEP_FONT, x + GUIDE_NUM_W, GUIDE_COL_W - GUIDE_NUM_W, GUIDE_STEP_LINES) + 0.6;
+  }
+  const foot = plainText(note);
+  if (foot) y += 0.8 + lines(foot, GUIDE_NOTE_FONT, x, GUIDE_COL_W, GUIDE_NOTE_LINES);
+  return { items, h: items.length ? y : 0 };
+}
+
+// homeScreenBlock lays out texts.homeScreen = { title, iosTitle, ios: [..],
+// iosNote, androidTitle, android: [..], androidNote } as a block the width of
+// the area. Returns { h, at(top) } where at gives the lines placed at top, or
+// null when there is nothing to show.
+export function homeScreenBlock(hs, measure) {
+  if (!hs || typeof hs !== 'object') return null;
+  const items = [];
+  let y = 0;
+  const title = plainText(hs.title);
+  if (title) {
+    const lh = GUIDE_TITLE_FONT.size * GUIDE_LH;
+    const r = wrapText(title, AREA.w, GUIDE_TITLE_FONT, measure, 2).lines;
+    r.forEach((line, i) => items.push({ text: line, x: AREA.x, y: (i + 0.5) * lh, size: GUIDE_TITLE_FONT.size, weight: GUIDE_TITLE_FONT.weight, color: INK, align: 'left', maxW: AREA.w }));
+    y = r.length * lh + 1.5;
+  }
+  const ios = guideColumn(hs.iosTitle, hs.ios, hs.iosNote, AREA.x, measure);
+  const android = guideColumn(hs.androidTitle, hs.android, hs.androidNote, AREA.x + GUIDE_COL_W + GUIDE_COL_GAP, measure);
+  if (!ios.items.length && !android.items.length) return null;
+  for (const it of [...ios.items, ...android.items]) items.push({ ...it, y: it.y + y });
+  const h = y + Math.max(ios.h, android.h);
+  return { h, at: (top) => items.map((it) => ({ ...it, y: it.y + top })) };
+}
+
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
 // translated words: the two lines of the sheet and the header of the remote
 // sticker (the speakers' stickers hold no words): { instruction, control,
-// remote }. Every speaker also gets its remote sticker. The pieces of one
-// speaker's own sticker never go on two pages; the remote stickers follow
-// them in rows of their own and carry the speaker's name. large: true sets
-// every name as large as its box allows (Large text in the dialog).
+// remote, homeScreen }. Every speaker also gets its remote sticker. The pieces
+// of one speaker's own sticker never go on two pages; the remote stickers
+// follow them in rows of their own and carry the speaker's name. large: true
+// sets every name as large as its box allows (Large text in the dialog).
+// homeScreen, when given, adds the steps that put the phone remote on a home
+// screen (see homeScreenBlock): under the last page's control line when they
+// fit there, else on one more page of their own.
 export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE, large: big = false } = {}) {
   squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
   large = !!big;
@@ -882,12 +1082,19 @@ export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQ
     const e = extent(g);
     const need = e.y1 - e.y0;
     if (page && y + need + CONTROL_H > bottom) close();
-    if (!page) { page = { header, pieces: [], scissors: [], control: null }; y = top; }
+    if (!page) { page = { header, pieces: [], scissors: [], control: null, guide: [] }; y = top; }
     const oy = y - e.y0;
     for (const p of g.pieces) page.pieces.push(Object.assign(p, { x: p.x + GROUP_X, y: p.y + oy }));
     for (const s of g.scissors) page.scissors.push({ x: s.x + GROUP_X, y: s.y + oy, rot: s.rot });
     y += need + GROUP_GAP;
   }
   close();
+  const guide = homeScreenBlock(texts.homeScreen, measure);
+  if (guide && pages.length) {
+    const last = pages[pages.length - 1];
+    const below = last.control.y + GUIDE_TOP;
+    if (below + guide.h <= bottom) last.guide = guide.at(below);
+    else pages.push({ header: [], pieces: [], scissors: [], control: null, guide: guide.at(AREA.y) });
+  }
   return { pages };
 }
