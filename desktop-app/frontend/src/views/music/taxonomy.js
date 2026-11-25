@@ -256,7 +256,8 @@ function renderLanguageOptions() {
   sorted.sort((a, b) => a.label.localeCompare(b.label));
   const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
   for (const l of sorted) {
-    const count = (l.stationcount == null) ? '' : ` (${l.stationcount})`;
+    // Say what the number is: a bare "(1234)" read as an API code (#1587).
+    const count = (l.stationcount == null) ? '' : ` (${t('search.nStations', { n: formatNumber(l.stationcount) })})`;
     opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)}${count}</option>`);
   }
   sel.innerHTML = opts.join('');
