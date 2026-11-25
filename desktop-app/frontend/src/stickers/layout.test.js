@@ -614,6 +614,103 @@ describe('pages', () => {
   });
 });
 
+describe('home screen steps', () => {
+  const many = (n, model) => Array.from({ length: n }, (_, i) => speaker(`Room ${i + 1}`, model));
+  const homeScreen = {
+    title: "Put it on the phone's home screen (4 taps)",
+    iosTitle: 'iPhone and iPad (Safari)',
+    ios: ['Scan the code.', 'Tap the share button in the bottom bar, the square with the arrow pointing up.', 'Scroll down and tap <b>Add to Home Screen</b>.', 'Tap <b>Add</b> at the top right.'],
+    iosNote: 'Safari only: on iOS, Chrome and Firefox cannot put a web app on the home screen.',
+    androidTitle: 'Android (Chrome)',
+    android: ['Scan the code and open it in Chrome.', 'Tap the three dots.', 'Tap **Install app**, or <b>Add to home screen</b> &amp; done.', 'Confirm with <b>Install</b>.'],
+    androidNote: 'Only Chrome offers the install.',
+  };
+  const withSteps = (speakers) => layoutStickers(speakers, { measure, texts: { ...texts, homeScreen } });
+  const span = (items) => ({ y0: Math.min(...items.map((x) => x.y - x.size / 2)), y1: Math.max(...items.map((x) => x.y + x.size / 2)) });
+  const lowestOf = (page) => Math.max(
+    ...page.pieces.map((p) => p.y + p.h + BLEED),
+    ...page.scissors.map((s) => s.y + SCISSORS_HALF),
+    page.control ? page.control.caption.y + page.control.caption.size / 2 : -Infinity,
+  );
+
+  it('lands on the last page under the control line when there is room', () => {
+    const plain = lay([speaker('Den', 'SoundTouch 20')]).pages;
+    const { pages } = withSteps([speaker('Den', 'SoundTouch 20')]);
+    expect(pages.length).toBe(plain.length);
+    const last = pages[pages.length - 1];
+    expect(last.guide.length).toBeGreaterThan(0);
+    expect(span(last.guide).y0).toBeGreaterThan(lowestOf(last));
+    for (const page of pages.slice(0, -1)) expect(page.guide).toEqual([]);
+    // Two columns: iPhone on the left, Android on the right.
+    const ios = last.guide.find((x) => x.text === homeScreen.iosTitle);
+    const android = last.guide.find((x) => x.text === homeScreen.androidTitle);
+    expect(ios.x).toBe(AREA.x);
+    expect(android.x).toBeGreaterThan(AREA.x + AREA.w / 2 - 1e-9);
+    expect(ios.y).toBeCloseTo(android.y, 6);
+    // The title runs over both; every line under it keeps to its column.
+    const title = last.guide.find((x) => x.text === homeScreen.title);
+    for (const x of last.guide.filter((g) => g.x < android.x && g.y > title.y)) expect(x.x + x.maxW).toBeLessThan(android.x);
+  });
+
+  it('starts one more page of its own when the last page is full', () => {
+    // Whether the block fits depends on how full the last page is: walk the
+    // speaker counts until both cases have been seen.
+    let fitted = 0;
+    let pushed = 0;
+    for (let n = 1; n <= 16; n++) {
+      const plain = lay(many(n, 'SoundTouch 10')).pages;
+      const { pages } = withSteps(many(n, 'SoundTouch 10'));
+      const prev = plain[plain.length - 1];
+      if (pages.length === plain.length) {
+        fitted += 1;
+        expect(span(pages[pages.length - 1].guide).y0).toBeGreaterThan(lowestOf(pages[pages.length - 1]));
+        continue;
+      }
+      pushed += 1;
+      expect(pages.length).toBe(plain.length + 1);
+      const own = pages[pages.length - 1];
+      expect(own.pieces).toEqual([]);
+      expect(own.scissors).toEqual([]);
+      expect(own.header).toEqual([]);
+      expect(own.control).toBeNull();
+      expect(span(own.guide).y0).toBeGreaterThanOrEqual(AREA.y - 1e-9);
+      // It did not fit under the control line of the page before.
+      const block = span(own.guide);
+      expect(prev.control.y + 10 + (block.y1 - block.y0)).toBeGreaterThan(AREA.y + AREA.h - 1);
+      expect(pages[pages.length - 2].guide).toEqual([]);
+    }
+    expect(fitted).toBeGreaterThan(0);
+    expect(pushed).toBeGreaterThan(0);
+  });
+
+  it('adds nothing when the steps are not given', () => {
+    for (const page of lay(many(3, 'SoundTouch 20')).pages) expect(page.guide).toEqual([]);
+    expect(lay(many(3, 'SoundTouch 20')).pages.length).toBe(withSteps(many(3, 'SoundTouch 20')).pages.length);
+    const empty = layoutStickers(many(2, 'SoundTouch 10'), { measure, texts: { ...texts, homeScreen: { ios: [], android: [''] } } });
+    for (const page of empty.pages) expect(page.guide).toEqual([]);
+    expect(withSteps([]).pages).toEqual([]);
+  });
+
+  it('keeps every line inside the area and prints no markup', () => {
+    for (let n = 1; n <= 16; n++) {
+      for (const page of withSteps(many(n, 'SoundTouch Portable')).pages) {
+        for (const x of page.guide) {
+          expect(x.x).toBeGreaterThanOrEqual(AREA.x - 1e-9);
+          expect(x.x + x.maxW).toBeLessThanOrEqual(AREA.x + AREA.w + 1e-9);
+          expect(x.y - x.size / 2).toBeGreaterThanOrEqual(AREA.y - 1e-9);
+          expect(x.y + x.size / 2).toBeLessThanOrEqual(AREA.y + AREA.h + 1e-9);
+          expect(measure(x.text, { size: x.size })).toBeLessThanOrEqual(x.maxW + 1e-9);
+          expect(x.text).not.toMatch(/<\/?b>|\*\*|&amp;/);
+        }
+      }
+    }
+    const text = withSteps([speaker('Den', 'SoundTouch 20')]).pages[0].guide.map((x) => x.text).join(' ');
+    expect(text).toContain('Add to Home Screen');
+    expect(text).toContain('Install app');
+    expect(text).toContain('& done');
+  });
+});
+
 describe('the remote sticker', () => {
   const bundles = import.meta.glob('../i18n/bundles/*.json', { eager: true, import: 'default' });
   const REALISTIC = [

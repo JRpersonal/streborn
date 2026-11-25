@@ -14,7 +14,9 @@
 //                     twice: { name, kind } | null }], qr }]
 //         Every speaker also gets the 40 x 75 mm sticker for the back of its
 //         remote: there is no remote it would not fit, so it is not optional.
-// Output: { pages: [{ header, pieces, scissors, control }] }
+// Output: { pages: [{ header, pieces, scissors, control, guide }] }
+//         guide holds the text lines of the home screen steps (texts.homeScreen):
+//         on the last page under the control line, or on a page of its own.
 
 const u = (px) => px / 6;
 
@@ -847,13 +849,99 @@ const INK = '#111111';
 const REMOTE_GAP = 2 * BLEED + 3;
 const REMOTES_PER_ROW = Math.floor((AREA.x + AREA.w - BLEED - GROUP_X + REMOTE_GAP) / (REMOTE.w + REMOTE_GAP));
 
+// ---------- the home screen steps ----------
+
+// The steps from the app's "Put it on the phone's home screen" card, in two
+// columns: iPhone left, Android right. Plain text in the sheet's ink.
+const GUIDE_TITLE_FONT = HEAD_FONT;
+const GUIDE_HEAD_FONT = { size: 2.8, weight: 700 };
+const GUIDE_STEP_FONT = CAPTION_FONT;
+const GUIDE_NOTE_FONT = { size: 2.5, weight: 400 };
+// Line height as a share of the font size.
+const GUIDE_LH = 1.3;
+const GUIDE_COL_GAP = 8;
+const GUIDE_COL_W = (AREA.w - GUIDE_COL_GAP) / 2;
+// The width the step number takes before its text.
+const GUIDE_NUM_W = 4;
+const GUIDE_STEP_LINES = 4;
+const GUIDE_NOTE_LINES = 3;
+// From the control line to the top of the block: past the caption under the
+// line and a clear gap.
+export const GUIDE_TOP = 10;
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'", nbsp: ' ' };
+
+// plainText drops the markup a translated string may carry (<b>, **), so a
+// tag is never printed as text.
+export function plainText(s) {
+  return String(s || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/&(amp|lt|gt|quot|apos|#39|nbsp);/g, (_, e) => ENTITIES[e])
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// guideColumn sets one column's heading, numbered steps and note, with y
+// measured from the top of the block. Returns the lines and the height.
+function guideColumn(title, steps, note, x, measure) {
+  const items = [];
+  let y = 0;
+  const lines = (text, font, lx, w, max) => {
+    const lh = font.size * GUIDE_LH;
+    const r = wrapText(text, w, font, measure, max).lines;
+    r.forEach((line, i) => items.push({ text: line, x: lx, y: y + (i + 0.5) * lh, size: font.size, weight: font.weight, color: INK, align: 'left', maxW: w }));
+    return r.length * lh;
+  };
+  const head = plainText(title);
+  if (head) y += lines(head, GUIDE_HEAD_FONT, x, GUIDE_COL_W, 2) + 1;
+  let n = 0;
+  for (const raw of Array.isArray(steps) ? steps : []) {
+    const step = plainText(raw);
+    if (!step) continue;
+    n += 1;
+    const lh = GUIDE_STEP_FONT.size * GUIDE_LH;
+    items.push({ text: `${n}.`, x, y: y + lh / 2, size: GUIDE_STEP_FONT.size, weight: 700, color: INK, align: 'left', maxW: GUIDE_NUM_W });
+    y += lines(step, GUIDE_STEP_FONT, x + GUIDE_NUM_W, GUIDE_COL_W - GUIDE_NUM_W, GUIDE_STEP_LINES) + 0.6;
+  }
+  const foot = plainText(note);
+  if (foot) y += 0.8 + lines(foot, GUIDE_NOTE_FONT, x, GUIDE_COL_W, GUIDE_NOTE_LINES);
+  return { items, h: items.length ? y : 0 };
+}
+
+// homeScreenBlock lays out texts.homeScreen = { title, iosTitle, ios: [..],
+// iosNote, androidTitle, android: [..], androidNote } as a block the width of
+// the area. Returns { h, at(top) } where at gives the lines placed at top, or
+// null when there is nothing to show.
+export function homeScreenBlock(hs, measure) {
+  if (!hs || typeof hs !== 'object') return null;
+  const items = [];
+  let y = 0;
+  const title = plainText(hs.title);
+  if (title) {
+    const lh = GUIDE_TITLE_FONT.size * GUIDE_LH;
+    const r = wrapText(title, AREA.w, GUIDE_TITLE_FONT, measure, 2).lines;
+    r.forEach((line, i) => items.push({ text: line, x: AREA.x, y: (i + 0.5) * lh, size: GUIDE_TITLE_FONT.size, weight: GUIDE_TITLE_FONT.weight, color: INK, align: 'left', maxW: AREA.w }));
+    y = r.length * lh + 1.5;
+  }
+  const ios = guideColumn(hs.iosTitle, hs.ios, hs.iosNote, AREA.x, measure);
+  const android = guideColumn(hs.androidTitle, hs.android, hs.androidNote, AREA.x + GUIDE_COL_W + GUIDE_COL_GAP, measure);
+  if (!ios.items.length && !android.items.length) return null;
+  for (const it of [...ios.items, ...android.items]) items.push({ ...it, y: it.y + y });
+  const h = y + Math.max(ios.h, android.h);
+  return { h, at: (top) => items.map((it) => ({ ...it, y: it.y + top })) };
+}
+
 // layoutStickers places every speaker's pieces on A4 pages. texts carries the
 // translated words: the two lines of the sheet and the header of the remote
 // sticker (the speakers' stickers hold no words): { instruction, control,
-// remote }. Every speaker also gets its remote sticker. The pieces of one
-// speaker's own sticker never go on two pages; the remote stickers follow
-// them in rows of their own and carry the speaker's name. large: true sets
-// every name as large as its box allows (Large text in the dialog).
+// remote, homeScreen }. Every speaker also gets its remote sticker. The pieces
+// of one speaker's own sticker never go on two pages; the remote stickers
+// follow them in rows of their own and carry the speaker's name. large: true
+// sets every name as large as its box allows (Large text in the dialog).
+// homeScreen, when given, adds the steps that put the phone remote on a home
+// screen (see homeScreenBlock): under the last page's control line when they
+// fit there, else on one more page of their own.
 export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQUEEZE, large: big = false } = {}) {
   squeeze = by > 0 && by <= 1 ? by : SQUEEZE;
   large = !!big;
@@ -882,12 +970,19 @@ export function layoutStickers(speakers, { measure, texts = {}, squeeze: by = SQ
     const e = extent(g);
     const need = e.y1 - e.y0;
     if (page && y + need + CONTROL_H > bottom) close();
-    if (!page) { page = { header, pieces: [], scissors: [], control: null }; y = top; }
+    if (!page) { page = { header, pieces: [], scissors: [], control: null, guide: [] }; y = top; }
     const oy = y - e.y0;
     for (const p of g.pieces) page.pieces.push(Object.assign(p, { x: p.x + GROUP_X, y: p.y + oy }));
     for (const s of g.scissors) page.scissors.push({ x: s.x + GROUP_X, y: s.y + oy, rot: s.rot });
     y += need + GROUP_GAP;
   }
   close();
+  const guide = homeScreenBlock(texts.homeScreen, measure);
+  if (guide && pages.length) {
+    const last = pages[pages.length - 1];
+    const below = last.control.y + GUIDE_TOP;
+    if (below + guide.h <= bottom) last.guide = guide.at(below);
+    else pages.push({ header: [], pieces: [], scissors: [], control: null, guide: guide.at(AREA.y) });
+  }
   return { pages };
 }
