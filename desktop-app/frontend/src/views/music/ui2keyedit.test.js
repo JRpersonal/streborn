@@ -1,6 +1,7 @@
-// Hold a key to change it (UI 2.0 preview): the gesture, the choices per kind
-// of key and the words of the panel. The panel itself is checked in the
-// browser (e2e/specs/desktop-ui2-hold-to-edit-key.spec.mjs).
+// Hold a key to save onto it, and a key's choices (UI 2.0 preview): what a
+// hold does, the gestures, the choices per kind of key and the words of the
+// panel. The panel itself is checked in the browser
+// (e2e/specs/desktop-ui2-hold-to-edit-key.spec.mjs).
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -12,8 +13,9 @@ vi.mock('./save.js', () => ({ saveCurrentToSlot: vi.fn() }));
 vi.mock('../../shell2/speakers/index.js', () => ({ openSpeakers: vi.fn(() => true) }));
 
 const {
-  HOLD_TO_EDIT_MS,
+  HOLD_TO_SAVE_MS,
   choiceToKeep,
+  holdAction,
   KEY_KINDS,
   isKeyEditGesture,
   keyEditActions,
@@ -28,21 +30,50 @@ setLocale('en');
 const src = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
 
 describe('the hold', () => {
-  it('opens the choices after about 700 ms, sooner than the current layout saves', () => {
-    expect(HOLD_TO_EDIT_MS).toBe(700);
+  it('takes as long as the current layout\'s hold-to-save, 1.1 s', () => {
+    expect(HOLD_TO_SAVE_MS).toBe(1100);
     expect(src('./presettiles.js')).toContain('const LONG_PRESS_MS = 1100;');
   });
 
-  it('a context menu ends the press it interrupts, so the release does not also play', () => {
+  it('saves what plays onto a station, empty or lost key', () => {
+    expect(holdAction('station', true)).toBe('save');
+    expect(holdAction('empty', true)).toBe('save');
+    expect(holdAction('lost', true)).toBe('save');
+  });
+
+  it('opens the choices when nothing plays, and never saves over the speaker\'s own key', () => {
+    for (const kind of KEY_KINDS) expect(holdAction(kind, false)).toBe('menu');
+    expect(holdAction('native', true)).toBe('menu');
+  });
+
+  it('saves exactly where the choices offer "save"', () => {
+    for (const kind of KEY_KINDS) {
+      for (const playing of [true, false]) {
+        expect(keyEditActions(kind, playing).includes('save')).toBe(holdAction(kind, playing) === 'save');
+      }
+    }
+  });
+
+  it('saves through the same path as the choice "Save what is playing", reported in the key\'s line', () => {
+    const body = src('./ui2keyedit.js');
+    const opts = body.slice(body.indexOf('export function ui2KeyHoldOpts'));
+    expect(opts).toContain("holdAction(kind, playingNow()) === 'save'");
+    expect(opts).toContain('saveCurrentToSlot(slot, keyReport(slot))');
+    expect(opts).toContain('onHold: hold, onMenu: open');
+  });
+
+  it('a context menu opens the choices, never saves, and ends the press it interrupts', () => {
     const body = src('./presettiles.js');
     const menu = body.slice(body.indexOf("el.addEventListener('contextmenu'"));
     expect(menu.indexOf('cancel();')).toBeGreaterThan(-1);
-    expect(menu.indexOf('cancel();')).toBeLessThan(menu.indexOf('opts.onHold();'));
+    expect(menu.indexOf('cancel();')).toBeLessThan(menu.indexOf('opts.onMenu();'));
+    expect(menu.slice(0, menu.indexOf('});'))).not.toContain('onHold');
+    expect(body).toContain('if (opts.onMenu) {');
     // Only one listener opens the choices on a context menu (the press path's).
     expect(src('./ui2radio.js')).not.toContain("addEventListener('contextmenu'");
   });
 
-  it('drops a hold whose tile a rebuilt grid replaced, instead of opening later', () => {
+  it('drops a hold whose tile a rebuilt grid replaced, instead of saving later', () => {
     expect(src('./presettiles.js')).toContain('if (opts.onHold && !el.isConnected) { cancel(); return; }');
   });
 

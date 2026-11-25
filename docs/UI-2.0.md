@@ -171,7 +171,27 @@ releases later.
   Radio source in front: the keyboard in the station search, or on the first
   favourite. Until 15 November they led to a station's "Put on key" on Radio,
   a second way to write a key from a choice. The classic layout keeps its
-  hold-to-save.
+  hold-to-save. The hold itself was reversed on 25 November, see the next
+  entry; the card and its choices stay.
+- **Holding a key saves what is playing again** (25 November 2026,
+  discussion #1077). Testers expected the hold to do what it does in the
+  classic layout and on the speaker itself, and found the extra click on
+  "Save what is playing" after a hold surprising. So a hold of 1.1 s (the
+  classic hold time; the hold writes to the speaker, so it keeps the guard
+  against a slow tap, the 0.7 s is gone) saves what is playing straight onto
+  a key with a station, an empty key or a key left over from a reinstall,
+  through the same path as the card's save, and the key's own line reports
+  it. It never saves over the speaker's own key (a Deezer mix), and it needs
+  something playing: otherwise the hold opens the key's choices, as before,
+  so it always does something visible (`holdAction` in
+  `views/music/ui2keyedit.js`). The card stays one gesture away: a right
+  click (macOS Ctrl+click), and from the keyboard Shift+Enter, the
+  context-menu key or Shift+F10; a short press on an empty key opens it too.
+  The context menu only ever opens the card. A long touch fires that context
+  menu at about 0.5 s in Chromium, before the hold time, so on a touch screen
+  a long touch opens the card rather than saving. A hold that fired never
+  also plays, and a hold whose key the status poll redrew under it is
+  dropped instead of saving.
 
 ## What we add
 
@@ -207,7 +227,7 @@ releases later.
   (folder by folder: a folder or a song) and Spotify (the playlists, albums
   and artists the speaker played lately). One key is chosen, the first empty
   one to start with, and the hint says what a save would replace; coming from
-  a hold on a Radio key, that key is chosen (`openSpeakers('speaker', { key })`,
+  a Radio key's choices, that key is chosen (`openSpeakers('speaker', { key })`,
   `aimKeyEditor`). "Put
   what's playing on key N" keeps every source the speaker agent can keep
   (`POST /api/box/save-playing`; Spotify, Pandora and iHeartRadio through

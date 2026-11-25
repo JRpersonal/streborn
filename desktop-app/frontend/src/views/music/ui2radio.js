@@ -284,7 +284,7 @@ export function syncUi2Keys() {
     }
     body.addEventListener('keydown', (e) => {
       if (e.target !== body || (e.key !== 'Enter' && e.key !== ' ')) return;
-      // Shift+Enter is the keyboard's hold (wireKeyEdit), never a play.
+      // Shift+Enter opens the key's choices (wireKeyEdit), never a play.
       if (e.shiftKey) return;
       e.preventDefault();
       // The tile's own press path (presettiles.js attachPresetHandlers): a

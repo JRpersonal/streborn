@@ -2741,7 +2741,7 @@
   "stickers.large": "Великий текст",
   "stickers.largeTitle": "Використовує вільне місце на кожній кнопці для найбільшого тексту, що вміщується, навіть якщо наліпка тоді виглядає переповненою",
   "stickers.remoteHeader": "Пульт",
-  "ui2.radio.keysEditHint": "Утримуйте кнопку або натисніть Shift+Enter, щоб змінити її",
+  "ui2.radio.keysEditHint": "Утримуйте кнопку, щоб зберегти те, що грає; правий клік або Shift+Enter змінює її",
   "ui2.radio.keyEditTitle": "Змінити кнопку {{n}} ({{speaker}})",
   "ui2.radio.keyAssignTitle": "Заповнити кнопку {{n}} ({{speaker}})",
   "ui2.radio.keyEditNow": "Зараз на цій кнопці: {{name}}",

@@ -2741,7 +2741,7 @@
   "stickers.large": "Testo grande",
   "stickers.largeTitle": "Usa lo spazio libero su ogni tasto per il testo più grande che ci sta, anche se l'adesivo sembra pieno",
   "stickers.remoteHeader": "Telecomando",
-  "ui2.radio.keysEditHint": "Tieni premuto un tasto o premi Maiusc+Invio per modificarlo",
+  "ui2.radio.keysEditHint": "Tieni premuto un tasto per salvare ciò che suona; clic destro o Maiusc+Invio per modificarlo",
   "ui2.radio.keyEditTitle": "Modifica il tasto {{n}} su {{speaker}}",
   "ui2.radio.keyAssignTitle": "Assegna il tasto {{n}} su {{speaker}}",
   "ui2.radio.keyEditNow": "Ora su questo tasto: {{name}}",

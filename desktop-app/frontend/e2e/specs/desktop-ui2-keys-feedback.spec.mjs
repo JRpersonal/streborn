@@ -1,6 +1,6 @@
 // The key tiles of the UI 2.0 preview report in their own line (#1286 phase 5,
 // docs/UI-2.0.md rules 2 and 3): a recall the speaker refused, a save from a
-// hold (the hold opens the key's choices, saving what plays is the first),
+// hold (the hold saves what plays, as in the classic layout),
 // a rename and the Transfer say what happened where it happened, named with
 // the key and the speaker, done only after the speaker's read-back, and the
 // keyboard stays on the key. The last block checks the current layout.
@@ -27,13 +27,12 @@ async function holdKey(page, slot) {
   await page.mouse.up();
 }
 
-// holdToSave is the same save in the UI 2.0 preview, where a hold opens the
-// key's choices (ui2keyedit.js) and saving what plays is the first of them.
+// holdToSave is the same save in the UI 2.0 preview, where the hold saves
+// what plays straight onto the key too (ui2keyedit.js holdAction, since 25
+// November 2026), and opens no choices.
 async function holdToSave(page, slot) {
   await holdKey(page, slot);
-  const save = page.locator('#ui2KeyEdit [data-ke="save"]');
-  await expect(save).toBeFocused();
-  await save.click();
+  await expect(page.locator('#ui2KeyEdit')).toBeHidden();
 }
 
 // Key 6 is not one of STR's keys but the speaker's own (a Deezer mix), which

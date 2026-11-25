@@ -2741,7 +2741,7 @@
   "stickers.large": "Didelis tekstas",
   "stickers.largeTitle": "Panaudoja laisvą vietą ant kiekvieno mygtuko didžiausiam tekstui, kuris telpa, net jei lipdukas tada atrodo perpildytas",
   "stickers.remoteHeader": "Pultelis",
-  "ui2.radio.keysEditHint": "Palaikykite mygtuką nuspaudę arba paspauskite Shift+Enter, kad jį pakeistumėte",
+  "ui2.radio.keysEditHint": "Palaikykite mygtuką, kad įrašytumėte tai, kas groja; dešinysis spustelėjimas arba Shift+Enter jį pakeičia",
   "ui2.radio.keyEditTitle": "Keisti mygtuką {{n}} ({{speaker}})",
   "ui2.radio.keyAssignTitle": "Užpildyti mygtuką {{n}} ({{speaker}})",
   "ui2.radio.keyEditNow": "Dabar šiame mygtuke: {{name}}",
