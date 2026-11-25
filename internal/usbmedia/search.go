@@ -10,8 +10,9 @@ import (
 // Searching the stick (discussion #1136, 2026-11-22: "searching music servers
 // does not display any results for the USB stick").
 //
-// The stick has no index and no tags: a song's title is its file name and the
-// only grouping is the folders it sits in. So a search reads the directories,
+// The stick has no index: a song's title is its file name and the only
+// grouping a walk can see is the folders it sits in (tags are read for the
+// hits handed out, tags.go, never during the walk). So a search reads the directories,
 // the same one-directory reads a Browse makes, and matches the file names and
 // the folder names on the way to each file. No file is opened or stat'ed, and
 // nothing is kept between searches: a stick that nobody searches costs nothing.

@@ -207,17 +207,26 @@ const usbRemountRetryGap = time.Minute
 // gave the stick no power" (musb VBUS_ERROR, live on a mojo ST30 in #119,
 // 2026-11-23). dmesg is read once per bundle, never on a timer.
 func (s *Server) USBMusicDebug() any {
-	return usbMusicDebugView{
+	v := usbMusicDebugView{
 		usbMusicSnapshot: s.usbRefresh(false),
 		KernelUSB:        usbKernelLines(),
 	}
+	s.usb.mu.Lock()
+	if s.usb.lib != nil {
+		v.TagReads = s.usb.lib.TagReads()
+	}
+	s.usb.mu.Unlock()
+	return v
 }
 
 // usbMusicDebugView is the usb_music section: the snapshot the apps also get,
-// plus the kernel lines only a bundle needs.
+// plus what only a bundle needs.
 type usbMusicDebugView struct {
 	usbMusicSnapshot
 	KernelUSB []string `json:"kernel_usb,omitempty"`
+	// TagReads is how many songs of the served stick had their tag read
+	// (usbmedia.Library.AddTags), cached reads not counted.
+	TagReads int64 `json:"tag_reads,omitempty"`
 }
 
 // usbDmesgFn reads the kernel ring buffer. A seam for the tests.
