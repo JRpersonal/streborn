@@ -10,9 +10,10 @@
 //     never be mistaken for each other;
 //   - every path the LAN can name is resolved through an os.Root, so neither
 //     "..", an absolute path nor a symlink can leave the stick;
-//   - a Browse reads exactly one directory, on request, and never stats or
-//     parses the files in it, so a 64 GB stick costs nothing until a user
-//     opens a folder, and nothing at all when nobody does.
+//   - a Browse reads exactly one directory, on request, plus the tag head of
+//     the songs on the page it hands out (tags.go, bounded per file and per
+//     page), so a 64 GB stick costs nothing until a user opens a folder, and
+//     nothing at all when nobody does.
 //
 // The package never writes to the stick. Detection (detect.go) reads sysfs,
 // /proc/mounts and the first sector of the partition; serving (cds.go) reads
@@ -29,6 +30,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -174,6 +177,11 @@ type Entry struct {
 	// when the folder has none. Found in the one directory read, never by a
 	// stat.
 	Cover string
+	// Artist and Album are what the song's own tag names, "" until AddTags
+	// read it and when the tag names none. Without a tag album the song is
+	// listed with its folder as the album (FileAlbum).
+	Artist string
+	Album  string
 }
 
 // Parent returns the object id of the folder an object id sits in: "0" for a
@@ -197,6 +205,11 @@ const MaxDirEntries = 10000
 type Library struct {
 	root  *os.Root
 	names nameCodec
+
+	// The tags read so far (tags.go), by the path they were asked for.
+	tagMu    sync.Mutex
+	tagCache map[string]cachedTags
+	tagReads atomic.Int64
 }
 
 // Open opens the stick mounted at dir, with the file name charset unknown

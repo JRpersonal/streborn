@@ -139,15 +139,38 @@ it cannot play from a stick, instead of failing.
   Search (next point). One Browse reads one directory (at most 10,000 entries), never stats or opens the files in it:
   titles are file names without the extension, the album is the folder's
   name, the cover is `cover`/`folder`/`front`/`albumart` `.jpg/.jpeg/.png`
-  in the folder. No tags are read, so the listing carries no durations
-  (Lengths, below). Order is natural (`2 x` before `10 x`), folders first. Dot
-  files, `._*` and the Windows system folders are hidden.
+  in the folder. The artist and the album come from the songs' tags (next
+  point); the listing carries no durations (Lengths, below). Order is natural
+  (`2 x` before `10 x`), folders first. Dot files, `._*` and the Windows
+  system folders are hidden.
+- **Tags** (`internal/usbmedia/tags.go`, discussion #1136, 2026-11-25: a
+  stick song showed no artist in Now Playing on the app and the phone page,
+  while the same song from a NAS did). A Browse page, a Search page and a
+  BrowseMetadata of one song read the tag of each song they hand out, and
+  only those: never a search walk, never at boot. Per file: the first 4 KB in
+  one read, then single frame or box headers past them (a cover picture in
+  front of the text is stepped over, not read), at most 64 KB and 64 reads.
+  Per page: at most 2 s (`usbmedia.ListingTagBudget`), after which the rest of
+  the page goes out labelled by path; what was read is cached in memory by
+  path, size and modification time (at most 4000 songs, about 1 MB), so the
+  next look goes further and costs only an open and a stat per song. Read:
+  ID3v2.2/2.3/2.4 with ID3v1 as the fallback (MP3, AAC), the FLAC
+  `VORBIS_COMMENT` block, the Ogg Vorbis and Opus comment header, the M4A
+  `ilst` (wherever `moov` sits). The artist is `TPE1`/`ARTIST`/`©ART`, the
+  album artist when there is none; it goes out as `upnp:artist` and
+  `dc:creator`. The album is the tag's, the folder's name when the tag names
+  none. The title stays the file name, which the order and every saved key go
+  by. A play that arrives without an artist (an older app, a key saved from
+  the stick before this, a replay) gets the tag's too
+  (`stickTagLabel` in `internal/webui/tracklabel.go`). `tag_reads` in the
+  debug state counts the songs read.
 - **Search** reads the stick's directories on the agent (the same reads a
   Browse makes, no file opened, nothing cached) and matches file names and
   folder names, case-insensitive: a title search the file name, an artist or
-  album search the names of the folders on the way to the file (the stick has
-  no tags, so `Artist/Album/` or `Artist - Album/` folders are what an artist
-  search finds), "any" both. At most 3000 folders, 16 levels and 2000 hits
+  album search the names of the folders on the way to the file (a search
+  reads no tag, so `Artist/Album/` or `Artist - Album/` folders are what an
+  artist search finds; the hits handed out are then labelled from their tags
+  like a Browse page), "any" both. At most 3000 folders, 16 levels and 2000 hits
   per search. The phone page searches its own stick directly
   (`internal/webui/usbsearch.go`; a search never mounts, so a Portable stick
   is searched once the Library has been opened); the desktop app asks the
@@ -273,7 +296,8 @@ firmware's mount to read-only and `/proc/mounts` shows it), `remount_error`
 (why the last attempt failed, while the mount is still `rw`),
 `last_kernel_event` / `last_kernel_event_at` (`attached` or `gone`, the last
 kernel USB disk line), `last_decoder_error` (the last stick file the speaker
-could not decode), `checked_at`, `checks`. The kernel lines themselves are in
+could not decode), `checked_at`, `checks`, `tag_reads` (songs whose tag was
+read, cache hits not counted). The kernel lines themselves are in
 `box_syslog_events` as class `usb_disk`. The agent log has one INFO line per
 change of state (`usb music: ...`), one for the remount (or one WARN for its
 failure), and one per kernel attach round, never one per request.
@@ -285,13 +309,14 @@ bytes). Nothing touches NAND at run time.
 
 ### Deferred
 
-- **Tags, and lengths in the listing.** No ID3/FLAC/MP4 tag is read, so a
-  track has no artist and no length in the DIDL. The length is read from the
-  file when it is played instead (Lengths, under How it works), which gives
-  the progress bar and the on-time folder advance; a CBR MP3 without a
-  Xing/Info frame, raw AAC and WMA still play without one. Reading the first
-  64 KB of the visible page's files is the next step if lengths or artists in
-  the listing itself are asked for.
+- **Lengths in the listing, and tags in the search.** The listing carries
+  no length: it is read from the file when it is played instead (Lengths,
+  under How it works), which gives the progress bar and the on-time folder
+  advance; a CBR MP3 without a Xing/Info frame, raw AAC and WMA still play
+  without one. The artist and album do come from the tags now (Tags, under
+  How it works), but only for the page handed out: a search still matches
+  file and folder names, never a tag, because it would have to open every
+  file it walks. WAV (`LIST INFO`, `id3 `) and WMA (ASF) tags are not read.
 - **SSDP and the native `STORED_MUSIC` source** (stage 2, Q4): the stick is
   not visible to the Bose app or to other speakers' own menus.
 - **Hot-plug events.** No netlink listener; the kernel's own syslog lines
@@ -648,9 +673,9 @@ agent binary is about 20 MB.
 - **Lazy listing, no full index.** Browse reads exactly one directory and
   stats nothing below it. Titles come from file names and albums from
   folder names. Cover art is `folder.jpg` / `cover.jpg` in the folder, one
-  stat per Browse. Tags (ID3v2, FLAC Vorbis comment, MP4 `ilst`) are
-  deferred. If they come later, read them only for the visible page, cap
-  each read at the first 64 KB, and never during a walk.
+  stat per Browse. Tags (ID3v2, FLAC Vorbis comment, MP4 `ilst`) are read
+  only for the visible page, capped at 64 KB per file, and never during a
+  walk (v1: Tags, under How it works; the tag cache lives in RAM only).
 - **Search** uses the existing bounded walk (`dlna/walksearch.go`, depth
   and hit ceilings), started only by a user's query.
 

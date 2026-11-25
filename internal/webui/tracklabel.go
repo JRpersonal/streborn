@@ -1,9 +1,11 @@
 package webui
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/usbmedia"
 )
 
 // Artist and album of a single library track, whichever way it was started
@@ -94,11 +96,63 @@ func (s *Server) settlePresetTrackLabel(p *presets.Preset) string {
 // ones stored on it, else what this agent knows of the same file (a key saved
 // before they were kept). recovered names where the latter came from and is
 // "" for a stored label and when there is none.
+//
+// A song on this speaker's USB stick that still has no artist then gets the
+// one its tag names (stickTagLabel): a key saved from the stick before its
+// listing read tags carries the folder as its album and no artist.
 func (s *Server) keyTrackLabel(p presets.Preset) (artist, album, recovered string) {
-	if artist, album = cleanTrackText(p.Artist), cleanTrackText(p.Album); artist != "" || album != "" {
-		return artist, album, ""
+	if artist, album = cleanTrackText(p.Artist), cleanTrackText(p.Album); artist == "" && album == "" {
+		artist, album, recovered = s.knownTrackLabel(p.StreamURL)
 	}
-	return s.knownTrackLabel(p.StreamURL)
+	if artist == "" {
+		if a, al := s.stickTagLabel(p.StreamURL, album); a != "" {
+			if recovered == "" && album == "" {
+				recovered = "the song's tag"
+			}
+			artist, album = a, al
+		}
+	}
+	return artist, album, recovered
+}
+
+// stickTagLabel returns the artist the tag of a song on this speaker's own
+// USB stick names, and the tag's album, or album when the tag names none
+// (#1136). It answers "" and album unchanged for any other URL, for a stick
+// that is not served and for a song whose tag names no artist. The read is
+// one bounded header read on the local stick (usbmedia.ReadTags), and a song
+// read before comes from the stick's tag cache; the stick is not looked for
+// again here.
+//
+// It backs the plays that arrive without an artist: a key saved from the
+// stick before its listing carried one, a client older than the listing that
+// does, a replay from Recently played.
+func (s *Server) stickTagLabel(raw, album string) (string, string) {
+	if !isUSBLoopbackFile(raw) {
+		return "", album
+	}
+	s.usb.mu.Lock()
+	lib := s.usb.lib
+	s.usb.mu.Unlock()
+	if lib == nil {
+		return "", album
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", album
+	}
+	p := strings.TrimPrefix(u.Path, usbmedia.FilePrefix)
+	if p == u.Path || p == "" {
+		return "", album
+	}
+	tags, ok := lib.TagsOf(p)
+	artist := cleanTrackText(tags.Artist)
+	if !ok || artist == "" {
+		return "", album
+	}
+	if a := cleanTrackText(tags.Album); a != "" {
+		album = a
+	}
+	return artist, album
 }
 
 // storeKeyTrackLabel writes a label recovered at a recall onto the key it was

@@ -11,6 +11,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The ContentDirectory the stick is served as: a device description, the
@@ -114,6 +115,12 @@ const (
 // can test (ParseCriteria).
 const SearchCaps = "dc:title,upnp:artist,upnp:album,dc:creator,upnp:genre"
 
+// ListingTagBudget bounds the time one listing page (a Browse, a Search
+// page) spends reading the tags of its songs (Library.AddTags). A slow stick
+// hands out the rest of the page labelled by path; the tags read so far stay
+// cached, so the next look at the page goes further.
+const ListingTagBudget = 2 * time.Second
+
 // maxSOAPBody bounds one control request. A Browse is a few hundred bytes.
 const maxSOAPBody = 16 << 10
 
@@ -206,7 +213,9 @@ func (l *Library) browse(w http.ResponseWriter, body []byte, base string, info I
 		if id == "0" {
 			e.Title = info.FriendlyName
 		}
-		writeEntry(&didl, e, base, true)
+		one := []Entry{e}
+		l.AddTags(one, time.Now().Add(ListingTagBudget))
+		writeEntry(&didl, one[0], base, true)
 		returned, total = 1, 1
 	case "BrowseDirectChildren":
 		count := a.RequestedCount
@@ -218,6 +227,7 @@ func (l *Library) browse(w http.ResponseWriter, body []byte, base string, info I
 			faultFor(w, err)
 			return
 		}
+		l.AddTags(page, time.Now().Add(ListingTagBudget))
 		for _, e := range page {
 			writeEntry(&didl, e, base, false)
 		}
@@ -272,6 +282,8 @@ func (l *Library) search(ctx context.Context, w http.ResponseWriter, body []byte
 	if len(hits) > count {
 		hits = hits[:count]
 	}
+	// The tags of the page handed out only: the walk itself matched on paths.
+	l.AddTags(hits, time.Now().Add(ListingTagBudget))
 	var didl strings.Builder
 	didl.WriteString(didlHead)
 	for _, e := range hits {
@@ -299,9 +311,12 @@ func faultFor(w http.ResponseWriter, err error) {
 const didlHead = `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">`
 
 // writeEntry appends one container or item. A folder's title is its name, a
-// file's its name without the extension, and a file's album the folder it sits
-// in: no tag is read (docs/streaming/usb-stick.md, section 5). Ids and titles
-// are the UTF-8 text, the res and cover URLs the on-disk bytes (charset.go).
+// file's its name without the extension. A file's artist and album are what
+// its tag names (AddTags, tags.go), the album the folder it sits in when the
+// tag names none (docs/streaming/usb-stick.md). The artist goes out as
+// upnp:artist, which the STR clients read, and as dc:creator for generic
+// clients. Ids and titles are the UTF-8 text, the res and cover URLs the
+// on-disk bytes (charset.go).
 func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 	parent := Parent(e.ID)
 	if e.ID == "0" {
@@ -318,7 +333,14 @@ func writeEntry(b *strings.Builder, e Entry, base string, self bool) {
 	}
 	fmt.Fprintf(b, `<item id="%s" parentID="%s" restricted="1">`, esc(e.ID), esc(parent))
 	b.WriteString(`<dc:title>` + esc(e.Title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>`)
-	if album := FileAlbum(e.ID); album != "" {
+	if e.Artist != "" {
+		b.WriteString(`<upnp:artist>` + esc(e.Artist) + `</upnp:artist><dc:creator>` + esc(e.Artist) + `</dc:creator>`)
+	}
+	album := e.Album
+	if album == "" {
+		album = FileAlbum(e.ID)
+	}
+	if album != "" {
 		b.WriteString(`<upnp:album>` + esc(album) + `</upnp:album>`)
 	}
 	if e.Cover != "" {

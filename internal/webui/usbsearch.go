@@ -48,15 +48,23 @@ func (s *Server) searchUSBStick(ctx context.Context, host, q, field string) (res
 	s.logger.Info("library search: searched the USB stick",
 		"q", q, "field", field, "hits", len(res.Hits), "folders", res.Folders,
 		"partial", res.Partial, "ms", time.Since(began).Milliseconds())
+	// The songs found are labelled from their tags, as a Browse page is: the
+	// walk matched on paths and opened no file.
+	hits := res.Hits
+	lib.AddTags(hits, time.Now().Add(usbmedia.ListingTagBudget))
 	artBase := usbLoopbackBase
 	if host != "" {
 		artBase = "http://" + host
 	}
 	items := make([]dlna.Item, 0, len(res.Hits))
-	for _, e := range res.Hits {
+	for _, e := range hits {
+		album := e.Album
+		if album == "" {
+			album = usbmedia.FileAlbum(e.ID)
+		}
 		it := dlna.Item{
 			ID: e.ID, ParentID: usbmedia.Parent(e.ID), Title: e.Title,
-			Album: usbmedia.FileAlbum(e.ID), Class: "object.item.audioItem.musicTrack",
+			Artist: e.Artist, Album: album, Class: "object.item.audioItem.musicTrack",
 			MimeType: e.MIME, StreamURL: usbmedia.FileURL(usbLoopbackBase, e.Path),
 		}
 		items = append(items, it)
@@ -65,7 +73,7 @@ func (s *Server) searchUSBStick(ctx context.Context, host, q, field string) (res
 			art = usbmedia.ArtURL(artBase, e.Cover)
 		}
 		results = append(results, librarySearchResult{
-			Title: it.Title, Album: it.Album, URL: it.StreamURL, Art: art,
+			Title: it.Title, Artist: it.Artist, Album: it.Album, URL: it.StreamURL, Art: art,
 			Mime: it.MimeType, Server: info.FriendlyName,
 		})
 	}
