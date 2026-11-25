@@ -118,14 +118,15 @@ export function setHousing(id, housing, storage) {
 }
 
 // Large text is one choice for the whole sheet, not per speaker: whoever
-// needs it needs it on every sticker. Off until ticked, and kept on this
-// computer; storage that cannot be read means off.
+// needs it needs it on every sticker. On until unticked, and kept on this
+// computer: only a stored "off" turns it off, so storage that cannot be read
+// means on.
 export function largeTextOn(storage) {
-  try { return store(storage).getItem(LARGE_KEY) === '1'; } catch { return false; }
+  try { return store(storage).getItem(LARGE_KEY) !== '0'; } catch { return true; }
 }
 
 export function setLargeText(on, storage) {
-  try { store(storage).setItem(LARGE_KEY, on ? '1' : '0'); } catch { /* blocked storage: off again next time */ }
+  try { store(storage).setItem(LARGE_KEY, on ? '1' : '0'); } catch { /* blocked storage: on again next time */ }
 }
 
 // printedFingerprints is what was on each speaker's keys when the stickers

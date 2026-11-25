@@ -7,6 +7,8 @@ import {
   AREA,
   BLEED,
   CONTROL_LENGTH,
+  LARGE_CAP,
+  LARGE_OUTLIERS,
   PAGE,
   REMOTE,
   REMOTE_GRIDS,
@@ -456,7 +458,10 @@ describe('large text', () => {
       const [normal, big] = both([speaker('Den', model, 'dark', keys)]).map((pages) => own(pages[0]));
       for (let i = 0; i < normal.length; i++) {
         if (!nameLines(normal[i]).length) continue;
-        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.2);
+        // All six names share one size, which the cells with a pressed-twice
+        // line limit: on the ST30, already large in normal text, that is
+        // about 1.16 times normal.
+        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.15);
         // The pressed-twice line grows too, but never past the name.
         expect(maxSize(twiceLines(big[i])), model).toBeGreaterThan(maxSize(twiceLines(normal[i])));
         expect(maxSize(twiceLines(big[i])), model).toBeLessThanOrEqual(Math.min(...nameLines(big[i]).map((x) => x.size)) + 1e-9);
@@ -500,6 +505,77 @@ describe('large text', () => {
       for (const pages of both(MODELS.map((m) => speaker('Wohnzimmer', m, 'dark', keys)))) expectInside(pages);
     }, 30_000);
   }
+
+  // The key names of one speaker's own sticker, over all its key pieces.
+  const keyNames = (pages) => pages.flatMap(own).filter((p) => p.part !== 'qr').flatMap(nameLines);
+  const sizesOf = (xs) => [...new Set(xs.map((x) => x.size))];
+  const MIXED = ['1LIVE', 'Rock', 'Absolut Relax', 'Energy Digital', 'Gute-Laune-Mix', 'Bayern 3'];
+
+  it('sets all names of one sticker in one size', () => {
+    const SHORT = ['1LIVE', 'Rock', 'Absolut Relax', 'Jazz', 'SWR3', 'Bayern 3'];
+    for (const model of MODELS) {
+      const keys = SHORT.map((name, i) => key(i + 1, name, i % 2 ? null : { name: 'Talk', kind: 'station' }));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const sizes = sizesOf(keyNames(big));
+      expect(sizes, model).toHaveLength(1);
+      // Not always larger than every normal name: on the ST30 a key with a
+      // pressed-twice line may already be as large as it gets.
+      expect(sizes[0], model).toBeGreaterThanOrEqual(Math.min(...keyNames(normal).map((x) => x.size)));
+      // The pressed-twice lines share one size too.
+      expect(sizesOf(big.flatMap(own).flatMap(twiceLines)), model).toHaveLength(1);
+    }
+  });
+
+  it('shares one size again when more names are long than may be left out', () => {
+    // Three names that fit only a little above normal, or not even at normal
+    // size on a narrow cell: too many to leave out, so the short ones come
+    // down to them instead of towering over them.
+    const LONG = ['Deutschlandfunk Nova', 'Deutschlandfunk Nova', 'Deutschlandfunk Nova'];
+    expect(LONG.length).toBeGreaterThan(LARGE_OUTLIERS);
+    for (const model of MODELS) {
+      const keys = [...LONG, 'Jazz', 'Rock', 'SWR3'].map((name, i) => key(i + 1, name));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const isShort = (x) => ['Jazz', 'Rock', 'SWR3'].includes(x.text);
+      const short = sizesOf(keyNames(big).filter(isShort));
+      expect(short, model).toHaveLength(1);
+      expect(short[0], model).toBeLessThanOrEqual(Math.max(...keyNames(big).filter((x) => !isShort(x)).map((x) => x.size)) + 1e-9);
+      // Never below the smallest name of normal text. (The ST30 sizes its
+      // names one by one in normal text, so there a short name may come down
+      // from its own normal size to that of the long ones.)
+      expect(short[0], model).toBeGreaterThanOrEqual(Math.min(...keyNames(normal).map((x) => x.size)) - 1e-9);
+    }
+  });
+
+  it('does not let one name that cannot fit pull the others below their normal size', () => {
+    const outlier = 'Xyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzy';
+    for (const model of MODELS) {
+      const keys = [...MIXED.slice(0, 5), outlier].map((name, i) => key(i + 1, name));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const isOutlier = (x) => outlier.includes(x.text.replace('…', ''));
+      const others = keyNames(big).filter((x) => !isOutlier(x));
+      expect(sizesOf(others), model).toHaveLength(1);
+      // Not below what those names have in normal text, and larger in fact.
+      expect(others[0].size, model).toBeGreaterThan(Math.max(...keyNames(normal).filter((x) => !isOutlier(x)).map((x) => x.size)));
+      // The same as without the outlier: it was left out of the choice.
+      const [, plain] = both([speaker('Den', model, 'dark', [...MIXED.slice(0, 5), 'Jazz'].map((name, i) => key(i + 1, name)))]);
+      expect(others[0].size, model).toBeCloseTo(sizesOf(keyNames(plain))[0], 6);
+      // The outlier itself is set no larger than the others.
+      for (const x of keyNames(big).filter(isOutlier)) expect(x.size, model).toBeLessThanOrEqual(others[0].size);
+    }
+  });
+
+  it('caps a one-word name so it does not fill the whole cell', () => {
+    // Text this narrow never runs out of width: only the height decides.
+    const narrow = (text, { size }) => Array.from(String(text)).length * size * 0.05;
+    const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Jazz'));
+    const page = layoutStickers([speaker('Den', 'SoundTouch 20', 'dark', keys)], { measure: narrow, texts, large: true }).pages[0];
+    const names = keyNames([page]);
+    expect(sizesOf(names)).toHaveLength(1);
+    // The ST20's top row of cells is 87.5 drawing units (6 per mm) high.
+    const cellH = 87.5 / 6;
+    expect(names[0].size * 1.05).toBeLessThanOrEqual(LARGE_CAP * cellH + 1e-6);
+    expect(names[0].size * 1.05).toBeGreaterThan(LARGE_CAP * cellH - 0.2);
+  });
 
   it('leaves the number and tile of every Portable cell where they line up', () => {
     const keys = [key(1, 'Jazz'), key(2, 'Deutschlandfunk Kultur'), key(3, 'SWR3', { name: 'Talk', kind: 'station' }), key(4, 'FIP'), key(5, 'Bayern 3 - Die Hits'), key(6)];

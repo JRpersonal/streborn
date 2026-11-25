@@ -200,14 +200,17 @@ describe('housing colour', () => {
 });
 
 describe('large text', () => {
-  it('is off until ticked, is kept, and is off where storage is blocked', () => {
+  it('is on until unticked, is kept, and is on where storage is blocked', () => {
     const storage = fakeStorage();
-    expect(largeTextOn(storage)).toBe(false);
-    setLargeText(true, storage);
     expect(largeTextOn(storage)).toBe(true);
     setLargeText(false, storage);
     expect(largeTextOn(storage)).toBe(false);
-    expect(largeTextOn(broken)).toBe(false);
+    setLargeText(true, storage);
+    expect(largeTextOn(storage)).toBe(true);
+    // A stored off still wins over the default.
+    setLargeText(false, storage);
+    expect(largeTextOn(storage)).toBe(false);
+    expect(largeTextOn(broken)).toBe(true);
     expect(() => setLargeText(true, broken)).not.toThrow();
   });
 });
