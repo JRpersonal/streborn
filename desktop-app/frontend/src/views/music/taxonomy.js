@@ -3,7 +3,7 @@
 
 import { boxFetch, RadioLanguages, RadioTags } from '../../api.js';
 import { getLocale, t, tLookup } from '../../i18n/index.js';
-import { canonGenre, GENRE_BY_COUNTRY, GENRE_CORE, translateGenre } from '../../localization.js';
+import { canonGenre, GENRE_BY_COUNTRY, GENRE_CORE, titleWords, translateGenre } from '../../localization.js';
 import { state } from '../../state.js';
 import { $, escapeAttr, escapeHtml, formatNumber } from '../../utils.js';
 import { doRefilter, updateFilterIndicators } from './search.js';
@@ -118,7 +118,7 @@ export function renderGenreChips() {
     const title = count > 0 ? t('search.nStations', { n: formatNumber(count) }) : '';
     return `<button class="${cls}" data-tag="${escapeAttr(canon)}" title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
   };
-  const labelFor = (canon) => translateGenre(canon) || canon.replace(/\b\w/g, c => c.toUpperCase());
+  const labelFor = (canon) => translateGenre(canon) || titleWords(canon);
 
   const seen = new Set();
   const parts = [];
@@ -233,7 +233,7 @@ export function localizeLanguageName(name) {
   // raw radio-browser name title-cased.
   const translated = tLookup('lang', name.toLowerCase().trim());
   if (translated) return translated;
-  return name.replace(/\b\w/g, (c) => c.toUpperCase());
+  return titleWords(name);
 }
 
 function renderLanguageOptions() {
@@ -256,7 +256,8 @@ function renderLanguageOptions() {
   sorted.sort((a, b) => a.label.localeCompare(b.label));
   const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
   for (const l of sorted) {
-    const count = (l.stationcount == null) ? '' : ` (${l.stationcount})`;
+    // Say what the number is: a bare "(1234)" read as an API code (#1587).
+    const count = (l.stationcount == null) ? '' : ` (${t('search.nStations', { n: formatNumber(l.stationcount) })})`;
     opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)}${count}</option>`);
   }
   sel.innerHTML = opts.join('');

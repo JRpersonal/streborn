@@ -23,8 +23,7 @@ import { t } from '../../i18n/index.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { keyLabel, keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
-import { pairUnitName } from '../../groups.js';
-import { pairDisplayName } from '../../stereoNames.js';
+import { speakerUnitName } from '../../unitname.js';
 import { $, escapeHtml, friendlyErrorText, getBoxLabel } from '../../utils.js';
 import { playVerdict, startingVerdict } from '../../shell2/feedback.js';
 import { claimPlay, onPlayClaim, ownsPlay, playLine, playLineOutdated, playLinesToDrop } from '../../shell2/playclaim.js';
@@ -62,12 +61,9 @@ let discoverMode = 'top';
 const on = () => !!state.ui2Shell;
 // speakerName names the speaker the keys belong to. Half of a live stereo pair
 // is named as the pair, "Kitchen (stereo)", the way the sidebar names it
-// (#1587); a pair name still being looked up repaints the keys when it lands.
-const speakerName = (box = state.currentBox) => {
-  if (!box) return '';
-  const pair = pairUnitName(box, state.zoneLive, state.boxes, (p) => pairDisplayName(p, () => syncUi2Keys()), getBoxLabel);
-  return pair ? t('ui2.side.pairName', { name: pair }) : getBoxLabel(box);
-};
+// (#1587, unitname.js); a pair name still being looked up repaints the keys
+// when it lands.
+const speakerName = (box = state.currentBox) => speakerUnitName(box, () => syncUi2Keys());
 
 // ensureUi2Radio builds the preview's additions to the Radio view once the
 // shell is mounted. Safe to call from any render path.
@@ -288,7 +284,7 @@ export function syncUi2Keys() {
     }
     body.addEventListener('keydown', (e) => {
       if (e.target !== body || (e.key !== 'Enter' && e.key !== ' ')) return;
-      // Shift+Enter is the keyboard's hold (wireKeyEdit), never a play.
+      // Shift+Enter opens the key's choices (wireKeyEdit), never a play.
       if (e.shiftKey) return;
       e.preventDefault();
       // The tile's own press path (presettiles.js attachPresetHandlers): a

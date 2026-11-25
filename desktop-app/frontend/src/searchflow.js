@@ -98,9 +98,18 @@ export function relaxedHintVisible(relaxed, dismissed, mode) {
 // own station in Favorites, report no bitrate; the "- kbit/s" placeholder that
 // used to stand in for it read as a broken stream on every such row
 // (discussion #1521), so an unknown rate now simply leaves the cell out.
+//
+// Resting the pointer on the cell shows the address the station streams from,
+// the same place a radio key shows it (discussion #2103: one station often has
+// several addresses, some with ads, and the row named only the station).
+// Returns HTML: the address is escaped for the attribute.
 export function stationBitrateCell(s) {
   const br = Number(s && s.bitrate);
-  return br > 0 ? `${br} kbit/s` : '';
+  if (!(br > 0)) return '';
+  const url = String((s && (s.url_resolved || s.url)) || '');
+  if (!/^https?:\/\//i.test(url)) return `${br} kbit/s`;
+  const attr = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<span class="result-bitrate" title="${attr}">${br} kbit/s</span>`;
 }
 
 // stationCheckDot is the reachability dot of a station row: 'ok' (green),

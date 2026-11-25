@@ -2751,7 +2751,7 @@
   "stickers.large": "Grand texte",
   "stickers.largeTitle": "Utilise la place libre sur chaque touche pour le plus grand texte qui tient, même si l'étiquette paraît alors pleine",
   "stickers.remoteHeader": "Télécommande",
-  "ui2.radio.keysEditHint": "Maintenez une touche enfoncée ou appuyez sur Maj+Entrée pour la modifier",
+  "ui2.radio.keysEditHint": "Maintenez une touche pour y enregistrer ce qui joue ; clic droit ou Maj+Entrée pour la modifier",
   "ui2.radio.keyEditTitle": "Modifier la touche {{n}} de {{speaker}}",
   "ui2.radio.keyAssignTitle": "Remplir la touche {{n}} de {{speaker}}",
   "ui2.radio.keyEditNow": "Sur cette touche : {{name}}",

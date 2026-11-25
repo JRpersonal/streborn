@@ -2751,7 +2751,7 @@
   "stickers.large": "Grote tekst",
   "stickers.largeTitle": "Gebruikt de vrije ruimte op elke toets voor de grootste tekst die past, ook als de sticker dan vol oogt",
   "stickers.remoteHeader": "Afstandsbediening",
-  "ui2.radio.keysEditHint": "Houd een toets ingedrukt of druk op Shift+Enter om hem te wijzigen",
+  "ui2.radio.keysEditHint": "Houd een toets ingedrukt om op te slaan wat er speelt; rechtsklik of Shift+Enter om hem te wijzigen",
   "ui2.radio.keyEditTitle": "Toets {{n}} op {{speaker}} wijzigen",
   "ui2.radio.keyAssignTitle": "Toets {{n}} op {{speaker}} vullen",
   "ui2.radio.keyEditNow": "Nu op deze toets: {{name}}",

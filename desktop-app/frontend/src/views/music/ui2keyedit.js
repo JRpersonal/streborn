@@ -1,39 +1,44 @@
-// views/music/ui2keyedit.js: hold a key to change it, in the UI 2.0 preview
-// (docs/UI-2.0.md).
+// views/music/ui2keyedit.js: hold a key to save onto it, and a key's choices,
+// in the UI 2.0 preview (docs/UI-2.0.md).
 //
 // A key of the Radio view does one thing on a short press: it plays. Holding
-// it used to save what is playing straight onto it, which is easy to do by
-// accident and the only way to change a key from the grid. In the preview a
-// hold of HOLD_TO_EDIT_MS opens the key's choices instead, in one panel under
-// the grid: save what is playing, find a station, pick a favourite, rename,
-// clear. Every choice is a flow the app already has, so there is no second
-// way to write a key: the quick ones stay here (saveCurrentToSlot, the rename
-// and clear icons), and "Find a station" and "Choose a favorite" open the one
-// key editor, Speakers > the speaker > Keys and alarms
+// it for HOLD_TO_SAVE_MS saves what is playing straight onto it, exactly as
+// the classic layout does (25 November 2026, discussion #1077: from 15 to 25
+// November the hold opened the choices instead, and testers expected the
+// save). holdAction decides: a hold saves while something plays, on any key
+// but the speaker's own (a Deezer mix); otherwise it opens the key's choices,
+// so a hold always does something visible.
+//
+// The choices sit in one panel under the grid: save what is playing, find a
+// station, pick a favourite, rename, clear. A right click (also macOS
+// Ctrl+click, the browser's context menu) opens them and never saves, and so
+// do Shift+Enter, the context-menu key and Shift+F10 from the keyboard (the
+// grid's hint says so); Escape closes them and puts the keyboard back on the
+// key. An empty key has nothing to play and opens them on a short press.
+// Every choice is a flow the app already has, so there is no second way to
+// write a key: the quick ones stay here (saveCurrentToSlot, the rename and
+// clear icons), and "Find a station" and "Choose a favorite" open the one key
+// editor, Speakers > the speaker > Keys and alarms
 // (shell2/speakers/keyeditor.js), on that key and on its station search or
-// its favourites. An empty key has nothing to play and opens the same panel
-// on a short press.
+// its favourites. Without the shell nothing here runs: the current layout
+// keeps its own hold-to-save.
 //
-// From the keyboard Shift+Enter, the context-menu key or Shift+F10 open it
-// (the grid's hint says so); Escape closes it and puts the keyboard back on
-// the key. Without the shell nothing here runs: the current layout keeps its
-// 1.1 s hold-to-save.
-//
-// The pure parts (the gesture, the choices per key, the words) take no DOM, so
-// vitest reads them without a document.
+// The pure parts (the gesture, what a hold does, the choices per key, the
+// words) take no DOM, so vitest reads them without a document.
 
 import { t } from '../../i18n/index.js';
 import { keyNum } from '../../presetrows.js';
 import { state } from '../../state.js';
-import { $, escapeAttr, escapeHtml, getBoxLabel } from '../../utils.js';
+import { speakerUnitName } from '../../unitname.js';
+import { $, escapeAttr, escapeHtml } from '../../utils.js';
 import { saveCurrentToSlot } from './save.js';
 import { keyReport, restoreKeyFocus } from './ui2radio.js';
 
-// HOLD_TO_EDIT_MS is how long a press must last to open the choices instead
-// of playing. Shorter than the current layout's 1.1 s save: opening a panel
-// writes nothing, so it does not need the guard against a slow tap that a
-// save does, and a long wait reads as "nothing happens".
-export const HOLD_TO_EDIT_MS = 700;
+// HOLD_TO_SAVE_MS is how long a press must last to count as a hold instead of
+// a play: the classic layout's 1.1 s (presettiles.js LONG_PRESS_MS; the
+// checks pin the two equal). The hold writes to the speaker, so it keeps the
+// classic guard against a slow tap.
+export const HOLD_TO_SAVE_MS = 1100;
 
 // The kinds of key the grid draws (presettiles.js renderPresets): one of STR's
 // keys with a station, an empty key, a key the speaker keeps for itself (a
@@ -49,15 +54,22 @@ export function isKeyEditGesture(e) {
   return !!e.shiftKey && (e.key === 'Enter' || e.key === 'F10');
 }
 
+// holdAction is what a hold on a key of kind does, playing telling whether
+// something plays: 'save' it onto the key, or 'menu', open the key's choices.
+// It saves only while something plays, and never over the speaker's own key:
+// the current layout refuses a hold-save there so a Deezer key is not
+// overwritten by accident, and the preview keeps that.
+export function holdAction(kind, playing) {
+  return playing && kind !== 'native' ? 'save' : 'menu';
+}
+
 // keyEditActions lists the choices of a key, in the order the panel shows
-// them; the first is the primary one. "save" only while something plays, and
-// never on the speaker's own key: the current layout refuses a hold-save
-// there so a Deezer key is not overwritten by accident, and the preview keeps
-// that. Rename and clear only on STR's own keys, which are the ones that have
-// those icons.
+// them; the first is the primary one. "save" exactly where a hold would save
+// (holdAction). Rename and clear only on STR's own keys, which are the ones
+// that have those icons.
 export function keyEditActions(kind, playing) {
   const out = [];
-  if (playing && kind !== 'native') out.push('save');
+  if (holdAction(kind, playing) === 'save') out.push('save');
   out.push('find', 'favorites');
   if (kind === 'station') out.push('rename', 'clear');
   return out;
@@ -142,12 +154,15 @@ function panel() {
 }
 
 // draw fills the panel for the key and returns its signature (kind, name,
-// choices), so a repaint of the grid only redraws it when one changed.
+// choices, speaker), so a repaint of the grid only redraws it when one
+// changed. The speaker is named as the heading over the keys names it: a key
+// of a stereo pair with the pair (unitname.js).
 function draw(el, slot, box) {
   const { kind, name } = keyFromTile(tileOf(slot));
   const actions = keyEditActions(kind, playingNow());
-  const sig = `${kind}|${name}|${actions.join(',')}`;
-  el.innerHTML = keyEditHTML(keyEditWords({ kind, slot, speaker: getBoxLabel(box), name, actions }));
+  const speaker = speakerUnitName(box);
+  const sig = `${kind}|${name}|${actions.join(',')}|${speaker}`;
+  el.innerHTML = keyEditHTML(keyEditWords({ kind, slot, speaker, name, actions }));
   el.dataset.slot = String(slot);
   return sig;
 }
@@ -215,7 +230,7 @@ export function syncKeyEditor() {
   const el = $('ui2KeyEdit');
   if (!el || el.hidden || !box || box.host !== edit.host || !tileOf(edit.slot)) { closeKeyEditor(false); return; }
   const { kind, name } = keyFromTile(tileOf(edit.slot));
-  const sig = `${kind}|${name}|${keyEditActions(kind, playingNow()).join(',')}`;
+  const sig = `${kind}|${name}|${keyEditActions(kind, playingNow()).join(',')}|${speakerUnitName(box)}`;
   if (sig !== edit.sig) {
     const active = document.activeElement;
     const inside = el.contains(active);
@@ -279,14 +294,20 @@ async function openKeyTab(host, slot, mode) {
 }
 
 // ui2KeyHoldOpts is what renderPresets hands attachPresetHandlers for one
-// tile in the preview: the shorter hold that opens the choices instead of
-// saving, and for an empty key a short press that opens them too. An empty
-// object without the shell, so the current layout keeps its hold-to-save.
+// tile in the preview: the hold (holdAction, read when it fires: save what
+// plays through the same path as the choice "Save what is playing", reported
+// in the key's own line, or open the choices when there is nothing to save),
+// the context menu, which opens the choices and never saves, and for an empty
+// key a short press that opens them too. An empty object without the shell,
+// so the current layout keeps its hold-to-save.
 export function ui2KeyHoldOpts(tile, slot, kind) {
   if (!on()) return {};
   tile.dataset.ui2Kind = kind;
   const open = () => openKeyEditor(slot);
-  return { holdMs: HOLD_TO_EDIT_MS, onHold: open, onEmptyPress: kind === 'empty' ? open : null };
+  const hold = () => (holdAction(kind, playingNow()) === 'save'
+    ? saveCurrentToSlot(slot, keyReport(slot))
+    : open());
+  return { holdMs: HOLD_TO_SAVE_MS, onHold: hold, onMenu: open, onEmptyPress: kind === 'empty' ? open : null };
 }
 
 // reducedMotion tells whether the system asks for less motion: the hold then

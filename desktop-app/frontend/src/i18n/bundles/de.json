@@ -2751,7 +2751,7 @@
   "stickers.large": "Große Schrift",
   "stickers.largeTitle": "Nutzt den freien Platz auf jeder Taste für die größte Schrift, die passt, auch wenn der Sticker dann voll wirkt",
   "stickers.remoteHeader": "Fernbedienung",
-  "ui2.radio.keysEditHint": "Halte eine Taste gedrückt oder drücke Umschalt+Eingabe, um sie zu ändern",
+  "ui2.radio.keysEditHint": "Taste halten speichert, was läuft; Rechtsklick oder Umschalt+Eingabe ändert sie",
   "ui2.radio.keyEditTitle": "Taste {{n}} auf {{speaker}} ändern",
   "ui2.radio.keyAssignTitle": "Taste {{n}} auf {{speaker}} belegen",
   "ui2.radio.keyEditNow": "Jetzt auf dieser Taste: {{name}}",

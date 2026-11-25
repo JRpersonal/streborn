@@ -5,7 +5,7 @@
 // the agent keeps (POST /api/box/save-playing). Every outcome is said in the
 // editor's own line, done only after the speaker's read-back; the agent's 409
 // already-on-slot offers the move right there and a 422 reads in plain words,
-// never in the error dialog. A hold on a Radio key opens this editor on that
+// never in the error dialog. A Radio key's choices open this editor on that
 // key (test 16). The last test checks the classic layout.
 //
 //   E2E_PORT=4185 npx playwright test specs/desktop-ui2-assignment-editor.spec.mjs --project=desktop
@@ -146,10 +146,10 @@ test.describe('UI 2.0 key assignment editor', () => {
     await expect(key(page, 6)).toContainText('Classic FM');
   });
 
-  // The hold on a Radio key (views/music/ui2keyedit.js): its "Find a station"
-  // and "Choose a favorite" open this editor, on that key, instead of a
-  // picker of their own.
-  test('16. a hold on a Radio key opens the editor on that key, in the mode it asked for', async ({ app }) => {
+  // The choices of a Radio key (views/music/ui2keyedit.js): its "Find a
+  // station" and "Choose a favorite" open this editor, on that key, instead of
+  // a picker of their own.
+  test('16. a Radio key\'s choices open the editor on that key, in the mode they asked for', async ({ app }) => {
     const { page } = app;
     const radioKey = (slot) => page.locator(`#presets .preset[data-slot="${slot}"]`);
     const holdChoice = (id) => page.locator(`#ui2KeyEdit [data-ke="${id}"]`);

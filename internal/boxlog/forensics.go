@@ -160,6 +160,13 @@ type Event struct {
 	// rather than one it just delivered (lineIsBacklog). Set for the classes
 	// a hook acts on at the moment of the line (usb_disk); never encoded.
 	Backlog bool `json:"-"`
+	// Repeats counts identical lines folded into this entry right after it,
+	// and LastAt is when the newest of them arrived. A stalled stream logs
+	// the same underrun line twice a second; stored one by one, a Lifestyle
+	// 650 bundle (discussion #2091) spent 134 of the 200 slots on one line
+	// and lost the display transitions from before the stall.
+	Repeats int       `json:"-"`
+	LastAt  time.Time `json:"-"`
 }
 
 // Line is one syslog line split into its fields. The ring's format is
@@ -621,6 +628,14 @@ func (r *ring[T]) items() []T {
 	return out
 }
 
+// setLast replaces the newest item; a no-op on an empty ring.
+func (r *ring[T]) setLast(v T) {
+	if r.n == 0 {
+		return
+	}
+	r.buf[(r.start+r.n-1)%len(r.buf)] = v
+}
+
 func (r *ring[T]) last() (T, bool) {
 	var zero T
 	if r.n == 0 {
@@ -769,7 +784,7 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 	}
 	f.classified++
 	ev = Event{Class: class, At: now, Process: l.Process, Facility: l.Facility, Message: msg, Backlog: backlog}
-	f.events.push(ev)
+	f.pushEventLocked(ev)
 	if class.Playback() {
 		f.lastPlayErr = ev
 	}
@@ -789,6 +804,19 @@ func (f *forensics) observe(line string, now time.Time) (ev Event, logIt bool, o
 		logIt = true
 	}
 	return ev, logIt, true
+}
+
+// pushEventLocked appends ev to the event ring, or folds it into the newest
+// entry when it repeats that entry's class, process and message exactly, so a
+// line the firmware repeats every second cannot push everything else out.
+func (f *forensics) pushEventLocked(ev Event) {
+	if prev, ok := f.events.last(); ok && prev.Class == ev.Class && prev.Process == ev.Process && prev.Message == ev.Message {
+		prev.Repeats++
+		prev.LastAt = ev.At
+		f.events.setLast(prev)
+		return
+	}
+	f.events.push(ev)
 }
 
 // lastPlaybackFailure returns the newest playback failure if it arrived
@@ -976,13 +1004,18 @@ func (f *forensics) eventsSnapshot() map[string]any {
 	evs := f.events.items()
 	out := make([]map[string]any, 0, len(evs))
 	for _, e := range evs {
-		out = append(out, map[string]any{
+		m := map[string]any{
 			"at":       e.At.Format(time.RFC3339),
 			"class":    string(e.Class),
 			"process":  e.Process,
 			"facility": e.Facility,
 			"message":  e.Message,
-		})
+		}
+		if e.Repeats > 0 {
+			m["repeats"] = e.Repeats
+			m["lastAt"] = e.LastAt.Format(time.RFC3339)
+		}
+		out = append(out, m)
 	}
 	return map[string]any{
 		"classified": f.classified,

@@ -169,6 +169,13 @@ export function canonGenre(t) {
   return GENRE_ALIAS[key] || key;
 }
 
+// titleWords capitalises the first letter of every word. Unicode-aware on
+// purpose: the ASCII \b\w pattern treats letters like ñ or é as word
+// breaks, which turned radio-browser's "español" into "EspañOl".
+export function titleWords(s) {
+  return String(s || '').replace(/(^|[^\p{L}\p{M}\p{N}'])(\p{L})/gu, (_, pre, c) => pre + c.toUpperCase());
+}
+
 // translateGenre canonicalises a tag and translates it for display.
 export function translateGenre(tag) {
   const key = canonGenre(tag);
@@ -177,7 +184,7 @@ export function translateGenre(tag) {
   if (localized) return localized;
   // Acronyms (BBC, WDR, ORF, ...) stay verbatim.
   if (/^[A-Z0-9]{2,5}$/.test(tag)) return tag;
-  return key.replace(/\b\w/g, c => c.toUpperCase());
+  return titleWords(key);
 }
 
 export function translateTags(tagsCsv) {

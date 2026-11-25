@@ -2751,7 +2751,7 @@
   "stickers.large": "大字體",
   "stickers.largeTitle": "利用每個按鍵上的空白處放入能容納的最大字體，即使貼紙看起來很滿",
   "stickers.remoteHeader": "遙控器",
-  "ui2.radio.keysEditHint": "長按按鍵或按 Shift+Enter 即可變更",
+  "ui2.radio.keysEditHint": "長按按鍵即可儲存正在播放的內容；按右鍵或 Shift+Enter 即可變更",
   "ui2.radio.keyEditTitle": "變更 {{speaker}} 的預設鍵 {{n}}",
   "ui2.radio.keyAssignTitle": "設定 {{speaker}} 的預設鍵 {{n}}",
   "ui2.radio.keyEditNow": "此鍵目前為：{{name}}",

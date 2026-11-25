@@ -11,6 +11,7 @@ import { nativeSpotifySlot, spotifySlotForContext, spotifySlotStillHolds, spotif
 import { state } from '../../state.js';
 import { presetMayLight } from '../../stoppedstate.js';
 import { syncStickerEntry } from '../../stickers/dialog.js';
+import { speakerUnitName } from '../../unitname.js';
 import {
   ROW_SIZE,
   boxPresetRows,
@@ -32,10 +33,10 @@ import {
   escapeAttr,
   escapeHtml,
   friendlyErrorText,
-  getBoxLabel,
   isKeyChrome,
   nativeSlotStale,
   orionStationPayload,
+  presetAddress,
   presetBitrateLine,
   presetOwnArt,
   queueSlotActive,
@@ -305,6 +306,10 @@ export function renderPresets() {
       // No bitrate line on a native Pandora / iHeartRadio key, nor on a media-server
       // key that has no rate (presetBitrateLine, #1065).
       const bitrateLine = isNativeServicePreset(p) ? '' : presetBitrateLine(p, tileBitrate);
+      // The station address rides on the bitrate line as a hover title (#2103),
+      // so the tile itself shows nothing new.
+      const address = isNativeServicePreset(p) ? '' : presetAddress(p, decodeProxyUrl);
+      const addressAttr = address ? ` title="${escapeAttr(address)}"` : '';
       // A key shows what is SAVED on it: a short, static name, plus the markers
       // that say it is the one playing (the green .playing tile and the
       // Playing/Buffering/Paused line from presetStateLabel). It deliberately
@@ -325,7 +330,7 @@ export function renderPresets() {
             <div class="name clamp-2" title="${escapeAttr(p.name || label)}">${escapeHtml(p.name || label)}</div>
             ${p.type === 'spotify' && spotifyAccountName(p.account, state.spotifyAccountNames) ? `<div class="preset-account">${escapeHtml(spotifyAccountName(p.account, state.spotifyAccountNames))}</div>` : ''}
             ${tileBadge ? `<div class="preset-source" title="${escapeAttr(tileBadge)}">${escapeHtml(t('preset.sourceBadge', { source: tileBadge }))}</div>` : ''}
-            ${bitrateLine ? `<div class="preset-bitrate">${bitrateLine}</div>` : ''}
+            ${bitrateLine ? `<div class="preset-bitrate"${addressAttr}>${bitrateLine}</div>` : ''}
             ${stateLabel}
           </div>
         </div>
@@ -404,8 +409,9 @@ export function renderPresets() {
       // own (e.g. Deezer) preset can't be clobbered by STR's current station.
       attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i, keyReport(i)), allowSave: false, ...ui2KeyHoldOpts(div, i, 'native') });
     } else {
-      // The UI 2.0 preview opens the key's choices on a hold (and on a short
-      // press of an empty key) instead of saving (ui2keyedit.js).
+      // The UI 2.0 preview saves on a hold too, opens the key's choices on a
+      // right click (and on a short press of an empty key), and opens them on
+      // a hold when there is nothing to save (ui2keyedit.js).
       attachPresetHandlers(div, i, p, ui2KeyHoldOpts(div, i, p ? 'station' : 'empty'));
     }
     grid.appendChild(div);
@@ -451,9 +457,10 @@ let lastLitKey = null;
 
 // lostKeyNotice explains, in the UI 2.0 preview's key line, a key left over
 // from before STR was reinstalled, with key and speaker named. The current
-// layout keeps its toast (renderPresets).
+// layout keeps its toast (renderPresets). A key of a stereo pair is named
+// with the pair (unitname.js), as the heading over the keys is.
 export function lostKeyNotice(slot, report) {
-  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const speaker = speakerUnitName(state.currentBox);
   report(t('ui2.feedback.keyLost', { n: keyNum(slot, t), speaker }), 'warn');
 }
 
@@ -469,7 +476,7 @@ export async function clearPresetKey(slot, report = null, mark = null) {
   const box = state.currentBox;
   if (!box) return;
   const n = keyNum(slot, t);
-  const speaker = getBoxLabel(box);
+  const speaker = speakerUnitName(box);
   try {
     await DeletePreset(box.host, box.port, slot);
     if (!report) { loadPresets(); return; }
@@ -500,7 +507,7 @@ export async function renameOutcome(slot, name, err, report = null, box = state.
     loadPresets();
     return;
   }
-  const speaker = box ? getBoxLabel(box) : '';
+  const speaker = speakerUnitName(box);
   if (err) {
     report(keyFailedVerdict(n, speaker, friendlyErrorText(String((err && err.message) || err))).text, 'error');
     return;
@@ -540,7 +547,7 @@ function renderPresetRowChrome(rows, shownRow, playingRows) {
     grid.removeAttribute('aria-labelledby');
     return;
   }
-  const speaker = state.currentBox ? getBoxLabel(state.currentBox) : '';
+  const speaker = speakerUnitName(state.currentBox);
   const count2 = rowCount(state.presets, 2);
   const isNew = showNewMarker(rows, count2, row2Seen());
   const tab = (row) => {
@@ -689,7 +696,7 @@ async function renamePresetKey(slot) {
     // The preview's key line names the key and the speaker (null: toasts).
     const box = state.currentBox;
     const report = keyReport(slot, box);
-    if (report) report(t('ui2.feedback.keyRenaming', { n: keyNum(slot, t), speaker: getBoxLabel(box) }), 'busy');
+    if (report) report(t('ui2.feedback.keyRenaming', { n: keyNum(slot, t), speaker: speakerUnitName(box) }), 'busy');
     let failed = null;
     try {
       await RenamePreset(state.currentBox.host, state.currentBox.port, slot, name);
@@ -737,9 +744,11 @@ export function applyTrackScroll(selector = '.status-bar .now') {
 // opts.onPlay overrides the short-click action (box-native presets recall the
 // box's hardware key instead of STR's play). opts.allowSave=false disables the
 // long-press save so a box-native preset can't be overwritten by a hold.
-// The UI 2.0 preview passes opts.holdMs and opts.onHold (its hold opens the
-// key's choices instead of saving) and opts.onEmptyPress (a short press on an
-// empty key opens them too). A hold that fired never also plays.
+// The UI 2.0 preview (ui2keyedit.js ui2KeyHoldOpts) passes opts.holdMs (the
+// same 1.1 s) and opts.onHold (save what plays, or open the key's choices when
+// there is nothing to save), opts.onMenu (a right click or the browser's
+// context menu opens the choices, never saves) and opts.onEmptyPress (a short
+// press on an empty key opens them too). A hold that fired never also plays.
 const LONG_PRESS_MS = 1100;
 const VISUAL_HOLD_DELAY = 180;
 // isKeyChrome reports whether an event landed on one of the small icons in a
@@ -752,8 +761,9 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
   const allowSave = opts.allowSave !== false;
   const holdMs = opts.holdMs || LONG_PRESS_MS;
-  // The preview's hold opens the key's choices (ui2keyedit.js); the current
-  // layout's hold saves what plays, where saving is allowed.
+  // The preview's hold decides itself between saving and opening the key's
+  // choices (ui2keyedit.js holdAction); the current layout's hold saves what
+  // plays, where saving is allowed.
   const onHold = opts.onHold || (allowSave ? () => saveCurrentToSlot(slot, keyReport(slot)) : null);
   const onEmptyPress = opts.onEmptyPress || null;
   // Without motion (the preview only, the current layout is left as it was)
@@ -804,13 +814,14 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
         if (!armed) return;
         // The preview's hold: when the status poll rebuilt the grid while the
         // key was held, the release landed on the new tile and never reached
-        // this one, so it may have been a short press. Opening the choices
-        // then, out of nowhere, would take the focus; the hold is dropped.
+        // this one, so it may have been a short press. Saving over the key
+        // (or opening its choices) then, out of nowhere, would write a key
+        // nobody held; the hold is dropped.
         if (opts.onHold && !el.isConnected) { cancel(); return; }
         firedLong = true;
         // The save reports in the preview's key line (keyReport is null in
-        // the current layout, which keeps its toasts); the preview's own hold
-        // opens the key's choices instead.
+        // the current layout, which keeps its toasts); with nothing to save
+        // the preview's hold opens the key's choices instead.
         await onHold();
         armed = false;
         el.classList.remove('long-press');
@@ -841,16 +852,18 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   el.addEventListener('touchstart', (e) => { start(e); }, { passive: true });
   el.addEventListener('touchend', (e) => { finish(e); });
   el.addEventListener('touchcancel', cancel);
-  if (opts.onHold) {
-    // The preview's other way to a key's choices: a right click, a long touch
-    // (Chromium fires this before HOLD_TO_EDIT_MS) and macOS Ctrl+click (a
-    // mousedown with button 0 first). It ends the press it interrupts, so
-    // lifting the finger or the button afterwards does not also play the key.
-    // The browser's own menu has nothing to offer on a key.
+  if (opts.onMenu) {
+    // The preview's way to a key's choices by pointer: a right click, a long
+    // touch (Chromium fires this at about 500 ms, before the 1.1 s hold, so a
+    // long touch opens the choices rather than saving) and macOS Ctrl+click
+    // (a mousedown with button 0 first). It never saves. It ends the press it
+    // interrupts, so the hold does not fire afterwards and lifting the finger
+    // or the button does not also play the key. The browser's own menu has
+    // nothing to offer on a key.
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       cancel();
-      opts.onHold();
+      opts.onMenu();
     });
   }
 }

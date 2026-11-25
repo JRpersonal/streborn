@@ -2751,7 +2751,7 @@
   "stickers.large": "大きな文字",
   "stickers.largeTitle": "各キーの空きスペースを使い、収まるいちばん大きな文字にします。ステッカーが詰まって見えても構いません",
   "stickers.remoteHeader": "リモコン",
-  "ui2.radio.keysEditHint": "キーを長押しするか Shift+Enter を押すと変更できます",
+  "ui2.radio.keysEditHint": "キーを長押しで再生中の内容を保存。右クリックか Shift+Enter で変更",
   "ui2.radio.keyEditTitle": "{{speaker}} のキー {{n}} を変更",
   "ui2.radio.keyAssignTitle": "{{speaker}} のキー {{n}} に登録",
   "ui2.radio.keyEditNow": "現在このキー: {{name}}",

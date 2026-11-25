@@ -312,6 +312,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		if artist == "" && album == "" {
 			artist, album, _ = s.knownTrackLabel(req.URL)
 		}
+		// A song on this speaker's USB stick named without an artist: the
+		// one its tag names (#1136).
+		if artist == "" {
+			artist, album = s.stickTagLabel(req.URL, album)
+		}
 	}
 	playErr := s.playTrackWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime, meta)
 	if playErr != nil {

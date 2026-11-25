@@ -125,6 +125,33 @@ describe('a hold-to-save with the preview\'s report hook', () => {
     expect(text).toMatch(/^Key 2 of Kitchen was not changed: /);
   });
 
+  it('names a stereo pair as the pair, for the Spotify stream it plays (#1587, #1077 issue 27)', async () => {
+    // The pair's keys live on its left half; the line names the pair, the way
+    // the sidebar and the heading over the keys do, never the half.
+    const left = { host: '192.0.2.11', port: 8888, deviceID: 'AA0000000001', friendlyName: 'Left half' };
+    const right = { host: '192.0.2.12', port: 8888, deviceID: 'AA0000000002', friendlyName: 'Right half' };
+    const pair = { stereo: { id: 'pair-1', masterDeviceID: left.deviceID, name: 'Kitchen pair', members: [
+      { deviceID: left.deviceID, ip: left.host, role: 'LEFT' },
+      { deviceID: right.deviceID, ip: right.host, role: 'RIGHT' },
+    ] } };
+    state.currentBox = left;
+    state.boxes = [left, right];
+    state.zoneLive = { [left.deviceID]: pair, [right.deviceID]: pair };
+    state.nowSource = 'UPNP';
+    state.nowName = 'Spotify';
+    state.nowLocation = 'http://127.0.0.1:8888/spotify/stream.ogg';
+    const liked = 'spotify:playlist:37i9dQZF1F5p3rmiWPIYgZ';
+    api.SpotifyNowPlaying.mockResolvedValue({ context: liked, account: 'acct', canRecall: true, premiumRequired: false, product: 'premium' });
+    api.SaveSpotifyPreset.mockResolvedValue();
+    api.LogSpotifySaveGate.mockResolvedValue();
+    readBack.list = [{ slot: 2, type: 'spotify', name: 'Spotify', uri: liked }];
+    const report = vi.fn();
+    await save.saveCurrentToSlot(2, report);
+    expect(api.SaveSpotifyPreset).toHaveBeenCalledWith(left.host, left.port, 2, 'Spotify', liked, 'acct');
+    expect(report).toHaveBeenNthCalledWith(1, 'Putting it on key 2 of Kitchen pair (stereo)...', 'busy');
+    expect(report).toHaveBeenLastCalledWith('On key 2 of Kitchen pair (stereo). The speaker confirmed it.', 'ok');
+  });
+
   it('keeps the move offer for a station already on another key', async () => {
     api.SavePlayingPreset.mockRejectedValue('status 409: {"error":"already-on-slot","slot":5,"name":"Jazz Lounge"}');
     ui.confirmWarn.mockResolvedValue(false);

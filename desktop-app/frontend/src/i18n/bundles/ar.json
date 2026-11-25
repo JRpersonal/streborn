@@ -2751,7 +2751,7 @@
   "stickers.large": "نص كبير",
   "stickers.largeTitle": "يستخدم المساحة الفارغة على كل زر لأكبر نص يتسع، حتى لو بدا الملصق ممتلئًا",
   "stickers.remoteHeader": "جهاز التحكم",
-  "ui2.radio.keysEditHint": "اضغط مطولًا على زر أو اضغط Shift+Enter لتغييره",
+  "ui2.radio.keysEditHint": "اضغط مطولًا على زر لحفظ ما يُشغَّل؛ انقر بالزر الأيمن أو اضغط Shift+Enter لتغييره",
   "ui2.radio.keyEditTitle": "تغيير الزر {{n}} على {{speaker}}",
   "ui2.radio.keyAssignTitle": "تعيين الزر {{n}} على {{speaker}}",
   "ui2.radio.keyEditNow": "على هذا الزر الآن: {{name}}",

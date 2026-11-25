@@ -144,6 +144,16 @@ describe('stationBitrateCell (#1521)', () => {
     expect(stationBitrateCell({ bitrate: 'x' })).toBe('');
     expect(stationBitrateCell(null)).toBe('');
   });
+  it('carries the stream address as the hover title (#2103)', () => {
+    expect(stationBitrateCell({ bitrate: 128, url: 'http://a.example/x', url_resolved: 'https://b.example/live?a=1&b="2"' }))
+      .toBe('<span class="result-bitrate" title="https://b.example/live?a=1&amp;b=&quot;2&quot;">128 kbit/s</span>');
+    expect(stationBitrateCell({ bitrate: 64, url: 'http://a.example/x' }))
+      .toBe('<span class="result-bitrate" title="http://a.example/x">64 kbit/s</span>');
+  });
+  it('shows no title for an address that is not a web stream', () => {
+    expect(stationBitrateCell({ bitrate: 128, url: 'javascript:alert(1)' })).toBe('128 kbit/s');
+    expect(stationBitrateCell({ bitrate: 128 })).toBe('128 kbit/s');
+  });
 });
 
 describe('stationCheckDot (#1521)', () => {

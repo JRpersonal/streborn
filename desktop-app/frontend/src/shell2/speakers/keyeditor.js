@@ -83,7 +83,7 @@ let box = null;
 let parts = {};
 // Bumped on every switch of speaker: an answer for the previous one is dropped.
 let gen = 0;
-// The key and the source a hold on a Radio key asked for (aimKeyEditor), or
+// The key and the source a Radio key's choices asked for (aimKeyEditor), or
 // null: { host, slot, mode, at }. Taken by the first paint for that speaker,
 // once.
 let aim = null;
@@ -143,7 +143,7 @@ export function resetKeyEditor() {
   gen++;
 }
 
-// aimKeyEditor is how the hold on a Radio key (views/music/ui2keyedit.js)
+// aimKeyEditor is how the choices of a Radio key (views/music/ui2keyedit.js)
 // hands its "Find a station" and "Choose a favorite" to this editor: the
 // next paint for host chooses key slot and opens the Radio source, mode
 // 'find' with the keyboard in the station search, 'favorites' on the

@@ -8,7 +8,8 @@ import { stationLogoChain } from '../../logos.js';
 import { parsePresetConflict } from '../../presetmove.js';
 import { state } from '../../state.js';
 import { boxPresetRows, clampRow, keyLabel, keyNum, markRow2Seen, rowSlots, slotKey } from '../../presetrows.js';
-import { $, escapeHtml, friendlyErrorText, getBoxLabel, showError, showToast } from '../../utils.js';
+import { speakerUnitName } from '../../unitname.js';
+import { $, escapeHtml, friendlyErrorText, showError, showToast } from '../../utils.js';
 import { loadPresets } from './presets.js';
 import { wireRowTabs } from './presettiles.js';
 import { presetMoveOffer } from './save.js';
@@ -62,7 +63,8 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
       switcher.removeAttribute('role');
       switcher.removeAttribute('aria-label');
     } else {
-      const speaker = target ? getBoxLabel(target) : '';
+      // A stereo pair's keys are named with the pair (unitname.js).
+      const speaker = speakerUnitName(target);
       const tab = (r) => {
         const label = r === 1 ? t('preset.row2.tabOnce') : r === 2 ? t('preset.row2.tabTwice') : t('preset.row3.tabThrice');
         const full = r === 1
@@ -124,7 +126,7 @@ function renderPickSlots({ row, rows, onPick, target, report = null }) {
         }
         if (report) {
           closePick();
-          const speaker = target ? getBoxLabel(target) : '';
+          const speaker = speakerUnitName(target);
           report(keyFailedVerdict(keyNum(i, t), speaker, friendlyErrorText(String((err && err.message) || err))).text, 'error');
           return;
         }
@@ -213,7 +215,7 @@ export function openPick(station, report = null) {
         return;
       }
       const n = keyNum(i, t);
-      const speaker = box ? getBoxLabel(box) : '';
+      const speaker = speakerUnitName(box);
       report(keySavingVerdict(n, speaker).text, 'busy');
       let fresh = null;
       try { fresh = box ? await GetPresets(box.host, box.port) : null; } catch { fresh = null; }
