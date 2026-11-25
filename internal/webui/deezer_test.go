@@ -147,6 +147,7 @@ func TestDeezerStates(t *testing.T) {
 func deezerRecheck(s *Server, ct string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	s.handleDeezerRecheck(w, nativeReq(http.MethodPost, "/api/deezer/recheck", "{}", "192.168.1.5:5000", ct))
+	s.deezerShare.wg.Wait()
 	return w
 }
 

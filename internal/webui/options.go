@@ -278,6 +278,14 @@ func WithCachedPeers(fn func() []PeerLink) Option {
 	return func(s *Server) { s.cachedPeersFn = fn }
 }
 
+// WithKnownPeer registers the check whether an address belongs to a speaker
+// in the agent's peer roster. POST /api/deezer/kept-login takes a shared
+// Deezer login only from such a speaker (or loopback); nil refuses every
+// other caller.
+func WithKnownPeer(fn func(ip string) bool) Option {
+	return func(s *Server) { s.knownPeerFn = fn }
+}
+
 // WithPeerSeed registers the sink for externally pushed peers (POST
 // /api/peers/seed). nil returns 404 on the endpoint.
 func WithPeerSeed(fn func([]PeerSeed)) Option {

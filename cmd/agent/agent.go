@@ -1068,6 +1068,8 @@ func (a *agent) buildWebui() error {
 		webui.WithPeerForget(func(host string) bool {
 			return a.peers.forgetPeer(host, logger.With("comp", "peers"))
 		}),
+		// A shared Deezer login is taken only from a speaker in the roster.
+		webui.WithKnownPeer(a.peers.isKnownPeer),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithGroupKeys(groupKeysStore),
 		webui.WithKeyActions(keyActionsStore),
@@ -1227,6 +1229,18 @@ func (a *agent) buildWebui() error {
 	// standby. A func value avoids importing webui into streamproxy, which
 	// depends on streamproxy, so no import cycle forms.
 	streamProxySrv.SetSpotifyTitleProvider(webuiSrv.CurrentSpotifyMeta)
+
+	// Deezer: a speaker that keeps a login offers it to a peer that comes up
+	// in the roster and needs one for the same account (deezershare.go). It
+	// rides on the roster's own sweeps and probes; without a kept login it
+	// returns at once.
+	a.peers.setOnPeerUp(func(ip string, port int) {
+		go func() {
+			octx, ocancel := context.WithTimeout(ctx, time.Minute)
+			defer ocancel()
+			webuiSrv.OfferKeptDeezerLoginToPeer(octx, ip, port)
+		}()
+	})
 
 	a.webuiSrv = webuiSrv
 	return nil
@@ -1978,6 +1992,9 @@ func (a *agent) startBackground() error {
 				return
 			}
 			ws.DeezerRecreateAtStart(ctx, deezerRecreateStartWait, deezerRecreateOutcomeWait)
+			// Then, once, offer a kept login to the speakers of the home that
+			// need one for the same account (internal/webui/deezershare.go).
+			ws.OfferKeptDeezerLogin(ctx, "start")
 		}()
 	}
 
