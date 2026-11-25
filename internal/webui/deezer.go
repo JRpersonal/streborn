@@ -22,7 +22,11 @@ package webui
 //                             forgets the kept login; safe to repeat, one
 //                             removal at a time (shared with Pandora)
 // POST   /api/deezer/recheck  the card's "Check again": runs the recreate
-//                             below when it applies, then answers like GET
+//                             below when it applies, then answers like GET;
+//                             also offers a kept login to the speakers of the
+//                             home that need one (deezershare.go)
+// GET    /api/deezer/login-need, POST /api/deezer/kept-login: sharing a kept
+//                             login with another speaker (deezershare.go)
 //
 // The recreate: when STR keeps a Deezer login and the speaker lists DEEZER
 // without a working account, the firmware ignores the token /full now serves
@@ -74,6 +78,12 @@ type DeezerBackend interface {
 	KeptDeezerAccount() string
 	CarriedOverDeezerAccount() string
 	ClearKeptDeezer() error
+	// Sharing a kept login between the speakers of one home
+	// (deezershare.go, internal/marge/deezershare.go).
+	DeezerShareKey() string
+	SealKeptDeezerLogin(peerKey, peerHash string) (marge.SealedDeezerLogin, error)
+	AdoptPeerDeezerLogin(sealed marge.SealedDeezerLogin, listed []string, peer string) (string, error)
+	NoteDeezerShare(sent bool, ev marge.DeezerShareEvent)
 }
 
 // deezerSourceLine is the speaker's own DEEZER entry in /sources.
@@ -323,14 +333,24 @@ func (s *Server) handleDeezerRecheck(w http.ResponseWriter, r *http.Request) {
 	v := s.deezerView(ctx)
 	v.Recreate = &res
 	writeJSON(w, http.StatusOK, v)
+	// A speaker that keeps a login also offers it to the speakers of the
+	// home that need one; it talks to them for some seconds, so not inline.
+	s.deezerShare.wg.Add(1)
+	go func() {
+		defer s.deezerShare.wg.Done()
+		octx, ocancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer ocancel()
+		s.OfferKeptDeezerLogin(octx, deezerShareTriggerCheck)
+	}()
 }
 
 // RecreateDeezerFromKeptLogin hands the kept Deezer login back to a speaker
 // that lists DEEZER without a working account: it removes the speaker's
 // account (empty password) and sends it a sourcesUpdated notification, and
 // the firmware creates the account again from /full, which carries the kept
-// token. Without a kept login it makes no call at all. trigger is "start" or
-// "check-again", for the log and the record.
+// token. Without a kept login it makes no call at all. trigger is "start",
+// "check-again" or "peer" (a login another speaker shared, deezershare.go),
+// for the log and the record.
 func (s *Server) RecreateDeezerFromKeptLogin(ctx context.Context, trigger string) DeezerRecreateResult {
 	if s.deezer == nil {
 		return DeezerRecreateResult{Skipped: "no-kept-login"}
@@ -415,11 +435,18 @@ func (s *Server) DeezerRecreateAtStart(ctx context.Context, wait, outcomeAfter t
 	case <-ctx.Done():
 		return
 	}
+	s.deezerRecreateAndReport(ctx, "start", outcomeAfter)
+}
+
+// deezerRecreateAndReport runs the recreate and, when it ran, reads the
+// speaker's Deezer source once more after outcomeAfter, for the log and the
+// deezer_login debug section. One wait, no loop.
+func (s *Server) deezerRecreateAndReport(ctx context.Context, trigger string, outcomeAfter time.Duration) {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	res := s.RecreateDeezerFromKeptLogin(cctx, "start")
+	res := s.RecreateDeezerFromKeptLogin(cctx, trigger)
 	cancel()
 	if !res.Ran {
-		s.logger.Info("deezer: recreate at start skipped", "why", res.Skipped)
+		s.logger.Info("deezer: recreate skipped", "trigger", trigger, "why", res.Skipped)
 		return
 	}
 	select {
@@ -435,7 +462,7 @@ func (s *Server) DeezerRecreateAtStart(ctx context.Context, wait, outcomeAfter t
 		retry = v.Login.LastRetry.Code
 	}
 	s.logger.Info("deezer: recreate: the speaker's Deezer source afterwards",
-		"sourceStatus", v.Source.Status, "hasAccount", v.Source.HasAccount, "state", v.State, "retryCode", retry)
+		"trigger", trigger, "sourceStatus", v.Source.Status, "hasAccount", v.Source.HasAccount, "state", v.State, "retryCode", retry)
 }
 
 // deezerAccountStore is Deezer's account on STR's side for a removal: the

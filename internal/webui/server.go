@@ -73,6 +73,13 @@ type Server struct {
 	deezerRecreateAt time.Time
 	deezerRecreating atomic.Bool
 	deezerHTTP       *http.Client
+	// deezerShare is the sending side of sharing a kept login with the
+	// other speakers of the home (deezershare.go); deezerShareHTTP is its
+	// test seam for the agent-to-agent calls; knownPeerFn says whether an
+	// address is in the agent's peer roster (see WithKnownPeer).
+	deezerShare     deezerShareSender
+	deezerShareHTTP *http.Client
+	knownPeerFn     func(ip string) bool
 	// pandoraStations is the last station list read from the speaker, so a
 	// play can hand back the exact item it listed (pandorastations.go).
 	pandoraMu       sync.Mutex
@@ -1897,6 +1904,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/deezer/account", s.handleDeezerAccount)
 	mux.HandleFunc("/api/deezer/recheck", s.handleDeezerRecheck)
 	mux.HandleFunc("/api/deezer/play", s.handleDeezerPlay)
+	mux.HandleFunc("/api/deezer/login-need", s.handleDeezerLoginNeed)
+	mux.HandleFunc("/api/deezer/kept-login", s.handleDeezerKeptLogin)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
