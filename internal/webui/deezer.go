@@ -24,9 +24,11 @@ package webui
 // POST   /api/deezer/recheck  the card's "Check again": runs the recreate
 //                             below when it applies, then answers like GET;
 //                             also offers a kept login to the speakers of the
-//                             home that need one (deezershare.go)
-// GET    /api/deezer/login-need, POST /api/deezer/kept-login: sharing a kept
-//                             login with another speaker (deezershare.go)
+//                             home that need one, or on a speaker that needs
+//                             one asks them to offer theirs (deezershare.go)
+// GET    /api/deezer/login-need, POST /api/deezer/kept-login,
+// POST   /api/deezer/offer-request: sharing a kept login with another
+//                             speaker (deezershare.go)
 //
 // The recreate: when STR keeps a Deezer login and the speaker lists DEEZER
 // without a working account, the firmware ignores the token /full now serves
@@ -84,6 +86,7 @@ type DeezerBackend interface {
 	SealKeptDeezerLogin(peerKey, peerHash string) (marge.SealedDeezerLogin, error)
 	AdoptPeerDeezerLogin(sealed marge.SealedDeezerLogin, listed []string, peer string) (string, error)
 	NoteDeezerShare(sent bool, ev marge.DeezerShareEvent)
+	NoteDeezerShareRequest(sent bool, ev marge.DeezerShareEvent)
 }
 
 // deezerSourceLine is the speaker's own DEEZER entry in /sources.
@@ -334,13 +337,16 @@ func (s *Server) handleDeezerRecheck(w http.ResponseWriter, r *http.Request) {
 	v.Recreate = &res
 	writeJSON(w, http.StatusOK, v)
 	// A speaker that keeps a login also offers it to the speakers of the
-	// home that need one; it talks to them for some seconds, so not inline.
+	// home that need one, and a speaker that needs one asks them for it;
+	// that talks to them for some seconds, so not inline.
 	s.deezerShare.wg.Add(1)
 	go func() {
 		defer s.deezerShare.wg.Done()
 		octx, ocancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer ocancel()
 		s.OfferKeptDeezerLogin(octx, deezerShareTriggerCheck)
+		// And a speaker that needs one asks the others to offer theirs.
+		s.RequestDeezerOffers(octx)
 	}()
 }
 

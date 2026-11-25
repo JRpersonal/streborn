@@ -79,11 +79,13 @@ type DeezerShareEvent struct {
 	At time.Time `json:"at"`
 	// Peer is the other speaker's pseudonym, never its address.
 	Peer string `json:"peer"`
-	// Trigger is why a sender looked at the peer: "start", "peer-seen" or
-	// "check-again"; "" on the receiving side.
+	// Trigger is why a sender looked at the peer: "start", "peer-seen",
+	// "check-again" or "offer-request" (the peer asked); "" on the receiving
+	// side.
 	Trigger string `json:"trigger,omitempty"`
 	// Outcome is "accepted", "refused:<code>", or on the sending side also
-	// "not-needed:<why>", "hash-mismatch", "unreachable" or "old-agent".
+	// "not-needed:<why>", "hash-mismatch", "unreachable" or "old-agent". An
+	// offer request is "offering" when the peer said it will offer.
 	Outcome string `json:"outcome"`
 }
 
@@ -92,6 +94,10 @@ type DeezerShareEvent struct {
 type DeezerShareLog struct {
 	Sent     []DeezerShareEvent `json:"sent,omitempty"`
 	Received []DeezerShareEvent `json:"received,omitempty"`
+	// RequestsSent are the offer requests a speaker that needs a login sent
+	// its peers (Check again); RequestsReceived the ones this speaker got.
+	RequestsSent     []DeezerShareEvent `json:"requestsSent,omitempty"`
+	RequestsReceived []DeezerShareEvent `json:"requestsReceived,omitempty"`
 }
 
 // deezerShareState is the Server's share state.
@@ -100,6 +106,8 @@ type deezerShareState struct {
 	key      *ecdh.PrivateKey
 	sent     []DeezerShareEvent
 	received []DeezerShareEvent
+	reqSent  []DeezerShareEvent
+	reqRecv  []DeezerShareEvent
 	// adoptMu keeps one adoption at a time, so two peers that offer at the
 	// same moment cannot both pass the "nothing kept yet" check.
 	adoptMu sync.Mutex
@@ -295,15 +303,29 @@ func (s *Server) AdoptPeerDeezerLogin(sealed SealedDeezerLogin, listed []string,
 
 // NoteDeezerShare records one share attempt, sent or received.
 func (s *Server) NoteDeezerShare(sent bool, ev DeezerShareEvent) {
+	list := &s.deezerShare.received
+	if sent {
+		list = &s.deezerShare.sent
+	}
+	s.noteDeezerShareIn(list, ev)
+}
+
+// NoteDeezerShareRequest records one offer request, sent or received.
+func (s *Server) NoteDeezerShareRequest(sent bool, ev DeezerShareEvent) {
+	list := &s.deezerShare.reqRecv
+	if sent {
+		list = &s.deezerShare.reqSent
+	}
+	s.noteDeezerShareIn(list, ev)
+}
+
+// noteDeezerShareIn appends ev to list (one of deezerShare's), capped.
+func (s *Server) noteDeezerShareIn(list *[]DeezerShareEvent, ev DeezerShareEvent) {
 	if ev.At.IsZero() {
 		ev.At = time.Now().UTC()
 	}
 	s.deezerShare.mu.Lock()
 	defer s.deezerShare.mu.Unlock()
-	list := &s.deezerShare.received
-	if sent {
-		list = &s.deezerShare.sent
-	}
 	*list = append(*list, ev)
 	if n := len(*list); n > deezerShareLogCap {
 		*list = append([]DeezerShareEvent(nil), (*list)[n-deezerShareLogCap:]...)
@@ -315,11 +337,14 @@ func (s *Server) NoteDeezerShare(sent bool, ev DeezerShareEvent) {
 func (s *Server) deezerShareLog() *DeezerShareLog {
 	s.deezerShare.mu.Lock()
 	defer s.deezerShare.mu.Unlock()
-	if len(s.deezerShare.sent) == 0 && len(s.deezerShare.received) == 0 {
+	sh := &s.deezerShare
+	if len(sh.sent)+len(sh.received)+len(sh.reqSent)+len(sh.reqRecv) == 0 {
 		return nil
 	}
 	return &DeezerShareLog{
-		Sent:     append([]DeezerShareEvent(nil), s.deezerShare.sent...),
-		Received: append([]DeezerShareEvent(nil), s.deezerShare.received...),
+		Sent:             append([]DeezerShareEvent(nil), sh.sent...),
+		Received:         append([]DeezerShareEvent(nil), sh.received...),
+		RequestsSent:     append([]DeezerShareEvent(nil), sh.reqSent...),
+		RequestsReceived: append([]DeezerShareEvent(nil), sh.reqRecv...),
 	}
 }

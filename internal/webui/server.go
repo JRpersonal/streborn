@@ -1906,6 +1906,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/deezer/play", s.handleDeezerPlay)
 	mux.HandleFunc("/api/deezer/login-need", s.handleDeezerLoginNeed)
 	mux.HandleFunc("/api/deezer/kept-login", s.handleDeezerKeptLogin)
+	mux.HandleFunc("/api/deezer/offer-request", s.handleDeezerOfferRequest)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)

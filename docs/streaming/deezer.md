@@ -295,7 +295,24 @@ How it works (`internal/webui/deezershare.go`,
   peer at most once per agent start. No timer: it runs once after the
   start recreate, when a peer comes up in the roster (a new entry, or a
   dimmed one that answers again; at most one need check per peer every
-  3 minutes), and on the card's Check again.
+  3 minutes), on the card's Check again, and when a peer that needs a
+  login asks for it (below).
+- **Pull.** Check again on the speaker that lost its login (where owners
+  will press it) asks each reachable speaker in its roster once to offer:
+  `POST /api/deezer/offer-request`, no body. A speaker that gets the request
+  takes it only from loopback or a speaker in its own roster, at most once
+  per requester every 3 minutes, not when it already sent that requester
+  its login this run, and only when it keeps a login itself (answers `202`
+  `offering`, else `refused` with `unknown-caller`, `rate-limited`,
+  `already-offered`, `no-kept-login`, `own-login-rejected`). It then runs
+  its normal offer towards that requester alone: the need signal, the hash
+  match, the sealing and the receiver's guards decide as above. The
+  requester also asks each peer at most once every 3 minutes.
+- **Ports.** Every agent-to-agent call tries the port the roster knows
+  first, then the other agent port: `:8888` (sm2 chassis) and `:17008` (the
+  REDIRECT the BCO and whitelisted chassis are reached on, see
+  `docs/MODEL-VARIANTS.md`). A peer whose port is not known is tried on
+  `:8888` and then `:17008`, each with a 1.5 s connect budget.
 - **Receiver.** `POST /api/deezer/kept-login` is write-only and takes the
   login only when all hold: the caller is loopback or a speaker in this
   agent's peer roster; this speaker lists a DEEZER source for exactly that
@@ -315,19 +332,24 @@ How it works (`internal/webui/deezershare.go`,
   ask for the login. Sealing keeps it from a passive listener only.
 
 What the first field report should show (agent logs of both speakers and a
-diagnostic file from each, taken a minute or two after the receiver's
-Check again or a restart of the speaker that keeps the login):
+diagnostic file from each, taken a minute or two after Check again on the
+speaker that lost its login):
 
-- sender log: `deezer share: sent the kept login, the speaker accepted it`
-  (or a `not offering` line with the reason: `does not need`,
+- receiver log, first: `deezer share: this speaker needs a Deezer login,
+  asking the other speakers to offer theirs`, and per peer `the speaker will
+  offer its kept Deezer login` or `refused the request` with the reason;
+- sender log: `deezer share: another speaker asked for a Deezer login`, then
+  `deezer share: sent the kept login, the speaker accepted it` (or a
+  `not offering` line with the reason: `does not need`,
   `another Deezer account`, `not reachable`, `did not answer`);
 - receiver log: `deezer share: accepted a Deezer login`, then
   `deezer: recreate: ...` with `trigger=peer`, and
   `deezer: recreate: the speaker's Deezer source afterwards` with
   `sourceStatus` and `retryCode`;
 - receiver bundle: `deezer_login.kept` true, `from` `peer`, `fromPeer`,
-  `shares.received`, `lastAttempt.trigger` `peer`, and `lastRetry`;
-  sender bundle: `deezer_login.shares.sent` with the outcome per peer.
+  `shares.requestsSent`, `shares.received`, `lastAttempt.trigger` `peer`,
+  and `lastRetry`; sender bundle: `deezer_login.shares.requestsReceived`
+  and `shares.sent` (trigger `offer-request`) with the outcome per peer.
 
 Reading it: `DEEZER` `READY` on the receiver and a Deezer key that plays is
 the pass, and settles that a token is bound to the account. A `3330` on the
