@@ -75,6 +75,11 @@ type updateResumeMarker struct {
 	// followUp marks the second resume, after the engine delivery that
 	// followed the restart. Never on the NAND.
 	followUp bool
+	// feedLost marks a resume onto a speaker that still reports playing,
+	// because what it plays is the buffer of the stream the old agent fed
+	// (updateResumeFeedLost). The push then does not take "busy" for "started
+	// by itself". Never on the NAND.
+	feedLost bool
 }
 
 // updateResumeTiming is every wait of the resume. All of them are bounded
@@ -136,6 +141,9 @@ type updateResumeFx struct {
 	// push starts the stream; done reports that the speaker turned out to be
 	// playing already and nothing was sent.
 	push func(m updateResumeMarker) (done bool, err error)
+	// feedLost reports that a speaker which says it plays is playing out the
+	// buffer of a stream the previous agent run fed (updateResumeFeedLost).
+	feedLost func(np nowPlayingSnapshot) bool
 }
 
 // updateResumeState is the in-memory half. mu is taken alone.
@@ -197,8 +205,45 @@ func (s *Server) updateResumeEffects() *updateResumeFx {
 			defer cancel()
 			_ = boxcli.WakeAndWait(ctx, s.boxHost, 6*time.Second, s.logger)
 		},
-		push: s.pushUpdateResume,
+		push:     s.pushUpdateResume,
+		feedLost: s.updateResumeFeedLost,
 	}
+}
+
+// updateResumeFeedLost reports whether the speaker is playing out the buffer
+// of a stream that died with the previous agent run.
+//
+// A station on one of STR's keys reaches the speaker through this agent's own
+// stream proxy (the native "/station?data=" descriptor names
+// http://127.0.0.1:8888/stream/N, a UPnP push the same address). The update's
+// restart closes that connection, and the firmware does not dial the new
+// agent: it plays out what it buffered and then drops the station. The
+// buffer is large (about 1.5 MB, close to a minute of a 128 kbit/s station),
+// so the speaker still reports PLAY_STATE well after the new agent is up.
+// Field case 2026-11-26 (ST30, permanent group main speaker): "already
+// playing" read 27 s after the old agent exited, the speaker fell silent with
+// SOURCE_DISCONNECTED 22 s later, and the station never came back on the
+// group; the new agent's proxy served no connection until the next key press.
+//
+// The evidence is exactly that: the speaker names this agent's proxy, and the
+// proxy has served nothing at all since this agent started.
+func (s *Server) updateResumeFeedLost(np nowPlayingSnapshot) bool {
+	if s.streamActivityFn == nil || !playsOwnProxyStream(np.Location) {
+		return false
+	}
+	lastFetch, _ := s.streamActivityFn()
+	return lastFetch.IsZero()
+}
+
+// playsOwnProxyStream reports whether a now_playing location is a stream this
+// agent's own per-key proxy serves: the native station descriptor STR writes
+// for its keys, or the proxy address itself.
+func playsOwnProxyStream(loc string) bool {
+	if _, ok := StationLocationOwnSlot(loc); ok {
+		return true
+	}
+	_, ok := selfProxySlot(strings.TrimSpace(loc))
+	return ok
 }
 
 // readOwnVolume reads the speaker's level; ok is false when it did not answer.
@@ -508,6 +553,13 @@ func (s *Server) attemptUpdateResume(m updateResumeMarker) (keep bool) {
 		fx.sleep(tm.boxReadGap)
 	}
 	switch {
+	case isPlayingStatus(np.PlayStatus) && fx.feedLost != nil && fx.feedLost(np):
+		// Not playing for long: the stream died with the old agent and only
+		// the speaker's buffer is left (updateResumeFeedLost). The station is
+		// started again before the buffer runs dry.
+		s.logger.Info("resume after update: the speaker plays out the buffer of the stream the old agent fed, starting it again",
+			"source", np.Source, "playStatus", np.PlayStatus, "signal", "this agent's stream proxy has served nothing since it started")
+		m.feedLost = true
 	case isPlayingStatus(np.PlayStatus) || np.PlayStatus == "PAUSE_STATE":
 		return skip("the speaker is already playing", "source", np.Source, "playStatus", np.PlayStatus)
 	case !resumeSafeSource(np.Source):
@@ -669,10 +721,20 @@ func (s *Server) pushUpdateResume(m updateResumeMarker) (done bool, err error) {
 	// somebody just started it). It gets a bounded moment to do so, because
 	// a push into that start cuts it off. A start that does not come, as on
 	// the Portable right after its boot, is ours to make.
+	fx := s.updateResumeEffects()
+	// startedByItself reads "busy" as the station having been started by the
+	// firmware, except while the speaker only plays out the old agent's
+	// buffer, which is busy too and is what this push replaces.
+	startedByItself := func() bool {
+		if _, busy := s.boxPlayState(); !busy {
+			return false
+		}
+		return !m.feedLost || fx.feedLost == nil || !fx.feedLost(fx.nowPlaying())
+	}
 	if !cur.ts.Equal(m.PlayTS) {
-		fx, tm := s.updateResumeEffects(), s.updateResumeTimes()
+		tm := s.updateResumeTimes()
 		for i := 0; i < tm.selfStartChecks; i++ {
-			if _, busy := s.boxPlayState(); busy {
+			if startedByItself() {
 				return true, nil
 			}
 			fx.sleep(tm.selfStartGap)
@@ -686,7 +748,7 @@ func (s *Server) pushUpdateResume(m updateResumeMarker) (done bool, err error) {
 	}
 	// A wake can make the firmware, or the power-on resume it triggers,
 	// start the station while this waited for the lock.
-	if _, busy := s.boxPlayState(); busy {
+	if startedByItself() {
 		return true, nil
 	}
 	// Counted and persisted before the push, like every automatic resume:
