@@ -66,8 +66,13 @@ as a DNS server for any other device, and does not phone home.
   handed back only to a loopback caller, the speaker itself; a LAN client
   gets `***`. Like every agent endpoint the account calls are LAN-only but
   not authenticated: anyone on the LAN can sign the speaker into an account
-  of their own or sign it out, not read the owner's login. Disconnect deletes
-  STR's kept copy. The firmware log lines in a diagnostic file have e-mail
+  of their own or sign it out, not read the owner's login. One exception: a
+  speaker that keeps a Deezer login hands it, sealed (X25519 + AES-GCM), to
+  another speaker in its peer roster whose agent says it needs a login for
+  the same account (`docs/streaming/deezer.md`, "Sharing a kept login within
+  a home"). Sealing keeps it from a passive listener; a LAN device that
+  poses as an STR speaker and knows the account could ask for it.
+  Disconnect deletes STR's kept copy. The firmware log lines in a diagnostic file have e-mail
   addresses masked and token, secret and password values dropped, in case
   the firmware prints one while it logs in. The Deezer new
   login is built but **not yet confirmed on a speaker**

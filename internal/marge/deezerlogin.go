@@ -14,10 +14,11 @@
 // Deezer login in Sources.xml is untouched: no file is written and every
 // document is byte for byte what it was.
 //
-// The login is the owner's. It never leaves the speaker: /full reveals it only
-// to a loopback caller (the firmware reaches the stand-in through /etc/hosts),
-// every other client gets "***", and no log line, debug section or diagnostic
-// bundle carries it or the account.
+// The login is the owner's. /full reveals it only to a loopback caller (the
+// firmware reaches the stand-in through /etc/hosts), every other client gets
+// "***", and no log line, debug section or diagnostic bundle carries it or the
+// account. The one way it leaves the speaker is sealed to another STR speaker
+// of the home that needs it for the same account (deezershare.go).
 
 package marge
 
@@ -40,8 +41,11 @@ type keptLogin struct {
 	DisplayName string    `json:"displayName,omitempty"`
 	SecretType  string    `json:"secretType,omitempty"`
 	Secret      string    `json:"secret"`
-	From        string    `json:"from"` // "sources-file" or "registration"
+	From        string    `json:"from"` // "sources-file", "registration" or "peer"
 	KeptAt      time.Time `json:"keptAt"`
+	// Peer is the pseudonym of the speaker a login came from when From is
+	// "peer" (deezershare.go), never its address.
+	Peer string `json:"peer,omitempty"`
 }
 
 // sameLogin reports whether two records hold the same login (the time and the
@@ -209,11 +213,20 @@ func (s *Server) respondDeezerAddSource(w http.ResponseWriter, r *http.Request, 
 // DeezerLoginStatus is the diagnostic view of the kept login: never the
 // login, never the account.
 type DeezerLoginStatus struct {
-	Configured bool      `json:"configured"`
-	Kept       bool      `json:"kept"`
-	SecretType string    `json:"secretType,omitempty"`
-	From       string    `json:"from,omitempty"`
-	KeptAt     time.Time `json:"keptAt,omitempty"`
+	Configured bool   `json:"configured"`
+	Kept       bool   `json:"kept"`
+	SecretType string `json:"secretType,omitempty"`
+	// From is where the kept login came from: "sources-file" (the speaker's
+	// own Sources.xml), "registration" (the firmware registered it) or
+	// "peer" (another speaker of the home shared it, deezershare.go).
+	From   string    `json:"from,omitempty"`
+	KeptAt time.Time `json:"keptAt,omitempty"`
+	// FromPeer is the pseudonym of the speaker that shared the login, set
+	// when From is "peer".
+	FromPeer string `json:"fromPeer,omitempty"`
+	// Shares are the last share attempts this agent sent to its peers and
+	// received from them since it started; nil before the first.
+	Shares *DeezerShareLog `json:"shares,omitempty"`
 	// LastAttempt is the last recreate or removal STR handed to the
 	// firmware since the agent started, and what followed
 	// (deezernewlogin.go); nil when there was none.
@@ -228,8 +241,9 @@ type DeezerLoginStatus struct {
 func (s *Server) DeezerLoginSnapshot() DeezerLoginStatus {
 	st := DeezerLoginStatus{Configured: s.deezerLoginPath != ""}
 	if k, ok := s.keptDeezer(); ok {
-		st.Kept, st.SecretType, st.From, st.KeptAt = true, k.SecretType, k.From, k.KeptAt
+		st.Kept, st.SecretType, st.From, st.KeptAt, st.FromPeer = true, k.SecretType, k.From, k.KeptAt, k.Peer
 	}
+	st.Shares = s.deezerShareLog()
 	st.LastAttempt = s.LastDeezerAttempt()
 	st.LastRetry = s.lastDeezerRetry()
 	return st

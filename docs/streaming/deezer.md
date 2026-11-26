@@ -209,7 +209,9 @@ and already reads firmware files in `/mnt/nv/BoseApp-Persistence/`
 4. **Untouched without Deezer.** No file, and every account document is
    byte for byte what it was. A test holds the documents with and
    without the feature side by side.
-5. **Never leaves the speaker.** No log line, debug section or bundle
+5. **Never leaves the speaker**, except sealed to another STR speaker of
+   the home that needs it for the same account (see "Sharing a kept login
+   within a home" below). No log line, debug section or bundle
    carries the login or the account. The debug section `deezer_login`
    says only whether a login is kept, its type, where it came from and
    when. `Remove STR` deletes it with the rest of `/mnt/nv/streborn/`.
@@ -260,6 +262,100 @@ the speaker's Deezer state, Check again and Disconnect, says that a new
 sign-in is not possible without Bose, and tells the owner to unplug the
 speaker for ten seconds when its Deezer client is stuck (the last account
 call answered 1024 or not at all).
+
+### Sharing a kept login within a home (built, untested on hardware)
+
+A speaker whose Deezer login is gone and that keeps no copy can never get one
+again: Deezer issues logins only to Bose's app. The field case (discussion
+#2124): an ST20 whose `Sources.xml` DEEZER entry still names the account but
+has an empty secret, no kept login, and the firmware retrying with `3351`
+every 15 s. When another speaker of the same home keeps a login for the
+same account, its agent now copies it over (maintainer decision
+2026-11-26). **Untested on hardware:** nobody here has a speaker with a
+Bose-issued Deezer token, and whether a token one speaker holds plays on
+another is open (most likely it is bound to the Deezer account, not to the
+device, see "Open details" above).
+
+How it works (`internal/webui/deezershare.go`,
+`internal/marge/deezershare.go`):
+
+- **Need signal.** `GET /api/deezer/login-need` answers whether this speaker
+  needs a login: it lists `DEEZER` with an account, none of its DEEZER
+  entries is `READY`, and it keeps no login. It carries a share key (an
+  X25519 public key the agent makes once per run, private half in RAM only)
+  and the account as `SHA-256("str-deezer-share-v1" | key | lowercased
+  account)`. Neither the account nor the login is ever in it. When nothing is
+  needed it says why (`kept`, `ready`, `not-listed`, `no-account`,
+  `unreadable`).
+- **Sender.** A speaker that keeps a login reads a peer's need signal and
+  posts only when the peer needs one and the hash matches its own kept
+  account. It never offers a login its own firmware reported rejected
+  (`3330`). The login travels sealed to the peer's key (one-time X25519,
+  HKDF-SHA256, AES-256-GCM), never in clear on the LAN. It posts to each
+  peer at most once per agent start. No timer: it runs once after the
+  start recreate, when a peer comes up in the roster (a new entry, or a
+  dimmed one that answers again; at most one need check per peer every
+  3 minutes), on the card's Check again, and when a peer that needs a
+  login asks for it (below).
+- **Pull.** Check again on the speaker that lost its login (where owners
+  will press it) asks each reachable speaker in its roster once to offer:
+  `POST /api/deezer/offer-request`, no body. A speaker that gets the request
+  takes it only from loopback or a speaker in its own roster, at most once
+  per requester every 3 minutes, not when it already sent that requester
+  its login this run, and only when it keeps a login itself (answers `202`
+  `offering`, else `refused` with `unknown-caller`, `rate-limited`,
+  `already-offered`, `no-kept-login`, `own-login-rejected`). It then runs
+  its normal offer towards that requester alone: the need signal, the hash
+  match, the sealing and the receiver's guards decide as above. The
+  requester also asks each peer at most once every 3 minutes.
+- **Ports.** Every agent-to-agent call tries the port the roster knows
+  first, then the other agent port: `:8888` (sm2 chassis) and `:17008` (the
+  REDIRECT the BCO and whitelisted chassis are reached on, see
+  `docs/MODEL-VARIANTS.md`). A peer whose port is not known is tried on
+  `:8888` and then `:17008`, each with a 1.5 s connect budget.
+- **Receiver.** `POST /api/deezer/kept-login` is write-only and takes the
+  login only when all hold: the caller is loopback or a speaker in this
+  agent's peer roster; this speaker lists a DEEZER source for exactly that
+  account (case and spaces aside) and none that works; and it keeps no
+  login yet. A kept login is never replaced by a peer's. Then it keeps the
+  login with `from` `peer` (file mode 0600, as A1) and runs the recreate with
+  trigger `peer`, so the firmware creates its account anew from `/full`.
+  Answers `{"status":"accepted"}` or `{"status":"refused","reason":...}`
+  (`unknown-caller`, `kept`, `ready`, `not-listed`, `no-account`,
+  `unreadable`, `account-mismatch`, `undecryptable`, `malformed`,
+  `already-kept`, `save-failed`, `bad-request`).
+- **Series-I.** Those speakers cannot reach each other's agent. The sender
+  skips a dimmed or silent peer with a log line; the desktop app does not
+  relay this (not built).
+- **Trust.** Like every agent endpoint this trusts the LAN: a device that
+  pretends to be an STR speaker in the roster and knows the account could
+  ask for the login. Sealing keeps it from a passive listener only.
+
+What the first field report should show (agent logs of both speakers and a
+diagnostic file from each, taken a minute or two after Check again on the
+speaker that lost its login):
+
+- receiver log, first: `deezer share: this speaker needs a Deezer login,
+  asking the other speakers to offer theirs`, and per peer `the speaker will
+  offer its kept Deezer login` or `refused the request` with the reason;
+- sender log: `deezer share: another speaker asked for a Deezer login`, then
+  `deezer share: sent the kept login, the speaker accepted it` (or a
+  `not offering` line with the reason: `does not need`,
+  `another Deezer account`, `not reachable`, `did not answer`);
+- receiver log: `deezer share: accepted a Deezer login`, then
+  `deezer: recreate: ...` with `trigger=peer`, and
+  `deezer: recreate: the speaker's Deezer source afterwards` with
+  `sourceStatus` and `retryCode`;
+- receiver bundle: `deezer_login.kept` true, `from` `peer`, `fromPeer`,
+  `shares.requestsSent`, `shares.received`, `lastAttempt.trigger` `peer`,
+  and `lastRetry`; sender bundle: `deezer_login.shares.requestsReceived`
+  and `shares.sent` (trigger `offer-request`) with the outcome per peer.
+
+Reading it: `DEEZER` `READY` on the receiver and a Deezer key that plays is
+the pass, and settles that a token is bound to the account. A `3330` on the
+receiver right after the recreate (while the sender still plays) means
+Deezer refuses the token on a second device: then the copy cannot help and
+the receiver should be disconnected again (Disconnect on its card).
 
 ### A2. A new login on the speaker (closed 2026-11-22)
 
@@ -496,5 +592,6 @@ same thread and would do as well.
 | A1 keep the existing login across an install | done, field check open | none | a stock, Deezer-linked speaker for the field check |
 | A2 build (login, forensics, Deezer links, hold-to-save) | login form removed, the rest kept | a Deezer card (state, Check again, Disconnect) in the Spotify view and on the phone's More tab, Deezer links in the station search | nothing |
 | A1 recreate (remove + sourcesUpdated) and retry code | done, confirmed with a fake token | Check again on the card | a kept login |
+| Share a kept login with another speaker of the home | built, untested on hardware | none | two speakers with the same account, one keeping a login |
 | Route B | about a week | a source in Find | ruled out (decryption) |
 | Route C | a FAQ answer | none | nothing |

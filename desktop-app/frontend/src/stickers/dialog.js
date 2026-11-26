@@ -136,6 +136,21 @@ function skippedHTML(skipped) {
   return skipped.map((name) => `<p class="sticker-skipped">${escapeHtml(t('stickers.skipped', { name }))}</p>`).join('');
 }
 
+// homeScreenTexts are the steps of the Settings card that puts the phone
+// remote on a home screen, for the end of the sheet. Their markup is dropped
+// by the layout.
+function homeScreenTexts() {
+  return {
+    title: t('settingsView.phoneHowtoSummary'),
+    iosTitle: `${t('settingsView.phoneIosTitle')} (${t('settingsView.phoneIosChip')})`,
+    ios: [t('settingsView.phoneIos1'), t('settingsView.phoneIos2'), t('settingsView.phoneIos3'), t('settingsView.phoneIos4')],
+    iosNote: t('settingsView.phoneIosNote'),
+    androidTitle: `${t('settingsView.phoneAndroidTitle')} (${t('settingsView.phoneAndroidChip')})`,
+    android: [t('settingsView.phoneAndroid1'), t('settingsView.phoneAndroid2'), t('settingsView.phoneAndroid3'), t('settingsView.phoneAndroid4')],
+    androidNote: t('settingsView.phoneAndroidNote'),
+  };
+}
+
 // redraw lays the sheet out again and paints the preview. Called after the
 // speakers were read, after every colour switch and when Large text changes.
 async function redraw(mine) {
@@ -145,7 +160,7 @@ async function redraw(mine) {
     measure: m.measure,
     squeeze: m.squeeze,
     large: m.large,
-    texts: { instruction: t('stickers.sheetInstruction'), control: t('stickers.sheetControl'), remote: t('stickers.remoteHeader') },
+    texts: { instruction: t('stickers.sheetInstruction'), control: t('stickers.sheetControl'), remote: t('stickers.remoteHeader'), homeScreen: homeScreenTexts() },
   });
   m.images = await loadImages(m.layout);
   if (mine !== run || model !== m) return;

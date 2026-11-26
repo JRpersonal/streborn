@@ -70,6 +70,50 @@ type peerRegistry struct {
 	savedAt  time.Time // last NAND write (rate-limits lastSeen refreshes)
 	// storePath is the roster's file on NAND, peersStorePath in production.
 	storePath string
+	// onPeerUp, when set, is told about a peer that came up: a new entry
+	// that answered, or a dimmed one that answers again. It rides on the
+	// sweeps, probes and seeds that already run; it never adds one.
+	onPeerUp atomic.Pointer[func(ip string, port int)]
+}
+
+// peerUp is one peer that came up during a merge, for onPeerUp.
+type peerUp struct {
+	ip   string
+	port int
+}
+
+// setOnPeerUp wires the hook for a peer that came up (nil unwires it).
+func (r *peerRegistry) setOnPeerUp(fn func(ip string, port int)) {
+	if fn == nil {
+		r.onPeerUp.Store(nil)
+		return
+	}
+	r.onPeerUp.Store(&fn)
+}
+
+// firePeerUp tells the hook about the peers that came up. Called without r.mu.
+func (r *peerRegistry) firePeerUp(ups []peerUp) {
+	fn := r.onPeerUp.Load()
+	if fn == nil {
+		return
+	}
+	for _, u := range ups {
+		(*fn)(u.ip, u.port)
+	}
+}
+
+// isKnownPeer reports whether ip is a speaker in the roster (any entry not yet
+// aged out, dimmed or not). POST /api/deezer/kept-login takes a shared login
+// only from such a speaker.
+func (r *peerRegistry) isKnownPeer(ip string) bool {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e := r.byIP[ip]
+	return e != nil && time.Since(e.lastSeen) <= peerTTL
 }
 
 // newPeerRegistry returns an empty roster persisted at storePath.
@@ -448,6 +492,7 @@ func (r *peerRegistry) seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 	now := time.Now()
 	r.mu.Lock()
 	added := 0
+	var ups []peerUp
 	for _, s := range seeds {
 		ip := strings.TrimSpace(s.Host)
 		if ip == "" || mine[ip] {
@@ -495,10 +540,14 @@ func (r *peerRegistry) seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		// "str-<ip>" forever even though the PHONE reading the picker reaches
 		// both speakers fine. Reachability for the picker means "a client can
 		// open this link", and the app just proved that.
+		if !e.reachable {
+			ups = append(ups, peerUp{ip: ip, port: e.port})
+		}
 		e.reachable = true
 	}
 	r.savePersistedPeersLocked(logger)
 	r.mu.Unlock()
+	r.firePeerUp(ups)
 	if added > 0 {
 		logger.Info("peer list seeded by the app", "added", added, "total", len(seeds))
 	}
@@ -569,7 +618,9 @@ func (r *peerRegistry) probeStalePeers(logger *slog.Logger) {
 				friendly = peerFriendlyName(c)
 				r.mu.Lock()
 			}
+			came := false
 			if e := r.byIP[c]; e != nil {
+				came = !e.reachable
 				e.lastSeen = time.Now()
 				e.reachable = true
 				e.port = port
@@ -578,6 +629,9 @@ func (r *peerRegistry) probeStalePeers(logger *slog.Logger) {
 				}
 			}
 			r.mu.Unlock()
+			if came {
+				r.firePeerUp([]peerUp{{ip: c, port: port}})
+			}
 		}
 		if logger != nil {
 			logger.Debug("peer fallback probe done", "checked", len(stale))
@@ -694,8 +748,13 @@ func (r *peerRegistry) browsePeers(ctx context.Context, logger *slog.Logger) []w
 
 		r.mu.Lock()
 		now := time.Now()
+		var ups []peerUp
 		for _, f := range fresh {
+			_, known := r.byIP[f.ip]
 			e := r.adoptPeerEntryLocked(f.ip, f.deviceID, f.boxDeviceID)
+			if f.port != 0 && (!known || !e.reachable) {
+				ups = append(ups, peerUp{ip: f.ip, port: f.port})
+			}
 			// Never let a placeholder overwrite a name we already know: mDNS can
 			// answer with the instance name only, and replacing "Kitchen" with
 			// "str-192.0.2.5" is the #494 defect arriving by the back door.
@@ -711,6 +770,7 @@ func (r *peerRegistry) browsePeers(ctx context.Context, logger *slog.Logger) []w
 		r.browseAt = now
 		r.savePersistedPeersLocked(logger)
 		r.mu.Unlock()
+		r.firePeerUp(ups)
 		// Independently of mDNS, re-confirm the longest-unseen listed peers over
 		// TCP so a speaker with lost announcements stays in the picker (async).
 		r.probeStalePeers(logger)

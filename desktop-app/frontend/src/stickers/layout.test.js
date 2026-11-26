@@ -7,6 +7,9 @@ import {
   AREA,
   BLEED,
   CONTROL_LENGTH,
+  LARGE_CAP,
+  LARGE_OUTLIERS,
+  LARGE_RATIO,
   PAGE,
   REMOTE,
   REMOTE_GRIDS,
@@ -456,7 +459,10 @@ describe('large text', () => {
       const [normal, big] = both([speaker('Den', model, 'dark', keys)]).map((pages) => own(pages[0]));
       for (let i = 0; i < normal.length; i++) {
         if (!nameLines(normal[i]).length) continue;
-        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.2);
+        // All six names share one size, which the cells with a pressed-twice
+        // line limit: on the ST30, already large in normal text, that is
+        // about 1.16 times normal.
+        expect(maxSize(nameLines(big[i])), model).toBeGreaterThan(maxSize(nameLines(normal[i])) * 1.15);
         // The pressed-twice line grows too, but never past the name.
         expect(maxSize(twiceLines(big[i])), model).toBeGreaterThan(maxSize(twiceLines(normal[i])));
         expect(maxSize(twiceLines(big[i])), model).toBeLessThanOrEqual(Math.min(...nameLines(big[i]).map((x) => x.size)) + 1e-9);
@@ -500,6 +506,104 @@ describe('large text', () => {
       for (const pages of both(MODELS.map((m) => speaker('Wohnzimmer', m, 'dark', keys)))) expectInside(pages);
     }, 30_000);
   }
+
+  // The key names of one speaker's own sticker, over all its key pieces.
+  const keyNames = (pages) => pages.flatMap(own).filter((p) => p.part !== 'qr').flatMap(nameLines);
+  const sizesOf = (xs) => [...new Set(xs.map((x) => x.size))];
+  const MIXED = ['1LIVE', 'Rock', 'Absolut Relax', 'Energy Digital', 'Gute-Laune-Mix', 'Bayern 3'];
+
+  it('sets all names of one sticker in one size', () => {
+    const SHORT = ['1LIVE', 'Rock', 'Absolut Relax', 'Jazz', 'SWR3', 'Bayern 3'];
+    for (const model of MODELS) {
+      const keys = SHORT.map((name, i) => key(i + 1, name, i % 2 ? null : { name: 'Talk', kind: 'station' }));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const sizes = sizesOf(keyNames(big));
+      expect(sizes, model).toHaveLength(1);
+      // Not always larger than every normal name: on the ST30 a key with a
+      // pressed-twice line may already be as large as it gets.
+      expect(sizes[0], model).toBeGreaterThanOrEqual(Math.min(...keyNames(normal).map((x) => x.size)));
+      // The pressed-twice lines share one size too.
+      expect(sizesOf(big.flatMap(own).flatMap(twiceLines)), model).toHaveLength(1);
+    }
+  });
+
+  it('never sets a name more than LARGE_RATIO times larger than the smallest, unless pinned at normal size', () => {
+    const SETS = [
+      ['1LIVE', 'Rock', 'Absolut Relax', 'Energy NRJ Digital', 'Best Of Rock.FM Alternative Rock', 'Gute-Laune-Mix'],
+      ['Jazz', 'Rock', 'SWR3', 'FIP', 'Bayern 3', 'Xyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzy'],
+      ['Jazz', 'Rock', 'Deutschlandfunk Kultur', 'Norddeutscher Rundfunk NDR Kultur', 'SWR3', 'FIP'],
+    ];
+    for (const names of SETS) {
+      for (const model of MODELS) {
+        const keys = names.map((name, i) => key(i + 1, name, i === 1 ? { name: 'Nrj Dance', kind: 'station' } : (i === 3 ? { name: 'Morning Mix Nova Extra Long', kind: 'playlist' } : null)));
+        const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+        const label = `${model}: ${names.join(', ')}`;
+        for (const [lines, normalLines] of [[keyNames(big), keyNames(normal)], [big.flatMap(own).flatMap(twiceLines), normal.flatMap(own).flatMap(twiceLines)]]) {
+          const sizes = lines.map((x) => x.size);
+          const hi = Math.max(...sizes);
+          const lo = Math.min(...sizes);
+          // Past the bound only where the larger ones are down at normal size.
+          if (hi > lo * LARGE_RATIO + 1e-6) expect(hi, label).toBeLessThanOrEqual(Math.max(...normalLines.map((x) => x.size)) + 1e-6);
+        }
+      }
+    }
+  });
+
+  it('shares one size again when more names are long than may be left out', () => {
+    // Three names that fit only a little above normal, or not even at normal
+    // size on a narrow cell: too many to leave out, so the short ones come
+    // down to them instead of towering over them.
+    const LONG = ['Deutschlandfunk Nova', 'Deutschlandfunk Nova', 'Deutschlandfunk Nova'];
+    expect(LONG.length).toBeGreaterThan(LARGE_OUTLIERS);
+    for (const model of MODELS) {
+      const keys = [...LONG, 'Jazz', 'Rock', 'SWR3'].map((name, i) => key(i + 1, name));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const isShort = (x) => ['Jazz', 'Rock', 'SWR3'].includes(x.text);
+      const short = sizesOf(keyNames(big).filter(isShort));
+      expect(short, model).toHaveLength(1);
+      expect(short[0], model).toBeLessThanOrEqual(Math.max(...keyNames(big).filter((x) => !isShort(x)).map((x) => x.size)) + 1e-9);
+      // Never below the smallest name of normal text. (The ST30 sizes its
+      // names one by one in normal text, so there a short name may come down
+      // from its own normal size to that of the long ones.)
+      expect(short[0], model).toBeGreaterThanOrEqual(Math.min(...keyNames(normal).map((x) => x.size)) - 1e-9);
+    }
+  });
+
+  it('does not let one name that cannot fit pull the others below their normal size', () => {
+    const outlier = 'Xyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzyxyzzy';
+    for (const model of MODELS) {
+      const keys = [...MIXED.slice(0, 5), outlier].map((name, i) => key(i + 1, name));
+      const [normal, big] = both([speaker('Den', model, 'dark', keys)]);
+      const isOutlier = (x) => outlier.includes(x.text.replace('…', ''));
+      const others = keyNames(big).filter((x) => !isOutlier(x));
+      expect(sizesOf(others), model).toHaveLength(1);
+      // Not below what those names have in normal text.
+      const normalTop = Math.max(...keyNames(normal).filter((x) => !isOutlier(x)).map((x) => x.size));
+      expect(others[0].size, model).toBeGreaterThanOrEqual(normalTop - 1e-9);
+      // No larger than without the outlier, and within LARGE_RATIO of it
+      // unless they are down at normal size.
+      const [, plain] = both([speaker('Den', model, 'dark', [...MIXED.slice(0, 5), 'Jazz'].map((name, i) => key(i + 1, name)))]);
+      expect(others[0].size, model).toBeLessThanOrEqual(sizesOf(keyNames(plain))[0] + 1e-9);
+      const outlierLines = keyNames(big).filter(isOutlier);
+      const smallest = Math.min(...outlierLines.map((x) => x.size));
+      if (others[0].size > normalTop + 1e-9) expect(others[0].size, model).toBeLessThanOrEqual(smallest * LARGE_RATIO + 1e-6);
+      // The outlier itself is set no larger than the others.
+      for (const x of outlierLines) expect(x.size, model).toBeLessThanOrEqual(others[0].size);
+    }
+  });
+
+  it('caps a one-word name so it does not fill the whole cell', () => {
+    // Text this narrow never runs out of width: only the height decides.
+    const narrow = (text, { size }) => Array.from(String(text)).length * size * 0.05;
+    const keys = [1, 2, 3, 4, 5, 6].map((n) => key(n, 'Jazz'));
+    const page = layoutStickers([speaker('Den', 'SoundTouch 20', 'dark', keys)], { measure: narrow, texts, large: true }).pages[0];
+    const names = keyNames([page]);
+    expect(sizesOf(names)).toHaveLength(1);
+    // The ST20's top row of cells is 87.5 drawing units (6 per mm) high.
+    const cellH = 87.5 / 6;
+    expect(names[0].size * 1.05).toBeLessThanOrEqual(LARGE_CAP * cellH + 1e-6);
+    expect(names[0].size * 1.05).toBeGreaterThan(LARGE_CAP * cellH - 0.2);
+  });
 
   it('leaves the number and tile of every Portable cell where they line up', () => {
     const keys = [key(1, 'Jazz'), key(2, 'Deutschlandfunk Kultur'), key(3, 'SWR3', { name: 'Talk', kind: 'station' }), key(4, 'FIP'), key(5, 'Bayern 3 - Die Hits'), key(6)];
@@ -611,6 +715,103 @@ describe('pages', () => {
   it('makes no page for no speaker', () => {
     expect(lay([]).pages).toEqual([]);
     expect(layoutStickers(null, { measure, texts }).pages).toEqual([]);
+  });
+});
+
+describe('home screen steps', () => {
+  const many = (n, model) => Array.from({ length: n }, (_, i) => speaker(`Room ${i + 1}`, model));
+  const homeScreen = {
+    title: "Put it on the phone's home screen (4 taps)",
+    iosTitle: 'iPhone and iPad (Safari)',
+    ios: ['Scan the code.', 'Tap the share button in the bottom bar, the square with the arrow pointing up.', 'Scroll down and tap <b>Add to Home Screen</b>.', 'Tap <b>Add</b> at the top right.'],
+    iosNote: 'Safari only: on iOS, Chrome and Firefox cannot put a web app on the home screen.',
+    androidTitle: 'Android (Chrome)',
+    android: ['Scan the code and open it in Chrome.', 'Tap the three dots.', 'Tap **Install app**, or <b>Add to home screen</b> &amp; done.', 'Confirm with <b>Install</b>.'],
+    androidNote: 'Only Chrome offers the install.',
+  };
+  const withSteps = (speakers) => layoutStickers(speakers, { measure, texts: { ...texts, homeScreen } });
+  const span = (items) => ({ y0: Math.min(...items.map((x) => x.y - x.size / 2)), y1: Math.max(...items.map((x) => x.y + x.size / 2)) });
+  const lowestOf = (page) => Math.max(
+    ...page.pieces.map((p) => p.y + p.h + BLEED),
+    ...page.scissors.map((s) => s.y + SCISSORS_HALF),
+    page.control ? page.control.caption.y + page.control.caption.size / 2 : -Infinity,
+  );
+
+  it('lands on the last page under the control line when there is room', () => {
+    const plain = lay([speaker('Den', 'SoundTouch 20')]).pages;
+    const { pages } = withSteps([speaker('Den', 'SoundTouch 20')]);
+    expect(pages.length).toBe(plain.length);
+    const last = pages[pages.length - 1];
+    expect(last.guide.length).toBeGreaterThan(0);
+    expect(span(last.guide).y0).toBeGreaterThan(lowestOf(last));
+    for (const page of pages.slice(0, -1)) expect(page.guide).toEqual([]);
+    // Two columns: iPhone on the left, Android on the right.
+    const ios = last.guide.find((x) => x.text === homeScreen.iosTitle);
+    const android = last.guide.find((x) => x.text === homeScreen.androidTitle);
+    expect(ios.x).toBe(AREA.x);
+    expect(android.x).toBeGreaterThan(AREA.x + AREA.w / 2 - 1e-9);
+    expect(ios.y).toBeCloseTo(android.y, 6);
+    // The title runs over both; every line under it keeps to its column.
+    const title = last.guide.find((x) => x.text === homeScreen.title);
+    for (const x of last.guide.filter((g) => g.x < android.x && g.y > title.y)) expect(x.x + x.maxW).toBeLessThan(android.x);
+  });
+
+  it('starts one more page of its own when the last page is full', () => {
+    // Whether the block fits depends on how full the last page is: walk the
+    // speaker counts until both cases have been seen.
+    let fitted = 0;
+    let pushed = 0;
+    for (let n = 1; n <= 16; n++) {
+      const plain = lay(many(n, 'SoundTouch 10')).pages;
+      const { pages } = withSteps(many(n, 'SoundTouch 10'));
+      const prev = plain[plain.length - 1];
+      if (pages.length === plain.length) {
+        fitted += 1;
+        expect(span(pages[pages.length - 1].guide).y0).toBeGreaterThan(lowestOf(pages[pages.length - 1]));
+        continue;
+      }
+      pushed += 1;
+      expect(pages.length).toBe(plain.length + 1);
+      const own = pages[pages.length - 1];
+      expect(own.pieces).toEqual([]);
+      expect(own.scissors).toEqual([]);
+      expect(own.header).toEqual([]);
+      expect(own.control).toBeNull();
+      expect(span(own.guide).y0).toBeGreaterThanOrEqual(AREA.y - 1e-9);
+      // It did not fit under the control line of the page before.
+      const block = span(own.guide);
+      expect(prev.control.y + 10 + (block.y1 - block.y0)).toBeGreaterThan(AREA.y + AREA.h - 1);
+      expect(pages[pages.length - 2].guide).toEqual([]);
+    }
+    expect(fitted).toBeGreaterThan(0);
+    expect(pushed).toBeGreaterThan(0);
+  });
+
+  it('adds nothing when the steps are not given', () => {
+    for (const page of lay(many(3, 'SoundTouch 20')).pages) expect(page.guide).toEqual([]);
+    expect(lay(many(3, 'SoundTouch 20')).pages.length).toBe(withSteps(many(3, 'SoundTouch 20')).pages.length);
+    const empty = layoutStickers(many(2, 'SoundTouch 10'), { measure, texts: { ...texts, homeScreen: { ios: [], android: [''] } } });
+    for (const page of empty.pages) expect(page.guide).toEqual([]);
+    expect(withSteps([]).pages).toEqual([]);
+  });
+
+  it('keeps every line inside the area and prints no markup', () => {
+    for (let n = 1; n <= 16; n++) {
+      for (const page of withSteps(many(n, 'SoundTouch Portable')).pages) {
+        for (const x of page.guide) {
+          expect(x.x).toBeGreaterThanOrEqual(AREA.x - 1e-9);
+          expect(x.x + x.maxW).toBeLessThanOrEqual(AREA.x + AREA.w + 1e-9);
+          expect(x.y - x.size / 2).toBeGreaterThanOrEqual(AREA.y - 1e-9);
+          expect(x.y + x.size / 2).toBeLessThanOrEqual(AREA.y + AREA.h + 1e-9);
+          expect(measure(x.text, { size: x.size })).toBeLessThanOrEqual(x.maxW + 1e-9);
+          expect(x.text).not.toMatch(/<\/?b>|\*\*|&amp;/);
+        }
+      }
+    }
+    const text = withSteps([speaker('Den', 'SoundTouch 20')]).pages[0].guide.map((x) => x.text).join(' ');
+    expect(text).toContain('Add to Home Screen');
+    expect(text).toContain('Install app');
+    expect(text).toContain('& done');
   });
 });
 
