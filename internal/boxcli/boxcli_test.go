@@ -141,6 +141,52 @@ func TestWakeAndWaitTogglesWhenAsleep(t *testing.T) {
 	}
 }
 
+// A wake the group's main speaker requested for a member toggles at once: no
+// button on the member is behind it, and the 2.5 s self-wake grace was a
+// quarter of the member's join time (2026-11-26).
+func TestWakeAndWaitRequestedTogglesWithoutTheGrace(t *testing.T) {
+	b := startFakeBox(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := WakeAndWaitRequested(ctx, "127.0.0.1", 8*time.Second, nil); err != nil {
+		t.Fatalf("WakeAndWaitRequested returned error on an asleep box: %v", err)
+	}
+	if n := b.powerCmd.Load(); n != 1 {
+		t.Fatalf("WakeAndWaitRequested sent %d `sys power` toggle(s), want exactly 1", n)
+	}
+	// One toggle, then the first 400 ms poll sees it awake.
+	if took := time.Since(start); took >= selfWakeGrace {
+		t.Fatalf("the requested wake took %s, not shorter than the self-wake grace %s it should skip", took, selfWakeGrace)
+	}
+}
+
+// Skipping the grace does not skip the read before the toggle: a member that
+// is already up is left alone, and one whose state cannot be read is never
+// toggled blind.
+func TestWakeAndWaitRequestedStillReadsBeforeTheToggle(t *testing.T) {
+	b := startFakeBox(t)
+	b.selfWoke.Store(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := WakeAndWaitRequested(ctx, "127.0.0.1", 8*time.Second, nil); err != nil {
+		t.Fatalf("WakeAndWaitRequested returned error on an awake box: %v", err)
+	}
+	if n := b.powerCmd.Load(); n != 0 {
+		t.Fatalf("WakeAndWaitRequested toggled an awake box %d time(s); want 0 (the toggle would switch it off)", n)
+	}
+
+	b.selfWoke.Store(false)
+	b.frozen.Store(true)
+	if err := WakeAndWaitRequested(ctx, "127.0.0.1", 4*time.Second, nil); err == nil {
+		t.Fatal("WakeAndWaitRequested reported success against a frozen :8090; want an unreadable-state error")
+	}
+	if n := b.powerCmd.Load(); n != 0 {
+		t.Fatalf("WakeAndWaitRequested sent %d toggle(s) while the state was unreadable; want 0", n)
+	}
+}
+
 // TestTapLabel covers the names that broke TAP tokenisation in the field:
 // quotes inside a station name shifted the argument boundaries so the box
 // stored nothing while reporting success (#654, `CFSM 107.5 "2Day FM"`).

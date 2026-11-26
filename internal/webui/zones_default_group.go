@@ -117,13 +117,26 @@ func (s *Server) rejoinReadZoneMaster(ctx context.Context, ip string) string {
 	return z.Master
 }
 
-// rejoinWakeMember wakes a member through its own agent (wakeMemberAgent).
+// rejoinWakeMember wakes a member through its own agent (wakeMemberAgentAt),
+// for a /setZone that follows the moment the wake answers.
 func (s *Server) rejoinWakeMember(ctx context.Context, ip string, logger *slog.Logger) {
 	if s.rejoinWakeMemberFn != nil {
 		s.rejoinWakeMemberFn(ctx, ip, logger)
 		return
 	}
-	wakeMemberAgent(ctx, ip, logger)
+	wakeMemberAgentAt(ctx, ip, logger, memberWakePath)
+}
+
+// mirrorWakeMember wakes a member of a mirror group, which no /setZone
+// follows: the mirror pass re-points it over UPnP, and only when it is idle.
+// So it gets the full quiet wake that stops its resumed station first, not
+// the zone-join one. Same test seam as rejoinWakeMember.
+func (s *Server) mirrorWakeMember(ctx context.Context, ip string, logger *slog.Logger) {
+	if s.rejoinWakeMemberFn != nil {
+		s.rejoinWakeMemberFn(ctx, ip, logger)
+		return
+	}
+	wakeMemberAgentAt(ctx, ip, logger, memberWakePathNoJoin)
 }
 
 // rejoinLiveZone reads the master's live /getZone.
@@ -165,11 +178,13 @@ func (s *Server) rejoinSelfDeviceID(ctx context.Context) string {
 	return s.localDeviceID(ctx, boxapi.New(s.boxHost), "")
 }
 
-// wakeMemberAgent wakes one stored member through its own agent
+// wakeMemberAgentAt wakes one stored member through its own agent
 // (POST /api/box/wake, the same TAP wake the desktop app uses when enrolling a
-// switched-off member, #70). The chassis decides the agent port, so both are
+// switched-off member, #70), asking with path (memberWakePath or
+// memberWakePathNoJoin). The chassis decides the agent port, so both are
 // tried; waking an already-awake box is a fast no-op on the member side.
-func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
+func wakeMemberAgentAt(ctx context.Context, ip string, logger *slog.Logger, path string) {
+	start := time.Now()
 	for _, port := range []string{"17008", "8888"} {
 		// quietifasleep=1: the member mutes itself for the wake and stops what
 		// its firmware resumes, so the room does not get every member's own
@@ -178,8 +193,9 @@ func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 		// and v0.9.75 without that condition, so a member of this group that is
 		// already playing would be muted and stopped by its own re-form. An
 		// agent that does not know this key does the plain wake instead.
+		//
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			"http://"+net.JoinHostPort(ip, port)+"/api/box/wake?quietifasleep=1", nil)
+			"http://"+net.JoinHostPort(ip, port)+path, nil)
 		if err != nil {
 			continue
 		}
@@ -189,7 +205,8 @@ func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 		}
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			logger.Info("default group: member woken for the group", "ip", ip, "port", port)
+			logger.Info("default group: member woken for the group", "ip", ip, "port", port,
+				"tookMs", time.Since(start).Milliseconds())
 			return
 		}
 	}
@@ -197,6 +214,24 @@ func wakeMemberAgent(ctx context.Context, ip string, logger *slog.Logger) {
 	// the firmware pulls it in, it just starts silent until used (#70).
 	logger.Info("default group: member wake not confirmed, joining it anyway", "ip", ip)
 }
+
+// memberWakePath is the wake the main speaker of a permanent group asks a
+// member for before its /setZone: quiet if it was asleep, with the zone join
+// to follow at once.
+//
+// zonejoin=1 lets the member skip the self-wake grace (nothing was pressed
+// over there) and answer without watching its resumed station for 5 s; the
+// join replaces that station (wakeJoinFollows). Those two waits were 7 of the
+// ~10 s a member took to join after the main speaker was switched on
+// (2026-11-26). An agent that does not know the key does the full quiet wake
+// as before.
+//
+// memberWakePathNoJoin is the same wake without the key, for the mirror group,
+// which no /setZone follows (mirrorWakeMember).
+const (
+	memberWakePath       = "/api/box/wake?quietifasleep=1&zonejoin=1"
+	memberWakePathNoJoin = "/api/box/wake?quietifasleep=1"
+)
 
 // wakeMemberClient allows the full WakeAndWait on the member side (up to ~10 s)
 // without stalling forever on a dead address.
@@ -462,7 +497,7 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 			mctx, mcancel := context.WithTimeout(ctx, 20*time.Second)
 			defer mcancel()
 			if s.rejoinReadNowPlaying(mctx, m.IP).Source == "STANDBY" {
-				s.rejoinWakeMember(mctx, m.IP, s.logger)
+				s.mirrorWakeMember(mctx, m.IP, s.logger)
 			}
 		}(m)
 	}

@@ -602,8 +602,8 @@ type Server struct {
 	quietWakeNowPlayingFn func(ctx context.Context, host string) nowPlayingSnapshot
 	quietWakeStopFn       func(ctx context.Context, host string) error
 	// quietWakeWakeFn is the standby wake of a quiet wake (quietWakeWake);
-	// nil = boxcli.WakeAndWait.
-	quietWakeWakeFn      func(ctx context.Context) error
+	// nil = boxcli.WakeAndWait, or WakeAndWaitRequested when joinFollows.
+	quietWakeWakeFn      func(ctx context.Context, joinFollows bool) error
 	wakeForPlayReadRetry time.Duration
 	// wokenStop is set when a quiet wake left the speaker paused instead of
 	// stopped (a Pandora station, #1629); /api/status then reports it stopped.
@@ -1390,7 +1390,7 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	quiet := wakeQuietRequested(r.URL.Query())
 	var err error
 	if quiet {
-		err = s.quietWake(ctx)
+		err = s.quietWakeFor(ctx, wakeJoinFollows(r.URL.Query()))
 	} else {
 		err = boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger)
 	}
@@ -1421,6 +1421,22 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 // leaves an awake speaker alone whichever spelling it was asked with.
 func wakeQuietRequested(q url.Values) bool {
 	return q.Get("quiet") == "1" || q.Get("quietifasleep") == "1"
+}
+
+// wakeJoinFollows reads zonejoin=1 off a quiet wake request: the caller is the
+// main speaker of this speaker's permanent group, and it sends its /setZone
+// the moment this wake answers (memberWakePath). Two things are true of such
+// a wake that are not true of every quiet wake, and quietWakeFor uses both:
+//
+//   - nothing on this speaker was pressed, so the self-wake grace of the
+//     standby wake has no wake of its own to protect (WakeAndWaitRequested);
+//   - the zone join replaces whatever the firmware resumed, so the answer does
+//     not wait out the 5 s resume watch first.
+//
+// An agent that does not know the key ignores it and does the full quiet wake,
+// and the key means nothing without the quiet flag.
+func wakeJoinFollows(q url.Values) bool {
+	return q.Get("zonejoin") == "1"
 }
 
 // quietWakeNeeded says whether the quiet treatment (mute, wake, stop) has any
@@ -1465,6 +1481,20 @@ func (s *Server) quietWakeNowPlaying(ctx context.Context, host string) nowPlayin
 // group was created (Jens, 2026-09-06). A speaker that is not in standby is
 // left exactly as it is.
 func (s *Server) quietWake(ctx context.Context) error {
+	return s.quietWakeFor(ctx, false)
+}
+
+// quietWakeFor is quietWake, told whether a zone join follows the moment it
+// returns (wakeJoinFollows: the main speaker of a permanent group waking a
+// member). Then the standby wake skips the self-wake grace and the resume
+// watch takes one look instead of watching for 5 s: one STOP at most, sent
+// before the answer, so none can land after the join. The mute stays as it
+// is, and the zone join replaces what the firmware resumed. Should no join
+// come, the timeout restore stops that resume before the level comes back
+// (stopSelfResumeBeforeRestore). Measured on a SoundTouch 10 member
+// (2026-11-26): 2.7 s of grace and 4.4 s of three STOPs the speaker ignored
+// while its station sat in BUFFERING_STATE, of a 9.7 s join.
+func (s *Server) quietWakeFor(ctx context.Context, joinFollows bool) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), quietWakeBudget)
 	defer cancel()
 	// Only a sleeping speaker gets the quiet treatment (quietWakeNeeded). The
@@ -1499,11 +1529,13 @@ func (s *Server) quietWake(ctx context.Context) error {
 	// read before the STOP then failed on the expired context, the STOP was
 	// never sent, and the firmware's resumed station became audible the
 	// moment the zone join lifted the mute (fleet run 2026-10-04).
+	start := time.Now()
 	wakeCtx, wakeCancel := context.WithTimeout(ctx, quietWakeWakeBudget)
 	muteDone := s.setVolumeOnFirstLife(wakeCtx, 0)
-	err := s.quietWakeWake(wakeCtx)
+	err := s.quietWakeWake(wakeCtx, joinFollows)
 	wakeCancel()
 	<-muteDone
+	wakeTook := time.Since(start)
 	if err != nil {
 		// The watcher may have muted a speaker that came up only half way.
 		// Released at once: the restore leaves a level that is not 0 alone,
@@ -1519,17 +1551,34 @@ func (s *Server) quietWake(ctx context.Context) error {
 	stepCancel()
 	// Whatever the firmware resumed on power-on is stopped, so the zone
 	// join meets an idle speaker instead of a station still spinning up.
-	s.stopQuietWakeResume()
+	// With a join right behind this answer, one look and at most one STOP:
+	// the join replaces the resumed station anyway, and a station that is
+	// still connecting ignores every STOP it gets (three in 4.4 s on the
+	// measured member), so watching it only delayed the join.
+	watch := quietWakeResumeWatch
+	if joinFollows {
+		watch = 0
+	}
+	watchStart := time.Now()
+	s.stopQuietWakeResumeWithin(watch)
 	// Always armed, whatever is known: the speaker was muted above, and a
 	// hold that is not armed is one nothing ever releases.
 	s.armQuietWakeRestore(in)
+	s.logger.Info("wake: quiet wake done", "zoneJoinFollows", joinFollows,
+		"wakeMs", wakeTook.Milliseconds(), "resumeWatchMs", time.Since(watchStart).Milliseconds(),
+		"totalMs", time.Since(start).Milliseconds())
 	return nil
 }
 
 // quietWakeWake is the standby wake of a quiet wake, seamed for the tests.
-func (s *Server) quietWakeWake(ctx context.Context) error {
+// joinFollows skips the self-wake grace: the main speaker of the group asked
+// for this wake, so no button press on this speaker is behind it.
+func (s *Server) quietWakeWake(ctx context.Context, joinFollows bool) error {
 	if s.quietWakeWakeFn != nil {
-		return s.quietWakeWakeFn(ctx)
+		return s.quietWakeWakeFn(ctx, joinFollows)
+	}
+	if joinFollows {
+		return boxcli.WakeAndWaitRequested(ctx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
 	}
 	return boxcli.WakeAndWait(ctx, s.boxHost, quietWakeWakeBudget-2*time.Second, s.logger)
 }
@@ -1594,14 +1643,22 @@ const (
 // than stopped (a Pandora station has no stopped state) is reported stopped by
 // /api/status until it plays again (#1629, wokenstop.go).
 func (s *Server) stopQuietWakeResume() {
-	np, stops := s.watchQuietWakeResume()
+	s.stopQuietWakeResumeWithin(quietWakeResumeWatch)
+}
+
+// stopQuietWakeResumeWithin is stopQuietWakeResume with the watch window given.
+// A window of 0 is the single look of a wake a zone join follows at once
+// (quietWakeFor): one read, at most one STOP, no waiting for it to take.
+func (s *Server) stopQuietWakeResumeWithin(window time.Duration) {
+	np, stops := s.watchQuietWakeResume(window)
 	s.noteQuietWakeEnd(np, stops)
 }
 
 // watchQuietWakeResume is the loop of stopQuietWakeResume. It returns the last
-// state it read and how many STOP keys it sent.
-func (s *Server) watchQuietWakeResume() (nowPlayingSnapshot, int) {
-	deadline := time.Now().Add(quietWakeResumeWatch)
+// state it read and how many STOP keys it sent. The loop body always runs
+// once, so a window of 0 still reads the speaker and stops a resume it sees.
+func (s *Server) watchQuietWakeResume(window time.Duration) (nowPlayingSnapshot, int) {
+	deadline := time.Now().Add(window)
 	stops := 0
 	var lastStop time.Time
 	for {
@@ -1761,7 +1818,50 @@ func (s *Server) restoreQuietWakeVolume(why string) {
 	if !restore || s.boxHost == "" {
 		return
 	}
+	if why == "timeout" {
+		s.stopSelfResumeBeforeRestore()
+	}
 	s.restoreWokenLevel("quiet wake", why, in, powerOn)
+}
+
+// stopSelfResumeBeforeRestore stops the firmware's own power-on resume when a
+// quiet wake's hold runs out without the zone join it was made for. The
+// member's resume watch takes a single look when the join follows at once
+// (quietWakeFor), so a station that started after that look plays on muted,
+// and the join was what was going to replace it. When the join never came,
+// putting the level back would make that station audible. By now (20 s on)
+// it has left BUFFERING_STATE, the state in which it ignored every STOP, so one
+// STOP takes.
+//
+// It runs on the restore timer that already exists, and only acts when the
+// play is the firmware's own: STR woke the speaker for a group inside the
+// episode window, nobody started anything through STR since (isSelfResume),
+// and the speaker is not in a zone, where a STOP would stop the whole group.
+// One read of the state and of the zone, at most one key.
+func (s *Server) stopSelfResumeBeforeRestore() {
+	active, since := s.groupWakeEpisode()
+	if !active {
+		return
+	}
+	if s.groupWake.lastZoneChange().After(since) {
+		return
+	}
+	ctx, cancel := quietWakeStepCtx()
+	defer cancel()
+	np := s.quietWakeNowPlaying(ctx, s.boxHost)
+	if !isSelfResume(true, s.userPlayedSince(since), np) {
+		return
+	}
+	if master := s.rejoinReadZoneMaster(ctx, s.boxHost); master != "" {
+		return
+	}
+	if err := s.quietWakeStop(ctx, s.boxHost); err != nil {
+		s.logger.Warn("wake: no zone join came after the quiet wake, and the STOP of what the speaker resumed failed",
+			"err", err, "source", np.Source, "playStatus", np.PlayStatus)
+		return
+	}
+	s.logger.Info("wake: no zone join came after the quiet wake, stopped what the speaker resumed before its level comes back",
+		"source", np.Source, "playStatus", np.PlayStatus)
 }
 
 func (s *Server) ensureBoxReady(ctx context.Context) { _ = s.ensureBoxReadyErr(ctx) }

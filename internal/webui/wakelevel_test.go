@@ -106,7 +106,7 @@ func newLevelServer(t *testing.T, b *wakeLevelBox) *Server {
 		b.mu.Unlock()
 		return nil
 	}
-	s.quietWakeWakeFn = func(context.Context) error { b.wake(); return nil }
+	s.quietWakeWakeFn = func(context.Context, bool) error { b.wake(); return nil }
 	s.newPlayWakeFn = func(context.Context) error { b.wake(); return nil }
 	s.ownVolumeFn = func(context.Context) (boxapi.Volume, error) {
 		b.mu.Lock()
@@ -298,7 +298,7 @@ func TestQuietWakeThatFailsDoesNotLeaveTheSpeakerMuted(t *testing.T) {
 	t.Parallel()
 	b := &wakeLevelBox{level: 0, fwLevel: 16}
 	s := newLevelServer(t, b)
-	s.quietWakeWakeFn = func(context.Context) error {
+	s.quietWakeWakeFn = func(context.Context, bool) error {
 		b.wake()
 		time.Sleep(300 * time.Millisecond) // the first-life watcher mutes
 		return errors.New("did not settle")

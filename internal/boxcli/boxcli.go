@@ -169,6 +169,31 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 // (#197). nil = never abort. Aborting returns nil: the box deliberately stays
 // as it is.
 func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger, abort func() bool) error {
+	return wakeAndWait(ctx, host, maxWait, logger, abort, selfWakeGrace)
+}
+
+// WakeAndWaitRequested is WakeAndWait for a wake another speaker asked for
+// over the network: the main speaker of a permanent group waking a member it
+// is about to pull into its zone. Nothing on THIS speaker was pressed, so
+// there is no wake of its own for the self-wake grace to protect, and the
+// grace is skipped: on a SoundTouch 10 member it was 2.7 s of a 10 s join
+// (measured 2026-11-26), spent watching a box nobody was waking.
+//
+// The rule that makes dropping the grace safe is unchanged: the state is
+// still read immediately before the toggle, so a box that is already up, or
+// whose state cannot be read, is never toggled. The one case the grace
+// covered that this does not is a person pressing this very speaker's power
+// button in the second or two before the toggle goes out. The toggle then
+// cancels that wake, and the re-toggle after toggleEvery brings the box up
+// anyway, inside the same minWakeBudget.
+func WakeAndWaitRequested(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger) error {
+	return wakeAndWait(ctx, host, maxWait, logger, nil, 0)
+}
+
+// wakeAndWait is the wake behind every exported variant. grace is how long it
+// watches for a self-wake before the first toggle: selfWakeGrace, or 0 for a
+// wake no button press on this speaker can be behind.
+func wakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger, abort func() bool, grace time.Duration) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -192,16 +217,22 @@ func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, l
 		logger.Warn(msg, kv...)
 	}
 
-	logPhase("wake phase: start", "host", host, "max_wait", maxWait.String())
+	logPhase("wake phase: start", "host", host, "max_wait", maxWait.String(), "self_wake_grace", grace.String())
 
 	// Phase 1: self-wake grace. The wake STR is reacting to was almost always
 	// caused by the user pressing a button, which is itself bringing the box out
 	// of standby. Give it that moment to surface so we do NOT toggle it back off.
-	graceDeadline := time.Now().Add(selfWakeGrace)
+	// A wake another speaker requested has no such press behind it and goes
+	// straight to phase 2, whose read before the toggle still spares a box that
+	// is already up (WakeAndWaitRequested).
+	if grace <= 0 {
+		logPhase("wake phase: self-wake grace skipped, the wake was requested over the network")
+	}
+	graceDeadline := time.Now().Add(grace)
 	if graceDeadline.After(deadline) {
 		graceDeadline = deadline
 	}
-	for {
+	for grace > 0 {
 		state, err := readSource(ctx, client, infoURL)
 		if err == nil && state != "STANDBY" {
 			logPhase("wake phase: box left standby on its own, not toggling (user wake)", "source", state)

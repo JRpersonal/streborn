@@ -59,7 +59,7 @@ func (s *Server) WakeSilentlyForPlay(ctx context.Context) (restore func()) {
 	s.groupWake.begin()
 	wakeCtx, wakeCancel := context.WithTimeout(ctx, quietWakeWakeBudget)
 	muteDone := s.setVolumeOnFirstLife(wakeCtx, 0)
-	err := s.quietWakeWake(wakeCtx)
+	err := s.quietWakeWake(wakeCtx, false)
 	wakeCancel()
 	<-muteDone
 	if err == nil {
