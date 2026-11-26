@@ -408,3 +408,17 @@ func TestPhoneRemoteSendsTheLabelOfAFavouriteAndARecentCard(t *testing.T) {
 		}
 	}
 }
+
+// A single library track played on its own hands its artist to the speaker
+// display too, not only to the app (#1136: the ST20 showed the title alone,
+// from the NAS and from the stick).
+func TestALoneFileHandsItsArtistToTheDisplay(t *testing.T) {
+	s, _ := newPlayTestServer(t)
+	playLoneFile(t, s, `{"url":"`+labelTrackURL+`","title":"Amanda","mime":"audio/flac","artist":"Boston","album":"Third Stage"}`)
+	s.panelMu.Lock()
+	m := s.panel
+	s.panelMu.Unlock()
+	if m.kind != panelLibrary || m.artist != "Boston" || m.title != "Amanda" {
+		t.Fatalf("panel = %+v, want the library track with its artist", m)
+	}
+}
