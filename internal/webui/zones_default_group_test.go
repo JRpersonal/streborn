@@ -755,3 +755,77 @@ func TestMasterRemoteKeyNearIsOneWindowEitherWay(t *testing.T) {
 		}
 	}
 }
+
+// Field case 2026-11-26, 15:40:50: the member reported in, and the round its
+// notice asked for could still not read its agent's uptime (the agent was busy
+// with its own start). The notice itself proves the agent just started, so the
+// member is taken back in that round instead of waiting for a notice that has
+// already come.
+func TestReformAfterMemberRebootTakesTheStartNoticeAsUptime(t *testing.T) {
+	t.Parallel()
+	s, f, z := newZoneLossFixture(t)
+	s.zones = zones.New()
+	_ = s.zones.Set(z)
+	s.memberStartedKick = make(chan struct{}, 1)
+	f.memberUptime = -1
+	if !s.noteMemberStarted("10.0.0.2", "") {
+		t.Fatal("the stored member's start notice was not recognised")
+	}
+	if !s.reformAfterMemberReboot(context.Background(), z) {
+		t.Fatal("a member that reported its start was left out because its uptime read failed")
+	}
+	if f.setCalls != 1 || !f.woken["10.0.0.2"] {
+		t.Fatalf("setCalls=%d woken=%v, want one setZone with the woken member", f.setCalls, f.woken)
+	}
+}
+
+// A start notice older than the fresh-boot window proves nothing about now.
+func TestAnOldStartNoticeDoesNotCountAsUptime(t *testing.T) {
+	t.Parallel()
+	s := newRejoinServer()
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int { return -1 }
+	s.memberStartedAt = map[string]time.Time{"10.0.0.2": time.Now().Add(-rejoinFreshBootWindow - time.Minute)}
+	if up := s.memberUptimeOrStartNotice(context.Background(), "10.0.0.2"); up != -1 {
+		t.Fatalf("uptime = %d from an old notice, want -1", up)
+	}
+	if up := s.memberUptimeOrStartNotice(context.Background(), "10.0.0.9"); up != -1 {
+		t.Fatalf("uptime = %d without any notice, want -1", up)
+	}
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int { return 42 }
+	if up := s.memberUptimeOrStartNotice(context.Background(), "10.0.0.2"); up != 42 {
+		t.Fatalf("uptime = %d, want the agent's own 42 when it answers", up)
+	}
+}
+
+// The live-group path takes the notice the same way: a missing member in
+// standby that reported its start is woken and added although its uptime read
+// failed.
+func TestRejoinMissingMembersTakesTheStartNoticeAsUptime(t *testing.T) {
+	t.Parallel()
+	s := newRejoinServer()
+	setCalls, woken := 0, 0
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
+		if ip == "10.0.0.1" {
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+		}
+		return nowPlayingSnapshot{Source: "STANDBY"}
+	}
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int { return -1 }
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(context.Context, string, *slog.Logger) { woken++ }
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "KEPT", IP: "10.0.0.5"}}}, nil
+	}
+	s.rejoinSetZoneFn = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+		setCalls++
+		return nil
+	}
+	s.memberStartedAt = map[string]time.Time{"10.0.0.2": time.Now().Add(-5 * time.Second)}
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
+		{DeviceID: "KEPT", IP: "10.0.0.5"},
+		{DeviceID: "STARTING", IP: "10.0.0.2"},
+	}}
+	if !s.rejoinMissingMembers(context.Background(), z) || setCalls != 1 || woken != 1 {
+		t.Fatalf("member that reported its start not taken back: setCalls=%d woken=%d", setCalls, woken)
+	}
+}

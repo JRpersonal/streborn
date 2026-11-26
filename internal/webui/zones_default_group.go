@@ -584,7 +584,7 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 		np := s.rejoinReadNowPlaying(mctx, m.IP)
 		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, false)
 		if act == rejoinWake {
-			up := s.rejoinReadAgentUptime(mctx, m.IP)
+			up := s.memberUptimeOrStartNotice(mctx, m.IP)
 			if up < 0 {
 				// No answer is not "switched off long ago": right after a
 				// restart the firmware answers seconds before the agent does.
@@ -691,7 +691,7 @@ func (s *Server) reformAfterMemberReboot(ctx context.Context, z zones.Zone) bool
 		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, false)
 		isFresh := false
 		if act == rejoinWake || act == rejoinJoin {
-			up := s.rejoinReadAgentUptime(mctx, m.IP)
+			up := s.memberUptimeOrStartNotice(mctx, m.IP)
 			isFresh = up >= 0 && time.Duration(up)*time.Second <= rejoinFreshBootWindow
 			if act == rejoinWake {
 				if up < 0 {
