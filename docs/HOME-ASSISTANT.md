@@ -40,7 +40,20 @@ API for the same, and the caveats (HTTP only, no seek) are in
 [`AUTOMATION.md`](./AUTOMATION.md).
 
 The old Bose notification endpoint (`POST :8090/speaker`) is dead since the
-shutdown; use the UPnP path above instead.
+shutdown; use the UPnP path above, or STR's announcement below, instead.
+
+## Recipes for STR's own API
+
+[`HOME-ASSISTANT-RECIPES.md`](./HOME-ASSISTANT-RECIPES.md) is a worked setup in
+plain YAML: a sensor with every speaker's presets and what plays (from
+`GET /api/nowplaying`), a preset dropdown per speaker, the presets as switches
+in Apple Home, and spoken announcements with a local Piper voice that play one
+speaker after the other.
+
+STR's API answers on `:17008` on some speakers and on `:8888` on others,
+depending on the chassis. Try `:17008` first, then `:8888`, and keep the one
+where `GET /api/agent/version` answers with a `version` in its body. Details in
+[`CONTROL-API.md`](./CONTROL-API.md#which-port).
 
 ## The other direction: a speaker press driving Home Assistant
 
@@ -56,5 +69,7 @@ These are the local surfaces and the integrations that target them; STR keeps
 them working, and the recipes above are what STR uses internally. I have not
 certified every Home Assistant integration version end to end, so if you wire up
 `soundtouchplus`, the core SoundTouch integration or the DLNA renderer against an
-STR box, please report what worked in a GitHub discussion. Others are asking the
+STR box, please report what worked in a GitHub discussion. The same goes for the
+YAML recipes: the STR endpoints behind them are tested, the Home Assistant side
+may need a tweak for your version. Others are asking the
 same thing, and confirmed setups make this page better for the next person.

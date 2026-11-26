@@ -100,6 +100,10 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyLikeCurrent != nil && s.spotifyUnlikeCurrent != nil {
 		out["spotifyLiked"] = "true"
 	}
+	// This agent answers GET /api/nowplaying with JSON (nowplaying_json.go),
+	// so an integration can tell it from an older agent, whose unknown path
+	// falls through to the phone remote's HTML.
+	out["nowPlayingJSON"] = "true"
 	// This agent steps a Spotify playlist's shuffle and repeat for an app
 	// (POST /api/spotify/playmode, spotifyplaymode_http.go, #2058).
 	if s.spotifyToggleShuffle != nil && s.spotifyCycleRepeat != nil {

@@ -17,20 +17,39 @@ The agent listens on port **8888**:
 http://<speaker-ip>:8888
 ```
 
-On the BCO/whitelisted chassis (SoundTouch Portable, and some ST20), the
-same API is reached on port **17008** instead (the box redirects it to the
-agent), so if `:8888` is refused, use `:17008`.
-
 STR announces itself over mDNS as `_streborn._tcp.local`, so you can
 discover the speaker's address and port automatically.
 
-All request and response bodies are JSON.
+### Which port
+
+The agent always listens on `:8888`, but not every speaker lets that port
+through from the LAN. On the BCO/whitelisted chassis (SoundTouch Portable,
+some ST20 and ST30, see `docs/MODEL-VARIANTS.md`) the speaker's own network
+filter refuses `:8888`, and the agent is reached on **`:17008`** instead: a
+redirect STR installs at boot on exactly those chassis (`REDIRECT_ELIGIBLE`
+in `usb-stick/run.sh`) hands `:17008` on to the agent. On every other speaker
+`:8888` answers directly and `:17008` may be closed. Same API, same answers,
+on either port.
+
+An integration that does not want to know the chassis tries both, `:17008`
+first, then `:8888`, and keeps the first that answers
+`GET /api/agent/version` with a `version` in the body (an open port alone
+proves nothing). Probe again only when a request fails, not on a timer.
+
+### Body format
+
+Request and response bodies are JSON, with one exception: `GET /api/status`
+answers with the speaker's own now-playing XML, unchanged, because the STR
+apps parse exactly that. For JSON use `GET /api/nowplaying`, which describes
+the same answer. Errors that are not described per endpoint below come back
+as a plain-text line.
 
 ## Playback
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`  | `/api/status` | - | Current now-playing (source, track, art, play state). |
+| `GET`  | `/api/status` | - | Current now-playing as the speaker's own XML (its `/now_playing` document, unchanged). Kept for the STR apps; integrations read `/api/nowplaying`. Answers are cached for 2 s, so polling it costs the speaker at most one read per 2 s. Headers: `X-STR-Playing-Key` (the Spotify key that plays), `X-STR-Muted` (`1`/`0`), and `X-STR-Status-Age` / `X-STR-Status-Stale: 1` while the speaker does not answer and the last answer is served. `503` without a configured speaker, `502` when it does not answer and nothing is cached. |
+| `GET`  | `/api/nowplaying` | - | The same now-playing as JSON, built from the very answer `/api/status` serves (same 2 s cache, no extra read of the speaker): `{"source","playStatus","title","artist","album","station","itemName","art","location","positionSec","durationSec","presetSlot","muted"}`. `title` is the track, or the item name when the speaker reports no track. `presetSlot` is the STR key (`1`-`12`) that holds what plays, while it plays, buffers or is paused, when STR can tell (a station, a Spotify key, a folder key). `muted` comes from the speaker's own bus and is absent until the agent has heard it. Every field the speaker does not report, or STR cannot tell, is left out. While the speaker does not answer, the last answer comes back with `"ageSec":N` and, after 30 s, `"stale":true`. `503` `{"error":"box host not configured"}`; `502` `{"error":"the speaker did not answer","detail":"..."}`, or `{"error":"...","speakerStatus":N}` when the speaker answered with an error. An agent that has this reports `"nowPlayingJSON":"true"` in `/api/agent/version`. |
 | `POST` | `/api/play` | `{"url":"https://...","title":"...","codec":"MP3"}` | Play any stream URL. `title`, `icon`, `codec` are optional. `codec` is the station codec (`MP3`, `AAC`, `AAC+`); an HE-AAC stream without it can play silence. Do not send `mime` for a stream: it marks a music-library file and hands the URL straight to the speaker. |
 | `POST` | `/api/play/<slot>` | - | Play STR preset slot `1`-`12` (`7`-`12` is the second row, see Presets). |
 | `POST` | `/api/pause` | - | Pause. |
@@ -46,6 +65,12 @@ All request and response bodies are JSON.
 | `GET`  | `/api/stream/title` | - | Live radio title of the stream STR is proxying: `{"title":"Artist - Title","swapped":bool}`. `title` is `""` when the station sends none. `swapped` says the station below is flagged and its title was already turned round. |
 | `GET`  | `/api/stream/title-swap` | - | `{"stations":[...],"swapped":bool}`: the stream URLs flagged as sending their title "Title - Artist", and whether the station playing now is one of them. |
 | `POST` | `/api/stream/title-swap` | `{"swap":true}` | Flag (or with `false` unflag) a station whose live title arrives as "Title - Artist" instead of "Artist - Title". Without `"station":"<stream url>"` it acts on the station playing now (`409` when nothing is). The flag is kept per station in `/mnt/nv/streborn/title-swap.json` and applies to everything that shows the title: the speaker display, the app, Recently played and the phone remote. Answers `{"ok":true,"station":"...","swapped":bool,"title":"<live title now>"}`. |
+
+## Announcements
+
+| Method | Path | Body | Notes |
+| ------ | ---- | ---- | ----- |
+| `POST` | `/api/announce` | `{"text":"Dinner is ready","lang":"en","volume":30}` or `{"url":"http://192.0.2.5:5000/clip.mp3","volume":30}` | Speak a text or play a short audio clip on the speaker, then put back what was playing (a speaker in standby goes back to standby). `text` is spoken through Google Translate's TTS (the text leaves your LAN, see `docs/announce-tts.md`); `lang` is its language code, default `en`. `url` is any `http` or `https` audio file the agent fetches itself (at most 8 MB, 25 s); with both, `url` is played and `text` only names the clip. For a voice of your own, or to keep the text on your LAN, render the clip with a local TTS (for example Piper) and pass its address as `url`. `volume` (`1`-`100`, capped at the speaker's max volume) is optional and restored afterwards; leave it out to play at the current level. Body at most 8 KB. The audio is fetched before anything on the speaker is touched, then the answer comes at once and the announcement plays in the background: `{"ok":true,"queued":true,"bytes":N,"durationMs":N}`. `durationMs` is how long the clip plays, the short silent lead-in included, read off the MP3 frame headers; it is left out when the length cannot be told (a clip that is not MP3). Errors: `400` `text or url required` or `invalid json: ...` (plain text), `502` `{"error":"could not fetch announcement audio","detail":"..."}` (bad or non-`http(s)` URL, the source answered an error, a clip over 8 MB, TTS unreachable), `503` `box not configured`. Details: [`docs/announce-tts.md`](announce-tts.md). |
 
 ## Volume, power and source
 
@@ -375,7 +400,7 @@ newest level.
 
 | Method | Path | Body | Notes |
 | ------ | ---- | ---- | ----- |
-| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `"presetRows":"2"` on an agent with the second preset row (slots 7-12), `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`, and `"spotifyPlayModes":"true"` on one that takes `POST /api/spotify/playmode`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
+| `GET`    | `/api/agent/version` | - | `{"version","build"}`, plus `friendlyName` and `model` when the agent knows them, `"presetRows":"2"` on an agent with the second preset row (slots 7-12), `"spotifyLiked":"true"` on an agent whose Spotify engine takes `POST /api/spotify/liked`, `"spotifyPlayModes":"true"` on one that takes `POST /api/spotify/playmode`, and `"nowPlayingJSON":"true"` on one that answers `GET /api/nowplaying`. The cheapest "is this really an STR agent" probe: require `version` in the BODY, an open port and a 200 alone prove nothing. |
 | `PUT`    | `/api/box/bass` | `{"value":N}` | Range as the speaker reports it; not every model has bass control. |
 | `GET`    | `/api/recent` | - | Recently played, newest first: `ts`, `source`, `cardKey`, `cardName`, `cardArt`, `cardURL`, `track`, `account`, `homepage`, and for a music-library entry (`source` `upnp`) `mime` and `durationSec`. |
 | `DELETE` | `/api/recent` | - | Clears the history. Answers `{"ok":true,"removed":N}`. |
@@ -521,6 +546,13 @@ curl -s -X PUT  "$BOX/api/box/volume" -d '{"value":20}'
 
 # Read the current volume
 curl -s "$BOX/api/box/volume"          # -> {"value":20,"target":20,"muted":false}
+
+# What is playing, as JSON
+curl -s "$BOX/api/nowplaying"   # -> {"source":"UPNP","playStatus":"PLAY_STATE","title":"...","presetSlot":1,...}
+
+# Say something, then wait until it has played
+curl -s -X POST "$BOX/api/announce" -d '{"text":"Dinner is ready","volume":30}'
+                                       # -> {"ok":true,"queued":true,"bytes":16800,"durationMs":4200}
 
 # Start preset 1, then pause
 curl -s -X POST "$BOX/api/play/1"

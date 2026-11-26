@@ -194,6 +194,25 @@ func RegisterDebugSection(key string, fn func() any) {
 	debugSections[key] = fn
 }
 
+// statusAnswer is the now_playing body as /api/status hands it out, together
+// with how it was obtained. /api/nowplaying reads the very same answer, so the
+// two endpoints share one micro-cache and one box read path.
+type statusAnswer struct {
+	// body is what clients get: the speaker's own XML with the station name
+	// STR started and a quiet wake's leftover pause reported as stopped.
+	body []byte
+	// keyBody is the body the playing-key lookup reads: the speaker's XML
+	// before those rewrites, which never touch the location anyway.
+	keyBody []byte
+	// code is the HTTP status the speaker answered with.
+	code int
+	// fallback says the read failed and body is the last cached one; ageSec
+	// is its age then, and stale says it is past statusStaleAfter.
+	fallback bool
+	ageSec   int
+	stale    bool
+}
+
 // handleStatus proxies the box's now_playing XML, with a short
 // micro-cache (statusCacheTTL) in front. Multiple or too-rapidly polling
 // clients thus share the same box roundtrip instead of hitting the
@@ -207,16 +226,34 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// on a cached or stale body as on a new read (mute.go, #1748).
 	s.setMutedHeader(w)
 
+	a, err := s.readStatusAnswer(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if a.fallback {
+		w.Header().Set("X-STR-Status-Age", strconv.Itoa(a.ageSec))
+		if a.stale {
+			w.Header().Set("X-STR-Status-Stale", "1")
+		}
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	s.setPlayingKeyHeader(w, a.keyBody)
+	w.WriteHeader(a.code)
+	_, _ = w.Write(a.body)
+}
+
+// readStatusAnswer is the /api/status read: the micro-cache when it holds a
+// recent body, otherwise one bounded read of the speaker, with the last cached
+// body as the fallback when that read fails. An error means the speaker did
+// not answer and there was nothing cached to fall back on.
+func (s *Server) readStatusAnswer(ctx context.Context) (statusAnswer, error) {
 	// Serve from cache if a recent good body exists.
 	s.statusMu.Lock()
 	if s.statusBody != nil && time.Since(s.statusAt) < statusCacheTTL {
 		body, code := s.statusBody, s.statusCode
 		s.statusMu.Unlock()
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		s.setPlayingKeyHeader(w, body)
-		w.WriteHeader(code)
-		_, _ = w.Write(s.statusForClients(body))
-		return
+		return statusAnswer{body: s.statusForClients(body), keyBody: body, code: code}, nil
 	}
 	s.statusMu.Unlock()
 
@@ -225,16 +262,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// poll forever. readBoxNow records the verdict in the outage tracker and
 	// caches a 200 body; a firmware error reply comes back as a BoxError and
 	// is served through below, uncached, so the next poll retries the box.
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	np, err := s.readBoxNow(ctx)
 	var boxErr *boxapi.BoxError
 	if errors.As(err, &boxErr) {
-		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		s.setPlayingKeyHeader(w, []byte(boxErr.Body))
-		w.WriteHeader(boxErr.Status)
-		_, _ = w.Write(s.statusForClients([]byte(boxErr.Body)))
-		return
+		body := []byte(boxErr.Body)
+		return statusAnswer{body: s.statusForClients(body), keyBody: body, code: boxErr.Status}, nil
 	}
 	if err != nil {
 		// Fall back to the last cached body on a box error so a brief BoseApp
@@ -253,29 +287,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			s.statusStaleWarned = true
 		}
 		s.statusMu.Unlock()
-		if have {
-			if warn {
-				s.logger.Warn("box now_playing unreachable; /api/status keeps serving the last cached body, now marked stale",
-					"ageSec", int(age.Seconds()), "err", err)
-			}
-			w.Header().Set("X-STR-Status-Age", strconv.Itoa(int(age.Seconds())))
-			if stale {
-				w.Header().Set("X-STR-Status-Stale", "1")
-			}
-			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-			s.setPlayingKeyHeader(w, body)
-			w.WriteHeader(code)
-			_, _ = w.Write(s.statusForClients(body))
-			return
+		if !have {
+			return statusAnswer{}, err
 		}
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+		if warn {
+			s.logger.Warn("box now_playing unreachable; /api/status keeps serving the last cached body, now marked stale",
+				"ageSec", int(age.Seconds()), "err", err)
+		}
+		return statusAnswer{
+			body: s.statusForClients(body), keyBody: body, code: code,
+			fallback: true, ageSec: int(age.Seconds()), stale: stale,
+		}, nil
 	}
 	body := np.Raw
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	s.setPlayingKeyHeader(w, body)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(s.observeWokenStop(s.withStationName(body)))
+	return statusAnswer{body: s.observeWokenStop(s.withStationName(body)), keyBody: body, code: http.StatusOK}, nil
 }
 
 // statusForClients is the now_playing body as /api/status serves it from the

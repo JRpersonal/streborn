@@ -208,15 +208,24 @@ func (s *Server) setPlayingKeyHeader(w http.ResponseWriter, body []byte) {
 	if m == nil {
 		return
 	}
-	loc := html.UnescapeString(string(m[1]))
+	if n := s.playingSpotifyKey(html.UnescapeString(string(m[1]))); n > 0 {
+		w.Header().Set(playingKeyHeader, strconv.Itoa(n))
+	}
+}
+
+// playingSpotifyKey names the Spotify key that holds what plays at the
+// (XML-unescaped) now-playing location loc, or 0. The header above and
+// /api/nowplaying's presetSlot both ask here, so they cannot disagree.
+func (s *Server) playingSpotifyKey(loc string) int {
+	if s.presets == nil {
+		return 0
+	}
 	if !strings.Contains(loc, "/spotify/stream") && !strings.Contains(loc, "/playback/container/") {
-		return
+		return 0
 	}
 	engine := ""
 	if s.spotifyContext != nil {
 		engine = s.spotifyContext()
 	}
-	if n := playingSpotifySlot(loc, engine, s.playingKeyAccount, s.presets.All()); n > 0 {
-		w.Header().Set(playingKeyHeader, strconv.Itoa(n))
-	}
+	return playingSpotifySlot(loc, engine, s.playingKeyAccount, s.presets.All())
 }
