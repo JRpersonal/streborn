@@ -342,8 +342,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		s.streamProxy.ForgetTitle()
 	}
 	if playDirect {
-		// a single library file: its name is the song
-		s.panelLibraryTrack("", "", req.Title)
+		// a single library file: its name is the song, with the artist the
+		// request, the agent or the stick's tags named for it (#1136)
+		s.panelLibraryTrack("", artist, req.Title)
 	}
 	// A finite file played on its own has nothing watching it end. The box
 	// finishes the bytes and freezes in PLAY_STATE (#380), so the app, the
