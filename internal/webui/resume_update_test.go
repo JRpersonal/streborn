@@ -879,3 +879,99 @@ func TestUpdateResumeUnreadableLevelAfterTheWakeIsBounded(t *testing.T) {
 		t.Fatalf("volume writes without a reading: %v", box.volSets)
 	}
 }
+
+// Field case 2026-11-26, ST30 main speaker of a permanent group: a native
+// station on key 6 played through the agent's own stream proxy, the update
+// restarted the agent, and the speaker played out its buffer for almost a
+// minute. The restarted agent read PLAY_STATE 27 s after the old one exited,
+// called it "already playing", and the speaker fell silent 22 s later; the
+// station never came back on the group. A speaker that names this agent's
+// proxy while the proxy has served nothing since the start is started again.
+func TestUpdateResumeStartsAgainWhatOnlyTheOldAgentsBufferPlays(t *testing.T) {
+	t.Parallel()
+	own := OrionStationLocation("http://127.0.0.1:8888/stream/6", "Absolut Relax", "")
+	for _, tc := range []struct {
+		name     string
+		np       nowPlayingSnapshot
+		feedLost bool
+		pushes   int
+	}{
+		{"native station, the new proxy served nothing", nowPlayingSnapshot{Source: nativeRadioSource, Location: own, PlayStatus: "PLAY_STATE"}, true, 1},
+		{"native station, the new proxy serves it", nowPlayingSnapshot{Source: nativeRadioSource, Location: own, PlayStatus: "PLAY_STATE"}, false, 0},
+		{"UPnP push of a key, the new proxy served nothing", nowPlayingSnapshot{Source: "UPNP", Location: "http://127.0.0.1:8888/stream/2", PlayStatus: "PLAY_STATE"}, true, 1},
+		{"paused is never a buffer to replace", nowPlayingSnapshot{Source: "UPNP", Location: "http://127.0.0.1:8888/stream/2", PlayStatus: "PAUSE_STATE"}, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, box := newUpdateResumeServer(t)
+			armUpdateResume(t, s, box, 2*time.Minute, 30)
+			box.np = tc.np
+			box.vol = 30
+			feedLost := tc.feedLost
+			s.updateResumeFx.feedLost = func(nowPlayingSnapshot) bool { return feedLost }
+			s.ResumeAfterUpdate()
+			waitUpdateResume(t, s)
+			if got := box.pushCount(); got != tc.pushes {
+				t.Fatalf("pushes = %d, want %d", got, tc.pushes)
+			}
+		})
+	}
+}
+
+// The same case through the production signal and push: the speaker reports
+// it plays STR's key 6 (so every "busy" read says yes), the stream proxy has
+// served nothing since the restart, and the station is pushed anyway. Once the
+// proxy serves the speaker, a busy speaker is left to itself as before.
+func TestUpdateResumeFeedLostReadsTheStreamProxy(t *testing.T) {
+	t.Parallel()
+	own := OrionStationLocation("http://127.0.0.1:8888/stream/6", "Absolut Relax", "")
+	doc := `<nowPlaying source="LOCAL_INTERNET_RADIO"><ContentItem source="LOCAL_INTERNET_RADIO" location="` + own + `"/>` +
+		`<playStatus>PLAY_STATE</playStatus></nowPlaying>`
+	for _, tc := range []struct {
+		name      string
+		lastFetch time.Time
+		wantPush  bool
+	}{
+		{"nothing served since the start", time.Time{}, true},
+		{"the speaker reconnected to the new proxy", time.Now(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, rec := resumeTestServer(t, doc)
+			s.playStateFn = func() (standby, busy bool) { return false, true }
+			fetch := tc.lastFetch
+			s.SetStreamActivityFn(func() (time.Time, time.Time) { return fetch, time.Time{} })
+			s.updateResumePath = filepath.Join(t.TempDir(), "resume-after-update")
+			tm := productionUpdateResumeTiming
+			tm.settle, tm.volumeSettle, tm.selfStartGap = 5*time.Millisecond, 5*time.Millisecond, 5*time.Millisecond
+			s.updateResumeTiming = &tm
+			lp, _ := s.play.snapshot()
+			b, _ := json.Marshal(updateResumeMarker{BoxURL: lp.boxURL, PlayTS: lp.ts, Volume: -1, At: time.Now().Add(-time.Minute)})
+			if err := os.WriteFile(s.updateResumePath, b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			s.loadUpdateResume()
+			s.ResumeAfterUpdate()
+			waitUpdateResume(t, s)
+			if got := waitForSOAP(rec, 300*time.Millisecond); got != tc.wantPush {
+				t.Fatalf("pushed = %v, want %v (SOAP %v)", got, tc.wantPush, rec.list())
+			}
+		})
+	}
+}
+
+func TestPlaysOwnProxyStream(t *testing.T) {
+	t.Parallel()
+	for loc, want := range map[string]bool{
+		OrionStationLocation("http://127.0.0.1:8888/stream/6", "X", ""):     true,
+		"http://127.0.0.1:8888/stream/2":                                    true,
+		OrionStationLocation("https://radio.example.com/live.mp3", "X", ""): false,
+		"http://192.0.2.50:8095/stream/flow.mp3":                            false,
+		"":                                                                  false,
+		"http://127.0.0.1:8888/spotify/stream.ogg":                          false,
+	} {
+		if got := playsOwnProxyStream(loc); got != want {
+			t.Errorf("playsOwnProxyStream(%q) = %v, want %v", loc, got, want)
+		}
+	}
+}

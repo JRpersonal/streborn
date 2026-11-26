@@ -1329,6 +1329,10 @@ func (a *agent) buildBoxLink() error {
 		onLikeKey:   webuiSrv.LikeKeyPress,
 		onUnlikeKey: webuiSrv.UnlikeKeyPress,
 		onTrackKey:  webuiSrv.RemoteTrackKey,
+		// A remote press on the main speaker of a permanent group is told to
+		// its members, which leave a press they caught too to this one
+		// (groupoverride.go).
+		onRemoteKey: webuiSrv.NotifyMembersOfRemoteKey,
 		// A thumbs key or AUX bound to snooze snoozes a ringing alarm; the
 		// alarm clock also follows the source (STANDBY ends a ringing alarm,
 		// AUX is the AUX key).
@@ -1645,6 +1649,10 @@ func (a *agent) buildBoxLink() error {
 	// played by STR and re-registers the keys (deadkey.go, #1931).
 	holdSave.deadKey = func(slot int) deadKeyVerdict { return deadKeyOnBox(store, a.flags.boxHost, slot) }
 	holdSave.playDeadKey = func(slot int, v deadKeyVerdict) { wsHandler.playDeadKey(context.Background(), slot, v) }
+	// A remote press the group's main speaker reported at the same moment
+	// was meant for that one: no hold-to-save, no dead-key play, no store of
+	// the firmware's own kept here (groupoverride.go).
+	holdSave.masterNear = webuiSrv.MasterRemoteKeyNear
 	// A physical preset key still down after heldScreenAfter takes the panel
 	// before the firmware's own hold message (holdsave.go, oled keyhold.go).
 	holdSave.screen = oledHeldScreen{}
@@ -2175,6 +2183,16 @@ func (a *agent) wireLate() error {
 func (a *agent) startDeferred() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
+
+	// Tell the other speakers this agent just started, once, now that its
+	// listeners answer: a permanent group's main speaker that found this
+	// speaker's agent still starting on its last look takes it back at once
+	// instead of on its next five-minute tick (zones_member_started.go).
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.webuiSrv.AnnounceAgentStarted()
+	}()
 	region, regionRes, margeSrv := a.region, a.regionRes, a.margeSrv
 	hostsMgr := a.hostsMgr
 

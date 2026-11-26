@@ -10,6 +10,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/keyactions"
 	"github.com/JRpersonal/streborn/internal/oled"
 	"github.com/JRpersonal/streborn/internal/webhooks"
+	"github.com/JRpersonal/streborn/internal/webui"
 )
 
 // keyLogDedup collapses the log lines for a key the user tends to hammer
@@ -121,7 +122,21 @@ func (h *presetWsHandler) OnKeyEvent(ev boxlog.KeyEvent) {
 		return
 	}
 	oled.FeedKey(ev.Name)
-	if (ev.Name == "NEXT_TRACK" || ev.Name == "PREV_TRACK") && h.onTrackKey != nil {
+	// A remote press: the members of this speaker's permanent group may have
+	// caught it too, and leave it to this one (groupoverride.go). Only the
+	// main speaker of a stored permanent group sends; off the reader's
+	// goroutine.
+	if ev.Producer == boxlog.ProducerIRRemote && h.onRemoteKey != nil && webui.RemoteKeyReachesMembers(ev.Name) {
+		go h.onRemoteKey(ev.Name)
+	}
+	trackKey := ev.Name == "NEXT_TRACK" || ev.Name == "PREV_TRACK"
+	if trackKey && h.onTrackKey != nil && h.holdSaver != nil &&
+		mainSpeakerOverrides(h.holdSaver.masterNear, h.logger, ev.Producer, ev.Name, ev.At, "the radio-key step") {
+		// The group's main speaker got the same remote press and steps for
+		// the group; this speaker does not step on its own.
+		trackKey = false
+	}
+	if trackKey && h.onTrackKey != nil {
 		// While a radio key plays, Next and Previous step through the radio
 		// keys (#1619); on Spotify and the play queue a press the gabbo skip
 		// frame did not report (a quick second press) skips. The webui pairs

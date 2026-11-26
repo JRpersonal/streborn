@@ -99,6 +99,12 @@ type zoneTiming struct {
 	// INVALID_SOURCE, which takes the zone down with it (Küche, 2026-10-17
 	// 09:51). On the zone clock so the tests do not wait for it.
 	defaultGroupHoldCheckAfter time.Duration
+	// playEdgeKickDelay is how long the kick from the firmware's own play
+	// edge waits before a native permanent group's round
+	// (kickDefaultGroupOnPlayEdge). The speaker plays already; the short wait
+	// lets the start settle before the setZone and collects a burst of edges
+	// (a user stepping through keys) into one round.
+	playEdgeKickDelay time.Duration
 }
 
 var productionZoneTiming = zoneTiming{
@@ -106,6 +112,7 @@ var productionZoneTiming = zoneTiming{
 	formResumeSettle:           1500 * time.Millisecond,
 	joinVolumeConfirmAfter:     2500 * time.Millisecond,
 	defaultGroupHoldCheckAfter: 8 * time.Second,
+	playEdgeKickDelay:          1500 * time.Millisecond,
 }
 
 // zoneTimes is the zone clock: the production values unless a test installed a

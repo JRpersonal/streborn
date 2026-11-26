@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,6 +41,39 @@ func TestQuietWakeStopGetsItsOwnDeadline(t *testing.T) {
 	}
 	if stopLeft < quietWakeStepBudget/2 {
 		t.Fatalf("STOP ran with %s left; it must not inherit a used-up deadline", stopLeft)
+	}
+}
+
+// Field case 2026-11-26, 11:29 (Küche ST10, woken for its permanent group):
+// the speaker resumed a station and kept BUFFERING through three STOPs, and
+// the main speaker's setZone followed the wake 0.3 s after the watch ended.
+// The member then sat in the zone on INVALID_SOURCE. Not a late STOP of the
+// wake racing the join: the watch sends every STOP before it returns, and the
+// wake answers the main speaker only after it returned (quietWake, then
+// handleBoxWake), so nothing of the wake reaches the speaker after the join.
+// (The silence was the main speaker's own: its stream had died with its agent
+// update; see TestUpdateResumeStartsAgainWhatOnlyTheOldAgentsBufferPlays.)
+func TestQuietWakeSendsNoStopAfterItReturns(t *testing.T) {
+	t.Parallel()
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil)), boxHost: "192.0.2.10"}
+	var stops atomic.Int32
+	s.quietWakeNowPlayingFn = func(context.Context, string) nowPlayingSnapshot {
+		// The member's own proxy serves silence for a key it does not hold,
+		// so the resumed station never leaves BUFFERING_STATE.
+		return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "BUFFERING_STATE"}
+	}
+	s.quietWakeStopFn = func(context.Context, string) error {
+		stops.Add(1)
+		return nil
+	}
+	s.stopQuietWakeResume()
+	atReturn := stops.Load()
+	if atReturn != quietWakeMaxStops {
+		t.Fatalf("STOP sent %d times before the watch returned, want the cap of %d", atReturn, quietWakeMaxStops)
+	}
+	time.Sleep(2 * quietWakeRestopGap)
+	if got := stops.Load(); got != atReturn {
+		t.Fatalf("a STOP went out after the watch returned (%d, then %d): it would land after the zone join", atReturn, got)
 	}
 }
 

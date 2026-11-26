@@ -312,6 +312,10 @@ type Server struct {
 	rejoinReadAgentUptimeFn func(ctx context.Context, ip string) int
 	rejoinSetZoneFn         func(ctx context.Context, host string, master boxapi.ZoneMember, slaves []boxapi.ZoneMember) error
 	rejoinSelfDeviceIDFn    func(ctx context.Context) string
+	// groupKeyNoticeFn and memberStartedNoticeFn replace the peer posts of
+	// groupremotekey.go and zones_member_started.go in the tests.
+	groupKeyNoticeFn      func(ctx context.Context, ip string, body []byte) bool
+	memberStartedNoticeFn func(ctx context.Context, ip string, body []byte) (member, ok bool)
 	// networkChangedFn is the post-switch state refresh, fired after a
 	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
 	networkChangedFn func(reason string)
@@ -731,6 +735,22 @@ type Server struct {
 	zoneLossMu            sync.Mutex
 	zoneDissolvedAt       time.Time
 	zoneLossRejoinTriedAt time.Time
+	// memberStartedKick asks the reconcile goroutine for one tick-style round
+	// when a stored member's agent reports that it just started
+	// (zones_member_started.go). Capacity 1 and non-blocking sends, like
+	// mirrorKick.
+	memberStartedKick chan struct{}
+	// memberStartedAt is when each address last sent a start notice that
+	// asked for a round (zones_member_started.go). Guarded by zoneLossMu.
+	memberStartedAt map[string]time.Time
+	// playEdgeKickPending is mirrorKickPending for the native permanent
+	// group's kick from the firmware's own play edge (KickDefaultGroup), which
+	// waits less than the app's kick (zoneTiming.playEdgeKickDelay).
+	playEdgeKickPending atomic.Bool
+	// masterKey is the newest remote press the main speaker of this speaker's
+	// permanent group reported here (groupremotekey.go).
+	masterKeyMu sync.Mutex
+	masterKey   masterKeyNote
 
 	// wedge tracks the "box accepts transport pushes but never plays" state
 	// that only a power-cycle clears; streamActivityFn (the stream proxy's
@@ -1790,7 +1810,8 @@ func (s *Server) refreshPairingInBackground() {
 // New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{addr: addr, logger: logger, queue: newPlayQueue(),
-		mirrorKick: make(chan struct{}, 1), alarmReload: make(chan struct{}, 1)}
+		mirrorKick: make(chan struct{}, 1), memberStartedKick: make(chan struct{}, 1),
+		alarmReload: make(chan struct{}, 1)}
 	for _, o := range opts {
 		o(s)
 	}
@@ -1975,6 +1996,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/sleep", s.handleSleep)
 	mux.HandleFunc("/api/box/zone/member", s.handleZoneMember)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
+	mux.HandleFunc("/api/group/master-key", s.handleGroupMasterKey)
+	mux.HandleFunc("/api/group/member-started", s.handleGroupMemberStarted)
 	mux.HandleFunc("/api/box/zone/stereo-name", s.handleStereoName)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)

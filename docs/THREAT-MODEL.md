@@ -84,6 +84,16 @@ as a DNS server for any other device, and does not phone home.
   the firmware prints one while it logs in. The Deezer new
   login is built but **not yet confirmed on a speaker**
   (`docs/streaming/deezer.md`, A2).
+- **Group coordination between speakers.** Two LAN-only, unauthenticated
+  calls let speakers of one permanent group coordinate:
+  `POST /api/group/master-key` (the main speaker tells its members that it
+  just took a remote key, so a member that caught the same infrared press
+  does not act on it) and `POST /api/group/member-started` (a member tells
+  its main speaker that its agent came up, so the group re-forms after an
+  update). Both carry no secret and change no stored setting. A LAN device
+  sending them can at worst make a member ignore its own remote presses for
+  about two seconds, or make a main speaker re-form its stored group once
+  (repeats from the same address within 30 s are ignored).
 
 Each boundary is covered in detail in
 [`SECURITY.md`](../SECURITY.md).
