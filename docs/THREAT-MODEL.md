@@ -67,12 +67,19 @@ as a DNS server for any other device, and does not phone home.
   gets `***`. Like every agent endpoint the account calls are LAN-only but
   not authenticated: anyone on the LAN can sign the speaker into an account
   of their own or sign it out, not read the owner's login. One exception: a
-  speaker that keeps a Deezer login hands it, sealed (X25519 + AES-GCM), to
-  another speaker in its peer roster whose agent says it needs a login for
-  the same account (`docs/streaming/deezer.md`, "Sharing a kept login within
-  a home"). Sealing keeps it from a passive listener; a LAN device that
-  poses as an STR speaker and knows the account could ask for it.
-  Disconnect deletes STR's kept copy. The firmware log lines in a diagnostic file have e-mail
+  kept Deezer login leaves a speaker **only when the owner presses Copy** in
+  the Deezer area, never on its own (not at the agent start, not when a peer
+  comes up, not on Check again). It then goes, sealed (X25519 + AES-GCM), to
+  another speaker in the peer roster whose agent says it uses the same
+  account and whose Deezer does not work (`docs/streaming/deezer.md`,
+  "Copying a kept login within a home"). Sealing keeps it from a passive
+  listener; a LAN device that poses as an STR speaker and knows the account
+  could take a copy the owner presses for. The overview of the home's
+  Deezer logins carries no login and no account, only whether two speakers
+  share one (a salted hash compared agent side). A kept login that another
+  one replaces is backed up beside it (`deezer-login-previous.json`, 0600,
+  at most three), never dropped, since no new Deezer login can be made.
+  Disconnect deletes STR's kept copy and its backups. The firmware log lines in a diagnostic file have e-mail
   addresses masked and token, secret and password values dropped, in case
   the firmware prints one while it logs in. The Deezer new
   login is built but **not yet confirmed on a speaker**
@@ -280,8 +287,9 @@ touch `/mnt/nv/streborn/`, and that directory holds everything STR consists
 of on the speaker: the agent binary, the boot hook (`run-override.sh`), the
 per-speaker CA and its private key, the preset store, the persisted Spotify
 credential, the speaker's own Deezer login if it had one (kept from the
-firmware's `Sources.xml`, or registered by the firmware after a Deezer login
-made from STR, see `docs/streaming/deezer.md`) and the SSH opt-in
+firmware's `Sources.xml`, registered by the firmware, or copied from another
+speaker on the owner's press, plus up to three older ones it replaced, see
+`docs/streaming/deezer.md`) and the SSH opt-in
 marker if one was set. After a factory reset the
 speaker boots straight back into STR.
 

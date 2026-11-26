@@ -3,6 +3,8 @@ import {
   deezerView, deezerStatusLine, deezerPill, deezerCanDisconnect,
   deezerRefreshDelays, deezerDisconnectError,
   parseDeezerLink, isDeezerLink, deezerLinkKindKey, deezerPlayError,
+  deezerHousehold, deezerHomeVisible, deezerShowCopyAll, deezerRowState, deezerRowDetails,
+  deezerKeptDate, deezerCopyMessages, deezerCopyOk,
 } from './deezer.js';
 import en from './i18n/bundles/en.json';
 import de from './i18n/bundles/de.json';
@@ -87,6 +89,97 @@ describe('Deezer links', () => {
     expect(deezerPlayError(new Error('{"code":"native-service-unavailable"}'))[0]).toBe('deezer.linkUnavailable');
     expect(deezerPlayError(new Error('{"code":"deezer-link-unresolved"}'))[0]).toBe('deezer.linkUnresolved');
     expect(deezerPlayError(new Error('{"error":"boom","code":"select-failed"}'))).toEqual(['deezer.linkFailed', { err: 'boom' }]);
+  });
+});
+
+describe('Deezer logins of the home', () => {
+  it('reads the overview and trusts no button the agent did not allow', () => {
+    const hh = deezerHousehold({
+      speakers: [
+        { id: '', name: ' Kitchen ', self: true, state: 'works', kept: true, canCopy: true, canUseOlder: true, previous: '2' },
+        { id: '192.0.2.5:8888', name: 'Bedroom', state: 'no-login', canCopy: true, account: 'same' },
+        { id: '', name: 'NoId', state: 'no-login', canCopy: true },
+        { id: 'x', name: 'Odd', state: 'bogus', account: 'maybe', canUseOlder: true },
+      ],
+    });
+    expect(hh.rows[0]).toMatchObject({ name: 'Kitchen', self: true, canCopy: false, canUseOlder: true, previous: 2 });
+    expect(hh.rows[1]).toMatchObject({ canCopy: true, account: 'same' });
+    expect(hh.rows[2].canCopy).toBe(false);
+    expect(hh.rows[3]).toMatchObject({ state: 'unknown', account: '', canUseOlder: false });
+    expect(hh.canCopy).toBe(1);
+    expect(deezerHousehold(undefined)).toEqual({ rows: [], canCopy: 0 });
+  });
+
+  it('shows the list only when there is something to show', () => {
+    const one = (r) => deezerHousehold({ speakers: [{ self: true, state: 'works', ...r }] });
+    expect(deezerHomeVisible(one({}))).toBe(false);
+    expect(deezerHomeVisible(one({ kept: true }))).toBe(true);
+    expect(deezerHomeVisible(one({ previous: 1 }))).toBe(true);
+    expect(deezerHomeVisible(deezerHousehold({ speakers: [{ self: true }, { id: 'a' }] }))).toBe(true);
+    expect(deezerShowCopyAll({ canCopy: 1 })).toBe(false);
+    expect(deezerShowCopyAll({ canCopy: 2 })).toBe(true);
+  });
+
+  it('names states, origins, backups and accounts', () => {
+    const row = (r) => deezerHousehold({ speakers: [r] }).rows[0];
+    expect(deezerRowState(row({ state: 'refused' }))).toBe('deezer.home.state.refused');
+    expect(deezerRowState(row({ state: 'unknown', why: 'old-agent' }))).toBe('deezer.home.state.oldAgent');
+    expect(deezerRowState(row({ state: 'unknown', why: 'unreachable' }))).toBe('deezer.home.state.unknown');
+    const date = () => '1 Dec';
+    expect(deezerRowDetails(row({ state: 'works', kept: true, from: 'peer', fromName: 'Hall', keptAt: 'x', previous: 3, account: 'same' }), date)).toEqual([
+      ['deezer.home.kept.copied', { date: '1 Dec', name: 'Hall' }],
+      ['deezer.home.older.many', { n: 3 }],
+      ['deezer.home.account.same', {}],
+    ]);
+    expect(deezerRowDetails(row({ self: true, state: 'refused', kept: true, from: 'restored', previous: 1, account: 'same' }), date)).toEqual([
+      ['deezer.home.kept.restored', { date: '1 Dec', name: '?' }],
+      ['deezer.home.older.one', {}],
+    ]);
+    expect(deezerRowDetails(row({ state: 'no-login', account: 'other' }), date)).toEqual([
+      ['deezer.home.kept.none', {}], ['deezer.home.account.other', {}],
+    ]);
+    // No date, or an origin this build does not know: just "keeps a login".
+    expect(deezerRowDetails(row({ state: 'works', kept: true, from: 'sources-file' }), () => '')[0][0]).toBe('deezer.home.kept.yes');
+    expect(deezerRowDetails(row({ state: 'works', kept: true, from: 'future' }), date)[0][0]).toBe('deezer.home.kept.yes');
+    expect(deezerRowDetails(row({ state: 'unknown' }), date)).toEqual([]);
+    expect(deezerKeptDate('')).toBe('');
+    expect(deezerKeptDate('0001-01-01T00:00:00Z')).toBe('');
+    expect(deezerKeptDate('2026-11-24T10:00:00Z', 'en')).toContain('2026');
+  });
+
+  it('turns a copy into sentences', () => {
+    const ans = { copied: 1, results: [
+      { name: 'Bedroom', outcome: 'accepted' },
+      { name: 'Office', outcome: 'refused:kept' },
+      { name: 'Garage', outcome: 'hash-mismatch' },
+      { name: 'Hall', outcome: 'not-needed:works' },
+      { name: 'Porch', outcome: 'unreachable' },
+      { name: 'Attic', outcome: 'old-agent' },
+    ] };
+    expect(deezerCopyMessages(ans, false)).toEqual([
+      ['deezer.home.result.copied', { name: 'Bedroom' }],
+      ['deezer.home.result.refused', { name: 'Office', reason: 'kept' }],
+      ['deezer.home.result.otherAccount', { name: 'Garage' }],
+      ['deezer.home.result.notNeeded', { name: 'Hall' }],
+      ['deezer.home.result.unreachable', { name: 'Porch' }],
+      ['deezer.home.result.oldAgent', { name: 'Attic' }],
+    ]);
+    // Copy to all names only who took it or refused it.
+    expect(deezerCopyMessages(ans, true)).toHaveLength(2);
+    expect(deezerCopyMessages({ copied: 0, results: [{ name: 'Hall', outcome: 'not-needed:works' }] }, true)).toEqual([['deezer.home.result.none', {}]]);
+    expect(deezerCopyOk(ans)).toBe(false);
+    expect(deezerCopyOk({ copied: 1, results: [{ outcome: 'accepted' }] })).toBe(true);
+    expect(deezerCopyOk(null)).toBe(false);
+  });
+
+  it('has every overview string in English and German', () => {
+    for (const k of Object.keys(en).filter((key) => key.startsWith('deezer.home.'))) {
+      expect(de[k], k).toBeTruthy();
+    }
+    for (const k of ['deezer.home.copy', 'deezer.home.copyAll', 'deezer.home.useOlder', 'deezer.home.hint',
+      'deezer.home.result.failed', 'deezer.home.older.done', 'deezer.home.older.failed', 'deezer.home.copying']) {
+      expect(en[k], k).toBeTruthy();
+    }
   });
 });
 

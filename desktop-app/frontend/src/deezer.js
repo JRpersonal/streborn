@@ -113,6 +113,134 @@ export function deezerLinkKindKey(link) {
   }
 }
 
+// ---- The Deezer logins of the home (GET /api/deezer/household) -------------
+// The overview names every STR speaker of the home, its Deezer state and the
+// login STR keeps for it, never a login or an account. A login goes to another
+// speaker only on the owner's Copy (POST /api/deezer/copy), and an older
+// backed-up one comes back only on "Use the older login" (POST
+// /api/deezer/use-older). docs/streaming/deezer.md.
+
+const HOME_STATES = new Set(['works', 'connecting', 'no-login', 'refused', 'not-set-up', 'unknown']);
+const KEPT_FROM = {
+  'sources-file': 'deezer.home.kept.own',
+  registration: 'deezer.home.kept.registration',
+  peer: 'deezer.home.kept.copied',
+  restored: 'deezer.home.kept.restored',
+};
+
+function homeRow(r) {
+  const o = r && typeof r === 'object' ? r : {};
+  const previous = Math.max(0, Math.min(99, Number.parseInt(o.previous, 10) || 0));
+  return {
+    id: String(o.id || ''),
+    name: String(o.name || '').trim(),
+    self: o.self === true,
+    state: HOME_STATES.has(o.state) ? o.state : 'unknown',
+    why: String(o.why || ''),
+    kept: o.kept === true,
+    from: String(o.from || ''),
+    fromName: String(o.fromName || '').trim(),
+    keptAt: String(o.keptAt || ''),
+    previous,
+    account: o.account === 'same' || o.account === 'other' ? o.account : '',
+    canCopy: o.canCopy === true && o.self !== true && !!o.id,
+    canUseOlder: o.canUseOlder === true && o.self === true,
+  };
+}
+
+// deezerHousehold reads the agent's answer: rows (this speaker first) and how
+// many speakers a copy to all would reach. An older agent answers nothing.
+export function deezerHousehold(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const rows = Array.isArray(o.speakers) ? o.speakers.map(homeRow) : [];
+  return { rows, canCopy: rows.filter((r) => r.canCopy).length };
+}
+
+// deezerHomeVisible: the list shows when there is another speaker, or when
+// this speaker keeps a login or can put an older one back.
+export function deezerHomeVisible(hh) {
+  const rows = (hh && hh.rows) || [];
+  if (rows.length > 1) return true;
+  return rows.some((r) => r.self && (r.kept || r.canUseOlder || r.previous > 0));
+}
+
+// deezerShowCopyAll: a separate "Copy to all" only when it reaches more than
+// one speaker; for one, that row's own button does it.
+export function deezerShowCopyAll(hh) {
+  return !!hh && hh.canCopy > 1;
+}
+
+// deezerRowState is the i18n key for a row's state.
+export function deezerRowState(row) {
+  switch (row && row.state) {
+    case 'works': return 'deezer.home.state.works';
+    case 'connecting': return 'deezer.home.state.connecting';
+    case 'no-login': return 'deezer.home.state.noLogin';
+    case 'refused': return 'deezer.home.state.refused';
+    case 'not-set-up': return 'deezer.home.state.notSetUp';
+    default: return row && row.why === 'old-agent' ? 'deezer.home.state.oldAgent' : 'deezer.home.state.unknown';
+  }
+}
+
+// deezerKeptDate formats the agent's timestamp as a local date, '' for none.
+export function deezerKeptDate(iso, locale) {
+  const ms = Date.parse(String(iso || ''));
+  if (!Number.isFinite(ms) || ms <= 0) return '';
+  try {
+    return new Date(ms).toLocaleDateString(locale || undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+}
+
+// deezerRowDetails lists a row's detail segments as [key, params]: the kept
+// login and its origin, the backed-up older logins, and the account. date
+// turns the agent's timestamp into a short local date ('' when unknown).
+export function deezerRowDetails(row, date) {
+  if (!row || row.state === 'unknown') return [];
+  const out = [];
+  if (row.kept) {
+    const when = typeof date === 'function' ? date(row.keptAt) : '';
+    const key = KEPT_FROM[row.from];
+    if (key && when) out.push([key, { date: when, name: row.fromName || '?' }]);
+    else out.push(['deezer.home.kept.yes', {}]);
+  } else {
+    out.push(['deezer.home.kept.none', {}]);
+  }
+  if (row.previous === 1) out.push(['deezer.home.older.one', {}]);
+  else if (row.previous > 1) out.push(['deezer.home.older.many', { n: row.previous }]);
+  if (!row.self && row.account === 'same') out.push(['deezer.home.account.same', {}]);
+  if (!row.self && row.account === 'other') out.push(['deezer.home.account.other', {}]);
+  return out;
+}
+
+// deezerCopyMessages turns a copy's answer into sentences, [key, params]
+// each. all: a copy to all reports only the speakers that took the login or
+// refused it; the others never needed it.
+export function deezerCopyMessages(answer, all) {
+  const results = answer && Array.isArray(answer.results) ? answer.results : [];
+  const out = [];
+  for (const r of results) {
+    const name = String((r && r.name) || '').trim() || '?';
+    const outcome = String((r && r.outcome) || '');
+    if (outcome === 'accepted') out.push(['deezer.home.result.copied', { name }]);
+    else if (outcome.startsWith('refused:')) out.push(['deezer.home.result.refused', { name, reason: outcome.slice(8) }]);
+    else if (all) continue;
+    else if (outcome.startsWith('not-needed:')) out.push(['deezer.home.result.notNeeded', { name }]);
+    else if (outcome === 'hash-mismatch') out.push(['deezer.home.result.otherAccount', { name }]);
+    else if (outcome === 'old-agent') out.push(['deezer.home.result.oldAgent', { name }]);
+    else out.push(['deezer.home.result.unreachable', { name }]);
+  }
+  if (!out.length) out.push(['deezer.home.result.none', {}]);
+  return out;
+}
+
+// deezerCopyOk says whether a copy's answer is only good news.
+export function deezerCopyOk(answer) {
+  const results = answer && Array.isArray(answer.results) ? answer.results : [];
+  return Number(answer && answer.copied) > 0 && results.every((r) => !String((r && r.outcome) || '').startsWith('refused:'));
+}
+
 // deezerPlayError picks the message for a Deezer link that did not start.
 export function deezerPlayError(err) {
   switch (agentErrorCode(err)) {

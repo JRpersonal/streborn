@@ -3,6 +3,9 @@ package webui
 import (
 	"bytes"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/marge"
@@ -24,7 +28,7 @@ import (
 // (keepDeezerLogin's account) is the account.
 const shareTestToken = "fake-token-for-tests"
 
-// shareSpeaker is one speaker of the sharing tests: its agent, stand-in, fake
+// shareSpeaker is one speaker of the copy tests: its agent, stand-in, fake
 // firmware, log and kept-login file.
 type shareSpeaker struct {
 	s    *Server
@@ -34,13 +38,14 @@ type shareSpeaker struct {
 	kept string
 }
 
-func newShareSpeaker(t *testing.T) shareSpeaker {
+func newShareSpeaker(t *testing.T, name string) shareSpeaker {
 	t.Helper()
 	s, _, box, logs := deezerTestServer(t)
 	dir := t.TempDir()
 	kept := filepath.Join(dir, "deezer-login.json")
 	m := marge.New(s.logger, marge.WithKeptDeezerLogin(kept), marge.WithReflectSourcesPath(filepath.Join(dir, "reflect.json")))
 	s.deezer = m
+	s.boxNameFn = func() (string, string) { return name, "SoundTouch 10" }
 	// No call may fall back to a real agent port on the test machine; the
 	// fallback test sets its own.
 	old := deezerShareAgentPorts
@@ -55,8 +60,19 @@ func (sp shareSpeaker) needsDeezer(account string) {
 	sp.box.keepAfterRemove = true
 }
 
+// works makes the speaker list Deezer READY for account.
+func (sp shareSpeaker) works(account string) {
+	sp.box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: account, Status: "READY"}}
+}
+
+// refuses makes Deezer refuse the speaker's login (the firmware's 3330).
+func (sp shareSpeaker) refuses(account string) {
+	sp.needsDeezer(account)
+	sp.m.SetDeezerRetrySource(func() (string, time.Time, bool) { return "3330", time.Now(), true })
+}
+
 // sealFor seals the sender's kept login to the receiver, the way the sender
-// does after reading the receiver's need signal for account.
+// does after reading the receiver's summary for account.
 func sealFor(t *testing.T, sender, receiver shareSpeaker, account string) marge.SealedDeezerLogin {
 	t.Helper()
 	key := receiver.m.DeezerShareKey()
@@ -67,8 +83,8 @@ func sealFor(t *testing.T, sender, receiver shareSpeaker, account string) marge.
 	return sealed
 }
 
-func postShare(sp shareSpeaker, remote string, sealed marge.SealedDeezerLogin) (*httptest.ResponseRecorder, deezerShareAnswer) {
-	b, _ := json.Marshal(map[string]any{"sealed": sealed})
+func postShare(sp shareSpeaker, remote string, sealed marge.SealedDeezerLogin, trigger string) (*httptest.ResponseRecorder, deezerShareAnswer) {
+	b, _ := json.Marshal(map[string]any{"sealed": sealed, "trigger": trigger})
 	w := httptest.NewRecorder()
 	sp.s.handleDeezerKeptLogin(w, nativeReq(http.MethodPost, "/api/deezer/kept-login", string(b), remote, "application/json"))
 	sp.s.deezerShare.wg.Wait()
@@ -88,26 +104,26 @@ func noLeak(t *testing.T, what string, outs ...string) {
 
 // The receiving side's guards: an unknown caller, an account the speaker does
 // not list, a speaker whose Deezer works and a speaker that keeps a login
-// already are all refused, and nothing is written.
+// (without an owner's copy) are all refused, and nothing is written.
 func TestDeezerShareReceiveGuards(t *testing.T) {
 	deezerShareOutcomeWait = 0
-	sender := newShareSpeaker(t)
+	sender := newShareSpeaker(t, "Kitchen")
 	keepDeezerLogin(t, sender.m)
-	recv := newShareSpeaker(t)
+	recv := newShareSpeaker(t, "Bedroom")
 	known := map[string]bool{"192.168.1.20": true}
 	recv.s.knownPeerFn = func(ip string) bool { return known[ip] }
 	recv.needsDeezer(deezerTestUser)
 
-	check := func(name, remote string, sealed marge.SealedDeezerLogin, code int, reason string) {
+	check := func(sp shareSpeaker, name, remote string, sealed marge.SealedDeezerLogin, trigger string, code int, reason string) {
 		t.Helper()
-		w, ans := postShare(recv, remote, sealed)
+		w, ans := postShare(sp, remote, sealed, trigger)
 		if w.Code != code || ans.Status != "refused" || ans.Reason != reason {
 			t.Fatalf("%s: %d %s", name, w.Code, w.Body.String())
 		}
 		noLeak(t, name, w.Body.String())
 	}
 
-	check("unknown caller", "192.168.1.99:4000", sealFor(t, sender, recv, deezerTestUser), http.StatusForbidden, "unknown-caller")
+	check(recv, "unknown caller", "192.168.1.99:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser, http.StatusForbidden, "unknown-caller")
 	if _, err := os.Stat(recv.kept); !os.IsNotExist(err) {
 		t.Fatal("an unknown caller's login was written")
 	}
@@ -115,13 +131,13 @@ func TestDeezerShareReceiveGuards(t *testing.T) {
 	recv.needsDeezer("other@example.com")
 	// The sender would never seal for a hash that does not match; a forged
 	// one must still be refused by the receiver itself.
-	check("account mismatch", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), http.StatusConflict, "account-mismatch")
+	check(recv, "account mismatch", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser, http.StatusConflict, "account-mismatch")
 
-	recv.box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "READY"}}
-	check("ready", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), http.StatusConflict, "ready")
+	recv.works(deezerTestUser)
+	check(recv, "ready", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser, http.StatusConflict, "ready")
 
 	recv.box.sources = nil
-	check("not listed", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), http.StatusConflict, "not-listed")
+	check(recv, "not listed", "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser, http.StatusConflict, "not-listed")
 
 	w := httptest.NewRecorder()
 	recv.s.handleDeezerKeptLogin(w, nativeReq(http.MethodPost, "/api/deezer/kept-login", "{}", "192.168.1.20:4000", "text/plain"))
@@ -135,16 +151,13 @@ func TestDeezerShareReceiveGuards(t *testing.T) {
 		t.Fatal("a refused login was written")
 	}
 
-	// A speaker that keeps a login already never takes a peer's.
-	keeper := newShareSpeaker(t)
+	// A speaker that keeps a login takes a peer's only on an owner's copy.
+	keeper := newShareSpeaker(t, "Office")
 	keeper.s.knownPeerFn = recv.s.knownPeerFn
 	keepDeezerLogin(t, keeper.m)
 	keeper.needsDeezer(deezerTestUser)
 	before, _ := os.ReadFile(keeper.kept)
-	w, ans := postShare(keeper, "192.168.1.20:4000", sealFor(t, sender, keeper, deezerTestUser))
-	if w.Code != http.StatusConflict || ans.Reason != "kept" {
-		t.Fatalf("kept: %d %s", w.Code, w.Body.String())
-	}
+	check(keeper, "kept", "192.168.1.20:4000", sealFor(t, sender, keeper, deezerTestUser), "", http.StatusConflict, "kept")
 	if after, _ := os.ReadFile(keeper.kept); string(after) != string(before) {
 		t.Fatal("a kept login was overwritten")
 	}
@@ -155,17 +168,20 @@ func TestDeezerShareReceiveGuards(t *testing.T) {
 	noLeak(t, "logs and snapshot", recv.logs.String(), string(snap))
 }
 
-// A known peer's login for the listed account is kept 0600, from "peer", and
-// the firmware is told to recreate its account from it.
+// A known peer's login for the listed account is kept 0600, from "peer" with
+// the sender's name, and the firmware is told to recreate its account.
 func TestDeezerShareReceiveAccepts(t *testing.T) {
 	deezerShareOutcomeWait = 0
-	sender := newShareSpeaker(t)
+	sender := newShareSpeaker(t, "Kitchen")
 	keepDeezerLogin(t, sender.m)
-	recv := newShareSpeaker(t)
+	recv := newShareSpeaker(t, "Bedroom")
 	recv.s.knownPeerFn = func(ip string) bool { return ip == "192.168.1.20" }
+	recv.s.cachedPeersFn = func() []PeerLink {
+		return []PeerLink{{Name: "Kitchen", URL: "http://192.168.1.20:8888/", IP: "192.168.1.20", Reachable: true}}
+	}
 	recv.needsDeezer(strings.ToUpper(deezerTestUser))
 
-	w, ans := postShare(recv, "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser))
+	w, ans := postShare(recv, "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser)
 	if w.Code != http.StatusOK || ans.Status != "accepted" {
 		t.Fatalf("accept: %d %s", w.Code, w.Body.String())
 	}
@@ -179,6 +195,9 @@ func TestDeezerShareReceiveAccepts(t *testing.T) {
 	if !st.Kept || st.From != "peer" || !strings.HasPrefix(st.FromPeer, "peer#") {
 		t.Fatalf("snapshot = %+v", st)
 	}
+	if sum := recv.m.KeptDeezerSummary(); sum.FromName != "Kitchen" {
+		t.Fatalf("summary = %+v", sum)
+	}
 	if recv.box.removeCalls != 1 || recv.box.notifyCalls != 1 {
 		t.Fatalf("recreate: %d removals, %d notifications", recv.box.removeCalls, recv.box.notifyCalls)
 	}
@@ -189,13 +208,54 @@ func TestDeezerShareReceiveAccepts(t *testing.T) {
 	noLeak(t, "accepted path", w.Body.String(), recv.logs.String(), string(snap))
 }
 
-// recordingPeer serves a receiving speaker over HTTP and records every
-// request body and answer, for the leak checks.
+// The "already kept" guard relaxes for an owner's copy only, and only while
+// the receiver's Deezer does not work; the receiver's own login is then
+// backed up (marked refused when Deezer refused it), never dropped.
+func TestDeezerShareRelaxedGuardOnlyForANonWorkingReceiver(t *testing.T) {
+	deezerShareOutcomeWait = 0
+	sender := newShareSpeaker(t, "Kitchen")
+	if err := os.WriteFile(sender.kept, []byte(`{"account":"`+deezerTestUser+`","secretType":"token","secret":"`+shareTestToken+`-sender","from":"registration"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recv := newShareSpeaker(t, "Bedroom")
+	keepDeezerLogin(t, recv.m)
+	recv.s.knownPeerFn = func(string) bool { return true }
+
+	// Works: never replaced, not even on an owner's copy.
+	recv.works(deezerTestUser)
+	if _, ans := postShare(recv, "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser); ans.Reason != "ready" {
+		t.Fatalf("working receiver: %+v", ans)
+	}
+	// Does not work, but no owner's copy: refused.
+	recv.refuses(deezerTestUser)
+	if _, ans := postShare(recv, "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), ""); ans.Reason != "kept" {
+		t.Fatalf("not the owner's copy: %+v", ans)
+	}
+	if sum := recv.m.KeptDeezerSummary(); sum.Previous != 0 || sum.From != "registration" {
+		t.Fatalf("a refused copy changed the kept login: %+v", sum)
+	}
+	// Does not work, owner's copy: taken, the old one backed up as refused.
+	if _, ans := postShare(recv, "192.168.1.20:4000", sealFor(t, sender, recv, deezerTestUser), deezerShareUser); ans.Status != "accepted" {
+		t.Fatalf("owner's copy: %+v", ans)
+	}
+	sum := recv.m.KeptDeezerSummary()
+	if !sum.Kept || sum.From != "peer" || sum.Previous != 1 || sum.PreviousRefused != 1 {
+		t.Fatalf("after the copy = %+v", sum)
+	}
+	prev, err := os.ReadFile(filepath.Join(filepath.Dir(recv.kept), "deezer-login-previous.json"))
+	if err != nil || !strings.Contains(string(prev), shareTestToken) {
+		t.Fatalf("the replaced login is not backed up: %v", err)
+	}
+	snap, _ := json.Marshal(recv.m.DeezerLoginSnapshot())
+	noLeak(t, "the relaxed guard", recv.logs.String(), string(snap))
+}
+
+// recordingPeer serves a speaker's agent over HTTP and records every request
+// body and answer, for the leak checks and the request counts.
 type recordingPeer struct {
 	mu        sync.Mutex
 	posts     int
-	needReads int
-	asks      int
+	summaries int
 	traffic   bytes.Buffer
 }
 
@@ -205,23 +265,18 @@ func (rp *recordingPeer) serve(sp shareSpeaker) *httptest.Server {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		rec := httptest.NewRecorder()
 		switch r.URL.Path {
-		case "/api/deezer/login-need":
-			sp.s.handleDeezerLoginNeed(rec, r)
+		case "/api/deezer/login-summary":
+			sp.s.handleDeezerLoginSummary(rec, r)
 		case "/api/deezer/kept-login":
 			sp.s.handleDeezerKeptLogin(rec, r)
-		case "/api/deezer/offer-request":
-			sp.s.handleDeezerOfferRequest(rec, r)
 		default:
 			http.NotFound(rec, r)
 		}
 		rp.mu.Lock()
-		switch r.URL.Path {
-		case "/api/deezer/kept-login":
+		if r.URL.Path == "/api/deezer/kept-login" {
 			rp.posts++
-		case "/api/deezer/offer-request":
-			rp.asks++
-		default:
-			rp.needReads++
+		} else {
+			rp.summaries++
 		}
 		rp.traffic.Write(body)
 		rp.traffic.Write(rec.Body.Bytes())
@@ -234,16 +289,10 @@ func (rp *recordingPeer) serve(sp shareSpeaker) *httptest.Server {
 	}))
 }
 
-func (rp *recordingPeer) counts() (needReads, posts int) {
+func (rp *recordingPeer) counts() (summaries, posts int) {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-	return rp.needReads, rp.posts
-}
-
-func (rp *recordingPeer) askCount() int {
-	rp.mu.Lock()
-	defer rp.mu.Unlock()
-	return rp.asks
+	return rp.summaries, rp.posts
 }
 
 func (rp *recordingPeer) seen() string {
@@ -252,169 +301,394 @@ func (rp *recordingPeer) seen() string {
 	return rp.traffic.String()
 }
 
-func peerLinkTo(srv *httptest.Server, reachable bool) PeerLink {
-	return PeerLink{Name: "Kitchen", URL: srv.URL + "/", IP: "127.0.0.1", Reachable: reachable}
+func peerLinkTo(srv *httptest.Server, name string, reachable bool) PeerLink {
+	return PeerLink{Name: name, URL: srv.URL + "/", IP: "127.0.0.1", Reachable: reachable}
 }
 
-// The sender posts only to a peer that needs a login for its own account,
-// once per agent start, and nothing in the traffic, the answers, the logs or
-// the debug sections carries the login or the account.
-func TestDeezerShareSendsOnlyToAMatchingPeerOnce(t *testing.T) {
-	deezerShareOutcomeWait = 0
-	sender := newShareSpeaker(t)
-	keepDeezerLogin(t, sender.m)
-	recv := newShareSpeaker(t)
-	recv.needsDeezer(deezerTestUser)
-	rp := &recordingPeer{}
-	srv := rp.serve(recv)
-	defer srv.Close()
-	sender.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(srv, true)} }
+func hostOf(srv *httptest.Server) string {
+	u, _ := url.Parse(srv.URL)
+	return u.Host
+}
 
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerStart)
-	recv.s.deezerShare.wg.Wait()
-	if _, posts := rp.counts(); posts != 1 {
-		t.Fatalf("posts = %d", posts)
+func household(t *testing.T, sp shareSpeaker) (DeezerHousehold, string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	sp.s.handleDeezerHousehold(w, nativeReq(http.MethodGet, "/api/deezer/household", "", "192.168.1.5:5000", ""))
+	if w.Code != http.StatusOK {
+		t.Fatalf("household: %d %s", w.Code, w.Body.String())
 	}
-	if st := recv.m.DeezerLoginSnapshot(); !st.Kept || st.From != "peer" {
-		t.Fatalf("receiver = %+v", st)
+	var hh DeezerHousehold
+	if err := json.Unmarshal(w.Body.Bytes(), &hh); err != nil {
+		t.Fatal(err)
 	}
-	if recv.box.removeCalls != 1 || recv.box.notifyCalls != 1 {
-		t.Fatalf("receiver recreate: %d removals, %d notifications", recv.box.removeCalls, recv.box.notifyCalls)
+	return hh, w.Body.String()
+}
+
+func rowNamed(t *testing.T, hh DeezerHousehold, name string) DeezerHouseholdRow {
+	t.Helper()
+	for _, r := range hh.Speakers {
+		if r.Name == name {
+			return r
+		}
 	}
-	sh := sender.m.DeezerLoginSnapshot().Shares
-	if sh == nil || len(sh.Sent) != 1 || sh.Sent[0].Outcome != "accepted" || sh.Sent[0].Trigger != "start" {
+	t.Fatalf("no row %q in %+v", name, hh.Speakers)
+	return DeezerHouseholdRow{}
+}
+
+// The overview names every speaker of the home with its Deezer state, its
+// kept login's origin and backups, and whether it uses the same account; Copy
+// applies only where this speaker keeps a login, the target uses the same
+// account and its Deezer does not work. Nothing carries the login or the
+// account, and reading it copies nothing.
+func TestDeezerHouseholdOverviewAndCopyEligibility(t *testing.T) {
+	deezerShareOutcomeWait = 0
+	me := newShareSpeaker(t, "Kitchen")
+	keepDeezerLogin(t, me.m)
+	me.works(deezerTestUser)
+	needs, ready, other, notSet := newShareSpeaker(t, "Bedroom"), newShareSpeaker(t, "Office"), newShareSpeaker(t, "Garage"), newShareSpeaker(t, "Hall")
+	needs.needsDeezer(deezerTestUser)
+	ready.works(deezerTestUser)
+	keepDeezerLogin(t, ready.m)
+	other.refuses("other@example.com")
+	rps := map[string]*recordingPeer{}
+	var links []PeerLink
+	for name, sp := range map[string]shareSpeaker{"Bedroom": needs, "Office": ready, "Garage": other, "Hall": notSet} {
+		rp := &recordingPeer{}
+		srv := rp.serve(sp)
+		t.Cleanup(srv.Close)
+		rps[name] = rp
+		links = append(links, peerLinkTo(srv, name, true))
+	}
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()
+	links = append(links, PeerLink{Name: "Porch", URL: dead.URL + "/", IP: "127.0.0.1", Reachable: false})
+	me.s.cachedPeersFn = func() []PeerLink { return links }
+
+	hh, raw := household(t, me)
+	if len(hh.Speakers) != 6 || !hh.Speakers[0].Self || hh.Speakers[0].Name != "Kitchen" {
+		t.Fatalf("rows = %+v", hh.Speakers)
+	}
+	self := hh.Speakers[0]
+	if self.State != "works" || !self.Kept || self.From != "registration" || self.KeptAt.IsZero() || self.CanCopy || self.CanUseOlder {
+		t.Fatalf("self = %+v", self)
+	}
+	b := rowNamed(t, hh, "Bedroom")
+	if b.State != "no-login" || b.Account != "same" || !b.CanCopy || b.Kept || b.ID == "" {
+		t.Fatalf("Bedroom = %+v", b)
+	}
+	o := rowNamed(t, hh, "Office")
+	if o.State != "works" || o.Account != "same" || o.CanCopy || !o.Kept {
+		t.Fatalf("Office = %+v", o)
+	}
+	g := rowNamed(t, hh, "Garage")
+	if g.State != "refused" || g.Account != "other" || g.CanCopy {
+		t.Fatalf("Garage = %+v", g)
+	}
+	h := rowNamed(t, hh, "Hall")
+	if h.State != "not-set-up" || h.Account != "" || h.CanCopy {
+		t.Fatalf("Hall = %+v", h)
+	}
+	if p := rowNamed(t, hh, "Porch"); p.State != "unknown" || p.Why != "unreachable" || p.CanCopy {
+		t.Fatalf("Porch = %+v", p)
+	}
+	if hh.CanCopy != 1 {
+		t.Fatalf("canCopy = %d", hh.CanCopy)
+	}
+	for name, rp := range rps {
+		if _, posts := rp.counts(); posts != 0 {
+			t.Fatalf("reading the overview copied to %s", name)
+		}
+	}
+
+	// A speaker whose own login Deezer refuses offers no Copy.
+	me.refuses(deezerTestUser)
+	if hh, _ := household(t, me); hh.CanCopy != 0 || rowNamed(t, hh, "Bedroom").CanCopy {
+		t.Fatalf("a refused login is offered for copying: %+v", hh)
+	}
+	// Nor does a speaker that keeps none.
+	bare := newShareSpeaker(t, "Attic")
+	bare.works(deezerTestUser)
+	bare.s.cachedPeersFn = me.s.cachedPeersFn
+	if hh, _ := household(t, bare); hh.CanCopy != 0 {
+		t.Fatalf("a speaker without a kept login offers Copy: %+v", hh)
+	}
+	var traffic []string
+	for _, rp := range rps {
+		traffic = append(traffic, rp.seen())
+	}
+	noLeak(t, "the overview", append(traffic, raw, me.logs.String(), needs.logs.String())...)
+}
+
+func copyCall(sp shareSpeaker, body string) (*httptest.ResponseRecorder, DeezerCopyAnswer) {
+	w := httptest.NewRecorder()
+	sp.s.handleDeezerCopy(w, nativeReq(http.MethodPost, "/api/deezer/copy", body, "192.168.1.5:5000", "application/json"))
+	var ans DeezerCopyAnswer
+	_ = json.Unmarshal(w.Body.Bytes(), &ans)
+	return w, ans
+}
+
+// Copy sends the kept login to the one speaker named, which takes it and
+// hands it to its firmware; Copy to all reaches only the speakers that need
+// it. Nothing in the traffic, the answers, the logs or the debug sections
+// carries the login or the account.
+func TestDeezerCopyOnTheOwnersPress(t *testing.T) {
+	deezerShareOutcomeWait = 0
+	me := newShareSpeaker(t, "Kitchen")
+	keepDeezerLogin(t, me.m)
+	me.works(deezerTestUser)
+	a, b, c := newShareSpeaker(t, "Bedroom"), newShareSpeaker(t, "Office"), newShareSpeaker(t, "Garage")
+	a.needsDeezer(deezerTestUser)
+	b.needsDeezer(deezerTestUser)
+	c.needsDeezer("other@example.com")
+	rpA, rpB, rpC := &recordingPeer{}, &recordingPeer{}, &recordingPeer{}
+	srvA, srvB, srvC := rpA.serve(a), rpB.serve(b), rpC.serve(c)
+	defer srvA.Close()
+	defer srvB.Close()
+	defer srvC.Close()
+	me.s.cachedPeersFn = func() []PeerLink {
+		return []PeerLink{peerLinkTo(srvA, "Bedroom", true), peerLinkTo(srvB, "Office", true), peerLinkTo(srvC, "Garage", true)}
+	}
+
+	w, ans := copyCall(me, `{"target":"`+hostOf(srvA)+`"}`)
+	a.s.deezerShare.wg.Wait()
+	if w.Code != http.StatusOK || ans.Copied != 1 || len(ans.Results) != 1 || ans.Results[0].Outcome != "accepted" || ans.Results[0].Name != "Bedroom" {
+		t.Fatalf("copy to one: %d %s", w.Code, w.Body.String())
+	}
+	if st := a.m.DeezerLoginSnapshot(); !st.Kept || st.From != "peer" {
+		t.Fatalf("Bedroom = %+v", st)
+	}
+	if a.box.removeCalls != 1 || a.box.notifyCalls != 1 {
+		t.Fatalf("Bedroom recreate: %d removals, %d notifications", a.box.removeCalls, a.box.notifyCalls)
+	}
+	if _, posts := rpB.counts(); posts != 0 {
+		t.Fatal("a copy to one reached another speaker")
+	}
+	sh := me.m.DeezerLoginSnapshot().Shares
+	if sh == nil || len(sh.Sent) != 1 || sh.Sent[0].Outcome != "accepted" || sh.Sent[0].Trigger != "copy" {
 		t.Fatalf("sent record = %+v", sh)
 	}
 
-	// Once per start: neither Check again nor the peer coming up again posts
-	// a second time.
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerCheck)
-	sender.s.offerDeezerToPeer(t.Context(), deezerSharePeer{ip: "127.0.0.1", bases: []string{srv.URL}, reachable: true}, deezerShareTriggerPeer)
-	if _, posts := rp.counts(); posts != 1 {
-		t.Fatalf("posts after repeats = %d", posts)
+	// Copy to all: Office takes it, Garage uses another account, Bedroom
+	// is in the middle of signing in with the copy it took.
+	_, all := copyCall(me, `{"all":true}`)
+	b.s.deezerShare.wg.Wait()
+	got := map[string]string{}
+	for _, r := range all.Results {
+		got[r.Name] = r.Outcome
+	}
+	if all.Copied != 1 || got["Office"] != "accepted" || got["Garage"] != "hash-mismatch" || got["Bedroom"] != "not-needed:connecting" {
+		t.Fatalf("copy to all = %+v", all)
+	}
+	if _, posts := rpC.counts(); posts != 0 {
+		t.Fatal("another account's speaker got the login")
 	}
 
-	snapS, _ := json.Marshal(sender.m.DeezerLoginSnapshot())
-	snapR, _ := json.Marshal(recv.m.DeezerLoginSnapshot())
-	rp.mu.Lock()
-	traffic := rp.traffic.String()
-	rp.mu.Unlock()
-	noLeak(t, "the share", traffic, sender.logs.String(), recv.logs.String(), string(snapS), string(snapR))
+	// Refusals of the endpoint itself.
+	if w, _ := copyCall(me, `{"target":"192.0.2.77:8888"}`); w.Code != http.StatusNotFound {
+		t.Fatalf("unknown target: %d", w.Code)
+	}
+	if w, _ := copyCall(me, `{}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("no target: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	me.s.handleDeezerCopy(w, nativeReq(http.MethodPost, "/api/deezer/copy", `{"all":true}`, "192.168.1.5:5000", "text/plain"))
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("form post: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	me.s.handleDeezerCopy(w, nativeReq(http.MethodPost, "/api/deezer/copy", `{"all":true}`, "203.0.113.7:5000", "application/json"))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-LAN caller: %d", w.Code)
+	}
+	bare := newShareSpeaker(t, "Attic")
+	bare.s.cachedPeersFn = me.s.cachedPeersFn
+	if w, _ := copyCall(bare, `{"all":true}`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "no-kept-login") {
+		t.Fatalf("nothing kept: %d %s", w.Code, w.Body.String())
+	}
+
+	snapMe, _ := json.Marshal(me.m.DeezerLoginSnapshot())
+	snapA, _ := json.Marshal(a.m.DeezerLoginSnapshot())
+	noLeak(t, "the copy", rpA.seen(), rpB.seen(), rpC.seen(), me.logs.String(), a.logs.String(), b.logs.String(),
+		string(snapMe), string(snapA), w.Body.String())
 }
 
-// No post to a peer that does not need a login, needs one for another
-// account, or cannot be reached; none at all without a kept login.
-func TestDeezerShareSkipsPeersThatDoNotMatch(t *testing.T) {
+// Nothing is copied on its own: not at the agent start, not on Check again
+// on either side, and no code path but the owner's Copy reaches the post.
+func TestDeezerNoAutomaticCopy(t *testing.T) {
 	deezerShareOutcomeWait = 0
-	sender := newShareSpeaker(t)
-	recv := newShareSpeaker(t)
-	rp := &recordingPeer{}
-	srv := rp.serve(recv)
-	defer srv.Close()
-	sender.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(srv, true)} }
+	keeper := newShareSpeaker(t, "Kitchen")
+	keepDeezerLogin(t, keeper.m)
+	keeper.needsDeezer(deezerTestUser)
+	needy := newShareSpeaker(t, "Bedroom")
+	needy.needsDeezer(deezerTestUser)
+	keeperRP, needyRP := &recordingPeer{}, &recordingPeer{}
+	keeperSrv, needySrv := keeperRP.serve(keeper), needyRP.serve(needy)
+	defer keeperSrv.Close()
+	defer needySrv.Close()
+	keeper.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(needySrv, "Bedroom", true)} }
+	needy.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(keeperSrv, "Kitchen", true)} }
 
-	// Without a kept login the sender asks nobody.
-	recv.needsDeezer(deezerTestUser)
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerStart)
-	sender.s.OfferKeptDeezerLoginToPeer(t.Context(), "127.0.0.1", 1)
-	if reads, posts := rp.counts(); reads != 0 || posts != 0 {
-		t.Fatalf("without a kept login: %d reads, %d posts", reads, posts)
+	keeper.s.DeezerRecreateAtStart(t.Context(), 0, 0)
+	needy.s.DeezerRecreateAtStart(t.Context(), 0, 0)
+	deezerRecheck(keeper.s, "application/json")
+	deezerRecheck(needy.s, "application/json")
+	if s, p := needyRP.counts(); s != 0 || p != 0 {
+		t.Fatalf("the keeper called the needy speaker on its own: %d reads, %d posts", s, p)
+	}
+	if s, p := keeperRP.counts(); s != 0 || p != 0 {
+		t.Fatalf("the needy speaker called the keeper on its own: %d reads, %d posts", s, p)
+	}
+	if _, err := os.Stat(needy.kept); !os.IsNotExist(err) {
+		t.Fatal("the needy speaker got a login nobody pressed for")
 	}
 
-	keepDeezerLogin(t, sender.m)
-	outcome := func() string {
-		sh := sender.m.DeezerLoginSnapshot().Shares
-		if sh == nil || len(sh.Sent) == 0 {
-			return ""
+	// Only handleDeezerCopy calls copyDeezerTo, and only copyDeezerTo seals
+	// and posts a login.
+	callers := deezerCallersIn(t, "deezershare.go")
+	for callee, want := range map[string]string{
+		"copyDeezerTo":        "handleDeezerCopy",
+		"postDeezerShare":     "copyDeezerTo",
+		"SealKeptDeezerLogin": "copyDeezerTo",
+	} {
+		got := callers[callee]
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("%s is called from %v, want only %s", callee, got, want)
 		}
-		return sh.Sent[len(sh.Sent)-1].Outcome
 	}
-
-	recv.box.sources = []boxapi.Source{{Source: "DEEZER", SourceAccount: deezerTestUser, Status: "READY"}}
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerStart)
-	if got := outcome(); got != "not-needed:ready" {
-		t.Fatalf("READY peer: %q", got)
+	for _, f := range []string{"deezer.go", "server.go", "options.go"} {
+		for callee, from := range deezerCallersIn(t, f) {
+			if callee == "copyDeezerTo" || callee == "postDeezerShare" || callee == "SealKeptDeezerLogin" {
+				t.Errorf("%s calls %s from %v", f, callee, from)
+			}
+		}
 	}
-
-	recv.needsDeezer("other@example.com")
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerCheck)
-	if got := outcome(); got != "hash-mismatch" {
-		t.Fatalf("other account: %q", got)
-	}
-
-	// A dimmed peer (series-I speakers cannot reach each other's agent) is
-	// not asked at all.
-	reads, _ := rp.counts()
-	sender.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(srv, false)} }
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerCheck)
-	if got := outcome(); got != "unreachable" {
-		t.Fatalf("dimmed peer: %q", got)
-	}
-	if now, _ := rp.counts(); now != reads {
-		t.Fatal("a dimmed peer was asked")
-	}
-
-	// A peer whose agent predates sharing answers 404.
-	old := httptest.NewServer(http.NotFoundHandler())
-	defer old.Close()
-	sender.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(old, true)} }
-	sender.s.OfferKeptDeezerLogin(t.Context(), deezerShareTriggerCheck)
-	if got := outcome(); got != "old-agent" {
-		t.Fatalf("old agent: %q", got)
-	}
-
-	if _, posts := rp.counts(); posts != 0 {
-		t.Fatalf("posts = %d", posts)
-	}
-	if _, err := os.Stat(recv.kept); !os.IsNotExist(err) {
-		t.Fatal("the receiver kept a login")
-	}
-	snap, _ := json.Marshal(sender.m.DeezerLoginSnapshot())
-	noLeak(t, "the skips", sender.logs.String(), recv.logs.String(), string(snap))
 }
 
-// The need signal names neither the account nor the login, and says why a
-// speaker needs nothing.
-func TestDeezerLoginNeedSignal(t *testing.T) {
-	sp := newShareSpeaker(t)
-	get := func() DeezerLoginNeed {
+// deezerCallersIn maps each called function or method name in file to the
+// functions that call it.
+func deezerCallersIn(t *testing.T, file string) map[string][]string {
+	t.Helper()
+	fs := token.NewFileSet()
+	f, err := parser.ParseFile(fs, file, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]string{}
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			name := ""
+			switch c := call.Fun.(type) {
+			case *ast.Ident:
+				name = c.Name
+			case *ast.SelectorExpr:
+				name = c.Sel.Name
+			}
+			if name != "" {
+				out[name] = append(out[name], fn.Name.Name)
+			}
+			return true
+		})
+	}
+	return out
+}
+
+// The login summary another agent reads names neither the account nor the
+// login, and says the speaker's state.
+func TestDeezerLoginSummary(t *testing.T) {
+	sp := newShareSpeaker(t, "Kitchen")
+	get := func() DeezerLoginSummary {
 		t.Helper()
 		w := httptest.NewRecorder()
-		sp.s.handleDeezerLoginNeed(w, nativeReq(http.MethodGet, "/api/deezer/login-need", "", "192.168.1.20:4000", ""))
+		sp.s.handleDeezerLoginSummary(w, nativeReq(http.MethodGet, "/api/deezer/login-summary", "", "192.168.1.20:4000", ""))
 		if w.Code != http.StatusOK {
-			t.Fatalf("need: %d", w.Code)
+			t.Fatalf("summary: %d", w.Code)
 		}
-		noLeak(t, "the need signal", w.Body.String())
-		var n DeezerLoginNeed
+		noLeak(t, "the summary", w.Body.String())
+		var n DeezerLoginSummary
 		_ = json.Unmarshal(w.Body.Bytes(), &n)
 		return n
 	}
-	if n := get(); n.Needs || n.Why != "not-listed" {
+	if n := get(); n.State != "not-set-up" || n.AccountHash != "" || n.Name != "Kitchen" {
 		t.Fatalf("no Deezer: %+v", n)
-	}
-	sp.box.sources = []boxapi.Source{{Source: "DEEZER", Status: "UNAVAILABLE"}}
-	if n := get(); n.Needs || n.Why != "no-account" {
-		t.Fatalf("no account: %+v", n)
 	}
 	sp.needsDeezer(deezerTestUser)
 	n := get()
-	if !n.Needs || n.Key == "" || n.AccountHash != marge.DeezerShareAccountHash(n.Key, deezerTestUser) {
-		t.Fatalf("needs: %+v", n)
+	if n.State != "no-login" || n.Key == "" || n.AccountHash != marge.DeezerShareAccountHash(n.Key, deezerTestUser) {
+		t.Fatalf("no login: %+v", n)
 	}
 	sp.box.sourcesErr = io.ErrUnexpectedEOF
-	if n := get(); n.Needs || n.Why != "unreadable" {
+	if n := get(); n.State != "unknown" {
 		t.Fatalf("unreadable: %+v", n)
 	}
 	sp.box.sourcesErr = nil
 	keepDeezerLogin(t, sp.m)
-	if n := get(); n.Needs || n.Why != "kept" {
-		t.Fatalf("kept: %+v", n)
+	sp.refuses(deezerTestUser)
+	if n := get(); n.State != "refused" || !n.Kept || n.From != "registration" {
+		t.Fatalf("refused: %+v", n)
 	}
 	w := httptest.NewRecorder()
-	sp.s.handleDeezerLoginNeed(w, nativeReq(http.MethodGet, "/api/deezer/login-need", "", "203.0.113.7:4000", ""))
+	sp.s.handleDeezerLoginSummary(w, nativeReq(http.MethodGet, "/api/deezer/login-summary", "", "203.0.113.7:4000", ""))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("non-LAN caller: %d", w.Code)
 	}
+}
+
+// Use the older login: only while Deezer refuses the current one, it puts
+// the backed-up one back, hands it to the firmware, and never swaps back.
+func TestDeezerUseOlderLogin(t *testing.T) {
+	sp := newShareSpeaker(t, "Kitchen")
+	use := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		sp.s.handleDeezerUseOlder(w, nativeReq(http.MethodPost, "/api/deezer/use-older", "{}", "192.168.1.5:5000", "application/json"))
+		return w
+	}
+	// An older login for the account (kept first), then the current one.
+	if err := os.WriteFile(sp.kept, []byte(`{"account":"`+deezerTestUser+`","secretType":"token","secret":"`+shareTestToken+`-older","from":"sources-file"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keepDeezerLogin(t, sp.m)
+	sp.works(deezerTestUser)
+	if w := use(); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "not-refused") {
+		t.Fatalf("working login: %d %s", w.Code, w.Body.String())
+	}
+	sp.refuses(deezerTestUser)
+	hh, hhRaw := household(t, sp)
+	if !hh.Speakers[0].CanUseOlder || hh.Speakers[0].Previous != 1 {
+		t.Fatalf("self row = %+v", hh.Speakers[0])
+	}
+	w := use()
+	if w.Code != http.StatusOK {
+		t.Fatalf("use older: %d %s", w.Code, w.Body.String())
+	}
+	v := deezerViewOf(t, w, "")
+	if v.Recreate == nil || !v.Recreate.Ran || v.Login.From != "restored" || v.Rejected {
+		t.Fatalf("answer = %+v", v)
+	}
+	if sp.box.removeCalls != 1 || sp.box.notifyCalls != 1 {
+		t.Fatalf("recreate: %d removals, %d notifications", sp.box.removeCalls, sp.box.notifyCalls)
+	}
+	// The refused one is backed up as refused and never offered back.
+	if hh, _ := household(t, sp); hh.Speakers[0].CanUseOlder || hh.Speakers[0].PreviousRefused != 1 || hh.Speakers[0].OlderUsable {
+		t.Fatalf("after the swap = %+v", hh.Speakers[0])
+	}
+	if _, err := sp.m.UseOlderDeezerLogin(); err == nil {
+		t.Fatal("a second swap went back to the refused login")
+	}
+	w2 := httptest.NewRecorder()
+	sp.s.handleDeezerUseOlder(w2, nativeReq(http.MethodPost, "/api/deezer/use-older", "{}", "192.168.1.5:5000", "text/plain"))
+	if w2.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("form post: %d", w2.Code)
+	}
+	snap, _ := json.Marshal(sp.m.DeezerLoginSnapshot())
+	noLeak(t, "use older", w.Body.String(), hhRaw, sp.logs.String(), string(snap))
 }
 
 // closedPort is a local port nothing listens on: a connection is refused.
@@ -436,28 +710,26 @@ func portOf(t *testing.T, srv *httptest.Server) int {
 	return p
 }
 
-// A peer whose agent port is not known is tried on the first agent port and
-// then on the second (the :8888 then :17008 order), not given up as
-// unreachable; a known port goes first and the others follow.
+// A peer is tried on its listed port first and then on the other agent
+// ports (the :8888 then :17008 order), not given up as unreachable.
 func TestDeezerShareFallsBackToTheSecondAgentPort(t *testing.T) {
 	deezerShareOutcomeWait = 0
-	sender := newShareSpeaker(t)
+	sender := newShareSpeaker(t, "Kitchen")
 	keepDeezerLogin(t, sender.m)
-	recv := newShareSpeaker(t)
+	recv := newShareSpeaker(t, "Bedroom")
 	recv.needsDeezer(deezerTestUser)
 	rp := &recordingPeer{}
 	srv := rp.serve(recv)
 	defer srv.Close()
 	dead := closedPort(t)
-	deezerShareAgentPorts = []int{dead, portOf(t, srv)}
-
-	sender.s.OfferKeptDeezerLoginToPeer(t.Context(), "127.0.0.1", 0)
-	recv.s.deezerShare.wg.Wait()
-	if reads, posts := rp.counts(); reads != 1 || posts != 1 {
-		t.Fatalf("over the second port: %d reads, %d posts", reads, posts)
+	deezerShareAgentPorts = []int{portOf(t, srv)}
+	sender.s.cachedPeersFn = func() []PeerLink {
+		return []PeerLink{{Name: "Bedroom", URL: "http://127.0.0.1:" + strconv.Itoa(dead) + "/", IP: "127.0.0.1", Reachable: true}}
 	}
-	if st := recv.m.DeezerLoginSnapshot(); !st.Kept || st.From != "peer" {
-		t.Fatalf("receiver = %+v", st)
+	_, ans := copyCall(sender, `{"all":true}`)
+	recv.s.deezerShare.wg.Wait()
+	if reads, posts := rp.counts(); reads != 1 || posts != 1 || ans.Copied != 1 {
+		t.Fatalf("over the second port: %d reads, %d posts, %+v", reads, posts, ans)
 	}
 
 	deezerShareAgentPorts = []int{8888, 17008}
@@ -469,126 +741,31 @@ func TestDeezerShareFallsBackToTheSecondAgentPort(t *testing.T) {
 	if len(got) != 2 || got[0] != "http://192.0.2.5:8888" || got[1] != "http://192.0.2.5:17008" {
 		t.Fatalf("unknown port: %v", got)
 	}
-	if p, ok := deezerSharePeerOf(PeerLink{URL: "http://192.0.2.5:8888/", IP: "192.0.2.5"}); !ok || len(p.bases) != 2 || p.bases[1] != "http://192.0.2.5:17008" {
+	if p, ok := deezerSharePeerOf(PeerLink{URL: "http://192.0.2.5:8888/", IP: "192.0.2.5"}); !ok || len(p.bases) != 2 || p.bases[1] != "http://192.0.2.5:17008" || p.id != "192.0.2.5:8888" {
 		t.Fatalf("roster entry on 8888: %+v", p)
 	}
 }
 
-// Check again on the speaker that lost its login asks its peers once; the
-// peer that keeps a login for the account offers it to that speaker alone,
-// once, and nothing carries the login or the account.
-func TestDeezerOfferRequestPullsTheLogin(t *testing.T) {
-	deezerShareOutcomeWait = 0
-	keeper := newShareSpeaker(t)
-	keepDeezerLogin(t, keeper.m)
-	needy := newShareSpeaker(t)
-	needy.needsDeezer(deezerTestUser)
-	keeperRP, needyRP := &recordingPeer{}, &recordingPeer{}
-	keeperSrv, needySrv := keeperRP.serve(keeper), needyRP.serve(needy)
-	defer keeperSrv.Close()
-	defer needySrv.Close()
-	// Both rosters know the other; the test servers share 127.0.0.1, which
-	// is also loopback and so a known caller.
-	keeper.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(needySrv, true)} }
-	needy.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(keeperSrv, true)} }
-
-	needy.s.RequestDeezerOffers(t.Context())
-	keeper.s.deezerShare.wg.Wait()
-	needy.s.deezerShare.wg.Wait()
-	if keeperRP.askCount() != 1 {
-		t.Fatalf("requests = %d", keeperRP.askCount())
+// Deezer refuses the current login only when the firmware's 3330 came after
+// that login was kept: a login just copied over or put back is not refused
+// by a code from before it.
+func TestDeezerLoginRefusedOnlyAfterTheKeptLogin(t *testing.T) {
+	now := time.Now()
+	at := func(code string, d time.Duration) *marge.DeezerRetry {
+		return &marge.DeezerRetry{Code: code, At: now.Add(d)}
 	}
-	if _, posts := needyRP.counts(); posts != 1 {
-		t.Fatalf("offers to the requester = %d", posts)
+	for name, c := range map[string]struct {
+		login marge.DeezerLoginStatus
+		want  bool
+	}{
+		"no retry":           {marge.DeezerLoginStatus{Kept: true, KeptAt: now}, false},
+		"3351":               {marge.DeezerLoginStatus{Kept: true, KeptAt: now, LastRetry: at("3351", time.Minute)}, false},
+		"3330 after":         {marge.DeezerLoginStatus{Kept: true, KeptAt: now, LastRetry: at("3330", time.Minute)}, true},
+		"3330 before":        {marge.DeezerLoginStatus{Kept: true, KeptAt: now, LastRetry: at("3330", -time.Minute)}, false},
+		"3330, nothing kept": {marge.DeezerLoginStatus{LastRetry: at("3330", -time.Hour)}, true},
+	} {
+		if got := deezerLoginRefused(c.login); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
 	}
-	if st := needy.m.DeezerLoginSnapshot(); !st.Kept || st.From != "peer" {
-		t.Fatalf("requester = %+v", st)
-	}
-	if needy.box.removeCalls != 1 || needy.box.notifyCalls != 1 {
-		t.Fatalf("requester recreate: %d removals, %d notifications", needy.box.removeCalls, needy.box.notifyCalls)
-	}
-	ks := keeper.m.DeezerLoginSnapshot().Shares
-	if ks == nil || len(ks.RequestsReceived) != 1 || ks.RequestsReceived[0].Outcome != "offering" ||
-		len(ks.Sent) != 1 || ks.Sent[0].Trigger != deezerShareTriggerRequest || ks.Sent[0].Outcome != "accepted" {
-		t.Fatalf("keeper record = %+v", ks)
-	}
-	if ns := needy.m.DeezerLoginSnapshot().Shares; ns == nil || len(ns.RequestsSent) != 1 || ns.RequestsSent[0].Outcome != "offering" {
-		t.Fatalf("requester record = %+v", ns)
-	}
-
-	// The requester asks a peer at most once every 3 minutes.
-	needy.s.RequestDeezerOffers(t.Context())
-	if keeperRP.askCount() != 1 {
-		t.Fatalf("requests after a second Check again = %d", keeperRP.askCount())
-	}
-
-	snapK, _ := json.Marshal(keeper.m.DeezerLoginSnapshot())
-	snapN, _ := json.Marshal(needy.m.DeezerLoginSnapshot())
-	noLeak(t, "the pull", keeperRP.seen(), needyRP.seen(), keeper.logs.String(), needy.logs.String(), string(snapK), string(snapN))
-}
-
-// The offering side's guards: an unknown caller is refused, a requester is
-// served at most once every 3 minutes, a requester that got the login this
-// run is not offered again, and a speaker without a kept login says so.
-func TestDeezerOfferRequestGuards(t *testing.T) {
-	deezerShareOutcomeWait = 0
-	keeper := newShareSpeaker(t)
-	keepDeezerLogin(t, keeper.m)
-	keeper.s.knownPeerFn = func(ip string) bool { return ip == "192.168.1.20" || ip == "192.168.1.21" }
-	ask := func(sp shareSpeaker, remote string) (int, deezerShareAnswer) {
-		t.Helper()
-		w := httptest.NewRecorder()
-		sp.s.handleDeezerOfferRequest(w, nativeReq(http.MethodPost, "/api/deezer/offer-request", "{}", remote, "application/json"))
-		sp.s.deezerShare.wg.Wait()
-		noLeak(t, "the request answer", w.Body.String())
-		var ans deezerShareAnswer
-		_ = json.Unmarshal(w.Body.Bytes(), &ans)
-		return w.Code, ans
-	}
-
-	if code, ans := ask(keeper, "192.168.1.99:4000"); code != http.StatusForbidden || ans.Reason != "unknown-caller" {
-		t.Fatalf("unknown caller: %d %+v", code, ans)
-	}
-	// A known requester: the offer runs (its agent does not answer here, so
-	// the offer ends unreachable), and a second request inside 3 minutes is
-	// refused without another offer.
-	if code, ans := ask(keeper, "192.168.1.20:4000"); code != http.StatusAccepted || ans.Status != "offering" {
-		t.Fatalf("known requester: %d %+v", code, ans)
-	}
-	if code, ans := ask(keeper, "192.168.1.20:4000"); code != http.StatusTooManyRequests || ans.Reason != "rate-limited" {
-		t.Fatalf("second request: %d %+v", code, ans)
-	}
-	sh := keeper.m.DeezerLoginSnapshot().Shares
-	if sh == nil || len(sh.Sent) != 1 || sh.Sent[0].Trigger != deezerShareTriggerRequest || sh.Sent[0].Outcome != "unreachable" {
-		t.Fatalf("record = %+v", sh)
-	}
-	if len(sh.RequestsReceived) != 3 || sh.RequestsReceived[0].Outcome != "refused:unknown-caller" ||
-		sh.RequestsReceived[1].Outcome != "offering" || sh.RequestsReceived[2].Outcome != "refused:rate-limited" {
-		t.Fatalf("requests received = %+v", sh.RequestsReceived)
-	}
-
-	// A requester this run already sent the login to is not offered again.
-	keeper.s.deezerShare.mu.Lock()
-	keeper.s.deezerShare.offered["192.168.1.21"] = true
-	keeper.s.deezerShare.mu.Unlock()
-	if code, ans := ask(keeper, "192.168.1.21:4000"); code != http.StatusConflict || ans.Reason != "already-offered" {
-		t.Fatalf("already offered: %d %+v", code, ans)
-	}
-
-	// A speaker without a kept login has nothing to offer.
-	empty := newShareSpeaker(t)
-	if code, ans := ask(empty, "127.0.0.1:4000"); code != http.StatusConflict || ans.Reason != "no-kept-login" {
-		t.Fatalf("no kept login: %d %+v", code, ans)
-	}
-	// A speaker that does not need a login asks nobody.
-	rp := &recordingPeer{}
-	srv := rp.serve(keeper)
-	defer srv.Close()
-	keeper.s.cachedPeersFn = func() []PeerLink { return []PeerLink{peerLinkTo(srv, true)} }
-	keeper.s.RequestDeezerOffers(t.Context())
-	if rp.askCount() != 0 {
-		t.Fatal("a speaker that keeps a login asked for one")
-	}
-	snap, _ := json.Marshal(keeper.m.DeezerLoginSnapshot())
-	noLeak(t, "the guards", keeper.logs.String(), string(snap))
 }

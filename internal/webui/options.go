@@ -279,7 +279,7 @@ func WithCachedPeers(fn func() []PeerLink) Option {
 }
 
 // WithKnownPeer registers the check whether an address belongs to a speaker
-// in the agent's peer roster. POST /api/deezer/kept-login takes a shared
+// in the agent's peer roster. POST /api/deezer/kept-login takes a copied
 // Deezer login only from such a speaker (or loopback); nil refuses every
 // other caller.
 func WithKnownPeer(fn func(ip string) bool) Option {

@@ -33,7 +33,7 @@ export const MODELLED_BINDINGS = [
   'AppInfo', 'AppVersion', 'BoxAgentVersion', 'BoxInstallReachable', 'BoxSettings', 'BrowseLibrary',
   'CheckAppUpdate', 'CheckFirewall', 'CheckStereoBeforeInstall', 'ConsumeStableNameNotice', 'ConsumeWingetUpgradeFailure',
   'CopyPresetKeysAcrossBoxes', 'CopyPresetsAcrossBoxes', 'DeletePreset',
-  'CurrentWiFi', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
+  'CurrentWiFi', 'DeezerHousehold', 'DiscoverBoxes', 'DissolvePairBeforeInstall', 'DissolveZone', 'FavoriteRemovals', 'FormZone',
   'GetAirplayOpt', 'GetAppFlag', 'GetBoxFirmware', 'GetBoxLanguage', 'GetClockBrightness', 'GetClockDisplay', 'GetClockFormat24',
   'GetDisplayTrack', 'GetGroupKeys', 'GetKeyActions', 'GetPresets', 'GetQueue', 'GetWebhooks',
   'GetZoneState', 'InstallHolds', 'InstallSTROnBox', 'KeepSpeakerWiFiCopy', 'LibraryFolder', 'LibraryUSBNotices', 'ListDrives', 'ListMediaServers', 'ListWiFiProfiles',
@@ -338,6 +338,8 @@ export function installDesktopMock({ scenario, demo }) {
     // station, off sends it to standby.
     SetBoxPower: ([h, , on]) => { state.playing[h] = on ? 'PLAY_STATE' : 'STANDBY'; return undefined; },
     GetQueue: () => ({}), // no queue active
+    // The Deezer area's list of the home's logins: none to show.
+    DeezerHousehold: () => ({ speakers: [], canCopy: 0 }),
     TrackPosition: () => ({ positionSec: 0, durationSec: 0 }),
     SpotifyNowPlaying: () => ({ bitrate: 0, track: '', artist: '', cover: '', context: '', account: '', premiumRequired: false, audioKeyRefused: false, product: '' }),
     ConsumeWingetUpgradeFailure: () => ({ failed: false, exitCode: '', command: '' }),

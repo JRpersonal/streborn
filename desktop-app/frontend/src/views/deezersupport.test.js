@@ -8,6 +8,7 @@ import { setLocale, t } from '../i18n/index.js';
 
 vi.mock('../api.js', () => ({
   DeezerStatus: vi.fn(), DeezerRecheck: vi.fn(), UnlinkMusicService: vi.fn(),
+  DeezerHousehold: vi.fn(), DeezerCopyLogin: vi.fn(), DeezerUseOlderLogin: vi.fn(),
   BrowserOpenURL: vi.fn(), ClipboardSetText: vi.fn(),
 }));
 vi.mock('./settings/shared.js', () => ({ confirmFor: vi.fn() }));

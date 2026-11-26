@@ -94,9 +94,9 @@ type Server struct {
 	deezerMu      sync.Mutex
 	deezerAttempt *DeezerAttempt
 	deezerRetry   func() (code string, at time.Time, ok bool)
-	// deezerShare is the sharing of a kept login between the speakers of one
-	// home (deezershare.go): this agent's share key, held in RAM for one
-	// run, and the last share attempts sent and received.
+	// deezerShare is copying a kept login between the speakers of one home
+	// on the owner's press (deezershare.go): this agent's share key, held in
+	// RAM for one run, and the last copies sent and received.
 	deezerShare deezerShareState
 
 	// requestLog stores the last N requests for debug purposes

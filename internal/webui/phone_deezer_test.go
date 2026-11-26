@@ -45,10 +45,32 @@ func TestPhonePageDeezer(t *testing.T) {
 		"apiDetail('/api/deezer/play', 'POST', { url: q }, 30000);",
 		"src === 'IHEARTRADIO' || src === 'DEEZER'",
 		"if (name === 'More') loadDeezerCard();",
+		// The Deezer logins of the home: read once with the card, Copy and
+		// "Use the older login" only on a press.
+		`<div id="dzHome"></div>`,
+		"apiDetail('/api/deezer/household', 'GET', null, 20000);",
+		"apiDetail('/api/deezer/copy', 'POST', target ? { target: target } : { all: true }, 70000);",
+		"apiDetail('/api/deezer/use-older', 'POST', {}, 40000);",
 	} {
 		if !strings.Contains(indexHTML, want) {
 			t.Errorf("phone page lacks %q", want)
 		}
+	}
+	// Every locale carries the overview's strings, translated.
+	for _, loc := range []string{"nl", "fr", "es", "pl", "tr", "ar", "ja", "lt", "lv", "uk"} {
+		line := regexp.MustCompile(`(?m)^  ` + loc + `:\{.*$`).FindString(dict)
+		for _, k := range []string{"dzHomeTitle", "dzHomeCopyTo", "dzHomeUseOlder", "dzHomeHint", "dzHomeCopied"} {
+			got := regexp.MustCompile(`[,{]` + k + `:"([^"]+)"`).FindStringSubmatch(line)
+			want := regexp.MustCompile(`[,{]` + k + `:"([^"]+)"`).FindStringSubmatch(en)
+			if got == nil || want == nil || got[1] == want[1] {
+				t.Errorf("%s: %s is missing or untranslated", loc, k)
+			}
+		}
+	}
+	// The household list is read with the card, never on a timer: the only
+	// setTimeout around the card is the re-read after Check again.
+	if strings.Contains(indexHTML, "setTimeout(dzLoadHome") || strings.Contains(indexHTML, "setInterval(dzLoadHome") {
+		t.Error("the Deezer logins list is polled")
 	}
 	// A new sign-in is not possible without Bose: no form, no POST of a login.
 	for _, gone := range []string{`id="dzPass"`, `id="dzUser"`, "password: pass", "btnDzConnect"} {

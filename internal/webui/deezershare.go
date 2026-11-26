@@ -1,36 +1,46 @@
 package webui
 
-// Deezer: share a kept login between the speakers of one home
-// (docs/streaming/deezer.md, "Sharing a kept login within a home").
+// Deezer: the logins of the speakers of one home, and copying a kept login
+// from one to another on the owner's press (docs/streaming/deezer.md,
+// "Copying a kept login within a home").
 //
-// A speaker whose Deezer login is gone and that keeps no copy can never get a
-// new one (Deezer issues logins only to Bose's app). When another speaker of
-// the home keeps a login for the same account, its agent copies it over:
+// A speaker whose Deezer login is gone and that keeps no working copy can
+// never get a new one (Deezer issues logins only to Bose's app). When another
+// speaker of the home keeps a login for the same account, the owner can copy
+// it over from the Deezer area. Nothing is ever copied on its own: no copy at
+// the agent start, none when a peer comes up, none on Check again.
 //
-// GET  /api/deezer/login-need  the need signal, secret-free: whether this
-//                              speaker lists Deezer without a working login
-//                              and keeps none, and if so a hash of the account
-//                              (salted with this run's share key) and the key.
-//                              Never the account in clear.
-// POST /api/deezer/kept-login  write-only: a peer's kept login, sealed to the
-//                              share key (internal/marge/deezershare.go). Kept
-//                              only from a known peer (or loopback), only for
-//                              an account this speaker lists without a working
-//                              login, and never over a login kept already.
-//                              Answers {"status","reason"}, never the login.
-// POST /api/deezer/offer-request  a speaker that needs a login asks this one
-//                              to offer its kept login (no body secrets).
-//                              From a known peer (or loopback) only, at most
-//                              once per requester every 3 minutes; runs the
-//                              normal offer towards that requester alone.
+// GET  /api/deezer/household     the Deezer area's overview: this speaker and
+//                                each peer in the roster, its Deezer state,
+//                                its kept login's origin and age, its backed-up
+//                                older logins, whether it uses the same
+//                                account, and which buttons apply. Read when
+//                                the owner opens or refreshes the area.
+// POST /api/deezer/copy          the owner's Copy: {"target":"<row id>"} (the
+//                                peer's address as the roster has it) or
+//                                {"all":true}. Sends the kept login, sealed,
+//                                to each target that uses the same account and
+//                                whose Deezer does not work.
+// POST /api/deezer/use-older     the owner's "Use the older login": puts a
+//                                backed-up login back when Deezer refuses the
+//                                current one (internal/marge/deezerprevious.go).
+// GET  /api/deezer/login-summary agent to agent: this speaker's line of the
+//                                overview, secret-free: its state, its kept
+//                                login's origin, a hash of its account (salted
+//                                with this run's share key) and the key. Never
+//                                the account in clear.
+// POST /api/deezer/kept-login    agent to agent, write-only: a peer's kept
+//                                login, sealed to the share key
+//                                (internal/marge/deezershare.go). Kept only
+//                                from a known peer (or loopback), only for an
+//                                account this speaker lists without a working
+//                                login. A login kept already is replaced only
+//                                by an owner's copy, and then backed up.
+//                                Answers {"status","reason"}, never the login.
 //
-// The sender side runs at existing moments, never on a timer: once after
-// the agent start (after the start recreate), when a peer comes up in the
-// peer roster, on the Deezer card's Check again, and when a peer that needs a
-// login asks (its own Check again). It posts to a peer at most once per agent
-// start, and only to a peer whose need signal names the kept account. Every
-// call tries the peer's agent on :8888 and then on :17008 (the REDIRECT the
-// BCO and whitelisted chassis are reached on), with a short per-port budget.
+// Every agent-to-agent call tries the peer's agent on :8888 and then on
+// :17008 (the REDIRECT the BCO and whitelisted chassis are reached on), with a
+// short per-port budget. No timer, no polling.
 // Untested on hardware: whether one speaker's token plays on another.
 
 import (
@@ -51,21 +61,28 @@ import (
 	"github.com/JRpersonal/streborn/internal/marge"
 )
 
-// deezerShareRecheckGap is the shortest gap between two need checks of the
-// same peer when it comes up again in the roster (a flapping peer).
-const deezerShareRecheckGap = 3 * time.Minute
-
-// deezerShareOutcomeWait is how long after a shared login's recreate the
+// deezerShareOutcomeWait is how long after a copied login's recreate the
 // receiver reads its Deezer source once more, for the log. A variable so the
 // tests need not wait.
 var deezerShareOutcomeWait = 30 * time.Second
 
-// Triggers of the sending side.
+// Triggers of a copy: the owner's press for one speaker or for all of them.
 const (
-	deezerShareTriggerStart   = "start"
-	deezerShareTriggerPeer    = "peer-seen"
-	deezerShareTriggerCheck   = "check-again"
-	deezerShareTriggerRequest = "offer-request"
+	deezerShareTriggerCopy    = "copy"
+	deezerShareTriggerCopyAll = "copy-all"
+	// deezerShareUser is what a copy's post says, so the receiver knows an
+	// owner pressed for it.
+	deezerShareUser = "user"
+)
+
+// The overview's states of one speaker's Deezer.
+const (
+	deezerHHWorks      = "works"
+	deezerHHConnecting = "connecting"
+	deezerHHNoLogin    = "no-login"
+	deezerHHRefused    = "refused"
+	deezerHHNotSetUp   = "not-set-up"
+	deezerHHUnknown    = "unknown"
 )
 
 // deezerShareAgentPorts are the ports a peer's agent answers on: :8888
@@ -91,34 +108,24 @@ var deezerShareDefaultClient = &http.Client{
 
 // deezerShareSender is the sending side's state for this agent run.
 type deezerShareSender struct {
-	// round keeps one offer at a time, so a peer that comes up during the
-	// start round is not asked twice at once.
+	// round keeps one copy at a time.
 	round sync.Mutex
-	mu    sync.Mutex
-	// offered holds the peers a login was posted to this run (once each).
-	offered map[string]bool
-	// checkedAt is when a peer's need signal was last read.
-	checkedAt map[string]time.Time
-	// askedAt is when this speaker last asked a peer to offer (the
-	// requester's side); requestedAt when a peer last asked this one (the
-	// offering side). Both keep one request per peer every
-	// deezerShareRecheckGap.
-	askedAt     map[string]time.Time
-	requestedAt map[string]time.Time
-	// wg tracks the goroutines this side starts (the receiver's recreate,
-	// Check again's offer round), so the tests can wait for them.
+	// wg tracks the goroutines this side starts (the receiver's recreate),
+	// so the tests can wait for them.
 	wg sync.WaitGroup
 }
 
-// DeezerLoginNeed is GET /api/deezer/login-need's answer.
-type DeezerLoginNeed struct {
-	Needs bool `json:"needs"`
-	// Why says why not: "kept" (a login is kept already), "ready" (Deezer
-	// works), "not-listed" (no Deezer account on the speaker), "no-account"
-	// (Deezer listed without an account), "unreadable" (the speaker's
-	// sources could not be read), "no-key".
-	Why string `json:"why,omitempty"`
-	// AccountHash is marge.DeezerShareAccountHash(Key, account).
+// DeezerLoginSummary is GET /api/deezer/login-summary's answer: one
+// speaker's line of the overview. Never the login, never the account.
+type DeezerLoginSummary struct {
+	// Name is the speaker's own name.
+	Name string `json:"name,omitempty"`
+	// State is "works", "connecting", "no-login", "refused" (Deezer refuses
+	// the speaker's login), "not-set-up" or "unknown".
+	State string `json:"state"`
+	marge.DeezerKeptSummary
+	// AccountHash is marge.DeezerShareAccountHash(Key, account) for the
+	// account the speaker lists (or keeps a login for); empty without one.
 	AccountHash string `json:"accountHash,omitempty"`
 	// Key is this run's share public key.
 	Key string `json:"key,omitempty"`
@@ -129,9 +136,9 @@ type deezerShareAnswer struct {
 	// Status is "accepted" or "refused".
 	Status string `json:"status"`
 	// Reason is the refusal's code: "unknown-caller", "bad-request",
-	// "already-kept", "ready", "not-listed", "no-account", "unreadable",
-	// "account-mismatch", "undecryptable", "malformed", "save-failed",
-	// "not-configured".
+	// "kept", "ready", "not-listed", "no-account", "unreadable",
+	// "account-mismatch", "refused-before", "undecryptable", "malformed",
+	// "save-failed", "not-configured".
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -143,41 +150,90 @@ func deezerPeerName(ip string) string {
 	return "peer#" + anonymise.HashShort(ip)
 }
 
-// deezerLoginNeed works out this speaker's need signal. listed are the
-// Deezer accounts it lists without a working login, unmasked, agent side only.
-func (s *Server) deezerLoginNeed(ctx context.Context) (need DeezerLoginNeed, listed []string) {
-	if s.deezer.KeptDeezerAccount() != "" {
-		return DeezerLoginNeed{Why: "kept"}, nil
+// deezerLoginRefused reports whether Deezer refuses the speaker's current
+// login: the firmware's last relogin retry is 3330 and came after the kept
+// login was written (a login just copied over or put back has not been
+// tried yet).
+func deezerLoginRefused(login marge.DeezerLoginStatus) bool {
+	r := login.LastRetry
+	if r == nil || r.Code != deezerRetryRejected {
+		return false
 	}
+	return !login.Kept || login.KeptAt.IsZero() || !r.At.Before(login.KeptAt)
+}
+
+// deezerLocal is this speaker's Deezer as the overview and the receiving
+// side see it. The accounts are unmasked, agent side only.
+type deezerLocal struct {
+	state string
+	// account is the account the speaker lists (the READY one first), else
+	// the kept login's.
+	account string
+	// listed are the accounts the speaker lists without a working login.
+	listed []string
+	kept   marge.DeezerKeptSummary
+	login  marge.DeezerLoginStatus
+}
+
+// deezerLocalState reads the speaker's /sources once.
+func (s *Server) deezerLocalState(ctx context.Context) deezerLocal {
+	l := deezerLocal{kept: s.deezer.KeptDeezerSummary(), login: s.deezer.DeezerLoginSnapshot()}
 	srcs, err := s.nativeBox().GetSources(ctx)
-	if err != nil {
-		return DeezerLoginNeed{Why: "unreadable"}, nil
-	}
-	seen := false
-	for _, src := range srcs {
-		if !strings.EqualFold(src.Source, deezerSource) {
-			continue
-		}
-		seen = true
-		acct := strings.TrimSpace(src.SourceAccount)
-		if strings.EqualFold(src.Status, "READY") && acct != "" {
-			return DeezerLoginNeed{Why: "ready"}, nil
-		}
-		if acct != "" {
-			listed = append(listed, acct)
+	src := deezerSourceLine{Status: "unknown"}
+	if err == nil {
+		src = pickDeezerSource(srcs)
+		for _, it := range srcs {
+			acct := strings.TrimSpace(it.SourceAccount)
+			if !strings.EqualFold(it.Source, deezerSource) || acct == "" {
+				continue
+			}
+			if !strings.EqualFold(it.Status, "READY") {
+				l.listed = append(l.listed, acct)
+			}
 		}
 	}
-	switch {
-	case !seen:
-		return DeezerLoginNeed{Why: "not-listed"}, nil
-	case len(listed) == 0:
-		return DeezerLoginNeed{Why: "no-account"}, nil
+	l.account = src.account
+	if l.account == "" {
+		l.account = s.deezer.KeptDeezerAccount()
 	}
-	key := s.deezer.DeezerShareKey()
-	if key == "" {
-		return DeezerLoginNeed{Why: "no-key"}, nil
+	st, _, _ := deezerState(src, err, l.login.LastAttempt, time.Now())
+	switch st {
+	case "connected":
+		l.state = deezerHHWorks
+	case "connecting":
+		l.state = deezerHHConnecting
+	case "unavailable":
+		l.state = deezerHHNoLogin
+		if deezerLoginRefused(l.login) {
+			l.state = deezerHHRefused
+		}
+	case "not-connected":
+		l.state = deezerHHNotSetUp
+	default:
+		l.state = deezerHHUnknown
 	}
-	return DeezerLoginNeed{Needs: true, Key: key, AccountHash: marge.DeezerShareAccountHash(key, listed[0])}, listed
+	return l
+}
+
+// deezerSummary is this speaker's line of the overview, for a peer.
+func (s *Server) deezerSummary(ctx context.Context) DeezerLoginSummary {
+	l := s.deezerLocalState(ctx)
+	out := DeezerLoginSummary{Name: s.ownSpeakerName(), State: l.state, DeezerKeptSummary: l.kept}
+	if l.account != "" {
+		if key := s.deezer.DeezerShareKey(); key != "" {
+			out.Key, out.AccountHash = key, marge.DeezerShareAccountHash(key, l.account)
+		}
+	}
+	return out
+}
+
+// ownSpeakerName is this speaker's name, "" when not known.
+func (s *Server) ownSpeakerName() string {
+	if s.boxNameFn == nil {
+		return ""
+	}
+	name, _ := s.boxNameFn()
+	return strings.TrimSpace(name)
 }
 
 // callerIP is the caller's address without the port.
@@ -198,48 +254,67 @@ func (s *Server) isKnownDeezerPeer(ip string) bool {
 	return s.knownPeerFn != nil && s.knownPeerFn(ip)
 }
 
-// handleDeezerLoginNeed is GET /api/deezer/login-need.
-func (s *Server) handleDeezerLoginNeed(w http.ResponseWriter, r *http.Request) {
+// deezerRosterName is the roster's name for a peer address, "" when none.
+func (s *Server) deezerRosterName(ip string) string {
+	if s.cachedPeersFn == nil {
+		return ""
+	}
+	for _, p := range s.cachedPeersFn() {
+		if t, ok := deezerSharePeerOf(p); ok && t.ip == ip {
+			return strings.TrimSpace(p.Name)
+		}
+	}
+	return ""
+}
+
+// deezerMethodGuard answers the common refusals of the Deezer endpoints:
+// not from the LAN, no Deezer on this build, another method. write also
+// requires a JSON content type, so a cross-site form cannot start it.
+func (s *Server) deezerMethodGuard(w http.ResponseWriter, r *http.Request, method string, write bool) bool {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
-		return
+		return false
 	}
 	if s.deezer == nil {
 		http.Error(w, "not available on this build", http.StatusNotImplemented)
-		return
+		return false
 	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
+	if r.Method != method {
+		w.Header().Set("Allow", method)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	if write {
+		if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, "music service settings need a JSON body", http.StatusUnsupportedMediaType)
+			return false
+		}
+	}
+	return true
+}
+
+// handleDeezerLoginSummary is GET /api/deezer/login-summary.
+func (s *Server) handleDeezerLoginSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.deezerMethodGuard(w, r, http.MethodGet, false) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	need, _ := s.deezerLoginNeed(ctx)
-	s.logger.Info("deezer share: a speaker asked whether this one needs a Deezer login",
-		"peer", deezerPeerName(callerIP(r.RemoteAddr)), "needs", need.Needs, "why", need.Why)
-	writeJSON(w, http.StatusOK, need)
+	sum := s.deezerSummary(ctx)
+	s.logger.Debug("deezer share: a speaker read this one's Deezer login summary",
+		"peer", deezerPeerName(callerIP(r.RemoteAddr)), "state", sum.State, "kept", sum.Kept)
+	writeJSON(w, http.StatusOK, sum)
 }
 
 // handleDeezerKeptLogin is POST /api/deezer/kept-login, the receiving side.
 func (s *Server) handleDeezerKeptLogin(w http.ResponseWriter, r *http.Request) {
-	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
-		return
-	}
-	if s.deezer == nil {
-		http.Error(w, "not available on this build", http.StatusNotImplemented)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !s.deezerMethodGuard(w, r, http.MethodPost, false) {
 		return
 	}
 	ip := callerIP(r.RemoteAddr)
 	peer := deezerPeerName(ip)
 	refuse := func(status int, reason string) {
-		s.logger.Info("deezer share: refused a Deezer login another speaker offered", "peer", peer, "reason", reason)
+		s.logger.Info("deezer share: refused a Deezer login another speaker copied over", "peer", peer, "reason", reason)
 		s.deezer.NoteDeezerShare(false, marge.DeezerShareEvent{Peer: peer, Outcome: "refused:" + reason})
 		writeJSON(w, status, deezerShareAnswer{Status: "refused", Reason: reason})
 	}
@@ -252,20 +327,40 @@ func (s *Server) handleDeezerKeptLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Sealed marge.SealedDeezerLogin `json:"sealed"`
+		Sealed  marge.SealedDeezerLogin `json:"sealed"`
+		Trigger string                  `json:"trigger"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&body); err != nil || body.Sealed.Box == "" {
 		refuse(http.StatusBadRequest, "bad-request")
 		return
 	}
+	user := body.Trigger == deezerShareUser
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	need, listed := s.deezerLoginNeed(ctx)
-	if !need.Needs {
-		refuse(http.StatusConflict, need.Why)
+	l := s.deezerLocalState(ctx)
+	switch {
+	case l.state == deezerHHUnknown:
+		refuse(http.StatusConflict, "unreadable")
+		return
+	case l.state == deezerHHWorks:
+		refuse(http.StatusConflict, "ready")
+		return
+	case l.state == deezerHHNotSetUp:
+		refuse(http.StatusConflict, "not-listed")
+		return
+	case len(l.listed) == 0:
+		refuse(http.StatusConflict, "no-account")
+		return
+	case l.kept.Kept && !user:
+		// Only an owner's copy replaces a kept login.
+		refuse(http.StatusConflict, "kept")
 		return
 	}
-	if _, err := s.deezer.AdoptPeerDeezerLogin(body.Sealed, listed, peer); err != nil {
+	_, changed, err := s.deezer.AdoptPeerDeezerLogin(body.Sealed, l.listed, marge.DeezerAdoptOptions{
+		Peer: peer, PeerName: s.deezerRosterName(ip),
+		Replace: user, CurrentRefused: l.state == deezerHHRefused,
+	})
+	if err != nil {
 		code := err.Error()
 		status := http.StatusConflict
 		if errors.Is(err, marge.ErrDeezerShareMalformed) || errors.Is(err, marge.ErrDeezerShareUndecryptable) {
@@ -277,15 +372,20 @@ func (s *Server) handleDeezerKeptLogin(w http.ResponseWriter, r *http.Request) {
 		refuse(status, code)
 		return
 	}
-	s.logger.Info("deezer share: accepted a Deezer login another speaker of the home offered, handing it to the firmware", "peer", peer)
-	s.deezer.NoteDeezerShare(false, marge.DeezerShareEvent{Peer: peer, Outcome: "accepted"})
+	trigger := ""
+	if user {
+		trigger = deezerShareUser
+	}
+	s.logger.Info("deezer share: accepted a Deezer login another speaker of the home copied over, handing it to the firmware",
+		"peer", peer, "replacedKept", l.kept.Kept && changed, "sameAsKept", !changed)
+	s.deezer.NoteDeezerShare(false, marge.DeezerShareEvent{Peer: peer, Trigger: trigger, Outcome: "accepted"})
 	writeJSON(w, http.StatusOK, deezerShareAnswer{Status: "accepted"})
 	// The recreate talks to the firmware for some seconds; the sender need
 	// not wait for it. It logs its own steps and outcome.
 	s.deezerShare.wg.Add(1)
 	go func() {
 		defer s.deezerShare.wg.Done()
-		s.deezerRecreateAndReport(context.Background(), "peer", deezerShareOutcomeWait)
+		s.deezerRecreateAndReport(context.Background(), "peer", deezerShareOutcomeWait, true)
 	}()
 }
 
@@ -293,7 +393,8 @@ func (s *Server) handleDeezerKeptLogin(w http.ResponseWriter, r *http.Request) {
 func isDeezerShareCode(err error) bool {
 	for _, e := range []error{marge.ErrDeezerShareNoKeptLogin, marge.ErrDeezerShareHashMismatch,
 		marge.ErrDeezerShareAlreadyKept, marge.ErrDeezerShareUndecryptable, marge.ErrDeezerShareMalformed,
-		marge.ErrDeezerShareAccount, marge.ErrDeezerShareSaveFailed, marge.ErrDeezerShareOff} {
+		marge.ErrDeezerShareAccount, marge.ErrDeezerShareSaveFailed, marge.ErrDeezerShareOff,
+		marge.ErrDeezerShareRefusedBefore, marge.ErrDeezerNoOlderLogin} {
 		if errors.Is(err, e) {
 			return true
 		}
@@ -303,7 +404,11 @@ func isDeezerShareCode(err error) bool {
 
 // deezerSharePeer is one peer to call.
 type deezerSharePeer struct {
-	ip string
+	// id is the roster entry's host (address and port as listed), the
+	// overview row's id and a copy's target.
+	id   string
+	ip   string
+	name string
 	// bases are the peer's agent addresses in the order they are tried
 	// (http://ip:port): the port the roster knows first, then the others.
 	bases     []string
@@ -340,26 +445,34 @@ func deezerSharePeerOf(p PeerLink) (deezerSharePeer, bool) {
 		return deezerSharePeer{}, false
 	}
 	port, _ := strconv.Atoi(u.Port())
-	return deezerSharePeer{ip: ip, bases: deezerShareBases(ip, port), reachable: p.Reachable}, true
+	return deezerSharePeer{id: u.Host, ip: ip, name: strings.TrimSpace(p.Name), bases: deezerShareBases(ip, port), reachable: p.Reachable}, true
 }
 
-// deezerSharePeerAt is the target for a peer known only by its address (a
-// requester): its roster entry's port first when the roster has one.
-func (s *Server) deezerSharePeerAt(ip string) deezerSharePeer {
-	if s.cachedPeersFn != nil {
-		for _, p := range s.cachedPeersFn() {
-			if t, ok := deezerSharePeerOf(p); ok && t.ip == ip {
-				t.reachable = true
-				return t
-			}
-		}
+// deezerSharePeers is the roster as call targets, one per entry, in the
+// roster's order.
+func (s *Server) deezerSharePeers() []deezerSharePeer {
+	if s.cachedPeersFn == nil {
+		return nil
 	}
-	return deezerSharePeer{ip: ip, bases: deezerShareBases(ip, 0), reachable: true}
+	seen := map[string]bool{}
+	var out []deezerSharePeer
+	for _, p := range s.cachedPeersFn() {
+		t, ok := deezerSharePeerOf(p)
+		if !ok || seen[t.id] {
+			continue
+		}
+		seen[t.id] = true
+		if t.name == "" {
+			t.name = t.ip
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
-// deezerShareBlocked says why this speaker has no login worth offering:
-// "not-configured", "no-kept-login", "own-login-rejected" (its firmware's last
-// relogin retry was 3330), or "" when it has one.
+// deezerShareBlocked says why this speaker has no login worth copying:
+// "not-configured", "no-kept-login", "own-login-rejected" (Deezer refuses
+// it), or "" when it has one.
 func (s *Server) deezerShareBlocked() string {
 	switch {
 	case s.deezer == nil:
@@ -367,309 +480,322 @@ func (s *Server) deezerShareBlocked() string {
 	case s.deezer.KeptDeezerAccount() == "":
 		return "no-kept-login"
 	}
-	if st := s.deezer.DeezerLoginSnapshot(); st.LastRetry != nil && st.LastRetry.Code == deezerRetryRejected {
+	if deezerLoginRefused(s.deezer.DeezerLoginSnapshot()) {
 		return "own-login-rejected"
 	}
 	return ""
 }
 
-// deezerShareReady reports whether this speaker has a login worth offering,
-// logging why not. A peer coming up logs at debug level (it is frequent and
-// most speakers keep no Deezer login).
-func (s *Server) deezerShareReady(trigger string) bool {
-	why := s.deezerShareBlocked()
-	switch why {
-	case "":
-		return true
-	case "not-configured":
-		return false
-	}
-	logf := s.logger.Info
-	if trigger == deezerShareTriggerPeer {
-		logf = s.logger.Debug
-	}
-	if why == "no-kept-login" {
-		logf("deezer share: not offering a login to other speakers, this speaker keeps no Deezer login", "trigger", trigger)
-	} else {
-		logf("deezer share: not offering a login to other speakers, Deezer rejected this speaker's own kept login (3330)", "trigger", trigger)
-	}
-	return false
+// DeezerHouseholdRow is one speaker of the overview.
+type DeezerHouseholdRow struct {
+	// ID is the peer's address as the roster lists it, the target of a
+	// copy; "" for this speaker.
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Self bool   `json:"self,omitempty"`
+	// State is as in DeezerLoginSummary; Why says why it is "unknown":
+	// "unreachable" or "old-agent".
+	State string `json:"state"`
+	Why   string `json:"why,omitempty"`
+	marge.DeezerKeptSummary
+	// Account is "same" when the speaker uses this speaker's Deezer account,
+	// "other" when it uses another one, "" when that is not known.
+	Account string `json:"account,omitempty"`
+	// CanCopy: this speaker keeps a login Deezer does not refuse, the row
+	// uses the same account, and its Deezer does not work.
+	CanCopy bool `json:"canCopy,omitempty"`
+	// CanUseOlder: this speaker's Deezer refuses its login and a backed-up
+	// older one Deezer has not refused exists (this speaker's row only).
+	CanUseOlder bool `json:"canUseOlder,omitempty"`
 }
 
-// OfferKeptDeezerLogin offers the kept login to every speaker in the peer
-// roster that needs one for the same account: once after the agent start
-// and on Check again. It never runs on a timer.
-func (s *Server) OfferKeptDeezerLogin(ctx context.Context, trigger string) {
-	if !s.deezerShareReady(trigger) {
-		return
+// DeezerHousehold is GET /api/deezer/household's answer.
+type DeezerHousehold struct {
+	Speakers []DeezerHouseholdRow `json:"speakers"`
+	// CanCopy is how many speakers a copy to all would reach.
+	CanCopy int `json:"canCopy"`
+}
+
+// deezerCanTake reports whether a speaker in state can take a copy: it lists
+// Deezer and its login does not work.
+func deezerCanTake(state string) bool {
+	return state == deezerHHNoLogin || state == deezerHHRefused
+}
+
+// deezerAccountRel compares a peer's account hash with this speaker's
+// accounts: "same", "other" or "".
+func deezerAccountRel(sum DeezerLoginSummary, accounts ...string) string {
+	if sum.AccountHash == "" || sum.Key == "" {
+		return ""
 	}
-	if s.cachedPeersFn == nil {
-		s.logger.Info("deezer share: not offering, no peer roster", "trigger", trigger)
-		return
-	}
-	s.deezerShare.round.Lock()
-	defer s.deezerShare.round.Unlock()
-	peers := s.cachedPeersFn()
-	s.logger.Info("deezer share: offering the kept Deezer login to speakers that need it", "trigger", trigger, "peers", len(peers))
-	for _, p := range peers {
-		t, ok := deezerSharePeerOf(p)
-		if !ok {
+	named := false
+	for _, a := range accounts {
+		if a = strings.TrimSpace(a); a == "" {
 			continue
 		}
-		if ctx.Err() != nil {
+		named = true
+		if marge.DeezerShareAccountHash(sum.Key, a) == strings.ToLower(strings.TrimSpace(sum.AccountHash)) {
+			return "same"
+		}
+	}
+	if !named {
+		return ""
+	}
+	return "other"
+}
+
+// deezerHousehold builds the overview: this speaker's line and each peer's,
+// read in parallel, once.
+func (s *Server) deezerHousehold(ctx context.Context) DeezerHousehold {
+	l := s.deezerLocalState(ctx)
+	kept := s.deezer.KeptDeezerAccount()
+	copyable := s.deezerShareBlocked() == ""
+	self := DeezerHouseholdRow{
+		Name: s.ownSpeakerName(), Self: true, State: l.state, DeezerKeptSummary: l.kept,
+		CanUseOlder: l.state == deezerHHRefused && l.kept.OlderUsable,
+	}
+	if l.account != "" {
+		self.Account = "same"
+	}
+	out := DeezerHousehold{Speakers: []DeezerHouseholdRow{self}}
+	peers := s.deezerSharePeers()
+	rows := make([]DeezerHouseholdRow, len(peers))
+	var wg sync.WaitGroup
+	for i, p := range peers {
+		rows[i] = DeezerHouseholdRow{ID: p.id, Name: p.name, State: deezerHHUnknown}
+		if !p.reachable {
+			// Series-I speakers cannot reach each other's agent.
+			rows[i].Why = "unreachable"
+			continue
+		}
+		wg.Add(1)
+		go func(i int, p deezerSharePeer) {
+			defer wg.Done()
+			sum, _, outcome := s.fetchDeezerSummary(ctx, p.bases)
+			if outcome != "" {
+				rows[i].Why = outcome
+				return
+			}
+			row := &rows[i]
+			row.State = deezerShareCode(sum.State)
+			// Only the summary's own fields; a peer's text is never echoed.
+			row.Kept, row.KeptAt = sum.Kept, sum.KeptAt
+			if sum.From != "" {
+				row.From = deezerShareCode(sum.From)
+			}
+			row.FromName = clipName(sum.FromName)
+			row.Previous, row.PreviousRefused, row.OlderUsable = clampCount(sum.Previous), clampCount(sum.PreviousRefused), sum.OlderUsable
+			if row.Name == p.ip && sum.Name != "" {
+				row.Name = clipName(sum.Name)
+			}
+			row.Account = deezerAccountRel(sum, l.account, kept)
+			row.CanCopy = copyable && deezerCanTake(row.State) && deezerAccountRel(sum, kept) == "same"
+		}(i, p)
+	}
+	wg.Wait()
+	for _, r := range rows {
+		if r.CanCopy {
+			out.CanCopy++
+		}
+		out.Speakers = append(out.Speakers, r)
+	}
+	return out
+}
+
+// clipName keeps a name another agent sent short and printable.
+func clipName(v string) string {
+	v = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(v))
+	if r := []rune(v); len(r) > 64 {
+		v = string(r[:64])
+	}
+	return v
+}
+
+func clampCount(n int) int {
+	switch {
+	case n < 0:
+		return 0
+	case n > 99:
+		return 99
+	}
+	return n
+}
+
+// handleDeezerHousehold is GET /api/deezer/household.
+func (s *Server) handleDeezerHousehold(w http.ResponseWriter, r *http.Request) {
+	if !s.deezerMethodGuard(w, r, http.MethodGet, false) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.deezerHousehold(ctx))
+}
+
+// DeezerCopyResult is one target's outcome of a copy.
+type DeezerCopyResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Outcome is "accepted", "refused:<code>", "not-needed:<state>",
+	// "hash-mismatch" (another account), "unreachable" or "old-agent".
+	Outcome string `json:"outcome"`
+}
+
+// DeezerCopyAnswer is POST /api/deezer/copy's answer.
+type DeezerCopyAnswer struct {
+	Results []DeezerCopyResult `json:"results"`
+	// Copied is how many speakers took the login.
+	Copied int `json:"copied"`
+}
+
+// handleDeezerCopy is POST /api/deezer/copy, the owner's Copy.
+func (s *Server) handleDeezerCopy(w http.ResponseWriter, r *http.Request) {
+	if !s.deezerMethodGuard(w, r, http.MethodPost, true) {
+		return
+	}
+	var body struct {
+		Target string `json:"target"`
+		All    bool   `json:"all"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil || (body.Target == "") == !body.All {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "name one speaker or all of them", "code": "bad-request"})
+		return
+	}
+	if why := s.deezerShareBlocked(); why != "" {
+		s.logger.Info("deezer share: not copying, this speaker has no login worth copying", "why", why)
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "this speaker has no Deezer login to copy", "code": why})
+		return
+	}
+	var targets []deezerSharePeer
+	trigger := deezerShareTriggerCopyAll
+	for _, p := range s.deezerSharePeers() {
+		if body.All || p.id == strings.TrimSpace(body.Target) {
+			targets = append(targets, p)
+		}
+	}
+	if !body.All {
+		trigger = deezerShareTriggerCopy
+		if len(targets) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "that speaker is not in this speaker's list", "code": "unknown-target"})
 			return
 		}
-		s.offerDeezerToPeer(ctx, t, trigger)
 	}
-}
-
-// OfferKeptDeezerLoginToPeer is the roster's hook for a peer that came up
-// (new, or reachable again): it offers the kept login to that one peer when
-// it needs one. port 0 means not known: both agent ports are tried.
-func (s *Server) OfferKeptDeezerLoginToPeer(ctx context.Context, ip string, port int) {
-	if !s.deezerShareReady(deezerShareTriggerPeer) || net.ParseIP(ip) == nil {
+	if !s.deezerShare.round.TryLock() {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "a copy is running already", "code": "busy"})
 		return
 	}
-	s.deezerShare.round.Lock()
 	defer s.deezerShare.round.Unlock()
-	s.offerDeezerToPeer(ctx, deezerSharePeer{ip: ip, bases: deezerShareBases(ip, port), reachable: true}, deezerShareTriggerPeer)
-}
-
-// initLocked makes the state's maps. The caller holds st.mu.
-func (st *deezerShareSender) initLocked() {
-	if st.offered == nil {
-		st.offered = map[string]bool{}
-		st.checkedAt = map[string]time.Time{}
-		st.askedAt = map[string]time.Time{}
-		st.requestedAt = map[string]time.Time{}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	s.logger.Info("deezer share: the owner asked to copy the kept Deezer login", "trigger", trigger, "targets", len(targets))
+	ans := DeezerCopyAnswer{Results: []DeezerCopyResult{}}
+	for _, t := range targets {
+		if ctx.Err() != nil {
+			break
+		}
+		outcome := s.copyDeezerTo(ctx, t, trigger)
+		ans.Results = append(ans.Results, DeezerCopyResult{ID: t.id, Name: t.name, Outcome: outcome})
+		if outcome == "accepted" {
+			ans.Copied++
+		}
 	}
+	writeJSON(w, http.StatusOK, ans)
 }
 
-// offerDeezerToPeer runs one peer's offer. The caller holds the round lock.
-func (s *Server) offerDeezerToPeer(ctx context.Context, p deezerSharePeer, trigger string) {
+// copyDeezerTo copies the kept login to one peer when it still needs it:
+// it reads the peer's summary, seals the login to its key when the account
+// hash matches, and posts it. The caller holds the round lock.
+func (s *Server) copyDeezerTo(ctx context.Context, p deezerSharePeer, trigger string) string {
 	peer := deezerPeerName(p.ip)
-	note := func(outcome string) {
+	note := func(outcome string) string {
 		s.deezer.NoteDeezerShare(true, marge.DeezerShareEvent{Peer: peer, Trigger: trigger, Outcome: outcome})
+		return outcome
 	}
-	st := &s.deezerShare
-	st.mu.Lock()
-	st.initLocked()
-	if st.offered[p.ip] {
-		st.mu.Unlock()
-		s.logger.Debug("deezer share: not offering, a login went to this speaker already since the agent started", "peer", peer, "trigger", trigger)
-		return
-	}
-	if trigger == deezerShareTriggerPeer && time.Since(st.checkedAt[p.ip]) < deezerShareRecheckGap {
-		st.mu.Unlock()
-		s.logger.Debug("deezer share: not asking, this speaker was asked moments ago", "peer", peer)
-		return
-	}
-	st.checkedAt[p.ip] = time.Now()
-	st.mu.Unlock()
-
 	if !p.reachable {
-		// Series-I speakers cannot reach each other's agent; the app does
-		// not relay this, so such a pair is skipped.
-		s.logger.Info("deezer share: not offering, the speaker's agent is not reachable from here (series-I speakers cannot reach each other's agent)",
+		s.logger.Info("deezer share: not copying, the speaker's agent is not reachable from here (series-I speakers cannot reach each other's agent)",
 			"peer", peer, "trigger", trigger)
-		note("unreachable")
-		return
+		return note("unreachable")
 	}
-	need, base, outcome := s.fetchDeezerNeed(ctx, p.bases)
+	sum, base, outcome := s.fetchDeezerSummary(ctx, p.bases)
 	if outcome != "" {
-		s.logger.Info("deezer share: not offering, the speaker did not answer the need check",
+		s.logger.Info("deezer share: not copying, the speaker did not answer the summary read",
 			"peer", peer, "trigger", trigger, "outcome", outcome, "portsTried", len(p.bases))
-		note(outcome)
-		return
+		return note(outcome)
 	}
-	if !need.Needs {
-		s.logger.Info("deezer share: not offering, the speaker does not need a Deezer login",
-			"peer", peer, "trigger", trigger, "why", deezerShareCode(need.Why))
-		note("not-needed:" + deezerShareCode(need.Why))
-		return
+	if state := deezerShareCode(sum.State); !deezerCanTake(state) {
+		s.logger.Info("deezer share: not copying, the speaker does not need a Deezer login", "peer", peer, "trigger", trigger, "state", state)
+		return note("not-needed:" + state)
 	}
-	sealed, err := s.deezer.SealKeptDeezerLogin(need.Key, need.AccountHash)
+	sealed, err := s.deezer.SealKeptDeezerLogin(sum.Key, sum.AccountHash)
 	switch {
 	case errors.Is(err, marge.ErrDeezerShareHashMismatch):
-		s.logger.Info("deezer share: not offering, the speaker needs a login for another Deezer account",
-			"peer", peer, "trigger", trigger)
-		note("hash-mismatch")
-		return
+		s.logger.Info("deezer share: not copying, the speaker uses another Deezer account", "peer", peer, "trigger", trigger)
+		return note("hash-mismatch")
 	case err != nil:
 		code := "seal-failed"
 		if isDeezerShareCode(err) {
 			code = err.Error()
 		}
-		s.logger.Info("deezer share: not offering, the login could not be sealed for the speaker",
+		s.logger.Info("deezer share: not copying, the login could not be sealed for the speaker",
 			"peer", peer, "trigger", trigger, "reason", code)
-		note("refused:" + code)
-		return
+		return note("refused:" + code)
 	}
-	// Once per agent start, whatever the answer.
-	st.mu.Lock()
-	st.offered[p.ip] = true
-	st.mu.Unlock()
 	ans, outcome := s.postDeezerShare(ctx, base, sealed)
 	switch {
 	case outcome != "":
-		s.logger.Info("deezer share: sent the kept login, the speaker did not take it",
-			"peer", peer, "trigger", trigger, "outcome", outcome)
-		note(outcome)
+		s.logger.Info("deezer share: sent the kept login, the speaker did not take it", "peer", peer, "trigger", trigger, "outcome", outcome)
+		return note(outcome)
 	case ans.Status == "accepted":
-		s.logger.Info("deezer share: sent the kept login, the speaker accepted it and hands it to its firmware",
-			"peer", peer, "trigger", trigger)
-		note("accepted")
+		s.logger.Info("deezer share: sent the kept login, the speaker accepted it and hands it to its firmware", "peer", peer, "trigger", trigger)
+		return note("accepted")
 	default:
-		s.logger.Info("deezer share: sent the kept login, the speaker refused it",
-			"peer", peer, "trigger", trigger, "reason", deezerShareCode(ans.Reason))
-		note("refused:" + deezerShareCode(ans.Reason))
+		s.logger.Info("deezer share: sent the kept login, the speaker refused it", "peer", peer, "trigger", trigger, "reason", deezerShareCode(ans.Reason))
+		return note("refused:" + deezerShareCode(ans.Reason))
 	}
 }
 
-// RequestDeezerOffers is the pull behind Check again on a speaker that needs a
-// login: it asks each reachable speaker in the roster, at most once every 3
-// minutes each, to offer its kept login (POST /api/deezer/offer-request). A
-// speaker that keeps one for the same account then runs its normal offer
-// towards this one. No timer.
-func (s *Server) RequestDeezerOffers(ctx context.Context) {
-	if s.deezer == nil {
+// handleDeezerUseOlder is POST /api/deezer/use-older, the owner's "Use the
+// older login". It applies only while Deezer refuses the current login; it
+// puts the newest backed-up login for the same account that Deezer has not
+// refused back, then hands it to the firmware, and answers like GET
+// /api/deezer/account with the recreate's step.
+func (s *Server) handleDeezerUseOlder(w http.ResponseWriter, r *http.Request) {
+	if !s.deezerMethodGuard(w, r, http.MethodPost, true) {
 		return
 	}
-	need, _ := s.deezerLoginNeed(ctx)
-	if !need.Needs {
-		s.logger.Info("deezer share: not asking other speakers for a login, this speaker does not need one", "why", need.Why)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if l := s.deezerLocalState(ctx); l.state != deezerHHRefused {
+		s.logger.Info("deezer: not putting an older login back, Deezer does not refuse the current one", "state", l.state)
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "Deezer does not refuse this speaker's login", "code": "not-refused"})
 		return
 	}
-	if s.cachedPeersFn == nil {
-		s.logger.Info("deezer share: not asking other speakers for a login, no peer roster")
-		return
-	}
-	peers := s.cachedPeersFn()
-	s.logger.Info("deezer share: this speaker needs a Deezer login, asking the other speakers to offer theirs", "peers", len(peers))
-	for _, p := range peers {
-		t, ok := deezerSharePeerOf(p)
-		if !ok {
-			continue
+	if _, err := s.deezer.UseOlderDeezerLogin(); err != nil {
+		code := "save-failed"
+		if isDeezerShareCode(err) {
+			code = err.Error()
 		}
-		if ctx.Err() != nil {
-			return
+		status := http.StatusConflict
+		if code == "save-failed" {
+			status = http.StatusInternalServerError
 		}
-		s.askDeezerOffer(ctx, t)
-	}
-}
-
-// askDeezerOffer asks one peer to offer its kept login.
-func (s *Server) askDeezerOffer(ctx context.Context, p deezerSharePeer) {
-	peer := deezerPeerName(p.ip)
-	note := func(outcome string) {
-		s.deezer.NoteDeezerShareRequest(true, marge.DeezerShareEvent{Peer: peer, Trigger: deezerShareTriggerCheck, Outcome: outcome})
-	}
-	st := &s.deezerShare
-	st.mu.Lock()
-	st.initLocked()
-	if time.Since(st.askedAt[p.ip]) < deezerShareRecheckGap {
-		st.mu.Unlock()
-		s.logger.Info("deezer share: not asking, this speaker was asked for a login moments ago", "peer", peer)
+		s.logger.Info("deezer: no older login put back", "reason", code)
+		writeJSON(w, status, map[string]any{"error": "no older Deezer login could be put back", "code": code})
 		return
 	}
-	st.askedAt[p.ip] = time.Now()
-	st.mu.Unlock()
-	if !p.reachable {
-		s.logger.Info("deezer share: not asking, the speaker's agent is not reachable from here (series-I speakers cannot reach each other's agent)", "peer", peer)
-		note("unreachable")
-		return
-	}
-	_, status, body, ok := s.deezerShareCall(ctx, p.bases, http.MethodPost, "/api/deezer/offer-request", []byte("{}"), 10*time.Second)
-	if !ok {
-		s.logger.Info("deezer share: the speaker did not answer the request for a login", "peer", peer, "portsTried", len(p.bases))
-		note("unreachable")
-		return
-	}
-	var ans deezerShareAnswer
-	if status == http.StatusNotFound || json.Unmarshal(body, &ans) != nil || ans.Status == "" {
-		s.logger.Info("deezer share: the speaker's agent predates sharing a Deezer login", "peer", peer, "status", status)
-		note("old-agent")
-		return
-	}
-	if ans.Status == "offering" {
-		s.logger.Info("deezer share: the speaker will offer its kept Deezer login if it has one for this account", "peer", peer)
-		note("offering")
-		return
-	}
-	s.logger.Info("deezer share: the speaker refused the request for a login", "peer", peer, "reason", deezerShareCode(ans.Reason))
-	note("refused:" + deezerShareCode(ans.Reason))
-}
-
-// handleDeezerOfferRequest is POST /api/deezer/offer-request: a speaker that
-// needs a login asks this one to offer its kept login. The body is not read.
-func (s *Server) handleDeezerOfferRequest(w http.ResponseWriter, r *http.Request) {
-	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
-		return
-	}
-	if s.deezer == nil {
-		http.Error(w, "not available on this build", http.StatusNotImplemented)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	ip := callerIP(r.RemoteAddr)
-	peer := deezerPeerName(ip)
-	refuse := func(status int, reason string) {
-		s.logger.Info("deezer share: refused another speaker's request for a login", "peer", peer, "reason", reason)
-		s.deezer.NoteDeezerShareRequest(false, marge.DeezerShareEvent{Peer: peer, Outcome: "refused:" + reason})
-		writeJSON(w, status, deezerShareAnswer{Status: "refused", Reason: reason})
-	}
-	if !s.isKnownDeezerPeer(ip) {
-		refuse(http.StatusForbidden, "unknown-caller")
-		return
-	}
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		refuse(http.StatusUnsupportedMediaType, "bad-request")
-		return
-	}
-	st := &s.deezerShare
-	st.mu.Lock()
-	st.initLocked()
-	if time.Since(st.requestedAt[ip]) < deezerShareRecheckGap {
-		st.mu.Unlock()
-		refuse(http.StatusTooManyRequests, "rate-limited")
-		return
-	}
-	st.requestedAt[ip] = time.Now()
-	already := st.offered[ip]
-	st.mu.Unlock()
-	if already {
-		refuse(http.StatusConflict, "already-offered")
-		return
-	}
-	if why := s.deezerShareBlocked(); why != "" {
-		refuse(http.StatusConflict, why)
-		return
-	}
-	s.logger.Info("deezer share: another speaker asked for a Deezer login, offering the kept one to it", "peer", peer)
-	s.deezer.NoteDeezerShareRequest(false, marge.DeezerShareEvent{Peer: peer, Outcome: "offering"})
-	writeJSON(w, http.StatusAccepted, deezerShareAnswer{Status: "offering"})
-	// The normal offer, towards the requester alone: its need signal, the
-	// hash match, the sealing and its own guards decide.
-	target := s.deezerSharePeerAt(ip)
-	st.wg.Add(1)
-	go func() {
-		defer st.wg.Done()
-		octx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		st.round.Lock()
-		defer st.round.Unlock()
-		s.offerDeezerToPeer(octx, target, deezerShareTriggerRequest)
-	}()
+	res := s.recreateDeezer(ctx, "use-older", true)
+	v := s.deezerView(ctx)
+	v.Recreate = &res
+	writeJSON(w, http.StatusOK, v)
 }
 
 // deezerShareCode keeps a reason code another agent sent printable and short
-// before it reaches the log and the debug section: lower-case letters, digits
-// and dashes, at most 32 characters, "unknown" otherwise.
+// before it reaches the log, the debug section or the overview: lower-case
+// letters, digits and dashes, at most 32 characters, "unknown" otherwise.
 func deezerShareCode(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" || len(v) > 32 {
@@ -726,27 +852,28 @@ func (s *Server) deezerShareCall(ctx context.Context, bases []string, method, pa
 	return "", 0, nil, false
 }
 
-// fetchDeezerNeed reads a peer's need signal from the first port that
+// fetchDeezerSummary reads a peer's login summary from the first port that
 // answers, and returns that port's base for the post. outcome is "" on
-// success, "old-agent" (the peer's agent predates sharing) or "unreachable".
-func (s *Server) fetchDeezerNeed(ctx context.Context, bases []string) (DeezerLoginNeed, string, string) {
-	base, status, body, ok := s.deezerShareCall(ctx, bases, http.MethodGet, "/api/deezer/login-need", nil, 5*time.Second)
+// success, "old-agent" (the peer's agent predates the overview) or
+// "unreachable".
+func (s *Server) fetchDeezerSummary(ctx context.Context, bases []string) (DeezerLoginSummary, string, string) {
+	base, status, body, ok := s.deezerShareCall(ctx, bases, http.MethodGet, "/api/deezer/login-summary", nil, 5*time.Second)
 	if !ok {
-		return DeezerLoginNeed{}, "", "unreachable"
+		return DeezerLoginSummary{}, "", "unreachable"
 	}
-	var need DeezerLoginNeed
-	if status != http.StatusOK || json.Unmarshal(body, &need) != nil {
+	var sum DeezerLoginSummary
+	if status != http.StatusOK || json.Unmarshal(body, &sum) != nil || sum.State == "" {
 		// 404 or 501, or an old agent's page for an unknown path.
-		return DeezerLoginNeed{}, base, "old-agent"
+		return DeezerLoginSummary{}, base, "old-agent"
 	}
-	return need, base, ""
+	return sum, base, ""
 }
 
-// postDeezerShare posts the sealed login to the base that answered the need
-// check. outcome is "" when the peer gave an answer, else "old-agent" or
-// "unreachable".
+// postDeezerShare posts the sealed login, marked as the owner's copy, to the
+// base that answered the summary read. outcome is "" when the peer gave an
+// answer, else "old-agent" or "unreachable".
 func (s *Server) postDeezerShare(ctx context.Context, base string, sealed marge.SealedDeezerLogin) (deezerShareAnswer, string) {
-	b, err := json.Marshal(map[string]any{"sealed": sealed})
+	b, err := json.Marshal(map[string]any{"sealed": sealed, "trigger": deezerShareUser})
 	if err != nil {
 		return deezerShareAnswer{}, "unreachable"
 	}
