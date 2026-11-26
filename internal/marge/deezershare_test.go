@@ -61,7 +61,8 @@ func TestDeezerShareAdoptKeepsTheLoginOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Not for an account the receiver does not list.
-	if _, err := receiver.AdoptPeerDeezerLogin(sealed, []string{"2222222222"}, "peer#a"); !errors.Is(err, ErrDeezerShareAccount) {
+	peerA := DeezerAdoptOptions{Peer: "peer#a", PeerName: "Kitchen"}
+	if _, _, err := receiver.AdoptPeerDeezerLogin(sealed, []string{"2222222222"}, peerA); !errors.Is(err, ErrDeezerShareAccount) {
 		t.Fatalf("account mismatch: %v", err)
 	}
 	if _, err := os.Stat(recv.keptPath); !os.IsNotExist(err) {
@@ -69,21 +70,22 @@ func TestDeezerShareAdoptKeepsTheLoginOnce(t *testing.T) {
 	}
 	// Not when sealed to another key (another run of the receiver).
 	stranger := newDeezerFixture(t, "").server(true)
-	if _, err := stranger.AdoptPeerDeezerLogin(sealed, []string{testDeezerAccount}, "peer#a"); !errors.Is(err, ErrDeezerShareUndecryptable) {
+	if _, _, err := stranger.AdoptPeerDeezerLogin(sealed, []string{testDeezerAccount}, peerA); !errors.Is(err, ErrDeezerShareUndecryptable) {
 		t.Fatalf("another key opened it: %v", err)
 	}
 	tampered := sealed
 	tampered.Box = sealed.Box[:len(sealed.Box)-4] + "AAAA"
-	if _, err := receiver.AdoptPeerDeezerLogin(tampered, []string{testDeezerAccount}, "peer#a"); err == nil {
+	if _, _, err := receiver.AdoptPeerDeezerLogin(tampered, []string{testDeezerAccount}, peerA); err == nil {
 		t.Fatal("a tampered box was taken")
 	}
 
-	acct, err := receiver.AdoptPeerDeezerLogin(sealed, []string{" " + testDeezerAccount}, "peer#a")
-	if err != nil || acct != testDeezerAccount {
-		t.Fatalf("adopt: %q %v", acct, err)
+	acct, changed, err := receiver.AdoptPeerDeezerLogin(sealed, []string{" " + testDeezerAccount}, peerA)
+	if err != nil || acct != testDeezerAccount || !changed {
+		t.Fatalf("adopt: %q %v %v", acct, changed, err)
 	}
 	k, ok := loadKeptLogin(recv.keptPath)
-	if !ok || k.Secret != testDeezerSecret || k.Account != testDeezerAccount || k.From != "peer" || k.Peer != "peer#a" || k.SecretType != "token" {
+	if !ok || k.Secret != testDeezerSecret || k.Account != testDeezerAccount || k.From != "peer" || k.Peer != "peer#a" ||
+		k.PeerName != "Kitchen" || k.SecretType != "token" {
 		t.Fatalf("kept = %+v", k)
 	}
 	if runtime.GOOS != "windows" {
@@ -92,10 +94,10 @@ func TestDeezerShareAdoptKeepsTheLoginOnce(t *testing.T) {
 			t.Fatalf("kept file mode: %v %v", fi, err)
 		}
 	}
-	// A kept login is never replaced by a peer's.
+	// Without the owner's copy a kept login is never replaced by a peer's.
 	before, _ := os.ReadFile(recv.keptPath)
 	sealed2, _ := sender.SealKeptDeezerLogin(key, DeezerShareAccountHash(key, testDeezerAccount))
-	if _, err := receiver.AdoptPeerDeezerLogin(sealed2, []string{testDeezerAccount}, "peer#b"); !errors.Is(err, ErrDeezerShareAlreadyKept) {
+	if _, _, err := receiver.AdoptPeerDeezerLogin(sealed2, []string{testDeezerAccount}, DeezerAdoptOptions{Peer: "peer#b"}); !errors.Is(err, ErrDeezerShareAlreadyKept) {
 		t.Fatalf("second adopt: %v", err)
 	}
 	if after, _ := os.ReadFile(recv.keptPath); string(after) != string(before) {
@@ -103,12 +105,12 @@ func TestDeezerShareAdoptKeepsTheLoginOnce(t *testing.T) {
 	}
 
 	receiver.NoteDeezerShare(false, DeezerShareEvent{Peer: "peer#a", Outcome: "accepted"})
-	sender.NoteDeezerShare(true, DeezerShareEvent{Peer: "peer#r", Trigger: "start", Outcome: "accepted"})
+	sender.NoteDeezerShare(true, DeezerShareEvent{Peer: "peer#r", Trigger: "copy", Outcome: "accepted"})
 	st := receiver.DeezerLoginSnapshot()
 	if !st.Kept || st.From != "peer" || st.FromPeer != "peer#a" || st.Shares == nil || len(st.Shares.Received) != 1 || st.Shares.Received[0].Outcome != "accepted" {
 		t.Fatalf("snapshot = %+v", st)
 	}
-	if ss := sender.DeezerLoginSnapshot(); ss.Shares == nil || len(ss.Shares.Sent) != 1 || ss.Shares.Sent[0].Trigger != "start" {
+	if ss := sender.DeezerLoginSnapshot(); ss.Shares == nil || len(ss.Shares.Sent) != 1 || ss.Shares.Sent[0].Trigger != "copy" {
 		t.Fatalf("sender snapshot = %+v", ss)
 	}
 	for _, v := range []any{st, sender.DeezerLoginSnapshot()} {
@@ -144,7 +146,7 @@ func TestDeezerShareOffWithoutAKeptFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := off.AdoptPeerDeezerLogin(sealed, []string{testDeezerAccount}, "peer#a"); !errors.Is(err, ErrDeezerShareOff) {
+	if _, _, err := off.AdoptPeerDeezerLogin(sealed, []string{testDeezerAccount}, DeezerAdoptOptions{Peer: "peer#a", Replace: true}); !errors.Is(err, ErrDeezerShareOff) {
 		t.Fatalf("feature off: %v", err)
 	}
 }

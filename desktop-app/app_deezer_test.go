@@ -31,6 +31,12 @@ func TestDeezerBindings(t *testing.T) {
 			_, _ = w.Write([]byte(`{"state":"connecting","recreate":{"ran":true}}`))
 		case "DELETE /api/deezer/account":
 			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "GET /api/deezer/household":
+			_, _ = w.Write([]byte(`{"speakers":[{"id":"","name":"Kitchen","self":true,"state":"works","kept":true,"previous":1}],"canCopy":0}`))
+		case "POST /api/deezer/copy":
+			_, _ = w.Write([]byte(`{"results":[{"id":"192.0.2.5:8888","name":"Bedroom","outcome":"accepted"}],"copied":1}`))
+		case "POST /api/deezer/use-older":
+			_, _ = w.Write([]byte(`{"state":"connecting","recreate":{"ran":true}}`))
 		case "POST /api/deezer/play":
 			_, _ = w.Write([]byte(`{"ok":true,"kind":"album","id":"376222197","name":"Paschtaschutta"}`))
 		default:
@@ -54,6 +60,21 @@ func TestDeezerBindings(t *testing.T) {
 	re, err := a.DeezerRecheck("127.0.0.1", port)
 	if err != nil || re["state"] != "connecting" || bodies["POST /api/deezer/recheck"] != "{}" {
 		t.Fatalf("recheck = %v, %v, body %q", re, err, bodies["POST /api/deezer/recheck"])
+	}
+	hh, err := a.DeezerHousehold("127.0.0.1", port)
+	if err != nil || hh["canCopy"] != float64(0) {
+		t.Fatalf("household = %v, %v", hh, err)
+	}
+	cp, err := a.DeezerCopyLogin("127.0.0.1", port, " 192.0.2.5:8888 ")
+	if err != nil || cp["copied"] != float64(1) || bodies["POST /api/deezer/copy"] != `{"target":"192.0.2.5:8888"}` {
+		t.Fatalf("copy = %v, %v, body %q", cp, err, bodies["POST /api/deezer/copy"])
+	}
+	if _, err := a.DeezerCopyLogin("127.0.0.1", port, ""); err != nil || bodies["POST /api/deezer/copy"] != `{"all":true}` {
+		t.Fatalf("copy to all: %v, body %q", err, bodies["POST /api/deezer/copy"])
+	}
+	old, err := a.DeezerUseOlderLogin("127.0.0.1", port)
+	if err != nil || old["state"] != "connecting" || bodies["POST /api/deezer/use-older"] != "{}" {
+		t.Fatalf("use older = %v, %v", old, err)
 	}
 	if err := a.UnlinkMusicService("127.0.0.1", port, "deezer"); err != nil {
 		t.Fatal(err)

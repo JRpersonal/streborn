@@ -292,10 +292,15 @@ func (s *Server) CarriedOverDeezerAccount() string {
 // ClearKeptDeezer forgets the Deezer login on STR's side: the kept-login file
 // and the carried-over entry in the reflect file. Without the second, /full
 // would keep naming the account and the firmware would pick it up again at
-// its next account sync (the same reason ClearNative drops it, #1101).
+// its next account sync (the same reason ClearNative drops it, #1101). The
+// backed-up older logins go too (deezerprevious.go): forgetting means
+// forgetting.
 func (s *Server) ClearKeptDeezer() error {
 	if s.deezerLoginPath != "" {
 		if err := os.Remove(s.deezerLoginPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Remove(previousLoginPath(s.deezerLoginPath)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}

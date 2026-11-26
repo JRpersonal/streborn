@@ -22,13 +22,13 @@ package webui
 //                             forgets the kept login; safe to repeat, one
 //                             removal at a time (shared with Pandora)
 // POST   /api/deezer/recheck  the card's "Check again": runs the recreate
-//                             below when it applies, then answers like GET;
-//                             also offers a kept login to the speakers of the
-//                             home that need one, or on a speaker that needs
-//                             one asks them to offer theirs (deezershare.go)
-// GET    /api/deezer/login-need, POST /api/deezer/kept-login,
-// POST   /api/deezer/offer-request: sharing a kept login with another
-//                             speaker (deezershare.go)
+//                             below when it applies, then answers like GET.
+//                             It never sends a login to another speaker.
+// GET    /api/deezer/household, POST /api/deezer/copy,
+// POST   /api/deezer/use-older, GET /api/deezer/login-summary,
+// POST   /api/deezer/kept-login: the logins of the home's speakers, and
+//                             copying one on the owner's press
+//                             (deezershare.go)
 //
 // The recreate: when STR keeps a Deezer login and the speaker lists DEEZER
 // without a working account, the firmware ignores the token /full now serves
@@ -80,13 +80,16 @@ type DeezerBackend interface {
 	KeptDeezerAccount() string
 	CarriedOverDeezerAccount() string
 	ClearKeptDeezer() error
-	// Sharing a kept login between the speakers of one home
-	// (deezershare.go, internal/marge/deezershare.go).
+	// The kept login's overview line and its backed-up older logins
+	// (internal/marge/deezerprevious.go).
+	KeptDeezerSummary() marge.DeezerKeptSummary
+	UseOlderDeezerLogin() (string, error)
+	// Copying a kept login between the speakers of one home on the owner's
+	// press (deezershare.go, internal/marge/deezershare.go).
 	DeezerShareKey() string
 	SealKeptDeezerLogin(peerKey, peerHash string) (marge.SealedDeezerLogin, error)
-	AdoptPeerDeezerLogin(sealed marge.SealedDeezerLogin, listed []string, peer string) (string, error)
+	AdoptPeerDeezerLogin(sealed marge.SealedDeezerLogin, listed []string, o marge.DeezerAdoptOptions) (string, bool, error)
 	NoteDeezerShare(sent bool, ev marge.DeezerShareEvent)
-	NoteDeezerShareRequest(sent bool, ev marge.DeezerShareEvent)
 }
 
 // deezerSourceLine is the speaker's own DEEZER entry in /sources.
@@ -213,8 +216,8 @@ func (s *Server) deezerView(ctx context.Context) DeezerAccountView {
 	v.State, v.Reason, v.Detail = deezerState(src, err, login.LastAttempt, time.Now())
 	v.Stuck = deezerStuck(login.LastAttempt, s.deezerRecreating.Load())
 	// Not while a recreate runs: the code then is the one from before it.
-	v.Rejected = v.State != "connected" && v.State != "connecting" &&
-		login.LastRetry != nil && login.LastRetry.Code == deezerRetryRejected
+	// Nor for a login kept after the code (copied over or put back since).
+	v.Rejected = v.State != "connected" && v.State != "connecting" && deezerLoginRefused(login)
 	acct := src.account
 	if acct == "" {
 		acct = s.deezer.KeptDeezerAccount()
@@ -311,23 +314,11 @@ func (s *Server) handleDeezerAccount(w http.ResponseWriter, r *http.Request) {
 
 // handleDeezerRecheck is POST /api/deezer/recheck, the card's "Check again".
 // A JSON content type is required (the body is not read), so a cross-site
-// form cannot start it.
+// form cannot start it. It hands this speaker its OWN kept login back; it
+// never sends a login to another speaker (that is the owner's Copy,
+// deezershare.go).
 func (s *Server) handleDeezerRecheck(w http.ResponseWriter, r *http.Request) {
-	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "music service settings only allowed from LAN", http.StatusForbidden)
-		return
-	}
-	if s.deezer == nil {
-		http.Error(w, "not available on this build", http.StatusNotImplemented)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		http.Error(w, "music service settings need a JSON body", http.StatusUnsupportedMediaType)
+	if !s.deezerMethodGuard(w, r, http.MethodPost, true) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -336,28 +327,23 @@ func (s *Server) handleDeezerRecheck(w http.ResponseWriter, r *http.Request) {
 	v := s.deezerView(ctx)
 	v.Recreate = &res
 	writeJSON(w, http.StatusOK, v)
-	// A speaker that keeps a login also offers it to the speakers of the
-	// home that need one, and a speaker that needs one asks them for it;
-	// that talks to them for some seconds, so not inline.
-	s.deezerShare.wg.Add(1)
-	go func() {
-		defer s.deezerShare.wg.Done()
-		octx, ocancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer ocancel()
-		s.OfferKeptDeezerLogin(octx, deezerShareTriggerCheck)
-		// And a speaker that needs one asks the others to offer theirs.
-		s.RequestDeezerOffers(octx)
-	}()
 }
 
 // RecreateDeezerFromKeptLogin hands the kept Deezer login back to a speaker
 // that lists DEEZER without a working account: it removes the speaker's
 // account (empty password) and sends it a sourcesUpdated notification, and
 // the firmware creates the account again from /full, which carries the kept
-// token. Without a kept login it makes no call at all. trigger is "start",
-// "check-again" or "peer" (a login another speaker shared, deezershare.go),
-// for the log and the record.
+// token. Without a kept login it makes no call at all. trigger is "start" or
+// "check-again", for the log and the record.
 func (s *Server) RecreateDeezerFromKeptLogin(ctx context.Context, trigger string) DeezerRecreateResult {
+	return s.recreateDeezer(ctx, trigger, false)
+}
+
+// recreateDeezer is the recreate. fresh skips the one-a-minute gap: the kept
+// login just changed (a copy taken, an older login put back), so the
+// firmware has not been handed this one yet. trigger is also "peer" or
+// "use-older" then.
+func (s *Server) recreateDeezer(ctx context.Context, trigger string, fresh bool) DeezerRecreateResult {
 	if s.deezer == nil {
 		return DeezerRecreateResult{Skipped: "no-kept-login"}
 	}
@@ -369,7 +355,7 @@ func (s *Server) RecreateDeezerFromKeptLogin(ctx context.Context, trigger string
 		return DeezerRecreateResult{Skipped: "busy"}
 	}
 	defer s.deezerRecreateMu.Unlock()
-	if !s.deezerRecreateAt.IsZero() && time.Since(s.deezerRecreateAt) < deezerRecreateEvery {
+	if !fresh && !s.deezerRecreateAt.IsZero() && time.Since(s.deezerRecreateAt) < deezerRecreateEvery {
 		return DeezerRecreateResult{Skipped: "ran-recently"}
 	}
 	box := s.nativeBox()
@@ -441,15 +427,15 @@ func (s *Server) DeezerRecreateAtStart(ctx context.Context, wait, outcomeAfter t
 	case <-ctx.Done():
 		return
 	}
-	s.deezerRecreateAndReport(ctx, "start", outcomeAfter)
+	s.deezerRecreateAndReport(ctx, "start", outcomeAfter, false)
 }
 
 // deezerRecreateAndReport runs the recreate and, when it ran, reads the
 // speaker's Deezer source once more after outcomeAfter, for the log and the
-// deezer_login debug section. One wait, no loop.
-func (s *Server) deezerRecreateAndReport(ctx context.Context, trigger string, outcomeAfter time.Duration) {
+// deezer_login debug section. One wait, no loop. fresh as in recreateDeezer.
+func (s *Server) deezerRecreateAndReport(ctx context.Context, trigger string, outcomeAfter time.Duration, fresh bool) {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	res := s.RecreateDeezerFromKeptLogin(cctx, trigger)
+	res := s.recreateDeezer(cctx, trigger, fresh)
 	cancel()
 	if !res.Ran {
 		s.logger.Info("deezer: recreate skipped", "trigger", trigger, "why", res.Skipped)

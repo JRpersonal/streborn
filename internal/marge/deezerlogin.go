@@ -18,7 +18,11 @@
 // firmware reaches the stand-in through /etc/hosts), every other client gets
 // "***", and no log line, debug section or diagnostic bundle carries it or the
 // account. The one way it leaves the speaker is sealed to another STR speaker
-// of the home that needs it for the same account (deezershare.go).
+// of the home with the same account, and only when the owner presses Copy in
+// the Deezer area (deezershare.go).
+//
+// A kept login that a different one replaces is never dropped: it moves to a
+// small backup file beside the kept one first (deezerprevious.go).
 
 package marge
 
@@ -37,15 +41,20 @@ import (
 
 // keptLogin is a service login the speaker held, as kept on the speaker.
 type keptLogin struct {
-	Account     string    `json:"account"`
-	DisplayName string    `json:"displayName,omitempty"`
-	SecretType  string    `json:"secretType,omitempty"`
-	Secret      string    `json:"secret"`
-	From        string    `json:"from"` // "sources-file", "registration" or "peer"
-	KeptAt      time.Time `json:"keptAt"`
+	Account     string `json:"account"`
+	DisplayName string `json:"displayName,omitempty"`
+	SecretType  string `json:"secretType,omitempty"`
+	Secret      string `json:"secret"`
+	// From is "sources-file", "registration", "peer" (copied from another
+	// speaker on the owner's press) or "restored" (an older backed-up login
+	// put back, deezerprevious.go).
+	From   string    `json:"from"`
+	KeptAt time.Time `json:"keptAt"`
 	// Peer is the pseudonym of the speaker a login came from when From is
-	// "peer" (deezershare.go), never its address.
-	Peer string `json:"peer,omitempty"`
+	// "peer" (deezershare.go), never its address; PeerName is that speaker's
+	// name as the roster knew it, for the Deezer area's overview.
+	Peer     string `json:"peer,omitempty"`
+	PeerName string `json:"peerName,omitempty"`
 }
 
 // sameLogin reports whether two records hold the same login (the time and the
@@ -121,13 +130,23 @@ func CaptureKeptDeezerLogin(sourcesGlob, storePath string, logger *slog.Logger) 
 		if hadPrev && prev.sameLogin(k) {
 			return true
 		}
-		if err := saveKeptLogin(storePath, k); err != nil {
+		if hadPrev && refusedBefore(storePath, k) {
+			// Deezer refused this one before and the owner put an older
+			// login back: the firmware's file still holds the refused one
+			// until its account is created anew. Keeping it would undo the
+			// swap.
+			logger.Info("deezer: Sources.xml holds a Deezer login Deezer refused before, keeping the one kept now",
+				slog.String("account", maskAccount(prev.Account)))
+			return true
+		}
+		backedUp, err := replaceKeptLogin(storePath, k, false)
+		if err != nil {
 			logger.Warn("deezer: the speaker's own Deezer login could not be kept", slog.String("err", err.Error()))
 			return hadPrev
 		}
 		logger.Info("deezer: kept the speaker's own Deezer login, the account document hands it back",
 			slog.String("account", maskAccount(k.Account)), slog.String("secretType", k.SecretType),
-			slog.Bool("replaced", hadPrev))
+			slog.Bool("replaced", hadPrev), slog.Bool("previousBackedUp", backedUp))
 		return true
 	}
 	if hadPrev {
@@ -171,7 +190,8 @@ func isDeezerRegistration(body string) bool {
 // respondDeezerAddSource answers the firmware's own registration of a Deezer
 // source in the shape it asked for, instead of filing it as a media server.
 // A registration that carries a credential replaces the kept login, so a
-// login the speaker makes itself is the one /full hands back from then on.
+// login the speaker makes itself is the one /full hands back from then on;
+// the login it replaces is backed up first (deezerprevious.go).
 func (s *Server) respondDeezerAddSource(w http.ResponseWriter, r *http.Request, body string) {
 	username := strings.TrimSpace(firstXMLValue(body, "username"))
 	credType, cred := credentialOf(body)
@@ -182,7 +202,7 @@ func (s *Server) respondDeezerAddSource(w http.ResponseWriter, r *http.Request, 
 			Secret: cred, From: "registration", KeptAt: time.Now().UTC()}
 		if hadPrev && prev.sameLogin(k) {
 			kept = true
-		} else if err := saveKeptLogin(s.deezerLoginPath, k); err != nil {
+		} else if _, err := replaceKeptLogin(s.deezerLoginPath, k, false); err != nil {
 			s.logger.Warn("deezer: the registered login could not be kept", slog.String("err", err.Error()))
 		} else {
 			kept = true
@@ -218,14 +238,20 @@ type DeezerLoginStatus struct {
 	SecretType string `json:"secretType,omitempty"`
 	// From is where the kept login came from: "sources-file" (the speaker's
 	// own Sources.xml), "registration" (the firmware registered it) or
-	// "peer" (another speaker of the home shared it, deezershare.go).
+	// "peer" (copied from another speaker of the home on the owner's press,
+	// deezershare.go) or "restored" (an older backed-up login put back).
 	From   string    `json:"from,omitempty"`
 	KeptAt time.Time `json:"keptAt,omitempty"`
-	// FromPeer is the pseudonym of the speaker that shared the login, set
+	// FromPeer is the pseudonym of the speaker the login was copied from, set
 	// when From is "peer".
 	FromPeer string `json:"fromPeer,omitempty"`
-	// Shares are the last share attempts this agent sent to its peers and
-	// received from them since it started; nil before the first.
+	// PreviousCount is how many older logins are backed up beside the kept
+	// one (at most 3), PreviousRefused how many of them Deezer refused.
+	PreviousCount   int `json:"previousCount"`
+	PreviousRefused int `json:"previousRefused,omitempty"`
+	// Shares are the last copies this agent sent to its peers and received
+	// from them since it started (each one an owner's press); nil before
+	// the first.
 	Shares *DeezerShareLog `json:"shares,omitempty"`
 	// LastAttempt is the last recreate or removal STR handed to the
 	// firmware since the agent started, and what followed
@@ -242,6 +268,12 @@ func (s *Server) DeezerLoginSnapshot() DeezerLoginStatus {
 	st := DeezerLoginStatus{Configured: s.deezerLoginPath != ""}
 	if k, ok := s.keptDeezer(); ok {
 		st.Kept, st.SecretType, st.From, st.KeptAt, st.FromPeer = true, k.SecretType, k.From, k.KeptAt, k.Peer
+	}
+	for _, r := range s.previousDeezer() {
+		st.PreviousCount++
+		if r.Refused {
+			st.PreviousRefused++
+		}
 	}
 	st.Shares = s.deezerShareLog()
 	st.LastAttempt = s.LastDeezerAttempt()

@@ -428,6 +428,17 @@ export function DeezerStatus(host, port) {
 export function DeezerRecheck(host, port) {
   return callOptionalBinding('DeezerRecheck', [host, port]);
 }
+// The Deezer logins of the home (deezer.js): the overview, the owner's Copy
+// (target '' copies to every speaker that needs it) and "Use the older login".
+export function DeezerHousehold(host, port) {
+  return callOptionalBinding('DeezerHousehold', [host, port]);
+}
+export function DeezerCopyLogin(host, port, target) {
+  return callOptionalBinding('DeezerCopyLogin', [host, port, target || '']);
+}
+export function DeezerUseOlderLogin(host, port) {
+  return callOptionalBinding('DeezerUseOlderLogin', [host, port]);
+}
 export function PlayDeezerLink(host, port, link, name) {
   return callOptionalBinding('PlayDeezerLink', [host, port, link, name || '']);
 }

@@ -138,12 +138,24 @@ export function CurrentWiFi() {
   return window['go']['main']['App']['CurrentWiFi']();
 }
 
+export function DeezerCopyLogin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DeezerCopyLogin'](arg1, arg2, arg3);
+}
+
+export function DeezerHousehold(arg1, arg2) {
+  return window['go']['main']['App']['DeezerHousehold'](arg1, arg2);
+}
+
 export function DeezerRecheck(arg1, arg2) {
   return window['go']['main']['App']['DeezerRecheck'](arg1, arg2);
 }
 
 export function DeezerStatus(arg1, arg2) {
   return window['go']['main']['App']['DeezerStatus'](arg1, arg2);
+}
+
+export function DeezerUseOlderLogin(arg1, arg2) {
+  return window['go']['main']['App']['DeezerUseOlderLogin'](arg1, arg2);
 }
 
 export function DeletePreset(arg1, arg2, arg3) {
