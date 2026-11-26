@@ -137,11 +137,16 @@ func (s *Server) ForgetBoxMute() {
 	s.boxMute.mu.Unlock()
 }
 
+// boxMuted is the recorded mute flag; known is false while there is none.
+func (s *Server) boxMuted() (muted, known bool) {
+	s.boxMute.mu.Lock()
+	defer s.boxMute.mu.Unlock()
+	return s.boxMute.muted, s.boxMute.known
+}
+
 // setMutedHeader puts the recorded flag on a status response, if there is one.
 func (s *Server) setMutedHeader(w http.ResponseWriter) {
-	s.boxMute.mu.Lock()
-	known, muted := s.boxMute.known, s.boxMute.muted
-	s.boxMute.mu.Unlock()
+	muted, known := s.boxMuted()
 	if !known {
 		return
 	}

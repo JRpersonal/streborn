@@ -1896,6 +1896,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/save-slot", s.handleQueueSaveSlot)
 	mux.HandleFunc("/api/queue/server-alive", s.handleQueueServerAlive)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	// The same answer as JSON, for integrations (nowplaying_json.go).
+	mux.HandleFunc("/api/nowplaying", s.handleNowPlaying)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/seek", s.handleSeek)
 	// Registered on every speaker, also one without a Spotify engine (it
