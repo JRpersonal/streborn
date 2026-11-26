@@ -124,6 +124,10 @@ type presetWsHandler struct {
 	// a Spotify or queue press the gabbo skip frame missed still skips.
 	// nil-safe.
 	onTrackKey func(forward bool)
+	// onRemoteKey tells the members of this speaker's permanent group about a
+	// remote press here (webui.NotifyMembersOfRemoteKey, groupoverride.go).
+	// Blocking; called off the key reader. nil-safe.
+	onRemoteKey func(key string)
 	// onSnoozeKey snoozes a ringing alarm (webui.AlarmSnoozePress), for a
 	// thumbs key bound to snooze. AUX reaches it through onAlarmSource.
 	// nil-safe.
@@ -600,6 +604,13 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
 	pressAt := time.Now()
+	// A remote press the group's main speaker got at the same moment was
+	// meant for it: STR starts nothing here, and the main speaker's re-form
+	// takes this speaker over from whatever its firmware activated
+	// (groupoverride.go).
+	if h.holdSaver.masterOverridesSelection(pressAt) {
+		return
+	}
 	// The frame may be the tap of a tap+hold: note it with what played before
 	// it, before this press's recall changes anything (tapholdsave.go).
 	h.noteTap(slot, pressAt)

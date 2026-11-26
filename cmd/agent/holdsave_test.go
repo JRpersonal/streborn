@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxlog"
+	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
 
@@ -542,5 +544,113 @@ func TestHoldSaveComboFromFirmwareCountdown(t *testing.T) {
 		if got := r.savedSlots(); len(got) != 0 {
 			t.Fatalf("countdownFirst=%v: saves = %v, want none\n%s", countdownFirst, got, r.log.String())
 		}
+	}
+}
+
+// masterNoticeAt makes the rig's speaker a member whose permanent group's
+// main speaker reported a remote press at noticeAt (webui
+// MasterRemoteKeyNear, on the member's own clock).
+func (r *holdRig) masterNoticeAt(noticeAt time.Time) {
+	r.hs.masterNear = func(at time.Time, window time.Duration) (time.Duration, string, string, bool) {
+		d := noticeAt.Sub(at)
+		return d, "PRESET_2", "192.0.2.21", d <= window && d >= -window
+	}
+}
+
+// Field case 2026-11-26 (Küche ST10, member of the Wohnzimmer ST30's
+// permanent group): PRESET_2 on the remote, aimed at the ST30, reached the
+// ST10 too. Its analytics line came 0.85 s after the main speaker's notice,
+// no verdict and no activation followed (the key was empty), and statsHold
+// read it as a hold. With a UPnP push playing that would have saved over the
+// key. The main speaker's press at the same moment overrides: nothing saved.
+func TestHoldSaveStrayRemotePressOfTheMainSpeakerSavesNothing(t *testing.T) {
+	r := newHoldRig(t)
+	r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+	r.masterNoticeAt(r.at(-850))
+	r.press("PRESET_2", boxlog.ProducerIRRemote, boxlog.OriginStats, 0)
+	r.fireAfter(holdConfirmAfter)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("a stray press of the main speaker's remote saved %v\n%s", got, r.log.String())
+	}
+	if !strings.Contains(r.log.String(), "member press within 850 ms of the main speaker's press, the main speaker overrides it") {
+		t.Fatalf("the deciding signal is not logged:\n%s", r.log.String())
+	}
+	if strings.Contains(r.log.String(), "reading it as a hold") {
+		t.Fatalf("the press was still read as a hold:\n%s", r.log.String())
+	}
+
+	// A paired hold (key trace plus the firmware's verdict) is left alone too.
+	r = newHoldRig(t)
+	r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+	r.masterNoticeAt(r.at(100))
+	r.press("PRESET_2", boxlog.ProducerIRRemote, boxlog.OriginTrace, 0)
+	r.gesture(true, 1600)
+	if got := r.savedSlots(); len(got) != 0 {
+		t.Fatalf("a paired hold of the main speaker's press saved %v\n%s", got, r.log.String())
+	}
+}
+
+// A member's own press keeps the old behaviour: no notice from the main
+// speaker, or one from minutes earlier, or a press on the speaker's own
+// buttons (the main speaker's remote cannot have made it).
+func TestHoldSaveOwnPressOfAMemberStillSaves(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		notice   int // ms relative to the press; 0 = no notice at all
+		producer boxlog.Producer
+	}{
+		{"no notice from the main speaker", 0, boxlog.ProducerIRRemote},
+		{"the main speaker's press was minutes earlier", -3 * 60 * 1000, boxlog.ProducerIRRemote},
+		{"the speaker's own buttons", -200, boxlog.ProducerConsole},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newHoldRig(t)
+			r.result = webui.HoldSaved{Kind: "spotify", Name: "Mix"}
+			if tc.notice != 0 {
+				r.masterNoticeAt(r.at(tc.notice))
+			}
+			r.press("PRESET_2", tc.producer, boxlog.OriginStats, 0)
+			r.fireAfter(holdConfirmAfter)
+			if got := r.savedSlots(); len(got) != 1 || got[0] != 2 {
+				t.Fatalf("saves = %v, want [2]\n%s", got, r.log.String())
+			}
+			if strings.Contains(r.log.String(), "overrides it") {
+				t.Fatalf("a member's own press was overridden:\n%s", r.log.String())
+			}
+		})
+	}
+}
+
+// The firmware's own store of a key, from a hold of the main speaker's
+// remote press, is refused (the key stays as it was) without counting as a
+// refused long press of the owner's; the speaker's preset activation after
+// such a press starts nothing of STR's.
+func TestMainSpeakerPressRefusesStoreAndRecallOnAMember(t *testing.T) {
+	r := newHoldRig(t)
+	r.masterNoticeAt(r.at(300))
+	r.press("PRESET_2", boxlog.ProducerIRRemote, boxlog.OriginStats, 0)
+	r.now = r.at(1700)
+	if !r.hs.masterOverridesStore(2) {
+		t.Fatal("the firmware's store from the main speaker's press was not refused")
+	}
+	if r.hs.masterOverridesStore(3) {
+		t.Fatal("a store on another key was refused")
+	}
+	if !r.hs.masterOverridesSelection(r.at(0).Add(300 * time.Millisecond)) {
+		t.Fatal("the activation after the main speaker's press would start STR's recall")
+	}
+	if !errors.Is(errMainSpeakerOverrides, marge.ErrHeldStoreHandled) {
+		t.Fatal("the refusal would raise the could-not-be-kept banner")
+	}
+
+	// Without a notice, a member's own activation recalls as before.
+	r = newHoldRig(t)
+	r.press("PRESET_2", boxlog.ProducerIRRemote, boxlog.OriginStats, 0)
+	if r.hs.masterOverridesSelection(r.at(300)) || r.hs.masterOverridesStore(2) {
+		t.Fatal("a member's own press was overridden without a main-speaker notice")
+	}
+	var nilSaver *holdSaver
+	if nilSaver.masterOverridesSelection(time.Now()) {
+		t.Fatal("no hold saver must mean no override")
 	}
 }

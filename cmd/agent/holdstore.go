@@ -150,6 +150,12 @@ func newHeldPresetKeeper(store *presets.Store, live heldLive, logger *slog.Logge
 		// the key's own station (the tap started it) back on the key: it is
 		// refused, which leaves the firmware's key as it was, and the
 		// display shows the row-2 outcome instead.
+		// A hold of the group main speaker's remote press reached this
+		// speaker too (groupoverride.go): the firmware's store on it is
+		// refused, which leaves the key as it was.
+		if hs := heldGestureSaver.Load(); hs != nil && hs.masterOverridesStore(item.Slot) {
+			return errMainSpeakerOverrides
+		}
 		if hs := heldGestureSaver.Load(); hs != nil && hs.tapHoldClaims(item.Slot) {
 			logger.Info("tap+hold on key "+strconv.Itoa(item.Slot)+": the speaker's own store on the key is refused, row 1 stays as it is",
 				"slot", item.Slot, "source", item.Source, "name", item.ItemName)

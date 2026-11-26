@@ -196,6 +196,12 @@ func (h *holdSaver) deadKeyPress(p holdPress) bool {
 	if wait := p.at.Add(deadKeyDecideAfter).Sub(h.now()); wait > 0 {
 		h.sleep(wait)
 	}
+	// The group's main speaker got the same remote press: it was meant for
+	// that one, and this speaker plays nothing of its own for it
+	// (groupoverride.go). Answered as decided, so no hold is read from it.
+	if h.masterOverrides(p, "the dead key's play") {
+		return true
+	}
 	h.mu.Lock()
 	ok, why := h.deadKeyCandidateLocked(p)
 	if ok {

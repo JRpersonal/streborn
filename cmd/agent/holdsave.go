@@ -192,6 +192,10 @@ type holdSaver struct {
 	// the key re-sync (presetWsHandler.playDeadKey). Either nil: off.
 	deadKey     func(slot int) deadKeyVerdict
 	playDeadKey func(slot int, v deadKeyVerdict)
+	// masterNear reports whether the main speaker of this speaker's
+	// permanent group reported a remote press near a press here
+	// (webui.Server.MasterRemoteKeyNear, groupoverride.go). nil: off.
+	masterNear masterKeyNearFunc
 
 	mu sync.Mutex
 	// tap is the newest selection frame a person caused (tapholdsave.go).
@@ -568,6 +572,12 @@ func (h *holdSaver) statsHold(p holdPress) {
 		return
 	}
 	h.mu.Unlock()
+	// A remote press the group's main speaker got at the same moment was
+	// meant for it (groupoverride.go): here it is neither a hold nor a dead
+	// key's press. Field case 2026-11-26: exactly this press, read as a hold.
+	if h.masterOverrides(p, "hold-to-save") {
+		return
+	}
 	// A key the speaker lost answers a tap with nothing at all, exactly
 	// like a hold here (#1931): it is played, not saved over (deadkey.go).
 	// The hold of a tap+hold had a frame of the key, so the key is not dead.
@@ -677,6 +687,12 @@ func (h *holdSaver) paired(p holdPress, holdAt time.Time) {
 func (h *holdSaver) confirmAndSave(p holdPress, holdAt time.Time) {
 	if wait := p.at.Add(holdConfirmAfter).Sub(h.now()); wait > 0 {
 		h.sleep(wait)
+	}
+	// A remote hold the group's main speaker got at the same moment was the
+	// main speaker's (groupoverride.go): nothing is saved here, on either row.
+	if h.masterOverrides(p, "hold-to-save") {
+		h.endHeldScreen(p.slot, "the main speaker took the press")
+		return
 	}
 	// A hold that follows a tap of the same key saves onto the key's second
 	// row, never onto the key itself (tapholdsave.go).
