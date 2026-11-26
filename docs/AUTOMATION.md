@@ -21,8 +21,11 @@ Replace `192.0.2.66` with your speaker's IP in every example.
 
 ## Option A: via STR's API (simplest, if STR is installed)
 
-STR reaches the speaker on `:17008` (the chipset-whitelisted entry that is
-reachable from the LAN on every variant; `:8888` is the on-box loopback).
+STR's API answers on `:17008` on some speakers and on `:8888` on others,
+depending on the chassis. Try `:17008` first, then `:8888`, and keep the one
+where `GET /api/agent/version` answers with a `version` in its body (see
+"Which port" in [`CONTROL-API.md`](CONTROL-API.md#which-port)). The examples use
+`:17008`.
 
 Play any URL directly (one request):
 

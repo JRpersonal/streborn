@@ -38,7 +38,9 @@ everything without any of this.
 
 Every speaker answers on its own address. Replace `192.0.2.10` with the address
 of your speaker, which the ST Reborn app shows in the speaker list, and use port
-`17008` (some models answer on `8888` instead; the app shows which one it uses).
+`17008` (some models answer on `8888` instead). To find out, try `17008` first,
+then `8888`, and keep the one where `GET .../api/agent/version` answers with a
+`version` in its body (see "Which port" in [`CONTROL-API.md`](./CONTROL-API.md#which-port)).
 
 | What you want | Call |
 |---|---|
