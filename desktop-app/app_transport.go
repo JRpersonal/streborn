@@ -499,7 +499,7 @@ const (
 	// not theirs (Klaus, 2026-09-03: the app SSH'd in and ran the installer, then
 	// the report told him to change his Wi-Fi). What went wrong is the speaker not
 	// coming back after the install rebooted it.
-	agentNotUpAdvice = "ST Reborn reached your speaker and ran the install over the network, so your Wi-Fi, firewall and network are fine. The speaker just did not come back on the network after the install rebooted it. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then power-cycle the speaker, unplug it for about 30 seconds, plug it back in, and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
+	agentNotUpAdvice = "ST Reborn reached your speaker and ran the install over the network, so your Wi-Fi, firewall and network are fine. The speaker just did not come back on the network after the install rebooted it. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then unplug the speaker and leave it without power for several hours: some speakers hang in the start after a restart, and a short power cut does not free them. Plug it back in and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
 
 	// repairBoxRestartedAdvice closes the message when the speaker restarted
 	// while the network install was still copying ST Reborn onto it (the SSH
@@ -509,7 +509,7 @@ const (
 	// an ST30 or Portable that an ST20 owner was given on 2026-10-26. That
 	// speaker came back by itself minutes later both times, and the second
 	// Install press only repeated the restart.
-	repairBoxRestartedAdvice = "The speaker restarted by itself in the middle of the install and comes back on its own within a few minutes. Your Wi-Fi, firewall and network are fine: ST Reborn reached the speaker and started the install. Do not press Install again for now, the same install would stop at the same point. Wait about five minutes, then refresh the speaker list. Only if it is still missing after that, unplug it for about 30 seconds and plug it back in. Then use \"Save diagnostic logs\" and send the file in, so we can see why the speaker restarted."
+	repairBoxRestartedAdvice = "The speaker restarted by itself in the middle of the install and comes back on its own within a few minutes. Your Wi-Fi, firewall and network are fine: ST Reborn reached the speaker and started the install. Do not press Install again for now, the same install would stop at the same point. Wait about five minutes, then refresh the speaker list. Only if it is still missing or its display stays dark after that, unplug it and leave it without power for several hours, then plug it back in: some speakers hang in the start after a restart, and a short power cut does not free them. Then use \"Save diagnostic logs\" and send the file in, so we can see why the speaker restarted."
 
 	// boxInSetupAdvice replaces the network blame when the speaker's own
 	// records show it was running Bose's out-of-box setup. That state takes
@@ -532,7 +532,7 @@ const (
 	// addresses back to Bose's own, which is the other half of the repair, and
 	// the second Install press is called out because that is what turned one
 	// failure into two for the same owner (#966).
-	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: power it off, plug the STR stick in, power it back on, and then leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
+	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: unplug it and leave it without power for several hours, because some speakers hang in the start after a restart and a short power cut does not free them. Then plug the STR stick in, plug the speaker back in, and leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
 
 	// bootstrapFirewallAdvice is appended for a factory-fresh (no-account)
 	// speaker whose unlock had to go through the bootstrap and whose speaker
@@ -554,7 +554,7 @@ const (
 
 	controlUnresponsiveNoStickAdvice = "Power the speaker fully off and back on: unplug it for about 30 seconds, plug it back in, wait 2 to 3 minutes, then refresh the speaker list and try again. This model does not read a USB stick, so no stick is needed."
 
-	restartingAfterUnlockNoStickAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing, unplug it for about 30 seconds, plug it back in and leave it alone for five minutes. Do not press Install while it is still starting: a second attempt on top of the first one only restarts it again."
+	restartingAfterUnlockNoStickAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing, unplug it and leave it without power for several hours, because some speakers hang in the start after a restart and a short power cut does not free them. Then plug it back in and leave it alone for five minutes. Do not press Install while it is still starting: a second attempt on top of the first one only restarts it again."
 
 	// speakerNotSetUpAdvice closes the message for a speaker that refused the
 	// stand-in account itself (speaker-not-set-up): reset and never set up
