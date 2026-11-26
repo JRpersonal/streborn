@@ -264,7 +264,9 @@ func TestFailureReportNeverBlamesTheVPNForASpeakerThatAnswered(t *testing.T) {
 	r.ErrMsg = "the agent did not come up: dial tcp 192.0.2.34:8888: i/o timeout\n\n" + vpnAdviceFor(*r.Facts.VPN)
 	out := formatFailureReport(r)
 	tail := out[strings.Index(out, "what to try"):]
-	if !strings.Contains(tail, agentNotUpAdvice) {
+	// Only an SSH login in the log, no restart after it: the reached advice
+	// without the hours-without-power sentence.
+	if !strings.Contains(tail, agentNotUpNoRestartAdvice) {
 		t.Fatalf("(a) the reached-this-session advice must lead:\n%s", tail)
 	}
 	if strings.Contains(tail, vpnAdvice) {

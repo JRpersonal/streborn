@@ -163,6 +163,13 @@ func (a *App) repairInstallViaSSH(host, model string) (InstallResult, error) {
 		// repair stopped the old agent, it would then stay down for good (the
 		// pidfile is gone, so both run.sh watchdogs have ended), so the
 		// speaker is restarted here as on every other failure.
+		//
+		// repairBoxRestartedAdvice may name hours without power, which is only
+		// for a restart STR knows of (Jens, 2026-11-26): the dropped session is
+		// that evidence, and where it was only sshd that died, restartIfStopped
+		// restarts a speaker whose agent this repair stopped, while one whose
+		// agent was never stopped stays up and in the list, where the advice's
+		// "if it is still missing or its display stays dark" never applies.
 		res.Code = "repair-box-restarted"
 		res.Message = "The speaker restarted in the middle of the network install, while ST Reborn was being copied onto it." +
 			"\n\n" + repairBoxRestartedAdvice
@@ -222,6 +229,9 @@ func (a *App) repairInstallViaSSH(host, model string) (InstallResult, error) {
 
 	a.emitPhase("restart")
 	_ = boxReboot(host)
+	// The failure report reads this line as the restart STR knows of
+	// (restartMarkers): it alone may lead to the hours-without-power advice.
+	a.logger.Info("repair_ssh: restart sent after the install", "host", host)
 	return res, nil
 }
 

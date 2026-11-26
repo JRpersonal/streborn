@@ -443,6 +443,7 @@ func (a *App) installUnlockOrAdvise(r *installRun) bool {
 	// :22 on the Portable live. The rung itself (port probe, unlock, stock
 	// URL restore on both outcomes) is ensureSSHOpen, shared with the OTA and
 	// the uninstall; rememberReboot feeds the recentUnlockReboot check above.
+	unlockStart := time.Now()
 	opened, tlog, unlockErr := a.ensureSSHOpen(host, model, sshUnlockOptions{tag: "install_str", phase: "access", rememberReboot: true, bootstrapIfNoAccount: true})
 	switch {
 	case opened:
@@ -476,9 +477,20 @@ func (a *App) installUnlockOrAdvise(r *installRun) bool {
 		// which would also defeat STR's later streaming.bose.com interception
 		// on a subsequent stick install. Best-effort.
 		res.Log = tlog
-		rebootedByUs = true
-		unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
-		a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
+		// Only a restart that actually went out over :17000 counts. The
+		// "restarting" advice below tells the owner to leave a speaker that
+		// stays dark without power for hours, which is true only after a
+		// restart STR knows of (Jens, 2026-11-26). An unlock whose :17000
+		// connection broke before any "sys reboot" left the speaker running,
+		// so the reachability probes below are measuring it as it is.
+		rebootedByUs = tapRebootSentSince(host, unlockStart)
+		if rebootedByUs {
+			unlockOutcome = "unlock ran but did not open SSH; stock URLs restored and speaker restarted"
+			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs and restarted the speaker", "host", host)
+		} else {
+			unlockOutcome = "unlock ran but did not open SSH; no restart reached the speaker"
+			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH and no restart reached the speaker", "host", host)
+		}
 	}
 
 	// The box did not boot with a stick (:22 closed) and the stick-free unlock

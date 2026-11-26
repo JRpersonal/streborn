@@ -499,7 +499,23 @@ const (
 	// not theirs (Klaus, 2026-09-03: the app SSH'd in and ran the installer, then
 	// the report told him to change his Wi-Fi). What went wrong is the speaker not
 	// coming back after the install rebooted it.
+	//
+	// The hours-without-power sentence is only true for a speaker STR knows it
+	// restarted and that has not come back since: a logic-board fault makes some
+	// speakers hang after any warm restart, and only hours without power free
+	// them (Jens, 2026-11-26). applyReachedThisSession picks this paragraph only
+	// on that evidence (restartKnownAndNotBack); every other report gets
+	// agentNotUpNoRestartAdvice.
 	agentNotUpAdvice = "ST Reborn reached your speaker and ran the install over the network, so your Wi-Fi, firewall and network are fine. The speaker just did not come back on the network after the install rebooted it. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then unplug the speaker and leave it without power for several hours: some speakers hang in the start after a restart, and a short power cut does not free them. Plug it back in and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
+
+	// agentNotUpNoRestartAdvice is agentNotUpAdvice for a report whose log shows
+	// no restart after the app's last contact with the speaker (an SSH login and
+	// then a failed upload, say), or whose speaker answers again by now. Telling
+	// that owner to leave the speaker without power for hours is advice for a
+	// fault their speaker never had the chance to show, so the plain ten-second
+	// power cycle stands in for it. Neither paragraph is a prefix of the other,
+	// which splitAdvice and hasAdvice rely on.
+	agentNotUpNoRestartAdvice = "ST Reborn reached your speaker over the network, so your Wi-Fi, firewall and network are fine. First pull any USB stick out of the speaker: a stick left in can keep an ST30 or Portable off the network even while it still plays. Then unplug the speaker for ten seconds, plug it back in and wait about 3 minutes before you refresh the speaker list. If it still does not appear, use \"Save diagnostic logs\" and send the file in."
 
 	// repairBoxRestartedAdvice closes the message when the speaker restarted
 	// while the network install was still copying ST Reborn onto it (the SSH
@@ -532,6 +548,12 @@ const (
 	// addresses back to Bose's own, which is the other half of the repair, and
 	// the second Install press is called out because that is what turned one
 	// failure into two for the same owner (#966).
+	//
+	// Its hours-without-power sentence, and the one in the no-stick variant,
+	// is only true after a restart STR knows of (Jens, 2026-11-26). Both
+	// paragraphs are only ever chosen after one: rebootedByUs needs a
+	// "sys reboot" that actually went out over :17000 (tapRebootSentSince),
+	// and recentUnlockReboot only remembers those.
 	restartingAfterUnlockAdvice = "Give the speaker about two minutes, then refresh the speaker list and try again. If it stays dark or missing: unplug it and leave it without power for several hours, because some speakers hang in the start after a restart and a short power cut does not free them. Then plug the STR stick in, plug the speaker back in, and leave it alone for five minutes. That is what brought another speaker in exactly this state back, with the clock and the Wi-Fi symbol on its display again. Do not press Install while the stick is still working, a second attempt on top of the first one made it worse for the owner who tried."
 
 	// bootstrapFirewallAdvice is appended for a factory-fresh (no-account)

@@ -415,13 +415,21 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 	// it", when the install never got that far) and hand an ST20 owner stick
 	// advice meant for an ST30 or Portable, so it is not added, and dropped if
 	// something else brought it in.
-	lead := agentNotUpAdvice
+	//
+	// Between the two agent-not-up paragraphs, the one that sends the owner to
+	// hours without power needs a restart STR knows of and a speaker that is
+	// still not back (restartKnownAndNotBack). "install_str: ssh ok" proves the
+	// app got in, not that the speaker ever restarted afterwards.
+	lead := agentNotUpNoRestartAdvice
+	if restartKnownAndNotBack(r) {
+		lead = agentNotUpAdvice
+	}
 	if hasAdvice(advice, repairBoxRestartedAdvice) {
 		lead = repairBoxRestartedAdvice
 	}
 	out := []string{lead}
 	for _, p := range advice {
-		if strings.HasPrefix(p, lead) || strings.HasPrefix(p, agentNotUpAdvice) {
+		if strings.HasPrefix(p, lead) || strings.HasPrefix(p, agentNotUpAdvice) || strings.HasPrefix(p, agentNotUpNoRestartAdvice) {
 			continue
 		}
 		if strings.HasPrefix(p, firewallAdvice) || strings.HasPrefix(p, notReachableAdvice) || strings.HasPrefix(p, isolationAdvice) {
@@ -436,6 +444,134 @@ func applyReachedThisSession(advice []string, r failureReport) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// restartMarkers are log lines written when STR restarted the speaker or saw
+// it restart: the install's own restart, the restart a running install's
+// stopped agent gets back with, a restart under the running install, every
+// :17000 "sys reboot" (the unlock's, the bootstrap's, the restore after a
+// failed unlock), a restart the user asked for, the forced one after a stalled
+// restart, and an accepted agent update (the agent restarts the speaker to
+// apply it). Each is a whole message, never the prefix of a line that reports
+// the restart request failing; restartFailedMarkers catches the one family
+// that shares its start with a failure.
+var restartMarkers = []string{
+	"repair_ssh: install ran",
+	"repair_ssh: restart sent after the install",
+	"repair_ssh: restarting the speaker so the STR agent stopped for the install comes back",
+	"repair_ssh: speaker restarted during the install",
+	"stock URLs restored and the speaker restarted",
+	"restored stock boseurls and rebooted after a failed unlock",
+	"injection written and sys reboot sent",
+	"envswitch injection written, sys reboot sent",
+	"telnet-bootstrap: restarting the speaker onto the local responder",
+	"accepted the restart command but never restarted; forcing the restart",
+	"reboot: STR asked the speaker to restart (",
+	"reboot: STR renamed the speaker to a name its firmware can handle and restarted it",
+	"restart: the speaker was still on its old boot",
+	"outcome: upload accepted",
+	"(agent applying + rebooting)",
+}
+
+// restartFailedMarkers turn a restartMarkers hit on the same line back into
+// "no restart": the request went out and the speaker did not take it.
+var restartFailedMarkers = []string{
+	"and the request failed",
+	"and it refused",
+}
+
+// backMarkers are log lines that prove the speaker was up and answering: a
+// restart logged before one of them is over, the speaker came back from it.
+var backMarkers = []string{
+	"install_str: ssh ok",
+	"repair_ssh: staged install files",
+	"SSH opened stick-free via :17000",
+	"install: OK",
+	"install: confirmed late",
+	"outcome: confirmed",
+}
+
+// lineIsAboutHost reports whether a log line names host as its host field. The
+// app log tail also carries the last lines about every other speaker, and a
+// restart of the speaker in the next room is no evidence about this one. A
+// bare substring test would let 192.0.2.1 match 192.0.2.10.
+func lineIsAboutHost(line, host string) bool {
+	if host == "" {
+		return true
+	}
+	for _, key := range []string{"host=" + host, `host="` + host + `"`} {
+		for i := 0; ; {
+			j := strings.Index(line[i:], key)
+			if j < 0 {
+				break
+			}
+			end := i + j + len(key)
+			if end == len(line) || line[end] == ' ' || line[end] == '\t' {
+				return true
+			}
+			i = end
+		}
+	}
+	return false
+}
+
+// restartPendingIn reports whether log, read top to bottom, shows a restart of
+// host after the last sign of the speaker answering.
+func restartPendingIn(log, host string) bool {
+	restarted := false
+	for _, line := range strings.Split(log, "\n") {
+		if !lineIsAboutHost(line, host) {
+			continue
+		}
+		if containsAny(line, backMarkers) {
+			restarted = false
+		}
+		if containsAny(line, restartMarkers) && !containsAny(line, restartFailedMarkers) {
+			restarted = true
+		}
+	}
+	return restarted
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// speakerAnswersNow reports whether the report's own probes found the speaker
+// up: its agent answered, or one of its ports accepted a connection. A speaker
+// that hangs in its start after a restart answers on none of them.
+func speakerAnswersNow(r failureReport) bool {
+	if len(r.BoxNow) > 0 {
+		return true
+	}
+	for _, p := range r.Facts.Ports {
+		if p.Result == "open" {
+			return true
+		}
+	}
+	return false
+}
+
+// restartKnownAndNotBack is the condition for advising hours without power
+// (Jens, 2026-11-26): some speakers hang in their start after any warm
+// restart, and only hours without power free them, which is advice for an
+// owner whose speaker STR knows it restarted and that is still not back, and
+// for nobody else. The restart has to be in the app's own log, after the last
+// line that shows the speaker answering; the app log is read when there is one
+// because it carries the update journal's lines too, in order, and the journal
+// alone only when the log tail is empty. "Not back" is the report's own probes
+// finding nothing that answers.
+func restartKnownAndNotBack(r failureReport) bool {
+	log := r.Facts.LogTail
+	if strings.TrimSpace(log) == "" {
+		log = r.History
+	}
+	return restartPendingIn(log, r.Host) && !speakerAnswersNow(r)
 }
 
 // hasAdvice reports whether one of the collected paragraphs is (or starts

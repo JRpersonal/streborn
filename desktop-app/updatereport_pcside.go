@@ -123,7 +123,7 @@ func hasReachabilityAdvice(advice []string) bool {
 	for _, p := range advice {
 		for _, k := range []string{
 			firewallAdvice, notReachableAdvice, isolationAdvice, noNetworkAdvice,
-			noLocalRouteAdvice, answeredNotSTRAdvice, agentNotUpAdvice,
+			noLocalRouteAdvice, answeredNotSTRAdvice, agentNotUpAdvice, agentNotUpNoRestartAdvice,
 			repairBoxRestartedAdvice, boxInSetupAdvice, offNetworkLead, otherNetworkLead,
 			stillRestartingAdvice,
 		} {
@@ -160,7 +160,7 @@ func hasReachabilityAdvice(advice []string) bool {
 func applyPCSideDiagnosis(advice []string, r failureReport) []string {
 	f := r.Facts
 	speakerAnswered := reachedThisSession(r) || len(r.BoxNow) > 0 || anyPortAnswered(f) ||
-		hasAdvice(advice, answeredNotSTRAdvice) || hasAdvice(advice, agentNotUpAdvice) ||
+		hasAdvice(advice, answeredNotSTRAdvice) || hasAdvice(advice, agentNotUpAdvice) || hasAdvice(advice, agentNotUpNoRestartAdvice) ||
 		hasAdvice(advice, repairBoxRestartedAdvice) || hasAdvice(advice, boxInSetupAdvice)
 	if speakerAnswered {
 		out, _ := dropPCSideAdvice(advice)
