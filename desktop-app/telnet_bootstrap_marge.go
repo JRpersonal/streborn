@@ -394,7 +394,7 @@ func accountRetryPlan(refused, uuidStored bool, attempt, maxAttempts int) string
 func (a *App) retryAccountAfterRestartOntoResponder(host, model string, t *tapConn, marge *bootstrapMarge, log *strings.Builder) bool {
 	fmt.Fprintf(log, "restarting the speaker onto the local responder before asking for the account again\n")
 	a.logger.Info("telnet-bootstrap: restarting the speaker onto the local responder before asking for the account again", "host", host)
-	_, _ = t.send("sys reboot")
+	sendTAPReboot(t, host)
 	boxSSHClients.invalidateHost(host)
 	// Down first (the restart takes a few seconds to drop :8090), then up.
 	for i := 0; i < 20 && tcpReachable(host, 8090, 2*time.Second); i++ {
@@ -607,7 +607,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string, err
 			return false, log.String(), nil
 		}
 	}
-	_, _ = t.send("sys reboot")
+	sendTAPReboot(t, host)
 	t.close()
 	boxSSHClients.invalidateHost(host)
 	a.logger.Info("telnet-bootstrap: dummy account set, envswitch injection written, sys reboot sent; waiting for the box to check marge and open SSH", "host", host, "pcMarge", base)

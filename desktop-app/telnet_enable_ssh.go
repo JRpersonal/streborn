@@ -240,7 +240,7 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	}
 	// Reboot to trigger the boot-time URL re-parse without the user touching the
 	// speaker. This is STR's advantage over the manual CLI flow.
-	_, _ = t.send("sys reboot")
+	sendTAPReboot(t, host)
 	t.close()
 	boxSSHClients.invalidateHost(host)
 	a.logger.Info("telnet-enable: injection written and sys reboot sent; polling for SSH", "host", host, "model", model)
@@ -335,7 +335,7 @@ func (a *App) restoreStockBoseURLsAndReboot(host string) {
 		return
 	}
 	if t, err := dialTAP(host, 5*time.Second); err == nil {
-		_, _ = t.send("sys reboot")
+		sendTAPReboot(t, host)
 		t.close()
 		boxSSHClients.invalidateHost(host)
 		a.logger.Info("telnet-enable: restored stock boseurls and rebooted after a failed unlock", "host", host)

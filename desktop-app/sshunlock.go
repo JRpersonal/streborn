@@ -12,6 +12,7 @@ package main
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
@@ -102,6 +103,7 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	if !tcpReachable(host, 17000, 2*time.Second) {
 		return false, "", errSetupPortClosed
 	}
+	start := time.Now()
 	if o.phase != "" {
 		a.emitPhase(o.phase)
 	}
@@ -145,6 +147,17 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	// restore stock URLs and reboot so the box is never left marge-checking a
 	// dead/reassignable host. Best-effort.
 	a.restoreStockBoseURLsAndReboot(host)
+	// Only a restart that actually went out is remembered and logged as one.
+	// Both feed advice that is true only after a restart (the preflight's
+	// "still starting up", and the failure report's hours without power): an
+	// unlock whose :17000 connection broke before any "sys reboot" left the
+	// speaker running.
+	restarted := tapRebootSentSince(host, start)
+	if !restarted {
+		a.logger.Warn(o.tag+": the :17000 stick-free unlock did not open SSH, and no restart reached the speaker",
+			"host", host, "log", discovery.LastN(note, 6000))
+		return false, note, failErr
+	}
 	if o.rememberReboot {
 		markUnlockReboot(host)
 	}
@@ -156,6 +169,34 @@ func (a *App) ensureSSHOpen(host, model string, o sshUnlockOptions) (opened bool
 	a.logger.Warn(o.tag+": the :17000 stick-free unlock did not open SSH; stock URLs restored and the speaker restarted",
 		"host", host, "firewallSuspected", errors.Is(failErr, errBootstrapResponderUnreachable), "accountRefused", errors.Is(failErr, errBootstrapAccountRefused), "log", discovery.LastN(note, 6000))
 	return false, note, failErr
+}
+
+// tapReboots remembers, per host, when a "sys reboot" last went out over the
+// :17000 setup port. The unlock's restarts are sent there and not over SSH, so
+// boxReboot's ledger (rebootLedger) never sees them.
+var tapReboots sync.Map // host -> time.Time
+
+// noteTAPReboot records that "sys reboot" just went to host over :17000.
+func noteTAPReboot(host string) { tapReboots.Store(host, time.Now()) }
+
+// tapRebootSentSince reports whether a "sys reboot" went to host over :17000
+// at or after t.
+func tapRebootSentSince(host string, t time.Time) bool {
+	v, ok := tapReboots.Load(host)
+	if !ok {
+		return false
+	}
+	at, ok := v.(time.Time)
+	return ok && !at.Before(t)
+}
+
+// sendTAPReboot sends "sys reboot" over an open :17000 connection and records
+// it when the command was written. Every :17000 restart goes through here, so
+// the advice that is only true after a restart can rely on tapReboots.
+func sendTAPReboot(t *tapConn, host string) {
+	if _, err := t.send("sys reboot"); err == nil {
+		noteTAPReboot(host)
+	}
 }
 
 // shouldTryBootstrapUnlock decides whether, after the plain :17000 unlock failed
