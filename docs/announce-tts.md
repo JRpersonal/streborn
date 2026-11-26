@@ -10,7 +10,7 @@ home automation.
 ## How it works
 
 ```
-desktop app / curl ──POST /api/announce {text, lang, volume}──▶ stick agent
+desktop app / curl ──POST /api/announce {text|url, lang, volume}──▶ stick agent
    (via boxDo: self-heals :8888 <-> :17008, BCO boxes only answer :17008)
         agent: fetch TTS audio ──▶ snapshot now-playing + volume
                                 ──▶ stop the current source
@@ -58,6 +58,33 @@ longer needed.
   pinned to `:8888` fails on BCO/Portable speakers (only the REDIRECTed `:17008`
   answers) — see the `:8888`/`:17008` note in `docs/ARCHITECTURE.md`.
 
+## The HTTP answer and how long the clip plays
+
+The full request reference is the `/api/announce` row in
+[`CONTROL-API.md`](CONTROL-API.md#announcements). The agent fetches the audio
+first, so a bad URL or a TTS failure is still reported (`502`), then answers at
+once and plays the announcement in the background:
+
+```json
+{"ok":true,"queued":true,"bytes":16800,"durationMs":4200}
+```
+
+`durationMs` is how long the clip plays, the silent lead-in included. The
+agent reads it off the MP3 frame headers of the audio it already holds
+(`internal/webui/announce_duration.go`, `mp3DurationMs`): each Layer III frame
+decodes to a fixed number of samples at the rate its header names, so the
+frames are walked header to header and summed. TTS text arrives as several MP3
+chunks back to back; the walk passes from one to the next and over any ID3 tag
+between them, so the answer is their sum. The walk reads headers only, never
+audio, and is capped for the speaker's weak CPU (past 32768 frames the rest is
+extrapolated, and junk between frames is searched through for at most 64 KB in
+total). A clip that is not mostly MP3 frames (Ogg, WAV, anything else) has no
+`durationMs`: the field is left out rather than guessed. The same length drives
+the agent's own wait before it resumes what was playing.
+
+An automation that wants to wait for the end waits `durationMs` plus a couple
+of seconds for the speaker's buffering and the resume.
+
 ## TTS engine: Google Translate TTS
 
 Speech is synthesised by **Google Translate's keyless TTS** endpoint
@@ -69,6 +96,24 @@ Speech is synthesised by **Google Translate's keyless TTS** endpoint
 - **Length**: Google TTS has a practical ~200-character per-request limit. The
   agent chunks longer text at `ttsChunkLimit` (180) and concatenates the audio;
   the app input is capped at 200 characters.
+
+## A voice of your own: a local TTS through `url`
+
+The agent has no setting for another TTS engine, and does not need one. Any
+TTS that can produce an audio file can drive an announcement: render the clip
+on a machine in your LAN (for example with [Piper](https://github.com/rhasspy/piper),
+or the TTS of Home Assistant), make it reachable over `http`, and pass its
+address as `url` instead of `text`:
+
+```bash
+curl -s -X POST "http://192.0.2.10:8888/api/announce" \
+     -d '{"url":"http://192.0.2.5:5000/clips/dinner.mp3","volume":30}'
+```
+
+The agent fetches the file itself (at most 8 MB) and plays it the same way as
+TTS text, with the same interrupt and resume. The text then never leaves your
+LAN. MP3 gets the silent lead-in and a `durationMs` in the answer; another
+format (WAV, Ogg) plays unchanged, without either.
 
 ## Privacy
 
@@ -85,8 +130,10 @@ privacy simply do not use announcements.
   the UI rather than hidden.
 - There is **no bundling/redistribution** concern: the audio is fetched per use
   and never shipped with STR, so no third-party audio is redistributed.
-- A future, fully-private option would be an on-device TTS (e.g. piper/espeak)
-  so no text leaves the LAN; quality and on-box footprint would need evaluating.
+- A fully private option exists today without anything on the speaker: a
+  local TTS renders the clip and its address goes in as `url` (see "A voice of
+  your own" above). An on-device TTS (e.g. piper/espeak) on the speaker itself
+  would need its quality and on-box footprint evaluated first.
 
 ## Notes / known issues
 
