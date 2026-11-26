@@ -192,7 +192,7 @@ func TestAnnounceStopsTheNativeStationBeforeRaisingTheVolume(t *testing.T) {
 	loc := nativeStationLocation()
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 
 	got := b.seen()
 	if !strings.HasPrefix(got, "stopkey,"+clipEvents+",") {
@@ -208,7 +208,7 @@ func TestAnnounceResumesTheNativeStationThroughSelect(t *testing.T) {
 	loc := nativeStationLocation()
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 
 	want := "stopkey," + clipEvents + ",stop,setvolume:35,select:" + loc
 	if got := b.seen(); got != want {
@@ -227,7 +227,7 @@ func TestAnnounceFallsBackToTheDescribedStream(t *testing.T) {
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: nativeRadioSource, Location: loc, ItemName: "SWR3", PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
 	s.selectFn = func(context.Context, string) error { return fmt.Errorf("select: box refused") }
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 
 	if got := b.seen(); !strings.HasSuffix(got, ",stop,setvolume:35,seturi:http://stream.example/swr3.mp3,play") {
 		t.Errorf("speaker saw %q, want the described stream pushed after the volume restore", got)
@@ -252,7 +252,7 @@ func TestAnnounceResumesAUPnPStreamWithTheWrongStateRepair(t *testing.T) {
 		}
 		return b.setVolume(ctx, v)
 	}
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 
 	want := "stop," + clipEvents + ",stop,setvolume:35," +
 		"seturi:" + radio + ",fault:Play,stop,seturi:,seturi:" + radio + ",play"
@@ -276,7 +276,7 @@ func TestAnnounceResumesOnlyWhatWasPlaying(t *testing.T) {
 	for _, prev := range cases {
 		b := &announceBox{volume: 35, np: prev}
 		s := newAnnounceServer(t, b)
-		s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+		s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 		got := b.seen()
 		if !strings.HasSuffix(got, "play,stop,setvolume:35") {
 			t.Errorf("%s/%s: speaker saw %q, want it to end with the clip, a stop and the volume restore", prev.Source, prev.PlayStatus, got)
@@ -293,7 +293,7 @@ func TestAnnounceWithoutVolumeLeavesTheVolumeAlone(t *testing.T) {
 	radio := "http://stream.example/nova.mp3"
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, PlayStatus: "PLAY_STATE"}}
 	s := newAnnounceServer(t, b)
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 0)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 0, 0)
 	if got := b.seen(); strings.Contains(got, "setvolume") {
 		t.Errorf("speaker saw %q, want no volume write", got)
 	}
@@ -306,7 +306,7 @@ func TestAnnounceUndoesAClipThatDidNotStart(t *testing.T) {
 	b := &announceBox{volume: 35, np: nowPlayingSnapshot{Source: "UPNP", Location: radio, PlayStatus: "PLAY_STATE"},
 		soapErr: map[string]string{"SetAVTransportURI": "Transition not available"}}
 	s := newAnnounceServer(t, b)
-	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20)
+	s.runAnnouncement(t.Context(), []byte("clip"), "audio/mpeg", "Hallo", 20, 0)
 	got := b.seen()
 	if strings.Contains(got, "setvolume:20") {
 		t.Errorf("speaker saw %q, the announcement volume was set for a clip that never started", got)

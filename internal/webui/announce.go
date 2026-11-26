@@ -193,7 +193,8 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	// surfaced "connection refused" even though the announcement had played fine
 	// (Jens, 2026-06-17, taigan Portable). The audio fetch above stays
 	// synchronous so a bad URL / TTS failure is still reported to the caller.
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "queued": true, "bytes": len(audio)})
+	durMs := announceDurationMs(audio, mime)
+	writeJSON(w, http.StatusOK, announceAnswer(len(audio), durMs))
 
 	go func() {
 		// Serialise against other box commands (play, volume) for the whole
@@ -211,13 +212,27 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 		// returned above, so use a fresh background context for the whole cycle.
 		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 		defer cancel()
-		s.runAnnouncement(ctx, audio, mime, title, volume)
+		s.runAnnouncement(ctx, audio, mime, title, volume, durMs)
 	}()
 }
 
+// announceAnswer is the POST /api/announce reply, sent once the audio is
+// fetched and the announcement queued. durationMs says how long the clip plays
+// (lead-in included), read off the MP3 frame headers of the bytes already in
+// memory (announce_duration.go), so an automation can wait for the end; it is
+// left out when it cannot be told.
+func announceAnswer(size int, durMs int64) map[string]any {
+	answer := map[string]any{"ok": true, "queued": true, "bytes": size}
+	if durMs > 0 {
+		answer["durationMs"] = durMs
+	}
+	return answer
+}
+
 // runAnnouncement is the interrupt/play/resume cycle behind handleAnnounce.
-// The caller holds boxCmdMu and has published the audio.
-func (s *Server) runAnnouncement(ctx context.Context, audio []byte, mime, title string, volume int) {
+// The caller holds boxCmdMu and has published the audio. durMs is the clip's
+// length from its frame walk; 0 falls back to the first-header estimate.
+func (s *Server) runAnnouncement(ctx context.Context, audio []byte, mime, title string, volume int, durMs int64) {
 	prev := s.snapshotNowPlaying(ctx)
 	wasStandby := prev.Source == "STANDBY" || prev.Source == ""
 	changedVol := volume > 0
@@ -246,7 +261,10 @@ func (s *Server) runAnnouncement(ctx context.Context, audio []byte, mime, title 
 		s.restoreAfterAnnounce(ctx, prev, prevVol, wasStandby, changedVol)
 		return
 	}
-	estDur := mp3DurationSec(audio)
+	estDur := float64(durMs) / 1000
+	if durMs <= 0 {
+		estDur = mp3DurationSec(audio)
+	}
 	s.logger.Info("announce: playing", "bytes", len(audio), "estSec", fmt.Sprintf("%.1f", estDur), "title", title,
 		"wasStandby", wasStandby, "prevSource", prev.Source, "prevStatus", prev.PlayStatus,
 		"prevLocation", truncateLoc(prev.Location))
