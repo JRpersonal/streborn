@@ -370,6 +370,8 @@ announce:
       description: Name of a prepared clip, e.g. dishwasher_done
     text:
       description: Free text, when there is no prepared clip
+    parts:
+      description: List of prepared clip names and free text, joined into one announcement (5.4)
     speakers:
       description: List of speaker keys
     volume:
@@ -380,14 +382,27 @@ announce:
     - condition: template
       value_template: "{{ at_night | default(false) or 7 <= now().hour < 22 }}"
     - choose:
-        - conditions: "{{ clip is defined and clip }}"
+        - conditions: "{{ (parts | default([]) | length) > 0 }}"
+          sequence:
+            - action: shell_command.announce_build
+              data:
+                parts: "{{ parts }}"
+              response_variable: built
+            - condition: template
+              value_template: "{{ built.returncode == 0 and built.stdout.startswith('/local/') }}"
+            - action: script.announce_play
+              data:
+                url: "http://192.0.2.10:8123{{ built.stdout | trim }}"
+                speakers: "{{ speakers | default(['living_room']) }}"
+                volume: "{{ volume | default(30) }}"
+        - conditions: "{{ (clip | default('') | string | length) > 0 }}"
           sequence:
             - action: script.announce_play
               data:
                 url: "http://192.0.2.10:8123/local/announcements/{{ clip }}.mp3"
                 speakers: "{{ speakers | default(['living_room']) }}"
                 volume: "{{ volume | default(30) }}"
-        - conditions: "{{ text is defined and text }}"
+        - conditions: "{{ (text | default('') | string | length) > 0 }}"
           sequence:
             - action: rest_command.ha_tts_url
               data:
@@ -442,6 +457,11 @@ the same sentence does not overlap from two rooms. A speaker that is offline is
 skipped without failing the script. Add your own
 presence check to the first condition if announcements should stay silent while
 nobody is home.
+
+The `parts` branch needs the `shell_command` from 5.4; leave it out if you do
+not use building blocks. Write the `choose` conditions as real comparisons as
+shown: a template that merely returns the text (`{{ clip }}`) does not count as
+true and the branch is silently skipped.
 
 Use it anywhere:
 
@@ -585,6 +605,230 @@ Then:
 Writing tips for the sentences: spell out numbers and times ("ten p.m."), keep
 one thought per sentence, and start warnings with a short word such as
 "Attention," so the listener is tuned in before the content comes.
+
+### 5.4 Building blocks: prepared parts plus live text
+
+Many announcements are a fixed phrase around one value that changes: "Outside
+it is" + "minus two" + "degrees". Render the fixed parts in advance (5.3) and
+let only the changing part be spoken live. The parts are joined into one MP3,
+so the speaker plays a single clip and interrupts the music only once.
+
+Add the fixed parts to `announcements.json` and render them, for example:
+
+```json
+  "part_outside_it_is": "Outside it is",
+  "part_degrees": "degrees.",
+  "part_next_appointment": "The next appointment is at"
+```
+
+`/config/announce_build.py` runs inside Home Assistant (its container already
+has `ffmpeg`). Each list item is either the name of a prepared clip or free
+text; free text goes to the live Piper on port 10200.
+
+```python
+#!/usr/bin/env python3
+"""Join prepared clips and live text into one announcement MP3.
+
+  announce_build.py <base64 of a JSON list>
+Prints the path under /local/. The same list gives the same file, built once
+(until one of its prepared clips is rendered again).
+"""
+import base64
+import hashlib
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+import wave
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+READY = os.path.join(HERE, "www", "announcements")
+DYN = os.path.join(READY, "dyn")
+PIPER = ("127.0.0.1", 10200)   # host and Wyoming port of the live Piper
+
+
+def speak(text, wav):
+    s = socket.create_connection(PIPER, timeout=120)
+    f = s.makefile("rwb")
+    f.write((json.dumps({"type": "synthesize", "data": {"text": text}}) + "\n").encode())
+    f.flush()
+    pcm, fmt = b"", None
+    while True:
+        line = f.readline()
+        if not line:
+            break
+        head = json.loads(line)
+        data = head.get("data") or {}
+        if head.get("data_length"):
+            data = json.loads(f.read(head["data_length"]))
+        payload = f.read(head["payload_length"]) if head.get("payload_length") else b""
+        if head["type"] == "audio-start":
+            fmt = data
+        elif head["type"] == "audio-chunk":
+            pcm += payload
+            fmt = fmt or data
+        elif head["type"] == "audio-stop":
+            break
+    s.close()
+    with wave.open(wav, "wb") as w:
+        w.setnchannels(fmt["channels"])
+        w.setsampwidth(fmt["width"])
+        w.setframerate(fmt["rate"])
+        w.writeframes(pcm)
+
+
+parts = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
+if isinstance(parts, str):
+    parts = [parts]
+parts = [str(p).strip() for p in parts if str(p).strip()]
+# A prepared clip that was rendered again gets a new name for the joined file.
+stamps = [int(os.path.getmtime(os.path.join(READY, p + ".mp3")))
+          if re.match(r"^[a-z0-9_]+$", p) and os.path.exists(os.path.join(READY, p + ".mp3")) else 0
+          for p in parts]
+mark = hashlib.sha1(json.dumps([parts, stamps], ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+os.makedirs(DYN, exist_ok=True)
+target = os.path.join(DYN, mark + ".mp3")
+if not os.path.exists(target):
+    sources, temp = [], []
+    for nr, part in enumerate(parts):
+        ready = os.path.join(READY, part + ".mp3")
+        if re.match(r"^[a-z0-9_]+$", part) and os.path.exists(ready):
+            sources.append(ready)
+        else:
+            wav = os.path.join(DYN, "%s-%d.wav" % (mark, nr))
+            speak(part, wav)
+            sources.append(wav)
+            temp.append(wav)
+    command = ["ffmpeg", "-y", "-loglevel", "error"]
+    for source in sources:
+        command += ["-i", source]
+    chain = "".join("[%d:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono[a%d];" % (i, i)
+                    for i in range(len(sources)))
+    chain += "".join("[a%d]" % i for i in range(len(sources))) + "concat=n=%d:v=0:a=1[out]" % len(sources)
+    fresh = target + ".part.mp3"
+    subprocess.run(command + ["-filter_complex", chain, "-map", "[out]", "-b:a", "128k", fresh], check=True)
+    os.replace(fresh, target)
+    for wav in temp:
+        os.remove(wav)
+for name in os.listdir(DYN):          # drop joined clips older than two days
+    path = os.path.join(DYN, name)
+    if path != target and time.time() - os.path.getmtime(path) > 2 * 86400:
+        os.remove(path)
+print("/local/announcements/dyn/%s.mp3" % mark)
+```
+
+`configuration.yaml` (a new `shell_command:` block needs one HA restart):
+
+```yaml
+shell_command:
+  announce_build: "python3 /config/announce_build.py {{ parts | tojson | base64_encode }}"
+```
+
+The list travels base64-encoded because a templated `shell_command` is run
+without a shell, where quotes and non-ASCII letters in the text would otherwise
+break the argument.
+
+Use it:
+
+```yaml
+- action: script.announce
+  data:
+    parts:
+      - part_outside_it_is
+      - "{{ states('sensor.outside_temperature') | round(0) | int }}"
+      - part_degrees
+    speakers: [kitchen]
+```
+
+Measured on the same Celeron N3150: a new combination takes 1 to 2 s until the
+speaker is called (about 5 s while the CPU was busy with other work), a
+repeated combination 0.6 s because the joined file is reused.
+
+Things to know:
+
+- A phrase start rendered on its own ("Outside it is") ends with a slightly
+  final intonation. Short parts hide this better than long ones; listen once
+  and decide whether a fully prepared sentence fits better.
+- Prepared parts (voice `high`) and live text (voice `medium`) come from the
+  same speaker model, so the change of quality is small but audible.
+- Where only a handful of values are possible (rooms, people, appliances),
+  prepare one whole sentence per value instead ("The window in the office is
+  still open."). It sounds like one piece. A single live word in the middle of
+  a sentence is the hardest spot for the voice. Keep building blocks for values
+  that are really open: temperature, time, an appointment.
+- Keep a value and its unit together in the live part ("zero degrees." as one
+  text, not a live "zero" followed by a prepared "degrees."). A single word
+  spoken on its own is stressed oddly and can be misheard; with its unit the
+  intonation is right. A prepared phrase start plus one live ending worked best.
+- A name is only taken as a clip when a file of that name exists; otherwise
+  the word itself is spoken. A typo in a name is therefore heard, not silently
+  dropped.
+- Let HA turn numbers into words where the voice reads them badly (negative
+  numbers, times): "minus two" is safer than "-2".
+
+### 5.5 A chime before the voice
+
+A voice that starts out of nowhere startles people. A short, soft two-tone
+chime in front of every announcement tells the room "a notice follows" before
+the first word, and it lets the voice stay calm instead of shouting
+"Attention". In a side-by-side test this beat both a spoken "Notice:" prefix
+and an exclamation mark.
+
+Create the chime once. It is plain `ffmpeg`, no download and no licence to
+think about: two sine tones (G5 and C6) with soft fades and a short pause
+after them. Run it where `announce_build.py` runs, e.g. inside the HA
+container:
+
+```sh
+ffmpeg -y -loglevel error \
+  -f lavfi -i "sine=frequency=784:duration=0.35" \
+  -f lavfi -i "sine=frequency=1047:duration=0.7" \
+  -filter_complex "[0:a]afade=t=in:d=0.02,afade=t=out:st=0.2:d=0.15[a];[1:a]afade=t=in:d=0.02,afade=t=out:st=0.25:d=0.45[b];[a][b]concat=n=2:v=0:a=1,volume=0.5,apad=pad_dur=0.25,aresample=44100[o]" \
+  -map "[o]" -ac 1 -b:a 128k /config/www/announcements/chime.mp3
+```
+
+The file sits next to the prepared clips, so `chime` is simply one more
+building block (5.4): `parts: [chime, dishwasher_done]`. The renderer of 5.3
+leaves it alone, because it only removes clips it created itself.
+
+To put the chime in front of everything, send every kind of announcement
+through the builder. Replace the whole `choose:` block of the `announce` script
+(5.2) with this, and add a field `no_chime` to its `fields`:
+
+```yaml
+    - variables:
+        blocks: >-
+          {%- set t = parts | default([]) -%}
+          {%- set t = [t] if t is string else (t | list) -%}
+          {%- if (clip | default('') | string | length) > 0 %}{% set t = t + [clip | string] %}{% endif -%}
+          {%- if (text | default('') | string | length) > 0 %}{% set t = t + [text | string] %}{% endif -%}
+          {{ ([] if no_chime | default(false) else ['chime']) + t }}
+    - condition: template
+      value_template: "{{ (blocks | reject('eq', 'chime') | list | length) > 0 }}"
+    - action: shell_command.announce_build
+      data:
+        parts: "{{ blocks }}"
+      response_variable: built
+    - condition: template
+      value_template: "{{ built.returncode == 0 and built.stdout.startswith('/local/') }}"
+    - action: script.announce_play
+      data:
+        url: "http://192.0.2.10:8123{{ built.stdout | trim }}"
+        speakers: "{{ speakers | default(['living_room']) }}"
+        volume: "{{ volume | default(30) }}"
+```
+
+`clip`, `text` and `parts` keep working as before and may even be combined.
+Free text is now spoken by the builder itself (Piper directly), so the
+`ha_tts_url` command and the long-lived token of 5.2 are no longer needed in
+this variant. A prepared clip with the chime is joined on first use (about a
+second) and reused afterwards.
+
+Keep the chime quiet and short. The speaker plays it at the announcement
+volume, and at more than about a second it starts to feel like waiting.
 
 ## 6. Example automation
 
