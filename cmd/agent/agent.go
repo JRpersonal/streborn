@@ -2175,6 +2175,16 @@ func (a *agent) wireLate() error {
 func (a *agent) startDeferred() error {
 	// Local names, so the body reads as it did in run().
 	logger, ctx, deviceID := a.logger, a.ctx, a.deviceID
+
+	// Tell the other speakers this agent just started, once, now that its
+	// listeners answer: a permanent group's main speaker that found this
+	// speaker's agent still starting on its last look takes it back at once
+	// instead of on its next five-minute tick (zones_member_started.go).
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		a.webuiSrv.AnnounceAgentStarted()
+	}()
 	region, regionRes, margeSrv := a.region, a.regionRes, a.margeSrv
 	hostsMgr := a.hostsMgr
 

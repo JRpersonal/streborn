@@ -494,3 +494,172 @@ func TestNotJoinedMembers(t *testing.T) {
 		t.Error("no stored members must report none")
 	}
 }
+
+// Field case 2026-11-26, 11:24:18: the follower restarted for an update, its
+// firmware already answered STANDBY and its agent did not answer yet
+// (agentUptimeSec=-1; its listeners came up two seconds later). That is no
+// verdict: nothing is formed and nobody is woken on the silence, the attempt
+// for this dissolve is not used up, and the member's own start notice runs
+// the round again at once, which then takes it back.
+func TestReformAfterMemberRebootWaitsForAStartingAgent(t *testing.T) {
+	t.Parallel()
+	s, f, z := newZoneLossFixture(t)
+	s.zones = zones.New()
+	_ = s.zones.Set(z) // in memory; the store has no file in a test
+	s.memberStartedKick = make(chan struct{}, 1)
+	f.memberUptime = -1
+	if s.reformAfterMemberReboot(context.Background(), z) || f.setCalls != 0 || f.woken["10.0.0.2"] {
+		t.Fatalf("a member whose agent is still starting was acted on: setCalls=%d woken=%v", f.setCalls, f.woken)
+	}
+	s.zoneLossMu.Lock()
+	tried := s.zoneLossRejoinTriedAt
+	s.zoneLossMu.Unlock()
+	if !tried.IsZero() {
+		t.Fatal("the agent's silence used up the one attempt this dissolve gets")
+	}
+
+	// A speaker that is not a member of the group asks for nothing.
+	if s.noteMemberStarted("10.0.0.77", "STRANGER") {
+		t.Fatal("a speaker outside the group was taken for a member")
+	}
+	select {
+	case <-s.memberStartedKick:
+		t.Fatal("a stranger's start queued a group round")
+	default:
+	}
+
+	// The member's agent is up and says so: one round is queued, and that
+	// round (the tick's own) takes the member back.
+	f.mu.Lock()
+	f.memberUptime = 8
+	f.mu.Unlock()
+	if !s.noteMemberStarted("10.0.0.2", "") {
+		t.Fatal("the stored member's start notice was not recognised")
+	}
+	select {
+	case <-s.memberStartedKick:
+	default:
+		t.Fatal("the member's start notice queued no round")
+	}
+	if !s.reformAfterMemberReboot(context.Background(), z) {
+		t.Fatal("the member was not taken back once its agent answered")
+	}
+	if f.setCalls != 1 || !f.woken["10.0.0.2"] {
+		t.Fatalf("setCalls=%d woken=%v, want one setZone with the woken member", f.setCalls, f.woken)
+	}
+	// The same notice again moments later (a repeat, or a LAN client posting
+	// in a loop) asks for no further round.
+	if !s.noteMemberStarted("10.0.0.2", "") {
+		t.Fatal("the repeated notice was not recognised as the member's")
+	}
+	select {
+	case <-s.memberStartedKick:
+		t.Fatal("a repeated start notice queued another round")
+	default:
+	}
+}
+
+// The same silence on the live-group path: a missing member in standby whose
+// agent does not answer is left for its own start notice, not written off.
+func TestRejoinMissingMembersLeavesAStartingAgentForItsNotice(t *testing.T) {
+	t.Parallel()
+	s := newRejoinServer()
+	setCalls := 0
+	s.rejoinReadNowPlayingFn = func(_ context.Context, ip string) nowPlayingSnapshot {
+		if ip == "10.0.0.1" {
+			return nowPlayingSnapshot{Source: "LOCAL_INTERNET_RADIO", PlayStatus: "PLAY_STATE"}
+		}
+		return nowPlayingSnapshot{Source: "STANDBY"}
+	}
+	s.rejoinReadAgentUptimeFn = func(context.Context, string) int { return -1 }
+	s.rejoinReadZoneMasterFn = func(context.Context, string) string { return "" }
+	s.rejoinWakeMemberFn = func(context.Context, string, *slog.Logger) { t.Error("a member whose agent does not answer was woken") }
+	s.rejoinLiveZoneFn = func(context.Context, string) (boxapi.Zone, error) {
+		return boxapi.Zone{Master: "MASTER01", Members: []boxapi.ZoneMember{{DeviceID: "KEPT", IP: "10.0.0.5"}}}, nil
+	}
+	s.rejoinSetZoneFn = func(context.Context, string, boxapi.ZoneMember, []boxapi.ZoneMember) error {
+		setCalls++
+		return nil
+	}
+	z := zones.Zone{Master: "MASTER01", MasterIP: "10.0.0.1", Permanent: true, Slaves: []zones.Member{
+		{DeviceID: "KEPT", IP: "10.0.0.5"},
+		{DeviceID: "STARTING", IP: "10.0.0.2"},
+	}}
+	if s.rejoinMissingMembers(context.Background(), z) || setCalls != 0 {
+		t.Fatalf("setZone driven for a member whose agent does not answer: setCalls=%d", setCalls)
+	}
+}
+
+// The start notice goes to every known speaker, restored (dimmed) entries
+// included, and reports which of them named this speaker a member.
+func TestAnnounceAgentStartedTellsEveryKnownSpeaker(t *testing.T) {
+	t.Parallel()
+	s := newRejoinServer()
+	s.rejoinSelfDeviceIDFn = func(context.Context) string { return "MEMBER01" }
+	s.cachedPeersFn = func() []PeerLink {
+		return []PeerLink{{IP: "10.0.0.1"}, {IP: "10.0.0.3", Reachable: true}, {IP: "10.0.0.1"}, {IP: ""}}
+	}
+	var mu sync.Mutex
+	asked := map[string]int{}
+	s.memberStartedNoticeFn = func(_ context.Context, ip string, body []byte) (bool, bool) {
+		mu.Lock()
+		asked[ip]++
+		mu.Unlock()
+		if string(body) != `{"deviceID":"MEMBER01"}` {
+			t.Errorf("notice body = %s", body)
+		}
+		return ip == "10.0.0.1", true
+	}
+	s.AnnounceAgentStarted()
+	if asked["10.0.0.1"] != 1 || asked["10.0.0.3"] != 1 || len(asked) != 2 {
+		t.Fatalf("asked = %v, want each known speaker once", asked)
+	}
+}
+
+// Field case 2026-11-26, 11:36:42.7 to 11:36:49.8: a remote press started the
+// main speaker, and the member that caught the same press joined seven seconds
+// later, six of them the app kick's wait. The firmware's own play edge says
+// the speaker plays already, so a native permanent group's round is sent after
+// the short play-edge wait; a mirror group keeps the long one.
+func TestPlayEdgeKickIsShortForANativePermanentGroup(t *testing.T) {
+	t.Parallel()
+	if productionZoneTiming.playEdgeKickDelay >= productionZoneTiming.mirrorKickDelay ||
+		productionZoneTiming.playEdgeKickDelay > 2*time.Second {
+		t.Fatalf("play-edge wait %s, want well under the app kick's %s",
+			productionZoneTiming.playEdgeKickDelay, productionZoneTiming.mirrorKickDelay)
+	}
+	for _, tc := range []struct {
+		name string
+		zone zones.Zone
+		fast bool
+	}{
+		{"native permanent group", zones.Zone{Master: "M", Permanent: true, Slaves: []zones.Member{{DeviceID: "A"}}}, true},
+		{"mirror group", zones.Zone{Master: "M", Permanent: true, Mode: "mirror", Slaves: []zones.Member{{DeviceID: "A"}}}, false},
+		{"not permanent", zones.Zone{Master: "M", Slaves: []zones.Member{{DeviceID: "A"}}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			timing := productionZoneTiming
+			timing.playEdgeKickDelay = 10 * time.Millisecond
+			timing.mirrorKickDelay = time.Hour
+			s := &Server{
+				logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+				zones:      zones.New(),
+				mirrorKick: make(chan struct{}, 1),
+				zoneTiming: &timing,
+			}
+			_ = s.zones.Set(tc.zone) // in memory; the store has no file in a test
+			s.KickDefaultGroup()
+			select {
+			case <-s.mirrorKick:
+				if !tc.fast {
+					t.Fatal("the round came after the short wait")
+				}
+			case <-time.After(500 * time.Millisecond):
+				if tc.fast {
+					t.Fatal("no round within the play-edge wait")
+				}
+			}
+		})
+	}
+}

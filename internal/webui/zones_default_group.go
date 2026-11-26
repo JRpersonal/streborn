@@ -470,9 +470,11 @@ func (s *Server) wakeStoredMembersForPlay(z zones.Zone) {
 }
 
 // KickDefaultGroup is the exported play trigger for callers outside the
-// package (the gabbo handler firing on a hardware-key or Connect start).
-// Same debounce as every app-driven play.
-func (s *Server) KickDefaultGroup() { s.kickMirrorAfterPlay() }
+// package (the gabbo handler firing on a hardware-key or Connect start). The
+// firmware's play edge means the speaker already plays, so a native permanent
+// group re-forms after a short wait (kickDefaultGroupOnPlayEdge); every other
+// group keeps the debounce of an app-driven play.
+func (s *Server) KickDefaultGroup() { s.kickDefaultGroupOnPlayEdge() }
 
 // groupFormHushWindow covers one whole alarm fire: the wake (alarmWakeTimeout,
 // 20 s), during which the FIRMWARE's own power-on resume of yesterday's station
@@ -583,7 +585,17 @@ func (s *Server) rejoinMissingMembers(ctx context.Context, z zones.Zone) bool {
 		act := classifyMemberForRejoin(np.Source, np.PlayStatus, s.rejoinReadZoneMaster(mctx, m.IP), z.Master, false)
 		if act == rejoinWake {
 			up := s.rejoinReadAgentUptime(mctx, m.IP)
-			if up < 0 || time.Duration(up)*time.Second > rejoinFreshBootWindow {
+			if up < 0 {
+				// No answer is not "switched off long ago": right after a
+				// restart the firmware answers seconds before the agent does.
+				// The member's agent reports in once it is up
+				// (zones_member_started.go), and that runs this again.
+				s.logger.Info("default group: missing member is in standby and its agent is not answering yet (still starting?), it is taken back when its agent reports in",
+					"ip", m.IP, "agentUptimeSec", up)
+				mcancel()
+				continue
+			}
+			if time.Duration(up)*time.Second > rejoinFreshBootWindow {
 				s.logger.Info("default group: missing member is in standby and was not just rebooted, leaving it off", "ip", m.IP, "agentUptimeSec", up)
 				mcancel()
 				continue
@@ -682,6 +694,19 @@ func (s *Server) reformAfterMemberReboot(ctx context.Context, z zones.Zone) bool
 			up := s.rejoinReadAgentUptime(mctx, m.IP)
 			isFresh = up >= 0 && time.Duration(up)*time.Second <= rejoinFreshBootWindow
 			if act == rejoinWake {
+				if up < 0 {
+					// The field case of 2026-11-26 (11:24:18): the member's
+					// firmware already answered STANDBY, its agent came up two
+					// seconds later, and this silence was read as "not just
+					// restarted". It is neither verdict: the attempt is not
+					// used up, and the member's agent reports in once it is up
+					// (zones_member_started.go), which runs this round again
+					// at once instead of on the next tick.
+					s.logger.Info("default group: member is in standby and its agent is not answering yet (still starting after a restart?), it is taken back when its agent reports in",
+						"ip", m.IP, "agentUptimeSec", up)
+					mcancel()
+					continue
+				}
 				if !isFresh {
 					s.logger.Info("default group: member is in standby and was not just rebooted, leaving it off", "ip", m.IP, "agentUptimeSec", up)
 					mcancel()

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -172,6 +173,12 @@ func (s *Server) PeriodicZoneReconcile() {
 			// moment the persisted group re-forms with full force (members
 			// woken, zone re-asserted). The tick above stays hands-off.
 			s.reconcileZoneOnce(true)
+		case <-s.memberStartedKick:
+			// A stored member's agent just reported in after starting: the
+			// tick's own round, now rather than up to five minutes later, so
+			// a member whose agent was still coming up on the last tick is
+			// read again the moment it can answer (zones_member_started.go).
+			s.reconcileZoneOnce(false)
 		}
 	}
 }
@@ -220,17 +227,58 @@ func (s *Server) kickMirrorAfterPlay() {
 	// it acts on the LATEST stream either way. Deduplicating here rather than
 	// at the send is what keeps a burst of plays (a user stepping through
 	// presets) to a single reconcile.
-	if !s.mirrorKickPending.CompareAndSwap(false, true) {
+	s.sendPlayKickAfter(s.zoneTimes().mirrorKickDelay, &s.mirrorKickPending)
+}
+
+// sendPlayKickAfter sends one play kick to the reconcile goroutine after
+// delay, unless a kick on the same pending flag is already on its way.
+func (s *Server) sendPlayKickAfter(delay time.Duration, pending *atomic.Bool) {
+	if !pending.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
-		time.Sleep(s.zoneTimes().mirrorKickDelay)
-		s.mirrorKickPending.Store(false)
+		time.Sleep(delay)
+		pending.Store(false)
 		select {
 		case s.mirrorKick <- struct{}{}:
 		default: // a round is already queued and has not started yet
 		}
 	}()
+}
+
+// kickDefaultGroupOnPlayEdge is the play kick from the firmware's own play
+// edge (KickDefaultGroup: a hardware key, the remote, Spotify Connect). That
+// edge only fires once the speaker reports PLAY_STATE or BUFFERING_STATE on a
+// streaming source, so for a native permanent group the wait the app's kick
+// needs (the pushed stream has to show up in now_playing first) is spent
+// already, and formDefaultGroupOnPlay reads the live state again anyway.
+//
+// It was the whole of the seven seconds from a remote press to the member's
+// join in the field case of 2026-11-26 (press 11:36:42.7, join 11:36:49.8,
+// of which 6 s were mirrorKickDelay). A member that caught the same infrared
+// press played something of its own for all of that time. A mirror group
+// keeps the long wait: its round checks that the master plays the very
+// stream it mirrors, which shows up later than the play edge.
+func (s *Server) kickDefaultGroupOnPlayEdge() {
+	if s.zones == nil || s.mirrorKick == nil {
+		return
+	}
+	z, ok := s.zones.Get()
+	if !ok || z.Stereo || z.Mirror() || !z.Permanent {
+		s.kickMirrorAfterPlay()
+		return
+	}
+	if s.groupFormHushed() {
+		s.logger.Info("group re-form: hushed, leaving the other speakers asleep")
+		return
+	}
+	d := s.zoneTimes().playEdgeKickDelay
+	if s.playEdgeKickPending.Load() {
+		return
+	}
+	s.logger.Info("default group: the main speaker started playing, re-forming the group shortly",
+		"afterMs", d.Milliseconds(), "trigger", "play edge")
+	s.sendPlayKickAfter(d, &s.playEdgeKickPending)
 }
 
 func (s *Server) reconcileZoneOnce(playKick bool) {
