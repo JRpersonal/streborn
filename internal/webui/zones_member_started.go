@@ -206,3 +206,30 @@ func (s *Server) noteMemberStarted(ip, deviceID string) bool {
 		"ip", ip, "deviceID", deviceID, "queued", queued)
 	return true
 }
+
+// memberUptimeOrStartNotice is the member's agent uptime in seconds, or -1
+// when it is unknown. A member whose agent does not answer the read but sent
+// its start notice a moment ago counts as started at that notice: the notice
+// can only come from a running agent that just started, and waiting for it
+// again waits for something that already happened. Field case 2026-11-26,
+// 15:40:50: the member reported in, the round it asked for read no uptime 8 s
+// later (the agent was still busy with its own start), filed the member as
+// "still starting" and left it out until a later round 16 s on.
+func (s *Server) memberUptimeOrStartNotice(ctx context.Context, ip string) int {
+	if up := s.rejoinReadAgentUptime(ctx, ip); up >= 0 {
+		return up
+	}
+	s.zoneLossMu.Lock()
+	at := s.memberStartedAt[ip]
+	s.zoneLossMu.Unlock()
+	if at.IsZero() {
+		return -1
+	}
+	age := time.Since(at)
+	if age < 0 || age > rejoinFreshBootWindow {
+		return -1
+	}
+	s.logger.Info("default group: member's agent did not answer, but it reported its start moments ago, counting it as just restarted",
+		"ip", ip, "noticeAgeSec", int(age.Seconds()))
+	return int(age.Seconds())
+}
