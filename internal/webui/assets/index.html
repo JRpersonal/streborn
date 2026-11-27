@@ -1062,6 +1062,20 @@ html.ui2 .tabbar button .ti { display:none; }
 <!-- ===================== MORE ===================== -->
 <section class="panel" id="panelMore" role="tabpanel" aria-labelledby="tabMore" hidden>
 
+<div class="card" id="adminAuthCard">
+<div class="label" id="adminAuthTitle">Administrator access</div>
+<div class="sum" id="adminAuthStatus" role="status" aria-live="polite">Checking password settings…</div>
+<div class="sum" id="adminAuthDesktopOnly"></div>
+<a class="btn" id="adminAuthSecureLink" href="#" hidden style="display:block;text-align:center;margin-top:8px"></a>
+<div id="adminAuthPhoneControls" hidden>
+<input id="adminAuthPassword" type="password" autocomplete="current-password" maxlength="1024" style="width:100%;margin:8px 0" aria-label="Administrator password">
+<button class="btn" id="adminAuthAction" type="button" style="width:100%"></button>
+<button class="btn" id="adminAuthLogout" type="button" style="width:100%;margin-top:8px" hidden></button>
+<button class="btn" id="adminAuthDisable" type="button" style="width:100%;margin-top:8px" hidden></button>
+<div class="msg" id="adminAuthMessage" aria-live="polite"></div>
+</div>
+</div>
+
 <div class="card" id="bassCard" style="display:none">
 <div class="label" id="lblBass">Bass reduction</div>
 <div class="volslide"><input type="range" id="bass" min="-9" max="0" value="0" aria-label="Bass reduction" oninput="onBass(this.value)"><span class="val" id="bassval">0</span></div>
@@ -1296,6 +1310,8 @@ function pickDict(){
   for (var k6 in base6) out[k6] = (sel6[k6] != null ? sel6[k6] : base6[k6]);
   var base7 = I18N7.en, sel7 = I18N7[code] || base7;
   for (var k7 in base7) out[k7] = (sel7[k7] != null ? sel7[k7] : base7[k7]);
+  var base8 = I18N8.en, sel8 = I18N8[code] || base8;
+  for (var k8 in base8) out[k8] = (sel8[k8] != null ? sel8[k8] : base8[k8]);
   return out;
 }
 // A third dictionary with short lines: one locale per line and only a few
@@ -1383,6 +1399,24 @@ var I18N7 = {
   lt:{dzBeta:"Beta",dzBetaHint:"Deezer ST Reborn programoje yra naujas ir dar ne visuose garsiakalbiuose patvirtintas.",dzSum:"Be Bose debesies naujai prisijungti prie Deezer neįmanoma. Deezer paskyra, kuri jau anksčiau buvo susieta su šiuo garsiakalbiu, toliau veikia, o Deezer nuorodos ir mygtukai jame groja. Kitu atveju leiskite Deezer iš telefono per Bluetooth arba per AirPlay, jei garsiakalbis jį turi.",dzDiag:"Jei susieta Deezer paskyra nustoja groti, išsaugokite diagnostikos failą ir atsiųskite jį.",dzStuck:"Garsiakalbio Deezer klientas užstrigo po ankstesnio bandymo prisijungti. Atjunkite garsiakalbį nuo maitinimo dešimčiai sekundžių, kad tai išspręstumėte.",dzRejected:"Deezer atmetė su šiuo garsiakalbiu susietą Deezer prisijungimą. Be Bose debesies jo atnaujinti neįmanoma.",dzDisconnect:"Atjungti",dzRefresh:"Tikrinti dar kartą",dzDiscConfirm:"Atjungti Deezer? Garsiakalbis pamirš Deezer paskyrą. Be Bose debesies naujai prisijungti prie Deezer neįmanoma, todėl mygtukai su Deezer grojaraščiais nebegros visam laikui.",dzDisconnected:"Atjungta.",dzDiscFail:"Garsiakalbis nepašalino paskyros: {d}",dzStConnected:"Prisijungta kaip {a}. Paruošta groti.",dzStConnectedNoName:"Prisijungta. Paruošta groti.",dzStConnecting:"Garsiakalbis atgauna savo Deezer prisijungimą. Tai gali užtrukti minutę.",dzStRefused:"Garsiakalbis atmetė prisijungimą ({d}).",dzStNoAnswer:"Garsiakalbis neatsakė į prisijungimą.",dzStNotReady:"Garsiakalbis priėmė prisijungimą, bet be Bose debesies negali jo užbaigti ({d}).",dzStUnavailable:"Garsiakalbyje yra Deezer paskyra, bet jis neprisijungęs.",dzStNotConnected:"Su šiuo garsiakalbiu nesusieta jokia Deezer paskyra.",dzStUnknown:"Garsiakalbis neatsakė.",dzLinkHint:"Norėdami groti Deezer grojaraštį, albumą ar kūrinį, įklijuokite jo nuorodą į stočių paiešką. Kol groja, palaikykite mygtuką, kad jį ten išsaugotumėte.",dzAlbum:"Albumas",dzTrack:"Kūrinys",dzPlaylist:"Grojaraštis",dzShare:"Bendrinimo nuoroda",dzLinkNote:"Groja per paties garsiakalbio Deezer klientą. Kol groja, palaikykite mygtuką, kad jį ten išsaugotumėte.",dzStarting:"Paleidžiama…",dzStarted:"{t} dabar groja.",dzPlayFail:"Nepavyko paleisti: {d}",dzNotLinked:"Šis garsiakalbis neturi Deezer paskyros, o be Bose debesies naujos susieti neįmanoma. Leiskite Deezer iš telefono per Bluetooth arba per AirPlay, jei garsiakalbis jį turi.",dzUnavailable:"Garsiakalbio Deezer prisijungimas šiuo metu neveikia. Patikrinkite Deezer kortelę skiltyje Daugiau.",dzUnresolved:"Tai ne Deezer grojaraščio, albumo ar kūrinio nuoroda. Atidarykite ją naršyklėje ir nukopijuokite adresą iš adreso juostos.",dzHomeTitle:"Deezer prisijungimai jūsų namuose",dzHomeHint:"Prisijungimas į kitą garsiakalbį patenka tik tada, kai paspaudžiate Kopijuoti. Pats prisijungimas niekada nerodomas.",dzHomeThis:"{n} (šis garsiakalbis)",dzHomeWorks:"Deezer veikia",dzHomeConnecting:"Jungiasi prie Deezer",dzHomeNoLogin:"Nėra Deezer prisijungimo",dzHomeRefused:"Deezer atmeta prisijungimą",dzHomeNotSetUp:"Deezer nenustatytas",dzHomeUnknown:"Iš čia nepasiekiamas",dzHomeOldAgent:"Reikia naujesnės ST Reborn versijos",dzHomeKeptOwn:"STR saugo savo prisijungimą (nuo {d})",dzHomeKeptReg:"STR saugo garsiakalbio užregistruotą prisijungimą (nuo {d})",dzHomeKeptCopied:"STR saugo iš {n} nukopijuotą prisijungimą (nuo {d})",dzHomeKeptRestored:"STR saugo grąžintą senesnį prisijungimą (nuo {d})",dzHomeKeptYes:"STR saugo prisijungimą",dzHomeKeptNone:"STR nesaugo jokio prisijungimo",dzHomeOlder1:"Atsarginė kopija: 1 senesnis prisijungimas",dzHomeOlderN:"Atsarginė kopija: {c} senesni prisijungimai",dzHomeSame:"Ta pati Deezer paskyra",dzHomeOther:"Kita Deezer paskyra",dzHomeCopyTo:"Kopijuoti į {n}",dzHomeCopyAll:"Kopijuoti į visus, kuriems jo reikia",dzHomeUseOlder:"Naudoti senesnį prisijungimą",dzHomeCopying:"Kopijuojama…",dzHomeCopied:"{n} priėmė prisijungimą ir jungiasi prie Deezer.",dzHomeCopyRefused:"{n} nepriėmė prisijungimo ({r}).",dzHomeCopyUnreachable:"{n} neatsakė.",dzHomeCopyNotNeeded:"{n} prisijungimo nebereikia.",dzHomeCopyOther:"{n} naudoja kitą Deezer paskyrą.",dzHomeCopyOldAgent:"{n} pirmiausia reikia naujesnės ST Reborn versijos.",dzHomeCopyNone:"Šiuo metu nė vienam garsiakalbiui šio prisijungimo nereikia.",dzHomeCopyFail:"Nukopijuoti nepavyko: {e}",dzHomeOlderDone:"Senesnis prisijungimas grąžintas. Garsiakalbis juo jungiasi prie Deezer.",dzHomeOlderFail:"Senesnio prisijungimo grąžinti nepavyko: {e}"},
   lv:{dzBeta:"Beta",dzBetaHint:"Deezer ST Reborn ir jauns un vēl nav apstiprināts visos skaļruņos.",dzSum:"Bez Bose mākoņa no jauna pieteikties Deezer nav iespējams. Deezer konts, kas jau iepriekš bija savienots ar šo skaļruni, turpina darboties, un Deezer saites un pogas tajā skan. Citādi atskaņo Deezer no tālruņa caur Bluetooth vai caur AirPlay, ja skaļrunim tas ir.",dzDiag:"Ja savienots Deezer konts pārstāj skanēt, saglabā diagnostikas failu un nosūti to.",dzStuck:"Skaļruņa Deezer klients ir iestrēdzis pēc iepriekšēja pieteikšanās mēģinājuma. Atvieno skaļruni no strāvas uz desmit sekundēm, lai to novērstu.",dzRejected:"Deezer noraidīja ar šo skaļruni savienoto Deezer pieteikšanos. Bez Bose mākoņa to nevar atjaunot.",dzDisconnect:"Atvienot",dzRefresh:"Pārbaudīt vēlreiz",dzDiscConfirm:"Atvienot Deezer? Skaļrunis aizmirsīs Deezer kontu. Bez Bose mākoņa no jauna pieteikties Deezer nav iespējams, tāpēc pogas ar Deezer atskaņošanas sarakstiem vairs nekad neskanēs.",dzDisconnected:"Atvienots.",dzDiscFail:"Skaļrunis nenoņēma kontu: {d}",dzStConnected:"Savienots kā {a}. Gatavs atskaņošanai.",dzStConnectedNoName:"Savienots. Gatavs atskaņošanai.",dzStConnecting:"Skaļrunis atgūst savu Deezer pieteikšanos. Tas var aizņemt minūti.",dzStRefused:"Skaļrunis noraidīja pieteikšanos ({d}).",dzStNoAnswer:"Skaļrunis neatbildēja uz pieteikšanos.",dzStNotReady:"Skaļrunis pieņēma pieteikšanos, bet bez Bose mākoņa to nevar pabeigt ({d}).",dzStUnavailable:"Skaļrunī ir Deezer konts, bet tas nav pieteicies.",dzStNotConnected:"Ar šo skaļruni nav savienots neviens Deezer konts.",dzStUnknown:"Skaļrunis neatbildēja.",dzLinkHint:"Lai atskaņotu Deezer atskaņošanas sarakstu, albumu vai dziesmu, ielīmē tā saiti staciju meklēšanā. Kamēr tas skan, turi pogu, lai to tur saglabātu.",dzAlbum:"Albums",dzTrack:"Dziesma",dzPlaylist:"Atskaņošanas saraksts",dzShare:"Kopīgošanas saite",dzLinkNote:"Skan skaļruņa paša Deezer klientā. Kamēr tas skan, turi pogu, lai to tur saglabātu.",dzStarting:"Palaiž…",dzStarted:"{t} tagad skan.",dzPlayFail:"Neizdevās palaist: {d}",dzNotLinked:"Šim skaļrunim nav Deezer konta, un bez Bose mākoņa jaunu savienot nav iespējams. Atskaņo Deezer no tālruņa caur Bluetooth vai caur AirPlay, ja skaļrunim tas ir.",dzUnavailable:"Skaļruņa Deezer pieteikšanās pašlaik nedarbojas. Pārbaudi Deezer kartīti sadaļā Vairāk.",dzUnresolved:"Šī nav Deezer atskaņošanas saraksta, albuma vai dziesmas saite. Atver to pārlūkā un nokopē adresi no adreses joslas.",dzHomeTitle:"Deezer pieteikšanās tavās mājās",dzHomeHint:"Pieteikšanās nonāk citā skaļrunī tikai tad, kad nospied Kopēt. Pati pieteikšanās nekad netiek parādīta.",dzHomeThis:"{n} (šis skaļrunis)",dzHomeWorks:"Deezer darbojas",dzHomeConnecting:"Piesakās Deezer",dzHomeNoLogin:"Nav Deezer pieteikšanās",dzHomeRefused:"Deezer noraida pieteikšanos",dzHomeNotSetUp:"Deezer nav iestatīts",dzHomeUnknown:"No šejienes nav sasniedzams",dzHomeOldAgent:"Vajag jaunāku ST Reborn",dzHomeKeptOwn:"STR glabā savu pieteikšanos (kopš {d})",dzHomeKeptReg:"STR glabā skaļruņa reģistrēto pieteikšanos (kopš {d})",dzHomeKeptCopied:"STR glabā no {n} nokopētu pieteikšanos (kopš {d})",dzHomeKeptRestored:"STR glabā atjaunotu vecāku pieteikšanos (kopš {d})",dzHomeKeptYes:"STR glabā pieteikšanos",dzHomeKeptNone:"STR neglabā nevienu pieteikšanos",dzHomeOlder1:"Rezerves kopijā: 1 vecāka pieteikšanās",dzHomeOlderN:"Rezerves kopijā: {c} vecākas pieteikšanās",dzHomeSame:"Tas pats Deezer konts",dzHomeOther:"Cits Deezer konts",dzHomeCopyTo:"Kopēt uz {n}",dzHomeCopyAll:"Kopēt uz visiem, kam tā vajadzīga",dzHomeUseOlder:"Izmantot vecāko pieteikšanos",dzHomeCopying:"Kopē…",dzHomeCopied:"{n} pieņēma pieteikšanos un piesakās Deezer.",dzHomeCopyRefused:"{n} nepieņēma pieteikšanos ({r}).",dzHomeCopyUnreachable:"{n} neatbildēja.",dzHomeCopyNotNeeded:"{n} vairs nevajag pieteikšanos.",dzHomeCopyOther:"{n} izmanto citu Deezer kontu.",dzHomeCopyOldAgent:"{n} vispirms vajag jaunāku ST Reborn.",dzHomeCopyNone:"Pašlaik nevienam skaļrunim šī pieteikšanās nav vajadzīga.",dzHomeCopyFail:"Nokopēt neizdevās: {e}",dzHomeOlderDone:"Vecākā pieteikšanās ir atpakaļ. Skaļrunis ar to piesakās Deezer.",dzHomeOlderFail:"Vecāko pieteikšanos neizdevās atjaunot: {e}"},
   uk:{dzBeta:"Бета",dzBetaHint:"Deezer у ST Reborn новий і ще не підтверджений на кожній колонці.",dzSum:"Новий вхід у Deezer без хмари Bose неможливий. Обліковий запис Deezer, який уже раніше був підключений до цієї колонки, працює далі, і посилання та кнопки Deezer на ній грають. Інакше відтворюйте Deezer з телефона через Bluetooth або через AirPlay, якщо колонка його має.",dzDiag:"Якщо підключений обліковий запис Deezer перестав грати, збережіть діагностичний файл і надішліть його.",dzStuck:"Клієнт Deezer на колонці завис після попередньої спроби входу. Від’єднайте колонку від живлення на десять секунд, щоб це виправити.",dzRejected:"Deezer відхилив вхід Deezer, підключений до цієї колонки. Без хмари Bose його не можна поновити.",dzDisconnect:"Відключити",dzRefresh:"Перевірити ще раз",dzDiscConfirm:"Відключити Deezer? Колонка забуде обліковий запис Deezer. Новий вхід у Deezer без хмари Bose неможливий, тож кнопки з плейлистами Deezer більше ніколи не гратимуть.",dzDisconnected:"Відключено.",dzDiscFail:"Колонка не видалила обліковий запис: {d}",dzStConnected:"Підключено як {a}. Готово до відтворення.",dzStConnectedNoName:"Підключено. Готово до відтворення.",dzStConnecting:"Колонка повертає свій вхід у Deezer. Це може тривати хвилину.",dzStRefused:"Колонка відхилила вхід ({d}).",dzStNoAnswer:"Колонка не відповіла на вхід.",dzStNotReady:"Колонка прийняла вхід, але без хмари Bose не може його завершити ({d}).",dzStUnavailable:"На колонці є обліковий запис Deezer, але вхід не виконано.",dzStNotConnected:"До цієї колонки не підключено жодного облікового запису Deezer.",dzStUnknown:"Колонка не відповіла.",dzLinkHint:"Щоб відтворити плейлист, альбом або трек Deezer, вставте його посилання в пошук станцій. Утримуйте кнопку під час відтворення, щоб зберегти його на ній.",dzAlbum:"Альбом",dzTrack:"Трек",dzPlaylist:"Плейлист",dzShare:"Посилання для поширення",dzLinkNote:"Грає через вбудований клієнт Deezer колонки. Утримуйте кнопку під час відтворення, щоб зберегти його на ній.",dzStarting:"Запуск…",dzStarted:"{t} зараз грає.",dzPlayFail:"Не запустилося: {d}",dzNotLinked:"На цій колонці немає облікового запису Deezer, а без хмари Bose новий підключити неможливо. Відтворюйте Deezer з телефона через Bluetooth або через AirPlay, якщо колонка його має.",dzUnavailable:"Вхід у Deezer на колонці зараз не працює. Перегляньте картку Deezer у розділі Більше.",dzUnresolved:"Це не посилання на плейлист, альбом або трек Deezer. Відкрийте його в браузері й скопіюйте адресу з адресного рядка.",dzHomeTitle:"Входи Deezer у вашому домі",dzHomeHint:"Вхід потрапляє на іншу колонку лише тоді, коли ви натискаєте «Копіювати». Сам вхід ніколи не показується.",dzHomeThis:"{n} (ця колонка)",dzHomeWorks:"Deezer працює",dzHomeConnecting:"Входить у Deezer",dzHomeNoLogin:"Немає входу Deezer",dzHomeRefused:"Deezer відхиляє вхід",dzHomeNotSetUp:"Deezer не налаштовано",dzHomeUnknown:"Недоступна звідси",dzHomeOldAgent:"Потрібен новіший ST Reborn",dzHomeKeptOwn:"STR зберігає власний вхід (з {d})",dzHomeKeptReg:"STR зберігає вхід, який зареєструвала колонка (з {d})",dzHomeKeptCopied:"STR зберігає вхід, скопійований з {n} (з {d})",dzHomeKeptRestored:"STR зберігає старіший вхід, який повернули (з {d})",dzHomeKeptYes:"STR зберігає вхід",dzHomeKeptNone:"STR не зберігає жодного входу",dzHomeOlder1:"1 старіший вхід у резервній копії",dzHomeOlderN:"{c} старіші входи в резервній копії",dzHomeSame:"Той самий обліковий запис Deezer",dzHomeOther:"Інший обліковий запис Deezer",dzHomeCopyTo:"Копіювати на {n}",dzHomeCopyAll:"Копіювати на всі, яким він потрібен",dzHomeUseOlder:"Використати старіший вхід",dzHomeCopying:"Копіювання…",dzHomeCopied:"{n} прийняла вхід і входить у Deezer.",dzHomeCopyRefused:"{n} не прийняла вхід ({r}).",dzHomeCopyUnreachable:"{n} не відповіла.",dzHomeCopyNotNeeded:"{n} більше не потребує входу.",dzHomeCopyOther:"{n} використовує інший обліковий запис Deezer.",dzHomeCopyOldAgent:"{n} спершу потрібен новіший ST Reborn.",dzHomeCopyNone:"Зараз жодній колонці цей вхід не потрібен.",dzHomeCopyFail:"Не вдалося скопіювати: {e}",dzHomeOlderDone:"Старіший вхід повернуто. Колонка входить з ним у Deezer.",dzHomeOlderFail:"Не вдалося повернути старіший вхід: {e}"}
+};
+// Administrator-access strings: the remaining locales fall back to English
+// through the same per-key lookup as the dictionaries above.
+var I18N8 = {
+  en:{adminTitle:"Administrator access",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Password protection is off. Anyone on your home network can change settings.",adminLocked:"Settings are locked. Enter the administrator password to unlock them.",adminUnlocked:"Settings are unlocked in this browser for up to 12 hours.",adminPassword:"Administrator password",adminNewPassword:"New password (8 characters minimum)",adminSet:"Set password and enable protection",adminUnlock:"Unlock settings",adminChange:"Change password",adminLogout:"Sign out",adminDisable:"Turn off password",adminSaved:"Saved.",adminWrong:"Password was not accepted.",adminDisabledOk:"Password protection is off.",adminConfirm:"Turn off administrator password protection?"},
+  de:{adminTitle:"Administratorzugang",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Der Passwortschutz ist ausgeschaltet. Alle im Heimnetz können Einstellungen ändern.",adminLocked:"Einstellungen gesperrt. Gib das Administratorpasswort ein.",adminUnlocked:"Einstellungen sind in diesem Browser bis zu 12 Stunden entsperrt.",adminPassword:"Administratorpasswort",adminNewPassword:"Neues Passwort (mindestens 8 Zeichen)",adminSet:"Passwort festlegen und Schutz aktivieren",adminUnlock:"Einstellungen entsperren",adminChange:"Passwort ändern",adminLogout:"Abmelden",adminDisable:"Passwortschutz ausschalten",adminSaved:"Gespeichert.",adminWrong:"Passwort nicht akzeptiert.",adminDisabledOk:"Passwortschutz ist ausgeschaltet.",adminConfirm:"Administrator-Passwortschutz ausschalten?"},
+  nl:{adminTitle:"Beheerderstoegang",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Wachtwoordbeveiliging staat uit. Iedereen op je thuisnetwerk kan instellingen wijzigen.",adminLocked:"Instellingen zijn vergrendeld. Vul het beheerderswachtwoord in.",adminUnlocked:"Instellingen zijn in deze browser tot 12 uur ontgrendeld.",adminPassword:"Beheerderswachtwoord",adminNewPassword:"Nieuw wachtwoord (minimaal 8 tekens)",adminSet:"Wachtwoord instellen en beveiligen",adminUnlock:"Instellingen ontgrendelen",adminChange:"Wachtwoord wijzigen",adminLogout:"Afmelden",adminDisable:"Wachtwoord uitschakelen",adminSaved:"Opgeslagen.",adminWrong:"Wachtwoord niet geaccepteerd.",adminDisabledOk:"Wachtwoordbeveiliging staat uit.",adminConfirm:"Wachtwoordbeveiliging uitschakelen?"},
+  fr:{adminTitle:"Accès administrateur",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"La protection par mot de passe est désactivée. Toute personne sur votre réseau peut modifier les réglages.",adminLocked:"Réglages verrouillés. Saisissez le mot de passe administrateur.",adminUnlocked:"Réglages déverrouillés dans ce navigateur pendant 12 heures maximum.",adminPassword:"Mot de passe administrateur",adminNewPassword:"Nouveau mot de passe (8 caractères minimum)",adminSet:"Définir le mot de passe et activer la protection",adminUnlock:"Déverrouiller les réglages",adminChange:"Modifier le mot de passe",adminLogout:"Se déconnecter",adminDisable:"Désactiver le mot de passe",adminSaved:"Enregistré.",adminWrong:"Mot de passe refusé.",adminDisabledOk:"La protection par mot de passe est désactivée.",adminConfirm:"Désactiver la protection administrateur ?"},
+  es:{adminTitle:"Acceso de administrador",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"La protección por contraseña está desactivada. Cualquiera en tu red puede cambiar los ajustes.",adminLocked:"Ajustes bloqueados. Introduce la contraseña de administrador.",adminUnlocked:"Ajustes desbloqueados en este navegador durante un máximo de 12 horas.",adminPassword:"Contraseña de administrador",adminNewPassword:"Contraseña nueva (mínimo 8 caracteres)",adminSet:"Crear contraseña y activar protección",adminUnlock:"Desbloquear ajustes",adminChange:"Cambiar contraseña",adminLogout:"Cerrar sesión",adminDisable:"Desactivar contraseña",adminSaved:"Guardado.",adminWrong:"Contraseña no aceptada.",adminDisabledOk:"La protección por contraseña está desactivada.",adminConfirm:"¿Desactivar la protección de administrador?"},
+  it:{adminTitle:"Accesso amministratore",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"La protezione con password è disattivata. Chiunque sulla rete domestica può cambiare le impostazioni.",adminLocked:"Impostazioni bloccate. Inserisci la password amministratore.",adminUnlocked:"Impostazioni sbloccate in questo browser per un massimo di 12 ore.",adminPassword:"Password amministratore",adminNewPassword:"Nuova password (almeno 8 caratteri)",adminSet:"Imposta la password e attiva la protezione",adminUnlock:"Sblocca impostazioni",adminChange:"Cambia password",adminLogout:"Esci",adminDisable:"Disattiva password",adminSaved:"Salvato.",adminWrong:"Password non accettata.",adminDisabledOk:"La protezione con password è disattivata.",adminConfirm:"Disattivare la protezione amministratore?"},
+  ja:{adminTitle:"管理者アクセス",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"パスワード保護はオフです。ホームネットワーク上の全員が設定を変更できます。",adminLocked:"設定はロックされています。管理者パスワードを入力してください。",adminUnlocked:"このブラウザーでは最大12時間設定が解除されます。",adminPassword:"管理者パスワード",adminNewPassword:"新しいパスワード（8文字以上）",adminSet:"パスワードを設定して保護を有効にする",adminUnlock:"設定を解除",adminChange:"パスワードを変更",adminLogout:"ログアウト",adminDisable:"パスワードを無効にする",adminSaved:"保存しました。",adminWrong:"パスワードが違います。",adminDisabledOk:"パスワード保護はオフです。",adminConfirm:"管理者パスワード保護を無効にしますか？"},
+  lt:{adminTitle:"Administratoriaus prieiga",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Apsauga slaptažodžiu išjungta. Visi namų tinklo naudotojai gali keisti nustatymus.",adminLocked:"Nustatymai užrakinti. Įveskite administratoriaus slaptažodį.",adminUnlocked:"Šioje naršyklėje nustatymai atrakinti iki 12 valandų.",adminPassword:"Administratoriaus slaptažodis",adminNewPassword:"Naujas slaptažodis (mažiausiai 8 ženklai)",adminSet:"Nustatyti slaptažodį ir įjungti apsaugą",adminUnlock:"Atrakinti nustatymus",adminChange:"Keisti slaptažodį",adminLogout:"Atsijungti",adminDisable:"Išjungti slaptažodį",adminSaved:"Išsaugota.",adminWrong:"Slaptažodis netinka.",adminDisabledOk:"Apsauga slaptažodžiu išjungta.",adminConfirm:"Išjungti administratoriaus apsaugą?"},
+  lv:{adminTitle:"Administratora piekļuve",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Paroles aizsardzība ir izslēgta. Ikviens mājas tīklā var mainīt iestatījumus.",adminLocked:"Iestatījumi ir bloķēti. Ievadiet administratora paroli.",adminUnlocked:"Iestatījumi šajā pārlūkā ir atbloķēti līdz 12 stundām.",adminPassword:"Administratora parole",adminNewPassword:"Jauna parole (vismaz 8 rakstzīmes)",adminSet:"Iestatīt paroli un ieslēgt aizsardzību",adminUnlock:"Atbloķēt iestatījumus",adminChange:"Mainīt paroli",adminLogout:"Izrakstīties",adminDisable:"Izslēgt paroli",adminSaved:"Saglabāts.",adminWrong:"Parole nav pieņemta.",adminDisabledOk:"Paroles aizsardzība ir izslēgta.",adminConfirm:"Izslēgt administratora aizsardzību?"},
+  pl:{adminTitle:"Dostęp administratora",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Ochrona hasłem jest wyłączona. Każda osoba w domowej sieci może zmieniać ustawienia.",adminLocked:"Ustawienia są zablokowane. Wpisz hasło administratora.",adminUnlocked:"Ustawienia w tej przeglądarce są odblokowane przez maksymalnie 12 godzin.",adminPassword:"Hasło administratora",adminNewPassword:"Nowe hasło (co najmniej 8 znaków)",adminSet:"Ustaw hasło i włącz ochronę",adminUnlock:"Odblokuj ustawienia",adminChange:"Zmień hasło",adminLogout:"Wyloguj",adminDisable:"Wyłącz hasło",adminSaved:"Zapisano.",adminWrong:"Hasło nie zostało przyjęte.",adminDisabledOk:"Ochrona hasłem jest wyłączona.",adminConfirm:"Wyłączyć ochronę administratora?"},
+  tr:{adminTitle:"Yönetici erişimi",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Parola koruması kapalı. Ev ağındaki herkes ayarları değiştirebilir.",adminLocked:"Ayarlar kilitli. Yönetici parolasını girin.",adminUnlocked:"Ayarlar bu tarayıcıda 12 saate kadar açık kalır.",adminPassword:"Yönetici parolası",adminNewPassword:"Yeni parola (en az 8 karakter)",adminSet:"Parolayı belirle ve korumayı aç",adminUnlock:"Ayarların kilidini aç",adminChange:"Parolayı değiştir",adminLogout:"Oturumu kapat",adminDisable:"Parolayı kapat",adminSaved:"Kaydedildi.",adminWrong:"Parola kabul edilmedi.",adminDisabledOk:"Parola koruması kapalı.",adminConfirm:"Yönetici parola koruması kapatılsın mı?"},
+  ar:{adminTitle:"دخول المسؤول",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"الحماية بكلمة مرور متوقفة. يمكن لأي شخص على شبكتك المنزلية تغيير الإعدادات.",adminLocked:"الإعدادات مقفلة. أدخل كلمة مرور المسؤول.",adminUnlocked:"الإعدادات مفتوحة في هذا المتصفح لمدة تصل إلى 12 ساعة.",adminPassword:"كلمة مرور المسؤول",adminNewPassword:"كلمة مرور جديدة (8 أحرف على الأقل)",adminSet:"تعيين كلمة المرور وتفعيل الحماية",adminUnlock:"فتح الإعدادات",adminChange:"تغيير كلمة المرور",adminLogout:"تسجيل الخروج",adminDisable:"إيقاف كلمة المرور",adminSaved:"تم الحفظ.",adminWrong:"كلمة المرور غير صحيحة.",adminDisabledOk:"الحماية بكلمة مرور متوقفة.",adminConfirm:"إيقاف حماية المسؤول؟"},
+  uk:{adminTitle:"Доступ адміністратора",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"Захист паролем вимкнено. Будь-хто у домашній мережі може змінити налаштування.",adminLocked:"Налаштування заблоковано. Введіть пароль адміністратора.",adminUnlocked:"Налаштування розблоковано в цьому браузері на строк до 12 годин.",adminPassword:"Пароль адміністратора",adminNewPassword:"Новий пароль (щонайменше 8 символів)",adminSet:"Задати пароль і ввімкнути захист",adminUnlock:"Розблокувати налаштування",adminChange:"Змінити пароль",adminLogout:"Вийти",adminDisable:"Вимкнути пароль",adminSaved:"Збережено.",adminWrong:"Пароль не прийнято.",adminDisabledOk:"Захист паролем вимкнено.",adminConfirm:"Вимкнути захист адміністратора?"},
+  "zh-Hant":{adminTitle:"管理員存取權",adminDesktopOnly:"To unlock from your phone, open the secure page. Passwords are sent only over HTTPS.",adminDisabled:"密碼保護已關閉。家用網路上的任何人都能變更設定。",adminLocked:"設定已鎖定。請輸入管理員密碼。",adminUnlocked:"此瀏覽器中的設定已解鎖，最長 12 小時。",adminPassword:"管理員密碼",adminNewPassword:"新密碼（至少 8 個字元）",adminSet:"設定密碼並啟用保護",adminUnlock:"解鎖設定",adminChange:"變更密碼",adminLogout:"登出",adminDisable:"關閉密碼",adminSaved:"已儲存。",adminWrong:"密碼不正確。",adminDisabledOk:"密碼保護已關閉。",adminConfirm:"要關閉管理員密碼保護嗎？"}
 };
 var T = pickDict();
 // The UI 2.0 preview switch, read once (the head script set html.ui2 from it).
@@ -1716,6 +1750,92 @@ async function apiDetail(path, method, body, ms) {
   if (!r.ok) console.error(path, r.status, data);
   return { ok: r.ok, status: r.status, data: data };
 }
+
+var adminAuthView = { enabled: false, authenticated: false };
+function paintAdminAuth() {
+  var secure = window.location.protocol === 'https:';
+  var status = document.getElementById('adminAuthStatus');
+  var note = document.getElementById('adminAuthDesktopOnly');
+  var secureLink = document.getElementById('adminAuthSecureLink');
+  var controls = document.getElementById('adminAuthPhoneControls');
+  var input = document.getElementById('adminAuthPassword');
+  var action = document.getElementById('adminAuthAction');
+  var logout = document.getElementById('adminAuthLogout');
+  var disable = document.getElementById('adminAuthDisable');
+  document.getElementById('adminAuthTitle').textContent = T.adminTitle;
+  if (!secure) {
+    status.textContent = adminAuthView.enabled ? T.adminLocked : T.adminDisabled;
+    note.textContent = T.adminDesktopOnly;
+    note.hidden = false;
+    secureLink.href = 'https://' + window.location.host + window.location.pathname + window.location.search;
+    secureLink.textContent = T.adminUnlock;
+    secureLink.hidden = false;
+    controls.hidden = true;
+    return;
+  }
+  note.hidden = true;
+  secureLink.hidden = true;
+  controls.hidden = false;
+  status.textContent = adminAuthView.enabled
+    ? (adminAuthView.authenticated ? T.adminUnlocked : T.adminLocked)
+    : T.adminDisabled;
+  input.placeholder = adminAuthView.enabled ? T.adminPassword : T.adminNewPassword;
+  input.autocomplete = adminAuthView.enabled ? 'current-password' : 'new-password';
+  input.setAttribute('aria-label', input.placeholder);
+  action.textContent = !adminAuthView.enabled ? T.adminSet
+    : adminAuthView.authenticated ? T.adminChange : T.adminUnlock;
+  logout.textContent = T.adminLogout;
+  disable.textContent = T.adminDisable;
+  logout.hidden = !adminAuthView.authenticated;
+  disable.hidden = !adminAuthView.authenticated;
+}
+async function loadAdminAuth() {
+  var r = await apiDetail('/api/admin/status');
+  if (!r.ok || !r.data) return;
+  adminAuthView = { enabled: !!r.data.enabled, authenticated: !!r.data.authenticated };
+  paintAdminAuth();
+}
+async function submitAdminAuth() {
+  if (window.location.protocol !== 'https:') return;
+  var input = document.getElementById('adminAuthPassword');
+  var msg = document.getElementById('adminAuthMessage');
+  var password = input.value;
+  if (password.length < 8) { msg.textContent = T.adminNewPassword; input.focus(); return; }
+  var path = !adminAuthView.enabled ? '/api/admin/setup'
+    : adminAuthView.authenticated ? '/api/admin/password' : '/api/admin/login';
+  var method = adminAuthView.authenticated ? 'PUT' : 'POST';
+  var body = { password: password };
+  if (!adminAuthView.enabled) {
+    var recovery = new Uint8Array(32);
+    window.crypto.getRandomValues(recovery);
+    body.recoveryKey = Array.from(recovery, function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  var result = await apiDetail(path, method, body);
+  input.value = '';
+  if (!result.ok) {
+    msg.textContent = result.status === 401 ? T.adminWrong : String(result.data || T.adminWrong);
+    await loadAdminAuth();
+    return;
+  }
+  msg.textContent = T.adminSaved;
+  await loadAdminAuth();
+  loadSettings(); loadPresets(); loadAlarms();
+}
+async function logoutAdminAuth() {
+  if (window.location.protocol !== 'https:') return;
+  var result = await apiDetail('/api/admin/logout', 'POST', {});
+  if (result.ok) await loadAdminAuth();
+}
+async function disableAdminAuth() {
+  if (window.location.protocol !== 'https:' || !window.confirm(T.adminConfirm)) return;
+  var result = await apiDetail('/api/admin/password', 'DELETE');
+  var msg = document.getElementById('adminAuthMessage');
+  if (!result.ok) { msg.textContent = String(result.data || T.adminWrong); return; }
+  msg.textContent = T.adminDisabledOk;
+  await loadAdminAuth();
+  loadSettings(); loadPresets(); loadAlarms();
+}
+
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 // decodeEntities turns the HTML/XML entities the box emits in its now_playing
 // track text (e.g. &apos; &#39; &amp;) back into their characters. The box
@@ -9542,6 +9662,10 @@ async function loadRemembered() {
 
 // UI 2.0 preview: reparent the cards once, before anything paints into them.
 if (ui2On) mountUi2();
+document.getElementById('adminAuthAction').addEventListener('click', submitAdminAuth);
+document.getElementById('adminAuthLogout').addEventListener('click', logoutAdminAuth);
+document.getElementById('adminAuthDisable').addEventListener('click', disableAdminAuth);
+loadAdminAuth();
 applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone(); loadSleep(); loadAlarms(); loadMusicLib(); loadPlayMode().catch(function(){}); loadRecent().catch(function(){}); loadFavorites().catch(function(){}); loadPandora().catch(function(){}); loadBrowseServers().catch(function(){}); loadRemembered().catch(function(){});
 // None of these ticks run while the page is in the background. A phone that
 // went back to its home screen, or a tab behind another, kept asking the

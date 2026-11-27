@@ -10,6 +10,22 @@ export function AddBoxByIP(arg1:string):Promise<main.BoxInfo>;
 
 export function AddMediaServerByURL(arg1:string):Promise<main.LibraryServer>;
 
+export function AdminAuthStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function AdminChangePassword(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function AdminForceResetPassword(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function AdminLogin(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function AdminLogout(arg1:string,arg2:number):Promise<void>;
+
+export function AdminSetupPassword(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function AdminTLSFingerprint(arg1:string,arg2:number):Promise<string>;
+
+export function AdminTrustTLSFingerprint(arg1:string,arg2:string):Promise<void>;
+
 export function AllowThroughFirewall(arg1:boolean):Promise<main.FirewallUnblockResult>;
 
 export function AnnounceExample(arg1:string,arg2:number):Promise<string>;

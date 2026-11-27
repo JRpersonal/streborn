@@ -10,6 +10,38 @@ export function AddMediaServerByURL(arg1) {
   return window['go']['main']['App']['AddMediaServerByURL'](arg1);
 }
 
+export function AdminAuthStatus(arg1, arg2) {
+  return window['go']['main']['App']['AdminAuthStatus'](arg1, arg2);
+}
+
+export function AdminChangePassword(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AdminChangePassword'](arg1, arg2, arg3);
+}
+
+export function AdminForceResetPassword(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AdminForceResetPassword'](arg1, arg2, arg3);
+}
+
+export function AdminLogin(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AdminLogin'](arg1, arg2, arg3);
+}
+
+export function AdminLogout(arg1, arg2) {
+  return window['go']['main']['App']['AdminLogout'](arg1, arg2);
+}
+
+export function AdminSetupPassword(arg1, arg2, arg3) {
+  return window['go']['main']['App']['AdminSetupPassword'](arg1, arg2, arg3);
+}
+
+export function AdminTLSFingerprint(arg1, arg2) {
+  return window['go']['main']['App']['AdminTLSFingerprint'](arg1, arg2);
+}
+
+export function AdminTrustTLSFingerprint(arg1, arg2) {
+  return window['go']['main']['App']['AdminTrustTLSFingerprint'](arg1, arg2);
+}
+
 export function AllowThroughFirewall(arg1) {
   return window['go']['main']['App']['AllowThroughFirewall'](arg1);
 }

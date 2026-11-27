@@ -4,6 +4,7 @@ package webui
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 
 	"github.com/JRpersonal/streborn/internal/alarm"
@@ -174,6 +175,31 @@ func WithRegion(cc string) Option {
 // /api/region (PUT). Without this path changes are only in memory.
 func WithRegionFile(path string) Option {
 	return func(s *Server) { s.regionFile = path }
+}
+
+// WithAdminAuthPath enables optional administrator password protection and
+// stores the salted password hash at path. A missing file leaves protection
+// disabled, preserving the default behavior.
+func WithAdminAuthPath(path string) Option {
+	return func(s *Server) {
+		a, err := newAdminAuthState(path)
+		s.adminAuth = a
+		if err != nil {
+			s.logger.Error("administrator password file could not be loaded; protected APIs are locked until the file is repaired or removed", "err", err)
+			return
+		}
+	}
+}
+
+// WithAdminTLSCertificate enables TLS on the existing web UI port. The
+// listener still accepts HTTP for playback and phone use; desktop-only
+// administrator requests are required to use the TLS side.
+func WithAdminTLSCertificate(cert *tls.Certificate) Option {
+	return func(s *Server) {
+		if cert != nil {
+			s.adminTLS = &tls.Config{Certificates: []tls.Certificate{*cert}, MinVersion: tls.VersionTLS12}
+		}
+	}
 }
 
 // WithResumeOnPowerOnFile sets the persistent path for the per-box "resume the

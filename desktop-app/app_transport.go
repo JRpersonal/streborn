@@ -215,6 +215,9 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 // were told had failed (#442, and the zone timeouts in the 2026-07-28 ST10
 // bundle).
 func (a *App) boxDoTimeout(host string, port int, method, path, contentType, body string, timeout time.Duration) (*http.Response, error) {
+	if desktopAdminRequired(path, method) && a.adminProtectionEnabled(host, port) {
+		return a.adminBoxDo(host, port, method, path, contentType, body, timeout)
+	}
 	client := a.httpClient
 	if timeout > 0 {
 		c := *a.httpClient
@@ -299,6 +302,58 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 	}
 	if stranger != nil {
 		return stranger, nil
+	}
+	return nil, a.reachabilityHintFor(host, allPortsError(failed))
+}
+
+// adminBoxDo carries protected desktop API traffic over the certificate-pinned
+// TLS connection. It keeps the same port fallback and avoids retrying a write
+// after the speaker has already received it.
+func (a *App) adminBoxDo(host string, port int, method, path, contentType, body string, timeout time.Duration) (*http.Response, error) {
+	var failed []portFailure
+	cands := a.candidatePorts(host, port)
+	for _, p := range cands {
+		client, err := a.adminTLSClient(host, p)
+		if err != nil {
+			return nil, err
+		}
+		if timeout > 0 {
+			client.Timeout = timeout
+		}
+		url := "https://" + net.JoinHostPort(host, fmt.Sprint(p)) + path
+		var rdr io.Reader
+		if body != "" {
+			rdr = strings.NewReader(body)
+		}
+		var wrote bool
+		trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { wrote = true }}
+		req, err := http.NewRequestWithContext(httptrace.WithClientTrace(a.appCtx(), trace), method, url, rdr)
+		if err != nil {
+			return nil, err
+		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		req.Header.Set("X-STR-Desktop-Admin", "1")
+		resp, err := client.Do(req)
+		if err == nil {
+			if notTheAgent(resp, path) {
+				resp.Body.Close()
+				a.forgetPort(host)
+				continue
+			}
+			a.rememberPort(host, p)
+			return resp, nil
+		}
+		failed = append(failed, portFailure{port: p, err: err})
+		if wrote && !idempotentMethod(method) {
+			a.rememberPort(host, p)
+			return nil, fmt.Errorf("the speaker took the protected request but did not answer in time: %w", err)
+		}
+		if !isTransportNotReady(err) {
+			return nil, err
+		}
+		a.forgetPort(host)
 	}
 	return nil, a.reachabilityHintFor(host, allPortsError(failed))
 }

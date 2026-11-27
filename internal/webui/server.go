@@ -5,6 +5,7 @@ package webui
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -105,7 +106,11 @@ type Server struct {
 	groupFollowT            *groupFollowTiming
 	volumeKeyTraceHealthyFn func() bool
 	logger                  *slog.Logger
-	presets                 *presets.Store
+	// adminAuth protects configuration and maintenance APIs when the owner
+	// chooses to set a password. See adminauth.go.
+	adminAuth *adminAuthState
+	adminTLS  *tls.Config
+	presets   *presets.Store
 	// snapshotPath is the NAND file where the agent persisted the box's
 	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
 	// by GET /api/box/snapshot so the app can warn about account-linked cloud
@@ -1951,6 +1956,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
 	s.baseCtx = ctx
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/", s.handleAdminAuth)
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("/icon.png", s.handleIcon)
@@ -2190,7 +2196,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// keep alive requests.
 	srv := &http.Server{
 		Addr:              s.addr,
-		Handler:           corsMiddleware(mux),
+		Handler:           corsMiddleware(s.adminAuthMiddleware(mux)),
 		ReadHeaderTimeout: agentReadHeaderTimeout,
 		IdleTimeout:       agentIdleTimeout,
 	}
@@ -2203,20 +2209,42 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("webui listen %s: %w", s.addr, err)
 	}
 	s.logger.Warn("webui phase: ListenTCP succeeded, starting Serve", "addr", s.addr, "local", ln.Addr().String())
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- srv.Serve(ln)
-	}()
+	errCh := make(chan error, 2)
+	var tlsSrv *http.Server
+	var protocolLn *protocolListener
+	if s.adminTLS != nil {
+		protocolLn = newProtocolListener(ln)
+		tlsSrv = &http.Server{Handler: srv.Handler, ReadHeaderTimeout: agentReadHeaderTimeout, IdleTimeout: agentIdleTimeout}
+		go func() { errCh <- srv.Serve(protocolLn.HTTP()) }()
+		go func() { errCh <- tlsSrv.Serve(tls.NewListener(protocolLn.TLS(), s.adminTLS)) }()
+	} else {
+		go func() { errCh <- srv.Serve(ln) }()
+	}
 	// The alarm scheduler outlives every request, so it hangs off the server's
 	// context rather than any one of them. It returns on ctx.Done.
 	go s.runAlarms(ctx)
 
 	select {
 	case <-ctx.Done():
+		if protocolLn != nil {
+			_ = protocolLn.Close()
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
+		if tlsSrv != nil {
+			_ = tlsSrv.Shutdown(shutdownCtx)
+		}
 		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
+		if protocolLn != nil {
+			_ = protocolLn.Close()
+		}
+		if tlsSrv != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			_ = tlsSrv.Shutdown(shutdownCtx)
+			_ = srv.Shutdown(shutdownCtx)
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}

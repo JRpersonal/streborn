@@ -27,6 +27,14 @@ import {
   SaveWebhookConfig,
   TestWebhookAction,
   SyncBoxPresets,
+  AdminTLSFingerprint,
+  AdminTrustTLSFingerprint,
+  AdminAuthStatus,
+  AdminSetupPassword,
+  AdminLogin,
+  AdminChangePassword,
+  AdminForceResetPassword,
+  AdminLogout,
 } from '../../api.js';
 import {
   deps, helpBlock, discussLink, revealInSettings, confirmFor,
@@ -119,6 +127,31 @@ export function renderAdvancedSections() {
   return {
     group: 'advanced',
     html: `
+    <details data-ui2-sec="adminAccess" class="settings-section settings-expert" id="adminAccessSection">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.adminAccessHeading'))}</summary>
+      ${helpBlock(t('settingsView.adminAccessHelp'))}
+      <div class="setting-row">
+        <button class="btn btn-mini" id="adminTLSConnect">${escapeHtml(t('settingsView.adminConnect'))}</button>
+        <span class="muted small" id="adminTLSStatus" role="status" aria-live="polite"></span>
+      </div>
+      <div class="hidden" id="adminTLSConfirm">
+        <small class="muted small">${escapeHtml(t('settingsView.adminFingerprintPrompt'))}</small>
+        <code id="adminTLSFingerprint" style="display:block;overflow-wrap:anywhere;margin:6px 0"></code>
+        <button class="btn btn-mini" id="adminTLSTrust">${escapeHtml(t('settingsView.adminTrust'))}</button>
+      </div>
+      <div class="hidden" id="adminPasswordControls">
+        <div class="setting-row" style="margin-top:8px">
+          <input id="adminPasswordInput" type="password" autocomplete="new-password" maxlength="1024" placeholder="${escapeAttr(t('settingsView.adminPasswordPlaceholder'))}" style="flex:1" />
+          <button class="btn btn-mini btn-primary" id="adminPasswordAction">${escapeHtml(t('settingsView.adminSavePassword'))}</button>
+        </div>
+        <div class="setting-row">
+          <button class="btn btn-mini" id="adminPasswordForceReset">${escapeHtml(t('settingsView.adminForceReset'))}</button>
+          <button class="btn btn-mini" id="adminPasswordLogout">${escapeHtml(t('settingsView.adminLogout'))}</button>
+        </div>
+      </div>
+      <small class="muted small" id="adminPasswordMessage" role="status" aria-live="polite"></small>
+    </details>
+
     <details data-ui2-sec="announce" class="settings-section settings-expert" id="announceSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       ${helpBlock(t('settingsView.announceHelp'))}
@@ -303,6 +336,96 @@ export function renderAdvancedSections() {
 
 export function wireAdvancedSections(ctx) {
   const { box } = ctx;
+
+  // Password credentials travel only over the pinned TLS connection. The
+  // first connection displays the speaker certificate fingerprint for an
+  // explicit trust step before any password control is enabled.
+  {
+    const connect = $('adminTLSConnect');
+    const trust = $('adminTLSTrust');
+    const status = $('adminTLSStatus');
+    const controls = $('adminPasswordControls');
+    const confirm = $('adminTLSConfirm');
+    const input = $('adminPasswordInput');
+    const action = $('adminPasswordAction');
+    const message = $('adminPasswordMessage');
+    let fingerprint = '';
+    let adminEnabled = false;
+    let adminAuthenticated = false;
+    const showError = (err) => { if (message) message.textContent = String(err); };
+    const refresh = async () => {
+      const result = await AdminAuthStatus(box.host, box.port);
+      adminEnabled = !!result.enabled;
+      adminAuthenticated = !!result.authenticated;
+      if (status) status.textContent = !adminEnabled
+        ? t('settingsView.adminProtectionOff')
+        : adminAuthenticated ? t('settingsView.adminUnlocked') : t('settingsView.adminLocked');
+      if (controls) controls.classList.remove('hidden');
+      if (input) { input.value = ''; input.autocomplete = adminEnabled ? 'current-password' : 'new-password'; }
+      if (action) action.textContent = !adminEnabled
+        ? t('settingsView.adminEnable')
+        : adminAuthenticated ? t('settingsView.adminChange') : t('settingsView.adminLogin');
+      const reset = $('adminPasswordForceReset');
+      const logout = $('adminPasswordLogout');
+      if (reset) reset.hidden = !adminEnabled;
+      if (logout) logout.hidden = !adminAuthenticated;
+    };
+    if (connect) connect.onclick = async () => {
+      connect.disabled = true;
+      if (status) status.textContent = t('settingsView.adminConnecting');
+      try {
+        fingerprint = await AdminTLSFingerprint(box.host, box.port);
+        const pinText = $('adminTLSFingerprint');
+        if (pinText) pinText.textContent = fingerprint.match(/.{1,2}/g).join(':');
+        if (confirm) confirm.classList.remove('hidden');
+        if (status) status.textContent = t('settingsView.adminVerifyFingerprint');
+      } catch (err) { showError(err); if (status) status.textContent = ''; }
+      finally { connect.disabled = false; }
+    };
+    if (trust) trust.onclick = async () => {
+      trust.disabled = true;
+      try {
+        await AdminTrustTLSFingerprint(box.host, fingerprint);
+        if (confirm) confirm.classList.add('hidden');
+        await refresh();
+      } catch (err) { showError(err); }
+      finally { trust.disabled = false; }
+    };
+    if (action) action.onclick = async () => {
+      const password = input ? input.value : '';
+      if (password.length < 8) { showError(t('settingsView.adminPasswordTooShort')); return; }
+      action.disabled = true;
+      try {
+        if (!adminEnabled) await AdminSetupPassword(box.host, box.port, password);
+        else if (!adminAuthenticated) await AdminLogin(box.host, box.port, password);
+        else await AdminChangePassword(box.host, box.port, password);
+        if (message) message.textContent = t('settingsView.adminSaved');
+        await refresh();
+      } catch (err) { showError(err); }
+      finally { action.disabled = false; }
+    };
+    const reset = $('adminPasswordForceReset');
+    if (reset) reset.onclick = async () => {
+      const ok = await confirmFor(box, t('settingsView.adminForceReset'), t('settingsView.adminForceResetConfirm'));
+      if (!ok) return;
+      const password = input ? input.value : '';
+      if (password.length < 8) { showError(t('settingsView.adminPasswordTooShort')); return; }
+      reset.disabled = true;
+      try {
+        await AdminForceResetPassword(box.host, box.port, password);
+        if (message) message.textContent = t('settingsView.adminResetDone');
+        await refresh();
+      } catch (err) { showError(err); }
+      finally { reset.disabled = false; }
+    };
+    const logout = $('adminPasswordLogout');
+    if (logout) logout.onclick = async () => {
+      logout.disabled = true;
+      try { await AdminLogout(box.host, box.port); await refresh(); }
+      catch (err) { showError(err); }
+      finally { logout.disabled = false; }
+    };
+  }
 
   // Voice control: STR itself will never speak to Alexa (the old skill was
   // Bose's cloud talking to Bose's cloud, and a new one would mean an account,

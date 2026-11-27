@@ -1033,6 +1033,25 @@ func (a *agent) buildWebui() error {
 	// The rescue agent a failed update swap started from RAM tries the write
 	// to the NAND once more itself (a no-op for any other agent).
 	webui.StartRescueRetry(ctx, logger.With("comp", "webui"))
+	var adminTLSCert *tls.Certificate
+	if a.flags.tlsEnabled {
+		tlsMgr := tlsgen.New(a.flags.tlsDir, nil, logger.With("comp", "tlsgen"))
+		bundle, regenerated, err := tlsMgr.EnsureBundle()
+		if err != nil {
+			logger.Error("admin TLS certificate unavailable; desktop administrator controls will be unavailable", "err", err)
+		} else {
+			if regenerated {
+				if err := tlsgen.RefreshTrustStore(bundle.RootCAPEM, logger.With("comp", "tlsgen")); err != nil {
+					logger.Warn("trust store refresh after CA regen failed", "err", err)
+				}
+			}
+			if cert, err := bundle.TLSCert(); err != nil {
+				logger.Error("admin TLS certificate could not be loaded", "err", err)
+			} else {
+				adminTLSCert = &cert
+			}
+		}
+	}
 
 	webuiSrv := webui.New(a.flags.webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
@@ -1043,6 +1062,8 @@ func (a *agent) buildWebui() error {
 		webui.WithAutoPair(autoPair),
 		webui.WithRegion(region),
 		webui.WithRegionFile(a.flags.regionFile),
+		webui.WithAdminAuthPath("/mnt/nv/streborn/admin-auth.json"),
+		webui.WithAdminTLSCertificate(adminTLSCert),
 		webui.WithStreamProxy(streamProxySrv),
 		// The whole Spotify control plane, audio plane and engine lifecycle
 		// in one value; see spotify_adapter.go for the glue that is not a
