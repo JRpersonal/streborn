@@ -34,6 +34,7 @@ import {
   relaxedHintVisible,
   searchModePressed,
   stationBitrateCell,
+  stationAddressAttr,
   stationCheckDot,
   syntheticStationForURL,
 } from '../../searchflow.js';
@@ -903,6 +904,9 @@ export function renderSearchResults() {
     const tagChips = translateTags(s.tags).slice(0, 4).map(tag => `<span class="tag-pill">${escapeHtml(tag)}</span>`).join('');
 
     const metaBits = [];
+    // A directory row without a known bitrate has no bitrate cell, so the
+    // whole meta line carries the stream address as its hover title (#2103).
+    let metaTitle = '';
     if (s.synthetic) {
       // The synthetic play-this-URL card: no directory metadata exists, so
       // the meta line carries the localized card label instead.
@@ -920,6 +924,7 @@ export function renderSearchResults() {
       // read as a broken stream (discussion #1521).
       const br = stationBitrateCell(s);
       if (br) metaBits.push(br);
+      else metaTitle = stationAddressAttr(s);
       if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
     }
 
@@ -943,7 +948,7 @@ export function renderSearchResults() {
             <span class="result-name-text">${escapeHtml(s.name || t('search.unnamed'))}</span>
             ${trend}
           </div>
-          <div class="result-meta">${metaBits.join(' &middot; ')}${webUrl ? ` &middot; <a href="#" class="result-site" data-i="${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : ''}</div>
+          <div class="result-meta"${metaTitle ? ` title="${metaTitle}"` : ''}>${metaBits.join(' &middot; ')}${webUrl ? ` &middot; <a href="#" class="result-site" data-i="${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : ''}</div>
           ${tagChips ? `<div class="result-tag-chips">${tagChips}</div>` : ''}
         </div>
         <div class="result-actions">
