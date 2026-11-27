@@ -228,7 +228,7 @@ func TestHandoverCoversTheQueuePush(t *testing.T) {
 	t.Parallel()
 	b := &handoverBox{source: nativeRadioSource}
 	s := newHandoverServer(t, b)
-	err := s.pushStream(t.Context(), "http://media.example/a.mp3", "Track", "", "audio/mpeg", "", 0)
+	err := s.pushStream(t.Context(), "http://media.example/a.mp3", "Track", "", "audio/mpeg", "", "", 0)
 	if !errors.Is(err, errNativeStationKept) {
 		t.Fatalf("err = %v, want errNativeStationKept", err)
 	}

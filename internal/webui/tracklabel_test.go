@@ -422,3 +422,20 @@ func TestALoneFileHandsItsArtistToTheDisplay(t *testing.T) {
 		t.Fatalf("panel = %+v, want the library track with its artist", m)
 	}
 }
+
+func TestLibraryPanelHeading(t *testing.T) {
+	cases := []struct{ folder, artist, album, want string }{
+		{"Meat Loaf", "Meat Loaf", "Bat Out of Hell", "Bat Out of Hell"},
+		{" meat loaf ", "Meat Loaf", "Bat Out of Hell", "Bat Out of Hell"},
+		{"Bat Out of Hell", "Meat Loaf", "Bat Out of Hell", "Bat Out of Hell"},
+		{"Meat Loaf", "Meat Loaf", "", "Meat Loaf"},
+		{"Party mix", "Meat Loaf", "Bat Out of Hell", "Party mix"},
+		{"", "", "Bat Out of Hell", "Bat Out of Hell"},
+		{"", "Meat Loaf", "", ""},
+	}
+	for _, c := range cases {
+		if got := libraryPanelHeading(c.folder, c.artist, c.album); got != c.want {
+			t.Errorf("libraryPanelHeading(%q, %q, %q) = %q, want %q", c.folder, c.artist, c.album, got, c.want)
+		}
+	}
+}
