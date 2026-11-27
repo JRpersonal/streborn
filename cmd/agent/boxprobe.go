@@ -63,7 +63,43 @@ func boxNowPlayingSource(boxHost string) string {
 	if !ok {
 		return ""
 	}
+	noteBoxSource(np.Source)
 	return np.Source
+}
+
+// lastBoxSource is the speaker's source as STR last learned it, from a
+// now_playing read or a gabbo source edge. It costs no request of its own.
+var lastBoxSource atomic.Value // string
+
+// noteBoxSource records a source STR has just seen. Empty readings (a failed
+// read) are not a source and keep the previous one.
+func noteBoxSource(src string) {
+	if src != "" {
+		lastBoxSource.Store(src)
+	}
+}
+
+// lastKnownBoxSource is the source noteBoxSource last recorded, "" before the
+// first one.
+func lastKnownBoxSource() string {
+	s, _ := lastBoxSource.Load().(string)
+	return s
+}
+
+// setupProbeNeeded reports whether the reconcile pass must ask /setup whether
+// the speaker is still in out-of-box setup before it writes.
+//
+// Not while the speaker sits in STANDBY: a speaker in out-of-box setup
+// reports source SETUP, never STANDBY, so the answer is known. And the
+// question is not free. BoseApp hands every GET /setup to its system
+// controller as EVT_SYSTEM_SETUP ("SysCtlr: HandleMessage(EVT_SYSTEM_SETUP)
+// >> Standby > StdOp"), unlike the /presets and /sources reads of the same
+// pass. Asked every five minutes all night, that is the one regular event a
+// sleeping speaker got from STR in 152 field bundles, and the only ST10 seen
+// dropping into deep standby (v1.3.0, 2026-11-01) was the one whose pass was
+// held and asked nothing.
+func setupProbeNeeded(src string) bool {
+	return src != "STANDBY"
 }
 
 // boxSetupState reads the firmware's OWN /setup, which is a different question

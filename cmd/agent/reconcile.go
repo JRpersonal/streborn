@@ -1604,7 +1604,7 @@ func (r *reconciler) reconcileOnce(forceFull bool) bool {
 	// spams BoseApp's log (and ours) once per cycle. Wait until the box
 	// has joined a network. Live-observed on a taigan Portable in OOB,
 	// 2026-05-31.
-	if boxInSetupOOB(boxHost) {
+	if setupProbeNeeded(lastKnownBoxSource()) && boxInSetupOOB(boxHost) {
 		logger.Debug("preset reconcile: box still in OOB setup (MargeHSM not associated), skipping until it joins a network")
 		return false
 	}

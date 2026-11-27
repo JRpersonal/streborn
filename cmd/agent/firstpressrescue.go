@@ -280,6 +280,9 @@ func (h *presetWsHandler) OnPlayFailure(ev boxlog.PlayFailure) {
 // OnSourceChanged is the boxws hook for every source transition. It runs on
 // the gabbo read loop, so the press happens in its own goroutine.
 func (h *presetWsHandler) OnSourceChanged(_ context.Context, from, to string) {
+	// the source the reconcile pass reads instead of asking the speaker
+	// (setupProbeNeeded)
+	noteBoxSource(to)
 	// leaving STR's sources takes the track off the panel (displaytrack.go);
 	// coming back out of standby is checked with the speaker first
 	// (phantomwake.go)
