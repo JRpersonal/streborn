@@ -59,6 +59,9 @@ func (a *App) repairInstallViaSSH(host, model string) (InstallResult, error) {
 		a.logger.Warn("repair_ssh: ssh handshake failed", "host", host, "err", helloErr)
 		return res, nil
 	}
+	// Before the first write: a Deezer login the speaker holds is saved now
+	// (the stick-free unlock reaches the install through here).
+	a.preserveDeezerLogin(host)
 
 	v := appVersion
 	if appBuild != "" && appBuild != "dev" {

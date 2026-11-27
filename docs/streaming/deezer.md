@@ -267,6 +267,30 @@ call answered 1024 or not at all). Below that, a compact list of the
 Deezer logins of the home's speakers, with Copy and "Use the older login"
 only where they apply (next sections).
 
+### Saving the login before an install (built)
+
+The capture in A1 runs at the agent's first start, and an install restarts
+the speaker before that. Two things happen earlier since 2026-11-27
+(`desktop-app/deezer_backup.go`):
+
+1. **No placeholder account on a Deezer speaker.** The stick-free unlock
+   seeds a throwaway account (`envswitch accountid set`) so that a speaker
+   without an account runs the check the unlock rides on. A speaker that has
+   its own account and lists `DEEZER` with an account in `/sources` checks
+   by itself, so the seed is skipped there. What the seed does to a live
+   Deezer login was never measured; this keeps the question from mattering.
+2. **The app reads `Sources.xml` as soon as it has SSH**, before the first
+   write. A Deezer login in it is saved to the app's folder on the computer
+   (`<user config>/ST Reborn/deezer-backups/`, mode 0600, the firmware's own
+   XML shape reduced to the Deezer source, named after a hash) and written
+   to the agent's kept-login file on the speaker when none is there. The
+   agent then starts with the login whatever the restart did to the
+   firmware's file. Nothing is logged but that a login was found.
+
+A `Sources.xml` the owner copied off a stock speaker by hand is the same
+kind of file as the app's copy. Putting such a file back onto a speaker from
+the app is not built; the seed in step 2 is what covers a normal install.
+
 ### Copying a kept login within a home (built, untested on hardware)
 
 A speaker whose Deezer login is gone and that keeps no working copy can never

@@ -607,6 +607,8 @@ func (a *App) installHandshake(r *installRun) bool {
 		return true
 	}
 	a.logger.Info("install_str: ssh ok", "host", host)
+	// Before the first write: a Deezer login the speaker holds is saved now.
+	a.preserveDeezerLogin(host)
 	return false
 }
 
