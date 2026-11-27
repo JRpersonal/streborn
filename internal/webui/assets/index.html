@@ -5809,21 +5809,73 @@ async function searchStations() {
   else clearLibrary();
   if (!findScopeStations(scope)) { lastResults = []; searchMsg('', false); return; }
   searchMsg(T.searching, false);
-  var path = '/json/stations/search?limit=25&hidebroken=true&order=clickcount&reverse=true&name=' + encodeURIComponent(q);
+  var base = '/json/stations/search?hidebroken=true&order=clickcount&reverse=true';
+  var words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  var jobs = [rbFetch(base + '&limit=25&name=' + encodeURIComponent(q))];
+  // The same words written together ("star fm" as "starfm"), see rbOtherSpellings.
+  if (words.length > 1) jobs.push(rbFetch(base + '&limit=' + RB_VARIANTS + '&name=' + encodeURIComponent(words.join(''))));
+  var got = await Promise.all(jobs);
+  if (token !== searchToken) return; // a newer search is already on screen
+  if (!got[0]) { searchMsg(T.netFail, true); return; }
+  var other = got[1] || [];
+  if (!got[0].length && words.length > 1) {
+    other = other.concat(await rbOtherSpellings(q, words, base));
+    if (token !== searchToken) return;
+  }
+  lastResults = rbMerge(other.slice(0, RB_VARIANTS), got[0]);
+  renderResults();
+}
+
+/* The directory matches a typed name as a plain piece of the station name, so
+   "star fm berlin" found nothing while the station is listed as "StarFM
+   Berlin", and "star fm" showed other countries' "Star FM" stations only
+   (#2140). Stations that carry the typed words under another spelling are
+   therefore looked up as well and listed first, at most RB_VARIANTS of them.
+   The desktop app does the same in radiobrowser.SearchWithVariants. */
+var RB_VARIANTS = 8;
+
+// rbFetch asks the directory mirrors in turn. A list is an answer, null means
+// no mirror answered.
+async function rbFetch(path) {
   for (var i = 0; i < RB_MIRRORS.length; i++) {
     try {
       var r = await fetch(RB_MIRRORS[i] + path, { headers: { 'Accept': 'application/json' } });
-      if (token !== searchToken) return; // a newer search is already on screen
       if (!r.ok) continue;
       var list = await r.json();
-      if (token !== searchToken) return;
-      lastResults = Array.isArray(list) ? list : [];
-      renderResults();
-      return;
+      return Array.isArray(list) ? list : [];
     } catch (e) { /* try the next mirror */ }
   }
-  if (token !== searchToken) return;
-  searchMsg(T.netFail, true);
+  return null;
+}
+
+// rbNorm keeps letters and digits only, so "StarFM Berlin", "star fm berlin"
+// and "Star-FM Berlin" are one and the same name.
+function rbNorm(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9\u00c0-\uffff]+/g, '');
+}
+
+// rbOtherSpellings runs when the typed spelling found nothing at all: the
+// longest word is asked for on its own and the answers are compared with
+// spaces and punctuation removed from both sides.
+async function rbOtherSpellings(q, words, base) {
+  var longest = words.reduce(function(a, b) { return b.length > a.length ? b : a; }, '');
+  if (longest.length < 3) return [];
+  var wide = await rbFetch(base + '&limit=400&name=' + encodeURIComponent(longest));
+  var want = rbNorm(q);
+  if (!wide || !want) return [];
+  return wide.filter(function(st) { return rbNorm(st.name).indexOf(want) >= 0; });
+}
+
+// rbMerge puts the other spellings in front of the name hits, each station once.
+function rbMerge(first, rest) {
+  var seen = {}, out = [];
+  first.concat(rest).forEach(function(st) {
+    var key = st.stationuuid || ((st.name || '') + '|' + (st.url || ''));
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(st);
+  });
+  return out;
 }
 
 // stationBtns appends the one item that holds every button of a .station row
