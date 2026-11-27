@@ -151,6 +151,101 @@ func TestPreserveDeezerLoginWithoutDeezerTouchesNothing(t *testing.T) {
 	}
 }
 
+func fakeDeezerRestore(t *testing.T, path string, sshOpens bool) {
+	t.Helper()
+	oldPick, oldOpen, oldRecheck, oldClose := deezerRestorePick, deezerRestoreOpenSSH, deezerRestoreRecheck, deezerRestoreCloseSSH
+	deezerRestorePick = func(*App) (string, error) { return path, nil }
+	deezerRestoreOpenSSH = func(*App, string) bool { return sshOpens }
+	deezerRestoreCloseSSH = func(*App, string, int) {}
+	deezerRestoreRecheck = func(*App, string, int) (map[string]any, error) {
+		return map[string]any{"state": "connecting", "recreate": map[string]any{"ran": true}}, nil
+	}
+	t.Cleanup(func() {
+		deezerRestorePick, deezerRestoreOpenSSH, deezerRestoreRecheck, deezerRestoreCloseSSH = oldPick, oldOpen, oldRecheck, oldClose
+	})
+}
+
+func writeDeezerBackupFile(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "deezer-backup.xml")
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// A Sources.xml copied off a speaker by hand goes back onto a speaker as the
+// agent's kept-login file, and neither the answer nor the log names the login.
+func TestDeezerRestoreBackupWritesTheKeptLogin(t *testing.T) {
+	written, dir := fakeDeezerSSH(t, "", "STR_DEEZER_KEPT_WRITTEN\n")
+	fakeDeezerRestore(t, writeDeezerBackupFile(t, testSourcesXML), true)
+	var logs bytes.Buffer
+	a := &App{logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	out, err := a.DeezerRestoreBackup("192.0.2.1", 8888)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["result"] != "written" || out["state"] != "connecting" {
+		t.Fatalf("answer is %v", out)
+	}
+	var kept struct{ Account, Secret, SecretType string }
+	if err := json.Unmarshal([]byte(*written), &kept); err != nil {
+		t.Fatalf("the kept-login file is not JSON: %v", err)
+	}
+	if kept.Account != "1234567" || kept.Secret != testDeezerSecret || kept.SecretType != "token_version_3" {
+		t.Errorf("kept-login file is %+v", kept)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("%d copies on the computer, want 1", len(entries))
+	}
+	answer, _ := json.Marshal(out)
+	for _, text := range []string{logs.String(), string(answer)} {
+		if strings.Contains(text, testDeezerSecret) || strings.Contains(text, "1234567") || strings.Contains(text, "user@example.com") {
+			t.Errorf("the login or the account shows:\n%s", text)
+		}
+	}
+}
+
+func TestDeezerRestoreBackupRefusals(t *testing.T) {
+	a := &App{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for name, c := range map[string]struct {
+		file, reply string
+		ssh         bool
+		want        string
+		wantWrite   bool
+	}{
+		"canceled":     {"", "", true, "canceled", false},
+		"no login":     {strings.Replace(testSourcesXML, `type="DEEZER"`, `type="TUNEIN"`, 1), "", true, "no-login", false},
+		"not xml":      {"hello", "", true, "no-login", false},
+		"no ssh":       {testSourcesXML, "", false, "no-ssh", false},
+		"already kept": {testSourcesXML, "STR_DEEZER_KEPT_EXISTS\n", true, "already-kept", true},
+		"write failed": {testSourcesXML, "", true, "write-failed", true},
+	} {
+		written, dir := fakeDeezerSSH(t, "", c.reply)
+		path := ""
+		if name != "canceled" {
+			path = writeDeezerBackupFile(t, c.file)
+		}
+		fakeDeezerRestore(t, path, c.ssh)
+		out, err := a.DeezerRestoreBackup("192.0.2.1", 8888)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if out["result"] != c.want {
+			t.Errorf("%s: result %v, want %s", name, out["result"], c.want)
+		}
+		if (*written != "") != c.wantWrite {
+			t.Errorf("%s: speaker got %d bytes", name, len(*written))
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("%s: a copy was saved on the computer", name)
+		}
+		if _, has := out["state"]; has {
+			t.Errorf("%s: a recheck ran", name)
+		}
+	}
+}
+
 func TestSourcesListDeezerAccount(t *testing.T) {
 	for doc, want := range map[string]bool{
 		`<sources><sourceItem source="DEEZER" sourceAccount="user@example.com" status="READY" isLocal="false">x</sourceItem></sources>`: true,
