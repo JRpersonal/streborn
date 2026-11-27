@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "表示中のスピーカー: {{n}} / {{total}}",
   "ui2.player.goRadio": "ラジオで表示",
   "ui2.player.goLibrary": "ライブラリで表示",
-  "ui2.player.goSpotify": "Spotify & Deezerで表示",
+  "ui2.player.goSpotify": "Spotify & Deezer タブで表示",
   "ui2.slider.wheelHint": "スライダーの上でスクロールまたはスワイプして変更します",
   "presets.keyCopySame": "{{target}}: {{keys}} はすでに同じでした。スピーカー本体のキーを設定し直しました。",
   "ui2.speakers.keyEditor.title": "{{name}} のキーを割り当てる",

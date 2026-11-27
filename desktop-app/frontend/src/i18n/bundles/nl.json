@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "Getoonde speakers: {{n}} van {{total}}",
   "ui2.player.goRadio": "Tonen in Radio",
   "ui2.player.goLibrary": "Tonen in Bibliotheek",
-  "ui2.player.goSpotify": "Tonen in Spotify & Deezer",
+  "ui2.player.goSpotify": "Tonen in het tabblad Spotify & Deezer",
   "ui2.slider.wheelHint": "Scrol of veeg over de schuifregelaar om hem aan te passen",
   "presets.keyCopySame": "{{target}}: {{keys}} daar al hetzelfde; de toetsen op de speaker zijn opnieuw ingesteld.",
   "ui2.speakers.keyEditor.title": "Toetsen van {{name}} toewijzen",

@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "顯示的喇叭：{{n}} / {{total}}",
   "ui2.player.goRadio": "在電台中顯示",
   "ui2.player.goLibrary": "在音樂庫中顯示",
-  "ui2.player.goSpotify": "在 Spotify & Deezer 中顯示",
+  "ui2.player.goSpotify": "在 Spotify & Deezer 分頁中顯示",
   "ui2.slider.wheelHint": "在滑桿上捲動或滑動即可調整",
   "presets.keyCopySame": "{{target}}：{{keys}} 已經相同，已重新設定喇叭上的按鍵。",
   "ui2.speakers.keyEditor.title": "設定 {{name}} 的預設鍵",

@@ -1351,16 +1351,31 @@ function fitSpeakerLists(lists) {
     fitWatch.observe(section);
     fitWatched = section;
   }
-  lists.querySelectorAll(SPK_LISTS).forEach(endOnRow);
+  lists.querySelectorAll(SPK_LISTS).forEach((list) => endOnRow(list, pinnedCap(list)));
+}
+
+// pinnedCap is the pinned group's cap in pixels: --u-spk-pinned counts rows,
+// and a row that shows its state ("Playing", an Update button) is taller
+// than the plain row the stylesheet's cap is made of. Measured in plain rows,
+// a playing group of two showed one member and scrolled for the other. So the
+// cap is the height of that many of the rows the list really holds. 0 for the
+// other list, or when nothing can be measured: the stylesheet's cap stays.
+function pinnedCap(list) {
+  if (!list.closest('.ui2-spk-pinned') || typeof getComputedStyle !== 'function') return 0;
+  const n = Math.floor(parseFloat(getComputedStyle(list).getPropertyValue('--u-spk-pinned')) || 0);
+  const rows = [...list.querySelectorAll('.ui2-spk-row')];
+  if (n < 1 || !rows.length) return 0;
+  const last = rows[Math.min(n, rows.length) - 1];
+  return layoutTop(last) - layoutTop(rows[0]) + last.offsetHeight;
 }
 
 // endOnRow lets a scrolling list end below a whole row instead of through
 // one: the height the sidebar gives it is cut back to the last row that fits
 // whole (its focus ring room included); the shadow at the cut edge
 // (shell2.css) says the list goes on. A list that shows every row keeps its
-// height.
-function endOnRow(list) {
-  list.style.maxHeight = '';
+// height. cap replaces the stylesheet's max-height (pinnedCap).
+function endOnRow(list, cap = 0) {
+  list.style.maxHeight = cap > 0 ? `${cap}px` : '';
   const room = list.clientHeight;
   if (list.scrollHeight <= room + 1) return;
   const top = layoutTop(list);

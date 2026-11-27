@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "Angezeigte Lautsprecher: {{n}} von {{total}}",
   "ui2.player.goRadio": "Im Radio zeigen",
   "ui2.player.goLibrary": "In der Mediathek zeigen",
-  "ui2.player.goSpotify": "In Spotify & Deezer zeigen",
+  "ui2.player.goSpotify": "Im Tab Spotify & Deezer zeigen",
   "ui2.slider.wheelHint": "Zum Ändern über dem Regler scrollen oder wischen",
   "presets.keyCopySame": "{{target}}: {{keys}} dort schon genauso, die Tasten am Lautsprecher wurden neu gesetzt.",
   "ui2.speakers.keyEditor.title": "Tasten von {{name}} belegen",
