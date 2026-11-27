@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "Altoparlanti mostrati: {{n}} di {{total}}",
   "ui2.player.goRadio": "Mostra in Radio",
   "ui2.player.goLibrary": "Mostra in Libreria",
-  "ui2.player.goSpotify": "Mostra in Spotify & Deezer",
+  "ui2.player.goSpotify": "Mostra nella scheda Spotify & Deezer",
   "ui2.slider.wheelHint": "Scorri o trascina sul cursore per modificarlo",
   "presets.keyCopySame": "{{target}}: {{keys}} già uguali su quell'altoparlante; i loro pulsanti sull'altoparlante sono stati riassegnati.",
   "ui2.speakers.keyEditor.title": "Assegna i tasti su {{name}}",

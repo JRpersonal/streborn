@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "Speakers shown: {{n}} of {{total}}",
   "ui2.player.goRadio": "Show in Radio",
   "ui2.player.goLibrary": "Show in Library",
-  "ui2.player.goSpotify": "Show in Spotify & Deezer",
+  "ui2.player.goSpotify": "Show in the Spotify & Deezer tab",
   "ui2.slider.wheelHint": "Scroll or swipe over the slider to change it",
   "presets.keyCopySame": "{{target}}: {{keys}} already the same there; their buttons on the speaker were set again.",
   "ui2.speakers.keyEditor.title": "Assign keys on {{name}}",

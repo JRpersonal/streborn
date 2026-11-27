@@ -2793,7 +2793,7 @@
   "ui2.side.findShown": "Altavoces mostrados: {{n}} de {{total}}",
   "ui2.player.goRadio": "Mostrar en Radio",
   "ui2.player.goLibrary": "Mostrar en Biblioteca",
-  "ui2.player.goSpotify": "Mostrar en Spotify & Deezer",
+  "ui2.player.goSpotify": "Mostrar en la pestaña Spotify & Deezer",
   "ui2.slider.wheelHint": "Desplázate o desliza sobre el control deslizante para cambiarlo",
   "presets.keyCopySame": "{{target}}: {{keys}} ya estaba(n) igual; se volvieron a asignar sus teclas en el altavoz.",
   "ui2.speakers.keyEditor.title": "Asignar teclas en {{name}}",
