@@ -225,7 +225,14 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	// still runs the marge check the injection rides on (see unlockAccountID).
 	// Best-effort: a firmware that rejects `envswitch accountid` still gets the
 	// injection written below, so log and keep going rather than abort.
-	if serr := sendAndLog(t, &log, "envswitch accountid set "+unlockAccountID); serr != nil {
+	//
+	// Not on a speaker that has its own account and lists Deezer: it checks by
+	// itself, and its Deezer login cannot be replaced once lost, so its account
+	// stays untouched until the install has saved that login (deezer_backup.go).
+	if a.boxCarriesDeezerAccount(host) {
+		fmt.Fprintf(&log, "-> (no account seed: the speaker has its own account and a Deezer entry)\n")
+		a.logger.Info("telnet-enable: speaker has its own account and a Deezer entry, unlocking without the placeholder account", "host", host)
+	} else if serr := sendAndLog(t, &log, "envswitch accountid set "+unlockAccountID); serr != nil {
 		a.logger.Warn("telnet-enable: seeding marge account failed (continuing to inject anyway)", "host", host, "err", serr)
 	}
 	for _, cmd := range buildEnableSSHCommands(telnetEnableBase) {

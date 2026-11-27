@@ -70,6 +70,26 @@ export function deezerCanDisconnect(v) {
   return !!v && (v.state === 'connected' || v.state === 'connecting' || v.state === 'failed' || v.state === 'unavailable');
 }
 
+// deezerCanRestore says whether the card offers "Restore from a backup
+// file": only while Deezer is not working on the speaker, so a speaker
+// that plays Deezer shows nothing more than before.
+export function deezerCanRestore(v) {
+  return !!v && v.state !== 'connected' && v.state !== 'connecting';
+}
+
+// deezerRestoreMessage turns the app's answer to a restore into the
+// message class and its i18n key; null for a cancelled file dialog.
+export function deezerRestoreMessage(ans) {
+  switch (ans && ans.result) {
+    case 'canceled': return null;
+    case 'written': return ['setup-ok', 'deezer.restore.done'];
+    case 'already-kept': return ['setup-warn', 'deezer.restore.kept'];
+    case 'no-login': return ['setup-err', 'deezer.restore.noLogin'];
+    case 'no-ssh': return ['setup-err', 'deezer.restore.noReach'];
+    default: return ['setup-err', 'deezer.restore.notWritten'];
+  }
+}
+
 // deezerRefreshDelays are the re-reads after a Check again that handed the
 // kept login back: the speaker re-creates its account after the call
 // returns, so the card asks again instead of guessing. The last one lies

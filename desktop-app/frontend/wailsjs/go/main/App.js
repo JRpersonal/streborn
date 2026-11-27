@@ -182,6 +182,10 @@ export function DeezerRecheck(arg1, arg2) {
   return window['go']['main']['App']['DeezerRecheck'](arg1, arg2);
 }
 
+export function DeezerRestoreBackup(arg1, arg2) {
+  return window['go']['main']['App']['DeezerRestoreBackup'](arg1, arg2);
+}
+
 export function DeezerStatus(arg1, arg2) {
   return window['go']['main']['App']['DeezerStatus'](arg1, arg2);
 }

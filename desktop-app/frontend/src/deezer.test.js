@@ -208,3 +208,25 @@ describe('Deezer strings', () => {
     }
   });
 });
+
+describe('restore from a backup file', () => {
+  it('is offered only while Deezer is not working', async () => {
+    const { deezerCanRestore, deezerView } = await import('./deezer.js');
+    expect(deezerCanRestore(deezerView({ state: 'unavailable' }))).toBe(true);
+    expect(deezerCanRestore(deezerView({ state: 'not-connected' }))).toBe(true);
+    expect(deezerCanRestore(deezerView({ state: 'failed' }))).toBe(true);
+    expect(deezerCanRestore(deezerView({ state: 'connected' }))).toBe(false);
+    expect(deezerCanRestore(deezerView({ state: 'connecting' }))).toBe(false);
+    expect(deezerCanRestore(null)).toBe(false);
+  });
+  it('names each outcome and stays silent on a cancel', async () => {
+    const { deezerRestoreMessage } = await import('./deezer.js');
+    expect(deezerRestoreMessage({ result: 'canceled' })).toBe(null);
+    expect(deezerRestoreMessage({ result: 'written' })).toEqual(['setup-ok', 'deezer.restore.done']);
+    expect(deezerRestoreMessage({ result: 'already-kept' })).toEqual(['setup-warn', 'deezer.restore.kept']);
+    expect(deezerRestoreMessage({ result: 'no-login' })).toEqual(['setup-err', 'deezer.restore.noLogin']);
+    expect(deezerRestoreMessage({ result: 'no-ssh' })).toEqual(['setup-err', 'deezer.restore.noReach']);
+    expect(deezerRestoreMessage({ result: 'write-failed' })).toEqual(['setup-err', 'deezer.restore.notWritten']);
+    expect(deezerRestoreMessage(null)).toEqual(['setup-err', 'deezer.restore.notWritten']);
+  });
+});

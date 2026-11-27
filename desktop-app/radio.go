@@ -105,7 +105,16 @@ type RadioSearchResult struct {
 func (a *App) RadioSearchDetailed(o RadioSearchOpts) (RadioSearchResult, error) {
 	ctx, cancel := a.radioCtx()
 	defer cancel()
-	res, err := radioClient.SearchDetailed(ctx, searchOptsFrom(o))
+	opts := searchOptsFrom(o)
+	var res radiobrowser.SearchResult
+	var err error
+	if !o.Top && o.Q != "" {
+		// A typed search also looks for the same words spelled differently
+		// ("star fm" for "StarFM"), see SearchWithVariants.
+		res, err = radioClient.SearchWithVariants(ctx, opts)
+	} else {
+		res, err = radioClient.SearchDetailed(ctx, opts)
+	}
 	logRadioErr("search", err)
 	return RadioSearchResult{
 		Stations: radiobrowser.EnrichSiblingLogos(nonNilStations(res.Stations)),

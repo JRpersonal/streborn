@@ -479,40 +479,37 @@ html.ui2 .ui2-support {
   border-top: 1px solid var(--u-hairline);
 }
 /* The same words as the classic donate rail (footer.donateSlogan, with the
-   cup): Jens, 2026-11-02, "the same text as before, that matters". Quiet in
-   colour (the muted text, 4.5:1 on the sidebar), never hidden. */
+   cup): Jens, 2026-11-02, "the same text as before, that matters". In the
+   text colour, not the muted one: quiet words above quiet buttons were
+   overlooked (Jens, 2026-11-27, "viel zu unauffällig"). */
 html.ui2 .ui2-support-head {
   margin: 0 0 6px;
-  color: var(--u-muted);
-  font-size: var(--u-fs-xs);
-  font-weight: var(--u-fw-regular);
+  color: var(--u-text);
+  font-size: var(--u-fs-sm);
+  font-weight: var(--u-fw-semibold);
   line-height: 1.35;
 }
-html.ui2 .ui2-support-cup { font-size: var(--u-fs-sm); }
+html.ui2 .ui2-support-cup { font-size: var(--u-fs-md); }
 html.ui2 #ui2Sidebar .ui2-donate {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 /* #ui2Support in the selector: help.css's shared rule (min-width 140px) has
-   the same specificity otherwise and loads later. Here the three buttons are
-   quiet controls like the others in the frame: the providers' brand colours
-   stay on Help and info, where the buttons are the subject of the page. Their
+   the same specificity otherwise and loads later. The three buttons keep the
+   providers' brand colours here too (help.css), as on Help and info and in
+   the classic donate rail: only their size is the sidebar's own. Their
    names, their order and what they open are the same. */
 html.ui2 #ui2Sidebar #ui2Support .donate-btn {
   gap: var(--u-space-1);
   min-width: 0;
   padding: 0 var(--u-space-1);
-  border-color: var(--u-raised-edge);
-  background: var(--u-raised);
-  color: var(--u-text);
   font-size: var(--u-fs-xs);
+  font-weight: var(--u-fw-bold);
   white-space: nowrap;
 }
-html.ui2 #ui2Sidebar #ui2Support .donate-btn:hover { background: color-mix(in srgb, var(--u-raised) 94%, var(--u-text)); }
-html.ui2 #ui2Sidebar #ui2Support .donate-btn .donate-btn-icon { color: var(--u-muted); }
+html.ui2 #ui2Sidebar #ui2Support .donate-btn:hover { filter: brightness(1.06); }
 html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark { font-size: var(--u-fs-sm); }
-html.ui2 #ui2Sidebar #ui2Support .donate-paypal-wordmark :is(.pay, .pal) { color: var(--u-text); }
 html.ui2 .ui2-side-bottom {
   display: flex;
   flex: 0 0 auto;

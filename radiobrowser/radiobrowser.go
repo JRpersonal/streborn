@@ -410,25 +410,108 @@ func (c *Client) SearchSmart(ctx context.Context, opts SearchOpts) ([]Station, e
 			merged = append(merged, s)
 		}
 	}
+	// Other spellings of the typed words go first: they are the user's own words
+	// with a space or a dash placed differently, and the plain name hits below
+	// would otherwise fill the page before them. See spellingVariants.
+	add(c.spellingVariants(ctx, opts, tokens, len(nameRes.stations)))
 	add(nameRes.stations)
-
-	// The name search found nothing, and the user typed more than one word?
-	// Then the station they mean may spell itself with different punctuation
-	// ("Gold 90.5" is listed as "Gold 905"). See punctFallback. This runs even
-	// when the tag search found something: words like "gold" or "rock" are tags
-	// on hundreds of stations, and those hits used to hide the one station the
-	// user typed the name of. Its matches go first for that reason.
-	if len(nameRes.stations) == 0 && len(tokens) >= 2 {
-		if st, err := c.punctFallback(ctx, opts, tokens); err == nil {
-			add(st)
-		}
-	}
 	add(tagStations)
 
 	if len(merged) > opts.Limit {
 		merged = merged[:opts.Limit]
 	}
 	return merged, nil
+}
+
+// variantLimit caps the other-spelling hits put in front of the plain name hits,
+// so they never crowd the list the user actually asked for.
+const variantLimit = 8
+
+// SearchWithVariants is SearchDetailed plus the stations that spell the typed
+// words differently, for the first page of a free-text search.
+//
+// radio-browser's byname is a plain substring match. "star fm berlin" finds
+// nothing because the station is listed as "StarFM Berlin", and "star fm" fills
+// the page with forty stations called "Star FM" from other countries while
+// "StarFM" never shows. A user asked for both stations to be added to the
+// search (discussion #2140) when they had been in the directory all along.
+//
+// Only the first page gets the extra hits (Offset == 0), so "load more" keeps
+// paging through the plain name search undisturbed. The page may therefore be
+// up to variantLimit entries longer than opts.Limit.
+func (c *Client) SearchWithVariants(ctx context.Context, opts SearchOpts) (SearchResult, error) {
+	res, err := c.SearchDetailed(ctx, opts)
+	if err != nil || opts.Name == "" || opts.Tag != "" || opts.Offset > 0 {
+		return res, err
+	}
+	variants := c.spellingVariants(ctx, opts, tokenize(opts.Name), len(res.Stations))
+	if len(variants) == 0 {
+		return res, nil
+	}
+	seen := make(map[string]bool, len(variants)+len(res.Stations))
+	merged := make([]Station, 0, len(variants)+len(res.Stations))
+	for _, list := range [][]Station{variants, res.Stations} {
+		for _, s := range list {
+			key := s.StationUUID
+			if key == "" {
+				key = s.Name + "|" + s.URL
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			merged = append(merged, s)
+		}
+	}
+	res.Stations = merged
+	return res, nil
+}
+
+// spellingVariants returns the stations that carry the typed words under a
+// different spelling, at most variantLimit of them. Two cases:
+//
+//   - The words written together ("star fm" as "starfm"), asked for directly.
+//   - Nothing found under the typed spelling at all (nameHits == 0): the
+//     punctuation-blind comparison of punctFallback, which also catches
+//     "star fm berlin" for "StarFM Berlin".
+//
+// A single word has no other spelling to try. Errors are swallowed: this only
+// ever adds to a search that already answered.
+func (c *Client) spellingVariants(ctx context.Context, opts SearchOpts, tokens []string, nameHits int) []Station {
+	if len(tokens) < 2 {
+		return nil
+	}
+	var out []Station
+	seen := map[string]bool{}
+	add := func(list []Station) {
+		for _, s := range list {
+			if len(out) >= variantLimit {
+				return
+			}
+			key := s.StationUUID
+			if key == "" {
+				key = s.Name + "|" + s.URL
+			}
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, s)
+			}
+		}
+	}
+	joined := opts
+	joined.Name = strings.Join(tokens, "")
+	joined.TagList = nil
+	joined.Offset = 0
+	joined.Limit = variantLimit
+	if st, err := c.Search(ctx, joined); err == nil {
+		add(st)
+	}
+	if nameHits == 0 {
+		if st, err := c.punctFallback(ctx, opts, tokens); err == nil {
+			add(st)
+		}
+	}
+	return out
 }
 
 // punctFallback finds a station whose own name carries punctuation the user did

@@ -447,6 +447,11 @@ export function DeezerCopyLogin(host, port, target) {
 export function DeezerUseOlderLogin(host, port) {
   return callOptionalBinding('DeezerUseOlderLogin', [host, port]);
 }
+// DeezerRestoreBackup lets the owner pick a saved Deezer login (the app's own
+// copy or a Sources.xml copied off a speaker) and puts it onto this speaker.
+export function DeezerRestoreBackup(host, port) {
+  return callOptionalBinding('DeezerRestoreBackup', [host, port]);
+}
 export function PlayDeezerLink(host, port, link, name) {
   return callOptionalBinding('PlayDeezerLink', [host, port, link, name || '']);
 }

@@ -267,6 +267,46 @@ call answered 1024 or not at all). Below that, a compact list of the
 Deezer logins of the home's speakers, with Copy and "Use the older login"
 only where they apply (next sections).
 
+### Saving the login before an install (built)
+
+The capture in A1 runs at the agent's first start, and an install restarts
+the speaker before that. Two things happen earlier since 2026-11-27
+(`desktop-app/deezer_backup.go`):
+
+1. **No placeholder account on a Deezer speaker.** The stick-free unlock
+   seeds a throwaway account (`envswitch accountid set`) so that a speaker
+   without an account runs the check the unlock rides on. A speaker that has
+   its own account and lists `DEEZER` with an account in `/sources` checks
+   by itself, so the seed is skipped there. What the seed does to a live
+   Deezer login was never measured; this keeps the question from mattering.
+2. **The app reads `Sources.xml` as soon as it has SSH**, before the first
+   write. A Deezer login in it is saved to the app's folder on the computer
+   (`<user config>/ST Reborn/deezer-backups/`, mode 0600, the firmware's own
+   XML shape reduced to the Deezer source, named after a hash) and written
+   to the agent's kept-login file on the speaker when none is there. The
+   agent then starts with the login whatever the restart did to the
+   firmware's file. Nothing is logged but that a login was found.
+
+A `Sources.xml` the owner copied off a stock speaker by hand is the same
+kind of file as the app's copy.
+
+### Putting a saved login back from a file (built, untested with a real login)
+
+The seed in step 2 covers a normal install. For everything else the Deezer
+card shows **Restore from a backup file** while Deezer is not working on the
+selected speaker (`DeezerRestoreBackup` in `desktop-app/deezer_backup.go`).
+The owner picks a file, the app's own copy or a hand-copied `Sources.xml`;
+the app opens SSH through the agent, writes the agent's kept-login file with
+the same guarded command as the install (never over an existing kept login),
+closes SSH again when it opened it, and runs Check again so the speaker signs
+in with the login. Results: `written`, `already-kept`, `no-login`, `no-ssh`,
+`write-failed`. The login is not logged and not returned to the frontend.
+
+The file may come from another speaker of the same home, which is the way
+out for a speaker whose login an older STR blanked while a second speaker
+still holds one. Whether Deezer accepts one token on two speakers is as
+unmeasured here as for Copy below.
+
 ### Copying a kept login within a home (built, untested on hardware)
 
 A speaker whose Deezer login is gone and that keeps no working copy can never
@@ -630,6 +670,7 @@ same thread and would do as well.
 | A1 keep the existing login across an install | done, field check open | none | a stock, Deezer-linked speaker for the field check |
 | A2 build (login, forensics, Deezer links, hold-to-save) | login form removed, the rest kept | a Deezer card (state, Check again, Disconnect) in the Spotify view and on the phone's More tab, Deezer links in the station search | nothing |
 | A1 recreate (remove + sourcesUpdated) and retry code | done, confirmed with a fake token | Check again on the card | a kept login |
+| Put a saved login back from a backup file | built, mechanism run on an ST10 with a dummy file, untested with a real login | one button on the card while Deezer is not working | a speaker that lost its login and a backup of it |
 | Copy a kept login to another speaker of the home, on the owner's press | built, untested on hardware | a compact list of the home's Deezer logins on the card, Copy and "Use the older login" where they apply | two speakers with the same account, one keeping a login |
 | Back up replaced logins, put an older one back | built | "Use the older login" on the card | nothing |
 | Route B | about a week | a source in Find | ruled out (decryption) |
