@@ -7,6 +7,7 @@ import {
   normalizeDetailedSearch,
   relaxedHintVisible,
   stationBitrateCell,
+  stationAddressAttr,
   searchModePressed,
   listButtonCloses,
   stationCheckDot,
@@ -153,6 +154,19 @@ describe('stationBitrateCell (#1521)', () => {
   it('shows no title for an address that is not a web stream', () => {
     expect(stationBitrateCell({ bitrate: 128, url: 'javascript:alert(1)' })).toBe('128 kbit/s');
     expect(stationBitrateCell({ bitrate: 128 })).toBe('128 kbit/s');
+  });
+});
+
+describe('stationAddressAttr (#2103)', () => {
+  it('gives the escaped address for a row without a bitrate cell', () => {
+    expect(stationAddressAttr({ bitrate: 0, url: 'http://a.example/x', url_resolved: 'https://b.example/live?a=1&b="2"' }))
+      .toBe('https://b.example/live?a=1&amp;b=&quot;2&quot;');
+    expect(stationAddressAttr({ url: 'http://a.example/x' })).toBe('http://a.example/x');
+  });
+  it('is empty for anything that is not a web stream', () => {
+    expect(stationAddressAttr({ url: 'javascript:alert(1)' })).toBe('');
+    expect(stationAddressAttr({})).toBe('');
+    expect(stationAddressAttr(null)).toBe('');
   });
 });
 

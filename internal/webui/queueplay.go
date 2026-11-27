@@ -500,7 +500,7 @@ func (s *Server) queueBoxInZone() bool {
 // library file the box can range-read) vs the loopback proxy (radio / HTTPS)
 // exactly like handlePlay, and records it as the last play. The caller must
 // hold boxCmdMu.
-func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist string, dur time.Duration) error {
+func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist, album string, dur time.Duration) error {
 	playDirect := queuePlaysDirect(url, mime)
 	playURL := queueBoxURL(url, mime)
 	// A folder started while the speaker plays a native station must stop
@@ -535,8 +535,20 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime, artist s
 	s.recentMu.Lock()
 	folder := s.recentQueueCard.name
 	s.recentMu.Unlock()
-	s.panelLibraryTrack(folder, artist, title)
+	s.panelLibraryTrack(libraryPanelHeading(folder, artist, album), artist, title)
 	return nil
+}
+
+// libraryPanelHeading is the top line of the speaker display for a queue
+// track: the folder that was started, or the song's album when that folder is
+// the artist's own. A folder tree of Artist / Album / Track started at the
+// artist showed the artist twice and no album (discussion #1136).
+func libraryPanelHeading(folder, artist, album string) string {
+	album = strings.TrimSpace(album)
+	if album != "" && strings.EqualFold(strings.TrimSpace(folder), strings.TrimSpace(artist)) {
+		return album
+	}
+	return folder
 }
 
 // queuePlaysDirect reports whether a queue track goes to the box as the file
@@ -706,7 +718,7 @@ func (s *Server) runQueueStartLocked(ctx context.Context, spec queueStartSpec) e
 		s.recentClearQueueCard()
 	}
 	s.noteQueueStart(len(items), start, shuffle, rep, it.Title, it.Duration, "resumed", spec.resume != nil)
-	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Album, it.Duration); err != nil {
 		s.noteQueueEnd("the first track could not be pushed to the box")
 		return err
 	}
@@ -929,7 +941,7 @@ func (s *Server) advanceAndPlayEnded(natural bool, gen int, why string, ended tr
 	}
 	s.ClearUserStop()
 	it = s.withStickLength(s.queueCtx(), it)
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Album, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		s.logger.Warn("queue advance: play failed", "why", why, "title", it.Title, "err", err)
 		return
@@ -962,7 +974,7 @@ func (s *Server) retryQueueTrackStart(gen int, trackStart time.Time) bool {
 	s.ensureBoxReady(ctx)
 	s.ClearUserStop()
 	it = s.withStickLength(ctx, it)
-	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Album, it.Duration); err != nil {
 		s.logger.Warn("queue watcher: the second start failed too", "title", it.Title, "err", err)
 		return false
 	}
@@ -1032,7 +1044,7 @@ func (s *Server) queueSkipLocked(forward bool) (queueItem, bool, error) {
 	}
 	s.ClearUserStop()
 	it = s.withStickLength(s.queueCtx(), it)
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Duration); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Artist, it.Album, it.Duration); err != nil {
 		s.noteQueuePushFailed()
 		return queueItem{}, false, err
 	}

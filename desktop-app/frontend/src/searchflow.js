@@ -106,10 +106,19 @@ export function relaxedHintVisible(relaxed, dismissed, mode) {
 export function stationBitrateCell(s) {
   const br = Number(s && s.bitrate);
   if (!(br > 0)) return '';
-  const url = String((s && (s.url_resolved || s.url)) || '');
-  if (!/^https?:\/\//i.test(url)) return `${br} kbit/s`;
-  const attr = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const attr = stationAddressAttr(s);
+  if (!attr) return `${br} kbit/s`;
   return `<span class="result-bitrate" title="${attr}">${br} kbit/s</span>`;
+}
+
+// stationAddressAttr is the address a station streams from, escaped for a
+// title attribute, or '' when it is not a web stream. A row without a known
+// bitrate has no bitrate cell to carry it, so its whole meta line does
+// (discussion #2103: "sometimes there is no bitrate, and then no source").
+export function stationAddressAttr(s) {
+  const url = String((s && (s.url_resolved || s.url)) || '');
+  if (!/^https?:\/\//i.test(url)) return '';
+  return url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // stationCheckDot is the reachability dot of a station row: 'ok' (green),
