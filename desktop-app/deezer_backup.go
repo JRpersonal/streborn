@@ -28,6 +28,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // boxSourcesGlob is the firmware's source store, the file the agent reads
@@ -218,6 +220,108 @@ func (a *App) preserveDeezerLogin(host string) bool {
 	a.logger.Info("deezer-backup: the speaker holds a Deezer login, saved before the install changes anything",
 		"host", host, "savedOnThisComputer", saved, "keptOnSpeaker", seeded, "secretType", login.SecretType)
 	return true
+}
+
+// deezerRestoreMaxBytes bounds a backup file: a Sources.xml is a few hundred
+// bytes, a speaker with many sources a few kilobytes.
+const deezerRestoreMaxBytes = 1 << 20
+
+// Seams for the tests of the restore: the file picker and the agent calls.
+var (
+	deezerRestorePick     = (*App).pickDeezerBackup
+	deezerRestoreOpenSSH  = (*App).enableSSHViaAgent
+	deezerRestoreRecheck  = (*App).DeezerRecheck
+	deezerRestoreCloseSSH = (*App).closeAgentSSH
+)
+
+// pickDeezerBackup lets the owner choose a backup file, starting in the
+// folder the app saves its own copies to. An empty path is a cancel.
+func (a *App) pickDeezerBackup() (string, error) {
+	opts := wailsruntime.OpenDialogOptions{
+		Title: "Open Deezer login backup",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Deezer login backup (*.xml)", Pattern: "*.xml"},
+		},
+	}
+	if dir, err := deezerBackupDirFn(); err == nil {
+		if st, serr := os.Stat(dir); serr == nil && st.IsDir() {
+			opts.DefaultDirectory = dir
+		}
+	}
+	return wailsruntime.OpenFileDialog(a.ctx, opts)
+}
+
+// DeezerRestoreBackup puts a saved Deezer login back onto a speaker that
+// runs STR and keeps none: a copy this app saved during an install, or a
+// Sources.xml the owner copied off a speaker by hand. It writes the agent's
+// kept-login file over SSH (opened through the agent for this, and closed
+// again), never over an existing kept login, and then runs the card's Check
+// again so the speaker signs in with it.
+//
+// The answer's "result" is "canceled", "no-login" (the file holds no Deezer
+// login), "no-ssh", "already-kept", "write-failed" or "written"; with
+// "written" it also carries the recheck's state. The login is never logged
+// and never returned.
+func (a *App) DeezerRestoreBackup(host string, port int) (map[string]any, error) {
+	path, err := deezerRestorePick(a)
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return map[string]any{"result": "canceled"}, nil
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if st.Size() > deezerRestoreMaxBytes {
+		return map[string]any{"result": "no-login"}, nil
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	login, ok := deezerLoginFromSources(string(blob))
+	if !ok {
+		a.logger.Info("deezer-restore: the chosen file holds no Deezer login", "host", host)
+		return map[string]any{"result": "no-login"}, nil
+	}
+	doc, err := login.keptJSON(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	wasOpen := tcpReachable(host, 22, 2*time.Second)
+	if !wasOpen && !deezerRestoreOpenSSH(a, host) {
+		a.logger.Info("deezer-restore: SSH did not open on the speaker, nothing written", "host", host)
+		return map[string]any{"result": "no-ssh"}, nil
+	}
+	res, werr := deezerBackupSSHWrite(host, seedKeptDeezerCmd, bytes.NewReader(doc), 20*time.Second)
+	if !wasOpen {
+		deezerRestoreCloseSSH(a, host, port)
+	}
+	out := map[string]any{}
+	switch {
+	case strings.Contains(res, "STR_DEEZER_KEPT_WRITTEN"):
+		out["result"] = "written"
+	case strings.Contains(res, "STR_DEEZER_KEPT_EXISTS"):
+		out["result"] = "already-kept"
+	default:
+		out["result"] = "write-failed"
+		a.logger.Warn("deezer-restore: the kept login could not be written to the speaker", "host", host, "err", werr)
+	}
+	if out["result"] == "written" {
+		// The hand-made file becomes one of the app's own copies too.
+		if dir, derr := deezerBackupDirFn(); derr == nil {
+			_, _ = saveDeezerBackup(dir, login)
+		}
+		if status, rerr := deezerRestoreRecheck(a, host, port); rerr == nil {
+			out["state"] = status["state"]
+			out["recreate"] = status["recreate"]
+		}
+	}
+	a.logger.Info("deezer-restore: backup file put back onto the speaker",
+		"host", host, "result", out["result"], "secretType", login.SecretType, "sshWasOpen", wasOpen)
+	return out, nil
 }
 
 var (

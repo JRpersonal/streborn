@@ -80,6 +80,8 @@ export function DeezerHousehold(arg1:string,arg2:number):Promise<Record<string, 
 
 export function DeezerRecheck(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function DeezerRestoreBackup(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function DeezerStatus(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function DeezerUseOlderLogin(arg1:string,arg2:number):Promise<Record<string, any>>;

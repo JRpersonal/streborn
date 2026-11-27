@@ -5,7 +5,8 @@
 // the Bose cloud, a Deezer account the speaker had before keeps working, and
 // otherwise Deezer reaches the speaker over Bluetooth or AirPlay. It shows
 // the speaker's Deezer state, Check again (which hands a kept login back to a
-// speaker that lost it, docs/streaming/deezer.md), and Disconnect. Below
+// speaker that lost it, docs/streaming/deezer.md), Disconnect, and, while
+// Deezer is not working, "Restore from a backup file". Below
 // that, a compact list of the Deezer logins of the home's speakers, with Copy
 // where this speaker's kept login can help another one and "Use the older
 // login" where Deezer refuses this speaker's login and an older one is backed
@@ -20,11 +21,11 @@ import { t, getLocale } from '../i18n/index.js';
 import { state } from '../state.js';
 import {
   DeezerStatus, DeezerRecheck, UnlinkMusicService, BrowserOpenURL, ClipboardSetText,
-  DeezerHousehold, DeezerCopyLogin, DeezerUseOlderLogin,
+  DeezerHousehold, DeezerCopyLogin, DeezerUseOlderLogin, DeezerRestoreBackup,
 } from '../api.js';
 import {
   deezerView, deezerStatusLine, deezerPill, deezerCanDisconnect,
-  deezerRefreshDelays, deezerDisconnectError,
+  deezerRefreshDelays, deezerDisconnectError, deezerCanRestore, deezerRestoreMessage,
   deezerHousehold, deezerHomeVisible, deezerShowCopyAll, deezerRowState, deezerRowDetails,
   deezerKeptDate, deezerCopyMessages, deezerCopyOk,
 } from '../deezer.js';
@@ -180,6 +181,9 @@ function paint(box, v) {
   const disconnect = deezerCanDisconnect(v)
     ? `<button class="btn btn-mini" id="deezerDisconnect">${escapeHtml(t('usServices.disconnect'))}</button>`
     : '';
+  const restore = deezerCanRestore(v)
+    ? `<button class="btn btn-mini" id="deezerRestore" title="${escapeAttr(t('deezer.restore.hint'))}">${escapeHtml(t('deezer.restore'))}</button>`
+    : '';
   const warn = [
     v.stuck ? t('deezer.stuck') : '',
     v.rejected ? t('deezer.rejected') : '',
@@ -194,6 +198,7 @@ function paint(box, v) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
       ${disconnect}
       <button class="btn btn-mini" id="deezerRefresh">${escapeHtml(t('deezer.refresh'))}</button>
+      ${restore}
     </div>
     <div id="deezerCardMsg" class="small">${keep.text ? `<div class="${escapeAttr(keep.cls)}">${escapeHtml(keep.text)}</div>` : ''}</div>
     <div id="deezerHome"></div>
@@ -258,6 +263,22 @@ function wire(box) {
   const copy = $('deezerSupportCopy');
   if (copy) copy.onclick = () => {
     deezerSupportCopy(copy, { copy: ClipboardSetText, later: setTimeout, t });
+  };
+  const rest = $('deezerRestore');
+  if (rest) rest.onclick = async () => {
+    rest.disabled = true;
+    say(box, '', t('deezer.restore.working'));
+    let wrote = false;
+    try {
+      const ans = await DeezerRestoreBackup(box.host, box.port);
+      const m = deezerRestoreMessage(ans);
+      say(box, m ? m[0] : '', m ? t(m[1]) : '');
+      wrote = !!ans && ans.result === 'written';
+    } catch (e) {
+      say(box, 'setup-err', t('deezer.restore.failed', { err: agentErrorText(e) }));
+    }
+    await renderDeezerCard().catch(() => {});
+    if (wrote) refreshSoon();
   };
   const ref = $('deezerRefresh');
   if (ref) ref.onclick = () => {
