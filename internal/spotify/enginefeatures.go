@@ -25,6 +25,7 @@ const engineFeatureProbeTimeout = 2 * time.Second
 // Caller holds m.mu.
 func (m *Manager) resetEngineFeaturesLocked() {
 	m.engineFeatures = nil
+	m.enginePrevNoSeek = false
 	m.engineFeaturesGen++
 }
 
@@ -79,4 +80,54 @@ func (m *Manager) readEngineFeatures(ctx context.Context) (set map[string]bool, 
 		set[f] = true
 	}
 	return set, root.Features, true
+}
+
+// prevNoSeekKnown reports what engineHasPrevNoSeek has already established,
+// without asking the engine.
+func (m *Manager) prevNoSeekKnown() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.enginePrevNoSeek
+}
+
+// enginePrevNoSeekProbeTimeout caps the probe below.
+const enginePrevNoSeekProbeTimeout = time.Second
+
+// engineHasPrevNoSeek reports whether the running engine's /player/prev takes
+// allow_seeking. The build does not list it as a feature, so the probe asks
+// for /player/queue, which reached the fork's master in the same merge
+// (JRpersonal/go-librespot 897d5f8, 2026-11-16): an engine that answers it
+// with a play order has the switch. Only a yes is kept; anything else (an
+// older build's 404, no session, no answer in time) reads as no and is asked
+// again when the next song starts (startTrackHeardLocked), while the engine is
+// playing and answers at once.
+func (m *Manager) engineHasPrevNoSeek(ctx context.Context) bool {
+	m.mu.Lock()
+	known, gen := m.enginePrevNoSeek, m.engineFeaturesGen
+	m.mu.Unlock()
+	if known {
+		return true
+	}
+	if m.client == nil {
+		return false
+	}
+	pctx, cancel := context.WithTimeout(ctx, enginePrevNoSeekProbeTimeout)
+	defer cancel()
+	data, err := m.apiGet(pctx, "/player/queue")
+	if err != nil {
+		return false
+	}
+	var q struct {
+		Next *[]json.RawMessage `json:"next_tracks"`
+	}
+	if json.Unmarshal(data, &q) != nil || q.Next == nil {
+		return false
+	}
+	m.mu.Lock()
+	if m.engineFeaturesGen == gen {
+		m.enginePrevNoSeek = true
+	}
+	m.mu.Unlock()
+	m.logger.Info("spotify: engine goes to the previous song without a rewind (allow_seeking)")
+	return true
 }

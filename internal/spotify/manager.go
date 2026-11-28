@@ -235,6 +235,9 @@ type Manager struct {
 	// older process does not land in the new one.
 	engineFeatures    map[string]bool
 	engineFeaturesGen uint64
+	// enginePrevNoSeek is set once the running engine has shown that its
+	// /player/prev takes allow_seeking (engineHasPrevNoSeek). Guarded by mu.
+	enginePrevNoSeek bool
 	// likedURI, likedState and likedAt are the last song written to Liked
 	// Songs (saved: true, removed: false) and when, so a repeated press of
 	// the same key on the same song writes once (liked.go). Memory only.
@@ -578,7 +581,12 @@ type Manager struct {
 	// was scheduled for. lagBaseSeq is lagSeq at that baseline: a stored
 	// reading with a higher lastLagSeq was sampled during this attachment.
 	// lagSettleDelay overrides boxLagSettleDelay (tests).
-	lagBaseAt      time.Time
+	lagBaseAt time.Time
+	// trackHeardAt is when the box received the first audio of the song it
+	// is on, trackHeardLag the audio that was still in flight to the room at
+	// that moment (trackheard.go). Guarded by mu.
+	trackHeardAt   time.Time
+	trackHeardLag  time.Duration
 	lagAttachGen   uint64
 	lagBaseSeq     uint64
 	lagSettleDelay time.Duration

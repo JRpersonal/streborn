@@ -28,7 +28,11 @@ type oggDrain struct {
 	// page. paused mirrors the "no consumer, engine paused" state.
 	hdr       []byte
 	capturing bool
-	paused    bool
+	// trackFresh is set at a track boundary and consumed by the first audio
+	// page of that track that is handed to the box (noteDelivered), which
+	// starts the song's heard clock.
+	trackFresh bool
+	paused     bool
 	// Bitrate measurement: body bytes and the highest granule (sample count at
 	// vorbisRate) seen since the current track's BOS. kbps = bytes*8 over the
 	// elapsed seconds. This is the real stream rate, not the configured nominal.
@@ -108,6 +112,17 @@ func (d *oggDrain) noteDelivered(advance int64) (tookBaseline bool) {
 	d.delivered += advance
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if d.trackFresh {
+		// First audio of a new song for this box: start its heard clock
+		// (trackheard.go) before this page is counted, so the audio in flight
+		// is what the box held of the songs before.
+		d.trackFresh = false
+		now := time.Now()
+		if d.now != nil {
+			now = d.now()
+		}
+		m.startTrackHeardLocked(now)
+	}
 	m.deliveredGran = d.deliveredBase + d.delivered
 	if !m.lagRebase {
 		return false
@@ -215,6 +230,7 @@ func (d *oggDrain) pageNow(ctx context.Context, page []byte) {
 	bodyLen := int64(len(page) - 27 - numSegs)
 	switch {
 	case htype&0x02 != 0: // BOS
+		d.trackFresh = true
 		// New logical stream = track boundary. Log it with the previous
 		// track's size so a premature/duplicate BOS (the suspected cause of
 		// a track restarting at its start) is visible in the log.
