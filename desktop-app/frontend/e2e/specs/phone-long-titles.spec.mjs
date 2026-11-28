@@ -1,6 +1,8 @@
 // phone-long-titles: on the phone remote a station name that runs over many
-// lines stops after two lines with "…" (#1783): in the now-playing card and
-// on a key tile, with the full name as the element's title.
+// lines stops with "…" (#1783): after two lines in the now-playing card and
+// after three on a key tile, with the full name as the element's title. A
+// key gets the third line because one long word alone takes two of them next
+// to the logo, and a tap cannot open the name there.
 //
 //   E2E_PORT=4184 npx playwright test specs/phone-long-titles.spec.mjs
 
@@ -32,16 +34,16 @@ test.use({
   phoneOverrides: { '/api/presets': { body: [{ ...PHONE.PRESETS[0], name: SHOWN }, ...PHONE.PRESETS.slice(1)] } },
 });
 
-test('the now-playing title and a key tile stop after two lines and keep the full name as title', async ({ phone }) => {
+test('the now-playing title stops after two lines, a key tile after three, and both keep the full name as title', async ({ phone }) => {
   const { page } = phone;
   await expect(page.locator('#presets .preset.has-art')).toHaveCount(6);
   const now = page.locator('#status .now');
   await expect(now).toHaveAttribute('title', SHOWN);
   const tile = page.locator('#presets .preset').first().locator('.name');
   await expect(tile).toHaveAttribute('title', SHOWN);
-  for (const el of [now, tile]) {
+  for (const [el, max] of [[now, 2], [tile, 3]]) {
     const m = await el.evaluate(lines);
-    expect(m.shown).toBeLessThanOrEqual(2);
+    expect(m.shown).toBeLessThanOrEqual(max);
     expect(m.cut).toBe(true);
   }
   // A short key name is not touched.

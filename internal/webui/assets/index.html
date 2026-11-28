@@ -282,6 +282,11 @@ button.btn:active { background:var(--press); }
 .preset:focus-visible { outline-offset:-2px; }
 .preset .num { font-size:11px; color:var(--muted); }
 .preset .name { font-size:15px; font-weight:600; margin-top:4px; }
+/* Three lines on a key: next to the logo a key's text column is about ten
+   letters wide on a phone, so one long word alone takes two lines and a name
+   like "Antenne Niedersachsen" lost its end. A tap cannot open it here, the
+   tap plays the key. */
+.preset .name.clamp2 { -webkit-line-clamp:3; line-clamp:3; }
 /* A key with a cover (#1312): the image sits left of the number and name, so
    both stay readable on a two-column phone grid; the name wraps rather than
    being cut. Without a cover (or when it fails) the image is the stand-in
