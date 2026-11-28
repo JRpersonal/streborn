@@ -16,9 +16,14 @@
 // page, else the lead cap; see heardLag). Inside the first heardPrevBackWindow of the
 // song heard, Back goes to the song before; later it restarts the song. To go
 // back regardless of the engine's own 3-second rule the engine is first put
-// to the start of the song, then asked for prev: at position 0 its prev always
-// means the song before. The /player/prev API has no allow_seeking switch
-// that would say this directly.
+// to the start of the song, then asked for prev with allow_seeking off. An
+// engine that knows the switch (JRpersonal/go-librespot master since
+// 2026-11-16, see engineHasPrevNoSeek) goes to the song before whatever its
+// position is and gets that one call alone; an older one ignores the field
+// and decides on its position, which the seek has just put to 0. The seek
+// alone was not enough: with the box detached for the skip the engine reads
+// on at pipe speed, and its position was past 3 seconds again before the
+// prev arrived, so two of three presses restarted the song (#1678).
 //
 // Every STR Back takes this path: the remote's key (webui HardwareSkip) and
 // the Previous button of the desktop app and the phone page (webui
@@ -111,37 +116,74 @@ func (m *Manager) HeardPrev(ctx context.Context) (back bool, err error) {
 	if m == nil {
 		return false, fmt.Errorf("spotify: no engine")
 	}
-	pos, ok := m.engineTrackPosition(ctx)
-	if !ok {
-		m.logger.Info("spotify: back, engine position unknown, leaving it to the engine")
-		m.NoteSkip()
-		return false, m.Prev(ctx)
+	// The song's own clock decides when there is one (trackheard.go), read
+	// at the press and before any engine call: the engine's /status took up
+	// to 3 s right after the speaker dropped the stream for the key, which
+	// both delayed the answer and aged the reading (live Portable).
+	if heard, ok := m.trackHeard(time.Now()); ok {
+		back = heard < heardPrevBackWindow
+		m.logger.Info("spotify: back", "heardSec", heard.Seconds(), "heardSource", "track-clock", "to", backTarget(back))
+	} else {
+		pos, ok := m.engineTrackPosition(ctx)
+		if !ok {
+			m.logger.Info("spotify: back, engine position unknown, leaving it to the engine")
+			m.NoteSkip()
+			return false, m.Prev(ctx)
+		}
+		lag, lagSource := m.heardLag()
+		back = heardPrevGoesBack(pos, lag)
+		m.logger.Info("spotify: back",
+			"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagSource", lagSource,
+			"heardSec", max(0, (pos-lag).Seconds()), "heardSource", lagSource, "to", backTarget(back))
 	}
-	lag, lagSource := m.heardLag()
-	back = heardPrevGoesBack(pos, lag)
-	to := "start of song"
-	if back {
-		to = "previous song"
-	}
-	m.logger.Info("spotify: back",
-		"engineSec", pos.Seconds(), "lagSec", lag.Seconds(), "lagSource", lagSource,
-		"heardSec", max(0, (pos-lag).Seconds()), "to", to)
 	m.NoteSkip()
 	if !back {
 		return false, m.Prev(ctx)
 	}
-	// At position 0 the engine's prev always means the song before. A seek
-	// that fails leaves only the plain prev, which then restarts the song:
-	// still an answer to the press, and the log above says what was meant.
+	// An engine with the allow_seeking switch needs no detour: one call,
+	// and no restart of the current song on the way. Only what is already
+	// known counts here (the song's start asked, trackheard.go): right after
+	// the speaker drops the stream for the key the engine answers nothing
+	// for seconds, and a question now would use up the time the skip has.
+	if m.prevNoSeekKnown() {
+		return true, m.apiPost(ctx, "/player/prev", prevNoSeekBody)
+	}
+	// At position 0 an engine without the allow_seeking switch reads its prev
+	// as the song before. A seek that fails still gets the prev that may not
+	// rewind: an engine that knows the switch goes back all the same, an
+	// older one restarts the song, which is still an answer to the press.
 	if err := m.apiPost(ctx, "/player/seek", `{"position":0}`); err != nil {
-		m.logger.Warn("spotify: back, could not go to the start of the song first, the engine decides", "err", err)
-		return false, m.Prev(ctx)
+		m.logger.Warn("spotify: back, could not go to the start of the song first", "err", err)
+		// A seek that ran out of time has usually still reached the engine
+		// and runs once it is free again. The prev goes out with time of
+		// its own, so it lines up behind that seek instead of dying with
+		// the caller's deadline: without it the press only restarted the
+		// song (live Portable, 2026-11-28).
+		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), prevAfterSeekTimeout)
+		defer cancel()
+		return true, m.apiPost(pctx, "/player/prev", prevNoSeekBody)
 	}
 	// Armed again right before the prev: the seek may have produced a track
 	// boundary of its own that used the first arm up.
 	m.NoteSkip()
-	return true, m.Prev(ctx)
+	return true, m.apiPost(ctx, "/player/prev", prevNoSeekBody)
 }
+
+// prevAfterSeekTimeout is how long the prev behind a timed-out seek may wait
+// for the engine.
+const prevAfterSeekTimeout = 3 * time.Second
+
+// backTarget names where a Back goes, for the log.
+func backTarget(back bool) string {
+	if back {
+		return "previous song"
+	}
+	return "start of song"
+}
+
+// prevNoSeekBody asks the engine for the song before even when it has read
+// more than its 3 seconds of the current one.
+const prevNoSeekBody = `{"allow_seeking":false}`
 
 // Repeat modes the remote's repeat key steps through, in the Spotify app's
 // order.

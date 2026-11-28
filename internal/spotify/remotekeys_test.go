@@ -18,6 +18,9 @@ type fakePlayModeEngine struct {
 	mu    sync.Mutex
 	posMs int64
 	noPos bool
+	// queue makes the fake an engine build that has /player/queue, and with
+	// it the allow_seeking switch of /player/prev.
+	queue bool
 	modes playModes
 	posts []string
 }
@@ -35,6 +38,14 @@ func (f *fakePlayModeEngine) handler(w http.ResponseWriter, r *http.Request) {
 			st["track"] = map[string]any{"uri": "spotify:track:x", "position": f.posMs}
 		}
 		_ = json.NewEncoder(w).Encode(st)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/player/queue" {
+		if !f.queue {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{"prev_tracks":[],"track":null,"next_tracks":[]}`)
 		return
 	}
 	b, _ := io.ReadAll(r.Body)
@@ -217,8 +228,10 @@ func TestHeardPrevEarlyGoesToTheSongBefore(t *testing.T) {
 		t.Fatalf("back=%v err=%v, want the song before", back, err)
 	}
 	got := f.calls()
-	if len(got) != 2 || got[0] != `/player/seek {"position":0}` || !strings.HasPrefix(got[1], "/player/prev") {
-		t.Fatalf("engine calls = %q, want a seek to 0 then prev", got)
+	// The prev says "no rewind" itself: the engine reads on after the seek,
+	// and a plain prev past its 3 seconds restarted the song (#1678).
+	if len(got) != 2 || got[0] != `/player/seek {"position":0}` || got[1] != `/player/prev {"allow_seeking":false}` {
+		t.Fatalf("engine calls = %q, want a seek to 0 then a prev that may not rewind", got)
 	}
 }
 
@@ -287,5 +300,91 @@ func TestCycleRepeatFromSongRepeatGoesOff(t *testing.T) {
 	}
 	if got := f.calls(); got[0] != `/player/repeat_track {"repeat_track":false}` {
 		t.Fatalf("the song repeat must go off first, calls = %q", got)
+	}
+}
+
+// The song's own clock decides Back, not the engine's position: after a skip
+// the box fills its buffer at several times real time, so the engine stood at
+// 25 s ten seconds into a song and every Back restarted it (#1678).
+func TestHeardPrevGoesBackOnTheSongClock(t *testing.T) {
+	f := &fakePlayModeEngine{posMs: 25571}
+	m := newFakePlayModeManager(t, f)
+	m.mu.Lock()
+	m.trackHeardAt = time.Now().Add(-7 * time.Second)
+	m.mu.Unlock()
+	back, err := m.HeardPrev(context.Background())
+	if err != nil || !back {
+		t.Fatalf("back=%v err=%v, want the song before: 7 s heard", back, err)
+	}
+}
+
+func TestHeardPrevRestartsOnTheSongClock(t *testing.T) {
+	f := &fakePlayModeEngine{posMs: 60000}
+	m := newFakePlayModeManager(t, f)
+	m.mu.Lock()
+	m.trackHeardAt = time.Now().Add(-40 * time.Second)
+	m.mu.Unlock()
+	if back, err := m.HeardPrev(context.Background()); err != nil || back {
+		t.Fatalf("back=%v err=%v, want a restart: 40 s heard", back, err)
+	}
+}
+
+// A song that follows another without a gap is heard later than it is
+// delivered, by the audio the box still held of the song before.
+func TestTrackHeardCountsFromWhatTheBoxStillHeld(t *testing.T) {
+	m := &Manager{}
+	now := time.Now()
+	// The attachment's first audio: nothing in flight.
+	m.lagRebase = true
+	m.startTrackHeardLocked(now)
+	if h, ok := m.trackHeard(now.Add(6 * time.Second)); !ok || h != 6*time.Second {
+		t.Fatalf("heard=%v ok=%v, want 6s", h, ok)
+	}
+	// 40 s delivered in the 30 s since the attachment's first page: 10 s in
+	// flight when the next song's first audio goes out.
+	m.lagRebase, m.lagBaseAt, m.lagBaseGran = false, now, 0
+	m.deliveredGran = 40 * vorbisRate
+	next := now.Add(30 * time.Second)
+	m.startTrackHeardLocked(next)
+	if h, _ := m.trackHeard(next.Add(4 * time.Second)); h != 0 {
+		t.Fatalf("heard=%v, want 0: the song has not reached the room yet", h)
+	}
+	if h, _ := m.trackHeard(next.Add(15 * time.Second)); h != 5*time.Second {
+		t.Fatalf("heard=%v, want 5s", h)
+	}
+}
+
+func TestTrackHeardUnknownBeforeAnySong(t *testing.T) {
+	if _, ok := (&Manager{}).trackHeard(time.Now()); ok {
+		t.Fatal("a clock was reported with no song delivered")
+	}
+}
+
+// An engine that can go back without a rewind gets that one call: no seek,
+// which restarted the current song on the way and hung for seconds on a live
+// Portable. The answer is kept for the engine process.
+func TestHeardPrevGoesBackInOneCallOnAnEngineThatCanSkipTheRewind(t *testing.T) {
+	f := &fakePlayModeEngine{posMs: 14000, queue: true}
+	m := newFakePlayModeManager(t, f)
+	// What the start of a song asks, in the background.
+	if !m.engineHasPrevNoSeek(context.Background()) {
+		t.Fatal("the fake engine with a queue must read as able to skip the rewind")
+	}
+	for range 2 {
+		if back, err := m.HeardPrev(context.Background()); err != nil || !back {
+			t.Fatalf("back=%v err=%v, want the song before", back, err)
+		}
+	}
+	want := `/player/prev {"allow_seeking":false}`
+	if got := f.calls(); len(got) != 2 || got[0] != want || got[1] != want {
+		t.Fatalf("engine calls = %q, want two single prevs that may not rewind", got)
+	}
+	m.mu.Lock()
+	kept := m.enginePrevNoSeek
+	m.resetEngineFeaturesLocked()
+	forgotten := !m.enginePrevNoSeek
+	m.mu.Unlock()
+	if !kept || !forgotten {
+		t.Fatalf("kept=%v forgotten after an engine restart=%v, want both", kept, forgotten)
 	}
 }
