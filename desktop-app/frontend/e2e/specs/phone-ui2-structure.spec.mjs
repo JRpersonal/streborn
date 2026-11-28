@@ -292,7 +292,8 @@ test.describe('current layout (no key)', () => {
     const links = page.locator('#peers a.peer');
     await expect(links).toHaveCount(PHONE.PEERS.length);
     for (let i = 0; i < PHONE.PEERS.length; i++) {
-      await expect(links.nth(i)).toHaveAttribute('href', PHONE.PEERS[i].url);
+      // The classic list carries #classic, so the next speaker opens classic too.
+      await expect(links.nth(i)).toHaveAttribute('href', PHONE.PEERS[i].url.split('#')[0] + '#classic');
     }
     await expect(page.locator('#peers .u2-self')).toHaveCount(0);
   });
